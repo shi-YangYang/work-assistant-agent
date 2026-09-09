@@ -1,4 +1,4 @@
-name: Foundation checks
+name: Desktop recording checks
 
 on:
   push:
@@ -25,6 +25,7 @@ jobs:
           python-version: '3.12'
       - run: python -m venv .venv
       - run: npm ci
+      - run: node scripts/install-python.mjs
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check

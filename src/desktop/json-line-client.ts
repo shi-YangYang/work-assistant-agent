@@ -53,7 +53,11 @@ export class JsonLineClient {
     return this.pending.size
   }
 
-  request(method: string, timeoutMs = this.timeoutMs): Promise<unknown> {
+  request(
+    method: string,
+    timeoutMs = this.timeoutMs,
+    params: Record<string, unknown> = {},
+  ): Promise<unknown> {
     if (this.failure) return Promise.reject(this.failure)
     if (this.stopping) return Promise.reject(new CoreError('stopping', '本地核心正在停止。'))
     if (this.pending.size >= 64) {
@@ -63,11 +67,11 @@ export class JsonLineClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
-        reject(new CoreError('timeout', '本地核心响应超时，请重新连接。'))
+        reject(new CoreError('timeout', '操作结果尚未确定，正在查询当前状态。'))
       }, timeoutMs)
       this.pending.set(id, { resolve, reject, timer })
       try {
-        this.child.stdin.write(JSON.stringify({ id, method }) + '\n', (error) => {
+        this.child.stdin.write(JSON.stringify({ id, method, params }) + '\n', (error) => {
           if (error) this.fail(new CoreError('write_failed', '核心通信写入失败。'))
         })
       } catch {
@@ -114,7 +118,25 @@ export class JsonLineClient {
       clearTimeout(pending.timer)
       this.pending.delete(message.id)
       if (hasError) {
-        pending.reject(new CoreError('remote_error', '本地核心无法处理该请求。'))
+        const remote = message.error as { code: string; message: string }
+        const publicCodes = new Set([
+          'invalid_params',
+          'invalid_id',
+          'storage_error',
+          'storage_unavailable',
+          'storage_schema',
+          'storage_commit',
+          'recording_active',
+          'recording_unavailable',
+          'meeting_missing',
+          'audio_path',
+          'core_error',
+        ])
+        pending.reject(
+          publicCodes.has(remote.code)
+            ? new CoreError(remote.code, remote.message)
+            : new CoreError('remote_error', '本地核心无法处理该请求。'),
+        )
       } else {
         pending.resolve(message.result)
       }

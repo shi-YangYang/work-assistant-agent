@@ -781,3 +781,175 @@ h1 {
     transition: none !important;
   }
 }
+
+.recording-card,
+.meeting-detail {
+  background: #fff;
+  border: 1px solid #cdded1;
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 28px;
+}
+.recording-card {
+  background: #eef5ef;
+}
+.recording-heading,
+.recording-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.recording-heading strong {
+  color: #28573b;
+}
+.recording-time {
+  margin-left: auto;
+  font-size: 30px;
+  font-variant-numeric: tabular-nums;
+}
+.recording-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #aaa;
+}
+.recording-dot.live {
+  background: #cb594e;
+  box-shadow: 0 0 0 5px #cb594e15;
+}
+.recording-card p,
+.recording-card small {
+  color: #6b776b;
+}
+.recording-controls {
+  justify-content: space-between;
+  margin: 16px 0;
+}
+.recording-controls label {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+}
+.recording-controls meter {
+  width: 180px;
+  height: 14px;
+}
+.meeting-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 18px;
+  padding: 20px 18px;
+  border: 0;
+  border-bottom: 1px solid #e7ece5;
+  background: white;
+  text-align: left;
+  color: #536056;
+  cursor: pointer;
+}
+.meeting-row:hover {
+  background: #f4f8f2;
+}
+.meeting-list {
+  border: 1px solid #e0e6dc;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 26px;
+}
+.row-icon {
+  color: #62846b;
+  background: #eff4ec;
+  padding: 12px;
+  border-radius: 12px;
+}
+.row-title {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+.row-title strong {
+  color: #354536;
+}
+.row-title small {
+  color: #8b948a;
+}
+.meeting-state {
+  font-size: 12px;
+  border-radius: 20px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  background: #edf3e9;
+  color: #51724c;
+}
+.meeting-state.interrupted,
+.meeting-state.failed {
+  background: #fbefdf;
+  color: #926731;
+}
+.meeting-detail .section-heading {
+  margin-top: 20px;
+  gap: 14px;
+}
+.meeting-detail h2 {
+  font-size: 22px;
+}
+.meeting-detail > p {
+  color: #7a857a;
+}
+.metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  margin: 26px 0;
+}
+.metadata dt {
+  font-size: 12px;
+  color: #8a9287;
+  margin-bottom: 8px;
+}
+.metadata dd {
+  margin: 0;
+  color: #495846;
+  font-size: 14px;
+}
+audio {
+  width: 100%;
+  margin: 12px 0;
+}
+.audio-warning {
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff6e8;
+  color: #936934 !important;
+  line-height: 1.6;
+}
+.detail-future {
+  margin-top: 24px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+  color: #90988c;
+}
+.error-notice {
+  margin-bottom: 20px;
+  color: #8c513c;
+  background: #fff3e9;
+}
+.error-notice span {
+  flex: 1;
+}
+@media (max-width: 1050px) {
+  .meeting-row {
+    gap: 10px;
+    padding: 16px 10px;
+  }
+  .row-icon {
+    display: none;
+  }
+  .recording-controls meter {
+    width: 110px;
+  }
+}

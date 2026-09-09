@@ -17,8 +17,8 @@ export default defineConfig({
         name: 'local-content-policy',
         transformIndexHtml(html, context) {
           const policy = context.server
-            ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:5173; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
-            : "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+            ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:5173; img-src 'self' data:; media-src paa-audio:; object-src 'none'; base-uri 'none'; form-action 'none'"
+            : "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src 'self' data:; media-src paa-audio:; object-src 'none'; base-uri 'none'; form-action 'none'"
           return html.replace('__CONTENT_POLICY__', policy)
         },
       },

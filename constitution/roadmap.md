@@ -11,11 +11,13 @@
 - 已完成 [Spec 001：产品与技术基础](../specs/spec-001-product-and-technical-foundation/spec.md)，交付产品定义、技术方案和可运行工程骨架，独立工程验收为 PASS。
 - 已确定 Electron + React + TypeScript 桌面入口、Python 本地核心及 stdio 进程通信，见 [实施基线](../.ai/decisions/0004-foundation-stack.md)。
 - 已实现中文会议工作区、设置、真实核心连接、故障重试与退出清理；本机工程检查及 Electron 冒烟测试通过，Windows 尚未运行验证。
-- 完整 Meeting Agent 功能由后续 Spec 推进；本次不接入真实录音、ASR 或 LLM。
+- Spec 001 未接入真实录音、ASR 或 LLM；完整 Meeting Agent 功能由 Phase 1 的后续 Spec 推进。
 
-## Phase 1 — Meeting Agent MVP（下一阶段）
+## Phase 1 — Meeting Agent MVP（当前阶段）
 
 目标是完成开始会议、持续录音、本地转写、显示并保存完整 Transcript、结束会议、生成并保存结构化纪要的闭环。
+
+已完成 [Spec 002：会议录音与本地保存](../specs/spec-002-meeting-recording-and-storage/spec.md)，交付麦克风录音、保存、历史与回放；状态为 DONE，独立验收 PASS。转写与纪要在此基础上逐步接入。正式用户试用前应完成独立的安装包与内置运行时分发工作。
 
 关键结果：
 

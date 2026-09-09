@@ -7,6 +7,7 @@
 | 编号 | 名称 | 状态 |
 | --- | --- | --- |
 | 001 | [产品与技术基础](spec-001-product-and-technical-foundation/spec.md) | DONE：桌面骨架已完成，独立工程验收 PASS；Windows 尚未实测 |
+| 002 | [会议录音与本地保存](spec-002-meeting-recording-and-storage/spec.md) | DONE：录音、保存、历史与回放完成，独立验收 PASS；Windows 尚未实测 |
 
 Spec 讨论、起草、决策和文档更新由协调 Agent 直接处理并自行检查，无需创建子 Agent 验证。下文独立验收指业务代码实施后的验收，详见 [Spec 决策工作规则](../.ai/rules/spec-decision-workflow.md)。
 

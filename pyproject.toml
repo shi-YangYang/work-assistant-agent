@@ -1,9 +1,9 @@
 [project]
 name = "paa-core"
 version = "0.1.0"
-description = "Local standard-library core for Personal Agent Assistant"
+description = "Local recording and storage core for Personal Agent Assistant"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = ["sounddevice==0.5.6"]
 
 [tool.paa]
 entry-point = "src/python/paa_core/__main__.py"

@@ -1,10 +1,13 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CoreManager } from '../../src/desktop/core-manager'
 import { pythonCommand } from '../../src/desktop/python-command'
 
 const managers: CoreManager[] = []
 const createManager = (): CoreManager => {
-  const manager = new CoreManager(process.cwd())
+  const manager = new CoreManager(process.cwd(), mkdtempSync(join(tmpdir(), 'paa-manager-')))
   managers.push(manager)
   return manager
 }
@@ -28,7 +31,7 @@ it('connects to actual Python, returns an empty list, and retries with one new p
   const [first, duplicate] = await Promise.all([manager.start(), manager.start()])
   expect(first.connection).toBe('ready')
   expect(first.processId).toBe(duplicate.processId)
-  expect(await manager.listMeetings()).toEqual({ ok: true, meetings: [] })
+  expect(await manager.listMeetings()).toEqual({ ok: true, meetings: [], hasMore: false })
   const second = await manager.start()
   expect(second.connection).toBe('ready')
   expect(second.processId).not.toBe(first.processId)

@@ -2,7 +2,9 @@
 
 ## 当前状态
 
-项目已完成 [Spec 001](../specs/spec-001-product-and-technical-foundation/spec.md)，具有 Electron 桌面入口、React 界面与 Python 本地核心，[独立工程验收](../specs/spec-001-product-and-technical-foundation/acceptance.md) 为 PASS。以下工程选择来自 [决策 0004](../.ai/decisions/0004-foundation-stack.md)，版本已核对 package-lock.json。真实录音、ASR 和 LLM 尚未接入。
+项目已完成 [Spec 001](../specs/spec-001-product-and-technical-foundation/spec.md)，具有 Electron 桌面入口、React 界面与 Python 本地核心，[独立工程验收](../specs/spec-001-product-and-technical-foundation/acceptance.md) 为 PASS。桌面工程选择来自 [决策 0004](../.ai/decisions/0004-foundation-stack.md)，版本已核对 package-lock.json。ASR 和 LLM 尚未接入。
+
+[Spec 002](../specs/spec-002-meeting-recording-and-storage/spec.md) 已实现 sounddevice 原始输入流、WAV 文件与 SQLite 会议持久化，见 [决策 0006](../.ai/decisions/0006-recording-and-storage-baseline.md)。下方记录当前代码与依赖选择；恢复重试问题已闭环，新的独立工程验收为 [PASS](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。
 
 ## 技术基线
 
@@ -13,9 +15,11 @@
 | 界面 | React 19.2.8、TypeScript 5.9.3、CSS |
 | 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0，满足兼容 peer 范围 |
 | Node 工具链 | Node 24、npm 11、package-lock.json；通过 npm ci 复现 |
-| Python | Python 3.12、venv + pip；当前仅标准库，无第三方运行依赖 |
+| Python | Python 3.12、venv + pip；`requirements.lock` 固定运行依赖 |
+| 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream，无 NumPy |
+| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 1 |
 | 通信 | Electron 主进程管理 Python 子进程，通过带请求 ID 的 JSON Lines / stdio 通信 |
-| 本次核心 | 健康 / 能力状态、空会议列表及退出；不实现模型或录音 |
+| 本次核心 | 健康 / 能力状态、会议采集、持久化、历史查询和生命周期；不实现 ASR / LLM |
 | 测试 | Vitest 4.1.11、Python unittest、Playwright 1.63.0 Electron smoke |
 | 质量 | TypeScript、ESLint 9.39.5、Prettier 3.9.6、构建检查 |
 | 分发 | 开发启动与构建预览；本次不制作签名安装包或内嵌 Python |
@@ -47,7 +51,7 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 | 操作 | 命令 |
 | --- | --- |
 | Node 依赖 | `npm ci` |
-| Python 环境 | 使用 Python 3.12 执行 `python -m venv .venv`，各平台命令见 README |
+| Python 环境 | 使用 Python 3.12 创建 `.venv` 后执行 `node scripts/install-python.mjs`，使用项目解释器安装 `requirements.lock`；各平台命令见 README |
 | 开发启动 | `npm run dev` |
 | 构建与预览 | `npm run build`、`npm start` |
 | 单元与协议测试 | `npm test` |
@@ -62,19 +66,22 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 - 默认优先项目 `.venv`，再使用平台适合的解释器命令；代码不写入开发机路径。
 - 窗口在 Python 缺失时仍可打开并显示真实连接错误。
 - 不要求 `.env`、LLM 密钥、模型文件或麦克风权限才能启动。
-- 原始会议音频、转写、数据库和模型不进入版本库；当前不创建真实会议数据。
+- 数据根目录使用 Electron `app.getPath('userData')`，数据库为 `meetings.sqlite3`，WAV 位于 `meetings/<UUIDv4>/`。测试通过 `PAA_TEST_DATA_DIR` 隔离，不能覆盖用户数据。
+- 原始会议音频、转写、数据库和模型不进入版本库。
 - 不运行本地业务 HTTP 服务或云服务，不输出整个环境变量或凭证。
 
 ## 后续能力方向
 
-- SQLite + 原始数据文件为个人单机 MVP 的持久化起点，本次只定义契约，不创建业务数据库。
-- sounddevice、faster-whisper / Whisper 是待设备验证的录音与 ASR 候选，不安装或下载模型。
+- SQLite + 原始数据文件在 Spec 002 接入，后续数据扩展需独立设计 schema 迁移。
+- faster-whisper / Whisper 是待设备验证的 ASR 候选，本次不安装或下载模型。
 - LLM 服务商、模型、密钥存储、文本外发规则在真实分析功能接入前确定。
 - FastAPI、PostgreSQL、pgvector、LangGraph 当前不引入；是否需要由后续实际需求决定。
 - 录音独立于 ASR / LLM，分块策略可配置；后台推理不进入 renderer 或录音回调。
 
 ## 验证边界
 
-macOS ARM64 已通过类型、Lint、格式、构建、16 项 TypeScript 测试、7 项 Python 测试及 3 项真实 Electron 冒烟测试；开发启动与构建预览已实测。验证环境为 Node 24.20.0、npm 11.19.0、Python 3.12.14，详见 [实施报告](../specs/spec-001-product-and-technical-foundation/implementation.md)。
+Spec 001 的 macOS ARM64 基线已通过类型、Lint、格式、构建、16 项 TypeScript 测试、7 项 Python 测试及 3 项真实 Electron 冒烟测试；开发启动与构建预览已实测。验证环境为 Node 24.20.0、npm 11.19.0、Python 3.12.14，详见 [实施报告](../specs/spec-001-product-and-technical-foundation/implementation.md)。
+
+Spec 002 已在默认 MacBook Pro 麦克风完成单声道 PCM16 / 48000 Hz 真实录音（210944 帧、约 4.395 秒），保存后重启可查询并播放。当前有效检查包括返工后的 13 项录音 / 存储回归，未变化区域复用首轮 7 项协议、19 项 TypeScript、6 项 Electron 及类型 / 定向 lint / 构建证据。真实音频、合成故障及执行边界分别记录在 [实施报告](../specs/spec-002-meeting-recording-and-storage/implementation.md)、[返工报告](../specs/spec-002-meeting-recording-and-storage/implementation-rework-1.md) 和 [PASS 验收报告](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。首次 macOS 授权弹框尚未实测。
 
 Windows 提供 CI 定义与路径逻辑检查，Windows 实机 / CI 尚未运行，不视为已验证。当前不承诺最低系统版本、安装包或模型实时性能。

@@ -1,47 +1,43 @@
-# Task Handoff — Spec 001 实施
+# Task Handoff — Spec 002 实施
 
-## Current Status
-
-Spec 001 已完成，见 [实施报告](../../specs/spec-001-product-and-technical-foundation/implementation.md) 与 [独立验收 PASS](../../specs/spec-001-product-and-technical-foundation/acceptance.md)。下文保留为本次实施交接记录，恢复任务时不要重复创建实施或验收 Agent，也不要重新初始化工程。后续会议能力由新的 Spec 推进。
+## Current Stage
+DONE。Spec 002 录音与本地保存已完成，首轮 ISSUE-01 恢复重试缺陷已修复，新的独立验收 acceptance.md 为 PASS。实施、首轮 FAIL、返工与最终验收均已读取处理；无仍待处理子任务。用户已授权 commit 并推送本轮交付，提交状态以 Git 记录为准。恢复上下文时读取当前报告，不重新实施或重复通过的检查。以下保留原始实施上下文，首轮历史与返工范围分别见 acceptance-round-1.md 和 rework.md。
 
 ## Role
-Implementation。完成业务代码与工程配置，不能创建子 Agent，不负责最终验收。
+Implementation。一个实施 Agent 串行完成耦合模块。禁止创建子 Agent；不负责最终独立验收，不 commit/push。
 
 ## Goal
-落实 Spec 001：产品与技术基础中的最小可运行 Electron 桌面工程，并返回可复现的验证结果。
+实现默认麦克风录音 → 停止保存 → 重启查询与播放，覆盖 Spec 002 的权限、异常恢复和退出收尾。
 
 ## Context
-用户已指定 Electron、macOS/Windows 目标，并明确“开始实施”。Spec 决策不创建子 Agent 验证的规则不取消业务实现后的独立验收。现有工作区含本轮未提交的规划文档，不能覆盖或重置。
+用户已要求“开始实施”。Spec 决策不派子 Agent 验证，业务代码完成后仍需新的独立验收 Agent。用户最新要求验证与停止规则：已通过检查不得无理由重复，需求满足且必要检查通过后停止。本次因权限、持久化、共享IPC和退出生命周期属于S3，仍只验证相关子系统。
 
 ## Project Mode
-在已有目录骨架上增量实施，业务代码此前不存在。主 Agent 负责 constitution、Spec/Plan、产品定义、架构和决策，你负责代码与工程配置。
+EXISTING。Spec001已提交；本次Spec002、决策0006和状态文档未提交，不得覆盖或重置。保持既有src/、tests/、docs/与固定Agent结构。
 
 ## Required Reading
-AGENTS.md、constitution/mission.md、constitution/tech-stack.md、.ai/rules/spec-decision-workflow.md、当前 spec.md 与 plan.md、.ai/decisions/0004-foundation-stack.md、docs/product-definition.md、docs/architecture.md。
-
-## Spec
-specs/spec-001-product-and-technical-foundation/spec.md
+AGENTS.md、constitution/mission.md和tech-stack.md、.ai/rules/所有有效规则、Spec002 spec.md与plan.md、决策0005/0006、docs/architecture.md、相关既有代码和测试。
 
 ## Scope
-你拥有 src/、tests/、scripts/、根目录工程配置（package.json/package-lock、electron-vite、TS、ESLint、Prettier、Vitest、Playwright、pyproject、.nvmrc 等）、.github/workflows/、.gitignore、.env.example、README.md，以及当前 Spec 的 implementation.md。不要编辑主 Agent 正在维护的 constitution、spec.md、plan.md、docs/ 和 .ai/ 文档。
+你拥有src/、tests/、scripts/、必要根目录工程配置、pyproject和新增Python锁定文件、.github/workflows/必要调整、.gitignore、.env.example、README.md、Spec002 implementation.md。主Agent维护constitution/、Spec/Plan、docs/和.ai/，不要同时改这些文档；接口和工程事实及时告知主Agent。
 
-## Implementation Details
-- Electron 44 + React 19 + TS 5.9 + electron-vite 5 + Vite 7 + React 插件 5。npm 锁依赖。最新 Vite 8 与 electron-vite 5 的 peer 范围不匹配，不要盲目采用。
-- Node 本机24.20.0、npm11.19.0。Python3.12可执行文件临时用于创建本地 .venv：/Users/yang/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3（3.12.14）。不要把这个路径写进代码或正式安装说明；不要替换系统 Python3.9。
-- Python仅标准库，运行入口 src/python/paa_core，控制协议UTF-8 JSON Lines，请求id、成功result或error，至少健康/状态、会议列表（真实空列表）、退出。未知方法和无效结构返回错误。
-- 无shell启动，解释器覆盖 PAA_PYTHON、项目.venv、平台fallback；Python版本不合适或缺失时，桌面必须正常出现并呈现错误/重试。
-- Electron客户端有请求timeout、并发id关联、分块stdout处理、有限行/缓冲、错误/退出拒绝pending、重试不遗留旧进程、退出清理。核心进程日志走stderr，不输出敏感env。
-- IPC只允许有限API，contextIsolation/sandbox开启、nodeIntegration关闭、拒绝设备权限、阻止任意导航/新窗口。不用全局禁用sandbox。开发服务只bind loopback。生产本地资源与CSP正确；不加载远程脚本。
-- 界面中文，标题个人工作助手，浅色工作区、稳定侧栏、墨绿强调与细腻排版。会议主页诚实空状态，开始会议禁用且附近说明未接入；设置页展示核心真实状态和重试按钮。可标明周报/长期记忆后续支持，不伪造演示会议或模型就绪。不要在主界面堆叠Electron/Node/协议等开发信息。图标可使用兼容的lucide-react或SVG。
-- 关闭最后窗口在两个平台都退出并清理Python；本次没有实际录音或后台常驻需求。
-- 不安装ASR、不下载模型、不接付费API、不创建真实业务数据库。SQLite仅后续设计方向。
-- 添加macOS/Windows的CI定义，当前不能宣称Windows已运行。无需签名、安装包或自动更新；npm build只是构建。
+## Implementation Boundaries
+- 先限定验证sounddevice/PortAudio稳定发布版安装、原生权限与默认设备；锁依赖，不引入ASR/LLM/NumPy或重复音频栈。现有.venv为Python3.12.14，Node24/Electron已准备，不无理由重装Node依赖或Electron。
+- Python RawInputStream → 轻量回调 → 有界队列 → 写入线程 → WAV。SQLite元信息；用户数据根目录由Electron提供。自动化测试使用隔离目录，不得读写或删除真实用户会议来清理测试。
+- 仅默认麦克风、一次一场。不自动录音、不自动换设备、不暂停续录。输入流实际打开才能显示recording。开始前停止回放，录音期间禁用回放。
+- 开始/结束幂等；超时不代表未执行，要查询权威状态恢复。stdio控制响应不等待整段录音或长时间flush，音频不走JSON。状态轮询有界、不重叠。
+- PCM16 WAV，真实设备支持的采样率。流式写临时文件，结束排空已接受音频、关闭文件、保存元信息；错误不能通过清空文件或重建DB解决。重启恢复已落盘完整帧，不能把interrupted伪装成completed。
+- 页面切换/最小化保持录音；窗口关闭、app退出、重连、suspend共用会话保护。保存退出失败时保持界面可见。单实例保护兼容隔离测试。
+- 扩展真实历史列表/详情，移除“只允许空列表”和“所有能力都false”的骨架校验。设备名、时长、音量、录音就绪来自实际数据；转写和纪要仍未接入。
+- 保持现有中文浅色绿色UI风格，加入活动录音、历史、详情与播放器，错误可操作；普通页面不堆叠协议细节。
+- 保留sandbox/contextIsolation、关闭nodeIntegration、校验IPC来源和参数。受限媒体资源只映射合法会议ID，限制根目录及文件并处理Range，拒绝路径穿越和任意本地文件访问；无关设备权限继续拒绝。
+- 使用本地Electron声明或官方文档核对API，不猜测；如果原生权限证明既定采集归属不可行，及时报告，不擅自改为第二套录音架构。
+- 继续区分开发环境与正式分发。本次不做安装包/内置Python，正式用户无需安装Python的约束不变。
+- 实录前通知主Agent时间与操作，采用短时非敏感测试内容和可见录音状态；不擅自改系统隐私设置。缺少OS授权/设备时立即报告具体情况，继续独立工作；合成音频不能冒充实录。
 
-## Acceptance Criteria
-除Spec AC外重点：真实Electron窗口可起；无key/model/mic仍可用；Python缺失下UI不白屏；正常连接实际Python；错误请求/异常输出/超时/退出路径有必要测试；正常与最小窗口尺寸UI可访问；无虚假功能。Python仅需unittest，不引入测试运行依赖。TS可Vitest；真Electron用Playwright（无需下载独立浏览器），输出截图到被忽略的artifacts目录。
-
-## Commands
-建立并运行：npm ci（锁文件生成后可验证）、npm run typecheck、npm run lint、npm run format:check、npm test、npm run build、npm run test:smoke。README提供 npm run dev 和 npm start。仅格式化自己负责的源码/配置，不批量格式化旧AGENTS或其他文档。
+## Verification
+按Recorder/Writer/Repository/IPC/生命周期/媒体权限风险做相关检查。真实Electron验证业务闭环及关键失败。跨模块契约需要typecheck；媒体协议/CSP需要相关build+Electron验证。已通过后只在相关代码变更、具体失败或结果不明确时重跑，不追加无关压力/攻击穷举。
+Spec001未变区域证据可复用，修改后的共享契约和退出路径必须有新证据。记录命令、结果、测试数、版本和真实/合成输入来源，验收可以复用明确证据。图形验证优先现有Playwright Electron，不申请Computer Use权限或另下浏览器。
 
 ## Expected Output
-完成后写 specs/spec-001-product-and-technical-foundation/implementation.md，含Summary、Files Changed、Important Decisions、Tests、Known Limitations、Remaining Questions。报告准确命令、结果、截图路径和Windows未验证等限制。不创建acceptance.md，不commit/push。中途有实质进展或阻塞及时消息主Agent。
+写specs/spec-002-meeting-recording-and-storage/implementation.md：Summary、Files Changed、Important Decisions、Tests、Known Limitations、Remaining Questions。报告API、存储布局、实际锁定版本、未执行项。截图证据放ignored artifacts/spec002/。结束自己的测试进程，不删除用户数据。每个实质进展阶段告知主Agent，完成报告不等于最终独立验收。
