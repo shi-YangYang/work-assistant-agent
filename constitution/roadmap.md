@@ -2,17 +2,18 @@
 
 本文描述用户已提出的阶段方向，不替代具体 Spec，不承诺时间或尚未确认的实现方案。
 
-产品目标平台包括 macOS 和 Windows，架构与技术选型从当前阶段开始考虑跨平台兼容性。当前开发环境为 macOS；具体支持版本、平台验证计划与交付安排尚未确定。
+产品目标平台包括 macOS 和 Windows，架构与技术选型从当前阶段开始考虑跨平台兼容性。当前在 macOS ARM64 实机验证，Windows 建立 CI 配置并检查路径逻辑，尚未运行验证；最低系统版本及安装包交付安排留给后续分发阶段。
 
-## Phase 0 — 项目骨架与架构准备（当前阶段）
+## Phase 0 — 项目骨架与架构准备（已完成）
 
-- 建立标准 Agent 结构及基础项目目录。
-- 记录产品使命、开发规范、阶段边界和已知技术约束。
-- 本次仅完成骨架，不创建具体 Spec 或业务实现。
-- 后续讨论 Meeting Agent MVP 的第一版架构、模块职责、数据流、接口、风险和实施顺序。
-- 架构与关键决策具备实施条件后，再创建首个 Spec。
+- 已建立标准 Agent 结构及基础项目目录。
+- 已记录产品使命、开发规范、阶段边界和已知技术约束。
+- 已完成 [Spec 001：产品与技术基础](../specs/spec-001-product-and-technical-foundation/spec.md)，交付产品定义、技术方案和可运行工程骨架，独立工程验收为 PASS。
+- 已确定 Electron + React + TypeScript 桌面入口、Python 本地核心及 stdio 进程通信，见 [实施基线](../.ai/decisions/0004-foundation-stack.md)。
+- 已实现中文会议工作区、设置、真实核心连接、故障重试与退出清理；本机工程检查及 Electron 冒烟测试通过，Windows 尚未运行验证。
+- 完整 Meeting Agent 功能由后续 Spec 推进；本次不接入真实录音、ASR 或 LLM。
 
-## Phase 1 — Meeting Agent MVP
+## Phase 1 — Meeting Agent MVP（下一阶段）
 
 目标是完成开始会议、持续录音、本地转写、显示并保存完整 Transcript、结束会议、生成并保存结构化纪要的闭环。
 

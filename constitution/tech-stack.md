@@ -1,85 +1,80 @@
 # 技术栈与工程约束
 
-## 当前工程状态
+## 当前状态
 
-- 项目模式：`NEW`。初始化前只有 Git 仓库和 MIT `LICENSE`，没有业务代码或工程配置。
-- 当前交付：目录骨架、开发规范与项目文档。
-- 应用实现、依赖清单、锁文件、数据库、构建配置和 CI：尚未创建。
-- 当前没有可运行的服务、桌面应用或测试套件。
+项目已完成 [Spec 001](../specs/spec-001-product-and-technical-foundation/spec.md)，具有 Electron 桌面入口、React 界面与 Python 本地核心，[独立工程验收](../specs/spec-001-product-and-technical-foundation/acceptance.md) 为 PASS。以下工程选择来自 [决策 0004](../.ai/decisions/0004-foundation-stack.md)，版本已核对 package-lock.json。真实录音、ASR 和 LLM 尚未接入。
 
-## 已明确的开发方向与约束
+## 技术基线
 
-| 项目 | 当前约束 |
+| 范围 | 选择 |
 | --- | --- |
-| 目标平台 | macOS 和 Windows，使用电脑麦克风录音；具体支持版本与交付安排待定 |
-| 当前开发环境 | macOS；不构成产品仅支持 macOS 的限制 |
-| 跨平台约束 | 技术选型需考虑两个目标平台；核心业务与平台相关的音频采集、权限、路径及打包差异解耦 |
-| 开发语言方向 | Python；具体版本与运行时尚未确定 |
-| 首个交付目标 | Meeting Agent MVP |
-| ASR 方向 | 优先本地 ASR，通过 Provider Interface 接入 |
-| LLM 时机 | MVP 在会议结束、完整转写整理后调用 |
-| 并发原则 | 持续录音独立于 ASR 和 LLM，采用生产者 / 消费者处理思路 |
-| 数据原则 | 保留原始信息与完整 Transcript，为未来 Memory 留出扩展边界 |
-| Agent 框架 | 不强制采用 LangGraph，底层实时音频与 ASR Pipeline 保持独立 |
+| 目标平台 | macOS / Windows；当前实机为 macOS ARM64 |
+| 桌面 | Electron 44.3.0 |
+| 界面 | React 19.2.8、TypeScript 5.9.3、CSS |
+| 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0，满足兼容 peer 范围 |
+| Node 工具链 | Node 24、npm 11、package-lock.json；通过 npm ci 复现 |
+| Python | Python 3.12、venv + pip；当前仅标准库，无第三方运行依赖 |
+| 通信 | Electron 主进程管理 Python 子进程，通过带请求 ID 的 JSON Lines / stdio 通信 |
+| 本次核心 | 健康 / 能力状态、空会议列表及退出；不实现模型或录音 |
+| 测试 | Vitest 4.1.11、Python unittest、Playwright 1.63.0 Electron smoke |
+| 质量 | TypeScript、ESLint 9.39.5、Prettier 3.9.6、构建检查 |
+| 分发 | 开发启动与构建预览；本次不制作签名安装包或内嵌 Python |
 
-## 当前目录约定
+正式用户分发约束：应用自带所需运行时与内部处理程序，用户无需安装 Python / Node.js、创建 `.venv` 或手动启动核心。当前解释器选择逻辑仅为开发启动实现，正式安装包与资源路径适配尚未落地。详见 [决策 0005](../.ai/decisions/0005-self-contained-desktop-distribution.md)。
 
-本次骨架采用以下位置，后续实现应沿用；涉及目录迁移时遵守 `AGENTS.md` 的结构变更规则。
+Node / Electron / Python 各自的运行边界、接口与退出行为见 [架构](../docs/architecture.md)。本机系统 Python 3.9 不作为项目基线；可用 Python 3.12 创建 `.venv`，不修改系统解释器。
 
-| 内容 | 位置 | 当前状态 |
-| --- | --- | --- |
-| 业务代码 | `src/` | 仅预留目录；尚未确定包名与内部模块结构 |
-| 测试 | `tests/` | 仅预留目录；测试框架待定 |
-| 产品与技术文档 | `docs/` | 目录说明 |
-| 项目使命、路线和技术约束 | `constitution/` | 已按当前已知信息建立 |
-| 功能规格 | `specs/` | 仅说明与模板，没有具体 Spec |
-| 决策 / 工作流 / 交接 / 补充规则 | `.ai/` | 决策已记录，其他目录预留 |
+## 目录约定
 
-预留 `src/` 不代表已经确认前后端分层、Python 包结构或桌面封装方式。
-
-## 候选技术（尚未选定）
-
-以下技术来自用户的初步考虑，不是已经安装的依赖或实施决定。
-
-| 能力 | 候选方向 |
+| 内容 | 位置 |
 | --- | --- |
-| 异步调度与队列 | Python `asyncio` |
-| 本地 ASR | faster-whisper / Whisper；需结合 macOS、Windows 目标设备的硬件、兼容性和性能验证选择 |
-| 本地服务 | FastAPI |
-| 数据库 | PostgreSQL |
-| 向量能力 | pgvector；复杂检索不属于首个 MVP 范围 |
-| 后续 Agent 编排 | LangGraph，仅在实际需求支持时考虑 |
+| 桌面主进程、preload、子进程客户端 | `src/desktop/` |
+| React 界面 | `src/renderer/` |
+| TS 共享契约 | `src/shared/` |
+| Python 核心 | `src/python/paa_core/` |
+| 测试 | `tests/` |
+| 工程辅助脚本 | `scripts/` |
+| 产品与技术文档 | `docs/` |
+| Spec、实施与验收报告 | `specs/` |
+| 决策、工作流、交接、规则 | `.ai/` |
 
-## 待定事项
-
-- macOS 和 Windows 的支持版本、硬件范围、验证环境及交付安排。
-- Python 版本、包管理器、依赖管理和锁文件方案。
-- 麦克风采集库、音频格式、分块策略及过载时的数据处理方式。
-- ASR 实现、模型、运行后端、硬件适配和性能要求。
-- UI 形态、框架以及是否需要本地 HTTP 服务。
-- LLM Provider、模型、接口、密钥管理及费用约束。
-- MVP 数据库、音频与转写存储、保留和恢复策略。
-- Meeting、Transcript、Summary 等具体数据模型与接口。
-- 测试、类型检查、Lint、格式化、构建与打包方式。
-
-平台范围依据用户后续澄清更新，见 [目标平台决策](../.ai/decisions/0002-target-platforms.md)。当前尚未实现或验证任何平台的应用运行能力。
+已有 `src/`、`tests/`、`docs/` 与固定 Agent 结构保持不变。上述是内部扩展，业务代码不移到其他根目录。
 
 ## 工程命令
 
-| 操作 | 状态 |
+下列命令已在 package.json 配置；验证结果以实施 / 验收报告为准。`npm ci` 的 postinstall 显式准备 Electron 二进制，首次需要网络。
+
+| 操作 | 命令 |
 | --- | --- |
-| 安装依赖 | 未配置 |
-| 启动应用 | 未配置 |
-| 测试 | 未配置 |
-| 类型检查 | 未配置 |
-| Lint | 未配置 |
-| 格式化 | 未配置 |
-| 构建 / 打包 | 未配置 |
+| Node 依赖 | `npm ci` |
+| Python 环境 | 使用 Python 3.12 执行 `python -m venv .venv`，各平台命令见 README |
+| 开发启动 | `npm run dev` |
+| 构建与预览 | `npm run build`、`npm start` |
+| 单元与协议测试 | `npm test` |
+| Electron 冒烟测试 | `npm run test:smoke` |
+| 类型检查 | `npm run typecheck` |
+| 静态检查 | `npm run lint` |
+| 格式检查 | `npm run format:check` |
 
-不得假定上述命令已经可用。确定技术方案并落地实际配置后，同步更新本文。
+## 配置与数据
 
-## 本地数据与外部依赖
+- `PAA_PYTHON`：可选的 Python 可执行文件路径，不能包含任意 shell 命令。
+- 默认优先项目 `.venv`，再使用平台适合的解释器命令；代码不写入开发机路径。
+- 窗口在 Python 缺失时仍可打开并显示真实连接错误。
+- 不要求 `.env`、LLM 密钥、模型文件或麦克风权限才能启动。
+- 原始会议音频、转写、数据库和模型不进入版本库；当前不创建真实会议数据。
+- 不运行本地业务 HTTP 服务或云服务，不输出整个环境变量或凭证。
 
-`.gitignore` 预留了根目录 `data/`、`models/`、`logs/` 的忽略规则，供未来存放会议数据、模型缓存和日志；这些运行目录当前未创建，最终存储布局仍待设计。
+## 后续能力方向
 
-真实凭证和包含敏感信息的本地配置不应进入版本库。当前未接入外部服务、付费 API 或云资源，也未下载模型。
+- SQLite + 原始数据文件为个人单机 MVP 的持久化起点，本次只定义契约，不创建业务数据库。
+- sounddevice、faster-whisper / Whisper 是待设备验证的录音与 ASR 候选，不安装或下载模型。
+- LLM 服务商、模型、密钥存储、文本外发规则在真实分析功能接入前确定。
+- FastAPI、PostgreSQL、pgvector、LangGraph 当前不引入；是否需要由后续实际需求决定。
+- 录音独立于 ASR / LLM，分块策略可配置；后台推理不进入 renderer 或录音回调。
+
+## 验证边界
+
+macOS ARM64 已通过类型、Lint、格式、构建、16 项 TypeScript 测试、7 项 Python 测试及 3 项真实 Electron 冒烟测试；开发启动与构建预览已实测。验证环境为 Node 24.20.0、npm 11.19.0、Python 3.12.14，详见 [实施报告](../specs/spec-001-product-and-technical-foundation/implementation.md)。
+
+Windows 提供 CI 定义与路径逻辑检查，Windows 实机 / CI 尚未运行，不视为已验证。当前不承诺最低系统版本、安装包或模型实时性能。

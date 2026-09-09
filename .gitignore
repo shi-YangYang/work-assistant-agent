@@ -29,3 +29,11 @@ dist/
 /models/
 /logs/
 *.log
+
+# Node dependencies, compiled desktop app, and local verification artifacts
+node_modules/
+out/
+artifacts/
+playwright-report/
+test-results/
+*.tsbuildinfo
