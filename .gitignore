@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+._*
+
+# Python caches, virtual environments, and build output
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local secrets; sanitized examples may be committed
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local runtime data: recordings, transcripts, databases, and models
+# Small, non-sensitive test fixtures belong under tests/ instead.
+/data/
+/models/
+/logs/
+*.log
