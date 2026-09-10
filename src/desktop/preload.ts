@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS, type CoreStatus, type DesktopApi } from '../shared/contracts'
 const api: DesktopApi = {
+  getTranscriptionModel: () => ipcRenderer.invoke(CHANNELS.modelStatus),
+  downloadTranscriptionModel: () => ipcRenderer.invoke(CHANNELS.modelDownload),
+  cancelModelDownload: () => ipcRenderer.invoke(CHANNELS.modelCancel),
+  startTranscription: (id) => ipcRenderer.invoke(CHANNELS.transcriptionStart, id),
+  getTranscriptionStatus: (id) => ipcRenderer.invoke(CHANNELS.transcriptionStatus, id),
+  listTranscript: (id, cursor = -1) => ipcRenderer.invoke(CHANNELS.transcript, id, cursor),
   getStatus: () => ipcRenderer.invoke(CHANNELS.status),
   retryCore: () => ipcRenderer.invoke(CHANNELS.retry),
   listMeetings: (offset = 0) => ipcRenderer.invoke(CHANNELS.meetings, offset),

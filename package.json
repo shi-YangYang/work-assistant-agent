@@ -21,7 +21,8 @@
     "test": "npm run test:unit && npm run test:python",
     "test:unit": "vitest run",
     "test:python": "node scripts/test-python.mjs",
-    "test:smoke": "npm run build && playwright test"
+    "test:smoke": "npm run build && playwright test",
+    "test:asr": "node scripts/test-asr.mjs"
   },
   "dependencies": {
     "lucide-react": "1.43.0",

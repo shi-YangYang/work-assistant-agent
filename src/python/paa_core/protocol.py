@@ -9,52 +9,79 @@ from pathlib import Path
 from typing import BinaryIO
 
 from .recorder import Recorder
-from .repository import ACTIVE, DomainError, Repository
+from .repository import ACTIVE, DomainError, Repository, valid_id
+from .transcription import Transcription
 
 MAX_LINE_BYTES = 65_536
 
 
 class CoreService:
-    def __init__(self, root: Path | None, source=None):
+    def __init__(self, root: Path | None, source=None, transcription_factory=Transcription):
         self.repository = None
         self.recorder = None
         self.storage_error = None
+        self.transcription = None
         if root is not None:
             try:
                 self.repository = Repository(root)
                 self.recorder = Recorder(self.repository, source=source)
+                self.transcription = transcription_factory(self.repository, self.recorder)
             except (OSError, sqlite3.Error, DomainError):
                 self.storage_error = '无法打开会议存储，请检查数据目录权限、磁盘空间和数据库版本；不要删除已有数据。'
 
     def dispatch(self, method: str, params: dict):
         expected = {'recording.start': {'operationId'}, 'recording.stop': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
-                    'meetings.list': set()}
+                    'meetings.list': set(), 'transcription.start': {'meetingId'},
+                    'transcription.status': {'meetingId'}, 'transcript.list': {'meetingId', 'cursor'}}
         keys = expected.get(method, set())
         if method == 'meetings.list' and set(params) == {'offset'}:
             if type(params['offset']) is not int or not 0 <= params['offset'] <= 1_000_000:
                 raise DomainError('invalid_params', '分页位置无效。')
         elif set(params) != keys:
             raise DomainError('invalid_params', '请求参数无效。')
+        if 'meetingId' in params and not valid_id(params['meetingId']):
+            raise DomainError('invalid_params', '会议标识无效。')
+        if method == 'transcript.list' and (type(params['cursor']) is not int or not -1 <= params['cursor'] <= 1_000_000_000):
+            raise DomainError('invalid_params', '文字分页位置无效。')
         if method == 'health':
             return {'pythonVersion': platform.python_version(), 'processId': os.getpid(),
                     'storageError': self.storage_error,
                     'capabilities': [{'id': 'recording', 'available': bool(self.recorder and not self.recorder.dependency_error)},
-                                     {'id': 'transcription', 'available': False}, {'id': 'summary', 'available': False}]}, False
+                                     {'id': 'transcription', 'available': bool(self.transcription and self.transcription.model.status()['state'] == 'ready')}, {'id': 'summary', 'available': False}]}, False
         if method == 'shutdown':
             if self.recorder and self.recorder.status()['state'] in ACTIVE:
                 raise DomainError('recording_active', '录音尚未完成保存，不能退出。')
+            if self.transcription:
+                self.transcription.shutdown()
             return {'stopping': True}, True
+        if method in ('model.status', 'model.download', 'model.cancel', 'transcription.start', 'transcription.status', 'transcription.activity', 'transcription.pause', 'transcript.list'):
+            if not self.transcription:
+                raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
+            actions = {'model.status': self.transcription.model.status,
+                       'model.download': self.transcription.model.download,
+                       'model.cancel': self.transcription.model.cancel,
+                       'transcription.activity': self.transcription.activity,
+                       'transcription.pause': self.transcription.pause}
+            if method in actions:
+                return actions[method](), False
+            if method == 'transcript.list':
+                return self.transcription.store.page(params['meetingId'], params['cursor']), False
+            return (self.transcription.start(params['meetingId']) if method == 'transcription.start' else self.transcription.status(params['meetingId'])), False
         if method not in ('recording.start', 'recording.status', 'recording.stop', 'recording.interrupt', 'meetings.list', 'meetings.get'):
             raise DomainError('method_not_found', 'Unknown method')
         if not self.repository or not self.recorder:
             raise DomainError('storage_unavailable', self.storage_error or '会议存储尚未配置。')
         if method == 'recording.start':
             result = self.recorder.start(params['operationId'])
+            if self.transcription and result['meetingId']:
+                self.transcription.auto_start(result['meetingId'])
         elif method == 'recording.status':
             result = self.recorder.status()
         elif method in ('recording.stop', 'recording.interrupt'):
             result = self.recorder.stop(params['meetingId'], 'system_suspend' if method == 'recording.interrupt' else None)
+            if method == 'recording.interrupt' and self.transcription:
+                self.transcription.pause()
         elif method == 'meetings.list':
             result = self.repository.list(params.get('offset', 0))
         else:
@@ -112,5 +139,7 @@ def serve(source: BinaryIO, destination: BinaryIO, service: CoreService | None =
             if stopping:
                 return
     finally:
+        if service and service.transcription:
+            service.transcription.shutdown()
         if service and service.recorder:
             service.recorder.shutdown()

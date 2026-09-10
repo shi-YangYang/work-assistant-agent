@@ -8,6 +8,9 @@
 | --- | --- | --- |
 | 001 | [产品与技术基础](spec-001-product-and-technical-foundation/spec.md) | DONE：桌面骨架已完成，独立工程验收 PASS；Windows 尚未实测 |
 | 002 | [会议录音与本地保存](spec-002-meeting-recording-and-storage/spec.md) | DONE：录音、保存、历史与回放完成，独立验收 PASS；Windows 尚未实测 |
+| 003 | [本地语音转写与 Transcript](spec-003-local-transcription/spec.md) | IMPLEMENTING：已授权实施，先进行真实模型可行性验证 |
+
+平台证据补充：现有代码提交 `b9e0e74` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34441992551) 均已通过；Windows 跳过 4 项既有平台受限冒烟测试。上表旧 Spec 的实测限制不代表当前 CI 未运行，Windows 实机录音和新的 ASR 验证仍需分别记录。
 
 Spec 讨论、起草、决策和文档更新由协调 Agent 直接处理并自行检查，无需创建子 Agent 验证。下文独立验收指业务代码实施后的验收，详见 [Spec 决策工作规则](../.ai/rules/spec-decision-workflow.md)。
 

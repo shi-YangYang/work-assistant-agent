@@ -2,7 +2,7 @@
 
 本文描述用户已提出的阶段方向，不替代具体 Spec，不承诺时间或尚未确认的实现方案。
 
-产品目标平台包括 macOS 和 Windows，架构与技术选型从当前阶段开始考虑跨平台兼容性。当前在 macOS ARM64 实机验证，Windows 建立 CI 配置并检查路径逻辑，尚未运行验证；最低系统版本及安装包交付安排留给后续分发阶段。
+产品目标平台包括 macOS 和 Windows，架构与技术选型从当前阶段开始考虑跨平台兼容性。当前在 macOS ARM64 实机验证，现有代码 `b9e0e74` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34441992551) 已通过，Windows 的 4 项平台受限冒烟测试仍跳过；这不替代 Windows 实机录音或后续 ASR 验证。最低系统版本及安装包交付安排留给后续分发阶段。
 
 ## Phase 0 — 项目骨架与架构准备（已完成）
 
@@ -10,7 +10,7 @@
 - 已记录产品使命、开发规范、阶段边界和已知技术约束。
 - 已完成 [Spec 001：产品与技术基础](../specs/spec-001-product-and-technical-foundation/spec.md)，交付产品定义、技术方案和可运行工程骨架，独立工程验收为 PASS。
 - 已确定 Electron + React + TypeScript 桌面入口、Python 本地核心及 stdio 进程通信，见 [实施基线](../.ai/decisions/0004-foundation-stack.md)。
-- 已实现中文会议工作区、设置、真实核心连接、故障重试与退出清理；本机工程检查及 Electron 冒烟测试通过，Windows 尚未运行验证。
+- 已实现中文会议工作区、设置、真实核心连接、故障重试与退出清理；本机工程检查及 Electron 冒烟测试通过，当前双平台 CI 状态见上文。
 - Spec 001 未接入真实录音、ASR 或 LLM；完整 Meeting Agent 功能由 Phase 1 的后续 Spec 推进。
 
 ## Phase 1 — Meeting Agent MVP（当前阶段）
@@ -18,6 +18,8 @@
 目标是完成开始会议、持续录音、本地转写、显示并保存完整 Transcript、结束会议、生成并保存结构化纪要的闭环。
 
 已完成 [Spec 002：会议录音与本地保存](../specs/spec-002-meeting-recording-and-storage/spec.md)，交付麦克风录音、保存、历史与回放；状态为 DONE，独立验收 PASS。转写与纪要在此基础上逐步接入。正式用户试用前应完成独立的安装包与内置运行时分发工作。
+
+正在实施 [Spec 003：本地语音转写与 Transcript](../specs/spec-003-local-transcription/spec.md)，状态 IMPLEMENTING。用户已确认中文为主、兼顾中英混合，应用内提示下载默认模型；范围包含持续转写、尾部补齐、历史补转写和持久恢复，纪要仍留给后续 Spec。
 
 关键结果：
 

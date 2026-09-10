@@ -1,7 +1,18 @@
-# Task Handoff — Spec 002 实施
+# Task Handoff — Spec 003 规划与历史实施上下文
 
 ## Current Stage
-DONE。Spec 002 录音与本地保存已完成，首轮 ISSUE-01 恢复重试缺陷已修复，新的独立验收 acceptance.md 为 PASS。实施、首轮 FAIL、返工与最终验收均已读取处理；无仍待处理子任务。用户已授权 commit 并推送本轮交付，提交状态以 Git 记录为准。恢复上下文时读取当前报告，不重新实施或重复通过的检查。以下保留原始实施上下文，首轮历史与返工范围分别见 acceptance-round-1.md 和 rework.md。
+
+ACCEPTANCE。Spec 003 业务与暂停竞态返工已完成，implementation.md / implementation-rework-1.md 为正式报告。首轮独立验收 P2 及失败证据保留在 acceptance-round-1.md；正在由新的独立验收 Agent 复验，交接为 .ai/prompts/acceptance-spec003-rework.md。当前候选分支 codex/spec-003-local-transcription，用于触发实际 macOS / Windows CI。
+
+用户已确认中文为主、兼顾中英混合，应用内提示下载 small 模型，并授权实施。用户指定内置扬声器播放公开人声 → 物理麦克风采集的验收方式已完成：37.035秒、首字18.383秒、CER15.56%，保存补尾、重启片段一致、定位后播放实际推进；固定2分钟文件基准CER6.52%、累计44.659秒。完整来源、原失败和测量边界在 verification.md，不能混称同一次测量。模型、音频与DB均保留在ignored artifacts，不提交Git。
+
+恢复后先检查子Agent和对应提交CI，再读实际报告，不重复已通过的模型基准、物理实录或无关基础检查。最终报告未完成前不能给PASS。Spec决策无需子Agent验证，工程独立验收规则继续适用。
+
+## Previous Task — DONE
+
+Spec 002 录音与本地保存已完成，首轮 ISSUE-01 恢复重试缺陷已修复，新的独立验收 acceptance.md 为 PASS。实施、首轮 FAIL、返工与最终验收均已读取处理；无仍待处理子任务。后续 CI 修复已提交推送，`b9e0e74` 的 macOS / Windows CI 均已通过，Windows 既有 4 项平台受限场景跳过。无需重新实施或重复已通过检查。
+
+以下保留 Spec 002 的原始实施上下文，仅供追溯，非当前执行指令；首轮历史与返工范围分别见其 acceptance-round-1.md 和 rework.md。
 
 ## Role
 Implementation。一个实施 Agent 串行完成耦合模块。禁止创建子 Agent；不负责最终独立验收，不 commit/push。

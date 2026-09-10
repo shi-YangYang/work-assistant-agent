@@ -308,6 +308,7 @@ class RecordingTests(unittest.TestCase):
         handle({'id': 'x', 'method': 'recording.stop', 'params': {'meetingId': meeting_id}}, service)
         gate.set()
         service.recorder.shutdown()
+        service.transcription.shutdown()
 
     def test_suspend_preserves_partial_and_final_commit_failure_is_visible(self):
         _, meeting_id = self.start()

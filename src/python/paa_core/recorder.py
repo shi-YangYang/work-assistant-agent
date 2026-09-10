@@ -198,7 +198,8 @@ class Recorder:
             writer = None
             info = inspect_audio(path, sample_rate)
             final = self.repository.path(current.meeting_id, 'audio.wav')
-            path.replace(final)
+            with self.lock:
+                path.replace(final)
             phase = 'storage_commit'
             terminal = 'interrupted' if current.error_code else 'completed'
             self.repository.update(current.meeting_id, status=terminal, endedAt=now(), errorCode=current.error_code,

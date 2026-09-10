@@ -30,10 +30,22 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      - uses: actions/cache@v4
+        with:
+          path: artifacts/spec003/real-asr/models
+          key: whisper-small-${{ runner.os }}-536b0662742c02347bc0e980a01041f333bce120
+      - run: npm run test:asr
       - run: npm run test:smoke
+        env:
+          PAA_REAL_ASR_SMOKE: '1'
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: smoke-${{ matrix.os }}
-          path: artifacts/
+          path: |
+            artifacts/playwright/
+            artifacts/spec002/*.png
+            artifacts/spec003/*.json
+            artifacts/spec003/*.png
           if-no-files-found: ignore

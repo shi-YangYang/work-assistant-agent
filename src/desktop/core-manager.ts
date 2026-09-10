@@ -10,6 +10,9 @@ import {
   type CoreStatus,
   type Meeting,
   type MeetingsResult,
+  type ModelState,
+  type TranscriptionStatus,
+  type TranscriptPage,
   type RecordingStatus,
   type Result,
 } from '../shared/contracts'
@@ -248,6 +251,66 @@ export class CoreManager extends EventEmitter {
     }
     throw new Error('录音仍在保存，窗口会保持打开；请稍后查看状态。')
   }
+  async modelState(
+    action: 'status' | 'download' | 'cancel' = 'status',
+  ): Promise<Result<ModelState>> {
+    try {
+      const value = await this.request(`model.${action}`)
+      if (!isModelState(value)) throw new CoreError('invalid_model', '模型状态数据无效。')
+      const available = value.state === 'ready'
+      if (
+        this.status.capabilities.find((item) => item.id === 'transcription')?.available !==
+        available
+      )
+        this.update({
+          ...this.status,
+          capabilities: this.status.capabilities.map((item) =>
+            item.id === 'transcription' ? { ...item, available } : item,
+          ),
+        })
+      return { ok: true, value }
+    } catch (error) {
+      if (action !== 'status' && error instanceof CoreError && error.code === 'timeout')
+        return this.modelState()
+      return this.failure(error)
+    }
+  }
+  async transcriptionStatus(
+    meetingId: string,
+    start = false,
+  ): Promise<Result<TranscriptionStatus>> {
+    try {
+      const value = await this.request(start ? 'transcription.start' : 'transcription.status', {
+        meetingId,
+      })
+      if (!isTranscription(value) || value.meetingId !== meetingId)
+        throw new CoreError('invalid_transcription', '转写状态数据无效。')
+      return { ok: true, value }
+    } catch (error) {
+      if (start && error instanceof CoreError && error.code === 'timeout')
+        return this.transcriptionStatus(meetingId)
+      return this.failure(error)
+    }
+  }
+  async transcript(meetingId: string, cursor: number): Promise<Result<TranscriptPage>> {
+    try {
+      const value = await this.request('transcript.list', { meetingId, cursor })
+      if (!isTranscriptPage(value, meetingId, cursor))
+        throw new CoreError('invalid_transcript', '转写文字数据无效。')
+      return { ok: true, value }
+    } catch (error) {
+      return this.failure(error)
+    }
+  }
+  async transcriptionActive(): Promise<boolean> {
+    const value = (await this.request('transcription.activity')) as { active?: unknown }
+    if (!value || typeof value.active !== 'boolean')
+      throw new CoreError('invalid_transcription', '无法确认转写状态。')
+    return value.active
+  }
+  async pauseTranscription(): Promise<void> {
+    await this.request('transcription.pause')
+  }
   async stop(): Promise<void> {
     if (this.status.connection === 'ready') await this.finishRecording()
     this.closed = true
@@ -279,7 +342,78 @@ function isHealth(value: unknown): value is Pick<CoreStatus, 'capabilities' | 's
       (expected, index) =>
         capabilities[index]?.id === expected.id &&
         typeof capabilities[index]?.available === 'boolean' &&
-        (index === 0 || capabilities[index].available === false),
+        (index !== 2 || capabilities[index].available === false),
     )
   )
+}
+function isModelState(value: unknown): value is ModelState {
+  if (!value || typeof value !== 'object') return false
+  const row = value as ModelState
+  return (
+    typeof row.modelId === 'string' &&
+    typeof row.revision === 'string' &&
+    ['missing', 'downloading', 'verifying', 'ready', 'error'].includes(row.state) &&
+    Number.isSafeInteger(row.downloadedBytes) &&
+    row.downloadedBytes >= 0 &&
+    Number.isSafeInteger(row.totalBytes) &&
+    row.totalBytes > 0 &&
+    row.downloadedBytes <= row.totalBytes &&
+    Number.isSafeInteger(row.requiredBytes) &&
+    row.requiredBytes >= row.totalBytes &&
+    typeof row.source === 'string' &&
+    typeof row.license === 'string' &&
+    (row.error === null || typeof row.error === 'string')
+  )
+}
+function isTranscription(value: unknown): value is TranscriptionStatus {
+  if (!value || typeof value !== 'object') return false
+  const row = value as TranscriptionStatus
+  return (
+    typeof row.meetingId === 'string' &&
+    ID_PATTERN.test(row.meetingId) &&
+    ['not_started', 'queued', 'running', 'draining', 'completed', 'paused', 'failed'].includes(
+      row.state,
+    ) &&
+    [row.processedMs, row.audioMs, row.pendingMs].every((x) => Number.isSafeInteger(x) && x >= 0) &&
+    (row.targetFrames === null ||
+      (Number.isSafeInteger(row.targetFrames) && row.targetFrames >= 0)) &&
+    typeof row.sourceIncomplete === 'boolean' &&
+    (row.error === null || typeof row.error === 'string')
+  )
+}
+function isTranscriptPage(
+  value: unknown,
+  meetingId: string,
+  cursor: number,
+): value is TranscriptPage {
+  if (!value || typeof value !== 'object') return false
+  const page = value as TranscriptPage
+  let previous = cursor
+  if (
+    !Array.isArray(page.segments) ||
+    page.segments.length > 100 ||
+    typeof page.hasMore !== 'boolean'
+  )
+    return false
+  for (const segment of page.segments) {
+    if (
+      typeof segment.id !== 'string' ||
+      typeof segment.chunkId !== 'string' ||
+      segment.meetingId !== meetingId ||
+      !Number.isSafeInteger(segment.sequence) ||
+      segment.sequence <= previous ||
+      !Number.isSafeInteger(segment.startMs) ||
+      segment.startMs < 0 ||
+      !Number.isSafeInteger(segment.endMs) ||
+      segment.endMs < segment.startMs ||
+      typeof segment.text !== 'string' ||
+      !segment.text.trim() ||
+      segment.text.length > 300 ||
+      segment.speaker !== null ||
+      segment.confidence !== null
+    )
+      return false
+    previous = segment.sequence
+  }
+  return page.nextCursor === previous && (!page.hasMore || page.segments.length > 0)
 }

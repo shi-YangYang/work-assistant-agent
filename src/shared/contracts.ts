@@ -1,4 +1,10 @@
 export const CHANNELS = {
+  modelStatus: 'paa:model-status',
+  modelDownload: 'paa:model-download',
+  modelCancel: 'paa:model-cancel',
+  transcriptionStart: 'paa:transcription-start',
+  transcriptionStatus: 'paa:transcription-status',
+  transcript: 'paa:transcript',
   status: 'paa:status',
   retry: 'paa:retry',
   meetings: 'paa:meetings',
@@ -51,6 +57,12 @@ export type Result<T> = { ok: true; value: T } | { ok: false; message: string; c
 export type MeetingsResult =
   { ok: true; meetings: Meeting[]; hasMore: boolean } | { ok: false; message: string }
 export interface DesktopApi {
+  getTranscriptionModel(): Promise<Result<ModelState>>
+  downloadTranscriptionModel(): Promise<Result<ModelState>>
+  cancelModelDownload(): Promise<Result<ModelState>>
+  startTranscription(meetingId: string): Promise<Result<TranscriptionStatus>>
+  getTranscriptionStatus(meetingId: string): Promise<Result<TranscriptionStatus>>
+  listTranscript(meetingId: string, cursor?: number): Promise<Result<TranscriptPage>>
   getStatus(): Promise<CoreStatus>
   retryCore(): Promise<CoreStatus>
   listMeetings(offset?: number): Promise<MeetingsResult>
@@ -68,3 +80,37 @@ export const UNAVAILABLE_CAPABILITIES: Capability[] = [
 ]
 export const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 export const ACTIVE_STATES: string[] = ['starting', 'recording', 'stopping']
+
+export type ModelState = {
+  modelId: string
+  revision: string
+  state: 'missing' | 'downloading' | 'verifying' | 'ready' | 'error'
+  downloadedBytes: number
+  totalBytes: number
+  requiredBytes: number
+  source: string
+  license: string
+  error: string | null
+}
+export type TranscriptionStatus = {
+  meetingId: string
+  state: 'not_started' | 'queued' | 'running' | 'draining' | 'completed' | 'paused' | 'failed'
+  processedMs: number
+  audioMs: number
+  pendingMs: number
+  targetFrames: number | null
+  error: string | null
+  sourceIncomplete: boolean
+}
+export type TranscriptSegment = {
+  id: string
+  meetingId: string
+  chunkId: string
+  sequence: number
+  startMs: number
+  endMs: number
+  text: string
+  speaker: string | null
+  confidence: number | null
+}
+export type TranscriptPage = { segments: TranscriptSegment[]; nextCursor: number; hasMore: boolean }

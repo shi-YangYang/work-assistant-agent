@@ -1,6 +1,6 @@
 # 技术架构
 
-状态：Spec 002 录音与本地保存已完成，恢复重试缺陷已修复，独立工程验收 [PASS](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。本文记录实际接口与存储实现；真实设备和自动检查证据见实施及返工报告。
+状态：Spec 003 已接入本地转写，工程验收正在收尾。本文记录当前实际接口与存储实现，证据和平台限制见 [实施报告](../specs/spec-003-local-transcription/implementation.md)。Spec 002 的录音、保存与回放基础保留。
 
 ## 职责与数据流
 
@@ -11,7 +11,9 @@ Electron 主进程
     ↓ JSON Lines 控制 / 状态（stdin / stdout）
 Python 本地核心
     ├─ 默认麦克风 → RawInputStream → 有界缓冲 → WAV 文件
-    └─ Repository → SQLite 会议元信息
+    ├─ ModelManager → 用户触发的受控下载 / 校验 / 本地模型
+    ├─ WAV 已写帧 → 调度器 → 有界音频窗 → spawn ASR worker
+    └─ Repository / TranscriptStore → SQLite 会议、任务、块和文字
 
 界面播放器 → paa-audio://meeting/<会议 ID> → 主进程校验 → WAV 文件流
 ```
@@ -25,9 +27,11 @@ Python 本地核心
 | renderer | `src/renderer/` | 会议工作区、历史详情与播放器；展示真实状态，不直接操作 Node / Python |
 | 采集与文件 | `src/python/paa_core/recorder.py`、`audio_store.py` | 设备输入、回调队列、写入、收尾及可恢复文件 |
 | 持久化 | `src/python/paa_core/repository.py` | SQLite、会议查询、启动恢复、音频可用性检查 |
+| 转写 | `src/python/paa_core/asr_worker.py`、`transcription.py` | 本地 Provider、受管工作进程、有限上下文和任务优先级 |
+| 模型与文字 | `src/python/paa_core/model_manager.py`、`transcript_store.py` | 受控模型准备、事务检查点和文字分页 |
 | 核心协议 | `src/python/paa_core/protocol.py` | 控制请求与响应，日志使用 stderr |
 
-录音回调只复制有界音频块并更新顺序信息，文件写入在工作线程完成。音频不经过 JSON 控制协议，不在 renderer 中采集，不加入尚未使用的推理依赖。输入队列积压、设备中断或写入失败必须显式结束并报告。
+录音回调只复制有界音频块并更新顺序信息，文件写入在工作线程完成。音频不经过 JSON 控制协议，不在 renderer 中采集。ASR 模型加载、VAD 和推理运行在独立进程；原始 WAV 与 SQLite 进度承接积压，不积累整场 PCM。输入队列积压、设备中断或写入失败必须显式结束并报告。
 
 ## 桌面接口
 
@@ -40,11 +44,14 @@ Python 本地核心
 | `getRecordingStatus()` | 查询活动会议、状态、设备、实际采集时长和输入音量 |
 | `startRecording(operationId)` | 用 UUID 操作标识开始会议，重复请求保持幂等 |
 | `stopRecording(meetingId)` | 请求停止并保存指定会议 |
+| `getTranscriptionModel()` / `downloadTranscriptionModel()` / `cancelModelDownload()` | 固定模型状态和受控下载，不接受 URL 或目标路径 |
+| `startTranscription(meetingId)` / `getTranscriptionStatus(meetingId)` | 幂等开始或继续、进度与独立任务状态 |
+| `listTranscript(meetingId, cursor)` | 每页最多 50 段，不轮询整场文字 |
 | `onLifecycleError(listener)` | 接收退出、重连或保存未完成的错误 |
 
-控制协议相应方法为 `health`、`meetings.list`、`meetings.get`、`recording.start/status/stop/interrupt` 和 `shutdown`。会议状态为 `starting`、`recording`、`stopping`、`completed`、`interrupted`、`failed`；没有当前会话时状态查询可返回 `idle`。连接状态独立为 `starting`、`ready`、`error`、`stopped`。
+控制协议相应方法为 `health`、`meetings.list`、`meetings.get`、`recording.start/status/stop/interrupt`、`model.status/download/cancel`、`transcription.start/status/activity/pause`、`transcript.list` 和 `shutdown`。会议状态为 `starting`、`recording`、`stopping`、`completed`、`interrupted`、`failed`；没有当前会话时状态查询可返回 `idle`。连接状态独立为 `starting`、`ready`、`error`、`stopped`。
 
-开始请求返回不代表已打开设备，界面需等待真实 `recording` 状态。控制请求超时也不证明业务操作失败：先查询核心状态，不盲目重放开始 / 结束操作。录音能力表示采集依赖和存储初始化可用，具体权限与设备在开始时检查；转写和总结保持不可用。
+开始请求返回不代表已打开设备，界面需等待真实 `recording` 状态。控制请求超时也不证明业务操作失败：先查询核心状态，不盲目重放开始 / 结束操作。录音能力表示采集依赖和存储初始化可用，具体权限与设备在开始时检查；模型就绪后转写可用，具体会议的处理状态仍独立；总结保持不可用。
 
 ## 存储与恢复
 
@@ -53,6 +60,8 @@ Python 本地核心
 ```text
 <userData>/
 ├── meetings.sqlite3
+├── meetings.schema1.backup.sqlite3  # 升级旧库前的完整备份
+├── models/                         # 受控模型与临时下载目录
 └── meetings/
     └── <UUIDv4>/
         ├── recording.wav    # 录制期间持续写入
@@ -60,7 +69,7 @@ Python 本地核心
         └── recovered.wav    # 中断恢复时另行生成，保留源文件
 ```
 
-各音频文件按会议状态存在，不保证三个同时存在。SQLite `PRAGMA user_version=1`，单张 `meetings` 表保存 ID、唯一操作标识、标题、带时区时间、状态、时长、错误码、设备、采样率、通道数、采样宽度、帧数、PCM 字节数和相对音频路径。标题按本地时间自动生成。
+各音频文件按会议状态存在，不保证三个同时存在。SQLite `PRAGMA user_version=2`，保留原有 `meetings` 表，保存 ID、唯一操作标识、标题、带时区时间、状态、时长、错误码、设备、采样率、通道数、采样宽度、帧数、PCM 字节数和相对音频路径。标题按本地时间自动生成。新增转写任务、音频块和片段表；块完成位置与片段在同一事务提交，稳定 ID / 唯一约束防重。迁移前经 staging 生成完整备份；DDL 失败回滚，数据库忙等待有界。旧会议保持未转写，不在升级时自动推理。
 
 音频为单声道 PCM16 WAV，采样率由设备参数检查决定。写入更新 WAV 长度并周期性同步磁盘；停止时先关闭采集、排空已接受缓冲、关闭音频，再提交终态元信息。标准 RIFF WAV 有容量上限，不能宣称无限时长。
 
@@ -80,27 +89,20 @@ Spec 001 曾验证额外注入脚本跳转 `about:blank` 可绕过 Electron 的 
 
 控制消息为带请求 ID 的 UTF-8 JSON Lines；解析、待处理请求数和等待时间有界。协议处理不等待整场录音或磁盘收尾，客户端处理分片行、非法输出、超时与子进程退出。无本地业务 HTTP 服务，Vite 开发服务只绑定本机，构建预览加载本地资源。
 
-最小化和页面切换不停止采集。正常关闭、应用退出或重连先查询活动会议，让用户选择继续录音或停止并保存；保存未完成时保持窗口可见。系统休眠请求中断保存，强制结束后的遗留数据由重启恢复处理。不能直接沿用 Spec 001 的短时强杀退出路径处理活动录音。
+最小化和页面切换不停止采集。正常关闭、应用退出或重连先查询活动会议，让用户选择继续录音或停止并保存；保存未完成时保持窗口可见。系统休眠请求中断保存，强制结束后的遗留数据由重启恢复处理。不能直接沿用 Spec 001 的短时强杀退出路径处理活动录音。仅转写活动时可选择继续处理或保留进度退出；不等待整场推理。启动先恢复录音，再把未完成转写置 paused，由用户继续；worker 超时、崩溃或退出须回收，不重启正在录音的核心。
 
-## 依赖与后续边界
+## 本地转写与后续边界
 
-- Electron / React / TypeScript / electron-vite 沿用 [决策 0004](../.ai/decisions/0004-foundation-stack.md)，具体版本见技术栈及锁文件。
-- 录音采用 sounddevice 0.5.6，运行依赖 CFFI 2.1.1、pycparser 3.0，不引入 NumPy。SQLite 和 WAV 使用 Python 3.12 标准库，依据见 [决策 0006](../.ai/decisions/0006-recording-and-storage-baseline.md)。
-- ASR 后续接收音频块与采样元信息，输出带相对时间的转写片段；当前不下载 Whisper 模型或承诺实时性能。
-- LLM 后续接收完整转写并输出经过验证的会议纪要；服务商、费用、密钥和文本外发规则待对应 Spec 确认。
-- TranscriptSegment、MeetingSummary、ActionItem 和 Memory 仍是后续设计边界，本次不建相关表。ASR / LLM 工作不能进入录音回调或 UI 主线程。
-- FastAPI、PostgreSQL、pgvector、LangGraph 继续延期，不因最初候选清单而安装。
+- faster-whisper 1.2.1 / CTranslate2 4.8.2，固定 Systran small revision `536b0662742c02347bc0e980a01041f333bce120`，CPU INT8 / 4 线程 / beam 5；模型约 487 MB。文件校验清单固化于 ModelManager。
+- 用户显式下载，HTTPS 固定来源与重定向白名单、真实字节进度、取消与重试。临时目录通过 hash 和实际加载检查后才发布，缺失模型不阻断录音。推理仅加载本地模型，音频与文字不外发。
+- 目标块约 10 秒（配置 5～15 秒），在目标前 5 秒内优先选择静音边界，前后最多各 4 秒上下文。VAD 区间分别解码，通过词时间中点决定归属，保留原会议内偏移。
+- 全局一次推理，活动录音优先，历史任务在块边界让出。读取已写的完整帧后关闭 WAV 句柄，再执行推理；短读与最终文件重命名互斥，兼顾 Windows 文件占用。
+- 任务保存模型与参数、已处理帧数，静音块也推进进度；结束后按最终帧数补尾块。录音状态与转写状态分别显示，缺失音频不能伪造处理完成，中断来源持续标明不完整。
+- renderer 有界分页、非重叠轮询，翻看上文时停止自动跟随；已保存片段可定位播放器，录音期间禁播。speaker / confidence 保持空值，不生成说话人身份。
+- sounddevice 原始输入流不变；NumPy、PyAV 与 ONNX Runtime 用于实际 ASR / VAD，完整锁定依赖见 `requirements.lock`。SQLite 与 WAV 沿用标准库。
+- MeetingSummary、ActionItem、Memory 和 LLM 仍未实现。服务商、费用、密钥与文本外发规则留给后续 Spec；FastAPI、PostgreSQL、pgvector、LangGraph 继续延期。
 
-保留 Spec 001 的后续最小数据约定，不代表本次已建表或提供相关功能：
-
-| 对象 | 预留信息 |
-| --- | --- |
-| AudioChunk | ID、meeting_id、会议内起止偏移、音频位置与采样元信息 |
-| TranscriptSegment | ID、meeting_id、start_time、end_time、text、可空 speaker / confidence |
-| MeetingSummary | title、summary、topics、decisions、action_items、risks、open_questions |
-| ActionItem | task、可空 owner / deadline、status；不凭空补全未知归属与日期 |
-
-墙上时间带时区，片段时间相对会议开始，ID 保持稳定并能追溯原始音频。未来结束会议后先处理剩余转写再生成纪要，ASR 和总结失败分别记录。
+墙上时间带时区，片段时间相对会议开始，ID 稳定并可追溯原始音频。正式迁移备份和恢复操作见 README；不能用旧程序直接写 schema 2。
 
 ## 平台和分发
 

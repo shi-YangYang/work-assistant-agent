@@ -1,3 +1,5 @@
+import { ModelSettings, Transcript } from './Transcription'
+import type { ModelState } from '../shared/contracts'
 import { useEffect, useRef, useState } from 'react'
 import {
   AudioLines,
@@ -212,6 +214,29 @@ export function App(): React.JSX.Element {
       setRetrying(false)
     }
   }
+  const [model, setModel] = useState<ModelState | null>(null)
+  const [modelRefresh, setModelRefresh] = useState(0)
+  useEffect(() => {
+    if (!connected) return
+    let alive = true
+    let timer: ReturnType<typeof setTimeout>
+    async function pollModel(): Promise<void> {
+      try {
+        const result = await window.paa.getTranscriptionModel()
+        if (alive && result.ok) setModel(result.value)
+      } finally {
+        if (alive)
+          timer = setTimeout(() => {
+            void pollModel()
+          }, 1000)
+      }
+    }
+    void pollModel()
+    return () => {
+      alive = false
+      clearTimeout(timer)
+    }
+  }, [connected, status.processId, modelRefresh])
   const connectionLabel = connected
     ? '本地核心已连接'
     : status.connection === 'starting'
@@ -286,7 +311,7 @@ export function App(): React.JSX.Element {
             <strong>{page === 'meetings' ? '会议记录' : '设置'}</strong>
           </div>
           <span className="preview-badge">
-            录音预览版 <span>0.2</span>
+            转写预览版 <span>0.3</span>
           </span>
         </header>
         <main>
@@ -331,6 +356,14 @@ export function App(): React.JSX.Element {
               <small>音频持续保存到本机。切换页面或最小化窗口可继续录音。</small>
             </section>
           )}
+          {active && connected && recording.meetingId && (
+            <Transcript
+              key={recording.meetingId}
+              meetingId={recording.meetingId}
+              modelReady={model?.state === 'ready'}
+              playable={false}
+            />
+          )}
           {page === 'meetings' ? (
             <>
               <div className="page-heading">
@@ -348,7 +381,11 @@ export function App(): React.JSX.Element {
                     <Plus size={18} />
                     {busy && !active ? '正在准备…' : '开始会议'}
                   </button>
-                  <span>使用系统默认麦克风</span>
+                  <span>
+                    {model?.state === 'ready'
+                      ? '默认麦克风 · 本地转写'
+                      : '本场暂只录音，模型准备后可补转写'}
+                  </span>
                 </div>
               </div>
               {!connected && (
@@ -417,10 +454,20 @@ export function App(): React.JSX.Element {
                   ) : (
                     <p>当前没有可播放的录音。</p>
                   )}
-                  <div className="detail-future">
-                    <Sparkles size={18} />
-                    <span>本地转写与会议纪要尚未接入。</span>
-                  </div>
+                  {connected && (
+                    <Transcript
+                      key={selected.id}
+                      meetingId={selected.id}
+                      modelReady={model?.state === 'ready'}
+                      playable={selected.audioAvailable && !active && !busy}
+                      onSeek={(ms) => {
+                        if (audio.current && !active) {
+                          audio.current.currentTime = ms / 1000
+                          void audio.current.play().catch(() => setError('无法播放录音。'))
+                        }
+                      }}
+                    />
+                  )}
                 </section>
               ) : (
                 <section className="meetings-section" aria-labelledby="meetings-title">
@@ -491,7 +538,7 @@ export function App(): React.JSX.Element {
                 </span>
                 <div>
                   <strong>先把原话留住</strong>
-                  <p>录音保存到本机；本地转写和会议纪要将在后续接入。</p>
+                  <p>录音和转写保存在本机；会议纪要将在后续接入。</p>
                 </div>
               </section>
             </>
@@ -537,6 +584,7 @@ export function App(): React.JSX.Element {
                   </button>
                 </div>
               </section>
+              <ModelSettings model={model} refresh={() => setModelRefresh((value) => value + 1)} />
               <section className="settings-card capabilities">
                 <div className="capability-heading">
                   <h2>会议能力</h2>
@@ -552,7 +600,7 @@ export function App(): React.JSX.Element {
                   {
                     id: 'transcription',
                     name: '本地转写',
-                    description: '后续提供完整文字记录',
+                    description: '离线生成带时间的文字记录',
                     icon: AudioLines,
                   },
                   {
@@ -571,7 +619,7 @@ export function App(): React.JSX.Element {
                     <span className="unavailable-badge">
                       {status.capabilities.find((item) => item.id === id)?.available
                         ? '已就绪'
-                        : id === 'recording'
+                        : id !== 'summary'
                           ? '未就绪'
                           : '尚未接入'}
                     </span>
@@ -580,7 +628,7 @@ export function App(): React.JSX.Element {
               </section>
               <p className="settings-footnote">
                 <LockKeyhole size={15} />
-                仅在开始会议后采集麦克风。当前无需模型或密钥。
+                仅在开始会议后采集麦克风。转写模型由你发起下载，无需密钥。
               </p>
             </>
           )}

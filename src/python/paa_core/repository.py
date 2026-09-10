@@ -4,8 +4,9 @@ from __future__ import annotations
 import re
 import sqlite3
 import threading
+import time
 import wave
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -38,8 +39,11 @@ class Repository:
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
             tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            if version not in (0, 1) or (version == 0 and tables):
+            if version not in (0, 1, 2) or (version == 0 and tables):
                 raise DomainError('storage_schema', '会议数据库版本不兼容，请保留数据并联系维护者。')
+            if version == 1:
+                self.backup_schema_one(db)
+            db.execute('BEGIN IMMEDIATE')
             if version == 0:
                 db.execute('''CREATE TABLE meetings (
                     id TEXT PRIMARY KEY, operationId TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
@@ -48,13 +52,33 @@ class Repository:
                     sampleRate INTEGER NOT NULL DEFAULT 48000, channels INTEGER NOT NULL DEFAULT 1,
                     sampleWidth INTEGER NOT NULL DEFAULT 2, frames INTEGER NOT NULL DEFAULT 0,
                     bytes INTEGER NOT NULL DEFAULT 0, audioPath TEXT)''')
-                db.execute('PRAGMA user_version=1')
+            if version < 2:
+                from .transcript_store import migrate
+                migrate(db)
+                db.execute('PRAGMA user_version=2')
         self.recover()
+
+    def backup_schema_one(self, db):
+        destination = self.root / 'meetings.schema1.backup.sqlite3'
+        staging = self.root / 'meetings.schema1.backup.staging'
+        if destination.is_symlink() or staging.is_symlink():
+            raise DomainError('storage_backup', '迁移备份位置无效，请保留原数据库并检查存储。')
+        deadline = time.monotonic() + 2
+        def progress(_status, _remaining, _total):
+            if time.monotonic() > deadline:
+                raise DomainError('storage_busy', '数据库仍被占用，迁移未开始；关闭其他实例后重试。')
+        try:
+            with closing(sqlite3.connect(staging)) as backup:
+                db.backup(backup, pages=128, progress=progress, sleep=0.02)
+            staging.replace(destination)
+        finally:
+            staging.unlink(missing_ok=True)
 
     @contextmanager
     def connect(self):
         db = sqlite3.connect(self.database, timeout=0.25)
         db.row_factory = sqlite3.Row
+        db.execute('PRAGMA foreign_keys=ON')
         try:
             with db:
                 yield db

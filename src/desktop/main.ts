@@ -55,7 +55,19 @@ function trustedCaller(event: IpcMainInvokeEvent): void {
   )
     throw new Error('Request is not allowed')
 }
-function parameters(args: unknown[], kind: 'none' | 'id' | 'offset'): void {
+function parameters(args: unknown[], kind: 'none' | 'id' | 'offset' | 'transcript'): void {
+  if (kind === 'transcript') {
+    if (
+      args.length !== 2 ||
+      typeof args[0] !== 'string' ||
+      !ID_PATTERN.test(args[0]) ||
+      !Number.isSafeInteger(args[1]) ||
+      Number(args[1]) < -1 ||
+      Number(args[1]) > 1_000_000_000
+    )
+      throw new Error('Invalid parameters')
+    return
+  }
   const valid =
     kind === 'none'
       ? args.length === 0
@@ -81,7 +93,24 @@ async function protectSession(action: 'exit' | 'retry' | 'suspend'): Promise<boo
     notifyError(status.message)
     return false
   }
-  if (!ACTIVE_STATES.includes(status.value.state)) return true
+  if (!ACTIVE_STATES.includes(status.value.state)) {
+    if (action !== 'suspend' && (await core.transcriptionActive())) {
+      if (!window) return false
+      const answer = await dialog.showMessageBox(window, {
+        type: 'question',
+        title: '文字仍在转写',
+        message: '保留当前转写进度？',
+        detail: '已保存文字会保留，下次打开会议可继续处理剩余音频。',
+        buttons: ['继续处理', action === 'exit' ? '保留进度并退出' : '保留进度并重连'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      })
+      if (answer.response === 0) return false
+    }
+    await core.pauseTranscription()
+    return true
+  }
   if (action !== 'suspend') {
     if (!window) return false
     window.show()
@@ -102,6 +131,7 @@ async function protectSession(action: 'exit' | 'retry' | 'suspend'): Promise<boo
   }
   try {
     await core.finishRecording(action === 'suspend')
+    await core.pauseTranscription()
     return true
   } catch (error) {
     notifyError(error instanceof Error ? error.message : '保存未完成，请检查会议记录。')
@@ -202,7 +232,7 @@ if (hasLock)
     protocol.handle('paa-audio', (request) => serveMedia(request, app.getPath('userData'), core))
     const register = (
       channel: string,
-      kind: 'none' | 'id' | 'offset',
+      kind: 'none' | 'id' | 'offset' | 'transcript',
       handler: (...args: unknown[]) => unknown,
     ): void => {
       ipcMain.handle(channel, (event, ...args: unknown[]) => {
@@ -211,6 +241,16 @@ if (hasLock)
         return handler(...args)
       })
     }
+    register(CHANNELS.modelStatus, 'none', () => core.modelState())
+    register(CHANNELS.modelDownload, 'none', () => core.modelState('download'))
+    register(CHANNELS.modelCancel, 'none', () => core.modelState('cancel'))
+    register(CHANNELS.transcriptionStart, 'id', (id) =>
+      core.transcriptionStatus(id as string, true),
+    )
+    register(CHANNELS.transcriptionStatus, 'id', (id) => core.transcriptionStatus(id as string))
+    register(CHANNELS.transcript, 'transcript', (id, cursor) =>
+      core.transcript(id as string, cursor as number),
+    )
     register(CHANNELS.status, 'none', () => core.getStatus())
     register(CHANNELS.retry, 'none', async () => {
       await runLifecycle('retry')
@@ -225,6 +265,7 @@ if (hasLock)
       if (window && !window.isDestroyed()) window.webContents.send(CHANNELS.statusChanged, status)
     })
     powerMonitor.on('suspend', () => {
+      void core.pauseTranscription().catch(() => undefined)
       // Interrupt immediately even while an exit/retry confirmation is pending.
       void core
         .recordingStatus()
