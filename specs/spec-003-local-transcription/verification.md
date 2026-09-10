@@ -68,4 +68,11 @@ macOS 26.4 / ARM64，Apple M5 / 16 GiB；Node 24、Python 3.12.14，faster-whisp
 - 两平台的实际 ASR JSON 均为同一锁定样本和参数，CER 2/12=16.67%；macOS 26.6.2 ARM64 推理 9.707 秒，Windows Server 2025 x64 推理 4.765 秒，Python 均为 3.12.10。云 runner 耗时不用于替代 M5 开发机的性能基准。
 - 实际下载的附件已核对 GitHub 展示的 SHA256：macOS `605e968cd5c9ce7d490087b66b976f85cf9abf8f70133bb3dcd6c0f0ee514cb2`，Windows `50cc091db73431c787ef0bd640c3647b7ed2824d8ad7aff1a02d3def4bb2c0fd`。解压证据位于 `artifacts/spec003/ci/34449407056-macos/` 和 `34449407056-windows/`。
 
-本轮仍未通过。已确认测试失败清理中的无界 `app.close()` 可能遇到产品退出确认并掩盖原始错误，正在补齐有界关闭与阶段诊断，随后用新候选实际 CI 判断。
+第三个候选 `9aa788b1cd921564cd510c3b8660bb8f3947ab11` 补齐有界关闭与阶段诊断，见 [smoke 返工报告](implementation-ci-smoke-rework.md)。[run 34450871426](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34450871426) 的 Windows 全部通过，macOS 仍有同一新增场景失败，但这次保留了真实失败点：
+
+- 恢复已有文字及定位于 6.614 秒完成，历史生成于 16.658 秒完成，第一次关闭重启于 19.985 秒完成；取消关闭、保留进度退出均通过，24.397 秒确认重启后的任务为 paused。
+- 继续转写后，处理位置从 0 推进至 8460 ms，目标 17124 ms，尚余 8664 ms、error=null。30 秒完成等待在总耗时 56.769 秒处失败，实际状态为 draining。
+- 失败清理在 57.627 秒完成，正常回收，无额外 teardown 卡住。由此区分了真实恢复完成等待不足与原本掩盖错误的关闭清理问题。
+- 附件通过公开 Actions 附件转发下载，并核对 GitHub API 的 SHA256 `10045628f24286033024bdeb5f340fbcedd15010d809d4bb0c790922f38f3a23` 完全一致；原始证据位于 `artifacts/spec003/ci/34450871426-macos/`。
+
+针对明确的云 runner 推理耗时，调整该集成测试的有界等待预算，保持模型、样本、进度和 completed 断言；开发机性能目标仍使用上文独立实测，不变成云 runner 的 30 秒完成保证。新候选实际双平台结果待补，当前仍不作最终 PASS。

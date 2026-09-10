@@ -33,7 +33,7 @@ test('real local model restores transcript, seeks, and generates historical text
     process.env.PAA_REAL_ASR_SMOKE !== '1',
     'Run npm run test:asr first; CI requires this real-model scenario',
   )
-  test.setTimeout(90_000)
+  test.setTimeout(120_000)
   const fixture = JSON.parse(readFileSync('artifacts/spec003/real-asr.json', 'utf8')) as {
     dataRoot: string
     meetingId: string
@@ -200,7 +200,7 @@ test('real local model restores transcript, seeks, and generates historical text
             record('continuing transcription', 'observed', result)
             return result.ok && result.value.state
           },
-          { timeout: 30_000 },
+          { timeout: 60_000 },
         )
         .toBe('completed')
     })
