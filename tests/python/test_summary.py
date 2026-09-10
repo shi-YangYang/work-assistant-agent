@@ -343,7 +343,8 @@ class TransportTests(unittest.TestCase):
         def delayed(*args, **kwargs):
             if not release.wait(2):
                 raise AssertionError('Test DNS was not released')
-            return original(*args, **kwargs)
+            # Resolve to this IPv4-only fixture, independent of OS localhost ordering.
+            return original('127.0.0.1', *args[1:], **kwargs)
 
         with patch('socket.getaddrinfo', side_effect=delayed) as lookup:
             try:

@@ -57,6 +57,10 @@
 
 新增一个无外网的延迟 DNS 回归：总预算 0.1 秒、连接预算 0.05 秒，连续三次操作各在 0.25 秒内返回，仅一次底层解析且没有 HTTP 请求；等待期间数字 IP 请求成功，释放旧解析后不会补发请求，后续主机名调用恢复。`PYTHONPATH=src/python:tests/python .venv/bin/python -m unittest test_summary test_protocol -v` **27 项通过，1.682 秒**，包括受影响的传输、队列退出与协议测试，日志为 `artifacts/spec004/dns-rework-python.log`。当前 Python 共 55 项，其余复用未受影响证据；未重复 TS、构建、UI 或 ASR 检查。未改动验收结论或私有窗口数据。
 
+### 首次远端 CI 的 Windows 测试修复
+
+提交 `20255df` 的 [首次远端 CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34493844440) 中，macOS 全部通过；Windows 仅 DNS 故障用例在恢复后的正常 `localhost` 请求处超时（`test_summary.py:372`），阻塞期间的截止时间与次数断言已通过。该测试服务器只监听 IPv4，模拟 DNS 却沿用系统的 localhost 地址选择；现将模拟解析明确指向同一 IPv4 服务器，保持生产 Provider、50 毫秒连接预算及原有超时／无重试／晚到结果断言不变。按 S1 仅运行此用例，本地通过（1 项，0.123 秒）；跨平台结果以修复提交的远端 CI 为准。
+
 ## 验证边界
 
 用户验收后的两项局部界面调整由协调 Agent 直接完成：新建服务默认开启流式接口，既有配置保持原选择；推理预设使用页内锚定下拉，固定从控件下方展开。按 S1 验证实际组件及样式，在隔离 Electron 的 1240／900 像素窗口检查定位、选择、键盘关闭和默认／已存设置，均通过；证据为 `artifacts/spec004/settings-ui-result.json` 与 `preset-below-*.png`。原纪要 smoke 的 JSON 模拟服务显式关闭流式，避免依赖旧默认值；本次不重跑全套测试或构建。
