@@ -64,7 +64,7 @@ export class CoreManager extends EventEmitter {
   private closed = false
   private status: CoreStatus = {
     connection: 'starting',
-    message: '正在连接本地核心…',
+    message: '正在连接…',
     capabilities: UNAVAILABLE_CAPABILITIES,
   }
   constructor(
@@ -99,7 +99,7 @@ export class CoreManager extends EventEmitter {
     this.client = undefined
     this.update({
       connection: 'starting',
-      message: '正在连接本地核心…',
+      message: '正在连接…',
       capabilities: UNAVAILABLE_CAPABILITIES,
     })
     await previous?.stop()
@@ -134,7 +134,7 @@ export class CoreManager extends EventEmitter {
       if (!this.closed)
         this.update({
           connection: 'ready',
-          message: health.storageError || '本地核心已连接',
+          message: health.storageError || '已连接',
           ...health,
         })
     } catch (error) {
@@ -320,7 +320,7 @@ export class CoreManager extends EventEmitter {
     await this.starting
     this.update({
       connection: 'stopped',
-      message: '本地核心已停止',
+      message: '连接已关闭',
       capabilities: UNAVAILABLE_CAPABILITIES,
     })
   }

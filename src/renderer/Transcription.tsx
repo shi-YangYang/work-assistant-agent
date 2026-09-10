@@ -35,19 +35,18 @@ export function ModelSettings({
   return (
     <section className="settings-card model-card" aria-label="本地转写模型">
       <h2>本地转写模型</h2>
-      <p>Whisper small 多语言 · 中文为主，兼顾中英混合</p>
+      <p>支持中文及中英混合转写。</p>
       <p>
-        来源：{model?.source ?? 'Hugging Face · SYSTRAN'} · MIT 许可。下载约{' '}
-        {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。
+        下载约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。
       </p>
-      <p>点击下载后联网获取模型。准备完成后离线转写，录音和文字留在本机。</p>
+      <p>下载需要联网，完成后可离线转写。</p>
       <strong role="status">
         {model?.state === 'ready'
           ? '模型已就绪'
           : model?.state === 'downloading'
             ? '正在下载模型'
             : model?.state === 'verifying'
-              ? '正在校验并加载模型'
+              ? '正在准备模型'
               : model?.state === 'error'
                 ? '模型准备失败'
                 : '模型尚未准备'}
@@ -79,7 +78,12 @@ export function ModelSettings({
           {preparing ? '取消准备' : model?.state === 'error' ? '重试下载模型' : '下载默认模型'}
         </button>
       )}
-      <p className="settings-footnote">模型未就绪时仍可录音，之后可以为历史会议补转写。</p>
+      {model?.state !== 'ready' && <p>可先录音，模型就绪后再补转写。</p>}
+      <details>
+        <summary>模型信息</summary>
+        <p>Whisper small 多语言</p>
+        <p>来源：{model?.source ?? 'Hugging Face · SYSTRAN'} · MIT 许可</p>
+      </details>
     </section>
   )
 }
@@ -134,7 +138,7 @@ export function Transcript({
           setError('')
         } else setError(page.message)
       } catch {
-        if (alive) setError('无法读取转写状态，请检查本地核心连接。')
+        if (alive) setError('无法读取转写状态，请在设置中重新连接。')
       } finally {
         if (alive)
           timer = setTimeout(() => {
@@ -218,7 +222,7 @@ export function Transcript({
                 : status?.state === 'paused'
                   ? '已保留进度，点击继续处理。'
                   : status && ['queued', 'running', 'draining'].includes(status.state)
-                    ? '音频正在处理，文字会在保存后分批出现。'
+                    ? '正在转写，文字将分批显示。'
                     : '为这场会议生成带时间的文字记录。'}
           </p>
         )}
@@ -232,7 +236,7 @@ export function Transcript({
           {busy ? '正在请求…' : status.state === 'not_started' ? '生成转写' : '继续转写'}
         </button>
       )}
-      {!modelReady && <p>请先前往设置准备本地转写模型；录音仍可使用。</p>}
+      {!modelReady && <p>在设置中下载转写模型后即可使用，录音不受影响。</p>}
       {segments.length > 0 && (
         <button
           className="text-button"
@@ -244,7 +248,7 @@ export function Transcript({
           回到最新内容{hasMore ? ' · 正在加载后续文字' : ''}
         </button>
       )}
-      {!playable && <small>录音期间禁止回放；保存后可点击文字定位音频。</small>}
+      {!playable && <small>回放暂不可用。</small>}
     </section>
   )
 }

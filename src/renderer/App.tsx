@@ -4,15 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 import {
   AudioLines,
   ChevronRight,
-  FileText,
-  Layers3,
   Leaf,
-  LockKeyhole,
   Mic,
   Plus,
   RefreshCw,
   Settings2,
-  Sparkles,
   Square,
   ArrowLeft,
 } from 'lucide-react'
@@ -26,7 +22,7 @@ import {
 
 const initialStatus: CoreStatus = {
   connection: 'starting',
-  message: '正在连接本地核心…',
+  message: '正在连接…',
   capabilities: UNAVAILABLE_CAPABILITIES,
 }
 const idle: RecordingStatus = {
@@ -237,11 +233,7 @@ export function App(): React.JSX.Element {
       clearTimeout(timer)
     }
   }, [connected, status.processId, modelRefresh])
-  const connectionLabel = connected
-    ? '本地核心已连接'
-    : status.connection === 'starting'
-      ? '正在连接本地核心'
-      : '本地核心未连接'
+  const connectionLabel = connected ? '已连接' : status.connection === 'starting' ? '连接中' : '未连接'
   const interruptedConnection = active && !connected
   return (
     <div className="app-shell">
@@ -252,7 +244,6 @@ export function App(): React.JSX.Element {
           </span>
           <div>
             <strong>个人工作助手</strong>
-            <span>PERSONAL ASSISTANT</span>
           </div>
         </div>
         <div className="workspace-label">我的工作空间</div>
@@ -265,29 +256,8 @@ export function App(): React.JSX.Element {
             <span>会议记录</span>
             <span className="nav-dot" />
           </button>
-          <div className="nav-item future">
-            <FileText size={19} />
-            <span>员工周报</span>
-            <small>后续</small>
-          </div>
-          <div className="nav-item future">
-            <Layers3 size={19} />
-            <span>长期记忆</span>
-            <small>后续</small>
-          </div>
         </nav>
         <div className="sidebar-bottom">
-          <div className="local-note">
-            <LockKeyhole size={17} />
-            <div>
-              <strong>原始录音，留在本地</strong>
-              <p>
-                让每一次交流
-                <br />
-                成为可回顾的工作记忆。
-              </p>
-            </div>
-          </div>
           <button
             className={`nav-item ${page === 'settings' ? 'active' : ''}`}
             onClick={() => setPage('settings')}
@@ -299,7 +269,6 @@ export function App(): React.JSX.Element {
             <span className="avatar">我</span>
             <div>
               <strong>个人工作空间</strong>
-              <span>本地 · 开发预览</span>
             </div>
           </div>
         </div>
@@ -310,9 +279,6 @@ export function App(): React.JSX.Element {
             工作空间 <ChevronRight size={14} />
             <strong>{page === 'meetings' ? '会议记录' : '设置'}</strong>
           </div>
-          <span className="preview-badge">
-            转写预览版 <span>0.3</span>
-          </span>
         </header>
         <main>
           {(error || recording.error || interruptedConnection) && (
@@ -338,7 +304,7 @@ export function App(): React.JSX.Element {
                   {duration(recording.elapsedMs)}
                 </span>
               </div>
-              <p>{recording.deviceName || '正在检查默认麦克风与本地存储…'}</p>
+              <p>{recording.deviceName || '正在准备录音…'}</p>
               <div className="recording-controls">
                 <label>
                   输入音量{' '}
@@ -353,7 +319,7 @@ export function App(): React.JSX.Element {
                   {recording.state === 'stopping' ? '正在保存…' : '结束会议'}
                 </button>
               </div>
-              <small>音频持续保存到本机。切换页面或最小化窗口可继续录音。</small>
+              <small>切换页面或最小化窗口后，录音会继续。</small>
             </section>
           )}
           {active && connected && recording.meetingId && (
@@ -368,9 +334,7 @@ export function App(): React.JSX.Element {
             <>
               <div className="page-heading">
                 <div>
-                  <p className="eyebrow">MEETING WORKSPACE</p>
-                  <h1>留住讨论，理清下一步。</h1>
-                  <p className="subtitle">记录真实声音，随时回到讨论发生的那一刻。</p>
+                  <h1>会议记录</h1>
                 </div>
                 <div className="meeting-action">
                   <button
@@ -383,8 +347,8 @@ export function App(): React.JSX.Element {
                   </button>
                   <span>
                     {model?.state === 'ready'
-                      ? '默认麦克风 · 本地转写'
-                      : '本场暂只录音，模型准备后可补转写'}
+                      ? '录音时自动转写'
+                      : '可先录音，下载模型后补转写'}
                   </span>
                 </div>
               </div>
@@ -418,12 +382,8 @@ export function App(): React.JSX.Element {
                       <dd>{duration(selected.durationMs)}</dd>
                     </div>
                     <div>
-                      <dt>输入设备</dt>
+                      <dt>麦克风</dt>
                       <dd>{selected.deviceName || '未打开设备'}</dd>
-                    </div>
-                    <div>
-                      <dt>音频格式</dt>
-                      <dd>WAV · {selected.sampleRate} Hz · PCM16 单声道</dd>
                     </div>
                   </dl>
                   {selected.status === 'interrupted' && (
@@ -440,7 +400,7 @@ export function App(): React.JSX.Element {
                     </p>
                   ) : selected.audioAvailable ? (
                     active || busy || !connected ? (
-                      <p className="audio-warning">录音期间或核心未连接时暂停回放。</p>
+                      <p className="audio-warning">录音或重新连接期间暂停回放。</p>
                     ) : (
                       <audio
                         ref={audio}
@@ -522,33 +482,18 @@ export function App(): React.JSX.Element {
                           <AudioLines size={40} />
                         </div>
                       </div>
-                      <h3>你的第一场会议，从这里开始</h3>
-                      <p>点击开始会议，录下讨论。结束后可在这里回放。</p>
-                      <div className="empty-label">
-                        <span />
-                        {loaded ? '暂无会议记录' : '等待会议记录加载'}
-                      </div>
+                      <h3>{loaded ? '暂无会议记录' : '正在加载会议记录'}</h3>
+                      <p>点击「开始会议」录音，结束后可在这里查看和回放。</p>
                     </div>
                   )}
                 </section>
               )}
-              <section className="foundation-banner">
-                <span className="banner-icon">
-                  <LockKeyhole size={20} />
-                </span>
-                <div>
-                  <strong>先把原话留住</strong>
-                  <p>录音和转写保存在本机；会议纪要将在后续接入。</p>
-                </div>
-              </section>
             </>
           ) : (
             <>
               <div className="page-heading">
                 <div>
-                  <p className="eyebrow">WORKSPACE SETTINGS</p>
-                  <h1>为下一次会议做好准备。</h1>
-                  <p className="subtitle">查看连接与录音准备状态。</p>
+                  <h1>设置</h1>
                 </div>
               </div>
               <section className="settings-card">
@@ -557,8 +502,7 @@ export function App(): React.JSX.Element {
                     <Settings2 size={22} />
                   </span>
                   <div>
-                    <h2>本地核心</h2>
-                    <p>负责本地采集、保存与会议历史。</p>
+                    <h2>应用状态</h2>
                   </div>
                   <span className={`status-pill ${connected ? 'ready' : 'pending'}`}>
                     {connectionLabel}
@@ -566,14 +510,8 @@ export function App(): React.JSX.Element {
                 </div>
                 <div className="core-detail" role="status">
                   <strong>{status.message}</strong>
-                  <p>
-                    {connected
-                      ? `Python ${status.pythonVersion} · 点击开始会议时检查麦克风。`
-                      : '请检查应用运行环境，完成后重新连接。'}
-                  </p>
                 </div>
                 <div className="settings-card-footer">
-                  <span>重连前会保护当前录音。</span>
                   <button
                     className="secondary-button"
                     disabled={retrying || status.connection === 'starting'}
@@ -587,14 +525,13 @@ export function App(): React.JSX.Element {
               <ModelSettings model={model} refresh={() => setModelRefresh((value) => value + 1)} />
               <section className="settings-card capabilities">
                 <div className="capability-heading">
-                  <h2>会议能力</h2>
-                  <p>录音就绪后，仍需成功打开默认麦克风才能开始采集。</p>
+                  <h2>录音与转写</h2>
                 </div>
                 {[
                   {
                     id: 'recording',
                     name: '持续录音',
-                    description: '默认麦克风 · 本地保存与回放',
+                    description: '使用默认麦克风录音',
                     icon: Mic,
                   },
                   {
@@ -602,12 +539,6 @@ export function App(): React.JSX.Element {
                     name: '本地转写',
                     description: '离线生成带时间的文字记录',
                     icon: AudioLines,
-                  },
-                  {
-                    id: 'summary',
-                    name: '会议纪要',
-                    description: '后续梳理讨论要点与行动项',
-                    icon: Sparkles,
                   },
                 ].map(({ id, name, description, icon: Icon }) => (
                   <div className="capability-row" key={id}>
@@ -619,24 +550,16 @@ export function App(): React.JSX.Element {
                     <span className="unavailable-badge">
                       {status.capabilities.find((item) => item.id === id)?.available
                         ? '已就绪'
-                        : id !== 'summary'
-                          ? '未就绪'
-                          : '尚未接入'}
+                        : '未就绪'}
                     </span>
                   </div>
                 ))}
               </section>
-              <p className="settings-footnote">
-                <LockKeyhole size={15} />
-                仅在开始会议后采集麦克风。转写模型由你发起下载，无需密钥。
-              </p>
             </>
           )}
           <footer className="workspace-footer">
             <span className={`connection-dot ${connected ? 'connected' : ''}`} />
             <span>{connectionLabel}</span>
-            <span className="footer-separator">·</span>
-            <span>音频保存在本机</span>
           </footer>
         </main>
       </div>
