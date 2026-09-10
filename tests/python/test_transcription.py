@@ -43,8 +43,8 @@ class HeldProvider:
     def __init__(self, _path, _config, entered, release):
         self.entered, self.release = entered, release
     def transcribe(self, _pcm, _rate):
-        self.entered.set()
-        if not self.release.wait(10): raise AssertionError('Slow inference was not released')
+        self.entered.release()
+        if not self.release.acquire(timeout=10): raise AssertionError('Slow inference was not released')
         return [{'start': 0.1, 'end': 0.3, 'text': '测试文字'}]
 
 
@@ -369,7 +369,9 @@ class TranscriptionTests(unittest.TestCase):
         source=DrivenInput()
         self.recorder=Recorder(self.repo,source)
         ctx=multiprocessing.get_context('spawn')
-        entered,release=ctx.Event(),ctx.Event()
+        # Event.set() waits for every registered sleeper to acknowledge waking.
+        # Cancellation kills the waiting child, so cleanup must never require its reply.
+        entered,release=ctx.Semaphore(0),ctx.Semaphore(0)
         worker=ASRWorker(partial(HeldProvider,entered=entered,release=release));self.workers.append(worker)
         model=ReadyModel()
         service=Transcription(self.repo,self.recorder,worker=worker,model=model);self.services.append(service)
@@ -395,13 +397,13 @@ class TranscriptionTests(unittest.TestCase):
             required_frames=round((DEFAULT_CONFIG['chunkSeconds']+DEFAULT_CONFIG['contextSeconds'])*self.recorder.session.sample_rate)
             feed_frames(required_frames)
             service.start(mid)
-            self.assertTrue(entered.wait(6), {'transcription':service.status(mid),'recording':self.recorder.status()})
+            self.assertTrue(entered.acquire(timeout=6), {'transcription':service.status(mid),'recording':self.recorder.status()})
             self.assertEqual(service.status(mid)['state'],'running')
             initial=self.recorder.session.frames
             feed_frames(self.recorder.block_size*4)
             self.assertGreater(self.recorder.session.frames,initial)
             self.assertGreater(service.status(mid)['pendingMs'],0)
-            self.assertFalse(release.is_set())
+            self.assertFalse(release.acquire(block=False))
             self.assertEqual(service.status(mid)['processedMs'],0)
             start=time.monotonic();self.recorder.stop(mid);self.assertLess(time.monotonic()-start,.1)
             wait_for(lambda:self.recorder.session.finished.is_set())
@@ -409,8 +411,10 @@ class TranscriptionTests(unittest.TestCase):
             self.assertLessEqual(self.recorder.session.chunks.qsize(),64)
             service.pause()
             self.assertEqual(service.status(mid)['state'],'paused')
+            # Exercise cleanup after cancellation has actually reclaimed the waiter.
+            wait_for(lambda:worker.process is None)
         finally:
-            release.set()
+            release.release()
 
     def test_corrupt_model_is_not_ready_and_download_cancel_and_retry_are_atomic(self):
         import hashlib

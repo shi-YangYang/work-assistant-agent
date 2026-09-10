@@ -13,10 +13,20 @@ if (version.error || version.status !== 0) {
 }
 const result = spawnSync(
   command,
-  [...args, '-m', 'unittest', 'discover', '-s', 'tests/python', '-v'],
+  [
+    ...args,
+    '-c',
+    [
+      'import faulthandler, unittest',
+      'faulthandler.dump_traceback_later(120, exit=True)',
+      "unittest.main(module=None, argv=['unittest', 'discover', '-s', 'tests/python', '-v'])",
+    ].join('\n'),
+  ],
   {
     stdio: 'inherit',
+    timeout: 150_000,
+    killSignal: 'SIGKILL',
   },
 )
-if (result.error) console.error('Unable to start Python tests.')
+if (result.error) console.error(`Python tests could not complete: ${result.error.message}`)
 process.exit(result.status ?? 1)

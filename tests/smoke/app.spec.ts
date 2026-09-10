@@ -1,7 +1,7 @@
 import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { mkdirSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve, join } from 'node:path'
+import { dirname, resolve, join } from 'node:path'
 const roots: string[] = []
 mkdirSync('artifacts/spec002', { recursive: true })
 function temp(): string {
@@ -251,16 +251,35 @@ test('synthetic suspend interrupts even while close confirmation is pending; cra
 
 test('synthetic save failure keeps the window visible and partial audio retained', async () => {
   test.skip(process.platform === 'win32', 'POSIX synthetic executable shim')
+  const testInfo = test.info()
+  const started = Date.now()
+  const stages: { stage: string; elapsedMs: number; error?: string }[] = []
+  const stagePath = testInfo.outputPath('save-failure-stages.json')
+  mkdirSync(dirname(stagePath), { recursive: true })
+  const record = (stage: string, error?: unknown): void => {
+    stages.push({
+      stage,
+      elapsedMs: Date.now() - started,
+      error: error === undefined ? undefined : String(error),
+    })
+    writeFileSync(stagePath, JSON.stringify(stages, null, 2))
+  }
+  record('launch')
   const app = await launch(temp(), true, { PAA_FIXTURE_FAIL_CLOSE: '1' })
+  let cleanupFailure: unknown
   try {
+    record('ready')
     const page = await ready(app)
+    record('start recording')
     await page.getByRole('button', { name: '开始会议', exact: true }).click()
     await expect.poll(() => recordingState(app)).toBe('recording')
     await page.waitForTimeout(150)
     await app.evaluate(({ dialog }) => {
       dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false })
     })
+    record('request close with save failure')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+    record('verify save protection')
     await expect.poll(() => recordingState(app)).toBe('interrupted')
     await expect(page.getByRole('alert')).toContainText('保存失败')
     expect(
@@ -268,9 +287,36 @@ test('synthetic save failure keeps the window visible and partial audio retained
     ).toBe(true)
     const result = await page.evaluate(() => window.paa.listMeetings())
     expect(result.ok && result.meetings[0].audioAvailable).toBe(true)
+    record('save protection passed')
   } finally {
-    await app.close().catch(() => {})
+    const child = app.process()
+    if (child.exitCode === null && child.signalCode === null) {
+      record('cleanup')
+      try {
+        // Keep the main debugger connected until the asynchronous exit guard finishes.
+        await Promise.all([
+          app.waitForEvent('close', { timeout: 10_000 }),
+          app.evaluate(({ BrowserWindow, dialog }) => {
+            dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false })
+            BrowserWindow.getAllWindows()[0]?.close()
+          }),
+        ])
+        record('cleanup completed')
+      } catch (error) {
+        record('cleanup failed', error)
+        cleanupFailure = error
+        if (child.exitCode === null && child.signalCode === null) {
+          try {
+            child.kill('SIGKILL')
+          } catch (terminationError) {
+            record('cleanup termination failed', terminationError)
+          }
+        }
+      }
+    }
   }
+  // Preserve a body error; unsuccessful cleanup must also fail an otherwise passing test.
+  if (cleanupFailure) throw cleanupFailure
 })
 
 test('missing Python opens the desktop and supports retry', async () => {
