@@ -2,7 +2,7 @@
 
 ## 对应 Spec
 
-[Spec 003](spec.md)，状态 IMPLEMENTING。用户已授权实施；本次工程涉及持久化迁移、共享 IPC、下载边界和进程生命周期，按 S3 验证相关子系统。
+[Spec 003](spec.md)，状态 DONE，[独立验收](acceptance.md) PASS。实施涉及持久化迁移、共享 IPC、下载边界和进程生命周期，按 S3 验证相关子系统；暂停竞态返工与实际 CI 修复均已闭环，最终平台及实录结果见 [verification.md](verification.md)。以下保留实施计划和测试范围供追溯。
 
 ## 涉及模块
 

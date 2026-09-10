@@ -1,6 +1,6 @@
 # 首版产品定义
 
-状态：Spec 003 已实现模型准备和本地转写，工程验收正在收尾；录音、保存和回放沿用 Spec 002。LLM 和纪要尚未接入。当前证据见 [实施报告](../specs/spec-003-local-transcription/implementation.md)。
+状态：Spec 003 已完成模型准备和本地转写，[独立验收](../specs/spec-003-local-transcription/acceptance.md) PASS，实际 macOS / Windows CI 均通过；录音、保存和回放沿用 Spec 002。LLM 和纪要尚未接入。实录与平台证据见 [验证记录](../specs/spec-003-local-transcription/verification.md)。
 
 ## 产品与用户
 

@@ -1,6 +1,6 @@
 # 技术架构
 
-状态：Spec 003 已接入本地转写，工程验收正在收尾。本文记录当前实际接口与存储实现，证据和平台限制见 [实施报告](../specs/spec-003-local-transcription/implementation.md)。Spec 002 的录音、保存与回放基础保留。
+状态：Spec 003 已完成本地转写，[独立工程验收](../specs/spec-003-local-transcription/acceptance.md) PASS，实际 macOS / Windows CI 均通过。本文记录当前接口与存储实现，实录证据和平台限制见 [验证记录](../specs/spec-003-local-transcription/verification.md)。Spec 002 的录音、保存与回放基础保留。
 
 ## 职责与数据流
 

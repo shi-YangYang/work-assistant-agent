@@ -6,7 +6,7 @@
 
 [Spec 002](../specs/spec-002-meeting-recording-and-storage/spec.md) 已实现 sounddevice 原始输入流、WAV 文件与 SQLite 会议持久化，见 [决策 0006](../.ai/decisions/0006-recording-and-storage-baseline.md)。下方记录当前代码与依赖选择；恢复重试问题已闭环，新的独立工程验收为 [PASS](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。
 
-[Spec 003](../specs/spec-003-local-transcription/spec.md) 代码已实现，正在完成工程验收。一个 faster-whisper Provider 提供本地持续转写，默认 small 多语言模型、CPU / INT8，应用内提示下载；依据见 [决策 0007](../.ai/decisions/0007-local-transcription-baseline.md)。下表记录实际实现；最终验收和平台结果单独留痕。
+[Spec 003](../specs/spec-003-local-transcription/spec.md) 已完成，独立工程验收 [PASS](../specs/spec-003-local-transcription/acceptance.md)。一个 faster-whisper Provider 提供本地持续转写，默认 small 多语言模型、CPU / INT8，应用内提示下载；依据见 [决策 0007](../.ai/decisions/0007-local-transcription-baseline.md)。下表记录实际实现；真实麦克风和最终双平台 CI 证据见文末。
 
 ## 技术基线
 
@@ -91,4 +91,4 @@ Spec 002 已在默认 MacBook Pro 麦克风完成单声道 PCM16 / 48000 Hz 真�
 
 现有代码 `b9e0e74` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34441992551) 已通过；本机 6 项 Electron 冒烟通过，Windows 运行其中 2 项并跳过 4 项平台受限场景。Windows 实机录音仍未验证；上述旧提交的结果不能代替 Spec 003 的新推理验证。当前不承诺最低系统版本或安装包。
 
-Spec 003 本机证据已包括 31 项 Python、19 项 TypeScript、真实 spawn ASR 和新增 Electron 转写流程；固定 121.76 秒真人中文分块 CER 6.52%，累计推理 44.659 秒。实际麦克风首段延迟、双平台对应提交和独立验收仍在收尾，不能提前标记完成。证据与具体限制见 [实施报告](../specs/spec-003-local-transcription/implementation.md)。
+Spec 003 最终代码 `0b84fe1` 的 [双平台 CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 已完整通过：每个平台 19 项 TypeScript、35 项 Python、真实 small 推理及类型 / lint / 格式 / 构建；macOS 7 项 Electron smoke 通过，Windows 3 项通过、4 项既有平台受限场景跳过，新增真实转写未跳过。固定 121.76 秒真人中文分块 CER 6.52%、累计推理 44.659 秒；用户指定的物理声学回采 37.035 秒，首段文字 18.383 秒，保存补尾 / 重启 / 定位回放均完成。独立验收 PASS，原失败、返工、测量边界与未验证事项见 [完整证据](../specs/spec-003-local-transcription/verification.md)。Windows 物理麦克风和正式安装包仍未验证。

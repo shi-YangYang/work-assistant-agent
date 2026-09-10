@@ -1,14 +1,14 @@
-# Task Handoff — Spec 003 规划与历史实施上下文
+# Task Handoff — Spec 003 已完成与历史实施上下文
 
 ## Current Stage
 
-REWORK (CI)。当前分支 codex/spec-003-local-transcription。第一候选 d7013c9 的 run34448151461 失败，暂停竞态已修复，第二轮独立 FAIL 保存在 acceptance-round-2.md。随后修复 macOS 慢 worker fixture 和 Windows cp1252 报告输出，见 implementation-ci-rework.md。
+DONE。Spec 003 已完成模型准备、持续转写、尾部处理、历史补转写和持久恢复，最终独立验收 acceptance.md 为 PASS。当前分支 codex/spec-003-local-transcription；实际被测代码为 0b84fe1c6349aa7c413da2d24bc700e43849d97e，[run34451673078](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 及 macOS / Windows 两个 job 均 success。后续只有文档状态收尾，不改变被测代码。
 
-当前候选 9a8dc781b1fe5e1e7c07d2115975201965de6314 的 run34449407056：Windows 全部通过；macOS 除新增转写 smoke 90 秒超时外通过。附件已下载至 artifacts/spec003/ci/34449407056-{macos,windows}/，error-context 没有具体栈。ci_fix_spec003 正修改测试有界关闭 / 失败清理和阶段诊断；accept_spec003_ci 保持独立验收待处理，未发本轮正式结论。不能把未知超时根因写成已修复；须提交新候选并等待实际双平台结果。根 Agent 维护 verification.md，其余历史实施 / 返工报告保留。
+原暂停竞态、慢 worker fixture、Windows cp1252 输出、smoke 无界退出掩盖错误与恢复等待预算已依证据闭环，实施和独立验收报告均已读取处理。原两轮 FAIL 与中间 CI 失败保留于 acceptance-round-1.md / acceptance-round-2.md、各 implementation-*.md 和 verification.md。没有仍待处理的实施 / 验收子任务，不重复原始实现或已通过验证。
 
 用户已确认中文为主、兼顾中英混合，应用内提示下载 small 模型，并授权实施。用户指定内置扬声器播放公开人声 → 物理麦克风采集的验收方式已完成：37.035秒、首字18.383秒、CER15.56%，保存补尾、重启片段一致、定位后播放实际推进；固定2分钟文件基准CER6.52%、累计44.659秒。完整来源、原失败和测量边界在 verification.md，不能混称同一次测量。模型、音频与DB均保留在ignored artifacts，不提交Git。
 
-恢复后先检查子Agent和对应提交CI，再读实际报告，不重复已通过的模型基准、物理实录或无关基础检查。最终报告未完成前不能给PASS。Spec决策无需子Agent验证，工程独立验收规则继续适用。
+最终每个平台 19 项 TS、35 项 Python、真实 small 推理与类型 / lint / 格式 / build 均成功；macOS 7 项 smoke 通过，Windows 3 项通过、4 项旧平台受限场景跳过。新增转写两平台均 completed、pending=0，正常退出。Windows 物理麦克风、首次 macOS 授权弹框、最低配置和正式安装包仍未验证。任务已闭环，恢复后先读报告和 Git 状态，不重复模型基准、物理实录或无关检查。Spec 决策无需子 Agent 验证，后续实际工程继续遵循独立验收规则。
 
 ## Previous Task — DONE
 

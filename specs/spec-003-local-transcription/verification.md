@@ -75,4 +75,23 @@ macOS 26.4 / ARM64，Apple M5 / 16 GiB；Node 24、Python 3.12.14，faster-whisp
 - 失败清理在 57.627 秒完成，正常回收，无额外 teardown 卡住。由此区分了真实恢复完成等待不足与原本掩盖错误的关闭清理问题。
 - 附件通过公开 Actions 附件转发下载，并核对 GitHub API 的 SHA256 `10045628f24286033024bdeb5f340fbcedd15010d809d4bb0c790922f38f3a23` 完全一致；原始证据位于 `artifacts/spec003/ci/34450871426-macos/`。
 
-针对明确的云 runner 推理耗时，调整该集成测试的有界等待预算，保持模型、样本、进度和 completed 断言；开发机性能目标仍使用上文独立实测，不变成云 runner 的 30 秒完成保证。新候选实际双平台结果待补，当前仍不作最终 PASS。
+针对明确的云 runner 推理耗时，调整该集成测试的有界等待预算，保持模型、样本、进度和 completed 断言；开发机性能目标仍使用上文独立实测，不变成云 runner 的 30 秒完成保证。调整依据见 [预算修正报告](implementation-ci-time-budget.md)。
+
+### 最终候选：双平台通过
+
+代码候选 `0b84fe1c6349aa7c413da2d24bc700e43849d97e` 的 [run 34451673078](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 已完成，工作流及 macOS、Windows 两个任务均为 **success**。实际验证后才记录通过；随后只有验收和状态文档收尾，不改变被测代码。
+
+| 检查 | macOS ARM64 | Windows x64 |
+| --- | --- | --- |
+| 依赖、typecheck、lint、format、build | 通过 | 通过 |
+| TypeScript / Python | 19 / 35 项通过 | 19 / 35 项通过 |
+| 真实 small 推理 | 通过；短样本 8.956 秒 | 通过；短样本 3.500 秒 |
+| Electron smoke | 7 项通过 | 3 项通过，4 项既有平台限制跳过 |
+| 新增转写 smoke | 所有阶段成功，总计 70.598 秒 | 所有阶段成功，总计 37.004 秒 |
+| 重启后的继续处理阶段 | 44.445 秒，最终 completed | 23.239 秒，最终 completed |
+
+两平台新增场景均实际恢复为 paused，再继续处理全部 17124 ms，最终 processedMs=17124、pendingMs=0、error=null；清理正常完成。短样本 CER 均为 2/12=16.67%。macOS 的恢复阶段实际超过旧 30 秒等待，验证了预算修正的必要性，而非通过放宽终态断言取得成功。
+
+官方 API 的最终提交、工作流和步骤证据保存在 `artifacts/spec003/ci/0b84fe1c6349aa7c413da2d24bc700e43849d97e.json`。两个最终附件均已核对官方 SHA256：macOS `c05950572ab3f868163045c05ab85eac574162b00bce6ae5f06ee5c665d3ef30`，Windows `6c356aaebb11829e0501f81212e8c2a9f3b4fdd005a409e8a471a74852f13b04`；解压原始阶段与 ASR JSON 位于 `artifacts/spec003/ci/34451673078-{macos,windows}/`。未重复两分钟基准、声学回采或已通过检查。
+
+Windows 的 4 个既有跳过为 macOS 原生拒绝权限适配和 3 个 POSIX 合成录音 shim 场景。新增真实模型转写场景没有跳过；仍不将 CI 等同 Windows 物理麦克风验证。独立工程验收的最终结论见 [acceptance.md](acceptance.md)。

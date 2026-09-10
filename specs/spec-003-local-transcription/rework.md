@@ -27,3 +27,11 @@
 - Windows：npm test通过，真实模型与推理断言通过；测试脚本输出中文JSON时cp1252编码失败。修复报告输出，保持真实模型和语音断言。
 - 新实施交接为 .ai/prompts/ci-rework-spec003.md。修复后对应提交重新运行实际双平台CI，再由新的独立验收Agent复验。
 - 最终Provider纯静音已补实测：10秒零样本无输出，绑定d7013c9和源码hash，见verification.md与第二轮验收；不用重复该缺口检查。
+
+## CI 集成收尾
+
+两项 CI 测试修复后，Windows 通过；macOS 新增 smoke 的失败清理遮住正文超时。先修正有界窗口关闭与清理、保存阶段证据，实际下一轮明确定位到 17.124 秒多块恢复推理在 30 秒时仍正常 draining。根据首块约 24.3 秒的实测，将恢复等待设为 60 秒、总预算设为 120 秒，保留样本、模型和全部通过断言。
+
+对应实施报告依次为 [CI 测试修复](implementation-ci-rework.md)、[关闭与诊断](implementation-ci-smoke-rework.md)、[实测等待预算](implementation-ci-time-budget.md)。所有中间失败和最终事实保留于 [verification.md](verification.md)。
+
+最终代码 `0b84fe1c6349aa7c413da2d24bc700e43849d97e` 的 [真实双平台 CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 已通过；macOS 的新增恢复阶段实际 44.445 秒完成，Windows 23.239 秒完成，均补齐全部帧且正常退出。没有修改产品性能目标或跳过新增场景，原暂停竞态及上述 CI 返工事项均已闭环。

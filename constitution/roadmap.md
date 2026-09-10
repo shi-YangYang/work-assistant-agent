@@ -2,7 +2,7 @@
 
 本文描述用户已提出的阶段方向，不替代具体 Spec，不承诺时间或尚未确认的实现方案。
 
-产品目标平台包括 macOS 和 Windows，架构与技术选型从当前阶段开始考虑跨平台兼容性。当前在 macOS ARM64 实机验证，现有代码 `b9e0e74` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34441992551) 已通过，Windows 的 4 项平台受限冒烟测试仍跳过；这不替代 Windows 实机录音或后续 ASR 验证。最低系统版本及安装包交付安排留给后续分发阶段。
+产品目标平台包括 macOS 和 Windows，架构与技术选型从当前阶段开始考虑跨平台兼容性。Spec 003 最终代码 `0b84fe1` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 已完整通过，包含两平台真实 ASR 与新增转写桌面流程。Windows 的 4 项既有平台受限冒烟测试仍跳过，物理麦克风验证仅在 macOS 完成。最低系统版本及安装包交付安排留给后续分发阶段。
 
 ## Phase 0 — 项目骨架与架构准备（已完成）
 
@@ -19,7 +19,7 @@
 
 已完成 [Spec 002：会议录音与本地保存](../specs/spec-002-meeting-recording-and-storage/spec.md)，交付麦克风录音、保存、历史与回放；状态为 DONE，独立验收 PASS。转写与纪要在此基础上逐步接入。正式用户试用前应完成独立的安装包与内置运行时分发工作。
 
-正在实施 [Spec 003：本地语音转写与 Transcript](../specs/spec-003-local-transcription/spec.md)，状态 IMPLEMENTING。用户已确认中文为主、兼顾中英混合，应用内提示下载默认模型；范围包含持续转写、尾部补齐、历史补转写和持久恢复，纪要仍留给后续 Spec。
+已完成 [Spec 003：本地语音转写与 Transcript](../specs/spec-003-local-transcription/spec.md)，状态 DONE，独立验收 PASS。交付应用内默认模型下载、中文为主且兼顾中英混合的持续转写、尾部补齐、历史补转写与持久恢复；实际质量、麦克风和双平台结果均已记录。纪要仍留给后续 Spec。
 
 关键结果：
 
