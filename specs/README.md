@@ -1,51 +1,28 @@
-# Spec 使用说明
+# Specs
 
-`specs/` 是项目唯一的功能规格目录。`_template/` 保留空白模板，具体 Spec 的状态见下表。
+| Spec | 范围 | 状态 | 验收 |
+| --- | --- | --- | --- |
+| [001](spec-001-product-and-technical-foundation/spec.md) | 产品、技术与桌面骨架 | DONE | [PASS](spec-001-product-and-technical-foundation/acceptance.md) |
+| [002](spec-002-meeting-recording-and-storage/spec.md) | 麦克风录音、保存与回放 | DONE | [PASS](spec-002-meeting-recording-and-storage/acceptance.md) |
+| [003](spec-003-local-transcription/spec.md) | 模型准备、持续转写与恢复 | DONE | [PASS](spec-003-local-transcription/acceptance.md) |
 
-## 当前 Spec
+最新平台和实录结果统一见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 
-| 编号 | 名称 | 状态 |
-| --- | --- | --- |
-| 001 | [产品与技术基础](spec-001-product-and-technical-foundation/spec.md) | DONE：桌面骨架已完成，独立工程验收 PASS；Windows 尚未实测 |
-| 002 | [会议录音与本地保存](spec-002-meeting-recording-and-storage/spec.md) | DONE：录音、保存、历史与回放完成，独立验收 PASS；Windows 尚未实测 |
-| 003 | [本地语音转写与 Transcript](spec-003-local-transcription/spec.md) | DONE：模型准备、持续转写、历史补转写与恢复完成，独立验收 PASS |
+## 文档分工
 
-平台证据补充：Spec 003 最终代码 `0b84fe1` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 均已通过，包含真实 ASR 及新增 Electron 转写场景；macOS 7 项 smoke 通过，Windows 3 项通过、4 项既有平台受限场景跳过。上表旧 Spec 的实测限制不代表当前 CI 未运行；Windows 物理麦克风仍未验证。详情见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)。
+- `.ai/decisions/`：为什么选这个方案、否决了什么、有哪些长期约束；不复制运行日志。
+- `spec.md`：目标、行为、边界和验收标准；通过引用使用已有技术决策。
+- `plan.md`：模块、数据流、实施顺序、迁移和针对性验证方案；不重抄需求。
+- `implementation.md`：最终实现摘要、必要实现细节和已关闭的返工记录。
+- `acceptance.md`：独立验收结论、覆盖、证据来源和未验证项；不能由实施者自评替代。
+- `verification.md`：仅在有较多实测数据时使用，集中样本、参数、计时与 CI 证据；其他文档引用它。
 
-Spec 讨论、起草、决策和文档更新由协调 Agent 直接处理并自行检查，无需创建子 Agent 验证。下文独立验收指业务代码实施后的验收，详见 [Spec 决策工作规则](../.ai/rules/spec-decision-workflow.md)。
-
-## 命名
-
-实际功能规格使用 `spec-XXX-short-name/`，编号按项目已有 Spec 顺序递增。`_template/` 不分配编号，也不代表存在可实施任务。
-
-## 文件职责
-
-- `spec.md`：定义目标、非目标、行为、需求、边界、约束和验收标准，记录待确认问题。
-- `plan.md`：说明已确认需求的实施方式、模块、顺序、接口、验证与风险。
-- `acceptance.md`：实施后由独立验收 Agent 记录验收结果。
-- `implementation.md`：可选，用于保存实施报告。
-- `rework.md`：可选，用于记录验收失败后的返工目标。
+每条事实只在职责最匹配的位置详述。短 Spec 按模板简写，已写清的内容不为填章节反复展开；已完成返工合入实施 / 验收记录，不为每次 CI 调整永久增加一份重复报告。
 
 ## 生命周期
 
-1. 先理解项目和需求，再从模板起草具体 Spec 与 Plan。
-2. 识别影响实施的关键决策。可以根据用户已明确的信息或项目事实判断的事项，不重复询问。
-3. 关键决策已确认、验收标准明确后，才将 Spec 标为可实施。
-4. 实施 Agent 按 Spec 工作，返回实施报告并明确验证结果。
-5. 创建新的独立验收 Agent，逐项检查 Spec、实现、相关 diff 和验证证据。
-6. 验收通过后交付；未通过则明确返工目标，由新的实施 Agent 返工，再由新的独立验收 Agent 验收。
+目录用 `spec-XXX-short-name/`。关键决策确认 → 实施 → 新的独立验收 → PASS 交付；FAIL 记录具体问题，交新的实施 Agent 返工，再由新的独立验收 Agent 检查。运行与未执行项分开记录，遵循 AGENTS.md 的验证 / 停止及分支收尾规则。[Spec 决策本身不派子 Agent 验证](../.ai/rules/spec-decision-workflow.md)。
 
-Plan 的调整不能绕过 Spec 改变需求。规格发生实质变化时，应先更新 Spec，并对重要决策留痕。
+## 历史记录
 
-## PASS / FAIL
-
-正式验收结论仅为 `PASS` 或 `FAIL`。空白验收模板在实际验收前不得填写或暗示已经通过。
-
-- `PASS`：适用的要求已满足，并有相应验证证据。
-- `FAIL`：存在未满足的要求或需要返工的问题，必须列明具体事项。
-
-未执行的检查必须标明原因、替代验证与剩余风险，不能表述成已通过。验收 Agent 不修改业务代码，实施 Agent 不负责最终验收。用户明确接受剩余问题时，应记录该决定，不得把已知失败伪写为测试通过。
-
-## 初次目录初始化例外
-
-用户此前明确要求初次目录骨架初始化时不创建 Spec，该次任务已完成。这一范围决定不限制当前及后续 Spec 的起草。详见 [初始化决策](../.ai/decisions/0001-project-skeleton.md)。
+2026-09-10 按用户要求整理：保留编号、需求、历史 PASS / FAIL、修复依据及证据，把已结束的分轮报告归并到各 Spec 的实施摘要与验收记录。本次仅整理文档，没有重新运行测试或改变验收结论。整理前完整原文可在 [Git 快照 23ba685](https://github.com/shi-YangYang/work-assistant-agent/tree/23ba685f5af58039ec30297d8e20af91eef61f10/specs) 查阅，也可用 `git show 23ba685:specs/<目录>/<原文件>` 恢复。

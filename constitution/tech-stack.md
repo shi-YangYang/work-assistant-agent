@@ -87,7 +87,7 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 
 Spec 001 的 macOS ARM64 基线已通过类型、Lint、格式、构建、16 项 TypeScript 测试、7 项 Python 测试及 3 项真实 Electron 冒烟测试；开发启动与构建预览已实测。验证环境为 Node 24.20.0、npm 11.19.0、Python 3.12.14，详见 [实施报告](../specs/spec-001-product-and-technical-foundation/implementation.md)。
 
-Spec 002 已在默认 MacBook Pro 麦克风完成单声道 PCM16 / 48000 Hz 真实录音（210944 帧、约 4.395 秒），保存后重启可查询并播放。当前有效检查包括返工后的 13 项录音 / 存储回归，未变化区域复用首轮 7 项协议、19 项 TypeScript、6 项 Electron 及类型 / 定向 lint / 构建证据。真实音频、合成故障及执行边界分别记录在 [实施报告](../specs/spec-002-meeting-recording-and-storage/implementation.md)、[返工报告](../specs/spec-002-meeting-recording-and-storage/implementation-rework-1.md) 和 [PASS 验收报告](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。首次 macOS 授权弹框尚未实测。
+Spec 002 的真实录音、恢复返工和验证范围统一见 [实施摘要](../specs/spec-002-meeting-recording-and-storage/implementation.md) 与 [PASS 验收](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。首次 macOS 授权弹框尚未实测。
 
 现有代码 `b9e0e74` 的 [macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34441992551) 已通过；本机 6 项 Electron 冒烟通过，Windows 运行其中 2 项并跳过 4 项平台受限场景。Windows 实机录音仍未验证；上述旧提交的结果不能代替 Spec 003 的新推理验证。当前不承诺最低系统版本或安装包。
 

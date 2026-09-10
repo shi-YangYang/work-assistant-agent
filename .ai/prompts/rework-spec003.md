@@ -1,5 +1,7 @@
 # Task Handoff — Spec 003 暂停竞态返工
 
+> 历史交接，任务已完成。文中分轮报告已归并至 [实施摘要](../../specs/spec-003-local-transcription/implementation.md) 与 [最终验收](../../specs/spec-003-local-transcription/acceptance.md)；原文见 [历史索引](../../specs/README.md)。以下旧指令不作为当前待办。
+
 ## Role / Goal / Project Mode
 
 Implementation / EXISTING。作为未参与首轮实现的新实施 Agent，只修复 Spec 003 首轮独立验收确认的暂停竞态。不得创建子 Agent，不做最终验收，不 commit / push。

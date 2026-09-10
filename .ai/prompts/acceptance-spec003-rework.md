@@ -1,5 +1,7 @@
 # Task Handoff — Spec 003 返工后独立验收
 
+> 历史交接，任务已完成。文中分轮报告已归并至 [实施摘要](../../specs/spec-003-local-transcription/implementation.md) 与 [最终验收](../../specs/spec-003-local-transcription/acceptance.md)；原文见 [历史索引](../../specs/README.md)。以下旧指令不作为当前待办。
+
 ## Role / Goal
 
 Acceptance / EXISTING。必须由未参与返工的新 Agent 执行；禁止修改业务、测试、配置，不创建子 Agent，不 commit / push。仅写 acceptance.md，保留 acceptance-round-1.md。按 .ai/prompts/acceptance-spec003.md 的全部工程边界验收，结合首轮具体问题与返工；不重新验收用户已确认的 Spec 决策。

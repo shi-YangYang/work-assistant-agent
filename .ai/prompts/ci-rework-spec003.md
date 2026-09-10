@@ -1,5 +1,7 @@
 # Task Handoff — Spec 003 真实 CI 失败修复
 
+> 历史交接，任务已完成。文中分轮报告已归并至 [实施摘要](../../specs/spec-003-local-transcription/implementation.md) 与 [最终验收](../../specs/spec-003-local-transcription/acceptance.md)；原文见 [历史索引](../../specs/README.md)。以下旧指令不作为当前待办。
+
 ## Role / Context
 
 新的 Implementation Agent / EXISTING。不创建子 Agent，不做最终验收，不 commit / push。用户授权实施，并明确要求真实验证通过后再宣告完成。分支 codex/spec-003-local-transcription 已推 d7013c94f87c85f081f158012a8e23613e01fdca，真实 run https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34448151461 失败，不能以本机绿色代替。

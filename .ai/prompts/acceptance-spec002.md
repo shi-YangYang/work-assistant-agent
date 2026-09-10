@@ -1,5 +1,7 @@
 # Task Handoff — Spec 002 独立工程验收
 
+> 历史交接，任务已完成。文中分轮报告已归并至 [实施摘要](../../specs/spec-002-meeting-recording-and-storage/implementation.md) 与 [最终验收](../../specs/spec-002-meeting-recording-and-storage/acceptance.md)；原文见 [历史索引](../../specs/README.md)。以下旧指令不作为当前待办。
+
 ## Role
 Acceptance。仅在implementation.md完成后由新的独立Agent执行。不创建子Agent，不改业务代码/测试/配置，不commit/push，只写Spec002 acceptance.md。
 

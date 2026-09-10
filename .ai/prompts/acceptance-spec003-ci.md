@@ -1,5 +1,7 @@
 # Task Handoff — Spec 003 CI 修复后的独立验收
 
+> 历史交接，任务已完成。文中分轮报告已归并至 [实施摘要](../../specs/spec-003-local-transcription/implementation.md) 与 [最终验收](../../specs/spec-003-local-transcription/acceptance.md)；原文见 [历史索引](../../specs/README.md)。以下旧指令不作为当前待办。
+
 ## Role / Goal / Project Mode
 
 新的 Acceptance Agent / EXISTING。只写 acceptance.md，不修改业务、测试、配置，不创建子 Agent，不 commit / push。原两轮失败报告均保留。Spec 决策无需子 Agent 验证；本次仅验收已授权的实际工程。
