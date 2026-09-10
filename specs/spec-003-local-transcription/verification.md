@@ -59,4 +59,13 @@ macOS 26.4 / ARM64，Apple M5 / 16 GiB；Node 24、Python 3.12.14，faster-whisp
 
 首个候选 `d7013c94f87c85f081f158012a8e23613e01fdca` 的 [实际 run 34448151461](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34448151461) 失败：macOS 35项Python中的慢worker场景等running超时，其他34项和19TS通过；Windows npm test通过，真实small推理及断言完成，但报告打印中文遇到cp1252编码错误，导致步骤失败、后续smoke跳过。
 
-完整失败来自GitHub实际任务/API与已登录Chrome日志页面，保存在 `artifacts/spec003/ci/failure-evidence.json`；新实施Agent正在针对性修复，不能将先前本机结果或历史 `b9e0e74` 的绿色CI当作本轮通过。修复候选的双平台结果待补。
+完整失败来自GitHub实际任务/API与已登录Chrome日志页面，保存在 `artifacts/spec003/ci/failure-evidence.json`；两项定向修复见 [CI 返工报告](implementation-ci-rework.md)。不能将先前本机结果或历史 `b9e0e74` 的绿色 CI 当作本轮通过。
+
+第二个候选 `9a8dc781b1fe5e1e7c07d2115975201965de6314` 的 [run 34449407056](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34449407056)：
+
+- Windows 整个任务通过，包含 19 项 TS、35 项 Python、真实 small 推理和新增跨平台转写 smoke；既有 4 项平台受限 smoke 仍跳过。
+- macOS 类型、lint、格式、19 项 TS、35 项 Python、真实推理及 6 项旧 smoke 通过；新增转写 smoke 超过 90 秒，worker teardown 又超过 30 秒。原始 error-context 没有具体栈或 DOM，不能据此断言业务根因。
+- 两平台的实际 ASR JSON 均为同一锁定样本和参数，CER 2/12=16.67%；macOS 26.6.2 ARM64 推理 9.707 秒，Windows Server 2025 x64 推理 4.765 秒，Python 均为 3.12.10。云 runner 耗时不用于替代 M5 开发机的性能基准。
+- 实际下载的附件已核对 GitHub 展示的 SHA256：macOS `605e968cd5c9ce7d490087b66b976f85cf9abf8f70133bb3dcd6c0f0ee514cb2`，Windows `50cc091db73431c787ef0bd640c3647b7ed2824d8ad7aff1a02d3def4bb2c0fd`。解压证据位于 `artifacts/spec003/ci/34449407056-macos/` 和 `34449407056-windows/`。
+
+本轮仍未通过。已确认测试失败清理中的无界 `app.close()` 可能遇到产品退出确认并掩盖原始错误，正在补齐有界关闭与阶段诊断，随后用新候选实际 CI 判断。
