@@ -2,7 +2,9 @@
 
 ## Current Stage
 
-DONE。Spec 003 已完成模型准备、持续转写、尾部处理、历史补转写和持久恢复，最终独立验收 acceptance.md 为 PASS。当前分支 codex/spec-003-local-transcription；实际被测代码为 0b84fe1c6349aa7c413da2d24bc700e43849d97e，[run34451673078](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 及 macOS / Windows 两个 job 均 success。后续只有文档状态收尾，不改变被测代码。
+DONE。Spec 003 已完成模型准备、持续转写、尾部处理、历史补转写和持久恢复，最终独立验收 acceptance.md 为 PASS。实际被测代码为 0b84fe1c6349aa7c413da2d24bc700e43849d97e，[run34451673078](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34451673078) 及 macOS / Windows 两个 job 均 success；后续只有文档更新，不改变被测代码。
+
+用户于 2026-09-10 要求补齐分支收尾，并将持续约定写入 AGENTS.md 和 .ai/rules/git-branch-workflow.md：默认不单独开分支；如创建分支，验收合格后自动合并并推送 main，删除自己创建的本地和远端分支。Spec 003 的 codex/spec-003-local-transcription 按此规则收尾，恢复时以实际 Git 状态确认是否仍有未完成的推送或清理，不重新创建同名分支。
 
 原暂停竞态、慢 worker fixture、Windows cp1252 输出、smoke 无界退出掩盖错误与恢复等待预算已依证据闭环，实施和独立验收报告均已读取处理。原两轮 FAIL 与中间 CI 失败保留于 acceptance-round-1.md / acceptance-round-2.md、各 implementation-*.md 和 verification.md。没有仍待处理的实施 / 验收子任务，不重复原始实现或已通过验证。
 
