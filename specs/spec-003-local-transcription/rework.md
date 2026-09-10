@@ -18,3 +18,12 @@
 ## 交付
 
 新实施 Agent 修改后写 implementation-rework-1.md；验收 Agent 不修改业务代码。随后创建新的独立验收 Agent，结合主 Agent 的声学回采、重启定位和实际双平台 CI 结果重新判断。
+
+## Round 2 — 实际 CI 失败
+
+候选 d7013c94f87c85f081f158012a8e23613e01fdca 的实际 run 34448151461 未通过，[第二轮独立验收](acceptance-round-2.md) 为 FAIL；原暂停竞态已确认修复。
+
+- macOS：19 TS通过，35 Python仅慢worker场景等待running超时。需先定位真实状态与fixture，不盲目加大超时或放宽断言。
+- Windows：npm test通过，真实模型与推理断言通过；测试脚本输出中文JSON时cp1252编码失败。修复报告输出，保持真实模型和语音断言。
+- 新实施交接为 .ai/prompts/ci-rework-spec003.md。修复后对应提交重新运行实际双平台CI，再由新的独立验收Agent复验。
+- 最终Provider纯静音已补实测：10秒零样本无输出，绑定d7013c9和源码hash，见verification.md与第二轮验收；不用重复该缺口检查。

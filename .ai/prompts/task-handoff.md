@@ -2,7 +2,7 @@
 
 ## Current Stage
 
-ACCEPTANCE。Spec 003 业务与暂停竞态返工已完成，implementation.md / implementation-rework-1.md 为正式报告。首轮独立验收 P2 及失败证据保留在 acceptance-round-1.md；正在由新的独立验收 Agent 复验，交接为 .ai/prompts/acceptance-spec003-rework.md。当前候选分支 codex/spec-003-local-transcription，用于触发实际 macOS / Windows CI。
+REWORK (CI)。d7013c9已推候选分支，实际run34448151461失败：macOS慢worker测试等待running超时，Windows真实ASR报告stdout cp1252编码失败。新的实施Agent按.ai/prompts/ci-rework-spec003.md修复，第二轮独立FAIL保存在acceptance-round-2.md；纯静音最终Provider补测已通过。原暂停竞态已修复，不能重新开始或重复基准。Spec 003 业务与暂停竞态返工已完成，implementation.md / implementation-rework-1.md 为正式报告。首轮独立验收 P2 及失败证据保留在 acceptance-round-1.md；正在由新的独立验收 Agent 复验，交接为 .ai/prompts/acceptance-spec003-rework.md。当前候选分支 codex/spec-003-local-transcription，用于触发实际 macOS / Windows CI。
 
 用户已确认中文为主、兼顾中英混合，应用内提示下载 small 模型，并授权实施。用户指定内置扬声器播放公开人声 → 物理麦克风采集的验收方式已完成：37.035秒、首字18.383秒、CER15.56%，保存补尾、重启片段一致、定位后播放实际推进；固定2分钟文件基准CER6.52%、累计44.659秒。完整来源、原失败和测量边界在 verification.md，不能混称同一次测量。模型、音频与DB均保留在ignored artifacts，不提交Git。
 

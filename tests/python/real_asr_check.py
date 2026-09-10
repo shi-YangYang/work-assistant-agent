@@ -117,7 +117,8 @@ def main():
                 'audioSeconds':frames/rate,'source':SPEECH_URL,'sha256':SPEECH_SHA256,'reference':REFERENCE,
                 'text':text,'segments':segments,'meetingId':mid,'dataRoot':str(root)}
         Path('artifacts/spec003/real-asr.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf8')
-        print(json.dumps(result,ensure_ascii=False),flush=True)
+        # Console encodings such as Windows cp1252 cannot represent Chinese.
+        print(json.dumps(result,ensure_ascii=True),flush=True)
     finally:service.transcription.shutdown();service.recorder.shutdown()
 
 

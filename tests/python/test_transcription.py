@@ -1,6 +1,7 @@
 """Deterministic fault controls; real Whisper evidence is a separate integration command."""
 import io
 import json
+import multiprocessing
 import os
 import sqlite3
 import sys
@@ -10,6 +11,7 @@ import time
 import unittest
 import uuid
 from pathlib import Path
+from functools import partial
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/python'))
@@ -35,6 +37,15 @@ class ControlledProvider:
         if self.mode == 'crash': os._exit(9)
         if self.mode == 'slow': time.sleep(2)
         return [{'start': 0.1, 'end': min(len(pcm) / (2 * rate), 0.3), 'text': '测试文字'}]
+
+
+class HeldProvider:
+    def __init__(self, _path, _config, entered, release):
+        self.entered, self.release = entered, release
+    def transcribe(self, _pcm, _rate):
+        self.entered.set()
+        if not self.release.wait(10): raise AssertionError('Slow inference was not released')
+        return [{'start': 0.1, 'end': 0.3, 'text': '测试文字'}]
 
 
 class InlineWorker:
@@ -343,36 +354,63 @@ class TranscriptionTests(unittest.TestCase):
         self.assertEqual(len(store.page(mid,page['nextCursor'])['segments']),10)
 
     def test_slow_worker_does_not_block_recording_controls_or_frame_growth(self):
-        class FastStream:
+        class DrivenStream:
             active=False
-            def __init__(self,callback,block): self.callback=callback;self.block=block;self.done=threading.Event()
-            def start(self):
-                self.active=True
-                def produce():
-                    while not self.done.is_set():
-                        self.callback(b'\x10\x10'*self.block,self.block,None,False);self.done.wait(.005)
-                self.thread=threading.Thread(target=produce);self.thread.start()
-            def stop(self): self.done.set();self.thread.join();self.active=False
+            def __init__(self,callback): self.callback=callback
+            def start(self): self.active=True
+            def stop(self): self.active=False
             close=stop
             abort=stop
-        class FastInput(FakeInput):
-            def stream(self,_device,_rate,block,callback): return FastStream(callback,block)
-        self.recorder=Recorder(self.repo,FastInput())
-        worker=ASRWorker(ControlledProvider);self.workers.append(worker)
-        model=ReadyModel();model.path=Path('slow')
+        class DrivenInput(FakeInput):
+            def stream(self,_device,_rate,_block,callback):
+                self.capture=DrivenStream(callback)
+                return self.capture
+
+        source=DrivenInput()
+        self.recorder=Recorder(self.repo,source)
+        ctx=multiprocessing.get_context('spawn')
+        entered,release=ctx.Event(),ctx.Event()
+        worker=ASRWorker(partial(HeldProvider,entered=entered,release=release));self.workers.append(worker)
+        model=ReadyModel()
         service=Transcription(self.repo,self.recorder,worker=worker,model=model);self.services.append(service)
-        mid=self.recorder.start(str(uuid.uuid4()))['meetingId'];service.start(mid)
-        wait_for(lambda:service.status(mid)['state']=='running',timeout=6)
-        initial=self.recorder.session.frames
-        time.sleep(.1)
-        self.assertGreater(self.recorder.session.frames,initial)
-        self.assertGreater(service.status(mid)['pendingMs'],0)
-        start=time.monotonic();self.recorder.stop(mid);self.assertLess(time.monotonic()-start,.1)
-        wait_for(lambda:self.recorder.session.finished.is_set())
-        self.assertTrue(self.repo.get(mid)['audioAvailable'])
-        self.assertLessEqual(self.recorder.session.chunks.qsize(),64)
-        service.pause()
-        self.assertEqual(service.status(mid)['state'],'paused')
+        mid=self.recorder.start(str(uuid.uuid4()))['meetingId']
+        wait_for(lambda:self.recorder.status()['state']=='recording')
+
+        def feed_frames(frames):
+            # Publish exact input through the real bounded callback/writer chain.
+            # Timer coalescing must not decide whether a full ASR window exists.
+            while frames:
+                batch=min(frames,self.recorder.block_size*32)
+                target=self.recorder.session.frames+batch
+                remaining=batch
+                while remaining:
+                    count=min(remaining,self.recorder.block_size)
+                    source.capture.callback(b'\x10\x10'*count,count,None,False)
+                    remaining-=count
+                wait_for(lambda:self.recorder.session.frames==target)
+                self.assertEqual(self.recorder.status()['state'],'recording')
+                frames-=batch
+
+        try:
+            required_frames=round((DEFAULT_CONFIG['chunkSeconds']+DEFAULT_CONFIG['contextSeconds'])*self.recorder.session.sample_rate)
+            feed_frames(required_frames)
+            service.start(mid)
+            self.assertTrue(entered.wait(6), {'transcription':service.status(mid),'recording':self.recorder.status()})
+            self.assertEqual(service.status(mid)['state'],'running')
+            initial=self.recorder.session.frames
+            feed_frames(self.recorder.block_size*4)
+            self.assertGreater(self.recorder.session.frames,initial)
+            self.assertGreater(service.status(mid)['pendingMs'],0)
+            self.assertFalse(release.is_set())
+            self.assertEqual(service.status(mid)['processedMs'],0)
+            start=time.monotonic();self.recorder.stop(mid);self.assertLess(time.monotonic()-start,.1)
+            wait_for(lambda:self.recorder.session.finished.is_set())
+            self.assertTrue(self.repo.get(mid)['audioAvailable'])
+            self.assertLessEqual(self.recorder.session.chunks.qsize(),64)
+            service.pause()
+            self.assertEqual(service.status(mid)['state'],'paused')
+        finally:
+            release.set()
 
     def test_corrupt_model_is_not_ready_and_download_cancel_and_retry_are_atomic(self):
         import hashlib

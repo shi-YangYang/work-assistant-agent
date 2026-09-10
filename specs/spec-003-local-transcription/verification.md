@@ -49,6 +49,14 @@ macOS 26.4 / ARM64，Apple M5 / 16 GiB；Node 24、Python 3.12.14，faster-whisp
 
 实录首批延迟采用 31.74 秒公开语音的声学回采，累计推理速度与中文基准采用独立的 121.76 秒原始参考样本；二者不混称同一次测量。Windows 物理麦克风、首次 macOS 权限弹框、最低配置与安装包未因此得到验证。
 
+## 最终 Provider 纯静音
+
+第二轮独立验收发现早期 beam 1 静音检查不足以代表最终参数，因此仅补此具体缺口：候选 `d7013c94f87c85f081f158012a8e23613e01fdca` 的真实 Provider 加载 small，加载前禁止 socket 连接，输入 PCM16 mono16kHz 的 10 秒全零样本。结果 `words=[]`，加载0.558721秒、推理0.110693秒；不把纯静音结果外推为所有噪声都不会产生错误文字。
+
+证据 `artifacts/spec003/final-provider-silence.json`，`asr_worker.py` SHA256 `14a8662c4e129578a5567b0ec7e37aad6af369fefc0cc1d0b458628bbfc35ac2`；详情见 [第二轮验收](acceptance-round-2.md)。
+
 ## 远端 CI
 
-待暂停竞态返工后推送最终候选提交，实际运行 macOS ARM64 / Windows x64 的依赖安装、真实 small 推理和相关 Electron 场景，再补充提交 SHA、run 链接及各平台通过 / 跳过数量。历史 `b9e0e74` 的绿色 CI 不作为本次新增 ASR 的通过证据。
+首个候选 `d7013c94f87c85f081f158012a8e23613e01fdca` 的 [实际 run 34448151461](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34448151461) 失败：macOS 35项Python中的慢worker场景等running超时，其他34项和19TS通过；Windows npm test通过，真实small推理及断言完成，但报告打印中文遇到cp1252编码错误，导致步骤失败、后续smoke跳过。
+
+完整失败来自GitHub实际任务/API与已登录Chrome日志页面，保存在 `artifacts/spec003/ci/failure-evidence.json`；新实施Agent正在针对性修复，不能将先前本机结果或历史 `b9e0e74` 的绿色CI当作本轮通过。修复候选的双平台结果待补。
