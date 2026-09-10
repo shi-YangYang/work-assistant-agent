@@ -10,7 +10,7 @@ import time
 import unittest
 import uuid
 import wave
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -279,11 +279,12 @@ class RecordingTests(unittest.TestCase):
         self.assertIsNotNone(self.repo.get(meeting_id)['audioError'])
 
     def test_schema_conflict_and_database_lock_preserve_data(self):
-        with sqlite3.connect(self.repo.database) as db:
+        # SQLite's transaction context does not close the connection.
+        with closing(sqlite3.connect(self.repo.database)) as db, db:
             db.execute('PRAGMA user_version=99')
         with self.assertRaises(DomainError):
             Repository(self.root)
-        with sqlite3.connect(self.repo.database) as db:
+        with closing(sqlite3.connect(self.repo.database)) as db, db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 99)
             db.execute('PRAGMA user_version=1')
             db.execute('BEGIN EXCLUSIVE')
