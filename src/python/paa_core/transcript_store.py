@@ -31,6 +31,7 @@ def migrate(db):
 class TranscriptStore:
     def __init__(self, repository):
         self.repo = repository
+        self.on_completed = None
         # Recording recovery has already completed. No heavy work restarts implicitly.
         with self.repo.lock, self.repo.connect() as db:
             db.execute("UPDATE transcription_jobs SET state='paused' WHERE state IN ('queued','running','draining')")
@@ -65,6 +66,9 @@ class TranscriptStore:
             db.execute('UPDATE transcription_jobs SET state=?,error=?,targetFrames=COALESCE(?,targetFrames) WHERE meetingId=?',
                        (state, error, target, meeting_id))
 
+        if state == 'completed' and self.on_completed:
+            self.on_completed(meeting_id)
+
     def pause(self):
         with self.repo.lock, self.repo.connect() as db:
             db.execute("UPDATE transcription_jobs SET state='paused' WHERE state IN ('queued','running','draining')")
@@ -88,6 +92,8 @@ class TranscriptStore:
             db.execute('''UPDATE transcription_jobs SET processedFrames=?,nextChunk=nextChunk+1,
                 state=?,targetFrames=?,error=NULL WHERE meetingId=?''',
                 (chunk['endFrame'], state, target, meeting_id))
+        if state == 'completed' and self.on_completed:
+            self.on_completed(meeting_id)
         return True
 
     def page(self, meeting_id, cursor=-1):

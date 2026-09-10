@@ -2,11 +2,13 @@
 
 ## 当前状态
 
-项目已完成 [Spec 001](../specs/spec-001-product-and-technical-foundation/spec.md)，具有 Electron 桌面入口、React 界面与 Python 本地核心，[独立工程验收](../specs/spec-001-product-and-technical-foundation/acceptance.md) 为 PASS。桌面工程选择来自 [决策 0004](../.ai/decisions/0004-foundation-stack.md)，版本已核对 package-lock.json。LLM 尚未接入。
+项目已完成 [Spec 001](../specs/spec-001-product-and-technical-foundation/spec.md)，具有 Electron 桌面入口、React 界面与 Python 本地核心，[独立工程验收](../specs/spec-001-product-and-technical-foundation/acceptance.md) 为 PASS。桌面工程选择来自 [决策 0004](../.ai/decisions/0004-foundation-stack.md)，版本已核对 package-lock.json。
 
 [Spec 002](../specs/spec-002-meeting-recording-and-storage/spec.md) 已实现 sounddevice 原始输入流、WAV 文件与 SQLite 会议持久化，见 [决策 0006](../.ai/decisions/0006-recording-and-storage-baseline.md)。下方记录当前代码与依赖选择；恢复重试问题已闭环，新的独立工程验收为 [PASS](../specs/spec-002-meeting-recording-and-storage/acceptance.md)。
 
 [Spec 003](../specs/spec-003-local-transcription/spec.md) 已完成，独立工程验收 [PASS](../specs/spec-003-local-transcription/acceptance.md)。一个 faster-whisper Provider 提供本地持续转写，默认 small 多语言模型、CPU / INT8，应用内提示下载；依据见 [决策 0007](../.ai/decisions/0007-local-transcription-baseline.md)。下表记录实际实现；真实麦克风和最终双平台 CI 证据见文末。
+
+[Spec 004](../specs/spec-004-meeting-minutes/spec.md) 已完成业务实施与必要本地检查，独立复验已关闭发现的工程缺陷。代码已接入多服务 API 设置、自定义推理预设和会后纪要；真实服务及本轮 Windows／远端 CI 仍待验证，见 [验收报告](../specs/spec-004-meeting-minutes/acceptance.md)。
 
 ## 技术基线
 
@@ -19,10 +21,12 @@
 | Node 工具链 | Node 24、npm 11、package-lock.json；通过 npm ci 复现 |
 | Python | Python 3.12、venv + pip；`requirements.lock` 固定运行依赖 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream；录音回调不调用 NumPy / ASR |
-| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 2，增量保留旧会议 |
+| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 3，增加纪要任务／结果／自动尝试标记，备份并增量保留旧会议 |
 | 通信 | Electron 主进程管理 Python 子进程，通过带请求 ID 的 JSON Lines / stdio 通信 |
-| 本次核心 | 会议采集、持久化、回放、受控模型准备、持续转写、历史补转写和恢复；不实现 LLM |
+| 当前核心 | 会议采集、持久化、回放、受控模型准备、持续转写、历史补转写和恢复，以及转写完成后的纪要队列 |
 | ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；Whisper small，CPU INT8 / 4 线程 / beam 5；完整依赖见 requirements.lock |
+| LLM | httpx 调用 OpenAI 兼容 Chat Completions；一个后台网络 worker，支持非流式与显式选择的 SSE；不自动重试付费请求 |
+| API 配置 | Electron 主进程管理多个服务；safeStorage 系统加密密钥；每个服务／模型保存自定义强度字符串或受限 JSON 预设 |
 | 测试 | Vitest 4.1.11、Python unittest、Playwright 1.63.0 Electron smoke |
 | 质量 | TypeScript、ESLint 9.39.5、Prettier 3.9.6、构建检查 |
 | 分发 | 开发启动与构建预览；本次不制作签名安装包或内嵌 Python |
@@ -72,6 +76,7 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 - 不要求 `.env`、LLM 密钥、模型文件或麦克风权限才能启动。
 - 数据根目录使用 Electron `app.getPath('userData')`，数据库为 `meetings.sqlite3`，WAV 位于 `meetings/<UUIDv4>/`。测试通过 `PAA_TEST_DATA_DIR` 隔离，不能覆盖用户数据。
 - 模型存储于数据根目录的 `models/`，固定 revision / SHA256，用户显式下载后可离线转写。任务、块和片段存于 SQLite；单页最多 50 段。
+- 服务设置存于数据根目录的 `model-services.json`，密钥仅保存加密值；数据库不存凭证。纪要读取该会议的完整转写，生成任务锁定服务、模型与参数快照，失败保留上一份成功结果。
 - 原始会议音频、转写、数据库和模型不进入版本库。
 - 不运行本地业务 HTTP 服务或云服务，不输出整个环境变量或凭证。
 
@@ -79,7 +84,7 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 
 - SQLite + 原始数据文件在 Spec 002 接入，后续数据扩展需独立设计 schema 迁移。
 - Spec 003 使用受管 spawn 工作进程、约 10 秒业务块和最多前后各 4 秒上下文，按静音边界分块；任务锁定配置，已处理位置与文字事务提交。具体模型 revision、文件清单与实测参数见决策 0007 和实施报告。
-- LLM 服务商、模型、密钥存储、文本外发规则在真实分析功能接入前确定。
+- Spec 004 的接口、参数边界和密钥存储依据见 [决策 0008](../.ai/decisions/0008-meeting-minutes-provider.md) 与对应 Plan；工程验收及真实服务验证以该 Spec 的报告为准。
 - FastAPI、PostgreSQL、pgvector、LangGraph 当前不引入；是否需要由后续实际需求决定。
 - 录音独立于 ASR / LLM，分块策略可配置；后台推理不进入 renderer 或录音回调。
 

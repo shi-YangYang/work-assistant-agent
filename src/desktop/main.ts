@@ -6,12 +6,14 @@ import {
   powerMonitor,
   protocol,
   session,
+  safeStorage,
   systemPreferences,
   type IpcMainInvokeEvent,
 } from 'electron'
 import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CoreManager } from './core-manager'
+import { SummarySettings } from './summary-settings'
 import { serveMedia } from './media'
 import {
   ACTIVE_STATES,
@@ -38,6 +40,17 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 const core = new CoreManager(app.getAppPath(), app.getPath('userData'))
+const allowTestHttp = !!process.env.PAA_TEST_DATA_DIR && process.env.PAA_TEST_ALLOW_HTTP === '1'
+const summarySettings = new SummarySettings(
+  app.getPath('userData'),
+  safeStorage,
+  (config, automatic) => core.configureSummary(config, automatic),
+  allowTestHttp,
+  async (config) => {
+    const result = await core.summaryRequest('summary.validateModel', { config })
+    if (!result.ok) throw new Error(result.message)
+  },
+)
 let window: BrowserWindow | undefined
 let quitting = false
 let lifecycle: Promise<boolean> | undefined
@@ -146,7 +159,10 @@ function runLifecycle(action: 'exit' | 'retry' | 'suspend'): Promise<boolean> {
       await core.stop()
       quitting = true
       app.quit()
-    } else if (action === 'retry') await core.start()
+    } else if (action === 'retry') {
+      await core.start()
+      await summarySettings.sync()
+    }
     return true
   })()
     .catch((error: unknown) => {
@@ -222,7 +238,8 @@ function createWindow(): void {
   void loading.catch(() => console.error('[desktop] Unable to load the local interface.'))
 }
 if (hasLock)
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
+    await summarySettings.load()
     // Native Python capture has its own permission check; no Chromium device access is needed.
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
       callback(false),
@@ -241,6 +258,79 @@ if (hasLock)
         return handler(...args)
       })
     }
+    register(CHANNELS.summaryGet, 'id', (id) =>
+      core.summaryRequest('summary.get', { meetingId: id }),
+    )
+    register(CHANNELS.summaryGenerate, 'id', (id) =>
+      core.summaryRequest('summary.generate', { meetingId: id }),
+    )
+    ipcMain.handle(CHANNELS.summarySource, (event, ...args: unknown[]) => {
+      trustedCaller(event)
+      if (
+        args.length !== 2 ||
+        typeof args[0] !== 'string' ||
+        !ID_PATTERN.test(args[0]) ||
+        typeof args[1] !== 'string' ||
+        args[1].length > 64
+      )
+        throw new Error('Invalid parameters')
+      return core.summaryRequest('summary.source', { meetingId: args[0], segmentId: args[1] })
+    })
+    ipcMain.handle(CHANNELS.summarySettings, async (event, ...args: unknown[]) => {
+      trustedCaller(event)
+      const [action, input] = args
+      try {
+        if (action === 'list' && args.length === 1)
+          return { ok: true, value: summarySettings.list() }
+        if (args.length !== 2) throw new Error('请求参数无效。')
+        let value: unknown
+        if (action === 'save') {
+          value = await summarySettings.upsert(input)
+          await core.summaryRequest('summary.cancelOperations', {
+            profileId: (input as { id: string }).id,
+          })
+        } else if (action === 'automatic' && typeof input === 'boolean')
+          value = await summarySettings.automatic(input)
+        else if (
+          action === 'select' &&
+          (input === null || (typeof input === 'string' && ID_PATTERN.test(input)))
+        )
+          value = await summarySettings.select(input)
+        else if (
+          (action === 'get' || action === 'remove') &&
+          typeof input === 'string' &&
+          ID_PATTERN.test(input)
+        ) {
+          value =
+            action === 'get' ? summarySettings.get(input) : await summarySettings.remove(input)
+          if (action === 'remove') {
+            await core.summaryRequest('summary.cancelOperations', { profileId: input })
+            await core.summaryRequest('summary.forgetModels', { profileId: input })
+          }
+        } else if (action === 'models' || action === 'check') {
+          const config = await summarySettings.draftRuntime(input, action === 'check')
+          return core.summaryRequest('summary.operation', { kind: action, config })
+        } else if (action === 'operation' && input && typeof input === 'object') {
+          const object = input as { id: unknown; offset: unknown }
+          if (
+            Object.keys(object).sort().join() !== 'id,offset' ||
+            typeof object.id !== 'string' ||
+            !ID_PATTERN.test(object.id) ||
+            !Number.isSafeInteger(object.offset) ||
+            Number(object.offset) < 0 ||
+            Number(object.offset) > 2000
+          )
+            throw new Error('请求参数无效。')
+          return core.summaryRequest('summary.operationStatus', object)
+        } else throw new Error('请求参数无效。')
+        return { ok: true, value }
+      } catch (error) {
+        return {
+          ok: false,
+          message: error instanceof Error ? error.message : '设置操作失败，请重试。',
+        }
+      }
+    })
     register(CHANNELS.modelStatus, 'none', () => core.modelState())
     register(CHANNELS.modelDownload, 'none', () => core.modelState('download'))
     register(CHANNELS.modelCancel, 'none', () => core.modelState('cancel'))
@@ -278,7 +368,10 @@ if (hasLock)
         .catch(() => notifyError('系统休眠中断了核心连接，请重新连接以恢复录音。'))
     })
     createWindow()
-    void core.start()
+    void core
+      .start()
+      .then(() => summarySettings.sync())
+      .catch(() => notifyError('模型服务设置未能恢复，请在设置中检查密钥后重新保存。'))
   })
 app.on('second-instance', () => {
   window?.restore()

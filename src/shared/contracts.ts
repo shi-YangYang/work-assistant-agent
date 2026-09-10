@@ -1,4 +1,16 @@
+import type {
+  ServiceList,
+  ServiceProfile,
+  ServiceDraft,
+  ModelOperation,
+  SummaryView,
+  SummarySource,
+} from './summary-contracts'
 export const CHANNELS = {
+  summarySettings: 'paa:summary-settings',
+  summaryGet: 'paa:summary-get',
+  summaryGenerate: 'paa:summary-generate',
+  summarySource: 'paa:summary-source',
   modelStatus: 'paa:model-status',
   modelDownload: 'paa:model-download',
   modelCancel: 'paa:model-cancel',
@@ -57,6 +69,18 @@ export type Result<T> = { ok: true; value: T } | { ok: false; message: string; c
 export type MeetingsResult =
   { ok: true; meetings: Meeting[]; hasMore: boolean } | { ok: false; message: string }
 export interface DesktopApi {
+  listModelServices(): Promise<Result<ServiceList>>
+  getModelService(id: string): Promise<Result<ServiceProfile>>
+  saveModelService(draft: ServiceDraft): Promise<Result<ServiceList>>
+  removeModelService(id: string): Promise<Result<ServiceList>>
+  selectModelService(id: string | null): Promise<Result<ServiceList>>
+  setAutomaticSummary(value: boolean): Promise<Result<ServiceList>>
+  requestModels(draft: ServiceDraft): Promise<Result<{ id: string }>>
+  checkModel(draft: ServiceDraft): Promise<Result<{ id: string }>>
+  getModelOperation(id: string, offset?: number): Promise<Result<ModelOperation>>
+  getSummary(meetingId: string): Promise<Result<SummaryView>>
+  generateSummary(meetingId: string): Promise<Result<SummaryView>>
+  getSummarySource(meetingId: string, segmentId: string): Promise<Result<SummarySource>>
   getTranscriptionModel(): Promise<Result<ModelState>>
   downloadTranscriptionModel(): Promise<Result<ModelState>>
   cancelModelDownload(): Promise<Result<ModelState>>

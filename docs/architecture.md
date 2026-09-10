@@ -29,6 +29,8 @@ Python 本地核心
 | 持久化 | `src/python/paa_core/repository.py` | SQLite、会议查询、启动恢复、音频可用性检查 |
 | 转写 | `src/python/paa_core/asr_worker.py`、`transcription.py` | 本地 Provider、受管工作进程、有限上下文和任务优先级 |
 | 模型与文字 | `src/python/paa_core/model_manager.py`、`transcript_store.py` | 受控模型准备、事务检查点和文字分页 |
+| 模型服务 | `src/desktop/summary-settings.ts`、`src/python/paa_core/llm_provider.py` | 系统加密多服务设置、模型发现及有界 HTTP / SSE |
+| 会议纪要 | `src/python/paa_core/meeting_summary.py`、`summary_store.py` | 完整转写快照、单网络 worker、校验与独立成功结果 |
 | 核心协议 | `src/python/paa_core/protocol.py` | 控制请求与响应，日志使用 stderr |
 
 录音回调只复制有界音频块并更新顺序信息，文件写入在工作线程完成。音频不经过 JSON 控制协议，不在 renderer 中采集。ASR 模型加载、VAD 和推理运行在独立进程；原始 WAV 与 SQLite 进度承接积压，不积累整场 PCM。输入队列积压、设备中断或写入失败必须显式结束并报告。
@@ -47,11 +49,15 @@ Python 本地核心
 | `getTranscriptionModel()` / `downloadTranscriptionModel()` / `cancelModelDownload()` | 固定模型状态和受控下载，不接受 URL 或目标路径 |
 | `startTranscription(meetingId)` / `getTranscriptionStatus(meetingId)` | 幂等开始或继续、进度与独立任务状态 |
 | `listTranscript(meetingId, cursor)` | 每页最多 50 段，不轮询整场文字 |
+| `listModelServices()` / `getModelService(id)` / `saveModelService(draft)` / `removeModelService(id)` | 有界多服务设置，不返回密钥 |
+| `selectModelService(id)` / `setAutomaticSummary(value)` | 明确选择纪要接收方及自动生成开关 |
+| `requestModels(draft)` / `checkModel(draft)` / `getModelOperation(id, offset)` | 使用草稿发起后台请求，按操作 ID 轮询，目录每页 50 条 |
+| `getSummary(id)` / `generateSummary(id)` / `getSummarySource(id, segmentId)` | 当前尝试、成功纪要及真实原文片段 |
 | `onLifecycleError(listener)` | 接收退出、重连或保存未完成的错误 |
 
 控制协议相应方法为 `health`、`meetings.list`、`meetings.get`、`recording.start/status/stop/interrupt`、`model.status/download/cancel`、`transcription.start/status/activity/pause`、`transcript.list` 和 `shutdown`。会议状态为 `starting`、`recording`、`stopping`、`completed`、`interrupted`、`failed`；没有当前会话时状态查询可返回 `idle`。连接状态独立为 `starting`、`ready`、`error`、`stopped`。
 
-开始请求返回不代表已打开设备，界面需等待真实 `recording` 状态。控制请求超时也不证明业务操作失败：先查询核心状态，不盲目重放开始 / 结束操作。录音能力表示采集依赖和存储初始化可用，具体权限与设备在开始时检查；模型就绪后转写可用，具体会议的处理状态仍独立；总结保持不可用。
+开始请求返回不代表已打开设备，界面需等待真实 `recording` 状态。控制请求超时也不证明业务操作失败：先查询核心状态，不盲目重放开始 / 结束操作。录音能力表示采集依赖和存储初始化可用，具体权限与设备在开始时检查；模型就绪后转写可用，具体会议的处理状态仍独立；纪要能力表示已选择并解锁配置；实际模型权限需通过生成检测确认。
 
 ## 存储与恢复
 
@@ -60,7 +66,9 @@ Python 本地核心
 ```text
 <userData>/
 ├── meetings.sqlite3
-├── meetings.schema1.backup.sqlite3  # 升级旧库前的完整备份
+├── meetings.schema1.backup.sqlite3  # 如从 schema 1 升级
+├── meetings.schema2.backup.sqlite3  # 如从 schema 2 升级
+├── model-services.json             # 服务与模型预设、系统保护的密钥密文
 ├── models/                         # 受控模型与临时下载目录
 └── meetings/
     └── <UUIDv4>/
@@ -69,7 +77,7 @@ Python 本地核心
         └── recovered.wav    # 中断恢复时另行生成，保留源文件
 ```
 
-各音频文件按会议状态存在，不保证三个同时存在。SQLite `PRAGMA user_version=2`，保留原有 `meetings` 表，保存 ID、唯一操作标识、标题、带时区时间、状态、时长、错误码、设备、采样率、通道数、采样宽度、帧数、PCM 字节数和相对音频路径。标题按本地时间自动生成。新增转写任务、音频块和片段表；块完成位置与片段在同一事务提交，稳定 ID / 唯一约束防重。迁移前经 staging 生成完整备份；DDL 失败回滚，数据库忙等待有界。旧会议保持未转写，不在升级时自动推理。
+各音频文件按会议状态存在，不保证三个同时存在。SQLite `PRAGMA user_version=3`，保留原有 `meetings` 表，保存 ID、唯一操作标识、标题、带时区时间、状态、时长、错误码、设备、采样率、通道数、采样宽度、帧数、PCM 字节数和相对音频路径。标题按本地时间自动生成。新增转写任务、音频块和片段表；块完成位置与片段在同一事务提交，稳定 ID / 唯一约束防重。迁移前经 staging 生成完整备份；DDL 失败回滚，数据库忙等待有界。旧会议保持未转写，不在升级时自动推理。
 
 音频为单声道 PCM16 WAV，采样率由设备参数检查决定。写入更新 WAV 长度并周期性同步磁盘；停止时先关闭采集、排空已接受缓冲、关闭音频，再提交终态元信息。标准 RIFF WAV 有容量上限，不能宣称无限时长。
 
@@ -100,9 +108,19 @@ Spec 001 曾验证额外注入脚本跳转 `about:blank` 可绕过 Electron 的 
 - 任务保存模型与参数、已处理帧数，静音块也推进进度；结束后按最终帧数补尾块。录音状态与转写状态分别显示，缺失音频不能伪造处理完成，中断来源持续标明不完整。
 - renderer 有界分页、非重叠轮询，翻看上文时停止自动跟随；已保存片段可定位播放器，录音期间禁播。speaker / confidence 保持空值，不生成说话人身份。
 - sounddevice 原始输入流不变；NumPy、PyAV 与 ONNX Runtime 用于实际 ASR / VAD，完整锁定依赖见 `requirements.lock`。SQLite 与 WAV 沿用标准库。
-- MeetingSummary、ActionItem、Memory 和 LLM 仍未实现。服务商、费用、密钥与文本外发规则留给后续 Spec；FastAPI、PostgreSQL、pgvector、LangGraph 继续延期。
+- 本地转写与模型网络 worker 独立；Memory、FastAPI、PostgreSQL、pgvector、LangGraph 继续延期。
 
-墙上时间带时区，片段时间相对会议开始，ID 稳定并可追溯原始音频。正式迁移备份和恢复操作见 README；不能用旧程序直接写 schema 2。
+墙上时间带时区，片段时间相对会议开始，ID 稳定并可追溯原始音频。正式迁移备份和恢复操作见 README；不能用旧程序直接写 schema 3。
+
+## 在线模型与纪要
+
+服务设置由主进程验证后使用异步 safeStorage 加密密钥，原子写入独立文件；修改串行处理，未激活服务不改变核心配置。只有活动服务经受控 stdio 解密传入核心内存，草稿的模型发现和连接检测建立临时上下文。Base URL 仅接受 HTTPS，禁止自动跳转；测试只有显式隔离目录和 `PAA_TEST_ALLOW_HTTP=1` 才允许 loopback HTTP。普通 renderer 无通用网络代理、任意核心方法或密钥读取入口。
+
+统一 Chat Completions 传输，共用草稿检测和纪要生成的请求构造器。推理预设按服务／模型保存，默认省略参数；自定义字符串或嵌套 JSON 经大小、类型、深度和受保护字段校验后发送，不引入厂商型号白名单。模型目录来源于受控 models 请求，百炼官方入口只做同源路径转换。列表权限与生成权限独立；流式模式仅汇总正文，不保存思维链。
+
+转写保存完成事件在核心发起自动尝试，不靠界面轮询。完整有序文字及配置被固定为任务快照，单网络 worker 处理纪要、模型列表和检测，控制循环不等网络。`summary_attempts` 按会议／输入摘要去重，失败不会自动重试；升级和重连不扫描旧会议。更换配置中断尚未发出的旧队列任务，在途请求继续使用原快照。退出有界停止调度，重启将未完成任务标为中断，晚到结果不能覆盖终态。
+
+`summary_jobs` 保存最新尝试状态，`meeting_summaries` 独立保存最后成功结果；重新生成失败不删除旧结果。结果经过结构、字段、长度及真实片段引用校验，UI 按同一结构显示，引用可直接按 ID 读取并复用回放。输入请求上限 256 KiB、服务响应 1 MiB、结构化纪要 48 KiB，控制消息仍限制 64 KiB；超限明确失败，不截断或自动增加调用。详细协议和约束见 [Spec 004 Plan](../specs/spec-004-meeting-minutes/plan.md)。
 
 ## 平台和分发
 

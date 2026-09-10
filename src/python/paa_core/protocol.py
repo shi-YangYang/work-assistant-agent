@@ -11,21 +11,27 @@ from typing import BinaryIO
 from .recorder import Recorder
 from .repository import ACTIVE, DomainError, Repository, valid_id
 from .transcription import Transcription
+from .meeting_summary import MeetingSummary
+from .llm_provider import Provider
 
 MAX_LINE_BYTES = 65_536
 
 
 class CoreService:
-    def __init__(self, root: Path | None, source=None, transcription_factory=Transcription):
+    def __init__(self, root: Path | None, source=None, transcription_factory=Transcription, summary_provider=None):
         self.repository = None
         self.recorder = None
         self.storage_error = None
         self.transcription = None
+        self.summary = None
         if root is not None:
             try:
                 self.repository = Repository(root)
                 self.recorder = Recorder(self.repository, source=source)
                 self.transcription = transcription_factory(self.repository, self.recorder)
+                self.summary = MeetingSummary(self.repository, summary_provider or Provider(allow_loopback=bool(os.environ.get('PAA_TEST_DATA_DIR')) and os.environ.get('PAA_TEST_ALLOW_HTTP') == '1'))
+                if hasattr(self.transcription, "store"):
+                    self.transcription.store.on_completed = self.summary.on_completed
             except (OSError, sqlite3.Error, DomainError):
                 self.storage_error = '无法打开会议存储，请检查数据目录权限、磁盘空间和数据库版本；不要删除已有数据。'
 
@@ -33,7 +39,11 @@ class CoreService:
         expected = {'recording.start': {'operationId'}, 'recording.stop': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
                     'meetings.list': set(), 'transcription.start': {'meetingId'},
-                    'transcription.status': {'meetingId'}, 'transcript.list': {'meetingId', 'cursor'}}
+                    'transcription.status': {'meetingId'}, 'transcript.list': {'meetingId', 'cursor'},
+                    'summary.validateModel': {'config'}, 'summary.forgetModels': {'profileId'},
+                    'summary.configure': {'config', 'automatic'}, 'summary.generate': {'meetingId'},
+                    'summary.get': {'meetingId'}, 'summary.operation': {'kind', 'config'},
+                    'summary.operationStatus': {'id', 'offset'}, 'summary.source': {'meetingId', 'segmentId'}, 'summary.cancelOperations': {'profileId'}}
         keys = expected.get(method, set())
         if method == 'meetings.list' and set(params) == {'offset'}:
             if type(params['offset']) is not int or not 0 <= params['offset'] <= 1_000_000:
@@ -44,14 +54,53 @@ class CoreService:
             raise DomainError('invalid_params', '会议标识无效。')
         if method == 'transcript.list' and (type(params['cursor']) is not int or not -1 <= params['cursor'] <= 1_000_000_000):
             raise DomainError('invalid_params', '文字分页位置无效。')
+        if method.startswith('summary.'):
+            if not self.summary:
+                raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
+            if method == 'summary.configure':
+                result = self.summary.configure(params['config'], params['automatic'])
+            elif method == 'summary.validateModel':
+                result = self.summary.provider.assert_text_model(params['config'])
+            elif method == 'summary.forgetModels':
+                if not valid_id(params['profileId']):
+                    raise DomainError('invalid_params', '服务标识无效。')
+                self.summary.provider.forget_models(params['profileId'])
+                result = {'forgotten': True}
+            elif method == 'summary.generate':
+                result = self.summary.generate(params['meetingId'])
+            elif method == 'summary.get':
+                result = self.summary.get(params['meetingId'])
+            elif method == 'summary.operation':
+                result = self.summary.operation(params['kind'], params['config'])
+            elif method == 'summary.cancelOperations':
+                if not valid_id(params['profileId']):
+                    raise DomainError('invalid_params', '服务标识无效。')
+                result = self.summary.cancel_operations(params['profileId'])
+            elif method == 'summary.operationStatus':
+                if not valid_id(params['id']) or type(params['offset']) is not int or not 0 <= params['offset'] <= 2000:
+                    raise DomainError('invalid_params', '操作标识或分页位置无效。')
+                result = self.summary.operation_status(params['id'], params['offset'])
+            elif method == 'summary.source':
+                if not isinstance(params['segmentId'], str) or len(params['segmentId']) > 64:
+                    raise DomainError('invalid_params', '原文片段无效。')
+                with self.repository.lock, self.repository.connect() as db:
+                    row = db.execute('SELECT id,startMs,endMs,text FROM transcript_segments WHERE meetingId=? AND id=?', (params['meetingId'], params['segmentId'])).fetchone()
+                if not row:
+                    raise DomainError('source_missing', '未找到原文片段。')
+                result = dict(row)
+            else:
+                raise DomainError('method_not_found', 'Unknown method')
+            return result, False
         if method == 'health':
             return {'pythonVersion': platform.python_version(), 'processId': os.getpid(),
                     'storageError': self.storage_error,
                     'capabilities': [{'id': 'recording', 'available': bool(self.recorder and not self.recorder.dependency_error)},
-                                     {'id': 'transcription', 'available': bool(self.transcription and self.transcription.model.status()['state'] == 'ready')}, {'id': 'summary', 'available': False}]}, False
+                                     {'id': 'transcription', 'available': bool(self.transcription and self.transcription.model.status()['state'] == 'ready')}, {'id': 'summary', 'available': bool(self.summary and self.summary.settings)}]}, False
         if method == 'shutdown':
             if self.recorder and self.recorder.status()['state'] in ACTIVE:
                 raise DomainError('recording_active', '录音尚未完成保存，不能退出。')
+            if self.summary:
+                self.summary.shutdown()
             if self.transcription:
                 self.transcription.shutdown()
             return {'stopping': True}, True
@@ -134,11 +183,16 @@ def serve(source: BinaryIO, destination: BinaryIO, service: CoreService | None =
                     response, stopping = error(None, 'invalid_json', 'Expected UTF-8 JSON'), False
                 else:
                     response, stopping = handle(request, service)
-            destination.write((json.dumps(response, ensure_ascii=False) + '\n').encode('utf-8'))
+            encoded = (json.dumps(response, ensure_ascii=False) + '\n').encode('utf-8')
+            if len(encoded) > MAX_LINE_BYTES:
+                encoded = (json.dumps(error(response.get('id'), 'response_too_large', '返回内容超限，请缩小请求范围。'), ensure_ascii=False) + '\n').encode('utf-8')
+            destination.write(encoded)
             destination.flush()
             if stopping:
                 return
     finally:
+        if service and service.summary:
+            service.summary.shutdown()
         if service and service.transcription:
             service.transcription.shutdown()
         if service and service.recorder:

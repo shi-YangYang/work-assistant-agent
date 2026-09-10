@@ -222,6 +222,7 @@ class TranscriptionTests(unittest.TestCase):
     def test_schema_one_migration_preserves_audio_and_failed_ddl_rolls_back(self):
         mid = self.audio(1)
         with self.repo.connect() as db:
+            for table in ('meeting_summaries', 'summary_jobs', 'summary_attempts'): db.execute('DROP TABLE ' + table)
             db.execute('DROP TABLE transcript_segments'); db.execute('DROP TABLE audio_chunks')
             db.execute('DROP TABLE transcription_jobs'); db.execute('PRAGMA user_version=1')
         def broken(db):
@@ -242,7 +243,7 @@ class TranscriptionTests(unittest.TestCase):
             def backup(self, target, **kwargs):
                 target.execute('CREATE TABLE incomplete (id TEXT)')
                 raise sqlite3.OperationalError('Injected backup failure')
-        with self.assertRaises(sqlite3.OperationalError): self.repo.backup_schema_one(BrokenBackup())
+        with self.assertRaises(sqlite3.OperationalError): self.repo.backup_schema(BrokenBackup(), 1)
         self.assertFalse((self.root/'meetings.schema1.backup.staging').exists())
         self.assertFalse((self.root/'meetings.schema1.backup.sqlite3').exists())
         lock=sqlite3.connect(self.repo.database)
@@ -250,11 +251,11 @@ class TranscriptionTests(unittest.TestCase):
             lock.execute('BEGIN EXCLUSIVE')
             with self.repo.connect() as source:
                 started=time.monotonic()
-                with self.assertRaises(DomainError): self.repo.backup_schema_one(source)
+                with self.assertRaises(DomainError): self.repo.backup_schema(source, 1)
                 self.assertLess(time.monotonic()-started,3)
         finally: lock.rollback();lock.close()
         self.assertFalse((self.root/'meetings.schema1.backup.staging').exists())
-        with self.repo.connect() as source: self.repo.backup_schema_one(source)
+        with self.repo.connect() as source: self.repo.backup_schema(source, 1)
         self.assertTrue((self.root/'meetings.schema1.backup.sqlite3').exists())
 
     def test_worker_crash_and_timeout_are_bounded_and_leave_no_child(self):

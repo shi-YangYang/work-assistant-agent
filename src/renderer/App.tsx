@@ -1,3 +1,5 @@
+import { ApiModelSettings } from './ModelSettings'
+import { MeetingMinutes } from './MeetingMinutes'
 import { ModelSettings, Transcript } from './Transcription'
 import type { ModelState } from '../shared/contracts'
 import { useEffect, useRef, useState } from 'react'
@@ -430,6 +432,19 @@ export function App(): React.JSX.Element {
                       }}
                     />
                   )}
+                  {connected && (
+                    <MeetingMinutes
+                      key={`summary-${selected.id}`}
+                      meetingId={selected.id}
+                      playable={selected.audioAvailable && !active && !busy}
+                      onSeek={(ms) => {
+                        if (audio.current && !active) {
+                          audio.current.currentTime = ms / 1000
+                          void audio.current.play().catch(() => setError('无法播放录音。'))
+                        }
+                      }}
+                    />
+                  )}
                 </section>
               ) : (
                 <section className="meetings-section" aria-labelledby="meetings-title">
@@ -524,6 +539,7 @@ export function App(): React.JSX.Element {
                   </button>
                 </div>
               </section>
+              <ApiModelSettings />
               <ModelSettings model={model} refresh={() => setModelRefresh((value) => value + 1)} />
               <section className="settings-card capabilities">
                 <div className="capability-heading">

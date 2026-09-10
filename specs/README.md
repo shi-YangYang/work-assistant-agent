@@ -5,6 +5,7 @@
 | [001](spec-001-product-and-technical-foundation/spec.md) | 产品、技术与桌面骨架 | DONE | [PASS](spec-001-product-and-technical-foundation/acceptance.md) |
 | [002](spec-002-meeting-recording-and-storage/spec.md) | 麦克风录音、保存与回放 | DONE | [PASS](spec-002-meeting-recording-and-storage/acceptance.md) |
 | [003](spec-003-local-transcription/spec.md) | 模型准备、持续转写与恢复 | DONE | [PASS](spec-003-local-transcription/acceptance.md) |
+| [004](spec-004-meeting-minutes/spec.md) | API 管理、会后纪要与重试 | ACCEPTANCE | [工程缺陷已关闭，待外部验证](spec-004-meeting-minutes/acceptance.md) |
 
 最新平台和实录结果统一见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

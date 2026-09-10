@@ -1,3 +1,4 @@
+import type { RuntimeConfig } from '../shared/summary-contracts'
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
@@ -308,6 +309,33 @@ export class CoreManager extends EventEmitter {
       throw new CoreError('invalid_transcription', '无法确认转写状态。')
     return value.active
   }
+  async configureSummary(config: RuntimeConfig | null, automatic: boolean): Promise<void> {
+    await this.request('summary.configure', { config, automatic })
+    this.update({
+      ...this.status,
+      capabilities: this.status.capabilities.map((item) =>
+        item.id === 'summary' ? { ...item, available: !!config } : item,
+      ),
+    })
+  }
+  async summaryRequest<T>(
+    method:
+      | 'summary.get'
+      | 'summary.generate'
+      | 'summary.source'
+      | 'summary.operation'
+      | 'summary.operationStatus'
+      | 'summary.cancelOperations'
+      | 'summary.validateModel'
+      | 'summary.forgetModels',
+    params: Record<string, unknown>,
+  ): Promise<Result<T>> {
+    try {
+      return { ok: true, value: (await this.request(method, params)) as T }
+    } catch (error) {
+      return this.failure(error)
+    }
+  }
   async pauseTranscription(): Promise<void> {
     await this.request('transcription.pause')
   }
@@ -341,8 +369,7 @@ function isHealth(value: unknown): value is Pick<CoreStatus, 'capabilities' | 's
     UNAVAILABLE_CAPABILITIES.every(
       (expected, index) =>
         capabilities[index]?.id === expected.id &&
-        typeof capabilities[index]?.available === 'boolean' &&
-        (index !== 2 || capabilities[index].available === false),
+        typeof capabilities[index]?.available === 'boolean',
     )
   )
 }

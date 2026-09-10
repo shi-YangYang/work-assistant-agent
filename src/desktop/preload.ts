@@ -1,6 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS, type CoreStatus, type DesktopApi } from '../shared/contracts'
 const api: DesktopApi = {
+  listModelServices: () => ipcRenderer.invoke(CHANNELS.summarySettings, 'list'),
+  getModelService: (id) => ipcRenderer.invoke(CHANNELS.summarySettings, 'get', id),
+  saveModelService: (draft) => ipcRenderer.invoke(CHANNELS.summarySettings, 'save', draft),
+  removeModelService: (id) => ipcRenderer.invoke(CHANNELS.summarySettings, 'remove', id),
+  selectModelService: (id) => ipcRenderer.invoke(CHANNELS.summarySettings, 'select', id),
+  setAutomaticSummary: (value) => ipcRenderer.invoke(CHANNELS.summarySettings, 'automatic', value),
+  requestModels: (draft) => ipcRenderer.invoke(CHANNELS.summarySettings, 'models', draft),
+  checkModel: (draft) => ipcRenderer.invoke(CHANNELS.summarySettings, 'check', draft),
+  getModelOperation: (id, offset = 0) =>
+    ipcRenderer.invoke(CHANNELS.summarySettings, 'operation', { id, offset }),
+  getSummary: (id) => ipcRenderer.invoke(CHANNELS.summaryGet, id),
+  generateSummary: (id) => ipcRenderer.invoke(CHANNELS.summaryGenerate, id),
+  getSummarySource: (id, segmentId) => ipcRenderer.invoke(CHANNELS.summarySource, id, segmentId),
   getTranscriptionModel: () => ipcRenderer.invoke(CHANNELS.modelStatus),
   downloadTranscriptionModel: () => ipcRenderer.invoke(CHANNELS.modelDownload),
   cancelModelDownload: () => ipcRenderer.invoke(CHANNELS.modelCancel),

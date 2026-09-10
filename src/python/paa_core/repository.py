@@ -39,10 +39,10 @@ class Repository:
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
             tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            if version not in (0, 1, 2) or (version == 0 and tables):
+            if version not in (0, 1, 2, 3) or (version == 0 and tables):
                 raise DomainError('storage_schema', '会议数据库版本不兼容，请保留数据并联系维护者。')
-            if version == 1:
-                self.backup_schema_one(db)
+            if version in (1, 2):
+                self.backup_schema(db, version)
             db.execute('BEGIN IMMEDIATE')
             if version == 0:
                 db.execute('''CREATE TABLE meetings (
@@ -55,12 +55,15 @@ class Repository:
             if version < 2:
                 from .transcript_store import migrate
                 migrate(db)
-                db.execute('PRAGMA user_version=2')
+            if version < 3:
+                from .summary_store import migrate as migrate_summary
+                migrate_summary(db)
+                db.execute('PRAGMA user_version=3')
         self.recover()
 
-    def backup_schema_one(self, db):
-        destination = self.root / 'meetings.schema1.backup.sqlite3'
-        staging = self.root / 'meetings.schema1.backup.staging'
+    def backup_schema(self, db, version):
+        destination = self.root / f'meetings.schema{version}.backup.sqlite3'
+        staging = self.root / f'meetings.schema{version}.backup.staging'
         if destination.is_symlink() or staging.is_symlink():
             raise DomainError('storage_backup', '迁移备份位置无效，请保留原数据库并检查存储。')
         deadline = time.monotonic() + 2

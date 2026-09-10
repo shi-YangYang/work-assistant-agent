@@ -120,6 +120,20 @@ export class JsonLineClient {
       if (hasError) {
         const remote = message.error as { code: string; message: string }
         const publicCodes = new Set([
+          'not_configured',
+          'nontext_model',
+          'transcript_incomplete',
+          'empty_transcript',
+          'input_too_large',
+          'invalid_config',
+          'invalid_url',
+          'invalid_parameters',
+          'invalid_operation',
+          'queue_full',
+          'operation_missing',
+          'source_missing',
+          'interrupted',
+          'response_too_large',
           'invalid_params',
           'invalid_id',
           'storage_error',
