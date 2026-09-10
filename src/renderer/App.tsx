@@ -233,7 +233,11 @@ export function App(): React.JSX.Element {
       clearTimeout(timer)
     }
   }, [connected, status.processId, modelRefresh])
-  const connectionLabel = connected ? '已连接' : status.connection === 'starting' ? '连接中' : '未连接'
+  const connectionLabel = connected
+    ? '已连接'
+    : status.connection === 'starting'
+      ? '连接中'
+      : '未连接'
   const interruptedConnection = active && !connected
   return (
     <div className="app-shell">
@@ -346,9 +350,7 @@ export function App(): React.JSX.Element {
                     {busy && !active ? '正在准备…' : '开始会议'}
                   </button>
                   <span>
-                    {model?.state === 'ready'
-                      ? '录音时自动转写'
-                      : '可先录音，下载模型后补转写'}
+                    {model?.state === 'ready' ? '录音时自动转写' : '可先录音，下载模型后补转写'}
                   </span>
                 </div>
               </div>

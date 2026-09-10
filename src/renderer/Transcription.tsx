@@ -36,9 +36,7 @@ export function ModelSettings({
     <section className="settings-card model-card" aria-label="本地转写模型">
       <h2>本地转写模型</h2>
       <p>支持中文及中英混合转写。</p>
-      <p>
-        下载约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。
-      </p>
+      <p>下载约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。</p>
       <p>下载需要联网，完成后可离线转写。</p>
       <strong role="status">
         {model?.state === 'ready'
