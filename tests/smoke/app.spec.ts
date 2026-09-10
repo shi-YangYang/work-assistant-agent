@@ -31,7 +31,8 @@ async function launch(
   }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
-  return electron.launch({ args: [resolve('.')], env })
+  // Supply capture devices even on CI runners without hardware; keep permission checks enabled.
+  return electron.launch({ args: ['--use-fake-device-for-media-stream', resolve('.')], env })
 }
 async function ready(app: ElectronApplication) {
   const page = await app.firstWindow()
