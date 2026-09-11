@@ -29,3 +29,5 @@
 ## 历史记录
 
 2026-09-10 按用户要求整理：保留编号、需求、历史 PASS / FAIL、修复依据及证据，把已结束的分轮报告归并到各 Spec 的实施摘要与验收记录。本次仅整理文档，没有重新运行测试或改变验收结论。整理前完整原文可在 [Git 快照 23ba685](https://github.com/shi-YangYang/work-assistant-agent/tree/23ba685f5af58039ec30297d8e20af91eef61f10/specs) 查阅，也可用 `git show 23ba685:specs/<目录>/<原文件>` 恢复。
+
+已完成的 Spec 001～003 专用交接文件于 2026-09-11 删除，结论保留在各 Spec；旧交接可通过 `git show e91748f:.ai/prompts/<原文件>` 查阅。后续只维护当前交接，避免重复保存已归档任务指令。
