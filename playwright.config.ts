@@ -6,5 +6,6 @@ export default defineConfig({
   timeout: 30_000,
   expect: { timeout: 10_000 },
   outputDir: 'artifacts/playwright',
-  reporter: [['list']],
+  reporter: process.env.CI ? [['list'], ['github']] : [['list']],
+  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
 })

@@ -22,6 +22,8 @@
     "test:unit": "vitest run",
     "test:python": "node scripts/test-python.mjs",
     "test:smoke": "npm run build && playwright test",
+    "test:smoke:quick": "npm run build && playwright test tests/smoke/app.spec.ts tests/smoke/summary.spec.ts",
+    "test:smoke:asr": "npm run build && playwright test tests/smoke/transcription.spec.ts",
     "test:asr": "node scripts/test-asr.mjs",
     "build:core": "node scripts/build-core.mjs",
     "package": "npm run build && npm run build:core && electron-builder --config electron-builder.json --publish never",

@@ -129,12 +129,28 @@ macOS 拒绝麦克风后，在系统设置 → 隐私与安全性 → 麦克风�
 | `npm run build` | main / preload / renderer 构建 |
 | `npm run test:asr` | 隔离目录下载/校验默认模型，真实 spawn 工作进程离线转写固定公开人声 |
 | `npm run test:smoke` | 构建并启动真实 Electron，验证界面、权限和生命周期 |
+| `npm run test:smoke:quick` | 日常 CI 的受控桌面流程，不运行真实模型与安装包场景 |
+| `npm run test:smoke:asr` | 仅运行真实模型桌面流程，需先准备样本并设置 `PAA_REAL_ASR_SMOKE=1` |
 
 Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打开短暂窗口，需要图形会话。默认自动测试不打开真实麦克风，故障与生命周期由 `tests/python/smoke_core.py` 显式注入合成 PCM，经测试专用可执行文件启动；产品没有假录音回退。POSIX 合成启动器在 Windows 跳过。测试数据为临时隔离目录，截图与实录证据位于忽略的 `artifacts/spec002/`。
 
-当前实机为 macOS ARM64；此前录音基线的 macOS / Windows CI 已通过。Spec 003 的 [CI](.github/workflows/ci.yml) 增加真实模型推理和 Electron 转写/重启/回放场景，Windows 不跳过新增场景；结果以对应提交的实际运行记录为准，不能据此声称 Windows 物理麦克风已验证。本轮真实采集、保存、重启播放及合成故障验证见 [实施报告](specs/spec-002-meeting-recording-and-storage/implementation.md)。本机已获麦克风授权，首次授权弹窗尚未实测。
+### CI 分层
 
-CI 执行带模型的 Electron 检查：先运行 `npm run test:asr`，再设置 `PAA_REAL_ASR_SMOKE=1` 执行 `npm run test:smoke`。本机交互验收在项目目录运行 `npm run dev`，沿用日常录音、模型与服务配置，不另建隔离验收窗口。普通 smoke 不会自行下载大模型，新增真实模型场景只有在该标记开启时运行。模型缓存、公开测试录音和报告位于忽略的 `artifacts/spec003/`；CI 仅上传测试报告和截图，不上传模型。两分钟中文样本的速度、字错误率和真实麦克风流程分别记录，不把模拟 Provider 作为准确率证据。
+[Desktop CI](.github/workflows/ci.yml) 在 `dev` / `main` 推送及面向 `main` 的 PR 上运行。静态检查、双平台单元测试和受控桌面流程分组独立执行；目标系统固定为 macOS 15 ARM64 / Windows 2025 x64，Node 24、Python 3.12，依赖沿用锁文件。重检查按 [触发规则](scripts/ci-scope.mjs) 选择：
+
+| 改动或触发方式 | 额外检查 |
+| --- | --- |
+| 普通界面、文案、文档 | 无真实模型或安装包检查 |
+| 转写链路、模型准备、转写界面及相应测试 | 真实 small 推理及桌面转写流程 |
+| 桌面主进程、本地核心、共享契约、打包配置及安装测试 | 冻结运行时、安装包启动与清理；准备并使用真实模型样本验证随包推理 |
+| 依赖锁、CI 规则、相关基础构建配置 | 全部重检查 |
+| 推送 `v*` 标签；Actions 手动选择 `full` | 发布前完整检查，不发布产物 |
+
+PR 按相对基线的完整差异判断，push 按前后提交判断；删除和重命名同样参与。新分支或无法获取比较历史时保守运行全部。Actions 的 **Run workflow** 也可选择 `asr`、`package` 或 `auto`（仅日常检查）。汇总检查 **CI required** 只有在日常检查及本次选中的重检查全部通过后成功；按规则跳过的重检查不等于通过。设置分支保护时使用该汇总检查。
+
+测试失败保留 Playwright trace、截图和实际异常；不自动重试失败断言。安装包流程与模型桌面流程使用不同的 trace 输出目录，避免后运行的测试覆盖前一份失败证据。模型缓存、公开样本与报告仍在忽略的 `artifacts/`，只上传报告、截图和测试安装包，不上传模型或用户数据。模型识别质量和物理设备采集分别记录，不能用合成数据证明准确率。
+
+本机交互验收在项目目录运行 `npm run dev`，沿用日常录音、模型与服务配置，不另建隔离验收窗口。真实麦克风、蓝牙及首次系统授权由相应实机验收覆盖，远端 CI 不能代替这些结论；历史实机证据见 [Spec 002 实施报告](specs/spec-002-meeting-recording-and-storage/implementation.md)。
 
 新增纪要 Electron 用例使用临时 HTTP 兼容服务及专门编写的 61 段会议样本，在 macOS / Windows 均执行，不访问真实 API 或密钥。真实服务的桌面验收使用用户日常环境，遵循 [桌面验收约定](AGENTS.md#21-测试与验证规则)，证据与模拟故障分别记录于 Spec 004 报告。
 
