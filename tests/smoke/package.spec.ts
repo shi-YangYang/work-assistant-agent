@@ -100,12 +100,40 @@ test('installed package starts its bundled core without Python, Node or source c
       )
       await page.getByRole('button', { name: '重新连接', exact: true }).click()
       await expect
-        .poll(async () => (await page.evaluate(() => window.paa.getStatus())).processId)
-        .not.toBe(status.processId)
+        .poll(
+          async () => {
+            const current = await page.evaluate(() => window.paa.getStatus())
+            return (
+              current.connection === 'ready' &&
+              typeof current.processId === 'number' &&
+              current.processId !== status.processId
+            )
+          },
+          { timeout: 30_000 },
+        )
+        .toBe(true)
+      await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeEnabled()
       mkdirSync('artifacts/spec005', { recursive: true })
       await page.screenshot({ path: `artifacts/spec005/installed-${process.platform}.png` })
     } finally {
-      await cleanup(() => app.close())
+      const child = app.process()
+      await cleanup(() =>
+        test.step('close installed app', async () => {
+          if (child.exitCode !== null || child.signalCode !== null) return
+          // Keep the main debugger connected until the asynchronous exit guard finishes.
+          await Promise.all([
+            app.waitForEvent('close', { timeout: 10_000 }),
+            app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close()),
+          ])
+        }),
+      )
+      await cleanup(() => {
+        // A failed graceful exit still fails the test; only terminate this test's process tree.
+        if (child.exitCode !== null || child.signalCode !== null || !child.pid) return
+        if (process.platform === 'win32')
+          run('taskkill', ['/PID', String(child.pid), '/T', '/F'], 10_000)
+        else child.kill('SIGKILL')
+      })
     }
   } catch (error) {
     // Keep the original launch/assertion error ahead of any teardown failures.
