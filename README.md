@@ -129,24 +129,25 @@ macOS 拒绝麦克风后，在系统设置 → 隐私与安全性 → 麦克风�
 | `npm run build` | main / preload / renderer 构建 |
 | `npm run test:asr` | 隔离目录下载/校验默认模型，真实 spawn 工作进程离线转写固定公开人声 |
 | `npm run test:smoke` | 构建并启动真实 Electron，验证界面、权限和生命周期 |
-| `npm run test:smoke:quick` | 日常 CI 的受控桌面流程，不运行真实模型与安装包场景 |
+| `npm run test:smoke:quick` | 受控桌面流程，用于手动或发布前检查，不运行真实模型与安装包场景 |
 | `npm run test:smoke:asr` | 仅运行真实模型桌面流程，需先准备样本并设置 `PAA_REAL_ASR_SMOKE=1` |
 
 Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打开短暂窗口，需要图形会话。默认自动测试不打开真实麦克风，故障与生命周期由 `tests/python/smoke_core.py` 显式注入合成 PCM，经测试专用可执行文件启动；产品没有假录音回退。POSIX 合成启动器在 Windows 跳过。测试数据为临时隔离目录，截图与实录证据位于忽略的 `artifacts/spec002/`。
 
 ### CI 分层
 
-[Desktop CI](.github/workflows/ci.yml) 在 `dev` / `main` 推送及面向 `main` 的 PR 上运行。静态检查、双平台单元测试和受控桌面流程分组独立执行；目标系统固定为 macOS 15 ARM64 / Windows 2025 x64，Node 24、Python 3.12，依赖沿用锁文件。重检查按 [触发规则](scripts/ci-scope.mjs) 选择：
+[Desktop CI](.github/workflows/ci.yml) 遵循 [CI 减负规则](AGENTS.md#ci-减负与交付效率)。面向 `main` 的 PR 自动运行一轮基础检查；普通 `dev` / `main` 推送不触发，合并及回同步不重复运行。Node 24、Python 3.12 与锁定依赖保持一致。
 
-| 改动或触发方式 | 额外检查 |
+| 触发方式 | 平台与检查 |
 | --- | --- |
-| 普通界面、文案、文档 | 无真实模型或安装包检查 |
-| 转写链路、模型准备、转写界面及相应测试 | 真实 small 推理及桌面转写流程 |
-| 桌面主进程、本地核心、共享契约、打包配置及安装测试 | 冻结运行时、安装包启动与清理；准备并使用真实模型样本验证随包推理 |
-| 依赖锁、CI 规则、相关基础构建配置 | 全部重检查 |
-| 推送 `v*` 标签；Actions 手动选择 `full` | 发布前完整检查，不发布产物 |
+| PR 新建或更新 | macOS 15 ARM64：格式、Lint、类型、TypeScript / Python 单元及模块测试、普通构建；不启动 Electron、模型推理或安装包 |
+| 手动 `quick`（默认） | 同一组基础检查，在 macOS 15 ARM64 / Windows 2025 x64 执行；用于平台相关改动 |
+| 手动 `desktop` | 双平台基础检查及受控桌面流程 |
+| 手动 `asr` | 双平台基础检查、真实 small 推理及桌面转写 |
+| 手动 `package` | 双平台基础检查、冻结运行时、安装包启动与清理；包含随包推理需要的模型／音频验证 |
+| 手动 `full` 或推送 `v*` 标签 | 双平台基础、桌面、真实转写与安装包检查；不自动发布 |
 
-PR 按相对基线的完整差异判断，push 按前后提交判断；删除和重命名同样参与。新分支或无法获取比较历史时保守运行全部。Actions 的 **Run workflow** 也可选择 `asr`、`package` 或 `auto`（仅日常检查）。汇总检查 **CI required** 只有在日常检查及本次选中的重检查全部通过后成功；按规则跳过的重检查不等于通过。设置分支保护时使用该汇总检查。
+在 Actions 的 **Run workflow** 中选择需要的范围。相关高风险改动可手动提前验证，不按路径自动叠加重测试。汇总检查 **CI required** 只在本轮必需项全部成功时通过；未选择的桌面／集成项允许跳过，选择后失败或跳过均阻止通过。PR 的该汇总检查可用于分支保护。
 
 测试失败保留 Playwright trace、截图和实际异常；不自动重试失败断言。安装包流程与模型桌面流程使用不同的 trace 输出目录，避免后运行的测试覆盖前一份失败证据。模型缓存、公开样本与报告仍在忽略的 `artifacts/`，只上传报告、截图和测试安装包，不上传模型或用户数据。模型识别质量和物理设备采集分别记录，不能用合成数据证明准确率。
 

@@ -2,17 +2,16 @@ name: Desktop CI
 
 on:
   push:
-    branches: [dev, main]
     tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       checks:
-        description: Expensive checks to include
+        description: Checks to run on macOS and Windows
         type: choice
-        options: [full, asr, package, auto]
-        default: full
+        options: [quick, desktop, asr, package, full]
+        default: quick
 
 permissions:
   contents: read
@@ -22,44 +21,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scope:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      asr: ${{ steps.scope.outputs.asr }}
-      package: ${{ steps.scope.outputs.package }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - id: scope
-        run: node scripts/ci-scope.mjs
-
-  quality:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-        id: dependencies
-      - run: npm run typecheck
-      - run: npm run lint
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-      - run: npm run format:check
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
-
-  unit:
+  checks:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15, windows-2025]
+        # PRs use one reference environment; manual runs and release tags cover both platforms.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "windows-2025"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
@@ -75,15 +42,24 @@ jobs:
           cache-dependency-path: requirements.lock
       - run: python -m venv .venv
       - run: npm ci
+        id: dependencies
       - run: node scripts/install-python.mjs
         id: runtime
-      - name: Runtime versions
-        run: node --version && npm --version && python --version
+      - run: npm run typecheck
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      - run: npm run lint
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      - run: npm run format:check
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
       - run: npm run test:unit
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
       - run: npm run test:python
         if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+      - run: npm run build
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
 
   desktop:
+    if: ${{ github.event_name == 'push' || inputs.checks == 'desktop' || inputs.checks == 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -115,8 +91,7 @@ jobs:
           if-no-files-found: ignore
 
   integration:
-    needs: scope
-    if: ${{ needs.scope.outputs.asr == 'true' || needs.scope.outputs.package == 'true' }}
+    if: ${{ github.event_name == 'push' || inputs.checks == 'asr' || inputs.checks == 'package' || inputs.checks == 'full' }}
     strategy:
       fail-fast: false
       matrix:
@@ -145,11 +120,11 @@ jobs:
       - run: npm run test:asr
         id: fixture
       - run: npm run test:smoke:asr
-        if: ${{ needs.scope.outputs.asr == 'true' }}
+        if: ${{ github.event_name == 'push' || inputs.checks == 'asr' || inputs.checks == 'full' }}
         env:
           PAA_REAL_ASR_SMOKE: '1'
       - name: Install frozen-runtime build tools
-        if: ${{ !cancelled() && steps.fixture.outcome == 'success' && needs.scope.outputs.package == 'true' }}
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' && (github.event_name == 'push' || inputs.checks == 'package' || inputs.checks == 'full') }}
         run: node scripts/install-build-python.mjs
         id: build-tools
       - run: npm run package
@@ -186,20 +161,25 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [scope, quality, unit, desktop, integration]
+    needs: [checks, desktop, integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Check all required results, including selected integration suites
+      - name: Check the results of required suites
         env:
           CHECK_RESULTS: ${{ toJSON(needs) }}
+          DESKTOP_REQUIRED: ${{ github.event_name == 'push' || inputs.checks == 'desktop' || inputs.checks == 'full' }}
+          INTEGRATION_REQUIRED: ${{ github.event_name == 'push' || inputs.checks == 'asr' || inputs.checks == 'package' || inputs.checks == 'full' }}
         run: |
           node <<'JS'
           const jobs = JSON.parse(process.env.CHECK_RESULTS)
-          const integration = jobs.scope.outputs.asr === 'true' || jobs.scope.outputs.package === 'true'
-          for (const [name, job] of Object.entries(jobs)) {
-            const expected = name === 'integration' && !integration ? 'skipped' : 'success'
-            console.log(`${name}: ${job.result} (expected ${expected})`)
-            if (job.result !== expected) process.exitCode = 1
+          const expected = {
+            checks: 'success',
+            desktop: process.env.DESKTOP_REQUIRED === 'true' ? 'success' : 'skipped',
+            integration: process.env.INTEGRATION_REQUIRED === 'true' ? 'success' : 'skipped',
+          }
+          for (const [name, result] of Object.entries(expected)) {
+            console.log(`${name}: ${jobs[name]?.result} (expected ${result})`)
+            if (jobs[name]?.result !== result) process.exitCode = 1
           }
           JS
