@@ -21,6 +21,7 @@
 - React / TypeScript 用于状态与契约；不引入额外组件库。electron-vite 5 的 peer 范围包含 Vite 7，不能无依据升级到不兼容大版本。
 - Electron 44 的按需下载与 electron-vite 读取 `path.txt` 的行为不同，因此显式使用 `postinstall: install-electron`，保证 `npm ci` 准备运行时；首次安装需要网络。
 - Spec 001 只交付开发骨架，不含录音、模型、业务数据库或安装包。正式用户无需安装运行时的约束见 [决策 0005](0005-self-contained-desktop-distribution.md)。
+- 2026-09-11 用户确认将 CI 分为日常检查与按风险触发的重检查，避免每次提交都运行真实模型和安装卸载。开发使用长期 `dev`，通过 CI 和 PR 后合入 `main` 并回同步；具体测试矩阵见 [README](../../README.md#ci-分层)，分支操作见 [分支规则](../rules/git-branch-workflow.md)。
 
 ## 依据
 

@@ -7,4 +7,5 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   outputDir: 'artifacts/playwright',
   reporter: [['list']],
+  use: { trace: 'retain-on-failure', screenshot: 'only-on-failure' },
 })

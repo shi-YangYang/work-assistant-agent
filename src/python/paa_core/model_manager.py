@@ -96,6 +96,7 @@ class ModelManager:
 
     def _prepare(self, download):
         target = self.staging if download else self.path
+        terminal_state, terminal_error = 'ready', None
         try:
             if self.root.is_symlink() or target.is_symlink():
                 raise OSError('Invalid model directory')
@@ -138,21 +139,28 @@ class ModelManager:
                     # Only the fixed, previously invalid model directory can be replaced.
                     shutil.rmtree(self.path)
                 target.replace(self.path)
-            with self.lock:
-                self.state = 'ready'
-                self.downloaded = DOWNLOAD_BYTES
         except InterruptedError:
-            with self.lock:
-                self.state, self.error = 'missing', None
+            terminal_state = 'missing'
         except Exception as exc:
-            with self.lock:
-                self.state = 'missing' if self.cancelled.is_set() else 'error'
-                self.error = None if self.cancelled.is_set() else str(exc) if isinstance(exc, DomainError) else '模型准备失败，请检查网络、磁盘空间后重试下载；录音仍可使用。'
+            terminal_state = 'missing' if self.cancelled.is_set() else 'error'
+            terminal_error = None if self.cancelled.is_set() else str(exc) if isinstance(exc, DomainError) else '模型准备失败，请检查网络、磁盘空间后重试下载；录音仍可使用。'
         finally:
-            if download and self.staging.exists() and not self.staging.is_symlink():
-                shutil.rmtree(self.staging, ignore_errors=True)
+            try:
+                if download and self.staging.exists() and not self.staging.is_symlink():
+                    shutil.rmtree(self.staging)
+            except OSError:
+                terminal_state, terminal_error = 'error', '模型临时文件清理失败，请检查磁盘权限后重试下载；录音仍可使用。'
+            finally:
+                # Terminal status and ownership are published together, after all file work.
+                # A caller observing missing/error can retry without racing this worker.
+                with self.lock:
+                    self.state, self.error = terminal_state, terminal_error
+                    if terminal_state == 'ready':
+                        self.downloaded = DOWNLOAD_BYTES
+                    self.thread = None
 
     def shutdown(self):
+        thread = self.thread
         self.cancel()
-        if self.thread:
-            self.thread.join(timeout=0.2)
+        if thread:
+            thread.join(timeout=0.2)

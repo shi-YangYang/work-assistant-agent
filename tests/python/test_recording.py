@@ -57,13 +57,14 @@ class FakeInput:
         return FakeStream(callback, self.count, self.overflow)
 
 
-def wait_for(predicate, timeout=3):
+def wait_for(predicate, timeout=3, *, describe=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
             return
         time.sleep(0.01)
-    raise AssertionError('Timed out waiting for recorder')
+    detail = f': {describe()}' if describe else ''
+    raise AssertionError(f'Timed out waiting for condition after {timeout}s{detail}')
 
 
 @contextmanager

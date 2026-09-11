@@ -31,7 +31,7 @@ async function closeWindow(app: ElectronApplication): Promise<void> {
 test('real local model restores transcript, seeks, and generates historical text across platforms', async () => {
   test.skip(
     process.env.PAA_REAL_ASR_SMOKE !== '1',
-    'Run npm run test:asr first; CI requires this real-model scenario',
+    'Run npm run test:asr first; enable this scenario for ASR changes or release checks',
   )
   test.setTimeout(120_000)
   const fixture = JSON.parse(readFileSync('artifacts/spec003/real-asr.json', 'utf8')) as {

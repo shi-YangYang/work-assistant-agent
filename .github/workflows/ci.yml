@@ -1,20 +1,67 @@
-name: Desktop recording checks
+name: Desktop CI
 
 on:
   push:
+    branches: [dev, main]
+    tags: ['v*']
   pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      checks:
+        description: Expensive checks to include
+        type: choice
+        options: [full, asr, package, auto]
+        default: full
 
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  verify:
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      asr: ${{ steps.scope.outputs.asr }}
+      package: ${{ steps.scope.outputs.package }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - id: scope
+        run: node scripts/ci-scope.mjs
+
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+        id: dependencies
+      - run: npm run typecheck
+      - run: npm run lint
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+      - run: npm run format:check
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+
+  unit:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-15, windows-2025]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,47 +71,135 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.lock
       - run: python -m venv .venv
       - run: npm ci
       - run: node scripts/install-python.mjs
-      - run: npm run typecheck
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm test
+        id: runtime
+      - name: Runtime versions
+        run: node --version && npm --version && python --version
+      - run: npm run test:unit
+      - run: npm run test:python
+        if: ${{ !cancelled() && steps.runtime.outcome == 'success' }}
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m venv .venv
+      - run: npm ci
+      - run: node scripts/install-python.mjs
+      - run: npm run test:smoke:quick
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-smoke-${{ matrix.os }}
+          path: |
+            artifacts/playwright/
+            artifacts/spec002/*.png
+          if-no-files-found: ignore
+
+  integration:
+    needs: scope
+    if: ${{ needs.scope.outputs.asr == 'true' || needs.scope.outputs.package == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - run: python -m venv .venv
+      - run: npm ci
+      - run: node scripts/install-python.mjs
       - uses: actions/cache@v4
         with:
           path: artifacts/spec003/real-asr/models
-          key: whisper-small-${{ runner.os }}-536b0662742c02347bc0e980a01041f333bce120
+          key: whisper-small-${{ runner.os }}-${{ runner.arch }}-536b0662742c02347bc0e980a01041f333bce120
+      # The frozen-runtime check also consumes this validated model/audio fixture.
       - run: npm run test:asr
-      - run: npm run test:smoke
+        id: fixture
+      - run: npm run test:smoke:asr
+        if: ${{ needs.scope.outputs.asr == 'true' }}
         env:
           PAA_REAL_ASR_SMOKE: '1'
-
       - name: Install frozen-runtime build tools
+        if: ${{ !cancelled() && steps.fixture.outcome == 'success' && needs.scope.outputs.package == 'true' }}
         run: node scripts/install-build-python.mjs
+        id: build-tools
       - run: npm run package
+        if: ${{ !cancelled() && steps.build-tools.outcome == 'success' }}
+        id: package
       - run: npm run test:package
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
       - name: Verify installed package
-        run: npx playwright test tests/smoke/package.spec.ts
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
+        run: npx playwright test tests/smoke/package.spec.ts --output=artifacts/playwright-package
         env:
           PAA_PACKAGE_SMOKE: '1'
       - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         with:
-          name: desktop-${{ matrix.os }}
+          name: package-${{ matrix.os }}
           path: |
             dist/desktop/*.dmg
             dist/desktop/*.exe
           if-no-files-found: error
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: smoke-${{ matrix.os }}
+          name: integration-${{ matrix.os }}
           path: |
             artifacts/playwright/
-            artifacts/spec002/*.png
+            artifacts/playwright-package/
             artifacts/spec003/*.json
             artifacts/spec003/*.png
             artifacts/spec005/*.json
             artifacts/spec005/*.png
           if-no-files-found: ignore
+
+  required:
+    name: CI required
+    if: always()
+    needs: [scope, quality, unit, desktop, integration]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check all required results, including selected integration suites
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node <<'JS'
+          const jobs = JSON.parse(process.env.CHECK_RESULTS)
+          const integration = jobs.scope.outputs.asr === 'true' || jobs.scope.outputs.package === 'true'
+          for (const [name, job] of Object.entries(jobs)) {
+            const expected = name === 'integration' && !integration ? 'skipped' : 'success'
+            console.log(`${name}: ${job.result} (expected ${expected})`)
+            if (job.result !== expected) process.exitCode = 1
+          }
+          JS

@@ -1,11 +1,11 @@
 # Task Handoff — 当前状态
 
-当前任务：[Spec 006：界面层级、页面导航与会议交互](../../specs/spec-006-interface-and-navigation/spec.md)，状态 ACCEPTANCE。用户已体验并认可原型并授权实施，业务改动与定向类型／lint 检查已完成。
+用户已授权直接修复 CI，不开新 Spec、不创建子 Agent。当前在长期 `dev`：日常静态、双平台单元及受控桌面检查分组运行，真实 ASR / 安装包按改动范围或发布触发；规则以 [README](../../README.md#ci-分层) 为准。先前未提交的 dev 分支约定一并保留，按 [分支规则](../rules/git-branch-workflow.md) 完成 PR 合并和回同步。
 
-首轮 FAIL 的历史行轮询容量问题已返工：共享队列最多 4 条在途 IPC，100 行及 20 次快速切页定向回归通过；窄窗口引用正文增加最小可读高度。新的独立验收者 `/root/spec006_reacceptance` 已确认没有工程阻塞，等待本次双平台 CI 后形成最终结论；完整依据见本 Spec 的 implementation.md / acceptance.md。协调 Agent 已在默认数据的 npm run dev 窗口完成首轮 CUA。恢复时先读 Git HEAD 与对应 Actions，不能引用旧 SHA 宣称本次通过；继续在 main 工作。
+原 [Spec 006](../../specs/spec-006-interface-and-navigation/spec.md) 仍为 ACCEPTANCE，界面实施 `cb9425d` 已在 main。首轮 FAIL 的列表轮询容量和窄窗引用问题已返工，独立复验及本机日常环境 CUA 证据见其 implementation.md / acceptance.md。旧实施、验收及诊断 Agent 均已完成或暂停，本次 CI 调整由主 Agent 直接处理。
 
-工程基线：main 上的 fa0a285 已提交并推送，[macOS / Windows CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34565153050) 均通过，包含安装版启动、重连、退出及清理。Windows URL 编码校验、NSIS 卸载等待和安装 smoke 提前退出已修复，不作为当前未完成任务。
+`cb9425d` 的 [macOS CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34573075617) 在模型下载取消后重试等待 ready 超时。本次通过同步信号固定清理时刻，已证明旧代码在文件清理未完成时发布 missing；修复将清理、终态发布和任务释放保持一致。相同定向测试旧代码 FAIL、修复后 PASS；不靠 sleep 或延长超时，等待失败现在可包含实际状态。
 
-Spec 004、005 的历史独立验收与物理设备验证边界仍以各自报告为准，本次 CI 成功不自动将它们标记 DONE。旧 .ai/prompts/*spec*.md 仅用于追溯。
+本次本地 S3 检查：47 项 TypeScript、58 项 Python 通过，typecheck / lint / format:check 通过，actionlint 1.7.11 工作流校验通过。CI 选择测试覆盖真实 Git 的完整 PR 差异、最后一次文档提交、删除/重命名和中文路径，以及缺失历史与手动模式。尚未推送本次改动，远端双平台结果待核对；修改 CI 本身会触发一次完整重检查。不得把本地结果说成远端通过。
 
-持续约束见 AGENTS.md 与 .ai/rules/。本机桌面验收使用项目 npm run dev 和用户默认数据目录，保留服务、密钥、模型与录音；UI 操作只用 CUA。不得因设计讨论发起付费请求或修改用户数据。原型可直接打开文件，当前预览地址为 http://127.0.0.1:5186/prototype.html（静态文件服务，失效时只需重新预览该文件）。
+本机 GUI 验收继续使用项目 npm run dev 和用户默认数据，不动真实密钥、模型与录音；本次不运行本机隔离桌面或物理设备测试，受控桌面及安装流程由远端 CI 执行。Spec 004、005 的历史独立验收与物理设备边界仍以各自报告为准，新 CI 通过不自动将历史 Spec 标记 DONE。

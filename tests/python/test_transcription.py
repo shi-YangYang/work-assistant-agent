@@ -419,25 +419,60 @@ class TranscriptionTests(unittest.TestCase):
 
     def test_corrupt_model_is_not_ready_and_download_cancel_and_retry_are_atomic(self):
         import hashlib
+        import shutil
         data=b'controlled model fixture';files={'model.bin':(len(data),hashlib.sha256(data).hexdigest())}
         class Response(io.BytesIO): pass
         class Opener:
             def open(self,*args,**kwargs):return Response(data)
         model=ModelManager(self.root,InlineWorker())
+        restarted=None
+        reading, release_read = threading.Event(), threading.Event()
+        cleaning, release_cleanup = threading.Event(), threading.Event()
         with patch('paa_core.model_manager.FILES',files), patch('paa_core.model_manager.urllib.request.build_opener',return_value=Opener()):
-            model.download();wait_for(lambda:model.status()['state']=='ready')
-            self.assertFalse(model.staging.exists())
-            verify_files(model.path)
-            (model.path/'model.bin').write_bytes(b'bad')
-            restarted=ModelManager(self.root,InlineWorker())
-            wait_for(lambda:restarted.status()['state']=='error')
-            class SlowResponse(Response):
-                def read(self,size):time.sleep(.2);return super().read(size)
-            class SlowOpener:
-                def open(self,*args,**kwargs):return SlowResponse(data)
-            with patch('paa_core.model_manager.urllib.request.build_opener',return_value=SlowOpener()):
-                restarted.download();restarted.cancel();wait_for(lambda:restarted.status()['state']=='missing')
-            restarted.download();wait_for(lambda:restarted.status()['state']=='ready')
-            self.assertFalse(restarted.staging.exists())
-            restarted.shutdown()
-        model.shutdown()
+            try:
+                model.download();wait_for(lambda:model.status()['state']=='ready',describe=model.status)
+                self.assertFalse(model.staging.exists())
+                verify_files(model.path)
+                (model.path/'model.bin').write_bytes(b'bad')
+                restarted=ModelManager(self.root,InlineWorker())
+                wait_for(lambda:restarted.status()['state']=='error',describe=restarted.status)
+                # Isolate cancellation from the preceding corrupt-cache check.
+                thread=restarted.thread
+                if thread: thread.join(3)
+                class HeldResponse(Response):
+                    def read(self,size):
+                        reading.set()
+                        if not release_read.wait(3): raise AssertionError('Download read was not released')
+                        return super().read(size)
+                class HeldOpener:
+                    def open(self,*args,**kwargs):return HeldResponse(data)
+                remove=shutil.rmtree
+                def hold_cleanup(path,*args,**kwargs):
+                    if path == restarted.staging:
+                        cleaning.set()
+                        if not release_cleanup.wait(3): raise AssertionError('Model cleanup was not released')
+                    return remove(path,*args,**kwargs)
+                with patch('paa_core.model_manager.urllib.request.build_opener',return_value=HeldOpener()), patch('paa_core.model_manager.shutil.rmtree',side_effect=hold_cleanup):
+                    try:
+                        restarted.download()
+                        self.assertTrue(reading.wait(3),restarted.status())
+                        restarted.cancel();release_read.set()
+                        self.assertTrue(cleaning.wait(3),restarted.status())
+                        # A terminal state promises that a retry can start immediately.
+                        self.assertIn(restarted.status()['state'],('downloading','verifying'),restarted.status())
+                        self.assertTrue(restarted.staging.exists())
+                    finally:
+                        release_read.set();release_cleanup.set()
+                    wait_for(lambda:restarted.status()['state']=='missing',describe=restarted.status)
+                    self.assertFalse(restarted.staging.exists())
+                    # Retry immediately on the public state, without joining the old thread.
+                    restarted.download();wait_for(lambda:restarted.status()['state']=='ready',describe=restarted.status)
+                self.assertFalse(restarted.staging.exists())
+                verify_files(restarted.path)
+            finally:
+                release_read.set();release_cleanup.set()
+                for manager in (restarted,model):
+                    if manager:
+                        thread=manager.thread
+                        manager.shutdown()
+                        if thread: thread.join(3)

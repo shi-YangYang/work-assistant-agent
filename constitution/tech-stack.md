@@ -68,9 +68,12 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 | 单元与协议测试 | `npm test` |
 | 真实模型集成 | `npm run test:asr`；首次联网准备固定公开音频和模型，worker 禁止联网推理 |
 | Electron 冒烟测试 | `npm run test:smoke` |
+| 日常 CI 桌面流程 | `npm run test:smoke:quick`；真实模型专用入口为 `npm run test:smoke:asr` |
 | 类型检查 | `npm run typecheck` |
 | 静态检查 | `npm run lint` |
 | 格式检查 | `npm run format:check` |
+
+CI 按改动与发布阶段选择重检查，日常组独立运行；固定的目标系统、选择条件、汇总门禁和手动触发方式统一见 [README：CI 分层](../README.md#ci-分层)。本地继续按 S0～S3 选择检查，GUI 验收使用用户日常环境。
 
 ## 配置与数据
 
