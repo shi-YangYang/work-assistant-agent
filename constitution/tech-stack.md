@@ -8,7 +8,7 @@
 
 [Spec 003](../specs/spec-003-local-transcription/spec.md) 已完成，独立工程验收 [PASS](../specs/spec-003-local-transcription/acceptance.md)。一个 faster-whisper Provider 提供本地持续转写，默认 small 多语言模型、CPU / INT8，应用内提示下载；依据见 [决策 0007](../.ai/decisions/0007-local-transcription-baseline.md)。下表记录实际实现；真实麦克风和最终双平台 CI 证据见文末。
 
-[Spec 004](../specs/spec-004-meeting-minutes/spec.md) 已完成业务实施与必要本地检查，独立复验已关闭发现的工程缺陷。代码已接入多服务 API 设置、自定义推理预设和会后纪要；真实服务及本轮 Windows／远端 CI 仍待验证，见 [验收报告](../specs/spec-004-meeting-minutes/acceptance.md)。
+[Spec 004](../specs/spec-004-meeting-minutes/spec.md) 已完成业务实施与必要本地检查，独立复验已关闭发现的工程缺陷。代码已接入多服务 API 设置、自定义推理预设和会后纪要；`9b2dc93` 的双平台 CI 已通过，真实服务样本核对仍待补，详见 [实施报告](../specs/spec-004-meeting-minutes/implementation.md) 与 [验收报告](../specs/spec-004-meeting-minutes/acceptance.md)。
 
 ## 技术基线
 
@@ -21,7 +21,7 @@
 | Node 工具链 | Node 24、npm 11、package-lock.json；通过 npm ci 复现 |
 | Python | Python 3.12、venv + pip；`requirements.lock` 固定运行依赖 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream；录音回调不调用 NumPy / ASR |
-| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 3，增加纪要任务／结果／自动尝试标记，备份并增量保留旧会议 |
+| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 4；沿用纪要表，新增暂停状态语义，先备份再增量升级 |
 | 通信 | Electron 主进程管理 Python 子进程，通过带请求 ID 的 JSON Lines / stdio 通信 |
 | 当前核心 | 会议采集、持久化、回放、受控模型准备、持续转写、历史补转写和恢复，以及转写完成后的纪要队列 |
 | ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；Whisper small，CPU INT8 / 4 线程 / beam 5；完整依赖见 requirements.lock |
@@ -29,9 +29,11 @@
 | API 配置 | Electron 主进程管理多个服务；safeStorage 系统加密密钥；每个服务／模型保存自定义强度字符串或受限 JSON 预设 |
 | 测试 | Vitest 4.1.11、Python unittest、Playwright 1.63.0 Electron smoke |
 | 质量 | TypeScript、ESLint 9.39.5、Prettier 3.9.6、构建检查 |
-| 分发 | 开发启动与构建预览；本次不制作签名安装包或内嵌 Python |
+| 分发 | electron-builder 26.15.3 + PyInstaller 6.22.2 onedir；macOS ARM64 DMG / Windows x64 NSIS 测试包，Spec 005 验收中 |
 
-正式用户分发约束：应用自带所需运行时与内部处理程序，用户无需安装 Python / Node.js、创建 `.venv` 或手动启动核心。当前解释器选择逻辑仅为开发启动实现，正式安装包与资源路径适配尚未落地。详见 [决策 0005](../.ai/decisions/0005-self-contained-desktop-distribution.md)。
+用户分发约束：应用自带所需运行时与内部处理程序，用户无需安装 Python / Node.js、创建 `.venv` 或手动启动核心。安装模式仅启动随包核心，开发模式保留解释器选择。正式签名／公证不在本轮范围，产物的实际验证边界见 [Spec 005 实施报告](../specs/spec-005-desktop-distribution-and-controls/implementation.md)。
+
+分发实现与录音操作增强的范围见 [Spec 005](../specs/spec-005-desktop-distribution-and-controls/spec.md)，状态 ACCEPTANCE；当前技术基线描述代码事实，尚未验收的能力不作为已交付结果。
 
 Node / Electron / Python 各自的运行边界、接口与退出行为见 [架构](../docs/architecture.md)。本机系统 Python 3.9 不作为项目基线；可用 Python 3.12 创建 `.venv`，不修改系统解释器。
 
@@ -61,6 +63,7 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 | Python 环境 | 使用 Python 3.12 创建 `.venv` 后执行 `node scripts/install-python.mjs`，使用项目解释器安装 `requirements.lock`；各平台命令见 README |
 | 开发启动 | `npm run dev` |
 | 构建与预览 | `npm run build`、`npm start` |
+| 测试安装包 | `node scripts/install-build-python.mjs` 准备构建依赖；`npm run package` 构建当前平台安装包，`npm run test:package` 检查实际资源 |
 | 单元与协议测试 | `npm test` |
 | 真实模型集成 | `npm run test:asr`；首次联网准备固定公开音频和模型，worker 禁止联网推理 |
 | Electron 冒烟测试 | `npm run test:smoke` |

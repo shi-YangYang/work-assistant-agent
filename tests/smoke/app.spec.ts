@@ -98,6 +98,18 @@ test('real desktop exposes actual capabilities and empty history with strict bou
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)
     await page.screenshot({ path: 'artifacts/spec002/empty-minimum.png' })
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const section = page.getByRole('button', { name: '模型服务管理', exact: true })
+    await expect(section).toHaveAttribute('aria-expanded', 'false')
+    await section.click()
+    await page.getByLabel('服务名称', { exact: true }).fill('未保存的草稿')
+    await section.click()
+    await expect(page.getByLabel('服务名称', { exact: true })).toBeHidden()
+    await page.getByRole('button', { name: '会议记录', exact: true }).click()
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await section.click()
+    await expect(page.getByLabel('服务名称', { exact: true })).toHaveValue('未保存的草稿')
+    await expect(page.getByRole('heading', { name: '应用状态', exact: true })).toHaveCount(0)
     const pid = (await page.evaluate(() => window.paa.getStatus())).processId!
     process.kill(pid)
     await expect
@@ -153,6 +165,17 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     await page.getByRole('button', { name: '开始会议', exact: true }).click()
     await expect.poll(() => recordingState(app)).toBe('recording')
     const initial = await page.evaluate(() => window.paa.getRecordingStatus())
+    await page.getByRole('button', { name: '暂停录音', exact: true }).click()
+    await expect.poll(() => recordingState(app)).toBe('paused')
+    const paused = await page.evaluate(() => window.paa.getRecordingStatus())
+    await page.waitForTimeout(200)
+    const stillPaused = await page.evaluate(() => window.paa.getRecordingStatus())
+    expect(
+      stillPaused.ok && paused.ok && stillPaused.value.elapsedMs === paused.value.elapsedMs,
+    ).toBe(true)
+    await expect(page.getByRole('button', { name: '开始会议', exact: true })).toBeDisabled()
+    await page.getByRole('button', { name: '继续录音', exact: true }).click()
+    await expect.poll(() => recordingState(app)).toBe('recording')
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await expect(page.getByLabel('活动录音')).toBeVisible()
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize())
@@ -193,9 +216,53 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
         page.locator('audio').evaluate((audio) => (audio as HTMLAudioElement).currentTime),
       )
       .toBeGreaterThan(0)
+    const player = page.getByRole('region', { name: '会议录音播放器', exact: true })
+    // Let periodic status updates reconcile the detail more than once.
+    await page.waitForTimeout(1200)
+    await expect(player).toHaveCount(1)
+    await player.getByRole('button', { name: '前进 10 秒', exact: true }).click()
+    await expect
+      .poll(() =>
+        page
+          .locator('audio')
+          .evaluate((element) =>
+            Math.abs(
+              (element as HTMLAudioElement).currentTime - (element as HTMLAudioElement).duration,
+            ),
+          ),
+      )
+      .toBeLessThan(0.1)
+    await player.getByRole('button', { name: '后退 10 秒', exact: true }).click()
+    await expect
+      .poll(() =>
+        page.locator('audio').evaluate((element) => (element as HTMLAudioElement).currentTime),
+      )
+      .toBe(0)
+    await player.getByLabel('播放倍速', { exact: true }).selectOption('1.5')
+    expect(
+      await page.locator('audio').evaluate((element) => (element as HTMLAudioElement).playbackRate),
+    ).toBe(1.5)
+    await player.getByRole('button', { name: '静音', exact: true }).click()
+    expect(
+      await page.locator('audio').evaluate((element) => (element as HTMLAudioElement).muted),
+    ).toBe(true)
+    await player.focus()
+    await player.press('m')
+    expect(
+      await page.locator('audio').evaluate((element) => (element as HTMLAudioElement).muted),
+    ).toBe(false)
     const rows = await page.evaluate(() => window.paa.listMeetings())
     expect(rows.ok && rows.meetings[0].audioAvailable).toBe(true)
     expect(rows.ok && Object.hasOwn(rows.meetings[0], 'audioPath')).toBe(false)
+    await page.getByRole('button', { name: '返回会议列表', exact: true }).click()
+    await expect(player).toHaveCount(0)
+    await expect(page.locator('audio')).toHaveCount(0)
+    await page.locator('.meeting-row').click()
+    await page.waitForTimeout(1200)
+    await expect(player).toHaveCount(1)
+    await page.getByRole('button', { name: '返回会议列表', exact: true }).click()
+    await expect(player).toHaveCount(0)
+    await expect(page.locator('audio')).toHaveCount(0)
     expect(errors).toEqual([])
   } finally {
     await app.close().catch(() => {})

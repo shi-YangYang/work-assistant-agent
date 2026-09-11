@@ -13,6 +13,7 @@ from .audio_store import AudioWriter, inspect_audio, inspect_recoverable_audio, 
 from .repository import ACTIVE, DomainError, Repository, now, valid_id
 
 ERROR_MESSAGES = {
+    'resume_unavailable': '无法继续录音，请检查默认麦克风与权限后重试，或结束会议保存已有内容。',
     'device_unavailable': '无法打开默认麦克风，请检查系统麦克风权限与输入设备后重试。',
     'device_interrupted': '麦克风输入已中断，已尝试保留可恢复录音。请检查设备后开始新会议。',
     'audio_overflow': '音频输入或写入缓冲溢出，录音已中断，部分声音可能缺失。',
@@ -34,6 +35,9 @@ class NativeInput:
         self.sd.check_input_settings(device=data['index'], channels=1, dtype='int16', samplerate=sample_rate)
         return data['index'], data['name'], sample_rate
 
+    def check(self, device, sample_rate):
+        self.sd.check_input_settings(device=device, channels=1, dtype='int16', samplerate=sample_rate)
+
     def stream(self, device, sample_rate, block_size, callback):
         return self.sd.RawInputStream(device=device, samplerate=sample_rate, channels=1,
                                       dtype='int16', blocksize=block_size, callback=callback)
@@ -51,6 +55,10 @@ class Session:
     stop: threading.Event = field(default_factory=threading.Event)
     finished: threading.Event = field(default_factory=threading.Event)
     chunks: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=64))
+    callback_lock: threading.Lock = field(default_factory=threading.Lock)
+    accepting: bool = True
+    generation: int = 0
+    resume_error: str | None = None
     next_sequence: int = 0
     next_offset: int = 0
     last_input: float = field(default_factory=time.monotonic)
@@ -70,7 +78,7 @@ class Recorder:
             try:
                 self.source = NativeInput()
             except (ImportError, OSError):
-                self.dependency_error = '录音组件不可用，请按 README 安装 Python 录音依赖后重新连接。'
+                self.dependency_error = '录音组件不可用，请重新启动应用；仍无法恢复时请重新安装。'
 
     def status(self):
         with self.lock:
@@ -80,7 +88,7 @@ class Recorder:
             return {'meetingId': current.meeting_id, 'state': current.state,
                     'elapsedMs': round(current.frames * 1000 / current.sample_rate),
                     'deviceName': current.device_name, 'inputLevel': current.input_level if current.state == 'recording' else 0,
-                    'error': {'code': current.error_code, 'message': ERROR_MESSAGES.get(current.error_code, '录音已中断，请检查存储与设备。')} if current.error_code else None}
+                    'error': {'code': current.error_code or current.resume_error, 'message': ERROR_MESSAGES.get(current.error_code or current.resume_error, '录音已中断，请检查存储与设备。')} if current.error_code or current.resume_error else None}
 
     def start(self, operation_id: str):
         if not valid_id(operation_id):
@@ -119,32 +127,56 @@ class Recorder:
                 current.stop.set()
             return self.status()
 
-    def callback(self, current: Session, data, frames, _timing, status):
-        if current.stop.is_set():
-            return
-        if status:
-            current.error_code = 'audio_overflow'
-            current.stop.set()
-            return
-        pcm = bytes(data)
-        if len(pcm) != frames * 2 or frames > self.block_size:
-            current.error_code = 'audio_overflow'
-            current.stop.set()
-            return
-        try:
-            current.chunks.put_nowait((current.next_sequence, current.next_offset, pcm))
-        except queue.Full:
-            current.error_code = 'audio_overflow'
-            current.stop.set()
-            return
-        current.next_sequence += 1
-        current.next_offset += frames
-        current.last_input = time.monotonic()
+    def pause(self, meeting_id: str):
+        return self.control(meeting_id, resume=False)
+
+    def resume(self, meeting_id: str):
+        return self.control(meeting_id, resume=True)
+
+    def control(self, meeting_id: str, resume: bool):
+        if not valid_id(meeting_id):
+            raise DomainError('invalid_params', '会议标识无效。')
+        with self.lock:
+            current = self.session
+            if not current or current.meeting_id != meeting_id:
+                raise DomainError('recording_inactive', '这场会议已经结束。')
+            expected = 'paused' if resume else 'recording'
+            if current.state == expected and not current.stop.is_set():
+                if not resume:
+                    with current.callback_lock:
+                        current.accepting = False
+                current.resume_error = None
+                current.state = 'resuming' if resume else 'pausing'
+            return self.status()
+
+    def callback(self, current: Session, data, frames, _timing, status, generation=None):
+        # Only this short memory/queue boundary is shared with control requests.
+        # No device, disk, database or inference work runs inside it.
+        with current.callback_lock:
+            if current.stop.is_set() or not current.accepting or (generation is not None and generation != current.generation):
+                return
+            if status:
+                current.error_code = 'audio_overflow'
+                current.stop.set()
+                return
+            pcm = bytes(data)
+            if len(pcm) != frames * 2 or frames > self.block_size:
+                current.error_code = 'audio_overflow'
+                current.stop.set()
+                return
+            try:
+                current.chunks.put_nowait((current.next_sequence, current.next_offset, pcm))
+            except queue.Full:
+                current.error_code = 'audio_overflow'
+                current.stop.set()
+                return
+            current.next_sequence += 1
+            current.next_offset += frames
+            current.last_input = time.monotonic()
 
     def run(self, current: Session):
         stream = None
         writer = None
-        opened = False
         closed = False
         phase = 'device_unavailable'
         try:
@@ -157,9 +189,9 @@ class Recorder:
             self.repository.update(current.meeting_id, deviceName=name, sampleRate=sample_rate, audioPath=f'meetings/{current.meeting_id}/recording.wav')
             phase = 'device_unavailable'
             if not current.stop.is_set():
-                stream = self.source.stream(device, sample_rate, self.block_size, lambda *args: self.callback(current, *args))
+                generation = current.generation
+                stream = self.source.stream(device, sample_rate, self.block_size, lambda *args, gen=generation: self.callback(current, *args, generation=gen))
                 stream.start()
-                opened = True
                 self.repository.update(current.meeting_id, status='recording', startedAt=now())
                 with self.lock:
                     if not current.stop.is_set():
@@ -170,16 +202,64 @@ class Recorder:
             while True:
                 if current.stop.is_set() and not closed:
                     current.state = 'stopping'
+                    with current.callback_lock:
+                        current.accepting = False
                     if stream:
                         stream.stop()
                         stream.close()
+                        stream = None
                     closed = True
                     self.repository.update(current.meeting_id, status='stopping')
+                elif current.state == 'pausing' and stream:
+                    stream.stop()
+                    stream.close()
+                    stream = None
+                elif current.state == 'resuming':
+                    try:
+                        device, name, _default_rate = self.source.device()
+                        if hasattr(self.source, 'check'):
+                            self.source.check(device, current.sample_rate)
+                        if not current.stop.is_set():
+                            with current.callback_lock:
+                                current.generation += 1
+                                generation = current.generation
+                                current.accepting = True
+                                current.last_input = time.monotonic()
+                            stream = self.source.stream(device, current.sample_rate, self.block_size,
+                                                        lambda *args, gen=generation: self.callback(current, *args, generation=gen))
+                            stream.start()
+                            with self.lock:
+                                if not current.stop.is_set():
+                                    self.repository.update(current.meeting_id, status='recording', deviceName=name)
+                                    current.device_name = name
+                                    current.state = 'recording'
+                    except Exception:
+                        with current.callback_lock:
+                            current.accepting = False
+                        if stream:
+                            try:
+                                stream.abort()
+                            finally:
+                                stream.close()
+                                stream = None
+                        # Drain any frames accepted during a failed open before confirming paused.
+                        with self.lock:
+                            if not current.stop.is_set():
+                                current.resume_error = 'resume_unavailable'
+                                current.state = 'pausing'
                 try:
                     sequence, offset, pcm = current.chunks.get(timeout=0.05)
                 except queue.Empty:
                     if closed:
                         break
+                    if current.state == 'pausing' and stream is None:
+                        writer.sync()
+                        with self.lock:
+                            if not current.stop.is_set():
+                                self.repository.update(current.meeting_id, status='paused', frames=current.frames,
+                                                       bytes=current.frames * 2, durationMs=round(current.frames * 1000 / current.sample_rate))
+                                current.state = 'paused'
+                                current.input_level = 0
                     if stream and (not stream.active or time.monotonic() - current.last_input > 3):
                         current.error_code = 'device_interrupted'
                         current.stop.set()

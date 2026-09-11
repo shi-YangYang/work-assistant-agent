@@ -39,7 +39,11 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true },
   },
 ])
-const core = new CoreManager(app.getAppPath(), app.getPath('userData'))
+const core = new CoreManager(
+  app.getAppPath(),
+  app.getPath('userData'),
+  app.isPackaged ? process.resourcesPath : undefined,
+)
 const allowTestHttp = !!process.env.PAA_TEST_DATA_DIR && process.env.PAA_TEST_ALLOW_HTTP === '1'
 const summarySettings = new SummarySettings(
   app.getPath('userData'),
@@ -56,7 +60,7 @@ let quitting = false
 let lifecycle: Promise<boolean> | undefined
 let startingRecording: Promise<Result<RecordingStatus>> | undefined
 const rendererFile = join(__dirname, '../renderer/index.html')
-const devUrl = process.env.ELECTRON_RENDERER_URL
+const devUrl = app.isPackaged ? undefined : process.env.ELECTRON_RENDERER_URL
 const rendererUrl = new URL(devUrl ?? pathToFileURL(rendererFile).href).href
 
 function trustedCaller(event: IpcMainInvokeEvent): void {
@@ -350,6 +354,8 @@ if (hasLock)
     register(CHANNELS.meeting, 'id', (id) => core.getMeeting(id as string))
     register(CHANNELS.recordingStatus, 'none', () => core.recordingStatus())
     register(CHANNELS.recordingStart, 'id', (id) => startRecording(id as string))
+    register(CHANNELS.recordingPause, 'id', (id) => core.pauseRecording(id as string))
+    register(CHANNELS.recordingResume, 'id', (id) => core.resumeRecording(id as string))
     register(CHANNELS.recordingStop, 'id', (id) => core.stopRecording(id as string))
     core.on('status', (status: CoreStatus) => {
       if (window && !window.isDestroyed()) window.webContents.send(CHANNELS.statusChanged, status)
@@ -371,7 +377,11 @@ if (hasLock)
     void core
       .start()
       .then(() => summarySettings.sync())
-      .catch(() => notifyError('模型服务设置未能恢复，请在设置中检查密钥后重新保存。'))
+      .catch((error: unknown) =>
+        notifyError(
+          error instanceof Error ? error.message : '模型服务设置未能恢复，请重新打开应用。',
+        ),
+      )
   })
 app.on('second-instance', () => {
   window?.restore()

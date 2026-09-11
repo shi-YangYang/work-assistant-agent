@@ -189,8 +189,17 @@ export class SummarySettings {
       if (!(await this.secrets.isAsyncEncryptionAvailable())) throw new Error('Unavailable')
       return (await this.secrets.decryptStringAsync(Buffer.from(profile.encryptedKey, 'base64')))
         .result
-    } catch {
-      throw new Error('无法解锁已保存密钥，请重新输入并保存；录音和转写仍可使用。')
+    } catch (error) {
+      const temporary =
+        error instanceof Error &&
+        (error.message === 'Unavailable' || error.message.includes('temporarily unavailable'))
+      // Only a fixed category is logged: OS errors, profiles and credentials never enter logs.
+      console.error(`[safe-storage] ${temporary ? 'temporarily-unavailable' : 'decrypt-failed'}`)
+      throw new Error(
+        temporary
+          ? '暂时无法访问系统密钥存储。请允许系统的访问请求后重新打开应用；已保存的配置仍保留。'
+          : '无法解锁已保存的服务密钥。请检查系统密钥存储的访问权限后重新打开应用；已保存的配置仍保留。',
+      )
     }
   }
   private runtime(profile: StoredProfile, apiKey: string): RuntimeConfig {
@@ -212,7 +221,9 @@ export class SummarySettings {
   sync(): Promise<void> {
     const operation = this.serial.then(async () => {
       this.ensure()
-      await this.apply(await this.active(this.state), this.state.autoGenerate)
+      const config = await this.active(this.state)
+      await this.apply(config, this.state.autoGenerate)
+      console.info(`[model-services] ${config ? 'restored' : 'unconfigured'}`)
     })
     this.serial = operation.catch(() => undefined)
     return operation

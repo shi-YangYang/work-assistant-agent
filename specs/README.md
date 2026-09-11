@@ -6,8 +6,9 @@
 | [002](spec-002-meeting-recording-and-storage/spec.md) | 麦克风录音、保存与回放 | DONE | [PASS](spec-002-meeting-recording-and-storage/acceptance.md) |
 | [003](spec-003-local-transcription/spec.md) | 模型准备、持续转写与恢复 | DONE | [PASS](spec-003-local-transcription/acceptance.md) |
 | [004](spec-004-meeting-minutes/spec.md) | API 管理、会后纪要与重试 | ACCEPTANCE | [工程缺陷已关闭，待外部验证](spec-004-meeting-minutes/acceptance.md) |
+| [005](spec-005-desktop-distribution-and-controls/spec.md) | 内置运行时打包、设置折叠、暂停录音与播放器 | ACCEPTANCE | [许可缺陷已关闭，待平台／交互验证](spec-005-desktop-distribution-and-controls/acceptance.md) |
 
-最新平台和实录结果统一见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
+录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 
 ## 文档分工
 
@@ -22,7 +23,7 @@
 
 ## 生命周期
 
-目录用 `spec-XXX-short-name/`。关键决策确认 → 实施 → 新的独立验收 → PASS 交付；FAIL 记录具体问题，交新的实施 Agent 返工，再由新的独立验收 Agent 检查。运行与未执行项分开记录，遵循 AGENTS.md 的验证 / 停止及分支收尾规则。[Spec 决策本身不派子 Agent 验证](../.ai/rules/spec-decision-workflow.md)。
+目录用 `spec-XXX-short-name/`。协调 Agent 起草决策并轻量自查，交用户审查，不安排决策子 Agent 或独立验收。关键决策确认 → 实施 Agent 开发 → 新的独立验收 → PASS 交付；FAIL 记录具体问题，交新的实施 Agent 返工，再由新的独立验收 Agent 检查。不开 Spec 的修改由协调 Agent 直接完成。具体遵循 [Spec 工作规则](../.ai/rules/spec-decision-workflow.md) 及 AGENTS.md 的验证 / 停止和分支收尾规则。
 
 ## 历史记录
 

@@ -13,7 +13,7 @@ from pathlib import Path
 from .audio_store import inspect_audio, inspect_recoverable_audio, recover_audio
 
 ID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
-ACTIVE = ('starting', 'recording', 'stopping')
+ACTIVE = ('starting', 'recording', 'pausing', 'paused', 'resuming', 'stopping')
 
 
 class DomainError(Exception):
@@ -39,9 +39,9 @@ class Repository:
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
             tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            if version not in (0, 1, 2, 3) or (version == 0 and tables):
+            if version not in (0, 1, 2, 3, 4) or (version == 0 and tables):
                 raise DomainError('storage_schema', '会议数据库版本不兼容，请保留数据并联系维护者。')
-            if version in (1, 2):
+            if version in (1, 2, 3):
                 self.backup_schema(db, version)
             db.execute('BEGIN IMMEDIATE')
             if version == 0:
@@ -58,7 +58,9 @@ class Repository:
             if version < 3:
                 from .summary_store import migrate as migrate_summary
                 migrate_summary(db)
-                db.execute('PRAGMA user_version=3')
+            if version < 4:
+                # New persisted active states require newer recovery semantics.
+                db.execute('PRAGMA user_version=4')
         self.recover()
 
     def backup_schema(self, db, version):
@@ -155,7 +157,7 @@ class Repository:
 
     def recover(self) -> None:
         with self.connect() as db:
-            rows = db.execute("""SELECT * FROM meetings WHERE status IN ('starting','recording','stopping')
+            rows = db.execute("""SELECT * FROM meetings WHERE status IN ('starting','recording','pausing','paused','resuming','stopping')
                               OR (status='failed' AND audioPath IS NOT NULL)""").fetchall()
         for row in rows:
             info = None

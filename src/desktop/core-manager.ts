@@ -1,9 +1,8 @@
 import type { RuntimeConfig } from '../shared/summary-contracts'
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
 import { CoreError, JsonLineClient } from './json-line-client'
-import { pythonCommand } from './python-command'
+import { coreLaunch } from './python-command'
 import {
   ACTIVE_STATES,
   ID_PATTERN,
@@ -71,6 +70,7 @@ export class CoreManager extends EventEmitter {
   constructor(
     private readonly root: string,
     private readonly dataRoot: string,
+    private readonly resourcesPath?: string,
   ) {
     super()
   }
@@ -105,33 +105,28 @@ export class CoreManager extends EventEmitter {
     })
     await previous?.stop()
     if (this.closed) return this.status
-    const { command, args } = pythonCommand(this.root)
-    const child = spawn(
-      command,
-      [
-        ...args,
-        '-u',
-        join(this.root, 'src/python/paa_core/__main__.py'),
-        '--data-dir',
-        this.dataRoot,
-      ],
-      {
-        cwd: this.root,
-        shell: false,
-        windowsHide: true,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
-      },
-    )
+    const { command, args, cwd } = coreLaunch(this.root, this.dataRoot, this.resourcesPath)
+    const child = spawn(command, args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+    })
     const client = new JsonLineClient(child, (error) => {
       if (this.client === client && !this.closed) this.reportError(error)
     })
     this.client = client
     try {
-      const health = await client.request('health')
+      const health = await client.request('health', this.resourcesPath ? 15_000 : undefined)
       if (!isHealth(health)) throw new CoreError('invalid_health', '本地核心状态无效，请重新连接。')
       if (!/^3\.12\./.test(health.pythonVersion))
-        throw new CoreError('python_version', '本地核心需要 Python 3.12，请更新项目 .venv 后重试。')
+        throw new CoreError(
+          'python_version',
+          this.resourcesPath
+            ? '应用运行资源版本不正确，请重新安装应用。'
+            : '本地核心需要 Python 3.12，请更新项目 .venv 后重试。',
+        )
       if (!this.closed)
         this.update({
           connection: 'ready',
@@ -148,7 +143,14 @@ export class CoreManager extends EventEmitter {
   private reportError(error: unknown): void {
     this.update({
       connection: 'error',
-      message: error instanceof CoreError ? error.message : '无法连接本地核心，请重试。',
+      message:
+        this.resourcesPath &&
+        error instanceof CoreError &&
+        ['python_missing', 'spawn_failed', 'exited'].includes(error.code)
+          ? '应用运行资源缺失或无法启动，请重新安装应用后重试。'
+          : error instanceof CoreError
+            ? error.message
+            : '无法连接本地核心，请重试。',
       capabilities: UNAVAILABLE_CAPABILITIES,
     })
   }
@@ -227,6 +229,12 @@ export class CoreManager extends EventEmitter {
   }
   startRecording(operationId: string): Promise<Result<RecordingStatus>> {
     return this.recordingRequest('recording.start', { operationId })
+  }
+  pauseRecording(meetingId: string): Promise<Result<RecordingStatus>> {
+    return this.recordingRequest('recording.pause', { meetingId })
+  }
+  resumeRecording(meetingId: string): Promise<Result<RecordingStatus>> {
+    return this.recordingRequest('recording.resume', { meetingId })
   }
   stopRecording(meetingId: string, interrupt = false): Promise<Result<RecordingStatus>> {
     return this.recordingRequest(interrupt ? 'recording.interrupt' : 'recording.stop', {

@@ -21,7 +21,9 @@
 
 已完成 [Spec 003：本地语音转写与 Transcript](../specs/spec-003-local-transcription/spec.md)，状态 DONE，独立验收 PASS。交付应用内默认模型下载、中文为主且兼顾中英混合的持续转写、尾部补齐、历史补转写与持久恢复；实际质量、麦克风和双平台结果均已记录。纪要仍留给后续 Spec。
 
-[Spec 004：会议纪要生成](../specs/spec-004-meeting-minutes/spec.md) 已实现多服务 API 管理、动态模型列表、自定义推理预设和转写完成后自动生成纪要；本地检查完成，仍待真实 API 样本及本轮 Windows／远端 CI 验证。
+[Spec 004：会议纪要生成](../specs/spec-004-meeting-minutes/spec.md) 已实现多服务 API 管理、动态模型列表、自定义推理预设和转写完成后自动生成纪要；用户反馈基本验收无问题，代码 `9b2dc93` 的双平台 CI 已通过，仍缺 Agent 的真实 API 样本核对证据，详见该 Spec 实施报告。
+
+[Spec 005：桌面打包与会议操作体验](../specs/spec-005-desktop-distribution-and-controls/spec.md) 已实施，状态 ACCEPTANCE：内置 Python 运行环境的安装包、设置折叠与命名整理、录音暂停／继续、自定义播放器。交付及验证结果以本 Spec 报告为准。
 
 关键结果：
 

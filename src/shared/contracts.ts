@@ -24,6 +24,8 @@ export const CHANNELS = {
   recordingStatus: 'paa:recording-status',
   recordingStart: 'paa:recording-start',
   recordingStop: 'paa:recording-stop',
+  recordingPause: 'paa:recording-pause',
+  recordingResume: 'paa:recording-resume',
   statusChanged: 'paa:status-changed',
   lifecycleError: 'paa:lifecycle-error',
 } as const
@@ -37,7 +39,15 @@ export type CoreStatus = {
   storageError?: string | null
 }
 export type MeetingState =
-  'starting' | 'recording' | 'stopping' | 'completed' | 'interrupted' | 'failed'
+  | 'starting'
+  | 'recording'
+  | 'pausing'
+  | 'paused'
+  | 'resuming'
+  | 'stopping'
+  | 'completed'
+  | 'interrupted'
+  | 'failed'
 export type Meeting = {
   id: string
   title: string
@@ -93,6 +103,8 @@ export interface DesktopApi {
   getMeeting(meetingId: string): Promise<Result<Meeting>>
   getRecordingStatus(): Promise<Result<RecordingStatus>>
   startRecording(operationId: string): Promise<Result<RecordingStatus>>
+  pauseRecording(meetingId: string): Promise<Result<RecordingStatus>>
+  resumeRecording(meetingId: string): Promise<Result<RecordingStatus>>
   stopRecording(meetingId: string): Promise<Result<RecordingStatus>>
   onStatusChanged(listener: (status: CoreStatus) => void): () => void
   onLifecycleError(listener: (message: string) => void): () => void
@@ -103,7 +115,14 @@ export const UNAVAILABLE_CAPABILITIES: Capability[] = [
   { id: 'summary', available: false },
 ]
 export const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
-export const ACTIVE_STATES: string[] = ['starting', 'recording', 'stopping']
+export const ACTIVE_STATES: string[] = [
+  'starting',
+  'recording',
+  'pausing',
+  'paused',
+  'resuming',
+  'stopping',
+]
 
 export type ModelState = {
   modelId: string

@@ -114,6 +114,91 @@ class RecordingTests(unittest.TestCase):
         with wave.open(str(self.root / row['audioPath'])) as audio:
             self.assertEqual(audio.readframes(1536), array.array('h', [1000, -1000] * 768).tobytes())
 
+    def test_pause_closes_stream_drains_and_resumes_same_pcm_without_silence(self):
+        streams = []
+        class ManualStream:
+            active = False
+            def __init__(self, callback): self.callback = callback
+            def start(self): self.active = True
+            def stop(self): self.active = False
+            close = stop
+            abort = stop
+            def emit(self, sample): self.callback(array.array('h', [sample] * 256).tobytes(), 256, None, False)
+        class ManualInput(FakeInput):
+            fail = False
+            def stream(source, _device, rate, _block, callback):
+                self.assertEqual(rate, 48000)
+                if source.fail: raise OSError('Device missing')
+                stream = ManualStream(callback); streams.append(stream); return stream
+        source = ManualInput()
+        self.recorder = Recorder(self.repo, source)
+        mid = self.recorder.start(str(uuid.uuid4()))['meetingId']
+        wait_for(lambda: self.recorder.status()['state'] == 'recording')
+        streams[0].emit(1000)
+        self.recorder.pause(mid)
+        self.recorder.pause(mid)
+        streams[0].emit(9999)  # callbacks arriving after the gate closes are rejected
+        wait_for(lambda: self.recorder.status()['state'] == 'paused')
+        paused = self.recorder.status()
+        self.assertFalse(streams[0].active)
+        self.assertEqual(self.recorder.session.frames, 256)
+        self.assertEqual(paused['inputLevel'], 0)
+        self.assertEqual(self.recorder.start(str(uuid.uuid4()))['meetingId'], mid)
+        source.fail = True
+        self.recorder.resume(mid)
+        wait_for(lambda: self.recorder.status()['state'] == 'paused')
+        self.assertEqual(self.recorder.status()['error']['code'], 'resume_unavailable')
+        self.assertEqual(self.recorder.status()['elapsedMs'], paused['elapsedMs'])
+        source.fail = False
+        for sample in (2000, 3000):
+            self.recorder.resume(mid)
+            self.recorder.resume(mid)
+            wait_for(lambda: self.recorder.status()['state'] == 'recording')
+            streams[0].emit(9999)  # old stream generation cannot write into the resumed session
+            streams[-1].emit(sample)
+            self.recorder.pause(mid)
+            wait_for(lambda: self.recorder.status()['state'] == 'paused')
+        row = self.finish(mid)
+        self.assertEqual(row['status'], 'completed')
+        self.assertEqual(row['frames'], 768)
+        self.assertEqual(row['durationMs'], 16)
+        self.assertEqual(len(streams), 3)
+        self.assertTrue(all(not stream.active for stream in streams))
+        with wave.open(str(self.root / row['audioPath'])) as audio:
+            self.assertEqual(audio.readframes(1000), array.array('h', [1000]*256 + [2000]*256 + [3000]*256).tobytes())
+
+    def test_stop_overrides_resume_while_device_is_opening(self):
+        gate = threading.Event()
+        reopening = threading.Event()
+        class SlowResume(FakeInput):
+            calls = 0
+            def device(source):
+                source.calls += 1
+                if source.calls > 1: reopening.set(); gate.wait(2)
+                return super().device()
+        self.recorder = Recorder(self.repo, SlowResume())
+        _, mid = self.start()
+        self.recorder.pause(mid)
+        wait_for(lambda: self.recorder.status()['state'] == 'paused')
+        self.recorder.resume(mid)
+        self.assertTrue(reopening.wait(1))
+        self.recorder.stop(mid)
+        gate.set()
+        self.assertTrue(self.recorder.session.finished.wait(2))
+        self.assertEqual(self.recorder.status()['state'], 'completed')
+
+    def test_schema3_backup_and_paused_crash_recovery_preserve_frames(self):
+        _, mid = self.start()
+        self.recorder.pause(mid)
+        wait_for(lambda: self.recorder.status()['state'] == 'paused')
+        before = self.recorder.session.frames
+        with self.repo.connect() as db: db.execute('PRAGMA user_version=3')
+        restored = Repository(self.root)
+        self.assertTrue((self.root / 'meetings.schema3.backup.sqlite3').exists())
+        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 4)
+        self.assertEqual(restored.get(mid)['status'], 'interrupted')
+        self.assertEqual(restored.get(mid)['frames'], before)
+
     def test_device_denied_never_claims_recording(self):
         class Denied(FakeInput):
             def device(self):

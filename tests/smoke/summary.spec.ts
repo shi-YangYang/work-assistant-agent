@@ -103,7 +103,8 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     const missing = await page.evaluate((id) => window.paa.generateSummary(id), meetingId)
     expect(!missing.ok && missing.code).toBe('not_configured')
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const card = page.getByLabel('纪要模型服务')
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
+    const card = page.getByLabel('模型服务管理', { exact: true })
     await expect(card.getByLabel('使用流式接口')).toBeChecked()
     // This fixture serves non-streaming JSON responses.
     await card.getByLabel('使用流式接口').uncheck()

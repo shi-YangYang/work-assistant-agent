@@ -4,6 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import ssl
+import certifi
 import threading
 import urllib.parse
 import urllib.request
@@ -105,7 +107,7 @@ class ModelManager:
                     shutil.rmtree(self.staging)
                 self.staging.mkdir()
                 # urllib honors the OS proxy settings on macOS/Windows and normal TLS validation.
-                opener = urllib.request.build_opener(HTTPSRedirect())
+                opener = urllib.request.build_opener(HTTPSRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())))
                 for name, (size, _checksum) in FILES.items():
                     if self.cancelled.is_set():
                         raise InterruptedError('Cancelled')

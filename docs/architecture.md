@@ -68,6 +68,7 @@ Python 本地核心
 ├── meetings.sqlite3
 ├── meetings.schema1.backup.sqlite3  # 如从 schema 1 升级
 ├── meetings.schema2.backup.sqlite3  # 如从 schema 2 升级
+├── meetings.schema3.backup.sqlite3  # 如从 schema 3 升级，新增暂停录音状态语义
 ├── model-services.json             # 服务与模型预设、系统保护的密钥密文
 ├── models/                         # 受控模型与临时下载目录
 └── meetings/
@@ -77,7 +78,7 @@ Python 本地核心
         └── recovered.wav    # 中断恢复时另行生成，保留源文件
 ```
 
-各音频文件按会议状态存在，不保证三个同时存在。SQLite `PRAGMA user_version=3`，保留原有 `meetings` 表，保存 ID、唯一操作标识、标题、带时区时间、状态、时长、错误码、设备、采样率、通道数、采样宽度、帧数、PCM 字节数和相对音频路径。标题按本地时间自动生成。新增转写任务、音频块和片段表；块完成位置与片段在同一事务提交，稳定 ID / 唯一约束防重。迁移前经 staging 生成完整备份；DDL 失败回滚，数据库忙等待有界。旧会议保持未转写，不在升级时自动推理。
+各音频文件按会议状态存在，不保证三个同时存在。SQLite `PRAGMA user_version=4`，保留原有 `meetings` 表，保存 ID、唯一操作标识、标题、带时区时间、状态、时长、错误码、设备、采样率、通道数、采样宽度、帧数、PCM 字节数和相对音频路径。标题按本地时间自动生成。新增转写任务、音频块和片段表；块完成位置与片段在同一事务提交，稳定 ID / 唯一约束防重。迁移前经 staging 生成完整备份；DDL 失败回滚，数据库忙等待有界。旧会议保持未转写，不在升级时自动推理。
 
 音频为单声道 PCM16 WAV，采样率由设备参数检查决定。写入更新 WAV 长度并周期性同步磁盘；停止时先关闭采集、排空已接受缓冲、关闭音频，再提交终态元信息。标准 RIFF WAV 有容量上限，不能宣称无限时长。
 
@@ -110,7 +111,7 @@ Spec 001 曾验证额外注入脚本跳转 `about:blank` 可绕过 Electron 的 
 - sounddevice 原始输入流不变；NumPy、PyAV 与 ONNX Runtime 用于实际 ASR / VAD，完整锁定依赖见 `requirements.lock`。SQLite 与 WAV 沿用标准库。
 - 本地转写与模型网络 worker 独立；Memory、FastAPI、PostgreSQL、pgvector、LangGraph 继续延期。
 
-墙上时间带时区，片段时间相对会议开始，ID 稳定并可追溯原始音频。正式迁移备份和恢复操作见 README；不能用旧程序直接写 schema 3。
+墙上时间带时区，片段时间相对累计音频时间（不含暂停），ID 稳定并可追溯原始音频。正式迁移备份和恢复操作见 README；不能用旧程序直接写 schema 4。
 
 ## 在线模型与纪要
 
@@ -126,4 +127,10 @@ Spec 001 曾验证额外注入脚本跳转 `about:blank` 可绕过 Electron 的 
 
 目标为 macOS 与 Windows，当前实机开发平台为 macOS ARM64。Windows 的 CI 定义和路径检查不等于 Windows 实机录音验证；结果分别记录。当前不承诺最低系统版本。
 
-本次仍是开发交付，构建预览不包含内嵌 Python、签名、公证、安装包和自动更新。正式分发必须遵循 [决策 0005](../.ai/decisions/0005-self-contained-desktop-distribution.md)：应用自带内部核心及运行时，普通用户无需安装 Python / Node.js 或启动服务。安装包资源路径和无预装运行时环境的验证留给后续分发 Spec。
+Spec 005 增加 electron-builder + PyInstaller onedir 的测试安装包，macOS ARM64 DMG / Windows x64 NSIS 随包提供 Python 3.12 与原生依赖，暂不做正式签名、公证或自动更新。分发遵循 [决策 0005](../.ai/decisions/0005-self-contained-desktop-distribution.md)：应用自带内部核心及运行时，普通用户无需安装 Python / Node.js 或启动服务。打包模式仅从 `process.resourcesPath/paa-core` 启动冻结程序，忽略开发解释器覆盖；入口先执行 `freeze_support()`，支持 ASR spawn。运行资源位于 ASAR 外，不写入程序目录。实际平台证据见 Spec 005 实施报告。
+
+## 暂停录音与播放
+
+`pauseRecording(meetingId)` / `resumeRecording(meetingId)` 通过受限 IPC 和 JSON Lines 对应 `recording.pause` / `recording.resume`。`pausing`、`paused`、`resuming` 均为活动会议，参与退出保护、恢复、禁止第二场会议和播放限制。控制线程只发起状态变化，录音线程串行关流、排空队列并 fsync 后确认暂停；继续重新打开输入设备，保持同一 WAV 及采样率，旧流回调通过代次拒绝。暂停时帧数与音频时长不增长，不触发转写完成或自动纪要。schema 4 不改变表结构，升级前备份旧数据库并阻止旧版按错误的状态语义恢复。
+
+播放器用一个 HTMLAudioElement 解码，React 控件处理定位、倍速、音量、时间和上下文快捷键；继续使用原有受限 Range 请求，不把整场音频先加载进 renderer。文字和纪要引用调用同一播放器定位入口。

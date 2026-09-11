@@ -1,3 +1,4 @@
+import { CollapsibleSection } from './CollapsibleSection'
 import { useEffect, useRef, useState } from 'react'
 import type {
   ModelEntry,
@@ -217,9 +218,19 @@ export function ApiModelSettings(): React.JSX.Element {
     /* Incomplete form. */
   }
   return (
-    <section className="settings-card api-settings" aria-label="纪要模型服务">
+    <CollapsibleSection
+      id="model-services"
+      title="模型服务管理"
+      className="api-settings"
+      error={!!error}
+      summary={
+        error ||
+        network ||
+        check ||
+        (active ? `${active.name} · ${active.model}` : '尚未选择纪要模型服务')
+      }
+    >
       <div className="section-heading">
-        <h2>纪要模型服务</h2>
         <button
           className="text-button"
           disabled={busy}
@@ -534,6 +545,6 @@ export function ApiModelSettings(): React.JSX.Element {
           {error}
         </p>
       )}
-    </section>
+    </CollapsibleSection>
   )
 }

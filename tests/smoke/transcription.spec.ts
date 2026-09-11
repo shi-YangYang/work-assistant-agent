@@ -79,6 +79,8 @@ test('real local model restores transcript, seeks, and generates historical text
         .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
         .toBe('ready')
       await page.getByRole('button', { name: '设置', exact: true }).click()
+      const modelSection = page.getByRole('button', { name: '本地转写模型', exact: true })
+      if ((await modelSection.getAttribute('aria-expanded')) !== 'true') await modelSection.click()
       await expect(page.getByText('模型已就绪', { exact: true })).toBeVisible({ timeout: 30_000 })
       await page.getByRole('button', { name: '会议记录', exact: true }).click()
       const meetings = await page.evaluate(() => window.paa.listMeetings())

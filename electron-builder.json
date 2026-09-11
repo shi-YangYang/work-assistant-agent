@@ -1,0 +1,55 @@
+{
+  "appId": "com.personal-agent-assistant.desktop",
+  "productName": "个人工作助手",
+  "directories": {
+    "output": "dist/desktop"
+  },
+  "files": ["out/**/*", "package.json", "LICENSE"],
+  "extraResources": [
+    {
+      "from": "dist/core/paa-core",
+      "to": "paa-core",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "requirements.lock",
+      "to": "licenses/requirements.lock"
+    },
+    {
+      "from": "LICENSE",
+      "to": "licenses/LICENSE"
+    }
+  ],
+  "asar": true,
+  "npmRebuild": false,
+  "artifactName": "Personal-Agent-Assistant-${version}-${os}-${arch}.${ext}",
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64"]
+      }
+    ],
+    "identity": "-",
+    "hardenedRuntime": false,
+    "extendInfo": {
+      "NSMicrophoneUsageDescription": "录制会议时需要使用麦克风。您可以随时暂停或结束录音。"
+    }
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false
+  },
+  "publish": null,
+  "electronDist": "node_modules/electron/dist"
+}

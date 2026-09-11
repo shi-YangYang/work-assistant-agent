@@ -26,6 +26,8 @@ const api: DesktopApi = {
   getMeeting: (id) => ipcRenderer.invoke(CHANNELS.meeting, id),
   getRecordingStatus: () => ipcRenderer.invoke(CHANNELS.recordingStatus),
   startRecording: (id) => ipcRenderer.invoke(CHANNELS.recordingStart, id),
+  pauseRecording: (id) => ipcRenderer.invoke(CHANNELS.recordingPause, id),
+  resumeRecording: (id) => ipcRenderer.invoke(CHANNELS.recordingResume, id),
   stopRecording: (id) => ipcRenderer.invoke(CHANNELS.recordingStop, id),
   onStatusChanged: (listener) => {
     const handler = (_event: Electron.IpcRendererEvent, status: CoreStatus): void =>

@@ -130,7 +130,7 @@ class Transcription:
             current = self.recorder.session
             live = current is not None and current.meeting_id == meeting_id and current.state in ACTIVE
             if live:
-                if current.state != 'recording':
+                if current.state not in ('recording', 'paused'):
                     return None
                 available, rate = current.frames, current.sample_rate
                 path = self.repo.path(meeting_id, 'recording.wav')

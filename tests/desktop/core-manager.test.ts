@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CoreManager } from '../../src/desktop/core-manager'
-import { pythonCommand } from '../../src/desktop/python-command'
+import { coreLaunch, pythonCommand } from '../../src/desktop/python-command'
 
 const managers: CoreManager[] = []
 const createManager = (): CoreManager => {
@@ -74,4 +74,32 @@ it('stopping during startup cannot leave a process or return ready', async () =>
   await startup
   expect(manager.getStatus().connection).toBe('stopped')
   expect((await manager.start()).connection).toBe('stopped')
+})
+
+it('packaged launch is rooted in resources and ignores development Python overrides', () => {
+  expect(
+    coreLaunch(
+      '/missing/source',
+      '/user data',
+      '/中文 App/resources',
+      { PAA_PYTHON: '/wrong/python' },
+      'win32',
+    ),
+  ).toEqual({
+    command: join('/中文 App/resources', 'paa-core', 'paa-core.exe'),
+    args: ['--data-dir', '/user data'],
+    cwd: join('/中文 App/resources', 'paa-core'),
+  })
+})
+it('missing packaged runtime reports an application fault without system fallback', async () => {
+  const manager = new CoreManager(
+    '/missing/source',
+    mkdtempSync(join(tmpdir(), 'paa-package-')),
+    '/missing/resources',
+  )
+  managers.push(manager)
+  const status = await manager.start()
+  expect(status.connection).toBe('error')
+  expect(status.message).toContain('重新安装应用')
+  expect(status.message).not.toContain('Python')
 })

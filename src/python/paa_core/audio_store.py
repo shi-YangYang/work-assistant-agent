@@ -29,6 +29,10 @@ class AudioWriter:
             os.fsync(self.file.fileno())
             self.last_sync = time.monotonic()
 
+    def sync(self) -> None:
+        os.fsync(self.file.fileno())
+        self.last_sync = time.monotonic()
+
     def close(self) -> None:
         try:
             self.wav.close()

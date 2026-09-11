@@ -1,3 +1,4 @@
+import { CollapsibleSection } from './CollapsibleSection'
 import { useEffect, useRef, useState } from 'react'
 import type { ModelState, TranscriptionStatus, TranscriptSegment } from '../shared/contracts'
 
@@ -33,8 +34,21 @@ export function ModelSettings({
     }
   }
   return (
-    <section className="settings-card model-card" aria-label="本地转写模型">
-      <h2>本地转写模型</h2>
+    <CollapsibleSection
+      id="transcription-model"
+      title="本地转写模型"
+      className="model-card"
+      error={!!(error || model?.error)}
+      summary={
+        error ||
+        model?.error ||
+        (model?.state === 'ready'
+          ? 'Whisper small · 已就绪'
+          : preparing
+            ? `正在准备 · ${Math.floor(((model?.downloadedBytes ?? 0) * 100) / (model?.totalBytes || 1))}%`
+            : '尚未下载模型')
+      }
+    >
       <p>支持中文及中英混合转写。</p>
       <p>下载约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。</p>
       <p>下载需要联网，完成后可离线转写。</p>
@@ -82,7 +96,7 @@ export function ModelSettings({
         <p>Whisper small 多语言</p>
         <p>来源：{model?.source ?? 'Hugging Face · SYSTRAN'} · MIT 许可</p>
       </details>
-    </section>
+    </CollapsibleSection>
   )
 }
 const states: Record<TranscriptionStatus['state'], string> = {
@@ -136,7 +150,7 @@ export function Transcript({
           setError('')
         } else setError(page.message)
       } catch {
-        if (alive) setError('无法读取转写状态，请在设置中重新连接。')
+        if (alive) setError('无法读取转写状态，请通过页面的连接提示重试。')
       } finally {
         if (alive)
           timer = setTimeout(() => {

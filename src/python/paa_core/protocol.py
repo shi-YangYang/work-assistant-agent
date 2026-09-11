@@ -36,7 +36,7 @@ class CoreService:
                 self.storage_error = '无法打开会议存储，请检查数据目录权限、磁盘空间和数据库版本；不要删除已有数据。'
 
     def dispatch(self, method: str, params: dict):
-        expected = {'recording.start': {'operationId'}, 'recording.stop': {'meetingId'},
+        expected = {'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
                     'meetings.list': set(), 'transcription.start': {'meetingId'},
                     'transcription.status': {'meetingId'}, 'transcript.list': {'meetingId', 'cursor'},
@@ -117,7 +117,7 @@ class CoreService:
             if method == 'transcript.list':
                 return self.transcription.store.page(params['meetingId'], params['cursor']), False
             return (self.transcription.start(params['meetingId']) if method == 'transcription.start' else self.transcription.status(params['meetingId'])), False
-        if method not in ('recording.start', 'recording.status', 'recording.stop', 'recording.interrupt', 'meetings.list', 'meetings.get'):
+        if method not in ('recording.start', 'recording.status', 'recording.stop', 'recording.pause', 'recording.resume', 'recording.interrupt', 'meetings.list', 'meetings.get'):
             raise DomainError('method_not_found', 'Unknown method')
         if not self.repository or not self.recorder:
             raise DomainError('storage_unavailable', self.storage_error or '会议存储尚未配置。')
@@ -127,6 +127,8 @@ class CoreService:
                 self.transcription.auto_start(result['meetingId'])
         elif method == 'recording.status':
             result = self.recorder.status()
+        elif method in ('recording.pause', 'recording.resume'):
+            result = (self.recorder.pause if method == 'recording.pause' else self.recorder.resume)(params['meetingId'])
         elif method in ('recording.stop', 'recording.interrupt'):
             result = self.recorder.stop(params['meetingId'], 'system_suspend' if method == 'recording.interrupt' else None)
             if method == 'recording.interrupt' and self.transcription:
