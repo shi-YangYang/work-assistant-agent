@@ -1,4 +1,10 @@
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
+import {
+  test,
+  expect,
+  _electron as electron,
+  type ElectronApplication,
+  type Locator,
+} from '@playwright/test'
 import { mkdirSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve, join } from 'node:path'
@@ -45,6 +51,20 @@ async function recordingState(app: ElectronApplication): Promise<string> {
   const page = await app.firstWindow()
   const result = await page.evaluate(() => window.paa.getRecordingStatus())
   return result.ok ? result.value.state : result.message
+}
+async function expectDocumentFocus(target: Locator): Promise<void> {
+  const state = () =>
+    target.evaluate((element) => ({
+      active: element.ownerDocument.activeElement === element,
+      documentFocused: element.ownerDocument.hasFocus(),
+      activeTag: element.ownerDocument.activeElement?.tagName,
+    }))
+  // Verify the actual keyboard destination. toBeFocused also requires OS foreground
+  // focus, which belongs to the CI desktop session rather than this navigation flow.
+  await expect
+    .poll(state, { message: 'Command focus must reach its intended DOM element' })
+    .toMatchObject({ active: true })
+  console.log('Command focus:', await state())
 }
 test.afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -117,12 +137,12 @@ test('real desktop exposes actual capabilities and empty history with strict bou
     const palette = page.getByRole('dialog', { name: '命令面板' })
     await palette.getByLabel('查找页面与操作', { exact: true }).fill('外观')
     await palette.getByLabel('查找页面与操作', { exact: true }).press('Enter')
-    await expect(page.getByRole('heading', { name: '外观', exact: true })).toBeFocused()
+    await expectDocumentFocus(page.getByRole('heading', { name: '外观', exact: true }))
     await page.getByRole('radio', { name: '深色', exact: true }).check()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await page.getByRole('button', { name: /查找页面与操作/ }).click()
     await palette.press('Escape')
-    await expect(page.getByRole('button', { name: /查找页面与操作/ })).toBeFocused()
+    await expectDocumentFocus(page.getByRole('button', { name: /查找页面与操作/ }))
     await page.getByRole('radio', { name: '跟随系统', exact: true }).check()
     await expect(page.getByRole('heading', { name: '应用状态', exact: true })).toHaveCount(0)
     const pid = (await page.evaluate(() => window.paa.getStatus())).processId!
