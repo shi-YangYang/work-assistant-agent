@@ -5,7 +5,7 @@ import { type AudioPlayerHandle } from './AudioPlayer'
 import { ApiModelSettings } from './ModelSettings'
 import { ModelSettings, Transcript } from './Transcription'
 import type { ModelState } from '../shared/contracts'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AudioLines,
   ChevronRight,
@@ -64,6 +64,7 @@ export function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>('meetings')
   const [theme, setTheme] = useTheme()
   const [commandOpen, setCommandOpen] = useState(false)
+  const [navigationVersion, setNavigationVersion] = useState(0)
   const heading = useRef<HTMLHeadingElement>(null)
   const route = useRef<Page>('meetings')
   const listViewport = useRef<HTMLDivElement>(null)
@@ -96,12 +97,15 @@ export function App(): React.JSX.Element {
     route.current = next
     setCommandOpen(false)
     setPage(next)
-    requestAnimationFrame(() => {
-      heading.current?.focus()
-      if (next === 'meetings' && listViewport.current)
-        listViewport.current.scrollTop = listScroll.current
-    })
+    setNavigationVersion((version) => version + 1)
   }, [])
+  useLayoutEffect(() => {
+    if (!navigationVersion) return
+    // Run after the new page is committed, independently of animation-frame scheduling.
+    heading.current?.focus()
+    if (route.current === 'meetings' && listViewport.current)
+      listViewport.current.scrollTop = listScroll.current
+  }, [navigationVersion])
   useEffect(() => {
     const keyboard = (event: KeyboardEvent): void => {
       if (
