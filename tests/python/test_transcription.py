@@ -249,14 +249,71 @@ class TranscriptionTests(unittest.TestCase):
         lock=sqlite3.connect(self.repo.database)
         try:
             lock.execute('BEGIN EXCLUSIVE')
-            with self.repo.connect() as source:
-                started=time.monotonic()
-                with self.assertRaises(DomainError): self.repo.backup_schema(source, 1)
-                self.assertLess(time.monotonic()-started,3)
+            with self.repo.connect() as source, patch('paa_core.repository.time') as clock:
+                clock.monotonic.side_effect = [0, 0.5, 2.1]
+                with self.assertRaises(DomainError) as error:
+                    self.repo.backup_schema(source, 1)
+                self.assertEqual(error.exception.code, 'storage_busy')
         finally: lock.rollback();lock.close()
         self.assertFalse((self.root/'meetings.schema1.backup.staging').exists())
         with self.repo.connect() as source: self.repo.backup_schema(source, 1)
         self.assertTrue((self.root/'meetings.schema1.backup.sqlite3').exists())
+
+    def test_slow_successful_backup_preserves_data_including_final_callback(self):
+        with self.repo.connect() as db:
+            db.execute('CREATE TABLE backup_probe (value BLOB)')
+        for size in (1, 1024 * 1024):
+            with self.subTest(bytes=size):
+                payload = b'x' * size
+                with self.repo.connect() as db:
+                    db.execute('DELETE FROM backup_probe')
+                    db.execute('INSERT INTO backup_probe VALUES (?)', (payload,))
+                statuses = []
+                with self.repo.connect() as source, patch('paa_core.repository.time') as clock:
+                    clock.monotonic.return_value = 0
+                    class SlowBackup:
+                        def backup(self, target, **kwargs):
+                            callback = kwargs['progress']
+                            def slow_progress(status, remaining, total):
+                                statuses.append(status)
+                                clock.monotonic.return_value += 3
+                                callback(status, remaining, total)
+                            source.backup(target, **{**kwargs, 'progress': slow_progress})
+                    self.repo.backup_schema(SlowBackup(), 1)
+                self.assertEqual(statuses[-1], sqlite3.SQLITE_DONE)
+                if size > 1: self.assertIn(sqlite3.SQLITE_OK, statuses)
+                backup = sqlite3.connect(self.root / 'meetings.schema1.backup.sqlite3')
+                try:
+                    self.assertEqual(backup.execute('SELECT value FROM backup_probe').fetchone()[0], payload)
+                    self.assertEqual(backup.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+                finally:
+                    backup.close()
+                self.assertFalse((self.root / 'meetings.schema1.backup.staging').exists())
+
+    def test_backup_lock_timeout_restarts_after_successful_progress(self):
+        callbacks = []
+        with patch('paa_core.repository.time') as clock:
+            class IntermittentLock:
+                def backup(self, target, **kwargs):
+                    target.execute('CREATE TABLE incomplete (id TEXT)')
+                    for elapsed, status in (
+                        (0, sqlite3.SQLITE_BUSY),
+                        (1.5, sqlite3.SQLITE_BUSY),
+                        (3, sqlite3.SQLITE_OK),
+                        (5, sqlite3.SQLITE_LOCKED),
+                        (6.5, sqlite3.SQLITE_LOCKED),
+                        (7.1, sqlite3.SQLITE_LOCKED),
+                    ):
+                        clock.monotonic.return_value = elapsed
+                        callbacks.append(elapsed)
+                        kwargs['progress'](status, 1, 2)
+            clock.monotonic.return_value = 0
+            with self.assertRaises(DomainError) as error:
+                self.repo.backup_schema(IntermittentLock(), 1)
+        self.assertEqual(error.exception.code, 'storage_busy')
+        self.assertEqual(callbacks, [0, 1.5, 3, 5, 6.5, 7.1])
+        self.assertFalse((self.root / 'meetings.schema1.backup.staging').exists())
+        self.assertFalse((self.root / 'meetings.schema1.backup.sqlite3').exists())
 
     def test_worker_crash_and_timeout_are_bounded_and_leave_no_child(self):
         for mode, timeout in [('crash', 5), ('slow', 0.3)]:

@@ -68,9 +68,17 @@ class Repository:
         staging = self.root / f'meetings.schema{version}.backup.staging'
         if destination.is_symlink() or staging.is_symlink():
             raise DomainError('storage_backup', '迁移备份位置无效，请保留原数据库并检查存储。')
-        deadline = time.monotonic() + 2
-        def progress(_status, _remaining, _total):
-            if time.monotonic() > deadline:
+        busy_since = None
+        def progress(status, _remaining, _total):
+            nonlocal busy_since
+            # Bound continuous lock waits, not successful copying or the final disk flush.
+            if status not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+                busy_since = None
+                return
+            current = time.monotonic()
+            if busy_since is None:
+                busy_since = current
+            elif current - busy_since >= 2:
                 raise DomainError('storage_busy', '数据库仍被占用，迁移未开始；关闭其他实例后重试。')
         try:
             with closing(sqlite3.connect(staging)) as backup:
