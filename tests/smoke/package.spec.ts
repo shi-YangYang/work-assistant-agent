@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
@@ -15,14 +15,23 @@ test('installed package starts its bundled core without Python, Node or source c
   const mount = join(root, 'mount')
   const install = join(root, '安装包 App')
   const data = join(root, 'data')
+  const errors: unknown[] = []
   mkdirSync(install)
-  function run(command: string, args: string[]): void {
+  async function cleanup(action: () => void | Promise<void>): Promise<void> {
+    try {
+      await action()
+    } catch (error) {
+      errors.push(error)
+    }
+  }
+  function run(command: string, args: string[], timeout = 90_000): void {
     const result = spawnSync(command, args, {
       encoding: 'utf8',
-      timeout: 90_000,
+      timeout,
       windowsHide: true,
     })
-    expect(result.status, `${result.error?.message || ''}\n${result.stderr}`).toBe(0)
+    if (result.error) throw result.error
+    expect(result.status, `${command}\n${result.stderr}`).toBe(0)
   }
   try {
     const directory = resolve('dist/desktop')
@@ -94,15 +103,36 @@ test('installed package starts its bundled core without Python, Node or source c
       mkdirSync('artifacts/spec005', { recursive: true })
       await page.screenshot({ path: `artifacts/spec005/installed-${process.platform}.png` })
     } finally {
-      await app.close()
+      await cleanup(() => app.close())
     }
+  } catch (error) {
+    // Keep the original launch/assertion error ahead of any teardown failures.
+    errors.unshift(error)
   } finally {
-    if (mounted) spawnSync('/usr/bin/hdiutil', ['detach', mount], { timeout: 30_000 })
-    if (process.platform === 'win32') {
-      const uninstall = join(root, 'installed', 'Uninstall 个人工作助手.exe')
-      if (existsSync(uninstall))
-        spawnSync(uninstall, ['/S'], { timeout: 30_000, windowsHide: true })
-    }
-    rmSync(root, { recursive: true, force: true })
+    if (mounted) await cleanup(() => run('/usr/bin/hdiutil', ['detach', mount], 30_000))
+    await cleanup(() => {
+      if (process.platform !== 'win32') return
+      const windowsInstall = join(root, 'installed')
+      const uninstall = join(windowsInstall, 'Uninstall 个人工作助手.exe')
+      if (!existsSync(uninstall)) return
+      // NSIS otherwise starts a temporary copy and returns before uninstall completes.
+      // Run our own copy outside the install directory; _?= must be last and unquoted.
+      const runner = join(root, 'uninstall.exe')
+      copyFileSync(uninstall, runner)
+      run(runner, ['/S', `_?=${windowsInstall}`], 30_000)
+    })
+    await cleanup(() =>
+      rmSync(root, {
+        recursive: true,
+        force: true,
+        maxRetries: process.platform === 'win32' ? 5 : 0,
+        retryDelay: 200,
+      }),
+    )
   }
+  if (errors.length === 1) throw errors[0]
+  if (errors.length > 1)
+    throw new AggregateError(errors, 'Installed package test or cleanup failed', {
+      cause: errors[0],
+    })
 })
