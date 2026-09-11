@@ -104,7 +104,7 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     expect(!missing.ok && missing.code).toBe('not_configured')
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
-    const card = page.getByLabel('模型服务管理', { exact: true })
+    const card = page.getByLabel('模型服务管理', { exact: true }).locator('.collapsible-content')
     await expect(card.getByLabel('使用流式接口')).toBeChecked()
     // This fixture serves non-streaming JSON responses.
     await card.getByLabel('使用流式接口').uncheck()
