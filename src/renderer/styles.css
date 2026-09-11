@@ -249,9 +249,19 @@ button:not(:disabled):hover {
   padding-top: 30px;
 }
 .navigation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
   overflow-y: auto;
   padding: 3px;
   margin: -3px;
+}
+.navigation > div {
+  flex-shrink: 0;
+}
+.navigation > div:has(.settings-label) {
+  margin-top: auto;
 }
 .nav-item {
   display: flex;
