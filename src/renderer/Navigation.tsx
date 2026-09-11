@@ -96,6 +96,7 @@ export function CommandPalette({
   const [query, setQuery] = useState('')
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
+  const restoreFocus = useRef(true)
   const filtered = commands.filter((command) =>
     `${command.label} ${command.detail}`.toLowerCase().includes(query.toLowerCase()),
   )
@@ -106,9 +107,18 @@ export function CommandPalette({
     input.current?.focus()
     return () => {
       element?.close()
-      if (previous?.isConnected && !previous.closest('[hidden]')) previous.focus()
+      if (restoreFocus.current && previous?.isConnected && !previous.closest('[hidden]'))
+        previous.focus()
     }
   }, [])
+  const execute = (command: Command): void => {
+    // Release the modal synchronously before navigation focuses its destination.
+    // Unmount cleanup must not move focus back after the command has run.
+    restoreFocus.current = false
+    dialog.current?.close()
+    onClose()
+    command.run()
+  }
   return (
     <dialog
       ref={dialog}
@@ -149,10 +159,7 @@ export function CommandPalette({
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               const command = filtered.find((item) => !item.disabled)
-              if (command) {
-                onClose()
-                command.run()
-              }
+              if (command) execute(command)
             }
           }}
         />
@@ -168,10 +175,7 @@ export function CommandPalette({
               className="command-result"
               key={command.id}
               disabled={command.disabled}
-              onClick={() => {
-                onClose()
-                command.run()
-              }}
+              onClick={() => execute(command)}
             >
               <strong>{command.label}</strong>
               <small>{command.detail}</small>

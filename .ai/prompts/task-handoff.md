@@ -6,6 +6,6 @@
 
 `cb9425d` 的 [macOS CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34573075617) 在模型下载取消后重试等待 ready 超时。本次通过同步信号固定清理时刻，已证明旧代码在文件清理未完成时发布 missing；修复将清理、终态发布和任务释放保持一致。相同定向测试旧代码 FAIL、修复后 PASS；不靠 sleep 或延长超时，等待失败现在可包含实际状态。
 
-本次本地 S3 检查：47 项 TypeScript、58 项 Python 通过，typecheck / lint / format:check 通过，actionlint 1.7.11 工作流校验通过。CI 选择测试覆盖真实 Git 的完整 PR 差异、最后一次文档提交、删除/重命名和中文路径，以及缺失历史与手动模式。尚未推送本次改动，远端双平台结果待核对；修改 CI 本身会触发一次完整重检查。不得把本地结果说成远端通过。
+本次本地 S3 检查：47 项 TypeScript、58 项 Python 通过，typecheck / lint / format:check 通过，actionlint 1.7.11 工作流校验通过。CI 选择测试覆盖真实 Git 的完整 PR 差异、最后一次文档提交、删除/重命名和中文路径，以及缺失历史与手动模式。`2e595bc` 已推送 dev，[首轮分层 CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34575986654) 的静态、双平台单元与完整集成检查通过；双平台桌面均失败于命令面板导航后的焦点断言，汇总检查正确失败。已修复 Navigation 的命令执行顺序：先同步关闭模态框，执行导航后不再由卸载逻辑恢复旧焦点；保留原 smoke 断言，web 类型检查通过，下一轮远端桌面验证待核对。
 
 本机 GUI 验收继续使用项目 npm run dev 和用户默认数据，不动真实密钥、模型与录音；本次不运行本机隔离桌面或物理设备测试，受控桌面及安装流程由远端 CI 执行。Spec 004、005 的历史独立验收与物理设备边界仍以各自报告为准，新 CI 通过不自动将历史 Spec 标记 DONE。
