@@ -140,8 +140,8 @@ Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打�
 
 | 触发方式 | 平台与检查 |
 | --- | --- |
-| PR 新建或更新 | macOS 15 ARM64：格式、Lint、类型、TypeScript / Python 单元及模块测试、普通构建；不启动 Electron、模型推理或安装包 |
-| 手动 `quick`（默认） | 同一组基础检查，在 macOS 15 ARM64 / Windows 2025 x64 执行；用于平台相关改动 |
+| PR 新建或更新 | macOS 15 ARM64 / Windows 2025 x64：TypeScript / Python 单元及模块测试、普通构建；格式、Lint、类型仅在 macOS 执行一次。不启动 Electron、模型推理或安装包 |
+| 手动 `quick`（默认） | 与 PR 相同的双平台基础检查，可指定分支主动运行 |
 | 手动 `desktop` | 双平台基础检查及受控桌面流程 |
 | 手动 `asr` | 双平台基础检查、真实 small 推理及桌面转写 |
 | 手动 `package` | 双平台基础检查、冻结运行时、安装包启动与清理；包含随包推理需要的模型／音频验证 |

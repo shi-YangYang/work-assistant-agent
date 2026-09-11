@@ -25,8 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PRs use one reference environment; manual runs and release tags cover both platforms.
-        os: ${{ fromJSON(github.event_name == 'pull_request' && '["macos-15"]' || '["macos-15", "windows-2025"]') }}
+        os: [macos-15, windows-2025]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
@@ -46,11 +45,11 @@ jobs:
       - run: node scripts/install-python.mjs
         id: runtime
       - run: npm run typecheck
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.os == 'macos-15' && steps.dependencies.outcome == 'success' }}
       - run: npm run lint
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.os == 'macos-15' && steps.dependencies.outcome == 'success' }}
       - run: npm run format:check
-        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        if: ${{ !cancelled() && matrix.os == 'macos-15' && steps.dependencies.outcome == 'success' }}
       - run: npm run test:unit
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
       - run: npm run test:python
