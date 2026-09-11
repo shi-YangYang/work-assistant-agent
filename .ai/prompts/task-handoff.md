@@ -1,11 +1,17 @@
 # Task Handoff — 当前状态
 
-用户已授权直接修复 CI，不开新 Spec、不创建子 Agent。当前在长期 `dev`：日常静态、双平台单元及受控桌面检查分组运行，真实 ASR / 安装包按改动范围或发布触发；规则以 [README](../../README.md#ci-分层) 为准。先前未提交的 dev 分支约定一并保留，按 [分支规则](../rules/git-branch-workflow.md) 完成 PR 合并和回同步。
+本轮为用户授权的直接 CI 修复，不开新 Spec、不创建子 Agent。CI 分层、下载取消与导航焦点修复已完成工程验证；Git 收尾遵循长期 [dev → main PR → 回同步规则](../rules/git-branch-workflow.md)，恢复时读取远端 PR 和分支状态，不重做已通过的检查。
 
-原 [Spec 006](../../specs/spec-006-interface-and-navigation/spec.md) 仍为 ACCEPTANCE，界面实施 `cb9425d` 已在 main。首轮 FAIL 的列表轮询容量和窄窗引用问题已返工，独立复验及本机日常环境 CUA 证据见其 implementation.md / acceptance.md。旧实施、验收及诊断 Agent 均已完成或暂停，本次 CI 调整由主 Agent 直接处理。
+## 实现与验证
 
-`cb9425d` 的 [macOS CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34573075617) 在模型下载取消后重试等待 ready 超时。本次通过同步信号固定清理时刻，已证明旧代码在文件清理未完成时发布 missing；修复将清理、终态发布和任务释放保持一致。相同定向测试旧代码 FAIL、修复后 PASS；不靠 sleep 或延长超时，等待失败现在可包含实际状态。
+- 日常静态、双平台单元及受控桌面检查独立运行，真实 ASR / 安装包按改动或发布阶段触发；矩阵及手动入口只在 [README](../../README.md#ci-分层) 详述。失败保留 trace / 截图并在 GitHub 摘要展示，汇总检查严格区分成功与按规则跳过。
+- 模型取消：受控测试证明旧代码在清理文件前发布 missing，导致立即重试可能被忽略。现在先清理，再原子发布终态并释放任务；用同步信号代替固定 sleep，错误报告包含实际状态。同一回归旧实现 FAIL、新实现 PASS。
+- 导航焦点：命令先同步关闭模态框，卸载不覆盖导航焦点；App 在 React 提交 DOM 后恢复标题焦点与列表位置，不依赖动画帧。测试严格检查 document.activeElement，并分别记录 OS 前台焦点，保留导航与 Esc 返回的目标断言。首轮只改模态关闭仍失败，后续提交时序修复后通过，过程保留在 Git 历史。
+- 本地 S3：47 项 TypeScript、58 项 Python、typecheck / lint / format:check 及 actionlint 1.7.11 通过。CI 选择测试包含真实 Git 的完整 PR 差异、文档尾提交、删除/重命名、中文路径、缺失历史与手动模式。
+- 最终业务代码 `9822e3c` 的 [完整 CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34577667873) PASS，耗时 5m28s。双平台单元、静态与真实 ASR / 冻结运行时 / 安装启动检查成功；日常桌面 macOS 7 项通过，Windows 3 项通过、4 项既有平台限制跳过。后续仅交接文档更新不改变该业务代码证据，最终提交的远端状态仍按实际 SHA 核对。
 
-本次本地 S3 检查：47 项 TypeScript、58 项 Python 通过，typecheck / lint / format:check 通过，actionlint 1.7.11 工作流校验通过。CI 选择测试覆盖真实 Git 的完整 PR 差异、最后一次文档提交、删除/重命名和中文路径，以及缺失历史与手动模式。`2e595bc` 已推送 dev，[首轮分层 CI](https://github.com/shi-YangYang/work-assistant-agent/actions/runs/34575986654) 的静态、双平台单元与完整集成检查通过；双平台桌面均失败于命令面板导航后的焦点断言，汇总检查正确失败。已修复 Navigation 的命令执行顺序：先同步关闭模态框，执行导航后不再由卸载逻辑恢复旧焦点；保留原 smoke 断言，web 类型检查通过，`52d6218` 的第二轮桌面仍未通过。检查 Playwright 实现发现 toBeFocused 同时检查 OS 前台焦点；已将两处命令导航断言改为严格检查 document.activeElement，并输出 document.hasFocus 与实际元素信息以区分这两个条件，node 类型检查通过。`28dfb08` 仍未通过页面内部焦点检查，因此不能归因于 OS 前台焦点。继续将 App 导航焦点和滚动恢复从 requestAnimationFrame 移至 DOM 提交后的 useLayoutEffect；CI 增加 GitHub reporter，让失败详情直接出现在运行摘要。web 类型检查通过，下一轮远端结果待核对，不能提前声称焦点已验证。
+## 原 Spec 与数据边界
 
-本机 GUI 验收继续使用项目 npm run dev 和用户默认数据，不动真实密钥、模型与录音；本次不运行本机隔离桌面或物理设备测试，受控桌面及安装流程由远端 CI 执行。Spec 004、005 的历史独立验收与物理设备边界仍以各自报告为准，新 CI 通过不自动将历史 Spec 标记 DONE。
+[Spec 006](../../specs/spec-006-interface-and-navigation/spec.md) 原界面实施 `cb9425d` 已在 main，仍为 ACCEPTANCE。列表轮询容量与窄窗引用返工的独立复验、首轮日常环境 CUA 见该 Spec 的 implementation.md / acceptance.md；旧实施、验收及诊断 Agent 均已完成或暂停。本轮直接 CI 修复不伪造新独立验收，也不自动将历史 Spec 标记 DONE。
+
+本机 GUI 使用项目 npm run dev 与用户默认数据；本次启动过日常窗口，未改真实密钥、模型、录音或调用付费 API。受控桌面及安装流程由远端 CI 验证。Spec 004、005 的历史独立验收与物理设备边界仍以各自报告为准。
