@@ -102,15 +102,17 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
       .toBe('ready')
     const missing = await page.evaluate((id) => window.paa.generateSummary(id), meetingId)
     expect(!missing.ok && missing.code).toBe('not_configured')
-    await page.getByRole('button', { name: '设置', exact: true }).click()
     await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
-    const card = page.getByLabel('模型服务管理', { exact: true }).locator('.collapsible-content')
+    let card = page.locator('.service-editors > div:not([hidden]) .service-editor')
+    await card.getByRole('tab', { name: '模型与推理', exact: true }).click()
     await expect(card.getByLabel('使用流式接口')).toBeChecked()
     // This fixture serves non-streaming JSON responses.
     await card.getByLabel('使用流式接口').uncheck()
+    await card.getByRole('tab', { name: '连接配置', exact: true }).click()
     await card.getByLabel('服务名称', { exact: true }).fill('服务甲')
     await card.getByLabel('API Base URL', { exact: true }).fill(baseUrl)
     await card.getByLabel('API 密钥', { exact: true }).fill('fake-only-smoke-key')
+    await card.getByRole('tab', { name: '模型与推理', exact: true }).click()
     await card.getByRole('button', { name: '获取模型', exact: true }).click()
     await expect(card.getByLabel('可用模型列表')).toBeVisible()
     await expect(
@@ -151,9 +153,23 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     expect(calls.at(-1)?.body?.model).toBe('unknown-manual')
     await card.getByLabel('可用模型列表').selectOption('future-kimi')
     await card.getByRole('button', { name: '添加推理预设', exact: true }).click()
-    await card.getByLabel('预设名称', { exact: true }).fill('深入')
+    await card
+      .getByLabel('预设名称', { exact: true })
+      .fill('深入分析 · Detailed reasoning with a longer preset label')
     await card.getByLabel('推理强度值', { exact: true }).fill('future-high')
     await card.getByRole('button', { name: '应用预设', exact: true }).click()
+    const presetSelect = card.getByLabel('推理预设', { exact: true })
+    await presetSelect.click()
+    const presetTrigger = await presetSelect.boundingBox()
+    const longOption = await presetSelect.getByRole('option', { name: /深入分析/ }).boundingBox()
+    expect(longOption).not.toBeNull()
+    expect(longOption!.y).toBeGreaterThanOrEqual(0)
+    expect(longOption!.y + longOption!.height).toBeLessThanOrEqual(
+      (await page.evaluate(() => innerHeight)) + 1,
+    )
+    expect(Math.abs(longOption!.x - presetTrigger!.x)).toBeLessThan(24)
+    await presetSelect.press('Escape')
+    await expect(presetSelect).toBeFocused()
     await card.getByRole('button', { name: '测试连接', exact: true }).click()
     await expect(card.getByText(/连接成功 ·/)).toBeVisible()
     expect(calls.at(-1)?.body?.reasoning_effort).toBe('future-high')
@@ -230,14 +246,38 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     expect(summaryCall?.key).toBe('Bearer fake-only-smoke-key')
     const messages = summaryCall?.body?.messages as { content: string }[]
     expect(JSON.parse(messages[1].content).segments).toHaveLength(61)
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 640))
     await minutes.getByRole('button', { name: '原文 1', exact: true }).first().click()
     await expect(page.getByLabel('纪要引用原文')).toContainText('最后决定取消上线')
+    const article = minutes.locator('.minutes-content')
+    expect(await article.evaluate((element) => element.clientHeight)).toBeGreaterThanOrEqual(160)
+    await article.scrollIntoViewIfNeeded()
+    const reader = await article.boundingBox()
+    const panel = await page.locator('#minutes-panel').boundingBox()
+    expect(
+      Math.min(reader!.y + reader!.height, panel!.y + panel!.height) -
+        Math.max(reader!.y, panel!.y),
+    ).toBeGreaterThanOrEqual(100)
+    for (const name of ['收起原文', '播放此处录音', '在完整文字中查看']) {
+      const control = page.getByRole('button', { name, exact: true })
+      await control.scrollIntoViewIfNeeded()
+      await control.click({ trial: true })
+    }
     await page.getByRole('button', { name: '播放此处录音', exact: true }).click()
     await expect
       .poll(() =>
         page.locator('audio').evaluate((audio) => (audio as HTMLAudioElement).currentTime),
       )
       .toBeGreaterThan(59)
+    await page
+      .locator('audio')
+      .evaluate((element) => element.setAttribute('data-instance', 'citation-player'))
+    await page.getByRole('button', { name: '在完整文字中查看', exact: true }).click()
+    await expect(page.locator('.source-target')).toContainText('最后决定取消上线')
+    await expect(page.locator('.source-target')).toBeFocused()
+    await expect(page.locator('.transcript-line')).toHaveCount(61)
+    await expect(page.locator('audio')).toHaveAttribute('data-instance', 'citation-player')
+    await page.getByRole('tab', { name: '纪要', exact: true }).click()
     const saved = await page.evaluate((id) => window.paa.getSummary(id), meetingId)
     fail = true
     await minutes.getByRole('button', { name: '重新生成纪要', exact: true }).click()
@@ -247,6 +287,7 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     await close(app)
     app = await launch()
     page = await app.firstWindow()
+    card = page.locator('.service-editors > div:not([hidden]) .service-editor')
     await expect
       .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
       .toBe('ready')
@@ -255,18 +296,24 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     const services = await page.evaluate(() => window.paa.listModelServices())
     expect(services.ok && services.value.activeProfileId).toBe(a)
     expect(calls.filter((call) => (call.body?.messages as unknown[])?.length === 2)).toHaveLength(2)
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
     await page.getByRole('button', { name: '服务甲 · 使用中', exact: true }).click()
     await page.getByLabel('API Base URL', { exact: true }).fill(baseUrl + '/changed')
-    await page.getByRole('button', { name: '获取模型', exact: true }).click()
-    await expect(page.getByRole('alert')).toContainText('密钥')
+    await page.getByRole('button', { name: '服务乙', exact: true }).click()
     await page.getByRole('button', { name: '服务甲 · 使用中', exact: true }).click()
+    await expect(card.getByLabel('API Base URL', { exact: true })).toHaveValue(baseUrl + '/changed')
+    await card.getByRole('tab', { name: '模型与推理', exact: true }).click()
+    await card.getByRole('button', { name: '获取模型', exact: true }).click()
+    await expect(page.getByRole('alert')).toContainText('密钥')
+    await card.getByRole('button', { name: '还原已保存', exact: true }).click()
+    await expect(card.getByLabel('API Base URL', { exact: true })).toHaveValue(baseUrl)
     modelDelay = 300
-    await page.getByRole('button', { name: '获取模型', exact: true }).click()
-    await page.getByLabel('API Base URL', { exact: true }).fill('https://new.example.com/v1')
-    await expect(page.getByLabel('可用模型列表')).toHaveCount(0)
+    await card.getByRole('button', { name: '获取模型', exact: true }).click()
+    await card.getByRole('tab', { name: '连接配置', exact: true }).click()
+    await card.getByLabel('API Base URL', { exact: true }).fill('https://new.example.com/v1')
+    await expect(card.getByLabel('可用模型列表')).toHaveCount(0)
     await new Promise((resolve) => setTimeout(resolve, 700))
-    await expect(page.getByLabel('可用模型列表')).toHaveCount(0)
+    await expect(card.getByLabel('可用模型列表')).toHaveCount(0)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 640))
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),

@@ -1,21 +1,23 @@
-import { CollapsibleSection } from './CollapsibleSection'
-import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
+import { Appearance, CommandPalette, pageLabels, useTheme, type Page } from './Navigation'
+import { MeetingWorkspace } from './MeetingWorkspace'
+import { MeetingProcessingState } from './MeetingProcessingState'
+import { type AudioPlayerHandle } from './AudioPlayer'
 import { ApiModelSettings } from './ModelSettings'
-import { MeetingMinutes } from './MeetingMinutes'
 import { ModelSettings, Transcript } from './Transcription'
 import type { ModelState } from '../shared/contracts'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AudioLines,
   ChevronRight,
-  Leaf,
+  Command,
+  Monitor,
+  Database,
   Mic,
   Plus,
   Pause,
   Play,
   Settings2,
   Square,
-  ArrowLeft,
 } from 'lucide-react'
 import {
   ACTIVE_STATES,
@@ -59,10 +61,18 @@ function date(value: string): string {
 }
 
 export function App(): React.JSX.Element {
-  const [page, setPage] = useState<'meetings' | 'settings'>('meetings')
+  const [page, setPage] = useState<Page>('meetings')
+  const [theme, setTheme] = useTheme()
+  const [commandOpen, setCommandOpen] = useState(false)
+  const heading = useRef<HTMLHeadingElement>(null)
+  const route = useRef<Page>('meetings')
+  const listViewport = useRef<HTMLDivElement>(null)
+  const listScroll = useRef(0)
   const [status, setStatus] = useState<CoreStatus>(initialStatus)
   const [recording, setRecording] = useState<RecordingStatus>(idle)
   const [meetings, setMeetings] = useState<Meeting[]>([])
+  const [listBusy, setListBusy] = useState(false)
+  const [listRefreshVersion, setListRefreshVersion] = useState(0)
   const [loaded, setLoaded] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [selected, setSelected] = useState<Meeting | null>(null)
@@ -71,6 +81,7 @@ export function App(): React.JSX.Element {
   const [uncertain, setUncertain] = useState(false)
   const [retrying, setRetrying] = useState(false)
   const operationId = useRef<string | null>(null)
+  const recordingVersion = useRef(0)
   const lastSession = useRef('')
   const selectionGeneration = useRef(0)
   const audio = useRef<AudioPlayerHandle>(null)
@@ -78,22 +89,69 @@ export function App(): React.JSX.Element {
   const connected = status.connection === 'ready'
   const available = status.capabilities.find((item) => item.id === 'recording')?.available
 
+  const navigate = useCallback((next: Page): void => {
+    audio.current?.pause()
+    selectionGeneration.current++
+    if (route.current === 'meetings') listScroll.current = listViewport.current?.scrollTop || 0
+    route.current = next
+    setCommandOpen(false)
+    setPage(next)
+    requestAnimationFrame(() => {
+      heading.current?.focus()
+      if (next === 'meetings' && listViewport.current)
+        listViewport.current.scrollTop = listScroll.current
+    })
+  }, [])
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent): void => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.key.toLowerCase() === 'k' &&
+        !event.altKey &&
+        !(event.target as HTMLElement).closest(
+          'input, textarea, select, [contenteditable="true"], .audio-player',
+        )
+      ) {
+        event.preventDefault()
+        setCommandOpen((value) => !value)
+      }
+    }
+    document.addEventListener('keydown', keyboard)
+    return () => document.removeEventListener('keydown', keyboard)
+  }, [])
   async function loadMeetings(offset = 0): Promise<void> {
-    const result = await window.paa.listMeetings(offset)
-    setLoaded(result.ok)
-    if (result.ok) {
-      setMeetings((previous) => (offset ? [...previous, ...result.meetings] : result.meetings))
-      setHasMore(result.hasMore)
-    } else setError(result.message)
+    setListBusy(true)
+    try {
+      const result = await window.paa.listMeetings(offset)
+      setLoaded(result.ok)
+      if (result.ok) {
+        setMeetings((previous) => (offset ? [...previous, ...result.meetings] : result.meetings))
+        if (!offset) setListRefreshVersion((version) => version + 1)
+        setHasMore(result.hasMore)
+      } else setError(result.message)
+    } catch {
+      setError('无法读取会议列表，请重新连接后重试。')
+    } finally {
+      setListBusy(false)
+    }
   }
   async function openMeeting(id: string): Promise<void> {
+    if (active && id === recording.meetingId) {
+      navigate('current')
+      return
+    }
+    audio.current?.pause()
     const generation = ++selectionGeneration.current
-    const result = await window.paa.getMeeting(id)
-    if (generation !== selectionGeneration.current) return
-    if (result.ok) {
-      setSelected(result.value)
-      setPage('meetings')
-    } else setError(result.message)
+    try {
+      const result = await window.paa.getMeeting(id)
+      if (generation !== selectionGeneration.current) return
+      if (result.ok) {
+        setSelected(result.value)
+        navigate('meeting')
+      } else setError(result.message)
+    } catch {
+      if (generation === selectionGeneration.current) setError('无法打开会议，请重新连接后重试。')
+    }
   }
   useEffect(() => {
     let alive = true
@@ -125,8 +183,10 @@ export function App(): React.JSX.Element {
     // Schedule the next query only after this one settles; page changes preserve capture.
     async function poll(): Promise<void> {
       try {
+        const selection = selectionGeneration.current
+        const version = recordingVersion.current
         const result = await window.paa.getRecordingStatus()
-        if (!alive) return
+        if (!alive || version !== recordingVersion.current) return
         if (result.ok) {
           setRecording(result.value)
           setUncertain(false)
@@ -137,12 +197,25 @@ export function App(): React.JSX.Element {
             if (!alive) return
             setLoaded(list.ok)
             if (list.ok) {
-              setMeetings(list.meetings)
+              setMeetings((previous) => [
+                ...list.meetings,
+                ...previous.filter(
+                  (meeting) => !list.meetings.some((item) => item.id === meeting.id),
+                ),
+              ])
               setHasMore(list.hasMore)
             } else setError(list.message)
             if (result.value.meetingId && !ACTIVE_STATES.includes(result.value.state)) {
               const detail = await window.paa.getMeeting(result.value.meetingId)
-              if (alive && detail.ok) setSelected(detail.value)
+              if (
+                alive &&
+                detail.ok &&
+                route.current === 'current' &&
+                selection === selectionGeneration.current
+              ) {
+                setSelected(detail.value)
+                navigate('meeting')
+              }
               operationId.current = null
             }
           }
@@ -168,20 +241,23 @@ export function App(): React.JSX.Element {
       alive = false
       clearTimeout(timer)
     }
-  }, [connected, status.processId])
+    // Navigation is read through route so capture polling never restarts on a page change.
+  }, [connected, status.processId, navigate])
 
   async function start(): Promise<void> {
+    recordingVersion.current++
     audio.current?.pause()
     setBusy(true)
     setError('')
     selectionGeneration.current++
-    setSelected(null)
     operationId.current ??= crypto.randomUUID()
     try {
       const result = await window.paa.startRecording(operationId.current)
       if (result.ok) {
         setRecording(result.value)
         setUncertain(false)
+        setSelected(null)
+        navigate('current')
       } else {
         setError(result.message)
         setUncertain(result.code === 'timeout')
@@ -190,11 +266,13 @@ export function App(): React.JSX.Element {
       setUncertain(true)
       setError('开始请求未确认，正在查询当前录音状态。')
     } finally {
+      recordingVersion.current++
       setBusy(false)
     }
   }
   async function stop(): Promise<void> {
     if (!recording.meetingId) return
+    recordingVersion.current++
     setBusy(true)
     setError('')
     try {
@@ -208,11 +286,13 @@ export function App(): React.JSX.Element {
       setUncertain(true)
       setError('结束请求未确认，正在查询保存状态。')
     } finally {
+      recordingVersion.current++
       setBusy(false)
     }
   }
   async function pauseOrResume(): Promise<void> {
     if (!recording.meetingId || busy) return
+    recordingVersion.current++
     setBusy(true)
     setError('')
     try {
@@ -225,10 +305,12 @@ export function App(): React.JSX.Element {
       setUncertain(true)
       setError('操作尚未确认，正在查询录音状态。')
     } finally {
+      recordingVersion.current++
       setBusy(false)
     }
   }
   async function retry(): Promise<void> {
+    audio.current?.pause()
     setRetrying(true)
     setError('')
     try {
@@ -249,6 +331,8 @@ export function App(): React.JSX.Element {
       try {
         const result = await window.paa.getTranscriptionModel()
         if (alive && result.ok) setModel(result.value)
+      } catch {
+        // The connection notice offers recovery; keep the last known download state.
       } finally {
         if (alive)
           timer = setTimeout(() => {
@@ -268,50 +352,125 @@ export function App(): React.JSX.Element {
       ? '连接中'
       : '未连接'
   const interruptedConnection = active && !connected
+  const canStart = connected && !!available && !active && !busy && !uncertain && !retrying
+  const navItems = [
+    { page: 'meetings' as const, icon: AudioLines },
+    ...(active ? [{ page: 'current' as const, icon: Mic }] : []),
+    { page: 'services' as const, icon: Settings2 },
+    { page: 'local-model' as const, icon: Database },
+    { page: 'appearance' as const, icon: Monitor },
+  ]
+  const commands = [
+    ...navItems.map((item) => ({
+      id: item.page,
+      label: pageLabels[item.page],
+      detail: ['services', 'local-model', 'appearance'].includes(item.page) ? '设置' : '工作空间',
+      // This callback runs only after a command is selected, never during render.
+      // eslint-disable-next-line react-hooks/refs
+      run: () => navigate(item.page),
+    })),
+    ...(!active
+      ? [
+          {
+            id: 'current',
+            label: '当前会议',
+            detail: '尚无活动录音',
+            disabled: true,
+            run: () => {},
+          },
+        ]
+      : []),
+    {
+      id: 'start',
+      label: '开始会议',
+      detail: active ? '已有活动录音' : canStart ? '使用默认麦克风录音' : '等待录音就绪',
+      disabled: !canStart,
+      run: () => void start(),
+    },
+  ]
+  const recordingControls = (
+    <div className="recording-controls">
+      <button
+        className="secondary-button"
+        disabled={!connected || busy || !['recording', 'paused'].includes(recording.state)}
+        onClick={() => void pauseOrResume()}
+      >
+        {recording.state === 'paused' ? <Play size={15} /> : <Pause size={15} />}
+        {recording.state === 'paused'
+          ? '继续录音'
+          : recording.state === 'pausing'
+            ? '正在暂停…'
+            : recording.state === 'resuming'
+              ? '正在继续…'
+              : '暂停录音'}
+      </button>
+      <button
+        className="secondary-button stop-button"
+        disabled={!connected || busy || recording.state === 'stopping'}
+        onClick={() => void stop()}
+      >
+        <Square size={14} />
+        {recording.state === 'stopping' ? '正在保存…' : '结束会议'}
+      </button>
+    </div>
+  )
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">
-            <Leaf size={22} />
+            <AudioLines size={22} />
           </span>
-          <div>
-            <strong>个人工作助手</strong>
-          </div>
+          <strong>个人工作助手</strong>
         </div>
-        <div className="workspace-label">我的工作空间</div>
+        <button className="command-trigger" onClick={() => setCommandOpen(true)}>
+          <Command size={16} />
+          <span>查找页面与操作</span>
+          <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
+        </button>
         <nav aria-label="主导航" className="navigation">
-          <button
-            className={`nav-item ${page === 'meetings' ? 'active' : ''}`}
-            onClick={() => setPage('meetings')}
-          >
-            <AudioLines size={19} />
-            <span>会议记录</span>
-            <span className="nav-dot" />
-          </button>
+          {navItems.map(({ page: target, icon: Icon }, index) => (
+            <div key={target}>
+              {index === 0 && <p className="workspace-label">工作空间</p>}
+              {target === 'services' && <p className="workspace-label settings-label">设置</p>}
+              <button
+                className={`nav-item ${page === target || (page === 'meeting' && target === 'meetings') ? 'active' : ''}`}
+                aria-current={
+                  page === target || (page === 'meeting' && target === 'meetings')
+                    ? 'page'
+                    : undefined
+                }
+                onClick={() => navigate(target)}
+              >
+                <Icon size={18} />
+                <span>{pageLabels[target]}</span>
+                {target === 'current' && <span className="recording-dot" />}
+              </button>
+            </div>
+          ))}
         </nav>
         <div className="sidebar-bottom">
-          <button
-            className={`nav-item ${page === 'settings' ? 'active' : ''}`}
-            onClick={() => setPage('settings')}
-          >
-            <Settings2 size={19} />
-            <span>设置</span>
-          </button>
-          <div className="profile">
-            <span className="avatar">我</span>
-            <div>
-              <strong>个人工作空间</strong>
-            </div>
+          <div className="connection-status">
+            <span className={`connection-dot ${connected ? 'connected' : ''}`} />
+            <span>{connectionLabel}</span>
+            <button
+              className="text-button"
+              disabled={retrying || status.connection === 'starting'}
+              onClick={() => void retry()}
+            >
+              {retrying ? '正在连接…' : '重新连接'}
+            </button>
           </div>
+          <small>录音与文字保存在本机</small>
         </div>
       </aside>
       <div className="main-shell">
         <header className="topbar">
-          <div>
-            工作空间 <ChevronRight size={14} />
-            <strong>{page === 'meetings' ? '会议记录' : '设置'}</strong>
-          </div>
+          <span>
+            {['services', 'local-model', 'appearance'].includes(page) ? '设置' : '工作空间'}
+          </span>
+          <ChevronRight size={14} />
+          <strong>{pageLabels[page]}</strong>
         </header>
         <main>
           {(error ||
@@ -325,292 +484,177 @@ export function App(): React.JSX.Element {
                   ? '录音连接已中断，请重新连接以恢复已保存的内容。'
                   : error || recording.error?.message || status.storageError || status.message}
               </span>
-              <button
-                className="text-button"
-                disabled={retrying || status.connection === 'starting'}
-                onClick={() => void retry()}
-              >
-                重新连接
-              </button>
             </div>
           )}
-          {active && (
-            <section className="recording-card" aria-label="活动录音">
-              <div className="recording-heading">
-                <span
-                  className={`recording-dot ${recording.state === 'recording' && connected ? 'live' : ''}`}
-                />
-                <strong>{interruptedConnection ? '录制中断' : labels[recording.state]}</strong>
-                <span className="recording-time" aria-label="录音时长">
-                  {duration(recording.elapsedMs)}
-                </span>
-              </div>
-              <p>{recording.deviceName || '正在准备录音…'}</p>
-              <div className="recording-controls">
-                <label>
-                  输入音量{' '}
-                  <meter aria-label="输入音量" min="0" max="1" value={recording.inputLevel} />
-                </label>
-                <button
-                  className="secondary-button"
-                  disabled={
-                    !connected || busy || !['recording', 'paused'].includes(recording.state)
-                  }
-                  onClick={() => void pauseOrResume()}
-                >
-                  {recording.state === 'paused' ? <Play size={15} /> : <Pause size={15} />}
-                  {recording.state === 'paused'
-                    ? '继续录音'
-                    : recording.state === 'pausing'
-                      ? '正在暂停…'
-                      : recording.state === 'resuming'
-                        ? '正在继续…'
-                        : '暂停录音'}
-                </button>
-                <button
-                  className="secondary-button stop-button"
-                  disabled={!connected || busy || recording.state === 'stopping'}
-                  onClick={() => void stop()}
-                >
-                  <Square size={14} />
-                  {recording.state === 'stopping' ? '正在保存…' : '结束会议'}
-                </button>
-              </div>
-              <small>
-                {recording.state === 'paused'
-                  ? '暂停期间不采集声音，继续后接着录制。'
-                  : '切换页面或最小化窗口后，录音会继续。'}
-              </small>
-            </section>
-          )}
-          {active && connected && recording.meetingId && (
-            <Transcript
-              key={recording.meetingId}
-              meetingId={recording.meetingId}
-              modelReady={model?.state === 'ready'}
-              playable={false}
-            />
-          )}
-          <div hidden={page !== 'meetings'}>
-            <div className="page-heading">
-              <div>
-                <h1>会议记录</h1>
-              </div>
+          <div className="page-heading">
+            <div>
+              <h1 ref={heading} tabIndex={-1}>
+                {page === 'meeting' && selected ? selected.title : pageLabels[page]}
+              </h1>
+              {page === 'meetings' && <p>保留讨论，回顾决定与下一步。</p>}
+              {page === 'services' && <p>管理生成会议纪要所使用的服务。</p>}
+              {page === 'current' && (
+                <p>
+                  {recording.deviceName || '正在准备麦克风'} ·{' '}
+                  {available ? '麦克风已就绪' : '等待录音设备'}
+                </p>
+              )}
+            </div>
+            {['meetings', 'current', 'meeting'].includes(page) && (
               <div className="meeting-action">
                 <button
                   className="primary-button"
-                  disabled={!connected || !available || active || busy || uncertain}
+                  disabled={!canStart}
                   onClick={() => void start()}
                 >
                   <Plus size={18} />
                   {busy && !active ? '正在准备…' : '开始会议'}
                 </button>
-                <span>
-                  {model?.state === 'ready' ? '录音时自动转写' : '可先录音，下载模型后补转写'}
-                </span>
+                {page === 'meetings' && (
+                  <small>
+                    {available ? '麦克风已就绪' : '麦克风暂不可用'} ·{' '}
+                    {model?.state === 'ready' ? '录音时自动转写' : '可先录音，准备模型后补转写'}
+                  </small>
+                )}
               </div>
-            </div>
-            {selected ? (
-              <section className="meeting-detail">
+            )}
+          </div>
+          <div ref={listViewport} hidden={page !== 'meetings'} className="page-content list-page">
+            <section className="meetings-section" aria-labelledby="meetings-title">
+              <div className="section-heading">
+                <h2 id="meetings-title">
+                  我的会议 <span>{loaded ? meetings.length : '—'}</span>
+                </h2>
                 <button
                   className="text-button"
-                  onClick={() => {
-                    audio.current?.pause()
-                    selectionGeneration.current++
-                    setSelected(null)
-                  }}
+                  disabled={!connected || listBusy}
+                  onClick={() => void loadMeetings()}
                 >
-                  <ArrowLeft size={16} />
-                  返回会议列表
+                  {listBusy ? '正在刷新…' : '刷新记录'}
                 </button>
-                <div className="section-heading">
-                  <h2>{selected.title}</h2>
-                  <span className={`meeting-state ${selected.status}`}>
-                    {labels[selected.status]}
-                  </span>
-                </div>
-                <p>{date(selected.startedAt || selected.createdAt)}</p>
-                <dl className="metadata">
-                  <div>
-                    <dt>录音时长</dt>
-                    <dd>{duration(selected.durationMs)}</dd>
-                  </div>
-                  <div>
-                    <dt>麦克风</dt>
-                    <dd>{selected.deviceName || '未打开设备'}</dd>
-                  </div>
-                </dl>
-                {selected.status === 'interrupted' && (
-                  <p className="audio-warning">这场会议曾中断，以下音频只包含可恢复的部分。</p>
-                )}
-                {selected.status === 'failed' && (
-                  <p className="audio-warning">
-                    录音未成功保存，请检查麦克风、磁盘空间与目录权限后重试。
-                  </p>
-                )}
-                {selected.audioError ? (
-                  <p role="alert" className="audio-warning">
-                    {selected.audioError}
-                  </p>
-                ) : selected.audioAvailable ? (
-                  active || busy || !connected || page !== 'meetings' ? (
-                    <p className="audio-warning">录音或重新连接期间暂停回放。</p>
-                  ) : (
-                    <AudioPlayer
-                      key={`audio-${selected.id}`}
-                      ref={audio}
-                      meetingId={selected.id}
-                      durationMs={selected.durationMs}
-                    />
-                  )
-                ) : (
-                  <p>当前没有可播放的录音。</p>
-                )}
-                {connected && (
-                  <Transcript
-                    key={`transcript-${selected.id}`}
-                    meetingId={selected.id}
-                    modelReady={model?.state === 'ready'}
-                    playable={selected.audioAvailable && !active && !busy}
-                    onSeek={(ms) => {
-                      if (!active) audio.current?.seek(ms)
-                    }}
-                  />
-                )}
-                {connected && (
-                  <MeetingMinutes
-                    key={`summary-${selected.id}`}
-                    meetingId={selected.id}
-                    playable={selected.audioAvailable && !active && !busy}
-                    onSeek={(ms) => {
-                      if (!active) audio.current?.seek(ms)
-                    }}
-                  />
-                )}
-              </section>
-            ) : (
-              <section className="meetings-section" aria-labelledby="meetings-title">
-                <div className="section-heading">
-                  <h2 id="meetings-title">
-                    我的会议 <span>{loaded ? meetings.length : '—'}</span>
-                  </h2>
-                  <button
-                    className="text-button"
-                    disabled={!connected}
-                    onClick={() => void loadMeetings()}
-                  >
-                    刷新记录
-                  </button>
-                </div>
-                {meetings.length ? (
-                  <div className="meeting-list">
-                    {meetings.map((meeting) => (
-                      <button
-                        className="meeting-row"
-                        key={meeting.id}
-                        onClick={() => void openMeeting(meeting.id)}
-                      >
-                        <span className="row-icon">
-                          <AudioLines size={22} />
-                        </span>
-                        <span className="row-title">
-                          <strong>{meeting.title}</strong>
-                          <small>{date(meeting.createdAt)}</small>
-                        </span>
-                        <span>{duration(meeting.durationMs)}</span>
+              </div>
+              {meetings.length ? (
+                <div className="meeting-list">
+                  {meetings.map((meeting) => (
+                    <button
+                      className="meeting-row"
+                      key={meeting.id}
+                      onClick={() => void openMeeting(meeting.id)}
+                    >
+                      <span className="row-icon">
+                        <AudioLines size={21} />
+                      </span>
+                      <span className="row-title">
+                        <strong>{meeting.title}</strong>
+                        <small>{date(meeting.createdAt)}</small>
+                      </span>
+                      <span>{duration(meeting.durationMs)}</span>
+                      <span className="row-state">
                         <span className={`meeting-state ${meeting.status}`}>
                           {labels[meeting.status]}
                         </span>
-                        <ChevronRight size={16} />
-                      </button>
-                    ))}
-                    {hasMore && (
-                      <button
-                        className="text-button"
-                        onClick={() => void loadMeetings(meetings.length)}
-                      >
-                        加载更多
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <div className="empty-art">
-                      <div className="art-orbit" />
-                      <div className="art-paper">
-                        <AudioLines size={40} />
-                      </div>
-                    </div>
-                    <h3>{loaded ? '暂无会议记录' : '正在加载会议记录'}</h3>
-                    <p>点击「开始会议」录音，结束后可在这里查看和回放。</p>
-                  </div>
-                )}
-              </section>
-            )}
+                        <MeetingProcessingState
+                          meetingId={meeting.id}
+                          visible={page === 'meetings'}
+                          connected={connected}
+                          state={meeting.status}
+                          refreshVersion={listRefreshVersion}
+                        />
+                      </span>
+                      <ChevronRight size={16} />
+                    </button>
+                  ))}
+                  {hasMore && (
+                    <button
+                      className="text-button"
+                      disabled={!connected}
+                      onClick={() => void loadMeetings(meetings.length)}
+                    >
+                      加载更多
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <AudioLines size={38} />
+                  <h3>{loaded ? '暂无会议记录' : '正在加载会议记录'}</h3>
+                  <p>点击「开始会议」录音，结束后可在这里查看和回放。</p>
+                </div>
+              )}
+            </section>
           </div>
-          <div hidden={page !== 'settings'}>
-            <div className="page-heading">
-              <div>
-                <h1>设置</h1>
-              </div>
-            </div>
-            <ApiModelSettings />
-            <ModelSettings model={model} refresh={() => setModelRefresh((value) => value + 1)} />
-            <CollapsibleSection
-              id="recording-transcription"
-              title="录音与转写"
-              className="capabilities"
-              error={!available && connected}
-              summary={
-                !connected
-                  ? '正在连接…'
-                  : !available
-                    ? '麦克风录音暂不可用'
-                    : model?.state === 'ready'
-                      ? '麦克风录音与本地转写已就绪'
-                      : '麦克风录音已就绪'
-              }
-            >
-              {[
-                {
-                  id: 'recording',
-                  name: '持续录音',
-                  description: '使用默认麦克风录音',
-                  icon: Mic,
-                },
-                {
-                  id: 'transcription',
-                  name: '本地转写',
-                  description: '离线生成带时间的文字记录',
-                  icon: AudioLines,
-                },
-              ].map(({ id, name, description, icon: Icon }) => (
-                <div className="capability-row" key={id}>
-                  <Icon size={20} />
-                  <div>
-                    <strong>{name}</strong>
-                    <p>{description}</p>
-                  </div>
-                  <span className="unavailable-badge">
-                    {status.capabilities.find((item) => item.id === id)?.available
-                      ? '已就绪'
-                      : '未就绪'}
+          {active && (
+            <div hidden={page !== 'current'} className="page-content current-page">
+              <section className="recording-card" aria-label="当前录音">
+                <div className="recording-heading">
+                  <span
+                    className={`recording-dot ${recording.state === 'recording' && connected ? 'live' : ''}`}
+                  />
+                  <strong>{interruptedConnection ? '录制中断' : labels[recording.state]}</strong>
+                  <span className="recording-time" aria-label="录音时长">
+                    {duration(recording.elapsedMs)}
                   </span>
                 </div>
-              ))}
-            </CollapsibleSection>
+                <label className="input-meter">
+                  输入音量{' '}
+                  <meter aria-label="输入音量" min="0" max="1" value={recording.inputLevel} />
+                </label>
+                {recordingControls}
+                <small>
+                  {recording.state === 'paused'
+                    ? '暂停期间不采集声音，继续后接着录制。'
+                    : '切换页面或最小化窗口后，录音会继续。'}
+                </small>
+              </section>
+              {connected && recording.meetingId && (
+                <Transcript
+                  key={recording.meetingId}
+                  meetingId={recording.meetingId}
+                  modelReady={model?.state === 'ready'}
+                  playable={false}
+                  visible={page === 'current'}
+                  live
+                />
+              )}
+            </div>
+          )}
+          {page === 'meeting' && selected && (
+            <MeetingWorkspace
+              key={selected.id}
+              meeting={selected}
+              audioRef={audio}
+              connected={connected}
+              playable={!active && !busy && !retrying && connected}
+              modelReady={model?.state === 'ready'}
+              onBack={() => navigate('meetings')}
+              onServices={() => navigate('services')}
+            />
+          )}
+          <div hidden={page !== 'services'} className="page-content settings-page">
+            <ApiModelSettings visible={page === 'services'} />
           </div>
-          <footer className="workspace-footer">
-            <span className={`connection-dot ${connected ? 'connected' : ''}`} />
-            <span>{connectionLabel}</span>
-            {connected && (
-              <button className="text-button" disabled={retrying} onClick={() => void retry()}>
-                重新连接
+          <div hidden={page !== 'local-model'} className="page-content settings-page">
+            <ModelSettings model={model} refresh={() => setModelRefresh((value) => value + 1)} />
+          </div>
+          <div hidden={page !== 'appearance'} className="page-content settings-page">
+            <Appearance theme={theme} onChange={setTheme} />
+          </div>
+          {active && page !== 'current' && (
+            <section className="recording-bar" aria-label="活动录音">
+              <button className="recording-return" onClick={() => navigate('current')}>
+                <span className="recording-dot" />
+                <strong>{interruptedConnection ? '录制中断' : labels[recording.state]}</strong>
+                <span className="recording-time" aria-label="录音时长">
+                  {duration(recording.elapsedMs)}
+                </span>
+                <span>返回当前会议</span>
               </button>
-            )}
-          </footer>
+              {recordingControls}
+            </section>
+          )}
         </main>
       </div>
+      {commandOpen && <CommandPalette commands={commands} onClose={() => setCommandOpen(false)} />}
     </div>
   )
 }

@@ -92,11 +92,11 @@ test('installed package starts its bundled core without Python, Node or source c
       const status = await page.evaluate(() => window.paa.getStatus())
       expect(status.pythonVersion).toMatch(/^3\.12\./)
       expect(status.capabilities.find((entry) => entry.id === 'recording')?.available).toBe(true)
-      await page.getByRole('button', { name: '设置', exact: true }).click()
+      await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
       await expect(page.getByRole('heading', { name: '应用状态', exact: true })).toHaveCount(0)
       await expect(page.getByRole('button', { name: '模型服务管理', exact: true })).toHaveAttribute(
-        'aria-expanded',
-        'false',
+        'aria-current',
+        'page',
       )
       await page.getByRole('button', { name: '重新连接', exact: true }).click()
       await expect

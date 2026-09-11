@@ -19,10 +19,12 @@ export function audioTime(seconds: number): string {
 export function AudioPlayer({
   meetingId,
   durationMs,
+  enabled = true,
   ref,
 }: {
   meetingId: string
   durationMs: number
+  enabled?: boolean
   ref?: Ref<AudioPlayerHandle>
 }): React.JSX.Element {
   const audio = useRef<HTMLAudioElement>(null)
@@ -46,7 +48,11 @@ export function AudioPlayer({
       element?.pause()
     }
   }, [])
+  useEffect(() => {
+    if (!enabled) audio.current?.pause()
+  }, [enabled])
   function play(): void {
+    if (!enabled) return
     const element = audio.current
     if (!element) return
     setError('')
@@ -58,6 +64,7 @@ export function AudioPlayer({
     })
   }
   function seek(seconds: number, start = false): void {
+    if (!enabled) return
     const element = audio.current
     if (!element) return
     const end = Number.isFinite(element.duration) ? element.duration : durationMs / 1000
@@ -85,6 +92,7 @@ export function AudioPlayer({
     if (value > 0) audio.current.muted = false
   }
   function keyboard(event: KeyboardEvent<HTMLElement>): void {
+    if (!enabled) return
     const target = event.target as HTMLElement
     if (
       target.closest('input, select, textarea, button, [contenteditable="true"]') ||
@@ -123,7 +131,12 @@ export function AudioPlayer({
     event.preventDefault()
   }
   return (
-    <section className="audio-player" aria-label="会议录音播放器" tabIndex={0} onKeyDown={keyboard}>
+    <section
+      className="audio-player"
+      aria-label="会议录音播放器"
+      tabIndex={enabled ? 0 : -1}
+      onKeyDown={keyboard}
+    >
       <audio
         ref={audio}
         preload="metadata"
@@ -169,89 +182,92 @@ export function AudioPlayer({
           setError('音频文件无法读取，请检查文件是否缺失或损坏。')
         }}
       />
-      <div className="player-timeline">
-        <output aria-label="播放时间">{audioTime(position)}</output>
-        <input
-          type="range"
-          min={0}
-          max={Math.max(length, 0.01)}
-          step={0.1}
-          value={Math.min(position, length)}
-          disabled={!ready || !!error}
-          aria-label="播放进度"
-          aria-valuetext={`${audioTime(position)} / ${audioTime(length)}`}
-          onChange={(event) => seek(Number(event.target.value))}
-        />
-        <span aria-label="总时长">{audioTime(length)}</span>
-      </div>
-      <div className="player-controls">
-        <button
-          className="player-icon"
-          aria-label="后退 10 秒"
-          disabled={!ready || !!error}
-          onClick={() => seek((audio.current?.currentTime ?? 0) - 10)}
-        >
-          <RotateCcw size={19} />
-          <span>10</span>
-        </button>
-        <button
-          className="player-play"
-          aria-label={playing ? '暂停播放' : '播放录音'}
-          onClick={toggle}
-        >
-          {playing ? <Pause size={21} /> : <Play size={21} />}
-        </button>
-        <button
-          className="player-icon"
-          aria-label="前进 10 秒"
-          disabled={!ready || !!error}
-          onClick={() => seek((audio.current?.currentTime ?? 0) + 10)}
-        >
-          <RotateCw size={19} />
-          <span>10</span>
-        </button>
-        <label className="player-speed">
-          倍速
-          <select
-            aria-label="播放倍速"
-            value={rate}
-            onChange={(event) => {
-              if (audio.current) {
-                audio.current.preservesPitch = true
-                audio.current.playbackRate = Number(event.target.value)
-              }
-            }}
-          >
-            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => (
-              <option key={value} value={value}>
-                {value}×
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="player-volume">
-          <button
-            className="player-icon"
-            aria-label={muted ? '取消静音' : '静音'}
-            onClick={() => {
-              if (audio.current) audio.current.muted = !audio.current.muted
-            }}
-          >
-            {muted || !volume ? <VolumeX size={20} /> : <Volume2 size={20} />}
-          </button>
+      <fieldset disabled={!enabled} className="player-fields">
+        <div className="player-timeline">
+          <output aria-label="播放时间">{audioTime(position)}</output>
           <input
             type="range"
             min={0}
-            max={1}
-            step={0.05}
-            value={muted ? 0 : volume}
-            aria-label="播放音量"
-            onChange={(event) => setAudioVolume(Number(event.target.value))}
+            max={Math.max(length, 0.01)}
+            step={0.1}
+            value={Math.min(position, length)}
+            disabled={!ready || !!error}
+            aria-label="播放进度"
+            aria-valuetext={`${audioTime(position)} / ${audioTime(length)}`}
+            onChange={(event) => seek(Number(event.target.value))}
           />
+          <span aria-label="总时长">{audioTime(length)}</span>
         </div>
-      </div>
+        <div className="player-controls">
+          <button
+            className="player-icon"
+            aria-label="后退 10 秒"
+            disabled={!ready || !!error}
+            onClick={() => seek((audio.current?.currentTime ?? 0) - 10)}
+          >
+            <RotateCcw size={19} />
+            <span>10</span>
+          </button>
+          <button
+            className="player-play"
+            aria-label={playing ? '暂停播放' : '播放录音'}
+            onClick={toggle}
+          >
+            {playing ? <Pause size={21} /> : <Play size={21} />}
+          </button>
+          <button
+            className="player-icon"
+            aria-label="前进 10 秒"
+            disabled={!ready || !!error}
+            onClick={() => seek((audio.current?.currentTime ?? 0) + 10)}
+          >
+            <RotateCw size={19} />
+            <span>10</span>
+          </button>
+          <label className="player-speed">
+            倍速
+            <select
+              aria-label="播放倍速"
+              value={rate}
+              onChange={(event) => {
+                if (audio.current) {
+                  audio.current.preservesPitch = true
+                  audio.current.playbackRate = Number(event.target.value)
+                }
+              }}
+            >
+              {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => (
+                <option key={value} value={value}>
+                  {value}×
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="player-volume">
+            <button
+              className="player-icon"
+              aria-label={muted ? '取消静音' : '静音'}
+              onClick={() => {
+                if (audio.current) audio.current.muted = !audio.current.muted
+              }}
+            >
+              {muted || !volume ? <VolumeX size={20} /> : <Volume2 size={20} />}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : volume}
+              aria-label="播放音量"
+              onChange={(event) => setAudioVolume(Number(event.target.value))}
+            />
+          </div>
+        </div>
+      </fieldset>
       <p className="player-status" role={error ? 'alert' : 'status'}>
-        {error ||
+        {(!enabled ? '录音或重新连接期间暂停回放。' : '') ||
+          error ||
           (waiting ? '正在缓冲…' : !ready ? '正在读取录音…' : ended ? '播放结束' : '\u00a0')}
       </p>
       <details className="player-shortcuts">

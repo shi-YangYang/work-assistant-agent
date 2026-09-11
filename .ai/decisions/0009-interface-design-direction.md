@@ -1,0 +1,30 @@
+# 0009 — 界面重设计方向
+
+2026-09-11 · ACCEPTED，对应 [Spec 006](../../specs/spec-006-interface-and-navigation/spec.md)。用户已明确“按照你的建议来”，确认全部四项设计建议。
+
+## 背景
+
+现有信息层级偏弱，不同任务共用长页面。增加卡片间距无法解决页面职责混杂，需要一起处理配色、导航和会议操作的连续性。
+
+## 调研依据
+
+| 官方资料 | 借鉴点 | 本项目应用 |
+| --- | --- | --- |
+| [Linear 2024 重设计](https://linear.app/now/how-we-redesigned-the-linear-ui) 与 [2026 界面调整](https://linear.app/now/behind-the-latest-design-refresh) | Electron 跨平台导航、稳定标题与视图操作、内容和导航的视觉权重 | 统一应用框架和语义色值，以阅读内容为主体 |
+| [Slack 设计团队](https://slack.design/articles/a-more-focused-productive-slack/) | 功能增长后按工作任务组织页签 | 分清列表、当前会议、会后回顾及设置的职责 |
+| [Obsidian 命令面板](https://obsidian.md/help/plugins/command-palette) | 按名称查找操作，减少记忆快捷键的负担 | `Cmd/Ctrl+K` 入口，共享已有操作，不新增检索后端 |
+| [W3C 文字对比度](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html) 与 [非文字对比度](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html) | 可测量的可读性与控件辨识下限 | 覆盖正文、辅助文字、焦点及必要状态标识 |
+
+以上是官方资料的借鉴与本项目的设计推论，不代表已在参考产品内完成实操测试，也不复制其品牌素材。
+
+## 决策与取舍
+
+- 选择克制、层级明确的桌面工具方向，以中性灰阶和少量蓝色强调组织视觉；支持浅色、深色及跟随系统，默认跟随系统。
+- 全局导航、设置子导航、会议内页签各承担一级职责；折叠只用于单个任务内的高级内容。
+- 已结束会议默认纪要、录音中默认实时文字；用“纪要引用 → 原文 → 音频”形成会议回顾特点，录音以跨页可达的紧凑控制条呈现，命令面板提供统一效率入口。
+- 保持既有技术与业务能力，优先内部组件和类型化视图状态，不引入重复 UI 库、不改变 IPC 信任边界或数据位置。
+- 避免营销式大标题、无功能概览、装饰波形和复杂无关动效；不继续把不同任务藏进同一长页的折叠块。
+
+## 后果
+
+拆页影响状态与生命周期，需要保护录音、服务草稿和播放器实例。[原型](../../specs/spec-006-interface-and-navigation/prototype.html) 提供可审查的色值与布局起点，最终行为与验收标准只在 Spec 详述。

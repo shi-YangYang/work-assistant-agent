@@ -25,6 +25,8 @@
 
 [Spec 005：桌面打包与会议操作体验](../specs/spec-005-desktop-distribution-and-controls/spec.md) 已实施，状态 ACCEPTANCE：内置 Python 运行环境的安装包、设置折叠与命名整理、录音暂停／继续、自定义播放器。交付及验证结果以本 Spec 报告为准。
 
+[Spec 006：界面层级、页面导航与会议交互](../specs/spec-006-interface-and-navigation/spec.md) 已完成现有能力的视觉、信息组织和操作体验重设计，状态 ACCEPTANCE；独立验收及本次 CI 待闭环。
+
 关键结果：
 
 - ASR 和 LLM 延迟不阻塞录音。

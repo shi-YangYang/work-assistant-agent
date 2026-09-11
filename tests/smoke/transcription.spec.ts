@@ -78,9 +78,7 @@ test('real local model restores transcript, seeks, and generates historical text
       await expect
         .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
         .toBe('ready')
-      await page.getByRole('button', { name: '设置', exact: true }).click()
-      const modelSection = page.getByRole('button', { name: '本地转写模型', exact: true })
-      if ((await modelSection.getAttribute('aria-expanded')) !== 'true') await modelSection.click()
+      await page.getByRole('button', { name: '本地转写模型', exact: true }).click()
       await expect(page.getByText('模型已就绪', { exact: true })).toBeVisible({ timeout: 30_000 })
       await page.getByRole('button', { name: '会议记录', exact: true }).click()
       const meetings = await page.evaluate(() => window.paa.listMeetings())
@@ -92,6 +90,7 @@ test('real local model restores transcript, seeks, and generates historical text
       expect(completedIndex).toBeGreaterThanOrEqual(0)
       expect(index).toBeGreaterThanOrEqual(0)
       await page.locator('.meeting-row').nth(completedIndex).click()
+      await page.getByRole('tab', { name: '文字记录', exact: true }).click()
       await expect(page.getByLabel('会议文字')).toContainText('中介协会分析')
       await page.locator('.transcript-line').first().click()
       await expect
@@ -119,6 +118,7 @@ test('real local model restores transcript, seeks, and generates historical text
     const saved = await step('generate historical transcript', async () => {
       await page.getByRole('button', { name: '返回会议列表', exact: true }).click()
       await page.locator('.meeting-row').nth(historyIndex).click()
+      await page.getByRole('tab', { name: '文字记录', exact: true }).click()
       await expect(page.getByRole('button', { name: '生成转写', exact: true })).toBeEnabled()
       await page.getByRole('button', { name: '生成转写', exact: true }).click()
       await expect(page.getByLabel('会议文字')).toContainText('转写完成', { timeout: 30_000 })
@@ -138,6 +138,7 @@ test('real local model restores transcript, seeks, and generates historical text
         saved,
       )
       await page.locator('.meeting-row').nth(historyIndex).click()
+      await page.getByRole('tab', { name: '文字记录', exact: true }).click()
       await expect(page.getByLabel('会议文字')).toContainText('转写完成')
     })
     await step('cancel close while real transcription is active', async () => {

@@ -34,21 +34,13 @@ export function ModelSettings({
     }
   }
   return (
-    <CollapsibleSection
-      id="transcription-model"
-      title="本地转写模型"
-      className="model-card"
-      error={!!(error || model?.error)}
-      summary={
-        error ||
-        model?.error ||
-        (model?.state === 'ready'
-          ? 'Whisper small · 已就绪'
-          : preparing
-            ? `正在准备 · ${Math.floor(((model?.downloadedBytes ?? 0) * 100) / (model?.totalBytes || 1))}%`
-            : '尚未下载模型')
-      }
-    >
+    <section className="settings-card model-card" aria-label="本地转写模型">
+      <div className="section-heading">
+        <h2>Whisper small</h2>
+        <span className="status-badge">
+          {model?.state === 'ready' ? '本地转写已就绪' : '准备本地转写'}
+        </span>
+      </div>
       <p>支持中文及中英混合转写。</p>
       <p>下载约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。</p>
       <p>下载需要联网，完成后可离线转写。</p>
@@ -91,12 +83,15 @@ export function ModelSettings({
         </button>
       )}
       {model?.state !== 'ready' && <p>可先录音，模型就绪后再补转写。</p>}
-      <details>
-        <summary>模型信息</summary>
+      <CollapsibleSection
+        id="model-information"
+        title="模型信息"
+        summary="Whisper small · 多语言 · CPU INT8"
+      >
         <p>Whisper small 多语言</p>
         <p>来源：{model?.source ?? 'Hugging Face · SYSTRAN'} · MIT 许可</p>
-      </details>
-    </CollapsibleSection>
+      </CollapsibleSection>
+    </section>
   )
 }
 const states: Record<TranscriptionStatus['state'], string> = {
@@ -113,24 +108,38 @@ export function Transcript({
   modelReady,
   playable,
   onSeek,
+  visible = true,
+  live = false,
+  connected = true,
+  target,
 }: {
   meetingId: string
   modelReady: boolean
   playable: boolean
   onSeek?: (ms: number) => void
+  visible?: boolean
+  live?: boolean
+  connected?: boolean
+  target?: { id: string; request: number } | null
 }): React.JSX.Element {
   const [status, setStatus] = useState<TranscriptionStatus | null>(null)
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [hasMore, setHasMore] = useState(false)
+  const [loadRequest, setLoadRequest] = useState(0)
+  const [locating, setLocating] = useState(false)
   const viewport = useRef<HTMLDivElement>(null)
   const cursor = useRef(-1)
-  const follow = useRef(true)
+  const loaded = useRef<TranscriptSegment[]>([])
+  const more = useRef(true)
+  const follow = useRef(live)
+  const located = useRef<number | null>(null)
   useEffect(() => {
+    if (!connected) return
     let alive = true
     let timer: ReturnType<typeof setTimeout>
-    cursor.current = -1
+    let explicitLoad = true
     async function poll(): Promise<void> {
       try {
         const state = await window.paa.getTranscriptionStatus(meetingId)
@@ -140,22 +149,50 @@ export function Transcript({
           return
         }
         setStatus(state.value)
-        const page = await window.paa.listTranscript(meetingId, cursor.current)
-        if (!alive) return
-        if (page.ok) {
-          setHasMore(page.value.hasMore)
-          cursor.current = page.value.nextCursor
-          if (page.value.segments.length)
-            setSegments((previous) => [...previous, ...page.value.segments])
-          setError('')
-        } else setError(page.message)
-      } catch {
-        if (alive) setError('无法读取转写状态，请通过页面的连接提示重试。')
-      } finally {
+        const looking = !!target && !loaded.current.some((segment) => segment.id === target.id)
+        if (looking) setLocating(true)
+        // A citation can reference any page. Consume sequential cursors until found,
+        // while ordinary historical reading fetches only an explicitly requested page.
+        if (explicitLoad || looking || live || !more.current) {
+          do {
+            const page = await window.paa.listTranscript(meetingId, cursor.current)
+            if (!alive) return
+            if (!page.ok) {
+              setError(page.message)
+              return
+            }
+            const next = page.value
+            if (next.hasMore && next.nextCursor <= cursor.current)
+              throw new Error('文字分页未前进，请重试。')
+            cursor.current = next.nextCursor
+            more.current = next.hasMore
+            const ids = new Set(loaded.current.map((segment) => segment.id))
+            loaded.current = [
+              ...loaded.current,
+              ...next.segments.filter((segment) => !ids.has(segment.id)),
+            ]
+            setSegments(loaded.current)
+            setHasMore(next.hasMore)
+          } while (
+            target &&
+            !loaded.current.some((segment) => segment.id === target.id) &&
+            more.current
+          )
+          explicitLoad = false
+        }
+        setError(
+          looking && !more.current && !loaded.current.some((segment) => segment.id === target?.id)
+            ? '当前文字中未找到该引用片段，请返回纪要重试。'
+            : '',
+        )
+      } catch (failure) {
         if (alive)
-          timer = setTimeout(() => {
-            void poll()
-          }, 800)
+          setError(failure instanceof Error ? failure.message : '无法读取文字，请重新连接。')
+      } finally {
+        if (alive) {
+          setLocating(false)
+          timer = setTimeout(() => void poll(), 800)
+        }
       }
     }
     void poll()
@@ -163,11 +200,22 @@ export function Transcript({
       alive = false
       clearTimeout(timer)
     }
-  }, [meetingId])
+  }, [meetingId, connected, target, loadRequest, live])
   useEffect(() => {
-    if (follow.current && viewport.current)
-      viewport.current.scrollTop = viewport.current.scrollHeight
-  }, [segments])
+    if (!visible || !viewport.current) return
+    if (target && located.current !== target.request) {
+      const line = Array.from(
+        viewport.current.querySelectorAll<HTMLButtonElement>('[data-segment-id]'),
+      ).find((element) => element.dataset.segmentId === target.id)
+      if (line) {
+        follow.current = false
+        located.current = target.request
+        viewport.current.scrollTop +=
+          line.getBoundingClientRect().top - viewport.current.getBoundingClientRect().top - 24
+        line.focus({ preventScroll: true })
+      }
+    } else if (follow.current) viewport.current.scrollTop = viewport.current.scrollHeight
+  }, [segments, target, visible])
   async function start(): Promise<void> {
     setBusy(true)
     setError('')
@@ -185,8 +233,10 @@ export function Transcript({
   return (
     <section className="transcript-card" aria-label="会议文字">
       <div className="section-heading">
-        <h2>会议文字</h2>
-        <span role="status">{status ? states[status.state] : '正在读取文字'}</span>
+        <h2>{live ? '实时文字' : '会议文字'}</h2>
+        <span role="status">
+          {locating ? '正在定位引用…' : status ? states[status.state] : '正在读取文字'}
+        </span>
       </div>
       {status && (
         <p className="transcript-progress">
@@ -210,16 +260,20 @@ export function Transcript({
         onScroll={() => {
           const element = viewport.current
           if (element)
-            follow.current = element.scrollHeight - element.scrollTop - element.clientHeight < 40
+            follow.current =
+              live && element.scrollHeight - element.scrollTop - element.clientHeight < 40
         }}
       >
         {segments.length ? (
           segments.map((segment) => (
             <button
-              className="transcript-line"
+              className={`transcript-line ${segment.id === target?.id ? 'source-target' : ''}`}
               key={segment.id}
-              disabled={!playable}
-              onClick={() => onSeek?.(segment.startMs)}
+              data-segment-id={segment.id}
+              aria-disabled={!playable}
+              onClick={() => {
+                if (playable) onSeek?.(segment.startMs)
+              }}
             >
               <time>{time(segment.startMs)}</time>
               <span>{segment.text}</span>
@@ -239,28 +293,39 @@ export function Transcript({
           </p>
         )}
       </div>
-      {canStart && (
-        <button
-          className="secondary-button"
-          disabled={!modelReady || busy}
-          onClick={() => void start()}
-        >
-          {busy ? '正在请求…' : status.state === 'not_started' ? '生成转写' : '继续转写'}
-        </button>
-      )}
-      {!modelReady && <p>在设置中下载转写模型后即可使用，录音不受影响。</p>}
-      {segments.length > 0 && (
-        <button
-          className="text-button"
-          onClick={() => {
-            follow.current = true
-            if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight
-          }}
-        >
-          回到最新内容{hasMore ? ' · 正在加载后续文字' : ''}
-        </button>
-      )}
-      {!playable && <small>回放暂不可用。</small>}
+      <div className="transcript-actions">
+        {canStart && (
+          <button
+            className="secondary-button"
+            disabled={!modelReady || busy || !connected}
+            onClick={() => void start()}
+          >
+            {busy ? '正在请求…' : status.state === 'not_started' ? '生成转写' : '继续转写'}
+          </button>
+        )}
+        {hasMore && (
+          <button
+            className="text-button"
+            disabled={locating || !connected}
+            onClick={() => setLoadRequest((value) => value + 1)}
+          >
+            加载后续文字
+          </button>
+        )}
+        {live && segments.length > 0 && (
+          <button
+            className="text-button"
+            onClick={() => {
+              follow.current = true
+              if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight
+            }}
+          >
+            回到最新内容
+          </button>
+        )}
+        {!playable && <small>回放暂不可用。</small>}
+      </div>
+      {!modelReady && <p>在本地转写模型页下载模型后即可使用，录音不受影响。</p>}
     </section>
   )
 }

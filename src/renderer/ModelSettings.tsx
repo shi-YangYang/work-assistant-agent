@@ -1,5 +1,4 @@
-import { CollapsibleSection } from './CollapsibleSection'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type {
   ModelEntry,
   ModelPresets,
@@ -19,14 +18,151 @@ const blank = (): ServiceDraft => ({
   models: [],
 })
 const initial: ServiceList = { profiles: [], activeProfileId: null, autoGenerate: true }
-export function ApiModelSettings(): React.JSX.Element {
+export function ApiModelSettings({ visible }: { visible: boolean }): React.JSX.Element {
   const [list, setList] = useState(initial)
-  const [draft, setDraft] = useState<ServiceDraft>(blank)
+  const [selected, setSelected] = useState('')
+  const [opened, setOpened] = useState<string[]>([])
+  const [error, setError] = useState('')
+  const [automaticBusy, setAutomaticBusy] = useState(false)
+  useEffect(() => {
+    if (!visible) return
+    let alive = true
+    void window.paa
+      .listModelServices()
+      .then((result) => {
+        if (!alive) return
+        if (!result.ok) {
+          setError(result.message)
+          return
+        }
+        setList(result.value)
+        setError('')
+        if (!selected) {
+          const id =
+            result.value.activeProfileId || result.value.profiles[0]?.id || crypto.randomUUID()
+          setSelected(id)
+          setOpened([id])
+        }
+      })
+      .catch(() => {
+        if (alive) setError('无法读取服务设置，请重新连接后重试。')
+      })
+    return () => {
+      alive = false
+    }
+    // Refresh the saved list on entry; existing in-memory editors own their drafts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible])
+  function select(id: string): void {
+    setSelected(id)
+    setOpened((previous) => (previous.includes(id) ? previous : [...previous, id]))
+  }
+  const active = list.profiles.find((profile) => profile.id === list.activeProfileId)
+  const profiles = [
+    ...list.profiles,
+    ...opened
+      .filter((id) => !list.profiles.some((profile) => profile.id === id))
+      .map((id) => ({ id, name: '未保存服务', model: '' })),
+  ]
+  return (
+    <section className="api-settings" aria-label="模型服务管理">
+      <div className="service-overview">
+        <p>
+          当前用于纪要：<strong>{active ? `${active.name} · ${active.model}` : '尚未选择'}</strong>
+        </p>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            checked={list.autoGenerate}
+            disabled={automaticBusy}
+            onChange={(event) => {
+              const checked = event.target.checked
+              setAutomaticBusy(true)
+              setError('')
+              void window.paa
+                .setAutomaticSummary(checked)
+                .then((result) => {
+                  if (result.ok) setList(result.value)
+                  else setError(result.message)
+                })
+                .catch(() => setError('自动生成设置未保存，请重试。'))
+                .finally(() => setAutomaticBusy(false))
+            }}
+          />
+          转写完成后自动生成纪要{automaticBusy ? ' · 正在保存…' : ''}
+        </label>
+      </div>
+      {error && (
+        <p role="alert" className="audio-warning">
+          {error}
+        </p>
+      )}
+      <div className="service-layout">
+        <aside className="service-list" aria-label="服务列表">
+          <div className="section-heading">
+            <h2>服务</h2>
+            <button className="text-button" onClick={() => select(crypto.randomUUID())}>
+              添加服务
+            </button>
+          </div>
+          {profiles.map((profile) => (
+            <button
+              key={profile.id}
+              className={`service-item ${profile.id === selected ? 'selected' : ''}`}
+              aria-label={`${profile.name}${profile.id === list.activeProfileId ? ' · 使用中' : ''}`}
+              aria-pressed={profile.id === selected}
+              onClick={() => select(profile.id)}
+            >
+              <strong>
+                {profile.name}
+                {profile.id === list.activeProfileId ? ' · 使用中' : ''}
+              </strong>
+              <small>{profile.model || '连接与模型待配置'}</small>
+            </button>
+          ))}
+          <p className="draft-hint">切换服务或页面会保留未保存的编辑，关闭应用前请保存。</p>
+        </aside>
+        <div className="service-editors">
+          {opened.map((id) => (
+            <div key={id} hidden={id !== selected}>
+              <ServiceEditor
+                id={id}
+                list={list}
+                setList={setList}
+                onRemove={() => {
+                  setOpened((previous) => previous.filter((item) => item !== id))
+                  const next =
+                    list.profiles.find((profile) => profile.id !== id)?.id || crypto.randomUUID()
+                  select(next)
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+function ServiceEditor({
+  id,
+  list,
+  setList,
+  onRemove,
+}: {
+  id: string
+  list: ServiceList
+  setList: Dispatch<SetStateAction<ServiceList>>
+  onRemove: () => void
+}): React.JSX.Element {
+  const panelId = useId()
+  const [draft, setDraft] = useState<ServiceDraft>(() => ({ ...blank(), id }))
+  const [tab, setTab] = useState<'connection' | 'model'>('connection')
   const [hasKey, setHasKey] = useState(false)
   const [savedDraft, setSavedDraft] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(() => list.profiles.some((profile) => profile.id === id))
   const [network, setNetwork] = useState('')
   const [directory, setDirectory] = useState<ModelEntry[] | null>(null)
   const [updatedAt, setUpdatedAt] = useState<number | null>(null)
@@ -38,23 +174,14 @@ export function ApiModelSettings(): React.JSX.Element {
   const [presetValue, setPresetValue] = useState('')
   const epoch = useRef(0)
   useEffect(() => {
-    let alive = true
+    if (list.profiles.some((profile) => profile.id === id)) void load(id)
     const lifetime = epoch
-    void window.paa
-      .listModelServices()
-      .then((result) => {
-        if (!alive) return
-        if (result.ok) setList(result.value)
-        else setError(result.message)
-      })
-      .catch(() => {
-        if (alive) setError('无法读取服务设置，请重新连接后重试。')
-      })
     return () => {
-      alive = false
       lifetime.current++
     }
-  }, [])
+    // Each mounted service owns its draft and outstanding operations until removal.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
   function invalidate(clearDirectory = false): void {
     epoch.current++
     setCheck('')
@@ -73,9 +200,18 @@ export function ApiModelSettings(): React.JSX.Element {
   }
   async function load(id: string): Promise<void> {
     invalidate(true)
+    setLoading(true)
     const current = epoch.current
-    const result = await window.paa.getModelService(id)
+    let result
+    try {
+      result = await window.paa.getModelService(id)
+    } catch {
+      if (epoch.current === current) setError('无法读取服务，请重新连接后重试。')
+      setLoading(false)
+      return
+    }
     if (epoch.current !== current) return
+    setLoading(false)
     if (!result.ok) {
       setError(result.message)
       return
@@ -210,7 +346,6 @@ export function ApiModelSettings(): React.JSX.Element {
     directory?.some((item) => item.id === draft.model.trim() && !item.selectable) === true
   const saved = list.profiles.some((item) => item.id === draft.id)
   const hasUnsavedChanges = JSON.stringify(draft) !== savedDraft
-  const active = list.profiles.find((item) => item.id === list.activeProfileId)
   let recipient = draft.baseUrl
   try {
     recipient = new URL(draft.baseUrl).host
@@ -218,260 +353,271 @@ export function ApiModelSettings(): React.JSX.Element {
     /* Incomplete form. */
   }
   return (
-    <CollapsibleSection
-      id="model-services"
-      title="模型服务管理"
-      className="api-settings"
-      error={!!error}
-      summary={
-        error ||
-        network ||
-        check ||
-        (active ? `${active.name} · ${active.model}` : '尚未选择纪要模型服务')
-      }
-    >
+    <section className="service-editor settings-card" aria-label="服务编辑">
       <div className="section-heading">
+        <h2>{draft.name || '新服务'}</h2>
+        <span className="draft-status">
+          {loading
+            ? '正在读取…'
+            : busy
+              ? '正在保存…'
+              : hasUnsavedChanges || editing
+                ? '有未保存的编辑'
+                : '已保存'}
+        </span>
+      </div>
+      <div
+        className="tabs"
+        role="tablist"
+        aria-label="服务配置"
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+            event.preventDefault()
+            const next = tab === 'connection' ? 'model' : 'connection'
+            setTab(next)
+            event.currentTarget
+              .querySelector<HTMLButtonElement>(`[data-service-tab="${next}"]`)
+              ?.focus()
+          }
+        }}
+      >
         <button
-          className="text-button"
-          disabled={busy}
-          onClick={() => {
-            invalidate(true)
-            setDraft(blank())
-            setHasKey(false)
-            setEditing(null)
-          }}
+          role="tab"
+          data-service-tab="connection"
+          id={`${panelId}-connection-tab`}
+          aria-controls={`${panelId}-connection`}
+          aria-selected={tab === 'connection'}
+          tabIndex={tab === 'connection' ? 0 : -1}
+          onClick={() => setTab('connection')}
         >
-          添加服务
+          连接配置
+        </button>
+        <button
+          role="tab"
+          data-service-tab="model"
+          id={`${panelId}-model-tab`}
+          aria-controls={`${panelId}-model`}
+          aria-selected={tab === 'model'}
+          tabIndex={tab === 'model' ? 0 : -1}
+          onClick={() => setTab('model')}
+        >
+          模型与推理
         </button>
       </div>
-      <p>
-        当前用于纪要：<strong>{active ? `${active.name} · ${active.model}` : '尚未选择'}</strong>
-      </p>
-      <div className="service-list">
-        {list.profiles.map((profile) => (
-          <button
-            key={profile.id}
-            className={`secondary-button ${profile.id === draft.id ? 'selected' : ''}`}
-            disabled={busy}
-            onClick={() => void load(profile.id)}
-          >
-            {profile.name}
-            {profile.id === list.activeProfileId ? ' · 使用中' : ''}
-          </button>
-        ))}
-      </div>
-      <label className="check-label">
-        <input
-          type="checkbox"
-          checked={list.autoGenerate}
-          disabled={busy}
-          onChange={(event) =>
-            void mutate(
-              () => window.paa.setAutomaticSummary(event.target.checked),
-              '自动生成设置已保存。',
-            )
-          }
-        />
-        转写完成后自动生成纪要
-      </label>
-      <fieldset disabled={busy} className="service-form">
-        <label>
-          服务名称
-          <input
-            value={draft.name}
-            maxLength={80}
-            onChange={(event) => change({ name: event.target.value })}
-          />
-        </label>
-        <label>
-          API Base URL
-          <input
-            value={draft.baseUrl}
-            maxLength={2048}
-            placeholder="https://example.com/v1"
-            onChange={(event) => {
-              change({ baseUrl: event.target.value, apiKey: '' }, true)
-              setHasKey(false)
-            }}
-          />
-        </label>
-        <label>
-          API 密钥
-          <input
-            type="password"
-            autoComplete="off"
-            value={draft.apiKey}
-            maxLength={4096}
-            placeholder={hasKey ? '已保存，留空保留' : '输入密钥'}
-            onChange={(event) => change({ apiKey: event.target.value }, true)}
-          />
-        </label>
-        <div className="button-row">
-          <button
-            className="secondary-button"
-            disabled={!!network}
-            onClick={() => void run('models')}
-          >
-            获取模型
-          </button>
-          {updatedAt && <small>更新于 {new Date(updatedAt * 1000).toLocaleTimeString()}</small>}
+      <fieldset disabled={busy || loading} className="service-form">
+        <div
+          hidden={tab !== 'connection'}
+          className="service-tab"
+          role="tabpanel"
+          id={`${panelId}-connection`}
+          aria-labelledby={`${panelId}-connection-tab`}
+        >
+          <label>
+            服务名称
+            <input
+              value={draft.name}
+              maxLength={80}
+              onChange={(event) => change({ name: event.target.value })}
+            />
+          </label>
+          <label>
+            API Base URL
+            <input
+              value={draft.baseUrl}
+              maxLength={2048}
+              placeholder="https://example.com/v1"
+              onChange={(event) => {
+                change({ baseUrl: event.target.value, apiKey: '' }, true)
+                setHasKey(false)
+              }}
+            />
+          </label>
+          <label>
+            API 密钥
+            <input
+              type="password"
+              autoComplete="off"
+              value={draft.apiKey}
+              maxLength={4096}
+              placeholder={hasKey ? '已保存，留空保留' : '输入密钥'}
+              onChange={(event) => change({ apiKey: event.target.value }, true)}
+            />
+          </label>
         </div>
-        {directory !== null && (
-          <div className="model-directory">
-            <label>
-              搜索模型
-              <input value={search} onChange={(event) => setSearch(event.target.value)} />
-            </label>
-            <label>
-              可用模型列表
-              <select
-                size={Math.min(6, Math.max(2, directory.length))}
-                value={directory.some((item) => item.id === draft.model) ? draft.model : ''}
-                onChange={(event) => change({ model: event.target.value })}
-              >
-                <option value="" disabled>
-                  选择模型
-                </option>
-                {directory
-                  .filter((item) => item.id.toLowerCase().includes(search.toLowerCase()))
-                  .map((item) => (
-                    <option key={item.id} value={item.id} disabled={!item.selectable}>
-                      {item.id}
-                      {item.selectable ? '' : ' · 非文本模型'}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {!directory.length && <p>没有返回模型，可手动填写模型 ID。</p>}
-            {draft.model && !directory.some((item) => item.id === draft.model) && (
-              <p>当前模型未出现在目录中，保留为手动 ID。</p>
-            )}
+        <div
+          hidden={tab !== 'model'}
+          className="service-tab"
+          role="tabpanel"
+          id={`${panelId}-model`}
+          aria-labelledby={`${panelId}-model-tab`}
+        >
+          <div className="button-row">
+            <button
+              className="secondary-button"
+              disabled={!!network}
+              onClick={() => void run('models')}
+            >
+              获取模型
+            </button>
+            {updatedAt && <small>更新于 {new Date(updatedAt * 1000).toLocaleTimeString()}</small>}
           </div>
-        )}
-        <label>
-          模型 ID
-          <input
-            value={draft.model}
-            maxLength={256}
-            placeholder="选择模型或手动填写"
-            onChange={(event) => change({ model: event.target.value })}
-          />
-        </label>
-        {knownNontext && (
-          <p role="alert">
-            此模型在该服务目录中明确为非文本模型，不能用于纪要；请选择其他模型或刷新目录。
-          </p>
-        )}
-        <label>
-          推理预设
-          <select
-            className="reasoning-preset-select"
-            aria-label="推理预设"
-            value={entry.selectedPresetId || ''}
-            disabled={!draft.model}
-            onChange={(event) => {
-              updatePresets({ ...entry, selectedPresetId: event.target.value || null })
-              setEditing(null)
-            }}
-          >
-            <option value="">服务默认</option>
-            {entry.presets.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="button-row">
-          <button
-            className="text-button"
-            disabled={!draft.model || entry.presets.length >= 16}
-            onClick={() => editPreset()}
-          >
-            添加推理预设
-          </button>
-          <button
-            className="text-button"
-            disabled={!entry.selectedPresetId}
-            onClick={() =>
-              editPreset(entry.presets.find((item) => item.id === entry.selectedPresetId))
-            }
-          >
-            编辑预设
-          </button>
-          <button
-            className="text-button"
-            disabled={!entry.selectedPresetId}
-            onClick={() => {
-              updatePresets({
-                ...entry,
-                selectedPresetId: null,
-                presets: entry.presets.filter((item) => item.id !== entry.selectedPresetId),
-              })
-              setEditing(null)
-            }}
-          >
-            删除预设
-          </button>
-        </div>
-        {editing && (
-          <div className="preset-editor">
-            <label>
-              预设名称
-              <input
-                value={presetName}
-                onChange={(event) => setPresetName(event.target.value)}
-                placeholder="例如：深入"
-              />
-            </label>
-            <label>
-              参数模式
-              <select
-                value={presetMode}
-                onChange={(event) => {
-                  setPresetMode(event.target.value as 'simple' | 'advanced')
-                  setPresetValue('')
-                }}
-              >
-                <option value="simple">强度字符串</option>
-                <option value="advanced">JSON 参数</option>
-              </select>
-            </label>
-            <label>
-              {presetMode === 'simple' ? '推理强度值' : '推理参数 JSON'}
-              <textarea
-                value={presetValue}
-                onChange={(event) => setPresetValue(event.target.value)}
-                placeholder={
-                  presetMode === 'simple' ? '例如：high' : '{"thinking":{"type":"enabled"}}'
-                }
-                rows={presetMode === 'simple' ? 2 : 5}
-              />
-            </label>
-            <small>
-              {presetMode === 'simple'
-                ? '作为 reasoning_effort 发送；可填写服务支持的值。'
-                : '填写服务文档中的推理参数；不能覆盖模型、会议文字或凭证。'}
-            </small>
-            <div className="button-row">
-              <button className="secondary-button" onClick={applyPreset}>
-                应用预设
-              </button>
-              <button className="text-button" onClick={() => setEditing(null)}>
-                取消编辑
-              </button>
+          {directory !== null && (
+            <div className="model-directory">
+              <label>
+                搜索模型
+                <input value={search} onChange={(event) => setSearch(event.target.value)} />
+              </label>
+              <label>
+                可用模型列表
+                <select
+                  size={Math.min(6, Math.max(2, directory.length))}
+                  value={directory.some((item) => item.id === draft.model) ? draft.model : ''}
+                  onChange={(event) => change({ model: event.target.value })}
+                >
+                  <option value="" disabled>
+                    选择模型
+                  </option>
+                  {directory
+                    .filter((item) => item.id.toLowerCase().includes(search.toLowerCase()))
+                    .map((item) => (
+                      <option key={item.id} value={item.id} disabled={!item.selectable}>
+                        {item.id}
+                        {item.selectable ? '' : ' · 非文本模型'}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              {!directory.length && <p>没有返回模型，可手动填写模型 ID。</p>}
+              {draft.model && !directory.some((item) => item.id === draft.model) && (
+                <p>当前模型未出现在目录中，保留为手动 ID。</p>
+              )}
             </div>
+          )}
+          <label>
+            模型 ID
+            <input
+              value={draft.model}
+              maxLength={256}
+              placeholder="选择模型或手动填写"
+              onChange={(event) => change({ model: event.target.value })}
+            />
+          </label>
+          {knownNontext && (
+            <p role="alert">
+              此模型在该服务目录中明确为非文本模型，不能用于纪要；请选择其他模型或刷新目录。
+            </p>
+          )}
+          <label>
+            推理预设
+            <select
+              className="reasoning-preset-select"
+              aria-label="推理预设"
+              value={entry.selectedPresetId || ''}
+              disabled={!draft.model}
+              onChange={(event) => {
+                updatePresets({ ...entry, selectedPresetId: event.target.value || null })
+                setEditing(null)
+              }}
+            >
+              <option value="">服务默认</option>
+              {entry.presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="button-row">
+            <button
+              className="text-button"
+              disabled={!draft.model || entry.presets.length >= 16}
+              onClick={() => editPreset()}
+            >
+              添加推理预设
+            </button>
+            <button
+              className="text-button"
+              disabled={!entry.selectedPresetId}
+              onClick={() =>
+                editPreset(entry.presets.find((item) => item.id === entry.selectedPresetId))
+              }
+            >
+              编辑预设
+            </button>
+            <button
+              className="text-button"
+              disabled={!entry.selectedPresetId}
+              onClick={() => {
+                updatePresets({
+                  ...entry,
+                  selectedPresetId: null,
+                  presets: entry.presets.filter((item) => item.id !== entry.selectedPresetId),
+                })
+                setEditing(null)
+              }}
+            >
+              删除预设
+            </button>
           </div>
-        )}
-        <label className="check-label">
-          <input
-            type="checkbox"
-            checked={draft.stream}
-            onChange={(event) => change({ stream: event.target.checked })}
-          />
-          使用流式接口
-        </label>
-        <small>按服务支持情况选择，部分模型需要开启。</small>
+          {editing && (
+            <div className="preset-editor">
+              <label>
+                预设名称
+                <input
+                  value={presetName}
+                  onChange={(event) => setPresetName(event.target.value)}
+                  placeholder="例如：深入"
+                />
+              </label>
+              <label>
+                参数模式
+                <select
+                  value={presetMode}
+                  onChange={(event) => {
+                    setPresetMode(event.target.value as 'simple' | 'advanced')
+                    setPresetValue('')
+                  }}
+                >
+                  <option value="simple">强度字符串</option>
+                  <option value="advanced">JSON 参数</option>
+                </select>
+              </label>
+              <label>
+                {presetMode === 'simple' ? '推理强度值' : '推理参数 JSON'}
+                <textarea
+                  value={presetValue}
+                  onChange={(event) => setPresetValue(event.target.value)}
+                  placeholder={
+                    presetMode === 'simple' ? '例如：high' : '{"thinking":{"type":"enabled"}}'
+                  }
+                  rows={presetMode === 'simple' ? 2 : 5}
+                />
+              </label>
+              <small>
+                {presetMode === 'simple'
+                  ? '作为 reasoning_effort 发送；可填写服务支持的值。'
+                  : '填写服务文档中的推理参数；不能覆盖模型、会议文字或凭证。'}
+              </small>
+              <div className="button-row">
+                <button className="secondary-button" onClick={applyPreset}>
+                  应用预设
+                </button>
+                <button className="text-button" onClick={() => setEditing(null)}>
+                  取消编辑
+                </button>
+              </div>
+            </div>
+          )}
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={draft.stream}
+              onChange={(event) => change({ stream: event.target.checked })}
+            />
+            使用流式接口
+          </label>
+          <small>按服务支持情况选择，部分模型需要开启。</small>
+        </div>
         <p className="recipient-note">
           生成纪要会将该会议的文字发送至 {recipient || '所填服务'}，可能产生 API 调用费用。
         </p>
@@ -496,7 +642,7 @@ export function ApiModelSettings(): React.JSX.Element {
               })()
             }
           >
-            保存服务
+            {busy ? '正在保存…' : '保存服务'}
           </button>
           {saved && (
             <button
@@ -510,6 +656,11 @@ export function ApiModelSettings(): React.JSX.Element {
             </button>
           )}
           {saved && (
+            <button className="text-button" disabled={!!network} onClick={() => void load(id)}>
+              还原已保存
+            </button>
+          )}
+          {saved && (
             <button
               className="text-button"
               onClick={() =>
@@ -520,10 +671,7 @@ export function ApiModelSettings(): React.JSX.Element {
                       '服务已移除，已有纪要保留。',
                     )
                   ) {
-                    invalidate(true)
-                    setDraft(blank())
-                    setHasKey(false)
-                    setEditing(null)
+                    onRemove()
                   }
                 })()
               }
@@ -545,6 +693,6 @@ export function ApiModelSettings(): React.JSX.Element {
           {error}
         </p>
       )}
-    </CollapsibleSection>
+    </section>
   )
 }

@@ -98,24 +98,39 @@ test('real desktop exposes actual capabilities and empty history with strict bou
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
     ).toBe(true)
     await page.screenshot({ path: 'artifacts/spec002/empty-minimum.png' })
-    await page.getByRole('button', { name: '设置', exact: true }).click()
-    const section = page.getByRole('button', { name: '模型服务管理', exact: true })
-    await expect(section).toHaveAttribute('aria-expanded', 'false')
-    await section.click()
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
     await page.getByLabel('服务名称', { exact: true }).fill('未保存的草稿')
-    await section.click()
+    await page
+      .getByLabel('服务名称', { exact: true })
+      .press(process.platform === 'darwin' ? 'Meta+k' : 'Control+k')
+    await expect(page.getByRole('dialog', { name: '命令面板' })).toHaveCount(0)
+    await page.getByRole('tab', { name: '模型与推理', exact: true }).click()
+    await page.getByLabel('模型 ID', { exact: true }).fill('draft-model')
+    await page.getByRole('button', { name: '本地转写模型', exact: true }).click()
     await expect(page.getByLabel('服务名称', { exact: true })).toBeHidden()
     await page.getByRole('button', { name: '会议记录', exact: true }).click()
-    await page.getByRole('button', { name: '设置', exact: true }).click()
-    await section.click()
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
+    await expect(page.getByLabel('模型 ID', { exact: true })).toHaveValue('draft-model')
+    await page.getByRole('tab', { name: '连接配置', exact: true }).click()
     await expect(page.getByLabel('服务名称', { exact: true })).toHaveValue('未保存的草稿')
+    await page.getByRole('button', { name: /查找页面与操作/ }).click()
+    const palette = page.getByRole('dialog', { name: '命令面板' })
+    await palette.getByLabel('查找页面与操作', { exact: true }).fill('外观')
+    await palette.getByLabel('查找页面与操作', { exact: true }).press('Enter')
+    await expect(page.getByRole('heading', { name: '外观', exact: true })).toBeFocused()
+    await page.getByRole('radio', { name: '深色', exact: true }).check()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await page.getByRole('button', { name: /查找页面与操作/ }).click()
+    await palette.press('Escape')
+    await expect(page.getByRole('button', { name: /查找页面与操作/ })).toBeFocused()
+    await page.getByRole('radio', { name: '跟随系统', exact: true }).check()
     await expect(page.getByRole('heading', { name: '应用状态', exact: true })).toHaveCount(0)
     const pid = (await page.evaluate(() => window.paa.getStatus())).processId!
     process.kill(pid)
     await expect
       .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
       .toBe('error')
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
     await page.getByRole('button', { name: '重新连接', exact: true }).click()
     await expect
       .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
@@ -176,8 +191,12 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     await expect(page.getByRole('button', { name: '开始会议', exact: true })).toBeDisabled()
     await page.getByRole('button', { name: '继续录音', exact: true }).click()
     await expect.poll(() => recordingState(app)).toBe('recording')
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
     await expect(page.getByLabel('活动录音')).toBeVisible()
+    await expect(page.getByRole('region', { name: '会议文字', exact: true })).toBeHidden()
+    await page.getByRole('button', { name: /查找页面与操作/ }).click()
+    await expect(page.getByRole('dialog').getByRole('button', { name: /开始会议/ })).toBeDisabled()
+    await page.getByRole('dialog').press('Escape')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize())
     await page.waitForTimeout(200)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].restore())
@@ -220,6 +239,12 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     // Let periodic status updates reconcile the detail more than once.
     await page.waitForTimeout(1200)
     await expect(player).toHaveCount(1)
+    await page.locator('audio').evaluate((element) => {
+      element.setAttribute('data-instance', 'original')
+    })
+    await page.getByRole('tab', { name: '文字记录', exact: true }).click()
+    await page.getByRole('tab', { name: '纪要', exact: true }).click()
+    await expect(page.locator('audio')).toHaveAttribute('data-instance', 'original')
     await player.getByRole('button', { name: '前进 10 秒', exact: true }).click()
     await expect
       .poll(() =>
@@ -238,7 +263,21 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
         page.locator('audio').evaluate((element) => (element as HTMLAudioElement).currentTime),
       )
       .toBe(0)
-    await player.getByLabel('播放倍速', { exact: true }).selectOption('1.5')
+    const speed = player.getByLabel('播放倍速', { exact: true })
+    await speed.click()
+    const trigger = await speed.boundingBox()
+    for (const option of await speed.getByRole('option').all()) {
+      const bounds = await option.boundingBox()
+      expect(bounds).not.toBeNull()
+      expect(bounds!.y).toBeGreaterThanOrEqual(0)
+      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(
+        (await page.evaluate(() => innerHeight)) + 1,
+      )
+      expect(Math.abs(bounds!.x - trigger!.x)).toBeLessThan(24)
+    }
+    await speed.press('Escape')
+    await expect(speed).toBeFocused()
+    await speed.selectOption('1.5')
     expect(
       await page.locator('audio').evaluate((element) => (element as HTMLAudioElement).playbackRate),
     ).toBe(1.5)
@@ -263,6 +302,14 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     await page.getByRole('button', { name: '返回会议列表', exact: true }).click()
     await expect(player).toHaveCount(0)
     await expect(page.locator('audio')).toHaveCount(0)
+    // Ending immediately must leave the current-meeting route even before a poll sees recording.
+    await page.getByRole('button', { name: '开始会议', exact: true }).click()
+    await page.getByRole('button', { name: '结束会议', exact: true }).click()
+    await expect(page.getByRole('region', { name: '会议工作区', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: '纪要', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     expect(errors).toEqual([])
   } finally {
     await app.close().catch(() => {})
@@ -393,7 +440,7 @@ test('missing Python opens the desktop and supports retry', async () => {
     await expect
       .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
       .toBe('error')
-    await page.getByRole('button', { name: '设置', exact: true }).click()
+    await page.getByRole('button', { name: '模型服务管理', exact: true }).click()
     await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeEnabled()
   } finally {
     await app.close()

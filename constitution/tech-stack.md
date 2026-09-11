@@ -17,6 +17,7 @@
 | 目标平台 | macOS / Windows；当前实机为 macOS ARM64 |
 | 桌面 | Electron 44.3.0 |
 | 界面 | React 19.2.8、TypeScript 5.9.3、CSS |
+| 页面与外观 | renderer 内存导航；会议页签共用播放器，服务编辑器保留草稿；语义主题支持浅色、深色和跟随系统，详见 Spec 006 |
 | 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0，满足兼容 peer 范围 |
 | Node 工具链 | Node 24、npm 11、package-lock.json；通过 npm ci 复现 |
 | Python | Python 3.12、venv + pip；`requirements.lock` 固定运行依赖 |
@@ -80,6 +81,7 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 - 数据根目录使用 Electron `app.getPath('userData')`，数据库为 `meetings.sqlite3`，WAV 位于 `meetings/<UUIDv4>/`。测试通过 `PAA_TEST_DATA_DIR` 隔离，不能覆盖用户数据。
 - 模型存储于数据根目录的 `models/`，固定 revision / SHA256，用户显式下载后可离线转写。任务、块和片段存于 SQLite；单页最多 50 段。
 - 服务设置存于数据根目录的 `model-services.json`，密钥仅保存加密值；数据库不存凭证。纪要读取该会议的完整转写，生成任务锁定服务、模型与参数快照，失败保留上一份成功结果。
+- 外观选择保存在 renderer 的 `localStorage`，键为 `paa.appearance.theme`；只保存 `system` / `light` / `dark`，不存服务密钥。页面切换不修改 renderer URL 或 IPC 信任边界，界面要求见 [Spec 006](../specs/spec-006-interface-and-navigation/spec.md)。
 - 原始会议音频、转写、数据库和模型不进入版本库。
 - 不运行本地业务 HTTP 服务或云服务，不输出整个环境变量或凭证。
 
