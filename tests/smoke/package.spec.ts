@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 test('installed package starts its bundled core without Python, Node or source cwd', async () => {
   test.skip(
@@ -80,13 +81,14 @@ test('installed package starts its bundled core without Python, Node or source c
     })
     try {
       const page = await app.firstWindow()
+      const appPath = await app.evaluate(({ app }) => app.getAppPath())
+      await expect(page).toHaveURL(pathToFileURL(join(appPath, 'out/renderer/index.html')).href)
       await expect
         .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection, {
           timeout: 30_000,
         })
         .toBe('ready')
       expect(await app.evaluate(({ app }) => app.isPackaged)).toBe(true)
-      expect(page.url()).toMatch(/^file:/)
       const status = await page.evaluate(() => window.paa.getStatus())
       expect(status.pythonVersion).toMatch(/^3\.12\./)
       expect(status.capabilities.find((entry) => entry.id === 'recording')?.available).toBe(true)

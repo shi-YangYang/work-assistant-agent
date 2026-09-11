@@ -238,8 +238,10 @@ function createWindow(): void {
   window.on('closed', () => {
     window = undefined
   })
-  const loading = devUrl ? window.loadURL(rendererUrl) : window.loadFile(rendererFile)
-  void loading.catch(() => console.error('[desktop] Unable to load the local interface.'))
+  // Use the same encoded URL for loading and IPC validation, including Windows short paths.
+  void window
+    .loadURL(rendererUrl)
+    .catch(() => console.error('[desktop] Unable to load the local interface.'))
 }
 if (hasLock)
   void app.whenReady().then(async () => {
