@@ -27,7 +27,7 @@
 
 ## 后果
 
-拆页影响状态与生命周期，需要保护录音、服务草稿和播放器实例。[原型](../../specs/spec-006-interface-and-navigation/prototype.html) 提供可审查的色值与布局起点，最终行为与验收标准只在 Spec 详述。
+拆页影响状态与生命周期，需要保护录音、服务草稿和播放器实例。[原型](https://github.com/shi-YangYang/work-assistant-agent/blob/236a9c4e32785e4d35b0673e2165e237cbe16b2c/specs/spec-006-interface-and-navigation/prototype.html) 提供可审查的色值与布局起点，最终行为与验收标准只在 Spec 详述。
 
 ## Web 延续约束
 

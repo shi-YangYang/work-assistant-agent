@@ -1,75 +1,51 @@
 # 0011 — 公司协作与业务 Agent 方向
 
-2026-09-12 · 用户已认可员工消息、工作进展、日报／周报与老板看板的优先方向，要求保存讨论结论、保留 Electron，并修改 Spec。当前 [Spec 008](../../specs/spec-008-meeting-followup/spec.md) 的技术方案与交互原型已获用户认可，并于 2026-09-12 明确授权实施；以下作为实施依据，实际代码与验证边界见该 Spec 的实施／验收报告。
+2026-09-12 · 已确认并实施于 [Spec 008](../../specs/spec-008-meeting-followup/spec.md)。本文件记录需求来源与取舍；行为、工程方案和实际验证分别见该 Spec、Plan 和验收报告。
 
-## 需求来源与试点范围
+## 需求来源与优先级
 
-- 老板明确提出两项需求：一是每周会议很多，希望 Agent 帮助记住谁要做什么、重要事项及会议安排；二是员工在系统内通过图片、文字、语音提交日报、周报及随时上报的信息，由 Agent 整理工作与进度，老板通过看板及时了解所有员工的进展。
-- 用户进一步明确，“会议安排”包括会议时间，以及根据老板自己的时间调整提醒；长期希望 Agent 逐步了解老板的时间与提醒偏好。具体学习依据和自动调整范围待设计，这不等于已授权自动改动他人的会议日程。
-- 当前工作汇报通过线下开会进行。员工在系统中持续上报图文语音属于目标行为，不能假定公司已有线上日报系统或固定模板。
-- 公司组织架构、员工画像、RAG 知识库及其他 Agent 场景属于用户提出的扩展愿景，不是老板原始需求，也不因本次讨论自动进入首版范围。
-- 以用户所在公司作为试点，结合真实使用反馈逐步开发。先让一个小流程进入真实业务，不一次实现完整愿景，也不将每个工程细节变成用户的选型负担。
+老板明确提出两项需求：会议多，需要记住责任事项、重要信息和会议安排；员工通过图片、文字、语音及零散消息汇报工作，由 Agent 整理，老板通过看板了解进展。当前汇报主要依靠线下会议，不能假设公司已有固定线上模板。
 
-## 当前优先方向
+以用户所在公司试点，优先完成“员工消息 → 关联工作与进展 → 员工确认或纠正 → 日报／周报 → 老板看板”，减少重复汇报，保留事实依据。首期只有老板／管理员、员工两类角色；管理员可查看本公司员工已发送的原始上报和附件，汇报安排由管理员配置。具体权限和草稿边界由 Spec 008 定义。
 
-- 首个公司业务流程：员工发送文字、图片或语音 → Agent 关联工作事项并整理进展 → 员工确认或纠正 → 生成日报／周报 → 老板查看。平时零散上报与正式汇报使用同一批工作记录，减少重复填写。
-- 首期优先一个适配电脑和手机浏览器的 Web 入口与共享服务端；不要求同时开发独立手机应用和完整桌面协作功能。具体页面、输入限制、报告发布及可见规则由实施前的 Spec 明确。
-- **保留 Electron**，继续承担已有会议录音、本地转写、纪要、回放与资料管理。后续按需接入同一共享服务端；Web 的加入不废弃现有桌面产品，不默认迁移或上传用户已有资料。
-- 用户要求 Web 符合当前 Electron 的设计原则，延续统一视觉、任务导航和交互行为，窄屏适配手机；跨端设计约束统一归入 [决策 0009](0009-interface-design-direction.md)。
-- Spec 008 已由原会议事项跟进草案改为员工工作助手与汇报看板，沿用编号与目录。原会议事项采纳、跨会议跟进、提醒及汇报关联留待后续，不作为本轮实施内容；原单机公司业务方案仍已撤回。
+组织架构、画像、RAG 属于用户扩展愿景；会议跟进、提醒及关联汇报留待后续。用户希望按老板时间调整提醒、逐渐了解其偏好，但尚未定义日程来源或授权自动调整范围。未上报不等于未工作，不做设备监控；未来画像须有来源、更新时间并允许纠正，不生成无依据的人员评价。
 
-## 架构方向
+## 客户端与架构
 
-首期业务规则已由用户于 2026-09-12 确认：仅设老板／管理员与员工两类角色；老板／管理员可以查看本公司员工上报给工作助手的原始消息和附件；日报按每天组织，日报／周报的安排交由管理员设置，不在代码中固定提交时间。可见提示、草稿边界和配置行为统一见 Spec 008，试点人数尚未提供。
+- 首期采用适配电脑、手机浏览器的 Web＋共享服务端；老板／员工是权限角色，不对应不同设备或服务端／客户端。业务接口、身份及数据在服务端统一管理。
+- **保留 Electron** 的本地录音、faster-whisper、纪要、回放与资料管理，按后续需求接入共享业务；不自动上传会议、迁移本地数据或同步桌面密钥。
+- Web 延续实际 Electron 的主题、导航和交互，按 [决策 0009](0009-interface-design-direction.md) 做响应式适配；首期不同时建设独立手机 App 与完整桌面协作端。
+- 各端同仓库、独立运行／构建／部署，在现有 `src/` 内扩展；暂不迁移目录或引入 Turborepo。一次变更可共同审查接口与 UI，并保留桌面独立发布能力。
+- Spec 008 沿用旧会议跟进草案的编号和目录，原单机公司业务方案撤回；目录名称不代表仍在实施会议跟进。
 
-- 用户明确系统采用服务端＋客户端架构，客户端可以是 Web、桌面和手机。老板／员工属于权限与业务角色，不分别等同于服务端／客户端，也不按设备划分角色。
-- 共享业务应围绕服务端接口设计，客户端提供各自的交互与设备能力；后续 harness 的部署、账号权限、数据同步和本地离线边界由 Spec 明确。不能继续将公司业务只依附于老板本机数据库和桌面 IPC。
-- 业务 Agent 遵循持续演进的 harness 范式。用户已澄清：LangChain、LangGraph、AutoGen 等可以按需要使用，不能把该方向解释为框架禁令；具体框架或 runtime 服务于业务 harness，不能代替完整的业务运行设计。此前“不使用 LangChain”的记录是协调 Agent 的误读，以本条修正为准。
+## Harness 与技术取舍
 
-## Harness 如何参与业务
+用户明确允许按需使用 LangChain、LangGraph、AutoGen；此前将其理解为框架禁令是误读。业务 harness 负责授权上下文、受控工具、持久状态、预算、失败恢复和人工纠正，框架／runtime 为这些职责服务。
 
-Harness 围绕业务上下文、受权限约束的工具、持久任务状态、失败恢复和人工纠正来设计。外部大模型 API 提供理解与推理，语音识别 API 提供转写；调用这些服务与业务 harness 兼容，不要求自托管模型。本轮采用 Deep Agents 与 LangGraph，按首个流程限制能力，不把某个厂商的命名当作唯一行业标准。
-
-例如员工说“方案初稿完成，还在等报价”，Agent 查询关联工作，保留原消息，整理出初稿完成和报价待提供；员工后续补充“报价拿到了”时继续更新同一事项。项目归属不明时澄清，不擅自把局部完成写成项目完成或给其他员工确认承诺。报告与看板从可追溯、可纠正的工作记录生成；进展确认和报告提交由员工执行，详见 Spec。
-
-试点价值看员工是否减少重复汇报、老板是否更容易了解有依据的进展，以及纠正是否能持续生效。主动催办、日程调整、复杂画像和多 Agent 协作按实际需求后续加入。
-
-## 初期部署约束
-
-- 用户现有预算面向阿里云等 2 核 2 GB 小服务器。已接受初期通过外部 API 完成 Web 语音识别和大模型推理的方向；业务服务器承担账号、消息、工作记录、报告及 Agent 调度，不将 faster-whisper 与业务服务一起自托管作为首期前提。
-- Electron 继续使用现有本地 faster-whisper 能力。下方给出云服务、存储与部署提案；讨论不等于已开通付费服务，也不承诺 2 核 2 GB 已通过实际负载验证。
-
-## 技术方案（已确认）
-
-同一仓库维护 Web、Electron、服务端与按需共享的 UI／契约，各自运行、构建和部署。沿用现有目录，在 `src/` 内扩展入口；首期不搬迁成另一套 monorepo 目录，也不引入 Turborepo。这样一次业务修改可以一起审查接口与界面，同时保留桌面独立发布能力。具体路径、契约与实现顺序只在 [Plan](../../specs/spec-008-meeting-followup/plan.md) 维护。
-
-| 范围 | 建议与理由 |
+| 选择 | 理由与边界 |
 | --- | --- |
-| Web | 沿用 React／TypeScript／Vite，React Router 7 的浏览器路由模式；复用桌面语义主题和纯交互组件，独立适配手机，不依赖 Electron IPC |
-| 业务服务 | Python 3.12＋FastAPI／Uvicorn；保留团队现有 Python 经验，业务 API 与本地会议核心分开 |
-| 数据与任务 | PostgreSQL 17＋SQLAlchemy 2／psycopg 3／Alembic；同库持久任务表与 checkpoint，附件为私有持久卷；先不用 Redis、Celery 或向量库 |
-| Harness | Deep Agents＋LangGraph＋PostgreSQL checkpoint；利用现有上下文整理、工具循环与恢复能力，业务权限、来源、版本及人工确认由本系统掌握 |
-| 模型参考接入 | 阿里云百炼北京地域，图文与工具调用用 `qwen3.5-flash-2026-02-23`，短语音用 `qwen3-asr-flash`；模型、地址和参数由服务端配置，可换兼容服务，不硬编码用户账户 |
-| 部署 | 一台 Linux 主机上用 Docker Compose 运行 Caddy、API、单并发任务进程及 PostgreSQL；外部模型承担推理，服务器负责业务与有限媒体转换 |
+| React／TypeScript／Vite＋浏览器路由 | 沿用界面技术和共享语义主题，Web 不依赖 Electron IPC |
+| Python 3.12＋FastAPI／Uvicorn | 沿用 Python 经验，公司 API 与本地核心独立 |
+| PostgreSQL＋SQLAlchemy／psycopg／Alembic | 同库保存业务任务与 checkpoint，附件使用私有持久卷；首期不加 Redis、Celery 或向量库 |
+| Deep Agents＋LangGraph＋PostgreSQL checkpoint | 复用上下文整理、工具循环和恢复，业务权限、来源及人工确认由系统掌握 |
+| Linux Docker Compose＋Caddy、API、单并发 worker、PostgreSQL | 小规模单机起步；外部 API 承担模型推理，服务器处理业务与有界媒体转换 |
 
-Deep Agents 的通用能力不能直接等同于业务权限：首版关闭子 Agent、命令执行和宿主机文件操作；只留下经鉴权的业务工具与线程内虚拟上下文读取。员工文本或附件不能改变这些边界。采用现成 harness 比重新实现整套上下文压缩与恢复更省维护成本，但框架升级仍需核对工具集合、checkpoint 兼容性与模型适配。[官方自定义方式](https://docs.langchain.com/oss/python/deepagents/customization)、[能力配置与工具排除](https://docs.langchain.com/oss/python/deepagents/profiles)、[状态存储边界](https://docs.langchain.com/oss/python/deepagents/backends)。
+Deep Agents 首版关闭子 Agent、命令执行、宿主文件和任意网络工具，仅开放授权业务工具与线程内虚拟上下文；员工输入不能改变权限。Agent 只提出进展和报告草稿，正式确认、发布由员工执行。比如“初稿完成，等待报价”后补充“报价拿到了”，可关联同一工作，但不能据此判定整个项目完成；归属不明时澄清。
 
-服务端已独立安装并固定 Deep Agents 0.7.13、LangGraph 1.2.11、PostgreSQL checkpoint 3.1.2、langchain-openai 1.6.2，Python 3.12 依赖检查通过；完整版本与验证见 [技术基线](../../constitution/tech-stack.md#公司-web-与服务端基线) 和 Spec 实施报告，不混入桌面 ASR 环境。
+采用现成 harness 可减少上下文与恢复维护成本，代价是升级时须核对工具集合、checkpoint 及模型兼容。框架命名不构成行业唯一标准。版本、路径和命令在 [技术栈](../../constitution/tech-stack.md#公司-web-与服务端基线)，具体预算与恢复契约在 [Plan](../../specs/spec-008-meeting-followup/plan.md)。
 
-选择图文模型是因为图片必须被实际理解；选择短语音 ASR 是因为可将有界音频直接提交，无需为识别临时建立公开文件链接。语音先规范成 WAV，默认不启用模型深度思考，不自动重试结果不明的付费调用。当前报价、服务开通及额度以部署方账户为准，本轮未调用真实模型。[图文与工具能力](https://help.aliyun.com/zh/model-studio/vision-model/)、[ASR 接口和 Base64 限制](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference)、[思考模式参数](https://help.aliyun.com/en/model-studio/deep-thinking)。
+## 模型与部署边界
 
-这一选择有明确取舍：账号、材料与工作记录开始由公司服务集中保管；外部模型收到完成识别所必需的图文／语音；首期 Web 依赖网络。小服务器部署仅是起点，容量按真实进程内存和固定并发样本实测决定，不预先承诺试点人数。
+用户接受小服务器初期通过外部 API 完成图文理解、工具调用和短语音转写；不要求在约 2 核 2 GB 的业务服务器自托管 faster-whisper 或 LLM，也不承诺该容量已通过实测。
 
-## 对后续设计的影响
+初始参考接入为百炼北京地域 `qwen3.5-flash-2026-02-23` 图文／工具模型和 `qwen3-asr-flash`：图片需要实际视觉能力，短语音规范为 WAV 后直接提交，可避免公开音频链接；默认不深度思考、不隐式重试结果未知的付费请求。该参考不绑定部署账户，现有多服务、用途与协议选择以 [决策 0012](0012-company-model-services.md) 为准。
 
-当前 Electron、Python、SQLite 仍是已实现的本地会议产品基线。Spec 008 新增共享服务端、员工消息、报告与公司业务 harness；本地会议资料仍不接入共享服务，分享方式须单独设计。
-
-首期角色、原始上报可见范围和管理员配置汇报安排已确认；用户已审查技术方案与原型并要求开始实施，不重复询问已确认决定。日程来源、提醒偏好和会议事项关联在对应后续 Spec 讨论。“实时了解”不扩展为设备监控，未上报不代表未工作；工作画像应有事实来源、更新时间并允许纠正，不生成无依据的人员评价。
+公司服务集中保管账号、材料与工作记录，外部服务收到完成识别所必需的输入，首期 Web 依赖网络。账户、额度、域名、服务器与试点人数须在部署前准备；讨论不代表开通收费资源。真实联调、恢复、手机和容量的通过／未验边界仅在对应验收报告维护。
 
 ## 工程参考
 
-- [LangChain：runtime、framework 与 harness](https://docs.langchain.com/oss/python/concepts/products)：其产品栈中 LangGraph 提供运行基础，LangChain 提供 Agent 抽象，Deep Agents 提供可组合的 harness 能力；这是厂商的分层说明，不是全行业唯一标准，本项目的具体提案见上节。
-- [Anthropic：长期运行的 harness](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)：持久进展、增量执行和跨会话交接。其示例面向编码，迁移到公司业务属于本项目设计推论。
-- [Anthropic：构建有效 Agent](https://www.anthropic.com/engineering/building-effective-agents)：明确工具接口、优先简单组合，按实际收益增加复杂度。
+以下为当时的方案依据，不代替项目实测：
 
-这些参考不改变本项目已确认的轻量 CI、相称验证和 Spec 决策流程。
+- [LangChain 产品分层](https://docs.langchain.com/oss/python/concepts/products)、[Deep Agents 自定义](https://docs.langchain.com/oss/python/deepagents/customization)、[能力配置](https://docs.langchain.com/oss/python/deepagents/profiles)、[状态边界](https://docs.langchain.com/oss/python/deepagents/backends)。
+- [Anthropic 长期运行 harness](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)、[有效 Agent](https://www.anthropic.com/engineering/building-effective-agents)：持久进展、清晰工具与简单组合；将编码经验用于公司业务是本项目的设计推论。
+- 百炼 [图文／工具](https://help.aliyun.com/zh/model-studio/vision-model/)、[ASR 输入限制](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference)、[思考参数](https://help.aliyun.com/en/model-studio/deep-thinking)。

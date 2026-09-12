@@ -1,70 +1,64 @@
-# Spec 008 — 实施摘要
+# Implementation — Spec 008
 
-2026-09-12 · 业务实施、首轮三项返工及复验发现的输入版本返工已完成，等待新的独立复验。未提交／推送，也未触发远端 CI。范围与技术选择见 [Spec](spec.md) 和 [Plan](plan.md)，此处只记录实现差异及验证证据。
+2026-09-12 · 业务实施及两轮返工完成，独立工程 [PASS](acceptance.md)。本文记录实现差异与检查；行为见 [Spec](spec.md)，接口、限额及恢复契约见 [Plan](plan.md)。
 
 ## 已实现
 
-- 新增 React Web 独立入口和浏览器路由：登录／首次修改密码、员工工作助手、进展确认与更正、工作来源、日报／周报、提交修订、管理员看板／原始上报／成员与汇报规则。自动适配窄屏，支持浅深主题、菜单、命令查找、草稿与离开提示；生产界面没有原型身份／手机切换或示例业务数据。
-- `src/python/paa_server/` 提供 FastAPI API、PostgreSQL 17 业务表与冻结的 Alembic 初始迁移；服务端强制身份、角色、来源与草稿边界，使用不透明 cookie 会话、CSRF、密码哈希、版本与事务幂等。附件上传、图片解码及缩放、FFmpeg 短语音规范化、ASR 转写修正均保留原始材料。
-- 实际 Deep Agents／LangGraph harness 使用 PostgreSQL checkpoint、StateBackend、固定业务工具和独立执行边界。框架 profile 关闭通用工具／子 Agent，调用边界再次拒绝未授权工具；正式进展确认和报告发布始终由员工 API 执行。长会话压缩、读版本校验、调用额度及任务租约／fencing／显式失败重试均已接入。
-- 自动汇报按公司时区和管理员规则调度，报告使用已确认修订快照。独立报告处理结果与公开助手消息分离；模型输出晚于人工编辑时进入候选内容，不覆盖草稿／已提交版本。
-- 保留桌面 `npm run dev`、现有用户数据与本地转写。仅把原有 39 行语义主题提取到 `src/ui/theme.css`，Electron 和 Web 引用同一份色值。没有同步 Electron 密钥、会议或模型。
-- 新增独立服务依赖锁、跨平台启动脚本、开发／生产 Compose、Caddy 与维护窗口备份脚本。已有 CI 触发方式保持；只新增单个 Linux＋PostgreSQL 的新模块检查，不叠加模型下载／推理或桌面发行包。
+- 独立 React Web：登录／首次改密、工作助手、进展确认／更正、来源、日报／周报／候选结果、老板看板、成员与汇报规则；响应式、主题、导航、草稿与冲突恢复。
+- FastAPI／PostgreSQL：服务端身份与材料权限、版本／事务幂等、原始附件、图片规范化、短语音转换和转写修正；新增接口可查 `/openapi.json`，不含凭证。
+- 实际 Deep Agents／LangGraph 工具循环、PostgreSQL checkpoint、StateBackend、预算、租约与 fencing；禁用通用工具／子 Agent，正式确认和发布由员工 API 执行。
+- 按公司时区和规则准备报告草稿，固定已确认输入修订；晚到结果进入候选，不覆盖人工编辑或已提交版本。
+- 独立公司依赖／启动／Compose／Caddy／备份支持；桌面启动与数据保持，仅共用语义主题。新增单个 Linux／PostgreSQL 模块 CI，不添加真实模型或桌面重检查。
 
-具体启动、环境准备、服务器配置和部署命令统一在 [README](../../README.md#公司工作助手-webspec-008)。新增实际接口包括报告来源读取、候选结果采用和语音转写修正，HTTP 契约可从 FastAPI `/openapi.json` 读取；OpenAPI 不包含凭证。
+具体版本与路径见 [技术栈](../../constitution/tech-stack.md)，安装和运行只在 [README](../../README.md#公司工作助手-webspec-008) 维护。
 
 ## 实现与验证
 
-本轮按 S3（认证、持久化、公共 API、构建入口）及 S2（Web）选择定向检查，没有重跑完整 Electron／ASR／安装包套件。
+按 S3（认证、API、持久化及构建入口）和 S2（Web）选择范围，未重跑 Electron／ASR／安装包套件。
 
-| 检查 | 结果 |
+| 检查 | 结果与边界 |
 | --- | --- |
-| 独立 Python 3.12 环境安装、`pip check` | 依赖解析成功，无冲突；Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、FastAPI 0.141.1、SQLAlchemy 2.0.52＋greenlet、psycopg 3.3.5 已固定 |
-| 真实 PostgreSQL 初始迁移与 checkpoint 初始化 | 开发库成功；冻结迁移也已在独立 `paa_company_test` 库成功执行 |
-| 服务端定向测试 | 9 项 API／harness／语音／事务场景通过，随后新增长上下文和旧修订工具边界 2 项通过；共 11 个场景，无真实模型网络调用 |
-| Web 单元 | 3 项通过，覆盖 CSRF／幂等请求、冲突传播、公司日期 |
-| 类型与 lint | Web 类型、新 Node 配置类型、新 Web／契约／脚本 lint 通过；修改过的前端文件均用项目 Prettier 整理 |
-| Web 普通构建 | 初轮成功（约 294 kB JS、17 kB CSS）；返工后的相关检查见末节 |
-| Compose／备份 | 开发和生产 `config -q` 通过，备份脚本 `sh -n` 通过 |
-| Docker 服务镜像 | 在 Docker Hub 获取 Python 基础镜像的鉴权阶段遇网络 IPv6 超时；未执行后续镜像构建步骤，不标记构建通过 |
+| 独立 Python 3.12 依赖、`pip check` | 通过；固定版本在服务端锁文件，不混入桌面环境 |
+| PostgreSQL／checkpoint 迁移 | 开发库及独立 `paa_company_test` 成功，初始迁移冻结 |
+| 初轮 server | 9 个 API／harness／媒体／事务场景＋2 个长上下文／旧修订场景通过；真实 PostgreSQL／Deep Agents，外部模型受控 |
+| 初轮 Web | 3 项 CSRF／幂等／冲突／日期用例通过；Web／新 Node 配置类型、变更文件 lint 和格式通过 |
+| 普通 Web 构建 | 成功，约 294 kB JS／17 kB CSS；不代表部署 |
+| Compose／备份脚本 | 开发和生产 `config -q`、`sh -n` 通过 |
+| Docker 服务镜像 | 获取 Python 基础镜像鉴权时 IPv6 超时，后续未构建；未换源或重跑到绿 |
 
-服务端固定样本实际经过 Deep Agents 的工具循环与 PostgreSQL checkpoint，覆盖前后消息关联、私有草稿不泄露给管理员、跨员工隔离、批量确认去重、版本冲突、幂等并发发送、已发布报告与私有更正分离、晚到候选结果、周期调度、真实图片规范化、真实 FFmpeg WAV 解码与受控 ASR 响应、租约过期和旧 worker 拒写、额度限制及长会话压缩。测试模型代码仅在 `tests/server/fakes.py`，正式服务没有演示响应开关。
+服务端场景覆盖前后关联、草稿不可见／跨员工隔离、确认去重、版本冲突、并发幂等、提交版本与私有更正分离、候选结果、周期、图片和 FFmpeg 真实规范化、受控 ASR、租约过期／旧 worker、额度与上下文压缩。替身仅在 `tests/server/fakes.py`，正式服务无演示开关。
 
-补充修复了报告生成完成后来源列表未随 revision 刷新的问题，并为进展／报告／规则版本冲突增加“读取最新版本→查看内容→保留当前输入或采用最新内容”的明确恢复入口；对应 Web lint／类型检查通过。开发环境还发现 UI 模块更新导致 Context 在 HMR 中重建，现已将 Workspace 独立到稳定模块，首登改密页直接接收成员信息；不会用空草稿掩盖缺失 Provider。该结构修复的 Web 类型／lint 通过。
+另修复报告 revision 更新后来源未刷新、409 后读取／保留／采用最新版本入口，以及 HMR 重建 Context 丢失 Workspace；后者抽离稳定 Provider，首登改密直接接收成员信息，不用空草稿掩盖故障。对应 Web 类型／lint 通过。
 
-协调 Agent 在正常 Web 开发环境用明确标注的本地验收账号完成了登录、成员创建和首次改密、消息草稿跨页保留、发送保存、编辑确认进展、日报编辑提交及管理员读取；受控模型实际经过工具流程。管理员可读第 3 版提交内容、来源和原始助手建议，没有代员工编辑／提交入口；汇报规则管理员可设、员工只读。900 px 菜单位置／宽度与 Esc 关闭、360 px 无整页横向溢出已检查。Electron 直接使用 `npm run dev` 与用户默认数据，主题显示正常，四条既有会议记录保持；未操作录音或服务密钥。
-
-## 已知外部边界
-
-- 未使用真实 API Key 调用付费图文模型或 ASR；生产服务能力、额度、模型兼容与真实识别质量需要部署方授权后联调。图片和语音处理不是静态假数据，但现有验证中的外部响应是受控的。
-- 未验证 iOS／Android 实机麦克风、锁屏录音、真实公网 HTTPS、Linux 完整镜像启动、生产备份恢复或 2 核 2 GB 负载。窄屏视口不能代替手机实机采集。
-- Docker Hub 网络阻止本机服务镜像构建，未通过换源、重跑到绿或修改用户网络掩盖。未开通云资源、部署公网服务或进行远端 CI。
+主 Agent 在正常开发环境以明确标注的验收账号完成登录、成员创建／首次改密、草稿跨页、发送、进展编辑确认、日报编辑提交和管理员查看第 3 版及来源；模型为受控响应。900px 菜单／Esc、360px 无整页横溢；Electron `npm run dev` 的原 4 条会议、主题及已下载模型保持，未录音或改 Key。
 
 ## 首轮验收返工
 
-首轮 FAIL 的三项问题已由新的实施 Agent 返工，并由另一位独立验收 Agent 关闭：
+首轮 FAIL 的三项问题由新实施 Agent 修复，再由独立 Agent 复核：
 
-- checkpoint 改为公司／员工／job 独占；消息和同一报告的不同 job 均不能恢复彼此的待执行工具。首次输入从授权业务记录重建有界历史，保留较早的显式澄清来源、排除当前消息之后的内容；同 job 同输入重试复用持久状态，已完成 graph 直接复用答复，输入变更补充规则见下一节。无需业务 schema 迁移，不读取旧共享 thread 的 pending tools。
-- 录音抽取为拥有请求代次与自身流的控制器，申请期间防重入，可取消；卸载后迟到的所有轨道立即停止，构造／启动失败清理资源。各录音事件只处理自身 session；离页后的最后音频块用函数式草稿更新保留，不覆盖后来输入的文字，也不停止新录音。
-- 进展编辑区分未缓存与明确 null；选择新事项后普通保存和版本冲突“保留我的修改”均保留 null。
+| 缺陷 | 修复 |
+| --- | --- |
+| 不同消息／报告任务共享可执行 checkpoint | 按公司／员工／job 隔离；从授权业务记录重建有界历史、截断未来消息、优先显式回复；同 job 同输入仍可复用 pending 或完成结果 |
+| 录音申请与离页竞态 | 控制器按代次拥有媒体流，申请防重入、可取消；迟到轨道停止，失败释放；旧会话不能覆盖新文字或停止新录音 |
+| 更正已有工作时 null 被回填 | 区分未缓存与明确 null，普通保存及冲突“保留我的修改”均保留用户选择 |
 
-定向验证：真实 PostgreSQL／Deep Agents 的消息与同一报告 A 失败→B 工具前失败→重试 A、B 自身恢复、完成 checkpoint 复用、历史授权与长上下文共 4 项通过；受影响的既有“确认→后续关联→报告→权限”集成 1 项通过。受控媒体 5 项、编辑映射 1 项通过；Web 类型和本次文件 lint 通过，已格式化修改的前端源码。没有重复完整项目测试、build、打包或 CI。
-
-协调 Agent 已重启 `npm run dev:company` 加载最终 Web、API 与 worker，无需 schema 迁移。现有外部服务／设备／镜像验证边界不变。
+定向证据：真实 PostgreSQL／Deep Agents 的任务隔离、恢复、历史／长上下文 4 项＋受影响的确认／报告／权限 1 项通过；媒体 5 项、编辑映射 1 项、Web 类型／改动文件 lint 通过，源码已格式化。未重复全套测试或构建。
 
 ## 输入版本返工
 
-第二次独立验收复现“语音文字纠正后重试仍恢复旧输入”，本次只修改 `agent/harness.py` 与 `worker.py` 的恢复和写入边界：消息 checkpoint 绑定实际转写 revision 与输入 SHA-256；同输入保留 pending tools 和完成结果复用，纠正后从新输入处理。可信运行上下文携带源 revision，工具／最终答复在持有源消息锁时校验，迟到结果不冒充纠正后的处理结果；错误保留明确重试入口。ASR 写回或选用途中人工纠正时，文字与 revision 在同一事务内取得。没有修改 API、schema、依赖、报告输入快照、原始材料或人工工作修订。
+第二轮 FAIL：语音文字纠正后重试仍恢复旧输入。仅修复 `agent/harness.py`、`worker.py` 的恢复／写入边界：checkpoint 绑定转写 revision 和输入 SHA-256，同输入续跑，纠正后新建执行上下文；ASR、工具及最终回复在锁内选择／校验源 revision，迟到输出失败并可手动重试。原音频、建议、人工修订和报告输入快照保留；不改 API／schema／依赖。
 
-按持久恢复风险仅执行直接相关检查：`node scripts/company.mjs test tests/server/test_transcript_recovery.py tests/server/test_recovery.py tests/server/test_boundaries.py::test_long_conversation_is_summarized_before_hard_context_limit`，**11 项通过（4.38 秒）**。其中新增 7 项真实 PostgreSQL／Deep Agents 场景经过转写 PATCH 与 retry API，覆盖模型前失败、旧 pending tool、旧 completed checkpoint、修订前后同 job 工具幂等和完成结果复用、工具写入／答复落库竞态、ASR 途中人工纠正；同时核对原音频、转写历史、原始建议和已确认修订保持。另 4 项是本次恢复入口改变直接涉及的 job 隔离、报告恢复、历史和长上下文检查。测试按其受控公司清理所有版本 checkpoint，不清理开发样本。
-
-Python 文件不在项目现有 Prettier 覆盖范围；未扩展格式化或完整测试。未调用真实模型／ASR、物理麦克风、桌面流程、CI 或部署。协调 Agent 已重启开发服务加载此次改动，最终独立结论见 [验收报告](acceptance.md)；本段不是验收结论。
-
+`node scripts/company.mjs test tests/server/test_transcript_recovery.py tests/server/test_recovery.py tests/server/test_boundaries.py::test_long_conversation_is_summarized_before_hard_context_limit`：**11 项通过，4.38 秒**。新增 7 项覆盖模型前失败、旧 pending／completed 状态、同 job 幂等、写入竞态和 ASR 途中纠正；另 4 项覆盖任务隔离／报告恢复／历史。使用独立测试库，未清理开发样本或调用真实模型。
 
 ## 用户体验后的直接修复（2026-09-12）
 
-按用户要求由主 Agent 直接修改，未新建 Spec 或子 Agent：团队看板列表／统计只含员工，详情入口拒绝管理员作为被汇报对象，通用资料读取阻止跨管理员访问；本人资料与成员账号管理保留。顶部搜索和设置共用相同尺寸的图标控件，日期改为带开始／结束标签的成组范围，窄屏保持同一行。
+主 Agent 按用户要求完成，未新增 Spec／独立验收：
 
-权限相关改动按 S3 选择 2 项定向 API／真实 PostgreSQL 检查（新增管理员排除／资料边界和既有员工确认／报告主流程），均通过；Web 类型检查通过，前端改动已按项目格式化。浏览器实测看板为员工 1/1，556 px 和 360 px 的顶部图标同线，360 px 起止日期同排且无横向溢出；开发服务已重启生效。初次测试被本机沙箱禁止数据库连接，获得执行许可后完成上述检查，不属于业务断言失败。未重复完整测试、构建或 CI，未提交推送。此段为主 Agent 直接修复验证，不扩展此前独立验收的范围。
+- 团队列表／统计只包含员工；团队详情及通用资料接口拒绝跨管理员读取，本人资料和账号管理保留。顶部图标统一尺寸，日期起止标签成组。S3 仅跑 2 项相关 API／PostgreSQL 检查及 Web 类型，均通过；浏览器看板为 1/1，556／360px 图标同线、日期同排且无横溢。数据库初次连接被本机沙箱禁止，获执行许可后通过，不是业务断言失败。
+- Web 对齐 Electron 的 216px 侧栏、底部设置、54px 面包屑、单标题、canvas／surface 和控件层级。S2 Web 类型／改动文件 Prettier／diff 通过；1280px 浅深色、360px 看板和外观观察通过，恢复原主题。
 
-后续视觉反馈：Web 共用主题后仍未正确使用 canvas／surface，导航与排版也偏离 Electron。主 Agent 直接将 Web 应用框架对齐现有桌面的 216 px 侧栏、底部设置分组、54 px 面包屑、主标题与间距、蓝色选中条及控件样式；内容卡片／列表使用独立表面色，看板统计收敛为一组，宽屏日期筛选同排、窄屏成组换行。按 S2 仅执行 Web 类型检查（通过）、改动文件 Prettier 和差异检查；实际浏览器检查 1280 px 浅深主题与 360 px 看板／外观页面，日期及图标同线、无横向溢出，随后恢复原深色主题与默认视口。未改服务端或 Electron 业务，未运行完整测试、构建或 CI。
+这些是主 Agent 增量验证，不扩大此前独立 PASS。后续控件／提示文案及真实文字联调归入 [Spec 009 实施摘要](../spec-009-company-model-services/implementation.md#用户直接修复与真实联调2026-09-12)，全站布局维护见 Spec 010。
+
+## 已知外部边界
+
+本 Spec 实施使用受控模型；真实文字与周报的后续证据见上方 Spec 009 引用。真实图片／ASR、iOS／Android 麦克风与锁屏、公网 HTTPS、完整 Linux 镜像、生产备份恢复和 2 核 2 GB 负载仍未验证。没有开通云资源或以窄屏截图代替实体设备。
