@@ -17,6 +17,8 @@ import {
   Palette,
   CalendarClock,
   Cpu,
+  PanelLeftOpen,
+  PanelLeftClose,
 } from 'lucide-react'
 import type { Identity } from '../shared/company-contracts'
 import { api, setCsrf, write } from './api'
@@ -24,6 +26,7 @@ import { Workspace } from './workspace'
 import { BusyButton, ErrorNotice, Modal } from './ui'
 import type { DraftStore } from './workspace'
 import { ModelServices } from './ModelServices'
+import { detailContext, detailReturn, pageName } from './navigation'
 import { Assistant, SourcePage } from './Assistant'
 import { WorkPage, WorkDetail, ReportsPage, ReportDetail } from './Records'
 import {
@@ -179,6 +182,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   const [toast, setToast] = useState('')
   const [commands, setCommands] = useState(false)
   const [query, setQuery] = useState('')
+  const [expandedNav, setExpandedNav] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const latestDrafts = useRef(drafts)
@@ -253,13 +257,15 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
     }
   }
   const inSettings = location.pathname.startsWith('/settings/')
+  const inDetail = !inSettings && location.pathname.split('/').length > 2
+  const back = detailReturn(location.pathname, location.state)
   const current =
     [...allowed, ...allowedSettings].find((p) => location.pathname.startsWith(p.path))?.title ??
-    '设置'
+    pageName(location.pathname)
   return (
     <Workspace.Provider value={{ identity, drafts, setDraft, notify: setToast }}>
       <div
-        className="company-shell"
+        className={`company-shell ${expandedNav ? 'nav-expanded' : ''}`}
         onClickCapture={(event) => {
           if (
             drafts.recording &&
@@ -271,23 +277,54 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           }
         }}
       >
-        <aside className="sidebar">
+        {expandedNav && (
+          <button
+            className="nav-backdrop"
+            aria-label="收起导航"
+            onClick={() => setExpandedNav(false)}
+          />
+        )}
+        <aside
+          className="sidebar"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setExpandedNav(false)
+          }}
+        >
+          <button
+            className="icon-button sidebar-toggle"
+            aria-label={expandedNav ? '收起导航' : '展开导航'}
+            aria-expanded={expandedNav}
+            onClick={() => setExpandedNav(!expandedNav)}
+          >
+            {expandedNav ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
+          </button>
           <Link to="/assistant" className="brand">
             <span className="brand-mark">
               <AudioLines size={22} />
             </span>
-            <span>{identity.company.name}</span>
+            <span className="nav-label">{identity.company.name}</span>
           </Link>
-          <button className="search-launch" onClick={() => setCommands(true)}>
-            <Command size={16} /> 查找页面
+          <button
+            className="search-launch"
+            title="查找页面"
+            aria-label="查找页面"
+            onClick={() => setCommands(true)}
+          >
+            <Command size={16} /> <span className="nav-label">查找页面</span>
             <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
           </button>
           <p className="workspace-label">工作空间</p>
           <nav aria-label="工作空间">
             {allowed.map((p) => (
-              <NavLink key={p.path} to={p.path}>
+              <NavLink
+                key={p.path}
+                to={p.path}
+                title={p.title}
+                aria-label={p.title}
+                onClick={() => setExpandedNav(false)}
+              >
                 <p.icon size={18} />
-                {p.title}
+                <span className="nav-label">{p.title}</span>
               </NavLink>
             ))}
           </nav>
@@ -295,15 +332,21 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             <p className="workspace-label">设置</p>
             <nav aria-label="设置">
               {allowedSettings.map((p) => (
-                <NavLink key={p.path} to={p.path}>
+                <NavLink
+                  key={p.path}
+                  to={p.path}
+                  title={p.title}
+                  aria-label={p.title}
+                  onClick={() => setExpandedNav(false)}
+                >
                   <p.icon size={18} />
-                  {p.title}
+                  <span className="nav-label">{p.title}</span>
                 </NavLink>
               ))}
             </nav>
             <div className="identity">
               <span className="avatar">{identity.member.name.slice(0, 1)}</span>
-              <span>
+              <span className="nav-label">
                 {identity.member.name}
                 <small>{identity.member.role === 'admin' ? '老板／管理员' : '员工'}</small>
               </span>
@@ -316,14 +359,21 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
         <section className="main">
           <header className="topbar">
             <div className="topbar-title">
-              {!inSettings && location.pathname.split('/').length > 2 && (
-                <button className="icon-button" aria-label="返回" onClick={() => navigate(-1)}>
+              {inDetail && (
+                <button
+                  className="icon-button"
+                  aria-label={`返回${back.label}`}
+                  title={`返回${back.label}`}
+                  onClick={() => navigate(back.path, { state: back.state })}
+                >
                   <ArrowLeft size={18} />
                 </button>
               )}
-              <span>{inSettings ? '设置' : '工作空间'}</span>
+              <span className="breadcrumb-root">
+                {inSettings ? '设置' : detailContext(location.state)}
+              </span>
               <ChevronRight size={14} aria-hidden="true" />
-              <strong>{current}</strong>
+              <strong>{inDetail ? pageName(location.pathname) : current}</strong>
             </div>
             <div className="mobile-tools">
               <button
@@ -365,7 +415,13 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
                 <div className="settings-layout">
                   <nav className="settings-nav" aria-label="设置页面">
                     {allowedSettings.map((p) => (
-                      <NavLink key={p.path} to={p.path}>
+                      <NavLink
+                        key={p.path}
+                        to={p.path}
+                        title={p.title}
+                        aria-label={p.title}
+                        onClick={() => setExpandedNav(false)}
+                      >
                         {p.title}
                       </NavLink>
                     ))}
@@ -391,7 +447,13 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             {allowed
               .filter((p) => p.path !== '/members')
               .map((p) => (
-                <NavLink key={p.path} to={p.path}>
+                <NavLink
+                  key={p.path}
+                  to={p.path}
+                  title={p.title}
+                  aria-label={p.title}
+                  onClick={() => setExpandedNav(false)}
+                >
                   <p.icon size={19} />
                   <span>{p.title}</span>
                 </NavLink>

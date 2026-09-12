@@ -10,7 +10,7 @@ import type {
   ModelSelection,
 } from '../shared/company-contracts'
 import { api, ApiError, dateLabel, useResource, write } from './api'
-import { BusyButton, ConflictRecovery, ErrorNotice, Modal } from './ui'
+import { AutoTextarea, BusyButton, ConflictRecovery, ErrorNotice, Modal } from './ui'
 import { useWorkspace } from './workspace'
 import { cleanServiceDraft, newModel, validateCompanyParameters } from './model-service-drafts'
 import type { ServiceDraft } from './model-service-drafts'
@@ -43,6 +43,7 @@ export function ModelServices() {
   const [check, setCheck] = useState<ModelCheck | null>(null)
   const [testPurpose, setTestPurpose] = useState<Purpose>('assistant')
   const [testOpen, setTestOpen] = useState(false)
+  const [removeOpen, setRemoveOpen] = useState(false)
   const [preset, setPreset] = useState<CompanyPreset | null>(null)
   const [presetJson, setPresetJson] = useState('{}')
   const drafts = (workspace.drafts.modelServices as Record<string, ServiceDraft>) || {}
@@ -194,8 +195,7 @@ export function ModelServices() {
     }
   }
   const remove = async () => {
-    if (!draft || !window.confirm('删除此模型服务？旧任务将无法继续使用它，历史工作和报告会保留。'))
-      return
+    if (!draft) return
     setBusy('delete')
     try {
       if (draft.revision)
@@ -206,14 +206,15 @@ export function ModelServices() {
         )
       const next = { ...drafts }
       delete next[draft.id]
-      workspace.setDraft('modelServices', next)
+      workspace.setDraft('modelServices', Object.keys(next).length ? next : undefined)
       setKeys((previous) => {
         const values = { ...previous }
         delete values[draft.id]
         return values
       })
       select(null)
-      resource.refresh()
+      setRemoveOpen(false)
+      if (draft.revision) resource.refresh()
     } catch (e) {
       handleError(e)
     } finally {
@@ -229,7 +230,6 @@ export function ModelServices() {
       <div className="page-heading">
         <div>
           <h2>模型服务管理</h2>
-          <p>管理公司使用的模型，并为不同任务选择服务。</p>
         </div>
       </div>
       <div className="tabs" role="tablist" aria-label="模型管理页面">
@@ -253,22 +253,19 @@ export function ModelServices() {
       <ErrorNotice>{resource.error}</ErrorNotice>
       {resource.data?.routing.source === 'environment' && (
         <div className="notice model-environment">
-          <div>
-            <strong>当前使用服务器环境配置</strong>
+          <details>
+            <summary>当前使用服务器环境配置</summary>
             <p>
               助手：{resource.data.routing.environment?.assistant.model || '未设置'}；语音：
               {resource.data.routing.environment?.asr.model || '未设置'}。
             </p>
-            <details>
-              <summary>查看来源</summary>
-              <p className="wrap-anywhere">
-                {resource.data.routing.environment?.assistant.baseUrl || '助手地址未设置'}
-              </p>
-              <p className="wrap-anywhere">
-                {resource.data.routing.environment?.asr.baseUrl || '语音地址未设置'}
-              </p>
-            </details>
-          </div>
+            <p className="wrap-anywhere">
+              {resource.data.routing.environment?.assistant.baseUrl || '助手地址未设置'}
+            </p>
+            <p className="wrap-anywhere">
+              {resource.data.routing.environment?.asr.baseUrl || '语音地址未设置'}
+            </p>
+          </details>
           <BusyButton
             busy={busy === 'import'}
             onClick={async () => {
@@ -360,52 +357,55 @@ export function ModelServices() {
                 </div>
                 <button
                   className="icon-button danger"
-                  aria-label="删除当前模型服务"
+                  aria-label={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
+                  title={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
                   disabled={!!busy}
-                  onClick={() => void remove()}
+                  onClick={() => setRemoveOpen(true)}
                 >
                   <Trash2 size={17} />
                 </button>
               </div>
               <fieldset disabled={!!busy}>
                 <legend>连接</legend>
-                <label>
-                  服务名称
-                  <input
-                    value={draft.name}
-                    maxLength={80}
-                    onChange={(e) => update({ ...draft, name: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Base URL
-                  <input
-                    value={draft.baseUrl}
-                    placeholder="https://api.example.com/v1"
-                    maxLength={2048}
-                    autoComplete="off"
-                    onChange={(e) => update({ ...draft, baseUrl: e.target.value })}
-                  />
-                </label>
-                <label>
-                  API 密钥{' '}
-                  <span className="muted">
-                    {draft.hasKey ? '已设置；地址不变时留空保留' : '尚未设置'}
-                  </span>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={keys[draft.id] || ''}
-                    maxLength={4096}
-                    placeholder={draft.hasKey ? '输入新密钥以替换' : '输入密钥'}
-                    onChange={(e) => {
-                      generation.current++
-                      setCheck(null)
-                      setCatalog(null)
-                      setKeys({ ...keys, [draft.id]: e.target.value })
-                    }}
-                  />
-                </label>
+                <div className="field-grid connection-fields">
+                  <label>
+                    服务名称
+                    <input
+                      value={draft.name}
+                      maxLength={80}
+                      onChange={(e) => update({ ...draft, name: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Base URL
+                    <input
+                      value={draft.baseUrl}
+                      placeholder="https://api.example.com/v1"
+                      maxLength={2048}
+                      autoComplete="off"
+                      onChange={(e) => update({ ...draft, baseUrl: e.target.value })}
+                    />
+                  </label>
+                  <label className="full-field">
+                    API 密钥{' '}
+                    <span className="muted">
+                      {draft.hasKey ? '已设置；地址不变时留空保留' : '尚未设置'}
+                    </span>
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={keys[draft.id] || ''}
+                      maxLength={4096}
+                      placeholder={draft.hasKey ? '输入新密钥以替换' : '输入密钥'}
+                      onChange={(e) => {
+                        generation.current++
+                        setCheck(null)
+                        setCatalog(null)
+                        setKeys({ ...keys, [draft.id]: e.target.value })
+                      }}
+                    />
+                  </label>
+                </div>
               </fieldset>
               <div className="model-section-heading">
                 <h3>模型</h3>
@@ -488,129 +488,131 @@ export function ModelServices() {
               {model && (
                 <fieldset disabled={!!busy} className="model-options">
                   <legend>模型配置</legend>
-                  <label>
-                    模型 ID
-                    <input
-                      value={model.model}
-                      maxLength={200}
-                      onChange={(e) => updateModel({ ...model, model: e.target.value })}
-                    />
-                  </label>
-                  <label>
-                    接口协议
-                    <select
-                      value={model.protocol}
-                      onChange={(e) => {
-                        const protocol = e.target.value as CompanyModel['protocol']
-                        updateModel({
-                          ...model,
-                          protocol,
-                          presets: [],
-                          selectedPresetId: null,
-                          streaming: protocol === 'chat',
-                        })
-                        setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
-                      }}
-                    >
-                      {Object.entries(protocolNames).map(([id, name]) => (
-                        <option key={id} value={id}>
-                          {name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {model.protocol === 'chat' ? (
-                    <>
-                      <label className="check-label">
-                        <input
-                          type="checkbox"
-                          checked={model.streaming}
-                          onChange={(e) => updateModel({ ...model, streaming: e.target.checked })}
-                        />
-                        使用流式接口
-                      </label>
-                      <label>
-                        推理预设
-                        <select
-                          value={model.selectedPresetId || ''}
-                          onChange={(e) =>
-                            updateModel({ ...model, selectedPresetId: e.target.value || null })
-                          }
-                        >
-                          <option value="">服务默认</option>
-                          {model.presets.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="card-actions">
-                        <button
-                          disabled={model.presets.length >= 16}
-                          onClick={() => {
-                            setPreset({
-                              id: crypto.randomUUID(),
-                              name: '',
-                              mode: 'simple',
-                              value: '',
-                              parameters: {},
-                            })
-                            setPresetJson('{}')
-                          }}
-                        >
-                          添加预设
-                        </button>
-                        {model.selectedPresetId && (
-                          <>
-                            <button
-                              onClick={() => {
-                                const p = model.presets.find(
-                                  (p) => p.id === model.selectedPresetId,
-                                )!
-                                setPreset(structuredClone(p))
-                                setPresetJson(JSON.stringify(p.parameters, null, 2))
-                              }}
-                            >
-                              编辑预设
-                            </button>
-                            <button
-                              onClick={() =>
-                                updateModel({
-                                  ...model,
-                                  presets: model.presets.filter(
-                                    (p) => p.id !== model.selectedPresetId,
-                                  ),
-                                  selectedPresetId: null,
-                                })
-                              }
-                            >
-                              删除预设
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  ) : (
+                  <div className="field-grid">
                     <label>
-                      识别语言（可选）
+                      模型 ID
                       <input
-                        value={model.language}
-                        placeholder="例如 zh"
-                        maxLength={20}
-                        onChange={(e) => updateModel({ ...model, language: e.target.value })}
+                        value={model.model}
+                        maxLength={200}
+                        onChange={(e) => updateModel({ ...model, model: e.target.value })}
                       />
                     </label>
-                  )}
-                  <button
-                    className="text-button danger"
-                    onClick={() => {
-                      update({ ...draft, models: draft.models.filter((m) => m.id !== model.id) })
-                      setActiveModel('')
-                    }}
-                  >
-                    移除此模型配置
-                  </button>
+                    <label>
+                      接口协议
+                      <select
+                        value={model.protocol}
+                        onChange={(e) => {
+                          const protocol = e.target.value as CompanyModel['protocol']
+                          updateModel({
+                            ...model,
+                            protocol,
+                            presets: [],
+                            selectedPresetId: null,
+                            streaming: protocol === 'chat',
+                          })
+                          setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
+                        }}
+                      >
+                        {Object.entries(protocolNames).map(([id, name]) => (
+                          <option key={id} value={id}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {model.protocol === 'chat' ? (
+                      <>
+                        <label className="check-label">
+                          <input
+                            type="checkbox"
+                            checked={model.streaming}
+                            onChange={(e) => updateModel({ ...model, streaming: e.target.checked })}
+                          />
+                          使用流式接口
+                        </label>
+                        <label>
+                          推理预设
+                          <select
+                            value={model.selectedPresetId || ''}
+                            onChange={(e) =>
+                              updateModel({ ...model, selectedPresetId: e.target.value || null })
+                            }
+                          >
+                            <option value="">服务默认</option>
+                            {model.presets.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="card-actions full-field">
+                          <button
+                            disabled={model.presets.length >= 16}
+                            onClick={() => {
+                              setPreset({
+                                id: crypto.randomUUID(),
+                                name: '',
+                                mode: 'simple',
+                                value: '',
+                                parameters: {},
+                              })
+                              setPresetJson('{}')
+                            }}
+                          >
+                            添加预设
+                          </button>
+                          {model.selectedPresetId && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  const p = model.presets.find(
+                                    (p) => p.id === model.selectedPresetId,
+                                  )!
+                                  setPreset(structuredClone(p))
+                                  setPresetJson(JSON.stringify(p.parameters, null, 2))
+                                }}
+                              >
+                                编辑预设
+                              </button>
+                              <button
+                                onClick={() =>
+                                  updateModel({
+                                    ...model,
+                                    presets: model.presets.filter(
+                                      (p) => p.id !== model.selectedPresetId,
+                                    ),
+                                    selectedPresetId: null,
+                                  })
+                                }
+                              >
+                                删除预设
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <label>
+                        识别语言（可选）
+                        <input
+                          value={model.language}
+                          placeholder="例如 zh"
+                          maxLength={20}
+                          onChange={(e) => updateModel({ ...model, language: e.target.value })}
+                        />
+                      </label>
+                    )}
+                    <button
+                      className="text-button danger full-field"
+                      onClick={() => {
+                        update({ ...draft, models: draft.models.filter((m) => m.id !== model.id) })
+                        setActiveModel('')
+                      }}
+                    >
+                      移除此模型配置
+                    </button>
+                  </div>
                 </fieldset>
               )}
               <ErrorNotice>{error}</ErrorNotice>
@@ -632,14 +634,6 @@ export function ModelServices() {
                 />
               )}
               <div className="model-savebar">
-                <BusyButton
-                  className="primary"
-                  busy={busy === 'save'}
-                  disabled={!!busy}
-                  onClick={() => void save()}
-                >
-                  保存服务
-                </BusyButton>
                 <button
                   disabled={!model || !!busy}
                   onClick={() => {
@@ -649,6 +643,14 @@ export function ModelServices() {
                 >
                   测试配置
                 </button>
+                <BusyButton
+                  className="primary"
+                  busy={busy === 'save'}
+                  disabled={!!busy}
+                  onClick={() => void save()}
+                >
+                  保存服务
+                </BusyButton>
               </div>
               {check && (
                 <section className="model-check">
@@ -676,6 +678,34 @@ export function ModelServices() {
             </section>
           )}
         </div>
+      )}
+      {removeOpen && draft && (
+        <Modal
+          title={draft.revision ? '删除模型服务' : '丢弃服务草稿'}
+          onClose={() => {
+            if (!busy) setRemoveOpen(false)
+          }}
+        >
+          <p>
+            {draft.revision
+              ? '删除后，旧任务将无法继续使用这个服务，历史工作和报告会保留。'
+              : '丢弃后，这份服务草稿和其中尚未保存的密钥将被清除。'}
+          </p>
+          <ErrorNotice>{error}</ErrorNotice>
+          <div className="form-actions">
+            <button disabled={!!busy} onClick={() => setRemoveOpen(false)}>
+              继续编辑
+            </button>
+            <BusyButton
+              className="danger"
+              busy={busy === 'delete'}
+              disabled={!!busy}
+              onClick={() => void remove()}
+            >
+              {draft.revision ? '确认删除服务' : '丢弃草稿'}
+            </BusyButton>
+          </div>
+        </Modal>
       )}
       {preset && model && (
         <Modal title="推理预设" onClose={() => setPreset(null)}>
@@ -736,8 +766,8 @@ export function ModelServices() {
                 <summary>高级参数</summary>
                 <label>
                   JSON 参数
-                  <textarea
-                    rows={8}
+                  <AutoTextarea
+                    rows={3}
                     value={presetJson}
                     onChange={(e) => setPresetJson(e.target.value)}
                   />
@@ -745,9 +775,14 @@ export function ModelServices() {
               </details>
             )}
             <ErrorNotice>{error}</ErrorNotice>
-            <button className="primary" type="submit">
-              保存预设到草稿
-            </button>
+            <div className="form-actions">
+              <button type="button" onClick={() => setPreset(null)}>
+                取消
+              </button>
+              <button className="primary" type="submit">
+                保存预设到草稿
+              </button>
+            </div>
           </form>
         </Modal>
       )}
@@ -785,14 +820,19 @@ export function ModelServices() {
                 : '文字与工具测试样本'}
             ，可能产生服务费用，不使用员工资料。
           </p>
-          <BusyButton
-            className="primary"
-            busy={busy === 'test'}
-            disabled={!!busy}
-            onClick={() => void request('test')}
-          >
-            开始测试
-          </BusyButton>
+          <div className="form-actions">
+            <button disabled={!!busy} onClick={() => setTestOpen(false)}>
+              取消
+            </button>
+            <BusyButton
+              className="primary"
+              busy={busy === 'test'}
+              disabled={!!busy}
+              onClick={() => void request('test')}
+            >
+              开始测试
+            </BusyButton>
+          </div>
         </Modal>
       )}
       {blocker.state === 'blocked' && (
@@ -862,84 +902,86 @@ function Routing({
               )
             : null
         return (
-          <div className="panel" key={purpose}>
+          <div className="panel routing-row" key={purpose}>
             <h3>{purposeNames[purpose]}</h3>
-            <label>
-              使用的模型
-              <select
-                value={
-                  choice === 'follow'
-                    ? 'follow'
-                    : choice
-                      ? `${choice.serviceId}/${choice.modelId}`
-                      : ''
-                }
-                onChange={(e) => {
-                  const option = options.find(
-                    (x) => `${x.service.id}/${x.model.id}` === e.target.value,
-                  )
-                  change(
-                    purpose,
-                    e.target.value === 'follow'
+            <div className="routing-fields">
+              <label>
+                使用的模型
+                <select
+                  value={
+                    choice === 'follow'
                       ? 'follow'
-                      : option
-                        ? {
-                            serviceId: option.service.id,
-                            modelId: option.model.id,
-                            presetId: option.model.selectedPresetId,
-                            streaming: option.model.streaming,
+                      : choice
+                        ? `${choice.serviceId}/${choice.modelId}`
+                        : ''
+                  }
+                  onChange={(e) => {
+                    const option = options.find(
+                      (x) => `${x.service.id}/${x.model.id}` === e.target.value,
+                    )
+                    change(
+                      purpose,
+                      e.target.value === 'follow'
+                        ? 'follow'
+                        : option
+                          ? {
+                              serviceId: option.service.id,
+                              modelId: option.model.id,
+                              presetId: option.model.selectedPresetId,
+                              streaming: option.model.streaming,
+                            }
+                          : null,
+                    )
+                  }}
+                >
+                  <option value="">未配置</option>
+                  {purpose === 'report' && <option value="follow">同工作助手</option>}
+                  {options.map(({ service, model }) => (
+                    <option key={`${service.id}/${model.id}`} value={`${service.id}/${model.id}`}>
+                      {service.name} · {model.model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {choice === 'follow' && (
+                <p className="muted">使用工作助手当前分配的模型、推理预设和请求方式。</p>
+              )}
+              {selected && typeof choice === 'object' && choice && (
+                <>
+                  <p className="wrap-anywhere">{selected.model.model}</p>
+                  {purpose !== 'asr' && (
+                    <>
+                      <label>
+                        推理预设
+                        <select
+                          value={choice.presetId || ''}
+                          onChange={(e) =>
+                            change(purpose, { ...choice, presetId: e.target.value || null })
                           }
-                        : null,
-                  )
-                }}
-              >
-                <option value="">未配置</option>
-                {purpose === 'report' && <option value="follow">同工作助手</option>}
-                {options.map(({ service, model }) => (
-                  <option key={`${service.id}/${model.id}`} value={`${service.id}/${model.id}`}>
-                    {service.name} · {model.model}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {choice === 'follow' && (
-              <p className="muted">使用工作助手当前分配的模型、推理预设和请求方式。</p>
-            )}
-            {selected && typeof choice === 'object' && choice && (
-              <>
-                <p className="wrap-anywhere">{selected.model.model}</p>
-                {purpose !== 'asr' && (
-                  <>
-                    <label>
-                      推理预设
-                      <select
-                        value={choice.presetId || ''}
-                        onChange={(e) =>
-                          change(purpose, { ...choice, presetId: e.target.value || null })
-                        }
-                      >
-                        <option value="">服务默认</option>
-                        {selected.model.presets.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="check-label">
-                      <input
-                        type="checkbox"
-                        checked={choice.streaming}
-                        onChange={(e) =>
-                          change(purpose, { ...choice, streaming: e.target.checked })
-                        }
-                      />
-                      使用流式接口
-                    </label>
-                  </>
-                )}
-              </>
-            )}
+                        >
+                          <option value="">服务默认</option>
+                          {selected.model.presets.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="check-label">
+                        <input
+                          type="checkbox"
+                          checked={choice.streaming}
+                          onChange={(e) =>
+                            change(purpose, { ...choice, streaming: e.target.checked })
+                          }
+                        />
+                        使用流式接口
+                      </label>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         )
       })}
@@ -958,35 +1000,37 @@ function Routing({
           }}
         />
       )}
-      <BusyButton
-        className="primary"
-        busy={busy}
-        onClick={async () => {
-          setBusy(true)
-          try {
-            await write(
-              '/settings/model-routing',
-              {
-                assistant: value.assistant,
-                report: value.report,
-                asr: value.asr,
-                expectedRevision: value.revision,
-              },
-              'PUT',
-            )
-            setDraft('modelRouting', undefined)
-            refresh()
-            notify('用途分配已保存')
-          } catch (e) {
-            setError((e as Error).message)
-            setConflict(e instanceof ApiError && e.status === 409)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        保存用途分配
-      </BusyButton>
+      <div className="form-actions editor-actions">
+        <BusyButton
+          className="primary"
+          busy={busy}
+          onClick={async () => {
+            setBusy(true)
+            try {
+              await write(
+                '/settings/model-routing',
+                {
+                  assistant: value.assistant,
+                  report: value.report,
+                  asr: value.asr,
+                  expectedRevision: value.revision,
+                },
+                'PUT',
+              )
+              setDraft('modelRouting', undefined)
+              refresh()
+              notify('用途分配已保存')
+            } catch (e) {
+              setError((e as Error).message)
+              setConflict(e instanceof ApiError && e.status === 409)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          保存用途分配
+        </BusyButton>
+      </div>
     </section>
   )
 }

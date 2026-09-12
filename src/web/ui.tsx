@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
 import { MoreHorizontal, X } from 'lucide-react'
 
 export function ErrorNotice({ children, retry }: { children: ReactNode; retry?: () => void }) {
@@ -16,6 +16,57 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
       <h2>{title}</h2>
       <p>{children}</p>
     </div>
+  )
+}
+function resizeTextarea(node: HTMLTextAreaElement | null) {
+  if (!node) return
+  node.style.height = 'auto'
+  const style = getComputedStyle(node)
+  const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)
+  const maximum = parseFloat(style.maxHeight) || 280
+  node.style.height = `${Math.min(node.scrollHeight + border, maximum)}px`
+  node.style.overflowY = node.scrollHeight + border > maximum ? 'auto' : 'hidden'
+}
+export function AutoTextarea({
+  value,
+  defaultValue,
+  className = '',
+  rows = 2,
+  elementRef,
+  onInput,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  elementRef?: RefObject<HTMLTextAreaElement | null>
+}) {
+  const local = useRef<HTMLTextAreaElement>(null)
+  const ref = elementRef ?? local
+  useLayoutEffect(() => resizeTextarea(ref.current), [value, defaultValue, ref])
+  useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    let width = node.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth !== width) {
+        width = node.clientWidth
+        resizeTextarea(node)
+      }
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [ref])
+  return (
+    <textarea
+      {...props}
+      ref={ref}
+      value={value}
+      defaultValue={defaultValue}
+      rows={rows}
+      className={`auto-textarea ${className}`}
+      onInput={(event) => {
+        resizeTextarea(event.currentTarget)
+        onInput?.(event)
+      }}
+    />
   )
 }
 export function Modal({
@@ -40,7 +91,10 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault()
+        onClose()
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -52,7 +106,7 @@ export function Modal({
             <X size={18} />
           </button>
         </header>
-        {children}
+        <div className="dialog-body">{children}</div>
       </div>
     </dialog>
   )
@@ -112,7 +166,7 @@ export function Actions({ children, label = '更多操作' }: { children: ReactN
             trigger.current?.focus()
           }}
         >
-          {children}
+          <div className="popover-items">{children}</div>
         </div>
       )}
     </div>

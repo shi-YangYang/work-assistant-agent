@@ -1,23 +1,25 @@
 # Task Handoff — 当前状态
 
-2026-09-12 · [Spec 009：公司级模型服务管理](../../specs/spec-009-company-model-services/spec.md) 独立工程复验已通过。用户随后要求直接修复 Web 控件／提示并授权真实文字与报告联调，主 Agent 已完成，无新 Spec／子 Agent；增量缺陷修复、5 项定向回归与最终真实 PASS 见 [实施摘要](../../specs/spec-009-company-model-services/implementation.md)，旧独立结论范围见 [验收报告](../../specs/spec-009-company-model-services/acceptance.md)。
+2026-09-13 · [Spec 010：Web 排版与响应式维护](../../specs/spec-010-web-layout-and-responsive/spec.md) 为 **DONE**，实施与新的独立最终验收均已完成；用户已审查认可宽度返工，并要求提交推送至 `dev`。[验收记录](../../specs/spec-010-web-layout-and-responsive/acceptance.md) 是覆盖、检查与限制的唯一明细来源。
 
-## 下一步与交付边界
+用户随后要求主 Agent 独立返工内容宽度，已取消右侧白色内容区域的固定限宽；本轮 S0 样式增量与定向 UI 观察见验收记录顶部，没有再派子 Agent。最新截图在 `artifacts/spec010/width-rework/`，此前 `after/` 保留首轮证据。
 
-- 用户本次明确授权使用 Electron 已配置的基元律动，只测试文字与报告。`glm-5.3-flash` 流式实际完成上报、人工确认／纠正、补充关联、两版历史与周报来源；含排错累计文字 23 次、报告 4 次，原始证据在忽略的 `artifacts/spec009/real-integration*.json`。临时凭证已撤销并恢复原环境配置来源，测试资料保留；后续不能自行扩大这次授权。
-- 用户已确认的产品与协议决策见 [决策 0012](../decisions/0012-company-model-services.md)，不重复询问。已有 Electron 配置与资料保持独立；Web 风格继续遵循 [决策 0009](../decisions/0009-interface-design-direction.md)。
-- 继续遵守 [Spec 工作规则](../rules/spec-decision-workflow.md)：Spec 决策由主 Agent 完成，业务实施／独立验收分工；直接修改不派子 Agent；问题使用普通文本集中提出。
+## 下一步
 
-## Git
+- 本次交付后按用户的新指令继续工作，不追加验收。
+- 本机前后对照 `artifacts/spec010/audit.html`；52 张基线、64 张后续截图和断点尺寸在 `artifacts/spec010/before/`、`after/`。全部忽略，不公开上传；不代表实体手机／Windows 验收。
+- 本轮没有发送消息、生成报告、调用模型或保存配置；审查服务草稿及前端临时编辑已清理。日常浏览器 tab 8 为管理员、浅色、默认视口，停留 http://127.0.0.1:5174/settings/models；用户原截图总览 tab 7 保留。
 
-本次交付基于 `7441f62`，包括 Spec 009 与用户验收后的直接修复，用户已要求提交并推送 dev。实际提交号和远端状态以 Git 与对应 CI 记录为准。按 [固定 dev 规则](../rules/git-branch-workflow.md) 提供 dev → main 的 PR 链接，由用户合并；不自动合并或回同步，不重复已经通过且内容未变的检查。
+## Git 与验证
 
-## 本机运行与验证
+- 当前分支 `dev`，实现基线 `9912de4`；本次提交包含 Web 排版、响应式、内容宽度返工和对应治理文档。提交／推送结果以 Git 实际记录为准。
+- 遵守 [固定 dev 规则](../rules/git-branch-workflow.md)：用户要求推送后给 dev → main 的 PR 链接，由用户合并，不自动合并／回同步或持续等待 CI。上一提交远端查询曾遇访问错误，CI 未知，不能称通过。
+- 本轮 S2 Web 定向检查及独立验收通过，后续弹窗／CSS 返工仅补相称检查。文档按 S0 自查；已通过且未修改的检查不重跑，本轮未运行 CI。
 
-- 日常 Web：`npm run dev:company`，主 Agent 会话 42538；Web http://127.0.0.1:5174，API 8000。API／worker 已重启加载最终事务修复；CUA tab 4 保留管理员登录，打开真实周报 http://127.0.0.1:5174/reports/416d2587-0b7e-44dd-986d-2bbf57e99797 ，浅色、默认 viewport。
-- PostgreSQL 17 容器 `paa-company-postgres`；开发库 `paa_company` 已先备份再迁移至 `0002_model_services`，原实体数量保持；自动测试只使用 `paa_company_test`。开发迁移证据与备份在忽略的 `artifacts/spec009/`。
-- `.env.company`、`data/company/postgres.env` 和 `data/company/review-access.txt` 为私有本机文件，不得打印。模型主密钥已在默认忽略路径初始化，权限 0600，未读取内容。服务端使用 `.venv-server`；FFmpeg 指向 `artifacts/spec008/tools/ffmpeg`。
-- 正常 Web 已验证目录、图文／工具、文件 ASR、密钥保护、用途及深浅／宽窄布局。固定网关已停止，临时源站放行已撤销；仅本轮建立的验收服务和空用途已清理，恢复原环境配置来源。证据在忽略的 `artifacts/spec009/web-verification.json`。
-- Electron 沿用项目目录 `npm run dev` 和默认用户资料。本次经用户授权，通过 safeStorage 在内存解密指定基元律动配置用于临时真实测试，未输出密钥或修改 Electron 原配置；未读取会议／录音，未运行桌面或安装包检查。
+## 日常环境与资料
 
-真实图片／ASR、长期业务质量、生产部署／恢复／容量及实体手机仍待外部验证。单个合成业务场景不代表普遍准确率。其他历史 Spec 状态见 [索引](../../specs/README.md)，本轮未自动恢复旧暂停项。
+- `npm run dev:company` 会话 42538；Web 5174，API 8000。API／worker 在 Python 修改后需重启，本轮不改 Python。
+- PostgreSQL 17 容器 `paa-company-postgres`，开发库 `paa_company` 已迁移至 `0002_model_services`；测试库 `paa_company_test`。Python 使用 `.venv-server`；FFmpeg 在 `artifacts/spec008/tools/ffmpeg`。
+- `.env.company`、`data/company/postgres.env`、`data/company/review-access.txt`、模型主密钥为私有资料，不打印。现有管理员／员工账号和已有联调样本可做只读布局检查，不改密码、业务或服务来填充画面。
+- [Spec 009 实施摘要](../../specs/spec-009-company-model-services/implementation.md) 记录之前授权的真实文字／报告联调；临时凭证已撤销、恢复原环境来源。该授权不能扩展为本轮模型测试。
+- Electron 仍在项目目录执行 `npm run dev`，使用默认用户资料。其他历史 Spec 状态见 [索引](../../specs/README.md)，本轮未恢复旧暂停项。

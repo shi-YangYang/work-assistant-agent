@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 import {
   ImagePlus,
   Mic,
@@ -23,7 +23,9 @@ import { api, dateLabel, useResource, write } from './api'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
-import { BusyButton, ConflictRecovery, Empty, ErrorNotice, Modal, Status } from './ui'
+import { Markdown } from './Markdown'
+import { detailState, detailReturn } from './navigation'
+import { AutoTextarea, BusyButton, ConflictRecovery, Empty, ErrorNotice, Modal, Status } from './ui'
 
 export function Assistant() {
   const { drafts, setDraft, notify } = useWorkspace()
@@ -41,6 +43,7 @@ export function Assistant() {
   const capturing = captureState !== 'idle'
   const [seconds, setSeconds] = useState(0)
   const input = useRef<HTMLInputElement>(null)
+  const textInput = useRef<HTMLTextAreaElement>(null)
   const capture = useRef<AudioCapture | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const composerRef = useRef(composer)
@@ -209,7 +212,7 @@ export function Assistant() {
               onChange={refresh}
               onReply={() => {
                 change({ ...composer, replyTo: message.id })
-                input.current?.focus()
+                textInput.current?.focus()
               }}
             />
           ))}
@@ -258,10 +261,11 @@ export function Assistant() {
               ))}
             </div>
           )}
-          <textarea
+          <AutoTextarea
+            elementRef={textInput}
             aria-label="工作消息"
             placeholder="今天有什么进展？也可以随时补充一条消息…"
-            rows={3}
+            rows={1}
             maxLength={8000}
             value={composer.text}
             disabled={busy}
@@ -365,6 +369,7 @@ export function MessageCard({
   onChange: () => void
   onReply?: () => void
 }) {
+  const location = useLocation()
   const [editing, setEditing] = useState<Draft | null>(null)
   const [transcript, setTranscript] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -429,7 +434,7 @@ export function MessageCard({
             <Sparkles size={16} />
             工作助手
           </h3>
-          <p className="preserve">{message.reply}</p>
+          <Markdown text={message.reply} />
         </div>
       )}
       {own
@@ -463,7 +468,9 @@ export function MessageCard({
                   >
                     忽略
                   </button>
-                  <Link to={`/messages/${message.id}`}>查看来源</Link>
+                  <Link to={`/messages/${message.id}`} state={detailState(location)}>
+                    查看来源
+                  </Link>
                 </div>
               )}
             </div>
@@ -515,16 +522,21 @@ export function MessageCard({
               }
             }}
           >
-            <textarea
+            <AutoTextarea
               name="text"
-              rows={8}
+              rows={3}
               defaultValue={message.transcript}
               maxLength={8000}
               required
             />
-            <BusyButton busy={busy} className="primary">
-              保存修正
-            </BusyButton>
+            <div className="form-actions">
+              <button type="button" onClick={() => setTranscript(false)}>
+                取消
+              </button>
+              <BusyButton busy={busy} className="primary">
+                保存修正
+              </BusyButton>
+            </div>
           </form>
         </Modal>
       )}
@@ -618,7 +630,7 @@ export function ProgressFields({
       </label>
       <label>
         当前进展
-        <textarea
+        <AutoTextarea
           rows={3}
           value={value.summary}
           required
@@ -639,7 +651,7 @@ export function ProgressFields({
       </label>
       <label>
         问题或阻碍
-        <textarea
+        <AutoTextarea
           rows={2}
           value={value.blocker}
           maxLength={2000}
@@ -648,7 +660,7 @@ export function ProgressFields({
       </label>
       <label>
         下一步
-        <textarea
+        <AutoTextarea
           rows={2}
           value={value.nextStep}
           maxLength={2000}
@@ -758,13 +770,16 @@ export function SourcePage() {
   const { id } = useParams()
   const { identity } = useWorkspace()
   const { data, error, refresh } = useResource<WorkMessage>(`/messages/${id}`, 2000)
-  const navigate = useNavigate()
+  const location = useLocation()
+  const context = detailReturn(location.pathname, location.state)
   return (
     <div className="page narrow">
-      <button className="text-button" onClick={() => navigate(-1)}>
-        ← 返回之前页面
-      </button>
-      <h2>原始上报</h2>
+      <div className="page-heading">
+        <div>
+          <h2>原始上报</h2>
+          <p>来源：{context.label}</p>
+        </div>
+      </div>
       <ErrorNotice retry={refresh}>{error}</ErrorNotice>
       {data && (
         <MessageCard message={data} own={data.ownerId === identity.member.id} onChange={refresh} />

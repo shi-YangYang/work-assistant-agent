@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router'
 import { ChevronRight, RefreshCw, FileText } from 'lucide-react'
 import type {
   Page,
@@ -11,8 +11,18 @@ import type {
 } from '../shared/company-contracts'
 import { api, dateLabel, todayIn, useResource, write } from './api'
 import { useWorkspace } from './workspace'
-import { ConflictRecovery, Actions, BusyButton, Empty, ErrorNotice, Modal, Status } from './ui'
+import {
+  AutoTextarea,
+  ConflictRecovery,
+  Actions,
+  BusyButton,
+  Empty,
+  ErrorNotice,
+  Modal,
+  Status,
+} from './ui'
 import { JobNotice, ProgressFields } from './Assistant'
+import { detailState } from './navigation'
 
 export function WorkList({
   items,
@@ -24,25 +34,26 @@ export function WorkList({
   refresh: () => void
 }) {
   const [editing, setEditing] = useState<Work | null>(null)
+  const location = useLocation()
   return (
     <div className="record-list">
       {items.map((work) => (
-        <div className="record-row" key={work.id}>
-          <Link className="record-main" to={`/work/${work.id}`}>
+        <div className="record-row work-row" key={work.id}>
+          <Link className="record-main" to={`/work/${work.id}`} state={detailState(location)}>
             <div className="row-between">
               <h3>{work.title}</h3>
               <Status value={work.status} />
             </div>
-            <p>{work.summary}</p>
-            <small>
+            <p className="record-summary">{work.summary}</p>
+            <small className="record-note">
               {work.blocker
                 ? `阻碍：${work.blocker}`
                 : work.nextStep
                   ? `下一步：${work.nextStep}`
-                  : '暂无补充'}{' '}
-              · {dateLabel(work.updatedAt)}
+                  : '暂无补充'}
             </small>
           </Link>
+          <time className="record-updated">{dateLabel(work.updatedAt)}</time>
           {own ? (
             <Actions>
               <button role="menuitem" onClick={() => setEditing(work)}>
@@ -198,6 +209,7 @@ function WorkEditor({
   )
 }
 export function WorkDetail() {
+  const location = useLocation()
   const { id } = useParams()
   const { data, error, refresh } = useResource<Work>(`/work-items/${id}`)
   const { identity } = useWorkspace()
@@ -234,7 +246,7 @@ export function WorkDetail() {
                 <p>{h.content.summary}</p>
                 {h.sourceIds.length ? (
                   h.sourceIds.map((source) => (
-                    <Link key={source} to={`/messages/${source}`}>
+                    <Link key={source} to={`/messages/${source}`} state={detailState(location)}>
                       查看原始上报
                     </Link>
                   ))
@@ -278,6 +290,7 @@ export function ReportBody({ content }: { content: ReportContent }) {
   )
 }
 export function ReportsPage() {
+  const location = useLocation()
   const [params, setParams] = useSearchParams()
   const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
   const { data, error, refresh } = useResource<Page<Report>>(`/reports?kind=${kind}`, 2000)
@@ -299,7 +312,7 @@ export function ReportsPage() {
         </div>
         <button onClick={() => setShowRules(true)}>汇报安排</button>
       </div>
-      <div className="toolbar">
+      <div className="toolbar report-toolbar">
         <div className="tabs">
           <button
             className={kind === 'daily' ? 'active' : ''}
@@ -314,7 +327,7 @@ export function ReportsPage() {
             周报
           </button>
         </div>
-        <div className="inline">
+        <div className="inline report-generate">
           <input
             type="date"
             aria-label="报告日期"
@@ -352,7 +365,12 @@ export function ReportsPage() {
           {[...data.items, ...(older.kind === kind ? older.items : [])]
             .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
             .map((report) => (
-              <Link to={`/reports/${report.id}`} className="record-row" key={report.id}>
+              <Link
+                to={`/reports/${report.id}`}
+                state={detailState(location)}
+                className="record-row report-row"
+                key={report.id}
+              >
                 <FileText size={21} />
                 <div className="record-main">
                   <h3>
@@ -365,13 +383,13 @@ export function ReportsPage() {
                       : '草稿'}
                   </p>
                   <small>
-                    {dateLabel(report.updatedAt)}
                     {report.job?.state === 'running' || report.job?.state === 'queued'
                       ? ' · 正在整理'
                       : ''}
                     {report.job?.error ? ' · 生成未完成' : ''}
                   </small>
                 </div>
+                <time className="record-updated">{dateLabel(report.updatedAt)}</time>
                 <ChevronRight size={18} />
               </Link>
             ))}
@@ -468,11 +486,9 @@ export function ReportDetail() {
               </h2>
               <p>{data.publishedRevision ? `已提交第 ${data.publishedRevision} 版` : '草稿'}</p>
             </div>
-            {own && (
+            {own && !editing && (
               <div className="inline">
-                <button onClick={() => setEditing(!editing)}>
-                  {editing ? '稍后继续' : '编辑草稿'}
-                </button>
+                <button onClick={() => setEditing(!editing)}>编辑草稿</button>
                 <button
                   className="primary"
                   disabled={editing || !!saved || data.revision === data.publishedRevision}
@@ -502,7 +518,7 @@ export function ReportDetail() {
           )}
           {editing && value ? (
             <form
-              className="panel"
+              className="panel report-editor"
               onSubmit={(e) => {
                 e.preventDefault()
                 void save()
@@ -511,8 +527,8 @@ export function ReportDetail() {
               {Object.entries(reportLabels).map(([field, label]) => (
                 <label key={field}>
                   {label}
-                  <textarea
-                    rows={4}
+                  <AutoTextarea
+                    rows={2}
                     maxLength={8000}
                     value={value[field as keyof ReportContent]}
                     onChange={(e) =>
@@ -538,9 +554,14 @@ export function ReportDetail() {
                   }}
                 />
               )}
-              <BusyButton busy={busy} className="primary">
-                保存草稿
-              </BusyButton>
+              <div className="form-actions editor-actions">
+                <button type="button" onClick={() => setEditing(false)}>
+                  稍后继续
+                </button>
+                <BusyButton busy={busy} className="primary">
+                  保存草稿
+                </BusyButton>
+              </div>
             </form>
           ) : (
             <div className="panel">
@@ -608,6 +629,7 @@ export function ReportDetail() {
   )
 }
 function ReportSources({ report }: { report: Report }) {
+  const location = useLocation()
   const { data, error, refresh } = useResource<{
     items: { id: string; workId: string; title: string; sourceIds: string[]; revision: number }[]
   }>(`/reports/${report.id}/sources?revision=${report.revision}`)
@@ -617,11 +639,11 @@ function ReportSources({ report }: { report: Report }) {
       <h3>工作依据</h3>
       {data.items.map((item) => (
         <div className="source-row" key={item.id}>
-          <Link to={`/work/${item.workId}`}>
+          <Link to={`/work/${item.workId}`} state={detailState(location)}>
             {item.title} · 第 {item.revision} 版
           </Link>
           {item.sourceIds.map((id) => (
-            <Link key={id} to={`/messages/${id}`}>
+            <Link key={id} to={`/messages/${id}`} state={detailState(location)}>
               原始上报
             </Link>
           ))}

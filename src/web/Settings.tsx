@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router'
 import { ChevronRight, RefreshCw, UserPlus } from 'lucide-react'
 import type {
   Member,
@@ -17,6 +17,7 @@ import { useWorkspace } from './workspace'
 import { ConflictRecovery, Actions, BusyButton, Empty, ErrorNotice, Modal } from './ui'
 import { MessageCard } from './Assistant'
 import { WorkList } from './Records'
+import { detailState } from './navigation'
 
 function applyTheme(value: Theme) {
   localStorage.setItem('paa.company.theme', value)
@@ -72,19 +73,23 @@ export function AccountPage({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   return (
-    <div className={force ? '' : 'settings-page'}>
+    <div className={force ? 'password-reset' : 'settings-page account-page'}>
       {!force && (
         <>
           <h2>账户</h2>
-          <div className="panel">
-            <h3>{member?.name}</h3>
-            <p>{member?.username}</p>
-            <small>{member?.role === 'admin' ? '老板／管理员' : '员工'}</small>
+          <div className="account-summary">
+            <span className="avatar">{member?.name.slice(0, 1)}</span>
+            <div>
+              <h3>{member?.name}</h3>
+              <p className="muted">
+                {member?.username} · {member?.role === 'admin' ? '老板／管理员' : '员工'}
+              </p>
+            </div>
           </div>
         </>
       )}
       <form
-        className="panel"
+        className="panel password-form"
         onSubmit={async (e) => {
           e.preventDefault()
           const data = new FormData(e.currentTarget)
@@ -141,9 +146,11 @@ export function AccountPage({
         </label>
         <small>至少 12 位。修改后所有已登录设备均需重新登录。</small>
         <ErrorNotice>{error}</ErrorNotice>
-        <BusyButton busy={busy} className="primary">
-          保存密码并重新登录
-        </BusyButton>
+        <div className="form-actions">
+          <BusyButton busy={busy} className="primary">
+            保存密码并重新登录
+          </BusyButton>
+        </div>
       </form>
       {!force && (
         <button
@@ -177,8 +184,44 @@ export function RulesPage() {
     <div className="settings-page">
       <h2>汇报规则</h2>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
-      {value && (
+      {value && !canEdit && (
+        <div className="rule-summary">
+          <p className="muted">公司时区：{value.timezone}</p>
+          {(['daily', 'weekly'] as const).map((kind) => (
+            <section className="panel schedule-panel" key={kind}>
+              <div className="row-between">
+                <h3>{kind === 'daily' ? '日报' : '周报'}</h3>
+                <span className="status">{value[kind].enabled ? '自动生成' : '未启用'}</span>
+              </div>
+              {value[kind].enabled ? (
+                <dl className="summary-grid">
+                  <div className="full-field">
+                    <dt>周期</dt>
+                    <dd>
+                      {value[kind].days
+                        .map((day) => ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][day])
+                        .join('、')}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>草稿生成</dt>
+                    <dd>{value[kind].generateTime}</dd>
+                  </div>
+                  <div>
+                    <dt>提交截止</dt>
+                    <dd>{value[kind].deadline}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="muted">可在我的报告中手动准备报告。</p>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
+      {value && canEdit && (
         <form
+          className="rules-form"
           onSubmit={async (e) => {
             e.preventDefault()
             setBusy(true)
@@ -203,7 +246,7 @@ export function RulesPage() {
             }
           }}
         >
-          <label>
+          <label className="timezone-field">
             公司时区
             <input
               value={value.timezone}
@@ -221,7 +264,7 @@ export function RulesPage() {
             </datalist>
           </label>
           {(['daily', 'weekly'] as const).map((kind) => (
-            <fieldset disabled={!canEdit} className="panel" key={kind}>
+            <fieldset disabled={!canEdit} className="panel schedule-panel" key={kind}>
               <div className="row-between">
                 <h3>{kind === 'daily' ? '日报' : '周报'}</h3>
                 <label className="check">
@@ -307,13 +350,11 @@ export function RulesPage() {
               }}
             />
           )}
-          {canEdit ? (
+          <div className="form-actions editor-actions">
             <BusyButton busy={busy} className="primary">
               保存汇报规则
             </BusyButton>
-          ) : (
-            <small>如需调整，请联系老板／管理员。</small>
-          )}
+          </div>
         </form>
       )}
     </div>
@@ -445,9 +486,20 @@ export function MembersPage() {
             </label>
             <small>至少 12 位。请通过公司认可的方式交给本人。</small>
             <ErrorNotice>{failure}</ErrorNotice>
-            <BusyButton busy={busy} className="primary">
-              保存
-            </BusyButton>
+            <div className="form-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setCreate(false)
+                  setReset(null)
+                }}
+              >
+                取消
+              </button>
+              <BusyButton busy={busy} className="primary">
+                保存
+              </BusyButton>
+            </div>
           </form>
         </Modal>
       )}
@@ -455,6 +507,7 @@ export function MembersPage() {
   )
 }
 export function TeamPage() {
+  const location = useLocation()
   const [params, setParams] = useSearchParams()
   const filter = params.get('q') ?? ''
   const status = params.get('status') ?? ''
@@ -560,6 +613,7 @@ export function TeamPage() {
             <Link
               className="record-row team-row"
               to={`/team/${item.member.id}`}
+              state={detailState(location)}
               key={item.member.id}
             >
               <span className="avatar">{item.member.name.slice(0, 1)}</span>
@@ -568,13 +622,13 @@ export function TeamPage() {
                   {item.member.name}
                   {!item.member.active && <small> · 已停用</small>}
                 </h3>
-                <p>{item.work[0]?.summary ?? '尚无已确认进展'}</p>
-                <small>
-                  {item.lastMessageAt
-                    ? `最近上报 ${dateLabel(item.lastMessageAt)}`
-                    : '尚未上报，不代表未开展工作'}
-                </small>
+                <p className="record-summary">{item.work[0]?.summary ?? '尚无已确认进展'}</p>
               </div>
+              <small className="record-updated">
+                {item.lastMessageAt
+                  ? `最近上报 ${dateLabel(item.lastMessageAt)}`
+                  : '尚未上报，不代表未开展工作'}
+              </small>
               {item.work.some((w) => w.blocker || w.status === 'blocked') && (
                 <span className="status blocked">有阻碍</span>
               )}
@@ -592,6 +646,7 @@ export function TeamPage() {
   )
 }
 export function TeamMemberPage() {
+  const location = useLocation()
   const { id } = useParams()
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') ?? 'work'
@@ -625,7 +680,7 @@ export function TeamMemberPage() {
           <button
             key={key}
             className={tab === key ? 'active' : ''}
-            onClick={() => setParams({ tab: key, kind })}
+            onClick={() => setParams({ tab: key, kind }, { replace: true, state: location.state })}
           >
             {label}
           </button>
@@ -669,11 +724,13 @@ export function TeamMemberPage() {
       )}
       {tab === 'reports' && (
         <>
-          <div className="inline">
+          <div className="toolbar member-report-toolbar">
             <select
               aria-label="报告类型"
               value={kind}
-              onChange={(e) => setParams({ tab, kind: e.target.value })}
+              onChange={(e) =>
+                setParams({ tab, kind: e.target.value }, { replace: true, state: location.state })
+              }
             >
               <option value="daily">日报</option>
               <option value="weekly">周报</option>
@@ -681,7 +738,12 @@ export function TeamMemberPage() {
           </div>
           <div className="record-list">
             {reports.data?.items.map((r) => (
-              <Link key={r.id} className="record-row" to={`/reports/${r.id}`}>
+              <Link
+                key={r.id}
+                className="record-row"
+                to={`/reports/${r.id}`}
+                state={detailState(location)}
+              >
                 <div className="record-main">
                   <h3>
                     {r.period}
