@@ -115,7 +115,9 @@ CI 在 PR 上运行双平台单元／模块测试和普通构建，格式、Lint
 
 `npm run dev:company` 同时运行 Web（5174）、API（8000）和 worker；`db:company` 初始化数据库，`admin:company` 交互创建首位管理员。`typecheck:web`、`test:web`、`test:server`、`build:web` 为新模块定向检查。环境准备、模型配置和部署步骤只在 [README](../README.md#公司工作助手-webspec-008) 维护。
 
-公司配置来自忽略的 `.env.company`；模型凭证仅供服务端使用。开发数据与自动测试库分离；测试不读取 Electron 密钥、会议或模型。新增 CI 模块使用单个 Linux／PostgreSQL 环境，不调用真实模型或麦克风。
+部署配置来自忽略的 `.env.company`；公司模型配置及加密凭证入库、仅供服务端使用。开发数据与自动测试库分离；测试不读取 Electron 密钥、会议或模型。新增 CI 模块使用单个 Linux／PostgreSQL 环境，不调用真实模型或麦克风。
+
+[Spec 009](../specs/spec-009-company-model-services/spec.md) 已实施公司模型服务表、不可变配置修订、独立用途分配与任务配置绑定（公司 Alembic schema `0002_model_services`）。API Key 由 `cryptography 50.0.1` AES-GCM 加密，主密钥在独立私有文件；环境配置仅为升级时已有公司保留，显式导入后不回退。ChatOpenAI 子类通过受控 HTTP 适配器处理流式／非流式聊天，文件转写与 Qwen-ASR 为两个独立协议；网络边界检查 DNS 并固定连接 IP。Web 采用同一 React Router 的 data router 以保护包含未保存 Key 的离开操作。依据见 [决策 0012](../.ai/decisions/0012-company-model-services.md)，实现与未验证项见 [实施摘要](../specs/spec-009-company-model-services/implementation.md)，独立工程 [验收通过](../specs/spec-009-company-model-services/acceptance.md)，真实供应商与生产环境仍待验证。
 
 ## 验证边界
 

@@ -10,6 +10,7 @@
 | [006](spec-006-interface-and-navigation/spec.md) | 配色层级、页面导航与会议交互重设计 | ACCEPTANCE | 实施完成，独立验收及本次 CI 待闭环 |
 | [007](spec-007-meeting-library/spec.md) | 会议搜索与筛选、重命名、复制导出及删除 | ACCEPTANCE | [工程 PASS，日期控件界面复验待解锁](spec-007-meeting-library/acceptance.md) |
 | [008](spec-008-meeting-followup/spec.md) | 员工工作助手、进展、日报／周报与老板看板；Web 延续桌面设计 | ACCEPTANCE | [工程 PASS，待真实服务／设备与部署验证](spec-008-meeting-followup/acceptance.md) |
+| [009](spec-009-company-model-services/spec.md) | 公司模型服务管理、用途分配与真实业务联调 | ACCEPTANCE | [工程及真实文字／周报通过，图文／ASR 待验证](spec-009-company-model-services/acceptance.md) |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

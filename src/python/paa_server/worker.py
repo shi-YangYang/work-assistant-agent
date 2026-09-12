@@ -45,18 +45,25 @@ async def heartbeat(context):
 
 
 async def asr(context, attachment):
+    from .model_services import resolve_bound
+    from .model_provider import transcribe, safe_error
     settings = context.settings
-    if not settings.asr_base_url or not settings.asr_key:
-        raise ValueError('语音识别暂未配置，请联系管理员；原始语音已保存')
     wav, _ = await audio_wav(settings.media_dir / attachment.id, settings)
-    await reserve_call(context, 'asr')
-    async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
-        response = await client.post(settings.asr_base_url.rstrip('/') + '/chat/completions', headers={'Authorization': f'Bearer {settings.asr_key}'}, json={'model': settings.asr_model, 'messages': [{'role': 'user', 'content': [{'type': 'input_audio', 'input_audio': {'data': data_url(wav, 'audio/wav')}}]}], 'stream': False})
-        response.raise_for_status()
-        text = response.json()['choices'][0]['message']['content']
-        if not isinstance(text, str) or not text.strip() or len(text) > 8000:
-            raise ValueError('语音识别没有返回有效文字，请核对原始录音后重试')
-        return text
+    usage_id = await reserve_call(context, 'asr')
+    async with context.sessions() as db:
+        await lease(db, context)
+        config, key = await resolve_bound(db, settings, context.company_id, context.model_binding or {}, 'asr')
+    try:
+        transcript, usage = await asyncio.wait_for(transcribe(settings, config, key, wav), 60)
+    except Exception as error:
+        raise safe_error(error) from None
+    if usage:
+        from .models import ModelUsage
+        async with context.sessions.begin() as db:
+            await lease(db, context)
+            row = await db.get(ModelUsage, usage_id)
+            row.input_tokens, row.output_tokens = usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0)
+    return transcript
 
 
 async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None):
@@ -75,8 +82,12 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
     context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
     heartbeat_task = asyncio.create_task(heartbeat(context))
     try:
-        if not model and (not settings.agent_base_url or not settings.agent_key):
-            raise ValueError('工作助手暂未配置，请联系管理员；发送内容已保存')
+        from .model_services import bind_job
+        context.model_purpose = 'report' if job.kind == 'report' else 'assistant'
+        async with sessions.begin() as binding_db:
+            live, _ = await lease(binding_db, context)
+            context.model_binding = await bind_job(binding_db, live, settings)
+            context.config_attempt = live.config_attempt
         async with sessions() as db:
             _, actor = await lease(db, context)
             if job.kind == 'message':
@@ -111,6 +122,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         if job.kind == 'message':
             context.source_revision = transcript_revision
         blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text + ('\n语音转写（员工可纠正）：' + transcript if transcript else '')})
+        if not model and not context.model_binding.get(context.model_purpose):
+            raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
         answer = await invoke_harness(context, checkpointer, blocks, model)
         async with sessions.begin() as db:
             live, actor = await lease(db, context)

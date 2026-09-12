@@ -42,7 +42,7 @@ if (action === 'all')
     '--config',
     'web.vite.config.ts',
   ])
-if (action === 'migrate' || action === 'bootstrap-admin')
+if (action === 'migrate' || action === 'bootstrap-admin' || action === 'model-key')
   launch(python, ['-m', 'paa_server.cli', action])
 if (action === 'test')
   launch(python, [
@@ -51,7 +51,7 @@ if (action === 'test')
     '-q',
     ...(process.argv.length > 3 ? process.argv.slice(3) : ['tests/server']),
   ])
-if (!['all', 'api', 'worker', 'migrate', 'bootstrap-admin', 'test'].includes(action)) {
+if (!['all', 'api', 'worker', 'migrate', 'bootstrap-admin', 'model-key', 'test'].includes(action)) {
   console.error('Unknown company command')
   process.exitCode = 1
 }

@@ -1,29 +1,23 @@
 # Task Handoff — 当前状态
 
-2026-09-12 · [Spec 008](../../specs/spec-008-meeting-followup/spec.md) 业务实施与两轮定向返工已完成，新的独立工程验收 [PASS](../../specs/spec-008-meeting-followup/acceptance.md)，状态 ACCEPTANCE，等待用户审查及外部联调。当前无进行中的实施或验收 Agent。
+2026-09-12 · [Spec 009：公司级模型服务管理](../../specs/spec-009-company-model-services/spec.md) 独立工程复验已通过。用户随后要求直接修复 Web 控件／提示并授权真实文字与报告联调，主 Agent 已完成，无新 Spec／子 Agent；增量缺陷修复、5 项定向回归与最终真实 PASS 见 [实施摘要](../../specs/spec-009-company-model-services/implementation.md)，旧独立结论范围见 [验收报告](../../specs/spec-009-company-model-services/acceptance.md)。
 
-## 已交付范围
+## 下一步与交付边界
 
-员工图文语音消息 → 实际业务 harness → 人工确认进展 → 日报／周报 → 老板看板。独立 Web／FastAPI／PostgreSQL 与共用主题已接入，Electron 保留。方向与取舍见 [决策 0011](../decisions/0011-company-agent-direction.md)，实现和四项历史缺陷的关闭证据归入对应实施／验收报告，不再重复展开。
+- 用户本次明确授权使用 Electron 已配置的基元律动，只测试文字与报告。`glm-5.3-flash` 流式实际完成上报、人工确认／纠正、补充关联、两版历史与周报来源；含排错累计文字 23 次、报告 4 次，原始证据在忽略的 `artifacts/spec009/real-integration*.json`。临时凭证已撤销并恢复原环境配置来源，测试资料保留；后续不能自行扩大这次授权。
+- 用户已确认的产品与协议决策见 [决策 0012](../decisions/0012-company-model-services.md)，不重复询问。已有 Electron 配置与资料保持独立；Web 风格继续遵循 [决策 0009](../decisions/0009-interface-design-direction.md)。
+- 继续遵守 [Spec 工作规则](../rules/spec-decision-workflow.md)：Spec 决策由主 Agent 完成，业务实施／独立验收分工；直接修改不派子 Agent；问题使用普通文本集中提出。
 
-用户体验后直接修复了看板只统计员工、跨管理员资料边界、顶部图标和成组日期布局；2 项相关 API 检查、Web 类型及浏览器 360 px／当前宽度检查通过，详见实施报告末节。未新建 Spec 或子 Agent。
+## Git
 
-最新反馈已直接对齐 Web 与 Electron 的页面底色／卡片、侧栏及底部设置、面包屑、文字层级和控件；Web 类型、1280 px 浅深主题与 360 px 页面检查通过，详情同在实施报告末节。CUA 已恢复原深色主题与默认视口。仅共用主题不代表视觉一致，后续遵循决策 0009 补充约束。
+本次交付基于 `7441f62`，包括 Spec 009 与用户验收后的直接修复，用户已要求提交并推送 dev。实际提交号和远端状态以 Git 与对应 CI 记录为准。按 [固定 dev 规则](../rules/git-branch-workflow.md) 提供 dev → main 的 PR 链接，由用户合并；不自动合并或回同步，不重复已经通过且内容未变的检查。
 
-用户已要求将当前全部实现与直接修复提交并推送至 dev，由用户通过网页将 dev 合并至 main。提交／推送及远端 CI 的实际状态以 Git 与对应 SHA 的 GitHub 检查为准；遵循 [固定 dev 规则](../rules/git-branch-workflow.md)，不得用旧提交 CI 代表本次源码。已通过检查不因提交或恢复上下文重复执行。
+## 本机运行与验证
 
-## 本机运行
+- 日常 Web：`npm run dev:company`，主 Agent 会话 42538；Web http://127.0.0.1:5174，API 8000。API／worker 已重启加载最终事务修复；CUA tab 4 保留管理员登录，打开真实周报 http://127.0.0.1:5174/reports/416d2587-0b7e-44dd-986d-2bbf57e99797 ，浅色、默认 viewport。
+- PostgreSQL 17 容器 `paa-company-postgres`；开发库 `paa_company` 已先备份再迁移至 `0002_model_services`，原实体数量保持；自动测试只使用 `paa_company_test`。开发迁移证据与备份在忽略的 `artifacts/spec009/`。
+- `.env.company`、`data/company/postgres.env` 和 `data/company/review-access.txt` 为私有本机文件，不得打印。模型主密钥已在默认忽略路径初始化，权限 0600，未读取内容。服务端使用 `.venv-server`；FFmpeg 指向 `artifacts/spec008/tools/ffmpeg`。
+- 正常 Web 已验证目录、图文／工具、文件 ASR、密钥保护、用途及深浅／宽窄布局。固定网关已停止，临时源站放行已撤销；仅本轮建立的验收服务和空用途已清理，恢复原环境配置来源。证据在忽略的 `artifacts/spec009/web-verification.json`。
+- Electron 沿用项目目录 `npm run dev` 和默认用户资料。本次经用户授权，通过 safeStorage 在内存解密指定基元律动配置用于临时真实测试，未输出密钥或修改 Electron 原配置；未读取会议／录音，未运行桌面或安装包检查。
 
-- Web：`npm run dev:company`，主 Agent 会话 17702，http://127.0.0.1:5174。Web、API／worker 均已加载团队看板修复，API 不热重载。CUA tab 3 保留已登录管理员；本轮账号说明在忽略的 `data/company/review-access.txt`。
-- Docker 已运行 PostgreSQL 17（paa-company-postgres）；开发库 paa_company，自动测试库 paa_company_test。私有配置在忽略的 `.env.company`、`data/company/postgres.env`，不得打印。服务端 `.venv-server` 独立于桌面 `.venv`，本机 FFmpeg 由本地配置指向 `artifacts/spec008/tools/ffmpeg`。
-- Electron：直接 `npm run dev`，主 Agent 会话 80672，默认用户数据；共用主题显示正常，四条既有会议记录保持。未操作真实录音、模型或服务密钥。若会话已结束，按 README 重新启动，不另建隔离桌面验收环境。
-
-## 验证边界
-
-实际 PostgreSQL／Deep Agents 工具流程、权限／版本／恢复、受控媒体与 Web 定向检查已通过；真实浏览器走通员工确认与报告提交、管理员只读及来源，菜单与窄屏布局已检查。详见 [验收报告](../../specs/spec-008-meeting-followup/acceptance.md)。服务端未配置真实图文／ASR Key，现有验收记录由受控响应经过实际工具生成，不是付费服务验收。
-
-真实服务、手机实机／移动键盘、公网 HTTPS、生产恢复和 2 核 2 GB 容量仍待外部验证。Docker Hub 基础镜像鉴权网络超时阻断完整镜像构建，未将配置语法检查称为部署通过。未部署云资源或迁移 Electron 资料。
-
-## 既有任务
-
-Spec 007 工程复验 PASS；日期半输入清除的旧界面复验不属于本次范围，状态见其 [验收报告](../../specs/spec-007-meeting-library/acceptance.md)。其他历史 Spec 见 [索引](../../specs/README.md)，没有因本次任务自动恢复旧暂停项。
+真实图片／ASR、长期业务质量、生产部署／恢复／容量及实体手机仍待外部验证。单个合成业务场景不代表普遍准确率。其他历史 Spec 状态见 [索引](../../specs/README.md)，本轮未自动恢复旧暂停项。

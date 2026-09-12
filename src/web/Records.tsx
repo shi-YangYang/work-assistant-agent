@@ -81,7 +81,6 @@ export function WorkPage() {
       <div className="page-heading">
         <div>
           <h2>我的工作</h2>
-          <p>只记录你已经确认的进展。</p>
         </div>
         <button aria-label="刷新工作" onClick={refresh}>
           <RefreshCw size={16} />
@@ -157,7 +156,6 @@ function WorkEditor({
           }
         }}
       >
-        <p className="muted">保存后更新看板，同时保留之前的修订记录。</p>
         <ProgressFields
           value={value}
           change={(content) =>
@@ -298,7 +296,6 @@ export function ReportsPage() {
       <div className="page-heading">
         <div>
           <h2>我的报告</h2>
-          <p>从确认的进展整理，审阅后再提交。</p>
         </div>
         <button onClick={() => setShowRules(true)}>汇报安排</button>
       </div>
@@ -365,7 +362,7 @@ export function ReportsPage() {
                   <p>
                     {report.publishedRevision
                       ? `已提交第 ${report.publishedRevision} 版${report.revision !== report.publishedRevision ? ' · 有未提交更正' : ''}`
-                      : '草稿，仅自己可见'}
+                      : '草稿'}
                   </p>
                   <small>
                     {dateLabel(report.updatedAt)}
@@ -469,11 +466,7 @@ export function ReportDetail() {
                 {data.period}
                 {data.kind === 'weekly' ? ` — ${data.periodEnd}` : ''}
               </h2>
-              <p>
-                {data.publishedRevision
-                  ? `已提交第 ${data.publishedRevision} 版`
-                  : '草稿仅自己可见'}
-              </p>
+              <p>{data.publishedRevision ? `已提交第 ${data.publishedRevision} 版` : '草稿'}</p>
             </div>
             {own && (
               <div className="inline">
@@ -571,7 +564,7 @@ export function ReportDetail() {
           )}
           {submit && (
             <Modal title="提交报告" onClose={() => setSubmit(false)}>
-              <p>提交后，老板／管理员可以查看这份报告。后续更正会保留为新版本。</p>
+              <p>确认提交这份报告？</p>
               <div className="form-actions">
                 <button onClick={() => setSubmit(false)}>继续检查</button>
                 <BusyButton

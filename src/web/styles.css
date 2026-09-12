@@ -1,4 +1,5 @@
 @import '../ui/theme.css';
+@import '../ui/select.css';
 * {
   box-sizing: border-box;
 }
@@ -100,6 +101,20 @@ textarea {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+input:not([type='checkbox'], [type='radio']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+select:not([size])::picker(select) {
+  width: max-content;
+  min-width: anchor-size(width);
+}
+select:not([size]) option:focus-visible {
+  outline: none;
+  background: var(--selection);
+  color: var(--accent);
 }
 h1,
 h2,
@@ -693,11 +708,6 @@ svg {
   padding: 12px 15px 8px;
   box-shadow: 0 3px 12px #14264b08;
 }
-.visibility-note {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
 .composer textarea {
   resize: none;
   border: 0;
@@ -1141,9 +1151,6 @@ dialog::backdrop {
   .composer {
     padding: 8px 10px;
   }
-  .visibility-note {
-    font-size: 12px;
-  }
   .composer textarea {
     font-size: 16px;
     min-height: 56px;
@@ -1332,5 +1339,248 @@ dialog::backdrop {
   }
   .team-date-range {
     grid-column: auto;
+  }
+}
+
+/* Company model management uses the same surface, type and control hierarchy. */
+.model-management {
+  max-width: none;
+  min-width: 0;
+}
+.model-management .tabs {
+  margin-bottom: 22px;
+}
+.model-management .page-heading {
+  margin-bottom: 18px;
+}
+.model-workspace {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.model-service-list {
+  padding: 14px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--subtle);
+  min-width: 0;
+}
+.model-list-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 8px 14px;
+}
+.model-service-list > button {
+  display: flex;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+  padding: 10px 8px;
+  margin-bottom: 4px;
+}
+.model-service-list > button:hover {
+  background: var(--selection);
+  color: var(--accent);
+}
+.model-service-list > button.selected {
+  background: var(--selection);
+  color: var(--accent);
+  border-left: 3px solid var(--accent);
+  padding-left: 6px;
+}
+.model-service-list > button > span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.model-service-list small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.model-editor {
+  min-width: 0;
+  padding: 22px 24px;
+}
+.model-editor-heading,
+.model-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.model-editor-heading {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.model-editor-heading span {
+  font-size: 12px;
+}
+.model-editor fieldset {
+  margin: 22px 0;
+  padding: 0;
+  min-width: 0;
+  border: none;
+}
+.model-editor legend {
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.model-editor .check-label,
+.model-routing .check-label {
+  flex-direction: row;
+  align-items: center;
+}
+.model-editor input[type='checkbox'],
+.model-routing input[type='checkbox'] {
+  width: auto;
+}
+.model-editor label > .muted {
+  font-weight: 400;
+  font-size: 12px;
+}
+.model-section-heading {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+  flex-wrap: wrap;
+}
+.model-section-heading .card-actions {
+  margin: 0;
+}
+.model-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 340px;
+  padding: 30px;
+  color: var(--muted);
+  text-align: center;
+}
+.model-placeholder h3 {
+  margin-top: 14px;
+  color: var(--text);
+}
+.model-catalog {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin: 14px 0;
+  background: var(--subtle);
+}
+.model-catalog [role='list'] {
+  max-height: 250px;
+  overflow: auto;
+  margin: 12px 0;
+}
+.model-catalog [role='list'] button {
+  width: 100%;
+  justify-content: space-between;
+  text-align: left;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.model-catalog [role='list'] button > span {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.model-catalog [role='list'] button > svg {
+  flex: 0 0 14px;
+}
+.model-catalog small,
+.model-check small {
+  display: block;
+  color: var(--muted);
+}
+.model-savebar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.model-savebar small {
+  color: var(--muted);
+}
+.model-check {
+  margin-top: 20px;
+  border: 1px solid var(--line);
+  padding: 16px;
+  border-radius: 6px;
+}
+.model-check p {
+  margin: 8px 0;
+}
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.model-environment {
+  margin: 18px 0;
+  align-items: start;
+}
+.model-mobile-back {
+  display: none;
+}
+.model-management select {
+  max-width: 100%;
+}
+.model-management .model-routing {
+  max-width: 760px;
+}
+.error-text {
+  color: var(--danger);
+}
+@media (max-width: 1000px) {
+  .model-workspace {
+    grid-template-columns: 155px minmax(0, 1fr);
+  }
+  .model-editor {
+    padding: 18px;
+  }
+}
+@media (max-width: 760px) {
+  .model-workspace {
+    display: block;
+  }
+  .model-service-list {
+    border: 0;
+  }
+  .model-workspace.editing .model-service-list {
+    display: none;
+  }
+  .model-workspace:not(.editing) .model-placeholder {
+    display: none;
+  }
+  .model-mobile-back {
+    display: inline-flex;
+    margin-bottom: 14px;
+  }
+  .model-editor {
+    padding: 16px;
+  }
+  .model-section-heading .card-actions {
+    gap: 6px;
+  }
+  .model-savebar {
+    align-items: stretch;
+  }
+  .model-savebar small {
+    width: 100%;
+  }
+  .model-routing .panel {
+    padding: 18px;
+  }
+  .model-environment {
+    flex-direction: column;
   }
 }

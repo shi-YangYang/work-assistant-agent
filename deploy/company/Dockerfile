@@ -15,7 +15,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 COPY src/web ./src/web
 COPY src/ui ./src/ui
-COPY src/shared/company-contracts.ts ./src/shared/company-contracts.ts
+COPY src/shared ./src/shared
 COPY web.vite.config.ts ./
 RUN npm run build:web
 

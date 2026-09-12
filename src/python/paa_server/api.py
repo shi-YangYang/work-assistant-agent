@@ -19,6 +19,9 @@ from .config import Settings
 from .db import database
 from .media import audio_mime, audio_wav, checksum, image_input
 from .models import Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, Session, WorkItem, WorkRevision, now
+from .model_schemas import RetryJob
+from .model_provider import ProviderError
+from .model_secrets import SecretUnavailable
 from .schemas import Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit
 from .service import confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
 
@@ -77,6 +80,11 @@ def create_app(settings=None):
         detail = error.detail if isinstance(error.detail, dict) else {'code': 'invalid_request', 'message': str(error.detail)}
         return JSONResponse({'error': {**detail, 'requestId': request.state.request_id}}, status_code=error.status_code)
 
+    @app.exception_handler(ProviderError)
+    @app.exception_handler(SecretUnavailable)
+    async def model_error(request, error):
+        return JSONResponse({'error': {'code': getattr(error, 'code', 'secret_unavailable'), 'message': str(error), 'requestId': request.state.request_id}}, status_code=422 if isinstance(error, ProviderError) else 503)
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
         return JSONResponse({'error': {'code': 'validation_error', 'message': '请检查输入内容、日期和长度限制', 'requestId': request.state.request_id, 'fields': ['.'.join(map(str, e['loc'])) for e in error.errors()]}}, status_code=422)
@@ -90,7 +98,9 @@ def create_app(settings=None):
                 await db.rollback()
                 raise
 
-    DB = Depends(db_dep)
+    # Complete writes before sending success, so an immediate read sees them
+    # and a failed commit cannot be reported to the client as a successful save.
+    DB = Depends(db_dep, scope='function')
 
     async def identity(request: Request, db=DB):
         raw = request.cookies.get(COOKIE, '')
@@ -115,6 +125,8 @@ def create_app(settings=None):
         return actor
 
     ADMIN = Depends(admin)
+    from .model_services import register_routes
+    register_routes(app, ADMIN, DB, settings, sessions)
 
     async def visible_member(db, actor, member_id, *, employee_only=False):
         target = await db.scalar(select(Member).where(Member.id == member_id, Member.company_id == actor.company_id))
@@ -314,11 +326,16 @@ def create_app(settings=None):
         return job_dto(await owned(db, Job, identifier, actor))
 
     @app.post('/api/v1/jobs/{identifier}/retry')
-    async def retry(identifier: str, actor=AUTH, db=DB):
+    async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         item = await owned(db, Job, identifier, actor, lock=True)
         if item.state not in ('failed', 'awaiting_retry'):
             problem(409, '当前任务不需要重试')
         item.state, item.error, item.request_started = 'queued', '', False
+        if body.useCurrentConfig:
+            item.model_binding = None
+            item.config_attempt += 1
+            if item.kind == 'report':
+                item.result = {k: v for k, v in item.result.items() if k != 'reportSaved'}
         item.attempt += 1
         item.updated_at = now()
         return job_dto(item)

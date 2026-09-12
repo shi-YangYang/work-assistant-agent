@@ -3,15 +3,18 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 import hashlib
 import json
+import re
 import time
-from typing import Any
+from typing import Any, Literal
 
+from fastapi import HTTPException
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.profiles import HarnessProfile, GeneralPurposeSubagentProfile, register_harness_profile
 from langchain.agents.middleware import AgentMiddleware, SummarizationMiddleware
 from langchain.tools import ToolRuntime, tool
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.outputs import ChatGenerationChunk
 from langchain_openai import ChatOpenAI
 from langsmith import tracing_context
 from pydantic import PrivateAttr
@@ -28,7 +31,9 @@ POLICY = '''你是公司的工作助手。仅处理当前员工上报的工作�
 进展只能通过 propose_progress 生成待确认建议。只有员工可以确认、纠正与发布，禁止声称工具已经完成确认。
 “初稿完成”不等于整个项目完成。不编造负责人、日期、比例或绩效评价。没有依据保持进行中。
 使用中文简洁回答，保留来源。报告只使用已确认工作；不得把待确认建议当成完成事实。
+回复只说明业务进展和需要员工决定的事项，不展示工具名、参数、内部 ID 或调用过程。
 用户补充或纠正优先于旧模型摘要。调用 get_work_item 获取当前修订，不用旧上下文覆盖新版本。
+历史回复中的“待确认”只表示当时的状态；当前是否确认以工具返回的 progress 状态和工作记录为准。
 只允许本次提供的工具。read_file 只能读线程内虚拟摘要，不能读取宿主机。'''
 
 
@@ -54,6 +59,9 @@ class RunContext:
     sessions: Any
     settings: Any
     source_revision: int | None = None
+    model_binding: dict | None = None
+    model_purpose: str = 'assistant'
+    config_attempt: int = 0
     calls: int = 0
     tools: int = 0
     input_tokens: int = 0
@@ -118,16 +126,35 @@ class BoundedChatModel(ChatOpenAI):
         estimate = approximate_tokens(messages)
         if estimate > 24000:
             raise BudgetExceeded('本次上下文较长，请分段上报')
-        usage_id = await reserve_call(context, 'agent', estimate)
-        kwargs['max_tokens'] = min(4000, 8000 - context.output_tokens)
-        result = await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        from ..model_services import resolve_bound
+        from ..model_provider import chat, safe_error
+        usage_id = await reserve_call(context, context.model_purpose, estimate)
+        async with context.sessions() as db:
+            await lease(db, context)
+            config, key = await resolve_bound(db, context.settings, context.company_id, context.model_binding or {}, context.model_purpose)
+        payload = self._get_request_payload(messages, stop=stop, **kwargs)
+        try:
+            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=min(4000, 8000 - context.output_tokens)), 60)
+            result = self._create_chat_result(response)
+        except Exception as error:
+            raise safe_error(error) from None
         output = sum((g.message.usage_metadata or {}).get('output_tokens', 0) or len(str(g.message.content)) + len(json.dumps(g.message.tool_calls, ensure_ascii=False)) for g in result.generations)
         context.output_tokens += output
         async with context.sessions.begin() as db:
             await lease(db, context)
             usage = await db.get(ModelUsage, usage_id)
             usage.output_tokens = output
+        if context.output_tokens > 8000:
+            raise BudgetExceeded('模型响应超过本次输出限制，已停止后续处理')
         return result
+
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        # Even framework streaming goes through the same reservation and complete
+        # response validation; no tool is exposed from a partial wire stream.
+        result = await self._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        for generation in result.generations:
+            message = generation.message
+            yield ChatGenerationChunk(message=AIMessageChunk(content=message.content, tool_calls=message.tool_calls, usage_metadata=message.usage_metadata), generation_info=generation.generation_info)
 
 
 class ToolBoundary(AgentMiddleware):
@@ -156,6 +183,16 @@ def clip(value):
     return rendered[:6000]
 
 
+async def referenced_record(db, model, identifier, actor):
+    """Keep model-supplied reference errors recoverable without widening access."""
+    try:
+        return await owned(db, model, identifier, actor)
+    except HTTPException as error:
+        if error.status_code != 404:
+            raise
+        return None
+
+
 @tool
 async def find_work_items(query: str, runtime: ToolRuntime[RunContext]) -> str:
     """Find the current employee's confirmed work; use an empty query to list recent items."""
@@ -163,8 +200,9 @@ async def find_work_items(query: str, runtime: ToolRuntime[RunContext]) -> str:
     async with context.sessions() as db:
         _, actor = await lease(db, context)
         statement = select(WorkItem).where(WorkItem.owner_id == actor.id, WorkItem.company_id == actor.company_id)
-        if query:
-            statement = statement.where(WorkItem.title.ilike(f'%{query[:120]}%'))
+        terms = re.findall(r'[^\W_]+', query[:120])[:8]
+        for term in terms:
+            statement = statement.where(WorkItem.title.ilike(f'%{term}%'))
         rows = (await db.scalars(statement.order_by(WorkItem.updated_at.desc()).limit(20))).all()
         context.read_versions.update({w.id: w.revision for w in rows})
         return clip([work_dto(w) for w in rows])
@@ -175,7 +213,9 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext]) -> str:
     """Read current confirmed progress and its authoritative revision for this employee."""
     async with runtime.context.sessions() as db:
         _, actor = await lease(db, runtime.context)
-        item = await owned(db, WorkItem, work_id, actor)
+        item = await referenced_record(db, WorkItem, work_id, actor)
+        if item is None:
+            return '工作记录不存在或无权查看。请使用 find_work_items 返回的工作 ID，不要猜测 ID。'
         runtime.context.read_versions[item.id] = item.revision
         return clip(work_dto(item))
 
@@ -185,21 +225,38 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext])
     """Read this employee's original sent message, corrected transcript and assistant reply."""
     async with runtime.context.sessions() as db:
         _, actor = await lease(db, runtime.context)
-        message = await owned(db, Message, message_id, actor)
-        return clip({'id': message.id, 'text': message.text, 'transcript': message.transcript, 'reply': message.reply})
+        message = await referenced_record(db, Message, message_id, actor)
+        if message is None:
+            return '消息不存在或无权查看。请使用本次上下文中的原消息 ID，不要猜测 ID。'
+        drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.owner_id == actor.id, ProgressDraft.company_id == actor.company_id).order_by(ProgressDraft.created_at.desc()).limit(20))).all()
+        return clip({'id': message.id, 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], 'text': message.text, 'transcript': message.transcript, 'reply': message.reply})
 
 
 @tool
-async def propose_progress(title: str, summary: str, status: str, blocker: str, next_step: str, work_id: str | None, runtime: ToolRuntime[RunContext]) -> str:
-    """Propose a private progress draft for employee confirmation, optionally linked to confirmed work. Never confirms work."""
+async def propose_progress(title: str, summary: str, status: Literal['in_progress', 'blocked', 'done'], blocker: str, next_step: str, runtime: ToolRuntime[RunContext], work_id: str | None = None) -> str:
+    """Propose progress for employee confirmation; never confirms work.
+
+    Use blocked when a dependency prevents the next step, in_progress for ongoing
+    work, and done only when the entire work is finished. For new work, work_id
+    can be omitted or JSON null. For existing work, use only an ID
+    returned by find_work_items or get_work_item. blocker contains only unresolved
+    dependencies; use an empty string when none remain and describe any resolved
+    blocker in summary instead.
+    """
     content = Progress(title=title, summary=summary, status=status, blocker=blocker, nextStep=next_step).model_dump()
+    # Some compatible providers serialize an optional null as a string. These
+    # empty sentinels cannot identify a stored work item; other IDs stay checked.
+    if isinstance(work_id, str) and work_id.strip() in ('', 'null'):
+        work_id = None
     context = runtime.context
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if job.kind != 'message':
             return '报告任务不能修改进展建议。'
         message = await owned(db, Message, job.target_id, actor, lock=True)
-        work = await owned(db, WorkItem, work_id, actor) if work_id else None
+        work = await referenced_record(db, WorkItem, work_id, actor) if work_id is not None else None
+        if work_id is not None and work is None:
+            return '工作记录不存在或无权查看。新工作请省略 work_id；关联已有工作请先查询并使用真实工作 ID。'
         if work and context.read_versions.get(work.id) != work.revision:
             return '工作记录尚未读取或已被员工更新，请重新读取并核对后提出建议。'
         key = f'{job.id}:{hashlib.sha256(json.dumps([content, work_id], sort_keys=True).encode()).hexdigest()}'
@@ -254,7 +311,8 @@ register_harness_profile('openai', HarnessProfile(excluded_tools=EXCLUDED_TOOLS,
 
 def build_graph(settings, checkpointer, context, model=None):
     if model is None:
-        model = BoundedChatModel(model=settings.agent_model, api_key=settings.agent_key, base_url=settings.agent_base_url, max_retries=0, timeout=60, max_tokens=4000, streaming=False, extra_body=settings.agent_options or {'enable_thinking': False})
+        choice = (context.model_binding or {}).get(context.model_purpose) or {}
+        model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
     graph = create_deep_agent(model, tools=BUSINESS_TOOLS, system_prompt=POLICY, middleware=[BusinessSummary(model, trigger=('tokens', 12000), keep=('messages', 6), token_counter=approximate_tokens), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
@@ -267,6 +325,9 @@ async def invoke_harness(context, checkpointer, content, model=None):
         # Checkpoints include pending executable tools. Never share them between jobs,
         # even for the same employee or report; history below contains business data only.
         thread = f'{actor.company_id}:{actor.id}:job:{job.id}'
+        if context.model_binding is not None:
+            config_digest = hashlib.sha256(json.dumps(context.model_binding, sort_keys=True).encode()).hexdigest()
+            thread += f':config:{context.config_attempt}:{config_digest}'
         if job.kind == 'message':
             if context.source_revision is None:
                 raise ValueError('消息输入版本缺失，无法恢复处理')

@@ -38,6 +38,21 @@ async def bootstrap():
     print('管理员已创建。请打开 Web 登录。')
 
 
+async def prepare_model_key():
+    from .model_secrets import initialize_key, SecretUnavailable
+    from .models import ModelServiceRevision
+    settings = Settings()
+    if not settings.model_key_file.exists():
+        engine, sessions = database(settings)
+        try:
+            async with sessions() as db:
+                if await db.scalar(select(ModelServiceRevision.id).where(ModelServiceRevision.credential != '').limit(1)):
+                    raise SecretUnavailable()
+        finally:
+            await engine.dispose()
+    initialize_key(settings.model_key_file)
+
+
 def main():
     action = sys.argv[1] if len(sys.argv) > 1 else ''
     if action == 'migrate':
@@ -46,6 +61,9 @@ def main():
         command.upgrade(config, 'head')
         asyncio.run(checkpoints())
         print('公司数据库与任务状态表已初始化。')
+    elif action == 'model-key':
+        asyncio.run(prepare_model_key())
+        print('模型主密钥文件已就绪；请单独备份并供 API 与 worker 读取。')
     elif action == 'bootstrap-admin':
         asyncio.run(bootstrap())
     else:

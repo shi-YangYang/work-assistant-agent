@@ -213,13 +213,20 @@ Windows 使用 `py -3.12 -m venv .venv-server`，安装命令改为 `.venv-serve
 ```sh
 docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d
 npm run db:company
+node scripts/company.mjs model-key
 npm run admin:company
 npm run dev:company
 ```
 
 `admin:company` 通过交互提示创建首家公司和管理员，密码不写入命令历史；公司已初始化时不会覆盖。打开 [本地 Web](http://127.0.0.1:5174)，管理员在“成员管理”创建员工临时账号；员工首次登录需修改密码。`dev:company` 同时启动 Web、API 与处理进程，Ctrl+C 一起停止。也可分别执行 `dev:web`、`dev:server`、`dev:worker`。API 修改后重启，Web 有热更新。
 
-配置 `PAA_AGENT_BASE_URL`、`PAA_AGENT_API_KEY`、`PAA_AGENT_MODEL` 及独立 ASR 地址、凭证、模型后重启服务；参考模型和受限参数见 `.env.company.example`。部署方需自行开通相应服务和额度。未配置时可登录、管理账号、保存消息、手动编辑／提交报告；AI 处理明确提示暂不可用，保留输入，绝不生成演示回复。模型配置只在服务端保存，不提供到浏览器。
+管理员在“设置 → 模型服务管理”添加服务，在“用途分配”指定工作助手、报告与语音模型；保存后新任务即时生效，无需重启。聊天支持兼容 Chat Completions，默认流式；语音选择文件转写或 Qwen-ASR 兼容协议。Base URL 已包含版本路径，不自动补 `/v1`。目录失败可以手填模型 ID，“服务默认”不追加推理参数。获取模型、保存服务、主动小样本检测是独立操作；检测可能计费，不自动调用，目录可见不代表业务能力已通过。
+
+服务器以 AES-GCM 保存 API 密钥，Web 只显示“已设置”。`PAA_MODEL_KEY_FILE` 指定独立的 32 字节主密钥文件，本地默认在忽略的 `data/company/model-master.key`；初始化命令不会覆盖已有文件，数据库已有密文时不会在文件缺失后另造密钥。API 与 worker 必须读取同一私有文件（Unix 权限 600）。不要向聊天发送 Key，不要使用 Electron 的配置文件替代。
+
+升级到 schema `0002_model_services` 前已有公司可继续使用原环境配置，并在管理页明确导入；导入后数据库用途接管，清空用途不会重新落回环境变量。新公司不能继承环境 Key，直接在 Web 配置。原任务固定所用配置修订，普通重试沿用旧配置；失败后也可主动“使用当前配置重新处理”，这可能再次计费。撤销服务使旧任务不能再使用它，历史工作不被删除。
+
+默认只允许公共 HTTPS 模型地址，DNS 解析检查后固定实际连接 IP，不接受重定向和环境代理。部署方确有私有网关时可在 `PAA_MODEL_ALLOWED_ORIGINS` 放行精确源站（逗号分隔），Web 管理员无法放宽此边界。未配置时仍可登录、管理账号、保存消息、手动编辑／提交报告；AI 处理说明缺少的用途并保留输入。
 
 员工发送的原始工作消息、助手回复与附件对公司管理员可见；尚未发送的输入、独立进展编辑草稿和未提交报告仅本人可见。工作进展需员工确认，报告需员工提交。自动日报／周报初始不启用，管理员配置有效日期和时间后生效。
 
@@ -233,7 +240,9 @@ CI 原触发方式保持不变；新增的 **Company API and Web** 在单个 Lin
 
 ### Linux 单机部署
 
-`deploy/company/compose.yml` 包含 Caddy、API、一个处理进程和 PostgreSQL。部署前设置 `.env.company` 的生产域名、`PAA_WEB_ORIGIN=https://你的域名`、数据库密码与模型配置；域名需解析到服务器，80／443 可达。生产 cookie 强制 Secure；PostgreSQL 不发布公网端口。
+`deploy/company/compose.yml` 包含 Caddy、API、一个处理进程和 PostgreSQL。部署前设置 `.env.company` 的生产域名、`PAA_WEB_ORIGIN=https://你的域名`、数据库密码与 `PAA_MODEL_KEY_HOST_PATH`；域名需解析到服务器，80／443 可达。生产 cookie 强制 Secure；PostgreSQL 不发布公网端口。
+
+先在宿主机仓库外创建一次 32 字节随机密钥文件，设置所属用户为容器服务账户 UID 10001、权限 600，并在 `.env.company` 的 `PAA_MODEL_KEY_HOST_PATH` 指向该现有绝对路径。API／worker 以只读绑定挂载使用它，Compose 不会自动创建缺失文件，也不能把密钥放进镜像。保留原文件与独立备份，不在升级时重新生成。
 
 ```sh
 docker compose --env-file .env.company -f deploy/company/compose.yml up --build -d
@@ -244,4 +253,4 @@ docker compose --env-file .env.company -f deploy/company/compose.yml exec api py
 
 2 核 2 GB 是试点部署起点，尚未通过实际负载验证。默认单处理并发、数据库小连接池，AI／ASR 由外部服务承担。每任务限制调用、工具次数、时间和 token 预算，另有公司每日调用额度；不将请求已发出但结果未知的情况自动重跑。
 
-升级前在维护窗口备份，设置已有的私有 `PAA_BACKUP_DIR` 后运行 `deploy/company/backup.sh`：暂时停止 Web／API／处理进程，保存 PostgreSQL dump、媒体与校验清单，然后恢复服务，保留最近 7 份完成的备份。备份应由运维复制到异机位置。恢复时先验证 SHA256SUMS，停止写服务，使用对应镜像将 dump 导入空库、媒体还原到私有卷，核对后再启动；不要把新 schema 自动降级到旧版本。本轮未执行云部署、真实付费模型联调、手机实机录音或生产恢复演练。
+升级前在维护窗口备份，设置已有的私有 `PAA_BACKUP_DIR` 后运行 `deploy/company/backup.sh`：暂时停止 Web／API／处理进程，保存 PostgreSQL dump、媒体与校验清单，然后恢复服务，保留最近 7 份完成的备份。主密钥必须另存于独立私有位置，`PAA_MODEL_KEY_BACKUP_DIR` 指定该目录；脚本为同一备份时间戳保存密钥副本及其校验值，不与数据库归档混放。两类备份由运维分别复制到受控异机位置。恢复时先验证两个 SHA256SUMS，停止写服务，使用对应镜像将 dump 导入空库、媒体还原到私有卷，并安装同一时间戳的主密钥（UID 10001／600），核对后再启动；不要把新 schema 自动降级到旧版本。主密钥丢失时旧凭证无法恢复；先保存业务数据库备份，由部署管理员撤销不可读服务并在确认所有旧密文已撤销后重新初始化主密钥，再重新输入各服务 Key。不要将损坏密文当成明文或静默恢复环境 Key。本轮未执行云部署、真实付费模型联调、手机实机录音或生产恢复演练。

@@ -121,3 +121,64 @@ export interface Page<T> {
   items: T[]
   nextCursor?: string | null
 }
+
+export interface CompanyPreset {
+  id: string
+  name: string
+  mode: 'simple' | 'advanced'
+  value: string
+  parameters: Record<string, import('./summary-contracts').JsonValue>
+}
+export interface CompanyModel {
+  id: string
+  model: string
+  protocol: 'chat' | 'transcriptions' | 'qwen-asr'
+  presets: CompanyPreset[]
+  selectedPresetId: string | null
+  streaming: boolean
+  language: string
+}
+export interface CompanyService {
+  id: string
+  name: string
+  baseUrl: string
+  models: CompanyModel[]
+  revision: number
+  hasKey: boolean
+  updatedAt: string
+}
+export interface ModelSelection {
+  serviceId: string
+  modelId: string
+  presetId: string | null
+  streaming: boolean
+}
+export interface ModelRouting {
+  revision: number
+  source: 'environment' | 'database'
+  assistant: ModelSelection | null
+  report: ModelSelection | 'follow' | null
+  asr: ModelSelection | null
+  environment: {
+    assistant: { baseUrl: string; model: string; hasKey: boolean }
+    asr: { baseUrl: string; model: string; hasKey: boolean }
+  } | null
+}
+export interface ModelCheck {
+  draftVersion: string
+  fingerprint: string
+  service: string
+  model: string
+  revision: number
+  purpose: 'assistant' | 'report' | 'asr'
+  time: string
+  elapsedMs: number
+  checks: {
+    name: string
+    state: 'untested' | 'passed' | 'failed'
+    message?: string
+    code?: string
+  }[]
+  usage: Record<string, number> | null
+  requestId: string
+}

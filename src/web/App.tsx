@@ -16,12 +16,14 @@ import {
   UserRound,
   Palette,
   CalendarClock,
+  Cpu,
 } from 'lucide-react'
 import type { Identity } from '../shared/company-contracts'
 import { api, setCsrf, write } from './api'
 import { Workspace } from './workspace'
 import { BusyButton, ErrorNotice, Modal } from './ui'
 import type { DraftStore } from './workspace'
+import { ModelServices } from './ModelServices'
 import { Assistant, SourcePage } from './Assistant'
 import { WorkPage, WorkDetail, ReportsPage, ReportDetail } from './Records'
 import {
@@ -44,6 +46,7 @@ const settingsPages = [
   { path: '/settings/account', title: '账户', icon: UserRound },
   { path: '/settings/appearance', title: '外观', icon: Palette },
   { path: '/settings/rules', title: '汇报规则', icon: CalendarClock },
+  { path: '/settings/models', title: '模型服务管理', icon: Cpu, admin: true },
 ]
 export function App() {
   const [identity, setIdentity] = useState<Identity | null>(null)
@@ -200,6 +203,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
     }
   }, [location.pathname, location.search])
 
+  const allowedSettings = settingsPages.filter((p) => !p.admin || identity.member.role === 'admin')
   const allowed = pages.filter((p) => !p.admin || identity.member.role === 'admin')
   const setDraft = (key: string, value: unknown) =>
     setDrafts((previous) => {
@@ -250,7 +254,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   }
   const inSettings = location.pathname.startsWith('/settings/')
   const current =
-    [...allowed, ...settingsPages].find((p) => location.pathname.startsWith(p.path))?.title ??
+    [...allowed, ...allowedSettings].find((p) => location.pathname.startsWith(p.path))?.title ??
     '设置'
   return (
     <Workspace.Provider value={{ identity, drafts, setDraft, notify: setToast }}>
@@ -290,7 +294,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           <div className="sidebar-bottom">
             <p className="workspace-label">设置</p>
             <nav aria-label="设置">
-              {settingsPages.map((p) => (
+              {allowedSettings.map((p) => (
                 <NavLink key={p.path} to={p.path}>
                   <p.icon size={18} />
                   {p.title}
@@ -360,7 +364,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
               element={
                 <div className="settings-layout">
                   <nav className="settings-nav" aria-label="设置页面">
-                    {settingsPages.map((p) => (
+                    {allowedSettings.map((p) => (
                       <NavLink key={p.path} to={p.path}>
                         {p.title}
                       </NavLink>
@@ -373,6 +377,9 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
                     />
                     <Route path="appearance" element={<AppearancePage />} />
                     <Route path="rules" element={<RulesPage />} />
+                    {identity.member.role === 'admin' && (
+                      <Route path="models" element={<ModelServices />} />
+                    )}
                     <Route path="*" element={<Navigate to="/settings/account" replace />} />
                   </Routes>
                 </div>
@@ -407,12 +414,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             onChange={(e) => setQuery(e.target.value)}
           />
           <div className="command-list">
-            {[
-              ...allowed,
-              { path: '/settings/account', title: '账户设置' },
-              { path: '/settings/appearance', title: '外观' },
-              { path: '/settings/rules', title: '汇报规则' },
-            ]
+            {[...allowed, ...allowedSettings]
               .filter((p) => p.title.includes(query))
               .map((p) => (
                 <button

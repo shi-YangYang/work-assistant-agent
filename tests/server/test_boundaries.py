@@ -53,8 +53,8 @@ async def test_voice_is_decoded_original_retained_and_corrected_asr_is_versioned
         assert body['messages'][0]['content'][0]['input_audio']['data'].startswith('data:audio/wav;base64,')
         return httpx.Response(200,json={'choices':[{'message':{'content':'方案完成，等待报价'}}]})
     original_client=httpx.AsyncClient
-    def mock_client(**kwargs): return original_client(**kwargs,transport=httpx.MockTransport(response))
-    monkeypatch.setattr('paa_server.worker.httpx.AsyncClient',mock_client)
+    def mock_client(settings): return original_client(transport=httpx.MockTransport(response))
+    monkeypatch.setattr('paa_server.model_provider.client', mock_client)
     configured=replace(settings,asr_base_url='https://controlled.invalid/v1',asr_key='test-only-key')
     async with sessions.begin() as db:
         job=await db.get(Job,result['jobId']);job.state='running';job.fence=1;job.lease_until=now()+timedelta(seconds=90)
@@ -120,3 +120,48 @@ async def test_tool_cannot_bless_a_work_revision_it_did_not_read(setup):
     assert '重新读取' in answer
     async with sessions() as db:
         assert (await db.get(WorkItem,work_id)).content['summary']=='最新人工内容'
+
+
+@pytest.mark.parametrize('fail_commit', [False, True])
+async def test_progress_confirmation_commits_before_success_response(setup, monkeypatch, fail_commit):
+    from uuid import uuid4
+    import httpx
+    from sqlalchemy.exc import SQLAlchemyError
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from paa_server.models import ProgressDraft, WorkRevision
+    settings, sessions, users, clients = setup
+    actor = users['employee']
+    old = {'title':'提交顺序', 'summary':'旧进展', 'status':'blocked', 'blocker':'等待报价', 'nextStep':'测算'}
+    async with sessions.begin() as db:
+        message = Message(company_id=actor.company_id, owner_id=actor.id, text='报价已到')
+        work = WorkItem(company_id=actor.company_id, owner_id=actor.id, title=old['title'], content=old)
+        db.add_all([message, work])
+        await db.flush()
+        draft = ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, work_id=work.id, base_revision=1, content={**old,'summary':'报价已到','status':'in_progress','blocker':''}, tool_key=uuid4().hex)
+        db.add(draft)
+        await db.flush()
+    original_commit = AsyncSession.commit
+    async def commit(db):
+        if fail_commit and any(isinstance(item, WorkItem) and item.id == work.id for item in db.dirty):
+            raise SQLAlchemyError('controlled commit failure')
+        await original_commit(db)
+    monkeypatch.setattr(AsyncSession, 'commit', commit)
+    observed = []
+    app = clients['employee']._transport.app
+    async def observed_app(scope, receive, send):
+        async def capture(event):
+            if event['type'] == 'http.response.start':
+                async with sessions() as db:
+                    current = await db.get(WorkItem, work.id)
+                    history = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work.id))
+                    observed.append((event['status'], current.revision, current.content['summary'], history is not None))
+            await send(event)
+        await app(scope, receive, capture)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=observed_app), base_url='http://test', headers=clients['employee'].headers, cookies=clients['employee'].cookies) as client:
+        result = await client.post('/api/v1/progress-drafts/confirm', json={'items':[{'id':draft.id,'expectedRevision':1}]}, headers={'Idempotency-Key':uuid4().hex})
+    if fail_commit:
+        assert result.status_code == 503
+        assert observed == [(503, 1, '旧进展', False)]
+    else:
+        assert result.status_code == 200
+        assert observed == [(200, 2, '报价已到', True)]

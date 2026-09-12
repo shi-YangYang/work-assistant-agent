@@ -22,13 +22,20 @@ services:
       PAA_MEDIA_DIR: /data/media
       PAA_FFMPEG: ffmpeg
       PAA_COOKIE_SECURE: 'true'
+      PAA_MODEL_KEY_FILE: /run/paa/model-master.key
     command: ['python', '-m', 'paa_server.cli', 'migrate']
     depends_on: { postgres: { condition: service_healthy } }
   api:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
     env_file: ../../.env.company
     environment: *service-env
-    volumes: [media:/data/media]
+    volumes:
+      - media:/data/media
+      - type: bind
+        source: ${PAA_MODEL_KEY_HOST_PATH:?Set the existing private master key file}
+        target: /run/paa/model-master.key
+        read_only: true
+        bind: { create_host_path: false }
     depends_on: { migrate: { condition: service_completed_successfully } }
     restart: unless-stopped
   worker:
@@ -36,7 +43,13 @@ services:
     env_file: ../../.env.company
     environment: *service-env
     command: ['python', '-m', 'paa_server.worker']
-    volumes: [media:/data/media]
+    volumes:
+      - media:/data/media
+      - type: bind
+        source: ${PAA_MODEL_KEY_HOST_PATH:?Set the existing private master key file}
+        target: /run/paa/model-master.key
+        read_only: true
+        bind: { create_host_path: false }
     depends_on: { migrate: { condition: service_completed_successfully } }
     restart: unless-stopped
   web:

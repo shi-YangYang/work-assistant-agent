@@ -25,6 +25,7 @@ class Record:
 class Company(Record, Base):
     __tablename__ = 'company'
     name: Mapped[str] = mapped_column(String(120))
+    environment_models: Mapped[bool] = mapped_column(Boolean, default=False)
     rules: Mapped[dict] = mapped_column(JSONB, default=lambda: {'timezone': 'Asia/Shanghai', 'daily': {'enabled': False, 'days': [0, 1, 2, 3, 4, 5, 6], 'generateTime': '', 'deadline': ''}, 'weekly': {'enabled': False, 'days': [4], 'generateTime': '', 'deadline': ''}})
     revision: Mapped[int] = mapped_column(Integer, default=1)
     rules_effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -136,6 +137,8 @@ class ReportRevision(Owned, Base):
 
 class Job(Owned, Base):
     __tablename__ = 'company_job'
+    model_binding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    config_attempt: Mapped[int] = mapped_column(Integer, default=0)
     kind: Mapped[str] = mapped_column(String(12))
     target_id: Mapped[str] = mapped_column(String(36), index=True)
     state: Mapped[str] = mapped_column(String(20), default='queued', index=True)
@@ -164,7 +167,46 @@ class Idempotency(Owned, Base):
 
 class ModelUsage(Owned, Base):
     __tablename__ = 'company_model_usage'
-    job_id: Mapped[str] = mapped_column(ForeignKey('company_job.id'))
+    job_id: Mapped[str | None] = mapped_column(ForeignKey('company_job.id'), nullable=True)
     kind: Mapped[str] = mapped_column(String(16))
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ModelService(Record, Base):
+    __tablename__ = 'company_model_service'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    base_url: Mapped[str] = mapped_column(String(2048))
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    models: Mapped[list] = mapped_column(JSONB, default=list)
+    internal: Mapped[bool] = mapped_column(Boolean, default=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ModelServiceRevision(Record, Base):
+    __tablename__ = 'company_model_service_revision'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    service_id: Mapped[str] = mapped_column(ForeignKey('company_model_service.id'))
+    revision: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(80))
+    base_url: Mapped[str] = mapped_column(String(2048))
+    models: Mapped[list] = mapped_column(JSONB)
+    credential: Mapped[str] = mapped_column(Text)
+    __table_args__ = (UniqueConstraint('service_id', 'revision'),)
+
+
+class ModelRouting(Base):
+    __tablename__ = 'company_model_routing'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    choices: Mapped[dict] = mapped_column(JSONB)
+
+
+class ModelCheck(Record, Base):
+    __tablename__ = 'company_model_check'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict] = mapped_column(JSONB)

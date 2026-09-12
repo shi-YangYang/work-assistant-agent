@@ -131,4 +131,4 @@ def draft_dto(draft):
 
 
 def job_dto(job):
-    return {'id': job.id, 'kind': job.kind, 'targetId': job.target_id, 'state': job.state, 'phase': job.phase, 'error': job.error, 'updatedAt': job.updated_at.isoformat()}
+    return {'id': job.id, 'kind': job.kind, 'targetId': job.target_id, 'state': job.state, 'phase': job.phase, 'error': job.error, 'configAttempt': job.config_attempt, 'modelSource': {k: ({'service': v['name'], 'model': v['model'], 'revision': v['revision']} if isinstance(v, dict) and 'model' in v else v) for k, v in (job.model_binding or {}).items() if k in ('assistant', 'report', 'asr', 'source', 'routingRevision')}, 'updatedAt': job.updated_at.isoformat()}

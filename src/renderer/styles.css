@@ -1,3 +1,4 @@
+@import '../ui/select.css';
 @import '../ui/theme.css';
 * {
   box-sizing: border-box;
@@ -1256,40 +1257,6 @@ summary {
     transition: none !important;
     scroll-behavior: auto !important;
   }
-}
-/* Keep menus in the renderer so theme, focus and window-edge placement agree. */
-select:not([size]),
-select:not([size])::picker(select) {
-  appearance: base-select;
-}
-select:not([size])::picker(select) {
-  inset: auto;
-  top: calc(anchor(bottom) + 4px);
-  left: anchor(left);
-  width: anchor-size(width);
-  max-width: calc(100dvw - 24px);
-  max-height: min(260px, calc(100dvh - 24px));
-  margin: 0;
-  position-try-fallbacks:
-    flip-block,
-    flip-inline,
-    flip-block flip-inline;
-  overflow-y: auto;
-  border: 1px solid var(--control);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: var(--shadow);
-}
-select:not([size]) option {
-  padding: 8px 12px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-select:not([size]) option:checked,
-select:not([size]) option:hover {
-  background: var(--selection);
-  color: var(--accent);
 }
 .player-speed select::picker(select) {
   width: max-content;

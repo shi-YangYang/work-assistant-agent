@@ -1,6 +1,6 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router'
+import { createBrowserRouter, RouterProvider } from 'react-router'
 import { App } from './App'
 import './styles.css'
 
@@ -11,11 +11,10 @@ document.documentElement.dataset.theme =
       ? 'dark'
       : 'light'
     : theme
+const router = createBrowserRouter([{ path: '*', element: <App /> }])
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </React.StrictMode>,
 )
 

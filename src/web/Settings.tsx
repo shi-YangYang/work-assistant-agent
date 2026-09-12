@@ -41,7 +41,6 @@ export function AppearancePage() {
   return (
     <div className="settings-page">
       <h2>外观</h2>
-      <p className="muted">选择适合你的阅读方式。</p>
       <div className="theme-options">
         {(['light', 'dark', 'system'] as const).map((theme) => (
           <button
@@ -177,7 +176,6 @@ export function RulesPage() {
   return (
     <div className="settings-page">
       <h2>汇报规则</h2>
-      <p className="muted">安排草稿生成与提交时间，员工审阅后自行提交。</p>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && (
         <form
@@ -345,7 +343,6 @@ export function MembersPage() {
       <div className="page-heading">
         <div>
           <h2>成员管理</h2>
-          <p>为公司成员创建账号，历史工作记录会保留。</p>
         </div>
         <button className="primary" onClick={() => setCreate(true)}>
           <UserPlus size={16} />
@@ -617,7 +614,6 @@ export function TeamMemberPage() {
       <div className="page-heading">
         <div>
           <h2>{work.data?.member.name ?? '成员详情'}</h2>
-          <p>已确认进展、原始上报与已提交报告。</p>
         </div>
       </div>
       <div className="tabs">

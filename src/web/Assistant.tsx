@@ -217,7 +217,6 @@ export function Assistant() {
       </div>
       <div className="composer-wrap">
         <div className="composer">
-          <p className="visibility-note">发送后的工作消息及附件，老板／管理员可查看</p>
           {composer.replyTo && (
             <div className="replying">
               <CornerUpLeft size={14} />
@@ -476,7 +475,6 @@ export function MessageCard({
                 <Status value={s.status} />
               </div>
               <p>{s.content.summary}</p>
-              <small>此处展示助手当时提出的原始建议；已确认内容以工作进展为准。</small>
             </div>
           ))}
       {pending.length > 1 && (
@@ -524,7 +522,6 @@ export function MessageCard({
               maxLength={8000}
               required
             />
-            <p className="muted">保留原录音；新文字用于之后的处理。已有进展不会被自动修改。</p>
             <BusyButton busy={busy} className="primary">
               保存修正
             </BusyButton>
@@ -575,6 +572,28 @@ export function JobNotice({
         }}
       >
         重试处理
+      </BusyButton>
+      <BusyButton
+        busy={busy}
+        onClick={async () => {
+          if (
+            !window.confirm(
+              '使用管理员当前分配的模型重新处理？这是一次新的处理尝试，可能再次计费；已确认内容保留。',
+            )
+          )
+            return
+          setBusy(true)
+          try {
+            await write(`/jobs/${job.id}/retry`, { useCurrentConfig: true })
+            refresh()
+          } catch (e) {
+            setError((e as Error).message)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        使用当前配置重新处理
       </BusyButton>
     </div>
   )
@@ -679,7 +698,6 @@ function ProgressEditor({
           }
         }}
       >
-        <p className="muted">编辑内容仅自己可见；确认后才更新工作记录。</p>
         <label>
           关联工作
           <select value={workId ?? ''} onChange={(e) => change(value, e.target.value || null)}>

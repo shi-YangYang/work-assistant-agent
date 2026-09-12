@@ -146,3 +146,89 @@ async def test_history_keeps_explicit_clarification_and_excludes_future_or_other
     assert parent.id in text and '请补充客户名称' in text
     assert '另一个员工的机密' not in text and '后发的 B' not in text
     assert sum(len(item.content) for item in history) <= 20000 - (8000 + 4 * 2048)
+
+
+class ReferenceRecoveryModel(ChatOpenAI):
+    work_id: str
+    message_id: str
+    new_reference: str | None = None
+    calls: int = 0
+    tool_results: list[str] = Field(default_factory=list)
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.calls += 1
+        if isinstance(messages[-1], ToolMessage):
+            self.tool_results.append(str(messages[-1].content))
+        schema = next(t['function']['parameters'] for t in kwargs['tools'] if t['function']['name'] == 'propose_progress')
+        assert schema['properties']['status']['enum'] == ['in_progress', 'blocked', 'done']
+        assert 'work_id' not in schema['required']
+        progress = {'title': '引用纠正后的工作', 'summary': '初稿完成，等待报价', 'status': 'blocked', 'blocker': '等待报价', 'next_step': '收到报价后测算', 'work_id': None}
+        new_progress = {k: v for k, v in progress.items() if k != 'work_id'}
+        if self.new_reference is not None:
+            new_progress['work_id'] = self.new_reference
+        actions = [
+            ('get_work_item', {'work_id': self.work_id}),
+            ('get_message_context', {'message_id': self.message_id}),
+            ('propose_progress', {**progress, 'work_id': self.work_id}),
+            ('propose_progress', new_progress),
+        ]
+        if self.calls <= len(actions):
+            name, args = actions[self.calls - 1]
+            answer = AIMessage(content='', tool_calls=[{'id': f'reference-{self.calls}', 'name': name, 'args': args}])
+        else:
+            answer = AIMessage(content='进展建议已整理，请确认。')
+        return ChatResult(generations=[ChatGeneration(message=answer)])
+
+
+@pytest.mark.parametrize(('other_owner', 'new_reference'), [('peer', 'null'), ('outsider', None)])
+async def test_model_recovers_invalid_references_without_exposing_other_work(setup, other_owner, new_reference):
+    from paa_server.models import WorkItem
+    settings, sessions, users, clients = setup
+    target = users[other_owner]
+    async with sessions.begin() as db:
+        foreign_work = WorkItem(company_id=target.company_id, owner_id=target.id, title='不可泄露的工作', content={'summary': '不可泄露的内容'})
+        foreign_message = Message(company_id=target.company_id, owner_id=target.id, text='不可泄露的消息')
+        db.add_all([foreign_work, foreign_message])
+        await db.flush()
+    sent = await send(clients['employee'])
+    job = await claim(sessions, users['employee'].id)
+    model = ReferenceRecoveryModel(model='controlled-reference', api_key='no-network', max_retries=0, work_id=foreign_work.id, message_id=foreign_message.id, new_reference=new_reference)
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(job, sessions, settings, saver, model=model)
+    result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert result['job']['state'] == 'succeeded', result['job']
+    assert model.calls == 5
+    assert len(model.tool_results) == 4
+    assert all('不存在或无权查看' in result for result in model.tool_results[:3])
+    assert '不可泄露' not in str(model.tool_results)
+    assert len(result['drafts']) == 1 and result['drafts'][0]['workId'] is None
+    assert result['drafts'][0]['content']['status'] == 'blocked'
+    assert not (await clients['employee'].get('/api/v1/work-items')).json()['items']
+
+
+async def test_work_search_and_message_context_use_confirmed_state_after_reply(setup):
+    import json
+    from types import SimpleNamespace
+    from paa_server.agent.harness import find_work_items, get_message_context
+    from paa_server.models import WorkItem
+    settings, sessions, users, clients = setup
+    actor = users['employee']
+    sent = await send(clients['employee'])
+    job = await claim(sessions, actor.id)
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    async with sessions.begin() as db:
+        source = await db.get(Message, sent['messageId'])
+        source.reply = '尚未确认，只是一条建议'
+        work = WorkItem(company_id=actor.company_id, owner_id=actor.id, title='真实联调—海星方案', content={'title':'真实联调—海星方案','summary':'确认后的当前进展','status':'blocked','blocker':'等待报价','nextStep':'收到报价后测算'})
+        foreign = WorkItem(company_id=actor.company_id, owner_id=users['peer'].id, title='真实联调—海星方案', content={'summary':'不可泄露'})
+        db.add_all([work, foreign])
+        await db.flush()
+        db.add(ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=source.id, work_id=work.id, content=work.content, status='confirmed', tool_key='confirmed-reference'))
+    runtime = SimpleNamespace(context=context)
+    results = json.loads(await find_work_items.coroutine(query='真实联调 海星方案', runtime=runtime))
+    assert [item['id'] for item in results] == [work.id]
+    assert context.read_versions == {work.id: work.revision}
+    source = json.loads(await get_message_context.coroutine(message_id=sent['messageId'], runtime=runtime))
+    assert source['progress'] == [{'status':'confirmed','workId':work.id}]
+    assert source['reply'] == '尚未确认，只是一条建议'
+    assert '不可泄露' not in str(results) + str(source)
