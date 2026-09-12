@@ -326,6 +326,17 @@ export class CoreManager extends EventEmitter {
       ),
     })
   }
+  async libraryRequest<T>(
+    method:
+      'library.start' | 'library.status' | 'library.release' | 'library.read' | 'meetings.rename',
+    params: Record<string, unknown>,
+  ): Promise<Result<T>> {
+    try {
+      return { ok: true, value: (await this.request(method, params)) as T }
+    } catch (error) {
+      return this.failure(error)
+    }
+  }
   async summaryRequest<T>(
     method:
       | 'summary.get'

@@ -28,6 +28,7 @@ class SummaryStore:
 
     def snapshot(self, meeting_id):
         with self.repo.lock, self.repo.connect() as db:
+            self.repo.assert_available(db, meeting_id)
             meeting = db.execute('SELECT status FROM meetings WHERE id=?', (meeting_id,)).fetchone()
             job = db.execute('SELECT state FROM transcription_jobs WHERE meetingId=?', (meeting_id,)).fetchone()
             if not meeting:
@@ -42,6 +43,7 @@ class SummaryStore:
 
     def register(self, meeting_id, snapshot, settings, automatic):
         with self.repo.lock, self.repo.connect() as db:
+            self.repo.assert_available(db, meeting_id)
             if automatic:
                 inserted = db.execute('INSERT OR IGNORE INTO summary_attempts VALUES (?,?)', (meeting_id, snapshot['inputHash'])).rowcount
                 if not inserted:
@@ -59,7 +61,7 @@ class SummaryStore:
 
     def claim(self, task):
         with self.repo.lock, self.repo.connect() as db:
-            return db.execute("UPDATE summary_jobs SET state='running' WHERE id=? AND state='queued'", (task,)).rowcount == 1
+            return db.execute("UPDATE summary_jobs SET state='running' WHERE id=? AND state='queued' AND meetingId NOT IN (SELECT meetingId FROM meeting_deletions)", (task,)).rowcount == 1
 
     def fail(self, task, code, message):
         with self.repo.lock, self.repo.connect() as db:
@@ -68,7 +70,7 @@ class SummaryStore:
     def complete(self, task, snapshot, settings, content):
         with self.repo.lock, self.repo.connect() as db:
             job = db.execute("SELECT * FROM summary_jobs WHERE id=? AND state='running'", (task,)).fetchone()
-            if not job:
+            if not job or db.execute('SELECT 1 FROM meeting_deletions WHERE meetingId=?', (job['meetingId'],)).fetchone():
                 return
             db.execute('''INSERT INTO meeting_summaries VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(meetingId) DO UPDATE SET
                 taskId=excluded.taskId,inputHash=excluded.inputHash,generatedAt=excluded.generatedAt,profileId=excluded.profileId,
@@ -96,6 +98,7 @@ class SummaryStore:
     def get(self, meeting_id):
         self.repo.get(meeting_id)
         with self.repo.lock, self.repo.connect() as db:
+            self.repo.assert_available(db, meeting_id)
             job = db.execute('SELECT * FROM summary_jobs WHERE meetingId=? ORDER BY rowid DESC LIMIT 1', (meeting_id,)).fetchone()
             result = db.execute('SELECT * FROM meeting_summaries WHERE meetingId=?', (meeting_id,)).fetchone()
         result = dict(result) if result else None

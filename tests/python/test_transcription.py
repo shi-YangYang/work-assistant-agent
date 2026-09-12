@@ -224,6 +224,7 @@ class TranscriptionTests(unittest.TestCase):
         with self.repo.connect() as db:
             for table in ('meeting_summaries', 'summary_jobs', 'summary_attempts'): db.execute('DROP TABLE ' + table)
             db.execute('DROP TABLE transcript_segments'); db.execute('DROP TABLE audio_chunks')
+            db.execute('DROP TABLE meeting_deletions')
             db.execute('DROP TABLE transcription_jobs'); db.execute('PRAGMA user_version=1')
         def broken(db):
             db.execute('CREATE TABLE partial_migration (id TEXT)')

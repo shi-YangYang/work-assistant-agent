@@ -193,10 +193,12 @@ class RecordingTests(unittest.TestCase):
         self.recorder.pause(mid)
         wait_for(lambda: self.recorder.status()['state'] == 'paused')
         before = self.recorder.session.frames
-        with self.repo.connect() as db: db.execute('PRAGMA user_version=3')
+        with self.repo.connect() as db:
+            db.execute('DROP TABLE meeting_deletions')
+            db.execute('PRAGMA user_version=3')
         restored = Repository(self.root)
         self.assertTrue((self.root / 'meetings.schema3.backup.sqlite3').exists())
-        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 4)
+        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
         self.assertEqual(restored.get(mid)['status'], 'interrupted')
         self.assertEqual(restored.get(mid)['frames'], before)
 

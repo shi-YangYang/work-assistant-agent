@@ -22,7 +22,7 @@
 | Node 工具链 | Node 24、npm 11、package-lock.json；通过 npm ci 复现 |
 | Python | Python 3.12、venv + pip；`requirements.lock` 固定运行依赖 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream；录音回调不调用 NumPy / ASR |
-| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 4；沿用纪要表，新增暂停状态语义，先备份再增量升级 |
+| 存储 | Python 标准库 SQLite + 单声道 PCM16 WAV，schema version 5；新增可恢复删除意图，先备份再增量升级 |
 | 通信 | Electron 主进程管理 Python 子进程，通过带请求 ID 的 JSON Lines / stdio 通信 |
 | 当前核心 | 会议采集、持久化、回放、受控模型准备、持续转写、历史补转写和恢复，以及转写完成后的纪要队列 |
 | ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；Whisper small，CPU INT8 / 4 线程 / beam 5；完整依赖见 requirements.lock |
@@ -85,6 +85,7 @@ CI 在 PR 上运行双平台单元／模块测试和普通构建，格式、Lint
 - 模型存储于数据根目录的 `models/`，固定 revision / SHA256，用户显式下载后可离线转写。任务、块和片段存于 SQLite；单页最多 50 段。
 - 服务设置存于数据根目录的 `model-services.json`，密钥仅保存加密值；数据库不存凭证。纪要读取该会议的完整转写，生成任务锁定服务、模型与参数快照，失败保留上一份成功结果。
 - 外观选择保存在 renderer 的 `localStorage`，键为 `paa.appearance.theme`；只保存 `system` / `light` / `dark`，不存服务密钥。页面切换不修改 renderer URL 或 IPC 信任边界，界面要求见 [Spec 006](../specs/spec-006-interface-and-navigation/spec.md)。
+- Spec 007 的本地检索／导出由有界后台资料 worker 处理；导出先创建私有 SQLite 一致快照，再以 16 KiB 分块交给主进程写入用户所选位置。删除意图在文件清理前持久化，任务写入共享状态保护，失败保留重试入口。完整边界见 [Plan](../specs/spec-007-meeting-library/plan.md)。
 - 原始会议音频、转写、数据库和模型不进入版本库。
 - 不运行本地业务 HTTP 服务或云服务，不输出整个环境变量或凭证。
 

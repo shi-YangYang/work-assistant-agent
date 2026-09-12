@@ -39,6 +39,7 @@ class TranscriptStore:
     def job(self, meeting_id):
         self.repo.get(meeting_id)
         with self.repo.lock, self.repo.connect() as db:
+            self.repo.assert_available(db, meeting_id)
             row = db.execute('SELECT * FROM transcription_jobs WHERE meetingId=?', (meeting_id,)).fetchone()
         if row:
             result = dict(row)
@@ -51,6 +52,7 @@ class TranscriptStore:
         if meeting['status'] not in ACTIVE and not meeting['audioAvailable']:
             raise DomainError('audio_unavailable', meeting['audioError'] or '没有可转写的录音。')
         with self.repo.lock, self.repo.connect() as db:
+            self.repo.assert_available(db, meeting_id)
             db.execute('''INSERT OR IGNORE INTO transcription_jobs
                 (meetingId,state,modelId,revision,config) VALUES (?,?,?,?,?)''',
                 (meeting_id, 'queued', model_id, revision, json.dumps(config)))
@@ -63,6 +65,8 @@ class TranscriptStore:
 
     def state(self, meeting_id, state, error=None, target=None):
         with self.repo.lock, self.repo.connect() as db:
+            if not db.execute('SELECT 1 FROM meetings WHERE id=?', (meeting_id,)).fetchone() or db.execute('SELECT 1 FROM meeting_deletions WHERE meetingId=?', (meeting_id,)).fetchone():
+                return False
             db.execute('UPDATE transcription_jobs SET state=?,error=?,targetFrames=COALESCE(?,targetFrames) WHERE meetingId=?',
                        (state, error, target, meeting_id))
 
@@ -78,6 +82,8 @@ class TranscriptStore:
         chunk_id = str(uuid.uuid5(uuid.UUID(meeting_id), f"chunk:{job['nextChunk']}"))
         with self.repo.lock, self.repo.connect() as db:
             current = db.execute('SELECT * FROM transcription_jobs WHERE meetingId=?', (meeting_id,)).fetchone()
+            if not current or db.execute('SELECT 1 FROM meeting_deletions WHERE meetingId=?', (meeting_id,)).fetchone():
+                return False
             if current['processedFrames'] != chunk['startFrame'] or current['state'] not in JOB_ACTIVE:
                 return False
             db.execute('INSERT INTO audio_chunks VALUES (?,?,?,?,?,?,?)',
@@ -99,6 +105,7 @@ class TranscriptStore:
     def page(self, meeting_id, cursor=-1):
         self.repo.get(meeting_id)
         with self.repo.lock, self.repo.connect() as db:
+            self.repo.assert_available(db, meeting_id)
             rows = db.execute('''SELECT * FROM transcript_segments WHERE meetingId=? AND sequence>?
                 ORDER BY sequence LIMIT 51''', (meeting_id, cursor)).fetchall()
         values = [dict(row) for row in rows[:50]]

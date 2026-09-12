@@ -1,6 +1,7 @@
+import { MeetingLibraryList } from './MeetingLibraryList'
+import type { MeetingHit } from '../shared/library-contracts'
 import { Appearance, CommandPalette, pageLabels, useTheme, type Page } from './Navigation'
 import { MeetingWorkspace } from './MeetingWorkspace'
-import { MeetingProcessingState } from './MeetingProcessingState'
 import { type AudioPlayerHandle } from './AudioPlayer'
 import { ApiModelSettings } from './ModelSettings'
 import { ModelSettings, Transcript } from './Transcription'
@@ -56,9 +57,6 @@ function duration(ms: number): string {
   const seconds = Math.floor(ms / 1000)
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
-function date(value: string): string {
-  return new Date(value).toLocaleString('zh-CN', { hour12: false })
-}
 
 export function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>('meetings')
@@ -71,11 +69,8 @@ export function App(): React.JSX.Element {
   const listScroll = useRef(0)
   const [status, setStatus] = useState<CoreStatus>(initialStatus)
   const [recording, setRecording] = useState<RecordingStatus>(idle)
-  const [meetings, setMeetings] = useState<Meeting[]>([])
-  const [listBusy, setListBusy] = useState(false)
   const [listRefreshVersion, setListRefreshVersion] = useState(0)
-  const [loaded, setLoaded] = useState(false)
-  const [hasMore, setHasMore] = useState(false)
+  const [selectionHit, setSelectionHit] = useState<MeetingHit | null>(null)
   const [selected, setSelected] = useState<Meeting | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -123,23 +118,7 @@ export function App(): React.JSX.Element {
     document.addEventListener('keydown', keyboard)
     return () => document.removeEventListener('keydown', keyboard)
   }, [])
-  async function loadMeetings(offset = 0): Promise<void> {
-    setListBusy(true)
-    try {
-      const result = await window.paa.listMeetings(offset)
-      setLoaded(result.ok)
-      if (result.ok) {
-        setMeetings((previous) => (offset ? [...previous, ...result.meetings] : result.meetings))
-        if (!offset) setListRefreshVersion((version) => version + 1)
-        setHasMore(result.hasMore)
-      } else setError(result.message)
-    } catch {
-      setError('无法读取会议列表，请重新连接后重试。')
-    } finally {
-      setListBusy(false)
-    }
-  }
-  async function openMeeting(id: string): Promise<void> {
+  async function openMeeting(id: string, hit: MeetingHit | null = null): Promise<void> {
     if (active && id === recording.meetingId) {
       navigate('current')
       return
@@ -151,6 +130,7 @@ export function App(): React.JSX.Element {
       if (generation !== selectionGeneration.current) return
       if (result.ok) {
         setSelected(result.value)
+        setSelectionHit(hit)
         navigate('meeting')
       } else setError(result.message)
     } catch {
@@ -197,18 +177,7 @@ export function App(): React.JSX.Element {
           const signature = `${result.value.meetingId}:${result.value.state}`
           if (lastSession.current !== signature) {
             lastSession.current = signature
-            const list = await window.paa.listMeetings()
-            if (!alive) return
-            setLoaded(list.ok)
-            if (list.ok) {
-              setMeetings((previous) => [
-                ...list.meetings,
-                ...previous.filter(
-                  (meeting) => !list.meetings.some((item) => item.id === meeting.id),
-                ),
-              ])
-              setHasMore(list.hasMore)
-            } else setError(list.message)
+            setListRefreshVersion((value) => value + 1)
             if (result.value.meetingId && !ACTIVE_STATES.includes(result.value.state)) {
               const detail = await window.paa.getMeeting(result.value.meetingId)
               if (
@@ -217,6 +186,7 @@ export function App(): React.JSX.Element {
                 route.current === 'current' &&
                 selection === selectionGeneration.current
               ) {
+                setSelectionHit(null)
                 setSelected(detail.value)
                 navigate('meeting')
               }
@@ -350,6 +320,18 @@ export function App(): React.JSX.Element {
       clearTimeout(timer)
     }
   }, [connected, status.processId, modelRefresh])
+  function meetingChanged(meeting: Meeting): void {
+    setSelected((previous) => (previous?.id === meeting.id ? meeting : previous))
+    setListRefreshVersion((value) => value + 1)
+  }
+  function meetingDeleted(id: string): void {
+    if (selected?.id === id) {
+      setSelected(null)
+      setSelectionHit(null)
+      navigate('meetings')
+    }
+    setListRefreshVersion((value) => value + 1)
+  }
   const connectionLabel = connected
     ? '已连接'
     : status.connection === 'starting'
@@ -524,68 +506,14 @@ export function App(): React.JSX.Element {
             )}
           </div>
           <div ref={listViewport} hidden={page !== 'meetings'} className="page-content list-page">
-            <section className="meetings-section" aria-labelledby="meetings-title">
-              <div className="section-heading">
-                <h2 id="meetings-title">
-                  我的会议 <span>{loaded ? meetings.length : '—'}</span>
-                </h2>
-                <button
-                  className="text-button"
-                  disabled={!connected || listBusy}
-                  onClick={() => void loadMeetings()}
-                >
-                  {listBusy ? '正在刷新…' : '刷新记录'}
-                </button>
-              </div>
-              {meetings.length ? (
-                <div className="meeting-list">
-                  {meetings.map((meeting) => (
-                    <button
-                      className="meeting-row"
-                      key={meeting.id}
-                      onClick={() => void openMeeting(meeting.id)}
-                    >
-                      <span className="row-icon">
-                        <AudioLines size={21} />
-                      </span>
-                      <span className="row-title">
-                        <strong>{meeting.title}</strong>
-                        <small>{date(meeting.createdAt)}</small>
-                      </span>
-                      <span>{duration(meeting.durationMs)}</span>
-                      <span className="row-state">
-                        <span className={`meeting-state ${meeting.status}`}>
-                          {labels[meeting.status]}
-                        </span>
-                        <MeetingProcessingState
-                          meetingId={meeting.id}
-                          visible={page === 'meetings'}
-                          connected={connected}
-                          state={meeting.status}
-                          refreshVersion={listRefreshVersion}
-                        />
-                      </span>
-                      <ChevronRight size={16} />
-                    </button>
-                  ))}
-                  {hasMore && (
-                    <button
-                      className="text-button"
-                      disabled={!connected}
-                      onClick={() => void loadMeetings(meetings.length)}
-                    >
-                      加载更多
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <AudioLines size={38} />
-                  <h3>{loaded ? '暂无会议记录' : '正在加载会议记录'}</h3>
-                  <p>点击「开始会议」录音，结束后可在这里查看和回放。</p>
-                </div>
-              )}
-            </section>
+            <MeetingLibraryList
+              connected={connected}
+              visible={page === 'meetings'}
+              refreshVersion={listRefreshVersion}
+              onOpen={(id, hit) => void openMeeting(id, hit)}
+              onChanged={meetingChanged}
+              onDeleted={meetingDeleted}
+            />
           </div>
           {active && (
             <div hidden={page !== 'current'} className="page-content current-page">
@@ -626,6 +554,9 @@ export function App(): React.JSX.Element {
             <MeetingWorkspace
               key={selected.id}
               meeting={selected}
+              hit={selectionHit}
+              onChanged={meetingChanged}
+              onDeleted={meetingDeleted}
               audioRef={audio}
               connected={connected}
               playable={!active && !busy && !retrying && connected}

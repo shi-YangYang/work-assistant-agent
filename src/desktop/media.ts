@@ -2,6 +2,7 @@ import { constants } from 'node:fs'
 import { open, realpath } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { Readable } from 'node:stream'
+import type { ReadStream } from 'node:fs'
 import { ACTIVE_STATES, ID_PATTERN } from '../shared/contracts'
 import type { CoreManager } from './core-manager'
 
@@ -22,12 +23,64 @@ export function byteRange(
     ? { start, end }
     : null
 }
+export class MediaAccess {
+  private blocked = new Set<string>()
+  private requests = new Map<string, Set<Promise<void>>>()
+  private streams = new Map<string, Set<ReadStream>>()
+  begin(id: string): (() => void) | null {
+    if (this.blocked.has(id)) return null
+    let finish!: () => void
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const requests = this.requests.get(id) ?? new Set()
+    this.requests.set(id, requests)
+    requests.add(pending)
+    return () => {
+      requests.delete(pending)
+      if (!requests.size) this.requests.delete(id)
+      finish()
+    }
+  }
+  track(id: string, stream: ReadStream): void {
+    const streams = this.streams.get(id) ?? new Set()
+    this.streams.set(id, streams)
+    streams.add(stream)
+    stream.once('close', () => {
+      streams.delete(stream)
+      if (!streams.size) this.streams.delete(id)
+    })
+  }
+  async block(id: string): Promise<() => void> {
+    if (this.blocked.has(id)) throw new Error('这场会议正在删除，请稍后重试。')
+    this.blocked.add(id)
+    await Promise.all(this.requests.get(id) ?? [])
+    await Promise.all(
+      [...(this.streams.get(id) ?? [])].map(
+        (stream) =>
+          new Promise<void>((resolve) => {
+            if (stream.closed) resolve()
+            else {
+              stream.once('close', resolve)
+              stream.destroy()
+            }
+          }),
+      ),
+    )
+    return () => {
+      this.blocked.delete(id)
+    }
+  }
+}
+export const mediaAccess = new MediaAccess()
 export async function serveMedia(
   request: Request,
   root: string,
   core: CoreManager,
+  access = mediaAccess,
 ): Promise<Response> {
   let handle
+  let finish: (() => void) | null = null
   try {
     const url = new URL(request.url)
     const id = url.pathname.slice(1)
@@ -42,6 +95,8 @@ export async function serveMedia(
       !['GET', 'HEAD'].includes(request.method)
     )
       return new Response(null, { status: 403 })
+    finish = access.begin(id)
+    if (!finish) return new Response(null, { status: 409 })
     const recording = await core.recordingStatus()
     if (!recording.ok || ACTIVE_STATES.includes(recording.value.state))
       return new Response(null, { status: 409 })
@@ -77,6 +132,7 @@ export async function serveMedia(
     if (request.method === 'HEAD')
       return new Response(null, { status: rangeHeader ? 206 : 200, headers })
     const stream = handle.createReadStream({ start: range.start, end: range.end, autoClose: true })
+    access.track(id, stream)
     handle = undefined
     return new Response(Readable.toWeb(stream) as ReadableStream, {
       status: rangeHeader ? 206 : 200,
@@ -85,6 +141,10 @@ export async function serveMedia(
   } catch {
     return new Response(null, { status: 404 })
   } finally {
-    await handle?.close()
+    try {
+      await handle?.close()
+    } finally {
+      finish?.()
+    }
   }
 }
