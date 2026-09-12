@@ -165,6 +165,12 @@ export function MeetingActions({
       <details
         ref={menu}
         className="meeting-menu"
+        onMouseLeave={(event) => {
+          event.currentTarget.open = false
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.currentTarget.open = false
