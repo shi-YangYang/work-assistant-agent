@@ -2,6 +2,7 @@
 import base64
 import json
 import sqlite3
+import sys
 import tempfile
 import threading
 import time
@@ -10,6 +11,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/python'))
 from paa_core.repository import Repository, DomainError
 from paa_core.meeting_library import MeetingLibrary, search, document_lines
 from paa_core.transcript_store import TranscriptStore
