@@ -8,7 +8,7 @@ import {
 } from 'react'
 import { Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from 'lucide-react'
 
-export type AudioPlayerHandle = { pause(): void; seek(milliseconds: number): void }
+export type AudioPlayerHandle = { pause(): void; release(): void; seek(milliseconds: number): void }
 export function audioTime(seconds: number): string {
   const whole = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
   const minutes = Math.floor(whole / 60)
@@ -79,6 +79,14 @@ export function AudioPlayer({
   }
   useImperativeHandle(ref, () => ({
     pause: () => audio.current?.pause(),
+    release: () => {
+      const element = audio.current
+      if (element) {
+        element.pause()
+        element.removeAttribute('src')
+        element.load()
+      }
+    },
     seek: (ms) => seek(ms / 1000, true),
   }))
   function toggle(): void {

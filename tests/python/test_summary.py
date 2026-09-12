@@ -205,6 +205,7 @@ class SummaryTests(unittest.TestCase):
         mid = seed(self.repo)
         with self.repo.connect() as db:
             for table in ('meeting_summaries', 'summary_jobs', 'summary_attempts'): db.execute('DROP TABLE ' + table)
+            db.execute('DROP TABLE meeting_deletions')
             db.execute('PRAGMA user_version=2')
         with patch('paa_core.summary_store.migrate', side_effect=sqlite3.OperationalError('test failure')):
             with self.assertRaises(sqlite3.OperationalError): Repository(self.repo.root)
@@ -213,7 +214,7 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM transcript_segments').fetchone()[0], 61)
         self.assertTrue((self.repo.root / 'meetings.schema2.backup.sqlite3').exists())
         upgraded = Repository(self.repo.root)
-        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 4)
+        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
         self.assertEqual(upgraded.get(mid)['status'], 'completed')
         self.service = MeetingSummary(upgraded, self.provider)
 

@@ -1,3 +1,4 @@
+import type { LibraryApi } from './library-contracts'
 import type {
   ServiceList,
   ServiceProfile,
@@ -7,6 +8,7 @@ import type {
   SummarySource,
 } from './summary-contracts'
 export const CHANNELS = {
+  library: 'paa:library',
   summarySettings: 'paa:summary-settings',
   summaryGet: 'paa:summary-get',
   summaryGenerate: 'paa:summary-generate',
@@ -66,6 +68,8 @@ export type Meeting = {
   format: 'wav'
   audioAvailable: boolean
   audioError: string | null
+  deleting?: boolean
+  deletionError?: string | null
 }
 export type RecordingStatus = {
   meetingId: string | null
@@ -78,7 +82,7 @@ export type RecordingStatus = {
 export type Result<T> = { ok: true; value: T } | { ok: false; message: string; code?: string }
 export type MeetingsResult =
   { ok: true; meetings: Meeting[]; hasMore: boolean } | { ok: false; message: string }
-export interface DesktopApi {
+export interface DesktopApi extends LibraryApi {
   listModelServices(): Promise<Result<ServiceList>>
   getModelService(id: string): Promise<Result<ServiceProfile>>
   saveModelService(draft: ServiceDraft): Promise<Result<ServiceList>>

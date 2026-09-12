@@ -1389,3 +1389,168 @@ select:not([size]) option:hover {
   display: block;
   margin-top: 4px;
 }
+
+/* Meeting library: filters and actions remain within the reading column. */
+.library-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 18px 0;
+}
+.library-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+}
+.library-filters input,
+.library-dialog input:not([type='checkbox']),
+.library-dialog select {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  color: var(--text);
+  min-width: 0;
+}
+.library-filters .library-search {
+  flex: 1 1 230px;
+  flex-direction: row;
+  align-items: center;
+}
+.library-search input {
+  width: 100%;
+}
+.library-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+.library-row .meeting-row {
+  border: 0;
+  width: 100%;
+  grid-template-columns: 42px minmax(0, 1fr) auto auto;
+}
+.search-hit {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  text-align: left;
+  padding: 0 18px 15px 64px;
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.search-hit small {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.library-row > .audio-warning {
+  grid-column: 1 / -1;
+}
+mark {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  border-radius: 2px;
+}
+.meeting-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.meeting-menu {
+  position: relative;
+}
+.meeting-menu > summary {
+  display: flex;
+  padding: 9px;
+  cursor: pointer;
+  list-style: none;
+  border-radius: 8px;
+}
+.meeting-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.meeting-menu[open] > summary {
+  background: var(--subtle);
+}
+.meeting-menu-items {
+  position: absolute;
+  z-index: 15;
+  right: 0;
+  top: calc(100% + 4px);
+  display: grid;
+  min-width: 160px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px #0002;
+}
+.meeting-menu-items button {
+  text-align: left;
+  padding: 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  white-space: nowrap;
+}
+.meeting-menu-items button:hover {
+  background: var(--subtle);
+}
+.meeting-menu-items small {
+  padding: 5px;
+}
+.meeting-menu-items .danger-text {
+  color: var(--danger);
+}
+.library-dialog {
+  width: min(480px, calc(100vw - 48px));
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  padding: 26px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+}
+.library-dialog::backdrop {
+  background: #0007;
+}
+.library-dialog form {
+  display: grid;
+  gap: 18px;
+}
+.library-dialog h2,
+.library-dialog p {
+  margin: 0;
+}
+.library-dialog label {
+  display: grid;
+  gap: 8px;
+}
+.library-dialog .check-label {
+  display: flex;
+  gap: 8px;
+}
+.library-dialog .button-row {
+  justify-content: flex-end;
+}
+.library-dialog .delete-button {
+  background: #b63232;
+  color: white;
+}
+.minutes-content .source-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+  border-radius: 4px;
+}

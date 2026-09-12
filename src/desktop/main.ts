@@ -1,5 +1,7 @@
+import { DesktopLibrary } from './meeting-library'
 import {
   app,
+  clipboard,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -264,6 +266,28 @@ if (hasLock)
         return handler(...args)
       })
     }
+    const library = new DesktopLibrary(core, {
+      save: async (name, format) => {
+        if (!window) throw new Error('窗口已关闭，请重新打开应用。')
+        const selection = await dialog.showSaveDialog(window, {
+          title: '导出会议',
+          defaultPath: name,
+          filters: [{ name: format === 'md' ? 'Markdown' : '文本文件', extensions: [format] }],
+          properties: ['createDirectory', 'showOverwriteConfirmation'],
+        })
+        return selection.canceled ? null : selection.filePath || null
+      },
+      copy: async (text) => {
+        await clipboard.writeText(text)
+        if ((await clipboard.readText()) !== text)
+          throw new Error('剪贴板写入失败，请重试或导出文件。')
+      },
+    })
+    ipcMain.handle(CHANNELS.library, (event, ...args: unknown[]) => {
+      trustedCaller(event)
+      if (args.length !== 2) throw new Error('Invalid parameters')
+      return library.execute(args[0], args[1])
+    })
     register(CHANNELS.summaryGet, 'id', (id) =>
       core.summaryRequest('summary.get', { meetingId: id }),
     )

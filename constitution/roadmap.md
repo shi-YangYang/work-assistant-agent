@@ -27,6 +27,8 @@
 
 [Spec 006：界面层级、页面导航与会议交互](../specs/spec-006-interface-and-navigation/spec.md) 已完成现有能力的视觉、信息组织和操作体验重设计，状态 ACCEPTANCE；独立验收及本次 CI 待闭环。
 
+[Spec 007：会议记录管理与检索](../specs/spec-007-meeting-library/spec.md) 已实现会议查找、重命名、复制导出与永久删除，独立工程复验 PASS；日期控件的最后一项界面复验待解锁，具体边界见 [验收报告](../specs/spec-007-meeting-library/acceptance.md)。
+
 关键结果：
 
 - ASR 和 LLM 延迟不阻塞录音。

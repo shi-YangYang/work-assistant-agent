@@ -1,3 +1,4 @@
+import type { MeetingHit } from '../shared/library-contracts'
 import { useEffect, useRef, useState } from 'react'
 import type { SummarySource, SummaryView } from '../shared/summary-contracts'
 import { time } from './Transcription'
@@ -10,6 +11,8 @@ const labels = {
 }
 export function MeetingMinutes({
   meetingId,
+  hit,
+  onSummaryAvailable,
   playable,
   onSeek,
   onTranscript,
@@ -18,6 +21,8 @@ export function MeetingMinutes({
   visible,
 }: {
   meetingId: string
+  hit?: Extract<MeetingHit, { source: 'summary' }> | null
+  onSummaryAvailable?: (value: boolean) => void
   playable: boolean
   onSeek: (ms: number) => void
   onTranscript: (id?: string) => void
@@ -29,6 +34,8 @@ export function MeetingMinutes({
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [source, setSource] = useState<SummarySource | null>(null)
+  const article = useRef<HTMLElement>(null)
+  const locatedHit = useRef(false)
   const quote = useRef<HTMLDivElement>(null)
   const sourceRequest = useRef(0)
   const sourceTrigger = useRef<HTMLElement | null>(null)
@@ -54,8 +61,10 @@ export function MeetingMinutes({
       try {
         const response = await window.paa.getSummary(meetingId)
         if (!alive) return
-        if (response.ok) setView(response.value)
-        else setError(response.message)
+        if (response.ok) {
+          setView(response.value)
+          onSummaryAvailable?.(!!response.value.result)
+        } else setError(response.message)
       } catch {
         if (alive) setError('无法读取纪要，请重新连接。')
       } finally {
@@ -67,10 +76,24 @@ export function MeetingMinutes({
       alive = false
       clearTimeout(timer)
     }
-  }, [meetingId, connected])
+  }, [meetingId, connected, onSummaryAvailable])
   useEffect(() => {
     if (source && visible) quote.current?.focus()
   }, [source, visible])
+  useEffect(() => {
+    if (!hit || !view?.result || !visible || locatedHit.current) return
+    locatedHit.current = true
+    if (view.result.generatedAt !== hit.generatedAt) return
+    const element = article.current?.querySelector<HTMLElement>(
+      `[data-summary-location="${hit.locator}"]`,
+    )
+    if (element) {
+      element.classList.add('source-target')
+      element.tabIndex = -1
+      element.focus()
+      element.scrollIntoView({ block: 'center' })
+    }
+  }, [hit, view, visible])
   async function generate(): Promise<void> {
     setBusy(true)
     setError('')
@@ -137,6 +160,11 @@ export function MeetingMinutes({
           </div>
         </div>
       )}
+      {hit && view?.result && hit.generatedAt !== view.result.generatedAt && (
+        <p role="status" className="audio-warning">
+          纪要已更新，请返回列表刷新搜索后重新定位。
+        </p>
+      )}
       {(error || view?.task?.error) && (
         <p role="alert" className="audio-warning">
           {error || view?.task?.error}
@@ -151,8 +179,8 @@ export function MeetingMinutes({
       </button>
       <div className={`minutes-layout ${source ? 'with-source' : ''}`}>
         {view?.result && content && (
-          <article className="minutes-content">
-            <h3>{content.title}</h3>
+          <article ref={article} className="minutes-content">
+            <h3 data-summary-location="title">{content.title}</h3>
             <small>
               {view.result.serviceName} · {view.result.model} ·{' '}
               {new Date(view.result.generatedAt).toLocaleString()}
@@ -161,12 +189,16 @@ export function MeetingMinutes({
               <p className="audio-warning">录音曾中断，本纪要仅依据保留下来的内容。</p>
             )}
             {view.task?.state !== 'completed' && <p>以下为上一次成功保存的纪要。</p>}
-            <p className="minutes-abstract">{content.abstract}</p>
+            <p data-summary-location="abstract" className="minutes-abstract">
+              {content.abstract}
+            </p>
             <h4>讨论要点</h4>
             {content.topics.length ? (
               <ul>
                 {content.topics.map((item, index) => (
-                  <li key={index}>{item}</li>
+                  <li data-summary-location={`topics:${index}`} key={index}>
+                    {item}
+                  </li>
                 ))}
               </ul>
             ) : (
@@ -176,7 +208,7 @@ export function MeetingMinutes({
             {content.decisions.length ? (
               <ul>
                 {content.decisions.map((item, index) => (
-                  <li key={index}>
+                  <li data-summary-location={`decisions:${index}`} key={index}>
                     {item.text}
                     {refs(item.sources)}
                   </li>
@@ -189,7 +221,7 @@ export function MeetingMinutes({
             {content.actions.length ? (
               <ul className="minutes-actions">
                 {content.actions.map((item, index) => (
-                  <li key={index}>
+                  <li data-summary-location={`actions:${index}`} key={index}>
                     <strong>{item.task}</strong>
                     <p>
                       负责人：{item.owner ?? '待确认'} · 截止：{item.deadline ?? '待确认'} · 状态：
@@ -206,7 +238,9 @@ export function MeetingMinutes({
             {content.risks.length ? (
               <ul>
                 {content.risks.map((item, index) => (
-                  <li key={index}>{item}</li>
+                  <li data-summary-location={`risks:${index}`} key={index}>
+                    {item}
+                  </li>
                 ))}
               </ul>
             ) : (
@@ -216,7 +250,9 @@ export function MeetingMinutes({
             {content.openQuestions.length ? (
               <ul>
                 {content.openQuestions.map((item, index) => (
-                  <li key={index}>{item}</li>
+                  <li data-summary-location={`openQuestions:${index}`} key={index}>
+                    {item}
+                  </li>
                 ))}
               </ul>
             ) : (

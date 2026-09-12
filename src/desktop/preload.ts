@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS, type CoreStatus, type DesktopApi } from '../shared/contracts'
 const api: DesktopApi = {
+  queryMeetings: (query) => ipcRenderer.invoke(CHANNELS.library, 'search', query),
+  renameMeeting: (id, title) =>
+    ipcRenderer.invoke(CHANNELS.library, 'rename', { meetingId: id, title }),
+  deleteMeeting: (id) => ipcRenderer.invoke(CHANNELS.library, 'delete', { meetingId: id }),
+  copyMinutes: (id) => ipcRenderer.invoke(CHANNELS.library, 'copy', { meetingId: id }),
+  exportMeeting: (id, options) =>
+    ipcRenderer.invoke(CHANNELS.library, 'export', { meetingId: id, ...options }),
   listModelServices: () => ipcRenderer.invoke(CHANNELS.summarySettings, 'list'),
   getModelService: (id) => ipcRenderer.invoke(CHANNELS.summarySettings, 'get', id),
   saveModelService: (draft) => ipcRenderer.invoke(CHANNELS.summarySettings, 'save', draft),
