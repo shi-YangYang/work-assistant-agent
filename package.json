@@ -16,8 +16,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint src tests scripts *.ts *.mjs",
-    "format": "prettier --write src/desktop src/renderer src/shared tests/desktop tests/smoke scripts *.json *.ts *.mjs .github/workflows/ci.yml",
-    "format:check": "prettier --check src/desktop src/renderer src/shared tests/desktop tests/smoke scripts *.json *.ts *.mjs .github/workflows/ci.yml",
+    "format": "prettier --write src/desktop src/renderer src/shared src/web src/ui tests/web tests/desktop tests/smoke scripts *.json *.ts *.mjs .github/workflows/ci.yml",
+    "format:check": "prettier --check src/desktop src/renderer src/shared src/web src/ui tests/web tests/desktop tests/smoke scripts *.json *.ts *.mjs .github/workflows/ci.yml",
     "test": "npm run test:unit && npm run test:python",
     "test:unit": "vitest run",
     "test:python": "node scripts/test-python.mjs",
@@ -28,12 +28,23 @@
     "build:core": "node scripts/build-core.mjs",
     "package": "npm run build && npm run build:core && electron-builder --config electron-builder.json --publish never",
     "package:dir": "npm run build && npm run build:core && electron-builder --config electron-builder.json --dir --publish never",
-    "test:package": "node scripts/test-package.mjs"
+    "test:package": "node scripts/test-package.mjs",
+    "dev:web": "vite --config web.vite.config.ts",
+    "dev:server": "node scripts/company.mjs api",
+    "dev:worker": "node scripts/company.mjs worker",
+    "dev:company": "node scripts/company.mjs all",
+    "build:web": "vite build --config web.vite.config.ts",
+    "typecheck:web": "tsc --noEmit -p tsconfig.company.json",
+    "db:company": "node scripts/company.mjs migrate",
+    "admin:company": "node scripts/company.mjs bootstrap-admin",
+    "test:server": "node scripts/company.mjs test",
+    "test:web": "vitest run --config vitest.web.config.ts"
   },
   "dependencies": {
     "lucide-react": "1.43.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-router": "7.18.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

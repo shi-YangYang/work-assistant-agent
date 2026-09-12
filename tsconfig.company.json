@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.web.json",
+  "include": [
+    "src/web/**/*.ts",
+    "src/web/**/*.tsx",
+    "src/shared/company-contracts.ts",
+    "src/ui/**/*.ts",
+    "src/ui/**/*.tsx"
+  ]
+}

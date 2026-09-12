@@ -1,0 +1,53 @@
+name: paa-company
+services:
+  postgres:
+    image: postgres:17.11-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-paa_company}
+      POSTGRES_USER: ${POSTGRES_USER:-paa}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+  migrate:
+    build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
+    env_file: ../../.env.company
+    environment: &service-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-paa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-paa_company}
+      PAA_MEDIA_DIR: /data/media
+      PAA_FFMPEG: ffmpeg
+      PAA_COOKIE_SECURE: 'true'
+    command: ['python', '-m', 'paa_server.cli', 'migrate']
+    depends_on: { postgres: { condition: service_healthy } }
+  api:
+    build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
+    env_file: ../../.env.company
+    environment: *service-env
+    volumes: [media:/data/media]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+  worker:
+    build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
+    env_file: ../../.env.company
+    environment: *service-env
+    command: ['python', '-m', 'paa_server.worker']
+    volumes: [media:/data/media]
+    depends_on: { migrate: { condition: service_completed_successfully } }
+    restart: unless-stopped
+  web:
+    build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: web }
+    environment: { PAA_DOMAIN: '${PAA_DOMAIN:?Set public domain}' }
+    ports: ['80:80', '443:443']
+    volumes: [caddy_data:/data, caddy_config:/config]
+    depends_on: [api]
+    restart: unless-stopped
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:

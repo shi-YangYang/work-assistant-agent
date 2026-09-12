@@ -57,6 +57,45 @@ jobs:
       - run: npm run build
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
 
+  company:
+    name: Company API and Web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11-bookworm
+        env:
+          POSTGRES_DB: paa_company
+          POSTGRES_USER: paa
+          POSTGRES_PASSWORD: controlled-ci-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U paa -d paa_company"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company
+      DATABASE_TEST_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company
+      PAA_COOKIE_SECURE: 'false'
+      PAA_WEB_ORIGIN: http://test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm }
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-server.lock
+      - run: npm ci --ignore-scripts
+      - run: python -m venv .venv-server
+      - run: .venv-server/bin/python -m pip install -r requirements-server.lock
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: npm run db:company
+      - run: npm run test:server
+      - run: npm run typecheck:web
+      - run: npm run test:web
+      - run: npm run build:web
+
   desktop:
     if: ${{ github.event_name == 'push' || inputs.checks == 'desktop' || inputs.checks == 'full' }}
     strategy:
@@ -160,7 +199,7 @@ jobs:
   required:
     name: CI required
     if: always()
-    needs: [checks, desktop, integration]
+    needs: [checks, company, desktop, integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -174,6 +213,7 @@ jobs:
           const jobs = JSON.parse(process.env.CHECK_RESULTS)
           const expected = {
             checks: 'success',
+            company: 'success',
             desktop: process.env.DESKTOP_REQUIRED === 'true' ? 'success' : 'skipped',
             integration: process.env.INTEGRATION_REQUIRED === 'true' ? 'success' : 'skipped',
           }

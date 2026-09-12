@@ -1,0 +1,11 @@
+.git
+node_modules
+.venv
+.venv-server
+.env*
+data
+models
+artifacts
+out
+dist
+__pycache__

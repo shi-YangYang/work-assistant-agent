@@ -37,3 +37,6 @@ artifacts/
 playwright-report/
 test-results/
 *.tsbuildinfo
+
+# Separate company service environment
+.venv-server/

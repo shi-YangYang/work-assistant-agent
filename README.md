@@ -2,7 +2,7 @@
 
 面向 macOS 和 Windows 的个人工作助手，从会议记录起步，逐步连接周报与历史工作信息，帮助个人回顾讨论、跟踪行动与积累长期记忆。
 
-当前已实现 **默认麦克风录音、WAV / SQLite 本地保存、历史列表与回放**。点击开始会议后采集真实声音，结束并保存后可重新启动应用查找和播放。已接入本地 Whisper small 转写、带时间的文字记录和历史补转写；本轮接入可配置的在线模型纪要，验证状态见 [Spec 004](specs/spec-004-meeting-minutes/spec.md)。周报和长期 Memory 尚未接入。
+当前已实现 **默认麦克风录音、WAV / SQLite 本地保存、历史列表与回放**。点击开始会议后采集真实声音，结束并保存后可重新启动应用查找和播放。已接入本地 Whisper small 转写、带时间的文字记录和历史补转写；本轮接入可配置的在线模型纪要，验证状态见 [Spec 004](specs/spec-004-meeting-minutes/spec.md)。公司员工消息、工作进展和日报／周报另由 [独立 Web 与服务端](#公司工作助手-webspec-008) 提供；长期 Memory 尚未接入。
 
 ## 背景
 
@@ -167,8 +167,13 @@ Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打�
 src/
 ├── desktop/              # 主进程、preload、Python 客户端、受限媒体
 ├── renderer/             # React 中文工作区
-├── shared/               # 有限 IPC API 与状态契约
-└── python/paa_core/      # 录音、WAV / SQLite、模型、转写与控制核心
+├── shared/               # 桌面 IPC 与公司 HTTP 契约
+├── ui/                   # 跨端共用语义主题
+├── web/                  # 公司工作助手 Web
+└── python/
+    ├── paa_core/         # 桌面录音、SQLite、转写与纪要
+    └── paa_server/       # 公司 API、任务、harness 与迁移
+deploy/company/          # 公司 Web／API 的独立部署
 tests/                   # 桌面、Python 与真实 Electron 场景
 scripts/                 # 安装与验证辅助脚本
 docs/                    # 产品定义与架构
@@ -185,3 +190,58 @@ renderer 启用沙箱与上下文隔离，关闭 Node integration。preload 仅�
 ## 许可证
 
 [MIT](LICENSE)。
+
+## 公司工作助手 Web（Spec 008）
+
+Electron 继续使用 `npm run dev`。公司账号、员工图文语音、工作进展和汇报看板使用独立 Web＋服务端，不读取或上传 Electron 的会议、模型与密钥。电脑与手机使用同一个网址，布局按宽度自动调整。
+
+### 本地启动
+
+准备 Node 24、Python 3.12、Docker Desktop 和 FFmpeg。服务端使用独立环境，安装过程不下载转写模型：
+
+```sh
+npm ci
+python3.12 -m venv .venv-server
+.venv-server/bin/python -m pip install -r requirements-server.lock
+cp .env.company.example .env.company
+```
+
+Windows 使用 `py -3.12 -m venv .venv-server`，安装命令改为 `.venv-server\Scripts\python.exe -m pip install -r requirements-server.lock`。其余 npm 命令相同。
+
+编辑 `.env.company`，设置随机 `POSTGRES_PASSWORD` 并同步 `DATABASE_URL`；`PAA_FFMPEG` 可指定 FFmpeg 可执行文件路径。不要提交这个文件，也不要使用 Electron 的配置文件替代。然后：
+
+```sh
+docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d
+npm run db:company
+npm run admin:company
+npm run dev:company
+```
+
+`admin:company` 通过交互提示创建首家公司和管理员，密码不写入命令历史；公司已初始化时不会覆盖。打开 [本地 Web](http://127.0.0.1:5174)，管理员在“成员管理”创建员工临时账号；员工首次登录需修改密码。`dev:company` 同时启动 Web、API 与处理进程，Ctrl+C 一起停止。也可分别执行 `dev:web`、`dev:server`、`dev:worker`。API 修改后重启，Web 有热更新。
+
+配置 `PAA_AGENT_BASE_URL`、`PAA_AGENT_API_KEY`、`PAA_AGENT_MODEL` 及独立 ASR 地址、凭证、模型后重启服务；参考模型和受限参数见 `.env.company.example`。部署方需自行开通相应服务和额度。未配置时可登录、管理账号、保存消息、手动编辑／提交报告；AI 处理明确提示暂不可用，保留输入，绝不生成演示回复。模型配置只在服务端保存，不提供到浏览器。
+
+员工发送的原始工作消息、助手回复与附件对公司管理员可见；尚未发送的输入、独立进展编辑草稿和未提交报告仅本人可见。工作进展需员工确认，报告需员工提交。自动日报／周报初始不启用，管理员配置有效日期和时间后生效。
+
+### 服务端和 Web 验证
+
+`npm run typecheck:web`、`npm run test:web`、`npm run build:web` 分别检查新 Web 的类型、快速单元和普通构建。`npm run test:server` 在真实 PostgreSQL 中验证权限、事务、幂等、任务恢复与实际 harness 工具流程，外部模型和 ASR 使用受控响应；不会调用付费服务。
+
+本地测试使用单独的 `paa_company_test` 数据库，在 `.env.company` 配置 `DATABASE_TEST_URL`。先创建该库，再临时将 `DATABASE_URL` 指向测试库执行一次 `npm run db:company`，恢复开发地址后运行测试。测试不清空开发库、录音或本地模型；它只清理自己创建的测试实体。只跑一个文件可用 `npm run test:server -- tests/server/test_boundaries.py`。服务端环境及数据库都独立于桌面 `.venv` 与 SQLite。
+
+CI 原触发方式保持不变；新增的 **Company API and Web** 在单个 Linux＋PostgreSQL 环境跑服务端固定样本、Web 单元／类型／普通构建，纳入 `CI required`。不运行真实 API、实体麦克风、模型下载或发行包。本地执行上述命令不触发远端 CI。
+
+### Linux 单机部署
+
+`deploy/company/compose.yml` 包含 Caddy、API、一个处理进程和 PostgreSQL。部署前设置 `.env.company` 的生产域名、`PAA_WEB_ORIGIN=https://你的域名`、数据库密码与模型配置；域名需解析到服务器，80／443 可达。生产 cookie 强制 Secure；PostgreSQL 不发布公网端口。
+
+```sh
+docker compose --env-file .env.company -f deploy/company/compose.yml up --build -d
+docker compose --env-file .env.company -f deploy/company/compose.yml exec api python -m paa_server.cli bootstrap-admin
+```
+
+迁移任务先成功，API 和处理进程才启动；Web 独立构建后由 Caddy 同源提供。生产镜像固定 Python、数据库和 FFmpeg 版本，服务端依赖使用独立锁文件；日后安全升级需更新固定版本并验证。部署本身不会自动准备模型凭证。手机前台录音需要有效 HTTPS；手机访问开发电脑 IP 不享有 localhost 的安全例外，也不保证锁屏持续采集。
+
+2 核 2 GB 是试点部署起点，尚未通过实际负载验证。默认单处理并发、数据库小连接池，AI／ASR 由外部服务承担。每任务限制调用、工具次数、时间和 token 预算，另有公司每日调用额度；不将请求已发出但结果未知的情况自动重跑。
+
+升级前在维护窗口备份，设置已有的私有 `PAA_BACKUP_DIR` 后运行 `deploy/company/backup.sh`：暂时停止 Web／API／处理进程，保存 PostgreSQL dump、媒体与校验清单，然后恢复服务，保留最近 7 份完成的备份。备份应由运维复制到异机位置。恢复时先验证 SHA256SUMS，停止写服务，使用对应镜像将 dump 导入空库、媒体还原到私有卷，核对后再启动；不要把新 schema 自动降级到旧版本。本轮未执行云部署、真实付费模型联调、手机实机录音或生产恢复演练。

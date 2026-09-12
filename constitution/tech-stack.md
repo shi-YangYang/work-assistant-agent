@@ -43,7 +43,10 @@ Node / Electron / Python 各自的运行边界、接口与退出行为见 [架�
 | 内容 | 位置 |
 | --- | --- |
 | 桌面主进程、preload、子进程客户端 | `src/desktop/` |
-| React 界面 | `src/renderer/` |
+| Electron React 界面 | `src/renderer/` |
+| 公司 Web／共用语义主题 | `src/web/`、`src/ui/theme.css` |
+| 公司 API、任务与业务 harness | `src/python/paa_server/` |
+| 公司部署 | `deploy/company/` |
 | TS 共享契约 | `src/shared/` |
 | Python 核心 | `src/python/paa_core/` |
 | 测试 | `tests/` |
@@ -87,15 +90,32 @@ CI 在 PR 上运行双平台单元／模块测试和普通构建，格式、Lint
 - 外观选择保存在 renderer 的 `localStorage`，键为 `paa.appearance.theme`；只保存 `system` / `light` / `dark`，不存服务密钥。页面切换不修改 renderer URL 或 IPC 信任边界，界面要求见 [Spec 006](../specs/spec-006-interface-and-navigation/spec.md)。
 - Spec 007 的本地检索／导出由有界后台资料 worker 处理；导出先创建私有 SQLite 一致快照，再以 16 KiB 分块交给主进程写入用户所选位置。删除意图在文件清理前持久化，任务写入共享状态保护，失败保留重试入口。完整边界见 [Plan](../specs/spec-007-meeting-library/plan.md)。
 - 原始会议音频、转写、数据库和模型不进入版本库。
-- 不运行本地业务 HTTP 服务或云服务，不输出整个环境变量或凭证。
+- Electron 本地核心不监听业务 HTTP；公司 Web 使用独立 API 和数据库。不得输出整个环境变量或凭证，也不自动同步桌面资料。
 
 ## 后续能力方向
 
 - SQLite + 原始数据文件在 Spec 002 接入，后续数据扩展需独立设计 schema 迁移。
 - Spec 003 使用受管 spawn 工作进程、约 10 秒业务块和最多前后各 4 秒上下文，按静音边界分块；任务锁定配置，已处理位置与文字事务提交。具体模型 revision、文件清单与实测参数见决策 0007 和实施报告。
 - Spec 004 的接口、参数边界和密钥存储依据见 [决策 0008](../.ai/decisions/0008-meeting-minutes-provider.md) 与对应 Plan；工程验收及真实服务验证以该 Spec 的报告为准。
-- FastAPI、PostgreSQL、pgvector、LangGraph 当前不引入；是否需要由后续实际需求决定。
+- 目标架构采用共享服务端＋多种客户端；首期公司消息与汇报业务优先 Web，Electron 保留现有本地会议能力并在后续按需接入。[决策 0011](../.ai/decisions/0011-company-agent-direction.md) 已确认同仓库、独立入口与部署方案，Spec 008 处于 ACCEPTANCE。
+- Web 与 Electron 共用 `src/ui/theme.css`，Web 使用浏览器导航与响应式布局，不依赖 window.paa。完整交互约束见 [Spec 008](../specs/spec-008-meeting-followup/spec.md)。
+- 公司业务已新增 FastAPI／PostgreSQL 与实际 Deep Agents 工具流程；保留人工确认、权限和来源边界。真实模型／ASR、手机实机、完整生产部署和小服务器容量尚待外部验证，具体结果统一见 [实施报告](../specs/spec-008-meeting-followup/implementation.md)。
 - 录音独立于 ASR / LLM，分块策略可配置；后台推理不进入 renderer 或录音回调。
+
+## 公司 Web 与服务端基线
+
+| 范围 | 当前实现 |
+| --- | --- |
+| Web | 现有 React／TypeScript／Vite，React Router 7.18.3，独立输出 `out/web/` |
+| 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server` 与 `requirements-server.lock` |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；附件私有存储，独立于桌面 SQLite |
+| Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；固定授权业务工具、持久恢复、人工确认 |
+| 媒体 | Pillow 校验图片，FFmpeg 将有界短语音转成 WAV；外部图文／ASR 服务，未引入服务端 faster-whisper |
+| 部署 | Linux Docker Compose＋Caddy；API、单并发 worker 和 PostgreSQL；本机数据库与依赖已启动，完整镜像部署尚未验证 |
+
+`npm run dev:company` 同时运行 Web（5174）、API（8000）和 worker；`db:company` 初始化数据库，`admin:company` 交互创建首位管理员。`typecheck:web`、`test:web`、`test:server`、`build:web` 为新模块定向检查。环境准备、模型配置和部署步骤只在 [README](../README.md#公司工作助手-webspec-008) 维护。
+
+公司配置来自忽略的 `.env.company`；模型凭证仅供服务端使用。开发数据与自动测试库分离；测试不读取 Electron 密钥、会议或模型。新增 CI 模块使用单个 Linux／PostgreSQL 环境，不调用真实模型或麦克风。
 
 ## 验证边界
 
