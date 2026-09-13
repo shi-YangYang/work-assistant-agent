@@ -20,9 +20,9 @@ from langsmith import tracing_context
 from pydantic import PrivateAttr
 from sqlalchemy import func, select
 
-from ..models import Job, Member, Message, ModelUsage, ProgressDraft, Report, WorkItem, now
+from ..models import Conversation, Job, Member, Message, ModelUsage, ProgressDraft, Report, WorkItem, WorkRevision, now
 from ..schemas import Progress, ReportContent
-from ..service import owned, report_inputs, work_dto
+from ..service import active_message, owned, work_dto
 
 ALLOWED_TOOLS = frozenset({'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'draft_report', 'read_file'})
 EXCLUDED_TOOLS = frozenset({'ls', 'glob', 'grep', 'write_file', 'edit_file', 'execute', 'write_todos', 'task'})
@@ -71,10 +71,16 @@ class RunContext:
 
 
 async def lease(db, context):
+    actor = await db.scalar(select(Member).where(Member.id == context.owner_id).with_for_update())
     job = await db.scalar(select(Job).where(Job.id == context.job_id).with_for_update())
-    actor = await db.get(Member, context.owner_id)
     if job is None or job.state != 'running' or job.fence != context.fence or job.lease_until < now() or not actor or not actor.active or actor.company_id != context.company_id:
         raise LostLease()
+    if job.kind == 'message':
+        await active_message(db, job.target_id, actor)
+    else:
+        await owned(db, Report, job.target_id, actor)
+        if actor.role != 'employee':
+            raise LostLease()
     if job.kind == 'message' and context.source_revision is not None:
         # Hold this lock through each write, so a transcript PATCH cannot commit
         # between validating its revision and saving a tool result or final reply.
@@ -199,7 +205,7 @@ async def find_work_items(query: str, runtime: ToolRuntime[RunContext]) -> str:
     context = runtime.context
     async with context.sessions() as db:
         _, actor = await lease(db, context)
-        statement = select(WorkItem).where(WorkItem.owner_id == actor.id, WorkItem.company_id == actor.company_id)
+        statement = select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == actor.id, WorkItem.company_id == actor.company_id)
         terms = re.findall(r'[^\W_]+', query[:120])[:8]
         for term in terms:
             statement = statement.where(WorkItem.title.ilike(f'%{term}%'))
@@ -228,6 +234,13 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext])
         message = await referenced_record(db, Message, message_id, actor)
         if message is None:
             return '消息不存在或无权查看。请使用本次上下文中的原消息 ID，不要猜测 ID。'
+        current_job, _ = await lease(db, runtime.context)
+        if current_job.kind == 'message':
+            current = await owned(db, Message, current_job.target_id, actor)
+            if message.conversation_id != current.conversation_id:
+                source = await db.scalar(select(WorkRevision.id).join(WorkItem, WorkItem.id == WorkRevision.work_id).where(WorkRevision.owner_id == actor.id, WorkItem.deleted.is_(False), WorkRevision.source_ids.contains([message.id])).limit(1))
+                if source is None:
+                    return '这条消息不属于当前会话或已确认工作来源。'
         drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.owner_id == actor.id, ProgressDraft.company_id == actor.company_id).order_by(ProgressDraft.created_at.desc()).limit(20))).all()
         return clip({'id': message.id, 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], 'text': message.text, 'transcript': message.transcript, 'reply': message.reply})
 
@@ -290,8 +303,10 @@ async def draft_report(completed: str, ongoing: str, blockers: str, next: str, r
             report.candidate = {'content': content, 'sourceIds': source_ids}
         else:
             report.content, report.source_ids = content, source_ids
-            report.revision += 1
-            report.updated_at = now()
+        # Candidates also change the source material included in deletion. A
+        # confirmation opened before this write must not authorize those sources.
+        report.revision += 1
+        report.updated_at = now()
         job.result = {**job.result, 'reportSaved': True}
         return '报告草稿已保存，等待员工审阅；尚未发布。'
 
@@ -319,7 +334,8 @@ def build_graph(settings, checkpointer, context, model=None):
 
 
 async def invoke_harness(context, checkpointer, content, model=None):
-    graph = build_graph(context.settings, checkpointer, context, model)
+    from .checkpoints import GuardedSaver
+    graph = build_graph(context.settings, GuardedSaver(checkpointer, context), context, model)
     async with context.sessions() as db:
         job, actor = await lease(db, context)
         # Checkpoints include pending executable tools. Never share them between jobs,
@@ -357,9 +373,11 @@ async def conversation_history(context, job, content):
     async with context.sessions() as db:
         _, actor = await lease(db, context)
         current = await owned(db, Message, job.target_id, actor)
-        rows = list((await db.scalars(select(Message).where(Message.owner_id == actor.id, Message.company_id == actor.company_id, Message.id != current.id, Message.created_at <= current.created_at).order_by(Message.created_at.desc(), Message.id.desc()).limit(12))).all())
+        rows = list((await db.scalars(select(Message).where(Message.owner_id == actor.id, Message.company_id == actor.company_id, Message.id != current.id, Message.deleted.is_(False), Message.conversation_id == current.conversation_id, Message.created_at <= current.created_at).order_by(Message.created_at.desc(), Message.id.desc()).limit(12))).all())
         if current.reply_to:
-            parent = await owned(db, Message, current.reply_to, actor)
+            parent = await active_message(db, current.reply_to, actor)
+            if parent.conversation_id != current.conversation_id:
+                raise ValueError('回复上下文不属于当前会话')
             # Prioritize an explicit clarification source even outside the recent window.
             rows = [parent, *(row for row in rows if row.id != parent.id)]
         selected = []

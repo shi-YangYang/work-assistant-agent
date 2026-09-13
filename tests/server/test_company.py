@@ -111,7 +111,7 @@ async def test_security_idempotency_disabled_account_and_request_validation(setu
     assert (await c['employee'].post('/api/v1/messages', json=payload, headers={**keyed(), 'X-CSRF-Token':'invalid'})).status_code == 403
     assert (await c['employee'].post('/api/v1/messages', json=payload, headers={**keyed(), 'Origin':'https://other.invalid'})).status_code == 403
     assert (await c['employee'].get('/api/v1/members')).status_code == 403
-    assert (await c['admin'].patch('/api/v1/members/' + users['admin'].id, json={'active':False})).status_code == 409
+    assert (await c['admin'].patch('/api/v1/members/' + users['admin'].id, json={'active':False})).status_code == 404
     assert (await c['admin'].patch('/api/v1/members/' + users['employee'].id, json={'active':False})).status_code == 200
     assert (await c['employee'].get('/api/v1/messages')).status_code == 401
     duplicate = await c['peer'].post('/api/v1/progress-drafts/confirm', json={'items':[{'id':'same','expectedRevision':1}]*2}, headers=keyed())
@@ -142,7 +142,7 @@ async def test_missing_provider_is_honest_and_expired_lease_requires_manual_retr
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(job,sessions,settings,saver)
     message = (await c['employee'].get('/api/v1/messages/'+result['messageId'])).json()
-    assert message['job']['state']=='failed' and '暂未配置' in message['job']['error']
+    assert message['job']['state']=='failed' and '未配置' in message['job']['error']
     assert not message['reply'] and not message['drafts']
     async with sessions.begin() as db:
         job = await db.get(Job,result['jobId']); job.state='running';job.lease_until=now()-timedelta(seconds=1);job.request_started=True
@@ -204,8 +204,8 @@ async def test_team_excludes_admins_and_protects_other_admin_materials(setup):
                 assert (await client.get(f"/api/v1/team/members/{users[target].id}/{section}")).status_code == 404
         assert (await client.get(f"/api/v1/team/members/{users['employee'].id}/messages")).status_code == 200
         assert (await client.get('/api/v1/messages/' + employee_message['messageId'])).status_code == 200
-        # Account administration remains available; it is separate from employee reporting.
-        assert len((await client.get('/api/v1/members')).json()['items']) == 3
+        # Member management contains only employees, not administrator accounts.
+        assert len((await client.get('/api/v1/members')).json()['items']) == 1
     for path in (f"/messages/{sent['messageId']}", f'/work-items/{work.id}', f'/reports/{report.id}', f'/reports/{report.id}/sources', attachment['url'].removeprefix('/api/v1')):
         assert (await clients['peer'].get('/api/v1' + path)).status_code == 404
         assert (await clients['admin'].get('/api/v1' + path)).status_code == 200

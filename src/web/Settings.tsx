@@ -1,3 +1,7 @@
+import { ReportActions } from './RecordManagement'
+import { companyTimezones, timezoneLabel } from './timezones'
+import { TimeField } from './ui'
+import { usePagedResource } from './paged-resource'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router'
 import { ChevronRight, RefreshCw, UserPlus } from 'lucide-react'
@@ -82,7 +86,7 @@ export function AccountPage({
             <div>
               <h3>{member?.name}</h3>
               <p className="muted">
-                {member?.username} · {member?.role === 'admin' ? '老板／管理员' : '员工'}
+                {member?.username} · {member?.role === 'admin' ? '管理员' : '用户'}
               </p>
             </div>
           </div>
@@ -186,7 +190,7 @@ export function RulesPage() {
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && !canEdit && (
         <div className="rule-summary">
-          <p className="muted">公司时区：{value.timezone}</p>
+          <p className="muted">公司时区：{timezoneLabel(value.timezone)}</p>
           {(['daily', 'weekly'] as const).map((kind) => (
             <section className="panel schedule-panel" key={kind}>
               <div className="row-between">
@@ -248,20 +252,17 @@ export function RulesPage() {
         >
           <label className="timezone-field">
             公司时区
-            <input
+            <select
               value={value.timezone}
               disabled={!canEdit}
-              list="timezones"
               onChange={(e) => setDraft('rules', { ...value, timezone: e.target.value })}
-            />
-            <datalist id="timezones">
-              <option>Asia/Shanghai</option>
-              <option>Asia/Hong_Kong</option>
-              <option>Asia/Tokyo</option>
-              <option>Europe/London</option>
-              <option>America/New_York</option>
-              <option>UTC</option>
-            </datalist>
+            >
+              {[...new Set([...companyTimezones, value.timezone])].map((zone) => (
+                <option key={zone} value={zone}>
+                  {timezoneLabel(zone)}
+                </option>
+              ))}
+            </select>
           </label>
           {(['daily', 'weekly'] as const).map((kind) => (
             <fieldset disabled={!canEdit} className="panel schedule-panel" key={kind}>
@@ -302,20 +303,18 @@ export function RulesPage() {
               <div className="two-columns">
                 <label>
                   草稿生成时间
-                  <input
-                    type="time"
+                  <TimeField
                     required={value[kind].enabled}
                     value={value[kind].generateTime}
-                    onChange={(e) => update(kind, { ...value[kind], generateTime: e.target.value })}
+                    onChange={(time) => update(kind, { ...value[kind], generateTime: time })}
                   />
                 </label>
                 <label>
                   提交截止时间
-                  <input
-                    type="time"
+                  <TimeField
                     required={value[kind].enabled}
                     value={value[kind].deadline}
-                    onChange={(e) => update(kind, { ...value[kind], deadline: e.target.value })}
+                    onChange={(time) => update(kind, { ...value[kind], deadline: time })}
                   />
                 </label>
               </div>
@@ -329,7 +328,7 @@ export function RulesPage() {
               load={() => api('/settings/report-rules')}
               render={(latest) => (
                 <>
-                  <p>公司时区：{latest.timezone}</p>
+                  <p>公司时区：{timezoneLabel(latest.timezone)}</p>
                   {(['daily', 'weekly'] as const).map((kind) => (
                     <p key={kind}>
                       {kind === 'daily' ? '日报' : '周报'}：
@@ -398,7 +397,7 @@ export function MembersPage() {
             <div className="record-main">
               <h3>{member.name}</h3>
               <p>
-                {member.username} · {member.role === 'admin' ? '老板／管理员' : '员工'} ·{' '}
+                {member.username} · {member.role === 'admin' ? '管理员' : '用户'} ·{' '}
                 {member.active ? '正常' : '已停用'}
               </p>
             </div>
@@ -435,7 +434,7 @@ export function MembersPage() {
                   await write('/members', {
                     name: form.get('name'),
                     username: form.get('username'),
-                    role: form.get('role'),
+                    role: 'employee',
                     password: form.get('password'),
                   })
                 setCreate(false)
@@ -463,13 +462,6 @@ export function MembersPage() {
                     pattern="[a-zA-Z0-9._@-]{3,80}"
                     autoComplete="off"
                   />
-                </label>
-                <label>
-                  角色
-                  <select name="role">
-                    <option value="employee">员工</option>
-                    <option value="admin">老板／管理员</option>
-                  </select>
                 </label>
               </>
             )}
@@ -652,18 +644,12 @@ export function TeamMemberPage() {
   const tab = params.get('tab') ?? 'work'
   const kind = params.get('kind') ?? 'daily'
   const work = useResource<Page<Work> & { member: Member }>(`/team/members/${id}/work`, 30000)
-  const messages = useResource<Page<WorkMessage>>(
-    tab === 'messages' ? `/team/members/${id}/messages` : null,
-    30000,
-  )
+  const messages = usePagedResource<WorkMessage>(`/team/members/${id}/messages`, 'createdAt', 30000)
   const reports = useResource<Page<Report>>(
     tab === 'reports' ? `/team/members/${id}/reports?kind=${kind}` : null,
     30000,
   )
-  const [older, setOlder] = useState<WorkMessage[]>([])
-  const [cursor, setCursor] = useState<string | null | undefined>(undefined)
-  const { notify } = useWorkspace()
-  const nextCursor = cursor === undefined ? messages.data?.nextCursor : cursor
+  const nextCursor = messages.data?.nextCursor
   return (
     <div className="page">
       <div className="page-heading">
@@ -695,25 +681,11 @@ export function TeamMemberPage() {
         ))}
       {tab === 'messages' && (
         <div className="raw-messages">
-          {[...(messages.data?.items ?? []), ...older]
-            .filter((m, i, all) => all.findIndex((x) => x.id === m.id) === i)
-            .map((m) => (
-              <MessageCard key={m.id} message={m} onChange={messages.refresh} />
-            ))}
+          {messages.data?.items.map((m) => (
+            <MessageCard key={m.id} message={m} onChange={messages.refresh} />
+          ))}
           {nextCursor && (
-            <button
-              onClick={async () => {
-                try {
-                  const page = await api<Page<WorkMessage>>(
-                    `/team/members/${id}/messages?cursor=${nextCursor}`,
-                  )
-                  setOlder([...older, ...page.items])
-                  setCursor(page.nextCursor)
-                } catch (e) {
-                  notify((e as Error).message)
-                }
-              }}
-            >
+            <button disabled={messages.loading} onClick={messages.loadMore}>
               加载更早上报
             </button>
           )}
@@ -738,23 +710,25 @@ export function TeamMemberPage() {
           </div>
           <div className="record-list">
             {reports.data?.items.map((r) => (
-              <Link
-                key={r.id}
-                className="record-row"
-                to={`/reports/${r.id}`}
-                state={detailState(location)}
-              >
-                <div className="record-main">
-                  <h3>
-                    {r.period}
-                    {r.kind === 'weekly' ? ` — ${r.periodEnd}` : ''}
-                  </h3>
-                  <small>
-                    已提交第 {r.publishedRevision} 版 · {dateLabel(r.updatedAt)}
-                  </small>
-                </div>
-                <ChevronRight size={18} />
-              </Link>
+              <div className="record-row" key={r.id}>
+                <Link
+                  className="record-main report-entry-link"
+                  to={`/reports/${r.id}`}
+                  state={detailState(location)}
+                >
+                  <div className="record-main">
+                    <h3>
+                      {r.period}
+                      {r.kind === 'weekly' ? ` — ${r.periodEnd}` : ''}
+                    </h3>
+                    <small>
+                      已提交第 {r.publishedRevision} 版 · {dateLabel(r.updatedAt)}
+                    </small>
+                  </div>
+                  <ChevronRight size={18} />
+                </Link>
+                <ReportActions report={r} onDeleted={reports.refresh} />
+              </div>
             ))}
           </div>
           {!reports.data?.items.length && (

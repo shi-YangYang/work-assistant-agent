@@ -29,7 +29,7 @@ async def claim(sessions, owner_id=None):
             job.lease_until, job.fence, job.updated_at = None, job.fence + 1, now()
         await db.flush()
         running = aliased(Job)
-        job = await db.scalar(select(Job).join(Member, Member.id == Job.owner_id).where(Job.state == 'queued', Member.active.is_(True), ~exists(select(running.id).where(running.owner_id == Job.owner_id, running.state == 'running')), *([Job.owner_id == owner_id] if owner_id else [])).order_by(Job.created_at).with_for_update(of=(Job, Member), skip_locked=True).limit(1))
+        job = await db.scalar(select(Job).join(Member, Member.id == Job.owner_id).where(Job.state == 'queued', Member.active.is_(True), ((Job.kind != 'report') | (Member.role == 'employee')), ~exists(select(running.id).where(running.owner_id == Job.owner_id, running.state == 'running')), *([Job.owner_id == owner_id] if owner_id else [])).order_by(Job.created_at).with_for_update(of=(Job, Member), skip_locked=True).limit(1))
         if not job:
             return None
         job.state, job.fence, job.lease_until, job.updated_at = 'running', job.fence + 1, now() + timedelta(seconds=90), now()
@@ -172,13 +172,15 @@ async def schedule_once(sessions, instant=None):
                 due = datetime.combine(local.date(), time.fromisoformat(rule['generateTime']), zone)
                 if due > local or due <= company.rules_effective_at:
                     continue
-                members = (await db.scalars(select(Member).where(Member.company_id == company.id, Member.active.is_(True)))).all()
+                members = (await db.scalars(select(Member).where(Member.company_id == company.id, Member.active.is_(True), Member.role == 'employee'))).all()
                 for member in members:
                     await ensure_report(db, member, kind, local.date(), scheduled=True)
 
 
 async def maintenance(sessions, settings):
+    from .deletion import clean_files
     async with sessions.begin() as db:
+        await clean_files(db, settings)
         old = (await db.scalars(select(Attachment).where(Attachment.message_id.is_(None), Attachment.created_at < now() - timedelta(hours=24)).with_for_update(skip_locked=True))).all()
         for attachment in old:
             (settings.media_dir / attachment.id).unlink(missing_ok=True)

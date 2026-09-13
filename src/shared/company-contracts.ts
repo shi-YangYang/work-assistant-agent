@@ -29,6 +29,12 @@ export interface Progress {
   blocker: string
   nextStep: string
 }
+export interface Conversation {
+  id: string
+  title: string
+  revision: number
+  updatedAt: string
+}
 export interface Work extends Progress {
   id: string
   ownerId: string
@@ -39,6 +45,7 @@ export interface Work extends Progress {
     revision: number
     content: Progress
     sourceIds: string[]
+    deletedSourceIds?: string[]
     createdAt: string
   }[]
 }
@@ -55,12 +62,20 @@ export interface Job {
   id: string
   kind: 'message' | 'report'
   targetId: string
-  state: 'queued' | 'running' | 'awaiting_input' | 'succeeded' | 'failed' | 'awaiting_retry'
+  state:
+    | 'queued'
+    | 'running'
+    | 'awaiting_input'
+    | 'succeeded'
+    | 'failed'
+    | 'awaiting_retry'
+    | 'cancelled'
   phase: string
   error: string
   updatedAt: string
 }
 export interface WorkMessage {
+  conversationId: string | null
   id: string
   ownerId: string
   text: string
@@ -92,6 +107,7 @@ export interface Report {
   sourceIds: string[]
   revision: number
   publishedRevision: number
+  managementRevision: number
   updatedAt: string
   job: Job | null
   revisions: {

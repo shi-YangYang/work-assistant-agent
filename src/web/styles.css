@@ -2076,3 +2076,258 @@ dialog::backdrop {
     padding: 10px 0;
   }
 }
+
+/* Conversation navigation belongs to the assistant workspace, not the global nav. */
+.assistant-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.conversation-sidebar {
+  width: 230px;
+  flex-shrink: 0;
+  padding: 16px 10px;
+  border-right: 1px solid var(--line);
+  background: var(--canvas);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+.conversation-sidebar-heading,
+.conversation-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.conversation-sidebar-heading h2 {
+  flex: 1;
+  font-size: 14px;
+  margin: 0;
+}
+.conversation-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.conversation-search svg {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+.conversation-search input {
+  min-width: 0;
+  padding-left: 30px;
+}
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.conversation-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 7px;
+}
+.conversation-row:hover {
+  background: var(--subtle);
+}
+.conversation-row.active {
+  background: var(--selection);
+  color: var(--accent);
+}
+.conversation-row > a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.conversation-row > a svg {
+  flex-shrink: 0;
+}
+.conversation-row > a span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.conversation-row .icon-button {
+  width: 28px;
+  height: 28px;
+}
+.conversation-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+.conversation-heading {
+  min-height: 57px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.conversation-heading h2 {
+  flex: 1;
+  font-size: 15px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-toggle {
+  display: none;
+}
+.conversation-main > .assistant-page {
+  flex: 1;
+  min-height: 0;
+}
+.composer textarea {
+  height: 128px;
+  min-height: 128px;
+  max-height: 128px;
+  overflow-y: auto;
+  resize: none;
+}
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+.composer-wrap {
+  max-height: 65%;
+}
+.time-field {
+  display: flex;
+  position: relative;
+}
+.time-field > input {
+  width: 100%;
+  padding-right: 40px;
+}
+.time-field > .icon-button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.time-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.time-picker label {
+  min-width: 90px;
+}
+.report-entry-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.breadcrumbs > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.breadcrumbs > span:not(:last-of-type) {
+  flex-shrink: 2;
+}
+.breadcrumbs a,
+.breadcrumbs strong {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breadcrumbs a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.breadcrumbs a:hover {
+  color: var(--text);
+}
+.breadcrumbs svg {
+  flex-shrink: 0;
+}
+.breadcrumb-overflow {
+  display: none;
+  order: 1;
+}
+.breadcrumb-path {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (max-width: 1100px) {
+  .conversation-sidebar {
+    width: 190px;
+  }
+  .conversation-heading {
+    padding: 10px 16px;
+  }
+}
+@media (max-width: 760px) {
+  .conversation-sidebar {
+    display: none;
+    width: 100%;
+    border: 0;
+  }
+  .conversations-expanded .conversation-sidebar {
+    display: flex;
+  }
+  .conversations-expanded .conversation-main {
+    display: none;
+  }
+  .conversation-toggle {
+    display: inline-flex;
+  }
+  .conversation-heading {
+    padding: 8px 12px;
+  }
+  .composer textarea {
+    height: 96px;
+    min-height: 96px;
+    max-height: 96px;
+  }
+  .breadcrumbs .breadcrumb-middle {
+    display: none;
+  }
+  .breadcrumb-overflow {
+    display: inline-flex;
+  }
+  .breadcrumbs > span:last-of-type {
+    order: 2;
+  }
+  .report-entry-link {
+    flex-wrap: wrap;
+  }
+}
+@media (max-height: 650px) {
+  .composer textarea {
+    height: 96px;
+    min-height: 96px;
+    max-height: 96px;
+  }
+}

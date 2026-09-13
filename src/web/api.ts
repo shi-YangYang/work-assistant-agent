@@ -58,7 +58,10 @@ export function useResource<T>(path: string | null, interval = 0) {
           setError('')
         }
       } catch (e) {
-        if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '连接失败')
+        if (!controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : '连接失败')
+          if (e instanceof ApiError && [403, 404].includes(e.status)) setLoaded(null)
+        }
       }
       if (interval && !controller.signal.aborted)
         timer = setTimeout(load, document.hidden ? Math.max(interval, 30000) : interval)

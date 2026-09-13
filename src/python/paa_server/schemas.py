@@ -33,7 +33,16 @@ class ResetPassword(Input):
     password: str = Field(min_length=12, max_length=128)
 
 
+class ConversationCreate(Input):
+    title: str = Field(default='新会话', min_length=1, max_length=120)
+
+
+class ConversationEdit(ConversationCreate):
+    expectedRevision: int = Field(ge=1)
+
+
 class SendMessage(Input):
+    conversationId: str | None = None
     text: str = Field(default='', max_length=8000)
     attachmentIds: list[str] = Field(default_factory=list, max_length=4)
     replyTo: str | None = None

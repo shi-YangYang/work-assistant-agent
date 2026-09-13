@@ -1,5 +1,8 @@
+import { DeleteRecord, ReportActions } from './RecordManagement'
+import { timezoneLabel } from './timezones'
+import { usePagedResource } from './paged-resource'
 import { useState } from 'react'
-import { Link, useLocation, useParams, useSearchParams } from 'react-router'
+import { Link, Navigate, useNavigate, useLocation, useParams, useSearchParams } from 'react-router'
 import { ChevronRight, RefreshCw, FileText } from 'lucide-react'
 import type {
   Page,
@@ -22,7 +25,7 @@ import {
   Status,
 } from './ui'
 import { JobNotice, ProgressFields } from './Assistant'
-import { detailState } from './navigation'
+import { detailReturn, detailState } from './navigation'
 
 export function WorkList({
   items,
@@ -34,6 +37,7 @@ export function WorkList({
   refresh: () => void
 }) {
   const [editing, setEditing] = useState<Work | null>(null)
+  const [deleting, setDeleting] = useState<Work | null>(null)
   const location = useLocation()
   return (
     <div className="record-list">
@@ -57,7 +61,10 @@ export function WorkList({
           {own ? (
             <Actions>
               <button role="menuitem" onClick={() => setEditing(work)}>
-                更正工作进展
+                编辑工作
+              </button>
+              <button role="menuitem" className="danger" onClick={() => setDeleting(work)}>
+                删除工作
               </button>
             </Actions>
           ) : (
@@ -65,6 +72,19 @@ export function WorkList({
           )}
         </div>
       ))}
+      {deleting && (
+        <DeleteRecord
+          kind="work-items"
+          id={deleting.id}
+          title={deleting.title}
+          revision={deleting.revision}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setDeleting(null)
+            refresh()
+          }}
+        />
+      )}
       {editing && (
         <WorkEditor
           work={editing}
@@ -159,6 +179,7 @@ function WorkEditor({
               expectedRevision: stored?.revision ?? work.revision,
             })
             setDraft(key, undefined)
+            window.dispatchEvent(new Event('paa-record-updated'))
             onSaved()
           } catch (e) {
             setError((e as Error).message)
@@ -209,6 +230,8 @@ function WorkEditor({
   )
 }
 export function WorkDetail() {
+  const navigate = useNavigate()
+  const [deleting, setDeleting] = useState(false)
   const location = useLocation()
   const { id } = useParams()
   const { data, error, refresh } = useResource<Work>(`/work-items/${id}`)
@@ -225,7 +248,14 @@ export function WorkDetail() {
               <h2>{data.title}</h2>
             </div>
             {data.ownerId === identity.member.id && (
-              <button onClick={() => setEditing(true)}>更正进展</button>
+              <Actions label="管理工作">
+                <button role="menuitem" onClick={() => setEditing(true)}>
+                  编辑工作
+                </button>
+                <button role="menuitem" className="danger" onClick={() => setDeleting(true)}>
+                  删除工作
+                </button>
+              </Actions>
             )}
           </div>
           <div className="panel">
@@ -236,6 +266,19 @@ export function WorkDetail() {
               更新于 {dateLabel(data.updatedAt)} · 第 {data.revision} 版
             </small>
           </div>
+          {deleting && (
+            <DeleteRecord
+              kind="work-items"
+              id={data.id}
+              title={data.title}
+              revision={data.revision}
+              onClose={() => setDeleting(false)}
+              onDeleted={() => {
+                const back = detailReturn(location.pathname, location.state)
+                navigate(back.path, { state: back.state, replace: true })
+              }}
+            />
+          )}
           <h3>进展记录与来源</h3>
           <div className="timeline">
             {data.history?.map((h) => (
@@ -245,11 +288,17 @@ export function WorkDetail() {
                 </small>
                 <p>{h.content.summary}</p>
                 {h.sourceIds.length ? (
-                  h.sourceIds.map((source) => (
-                    <Link key={source} to={`/messages/${source}`} state={detailState(location)}>
-                      查看原始上报
-                    </Link>
-                  ))
+                  h.sourceIds.map((source) =>
+                    h.deletedSourceIds?.includes(source) ? (
+                      <span className="muted" key={source}>
+                        原始消息已删除
+                      </span>
+                    ) : (
+                      <Link key={source} to={`/messages/${source}`} state={detailState(location)}>
+                        查看原始上报
+                      </Link>
+                    ),
+                  )
                 ) : (
                   <small>员工手动更正</small>
                 )}
@@ -293,12 +342,12 @@ export function ReportsPage() {
   const location = useLocation()
   const [params, setParams] = useSearchParams()
   const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
-  const { data, error, refresh } = useResource<Page<Report>>(`/reports?kind=${kind}`, 2000)
+  const { data, error, refresh, loadMore, loading } = usePagedResource<Report>(
+    `/reports?kind=${kind}`,
+    'period',
+    2000,
+  )
   const rules = useResource<Rules>('/settings/report-rules')
-  const [older, setOlder] = useState<{ kind: string; items: Report[]; cursor?: string | null }>({
-    kind,
-    items: [],
-  })
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
   const [showRules, setShowRules] = useState(false)
@@ -362,14 +411,12 @@ export function ReportsPage() {
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {data?.items.length ? (
         <div className="record-list">
-          {[...data.items, ...(older.kind === kind ? older.items : [])]
-            .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
-            .map((report) => (
+          {data.items.map((report) => (
+            <div className="record-row report-row" key={report.id}>
               <Link
                 to={`/reports/${report.id}`}
                 state={detailState(location)}
-                className="record-row report-row"
-                key={report.id}
+                className="record-main report-entry-link"
               >
                 <FileText size={21} />
                 <div className="record-main">
@@ -392,21 +439,11 @@ export function ReportsPage() {
                 <time className="record-updated">{dateLabel(report.updatedAt)}</time>
                 <ChevronRight size={18} />
               </Link>
-            ))}
-          {(older.kind === kind && older.cursor !== undefined ? older.cursor : data.nextCursor) && (
-            <button
-              onClick={async () => {
-                const next = await api<Page<Report>>(
-                  `/reports?kind=${kind}&cursor=${older.kind === kind && older.cursor !== undefined ? older.cursor : data.nextCursor}`,
-                )
-                setOlder({
-                  kind,
-                  items: [...(older.kind === kind ? older.items : []), ...next.items],
-                  cursor: next.nextCursor,
-                })
-                notify('已加载更早报告')
-              }}
-            >
+              <ReportActions report={report} onDeleted={refresh} />
+            </div>
+          ))}
+          {data.nextCursor && (
+            <button disabled={loading} onClick={loadMore}>
               加载更早报告
             </button>
           )}
@@ -418,7 +455,7 @@ export function ReportsPage() {
         <Modal title="我的汇报安排" onClose={() => setShowRules(false)}>
           {rules.data ? (
             <>
-              <p>公司时区：{rules.data.timezone}</p>
+              <p>公司时区：{timezoneLabel(rules.data.timezone)}</p>
               {(['daily', 'weekly'] as const).map((k) => (
                 <div className="panel" key={k}>
                   <h3>{k === 'daily' ? '日报' : '周报'}</h3>
@@ -439,10 +476,13 @@ export function ReportsPage() {
   )
 }
 export function ReportDetail() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [deleting, setDeleting] = useState(false)
   const { id } = useParams()
   const { data, error, refresh } = useResource<Report>(`/reports/${id}`, 2000)
   const { identity, drafts, setDraft, notify } = useWorkspace()
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(new URLSearchParams(location.search).get('edit') === '1')
   const [submit, setSubmit] = useState(false)
   const [history, setHistory] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
@@ -450,7 +490,7 @@ export function ReportDetail() {
   const key = `report:${id}`
   const saved = drafts[key] as { content: ReportContent; revision: number } | undefined
   const value = saved?.content ?? data?.content
-  const own = data?.ownerId === identity.member.id
+  const own = data?.ownerId === identity.member.id && identity.member.role === 'employee'
   async function save() {
     if (!data || !value) return
     setBusy(true)
@@ -470,6 +510,8 @@ export function ReportDetail() {
       setBusy(false)
     }
   }
+  if (data?.ownerId === identity.member.id && identity.member.role === 'admin')
+    return <Navigate to="/team" replace />
   return (
     <div className="page narrow">
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
@@ -478,7 +520,7 @@ export function ReportDetail() {
           <div className="page-heading">
             <div>
               <span className="eyebrow">
-                {data.kind === 'daily' ? '日报' : '周报'} · {data.timezone}
+                {data.kind === 'daily' ? '日报' : '周报'} · {timezoneLabel(data.timezone)}
               </span>
               <h2>
                 {data.period}
@@ -486,6 +528,13 @@ export function ReportDetail() {
               </h2>
               <p>{data.publishedRevision ? `已提交第 ${data.publishedRevision} 版` : '草稿'}</p>
             </div>
+            {(identity.member.role === 'admin' || (own && !data.publishedRevision)) && (
+              <Actions label="管理报告">
+                <button role="menuitem" className="danger" onClick={() => setDeleting(true)}>
+                  删除报告
+                </button>
+              </Actions>
+            )}
             {own && !editing && (
               <div className="inline">
                 <button onClick={() => setEditing(!editing)}>编辑草稿</button>
@@ -499,6 +548,19 @@ export function ReportDetail() {
               </div>
             )}
           </div>
+          {deleting && (
+            <DeleteRecord
+              kind="reports"
+              id={data.id}
+              title={`${data.period}${data.kind === 'daily' ? '日报' : '周报'}`}
+              revision={data.managementRevision ?? data.revision}
+              onClose={() => setDeleting(false)}
+              onDeleted={() => {
+                const back = detailReturn(location.pathname, location.state)
+                navigate(back.path, { state: back.state, replace: true })
+              }}
+            />
+          )}
           {data.job && <JobNotice job={data.job} refresh={refresh} />}
           {data.candidate && own && (
             <div className="notice">
@@ -631,7 +693,15 @@ export function ReportDetail() {
 function ReportSources({ report }: { report: Report }) {
   const location = useLocation()
   const { data, error, refresh } = useResource<{
-    items: { id: string; workId: string; title: string; sourceIds: string[]; revision: number }[]
+    items: {
+      id: string
+      workId: string
+      title: string
+      sourceIds: string[]
+      deletedSourceIds?: string[]
+      workDeleted?: boolean
+      revision: number
+    }[]
   }>(`/reports/${report.id}/sources?revision=${report.revision}`)
   if (error) return <ErrorNotice retry={refresh}>{error}</ErrorNotice>
   return data?.items.length ? (
@@ -639,14 +709,24 @@ function ReportSources({ report }: { report: Report }) {
       <h3>工作依据</h3>
       {data.items.map((item) => (
         <div className="source-row" key={item.id}>
-          <Link to={`/work/${item.workId}`} state={detailState(location)}>
-            {item.title} · 第 {item.revision} 版
-          </Link>
-          {item.sourceIds.map((id) => (
-            <Link key={id} to={`/messages/${id}`} state={detailState(location)}>
-              原始上报
+          {item.workDeleted ? (
+            <span>{item.title} · 工作已删除</span>
+          ) : (
+            <Link to={`/work/${item.workId}`} state={detailState(location)}>
+              {item.title} · 第 {item.revision} 版
             </Link>
-          ))}
+          )}
+          {item.sourceIds.map((id) =>
+            item.deletedSourceIds?.includes(id) ? (
+              <span key={id} className="muted">
+                原始消息已删除
+              </span>
+            ) : (
+              <Link key={id} to={`/messages/${id}`} state={detailState(location)}>
+                原始上报
+              </Link>
+            ),
+          )}
         </div>
       ))}
     </section>

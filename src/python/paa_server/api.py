@@ -18,12 +18,12 @@ from starlette.concurrency import run_in_threadpool
 from .config import Settings
 from .db import database
 from .media import audio_mime, audio_wav, checksum, image_input
-from .models import Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, Session, WorkItem, WorkRevision, now
+from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, Session, WorkItem, WorkRevision, now
 from .model_schemas import RetryJob
 from .model_provider import ProviderError
 from .model_secrets import SecretUnavailable
-from .schemas import Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit
-from .service import confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
+from .schemas import ConversationCreate, ConversationEdit, Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit
+from .service import active_message, conversation_dto, default_conversation, confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
 
 passwords = PasswordHash.recommended()
 DUMMY_PASSWORD = passwords.hash('constant-not-a-login-password')
@@ -135,11 +135,11 @@ def create_app(settings=None):
         return target
 
     async def message_dto(db, item, actor):
-        attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == item.id))).all()
+        attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == item.id, Attachment.deleted.is_(False)))).all()
         job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
-        private = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id).order_by(ProgressDraft.created_at))).all() if actor.id == item.owner_id else []
+        private = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id, ProgressDraft.status != 'deleted').order_by(ProgressDraft.created_at))).all() if actor.id == item.owner_id else []
         statuses = {d.id: d.status for d in (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id))).all()}
-        return {'id': item.id, 'ownerId': item.owner_id, 'text': item.text, 'reply': item.reply, 'replyTo': item.reply_to, 'transcript': item.transcript, 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments], 'job': job_dto(job) if job else None, 'drafts': [draft_dto(d) for d in private], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions]}
+        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text, 'reply': item.reply, 'replyTo': item.reply_to, 'transcript': item.transcript, 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments], 'job': job_dto(job) if job else None, 'drafts': [draft_dto(d) for d in private], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions]}
 
     def attachment_dto(a):
         return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content'}
@@ -151,7 +151,7 @@ def create_app(settings=None):
             problem(404, '报告尚未提交或无权查看')
         job = await db.scalar(select(Job).where(Job.target_id == report.id, Job.kind == 'report').order_by(Job.created_at.desc()).limit(1)) if own else None
         public = revisions[0] if revisions else None
-        return {'id': report.id, 'ownerId': report.owner_id, 'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'timezone': report.timezone, 'content': report.content if own else public.content, 'candidate': report.candidate if own else None, 'sourceIds': report.source_ids if own else public.source_ids, 'revision': report.revision if own else public.revision, 'publishedRevision': report.published_revision, 'updatedAt': (report.updated_at if own else public.created_at).isoformat(), 'job': job_dto(job) if job else None, 'revisions': [{'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'submittedAt': r.created_at.isoformat()} for r in revisions]}
+        return {'id': report.id, 'ownerId': report.owner_id, 'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'timezone': report.timezone, 'content': report.content if own else public.content, 'candidate': report.candidate if own else None, 'sourceIds': report.source_ids if own else public.source_ids, 'revision': report.revision if own else public.revision, 'publishedRevision': report.published_revision, 'managementRevision': report.revision, 'updatedAt': (report.updated_at if own else public.created_at).isoformat(), 'job': job_dto(job) if job else None, 'revisions': [{'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'submittedAt': r.created_at.isoformat()} for r in revisions]}
 
     @app.get('/api/v1/health')
     async def health(db=DB):
@@ -201,10 +201,12 @@ def create_app(settings=None):
 
     @app.get('/api/v1/members')
     async def members(actor=ADMIN, db=DB):
-        return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id).order_by(Member.created_at))).all()]}
+        return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee').order_by(Member.created_at))).all()]}
 
     @app.post('/api/v1/members', status_code=201)
     async def add_member(body: MemberCreate, actor=ADMIN, db=DB):
+        if body.role != 'employee':
+            problem(403, '成员管理仅可添加员工')
         if await db.scalar(select(Member.id).where(Member.username == body.username.lower())):
             problem(409, '账号名称已被使用')
         item = Member(company_id=actor.company_id, username=body.username.lower(), name=body.name, role=body.role, password_hash=await run_in_threadpool(passwords.hash, body.password))
@@ -215,11 +217,7 @@ def create_app(settings=None):
     @app.patch('/api/v1/members/{identifier}')
     async def change_member(identifier: str, body: MemberPatch, actor=ADMIN, db=DB):
         await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
-        item = await visible_member(db, actor, identifier)
-        if not body.active and item.role == 'admin':
-            count = await db.scalar(select(func.count()).select_from(Member).where(Member.company_id == actor.company_id, Member.role == 'admin', Member.active.is_(True)))
-            if count <= 1 and item.active:
-                problem(409, '不能停用最后一名有效管理员')
+        item = await visible_member(db, actor, identifier, employee_only=True)
         item.active = body.active
         if not item.active:
             await db.execute(delete(Session).where(Session.member_id == item.id))
@@ -227,7 +225,7 @@ def create_app(settings=None):
 
     @app.post('/api/v1/members/{identifier}/reset-password')
     async def reset_password(identifier: str, body: ResetPassword, actor=ADMIN, db=DB):
-        item = await visible_member(db, actor, identifier)
+        item = await visible_member(db, actor, identifier, employee_only=True)
         item.password_hash = await run_in_threadpool(passwords.hash, body.password)
         item.must_change_password = True
         await db.execute(delete(Session).where(Session.member_id == item.id))
@@ -278,33 +276,47 @@ def create_app(settings=None):
     async def send_message(body: SendMessage, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
         prior, digest = await idem_begin(db, actor, 'message', idempotency_key, body.model_dump())
         if prior:
+            await active_message(db, prior['messageId'], actor)
             return prior
+        conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor)
         attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
         if any(a.message_id for a in attached) or len({a.kind for a in attached}) > 1 or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
             problem(422, '附件已使用或组合不受支持，请每次发送最多 4 张图片或一段语音')
         if body.replyTo:
-            await owned(db, Message, body.replyTo, actor)
-        item = Message(company_id=actor.company_id, owner_id=actor.id, text=body.text, reply_to=body.replyTo)
+            reply = await active_message(db, body.replyTo, actor)
+            if reply.conversation_id != conversation.id:
+                problem(422, '回复必须属于当前会话')
+        item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, text=body.text, reply_to=body.replyTo)
         db.add(item)
         await db.flush()
+        conversation.updated_at = now()
+        if conversation.title == '新会话':
+            conversation.title = body.text[:40] or ('图片上报' if attached[0].kind == 'image' else '语音上报')
+            conversation.revision += 1
         for a in attached:
             a.message_id = item.id
         job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id)
         db.add(job)
         await db.flush()
-        return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id})
+        return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})
 
-    async def list_messages(db, actor, owner_id, cursor, limit):
-        query = select(Message).where(Message.company_id == actor.company_id, Message.owner_id == owner_id)
+    async def list_messages(db, actor, owner_id, cursor, limit, conversation_id=None):
+        query = select(Message).where(Message.company_id == actor.company_id, Message.owner_id == owner_id, Message.deleted.is_(False), ~Message.conversation_id.in_(select(Conversation.id).where(Conversation.deleted.is_(True))))
+        if conversation_id:
+            query = query.where(Message.conversation_id == conversation_id)
         if cursor:
             anchor = await owned(db, Message, cursor, actor, read=True)
+            if anchor.owner_id != owner_id or (conversation_id and anchor.conversation_id != conversation_id):
+                problem(404, '分页位置不属于当前会话')
             query = query.where((Message.created_at < anchor.created_at) | ((Message.created_at == anchor.created_at) & (Message.id < anchor.id)))
         rows = list((await db.scalars(query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1))).all())
         return {'items': [await message_dto(db, m, actor) for m in rows[:limit]], 'nextCursor': rows[limit - 1].id if len(rows) > limit else None}
 
     @app.get('/api/v1/messages')
-    async def messages(cursor: str | None = None, limit: int = Query(50, ge=1, le=100), actor=AUTH, db=DB):
-        return await list_messages(db, actor, actor.id, cursor, limit)
+    async def messages(conversationId: str | None = None, cursor: str | None = None, limit: int = Query(50, ge=1, le=100), actor=AUTH, db=DB):
+        if conversationId:
+            await owned(db, Conversation, conversationId, actor)
+        return await list_messages(db, actor, actor.id, cursor, limit, conversationId)
 
     @app.get('/api/v1/messages/{identifier}')
     async def get_message(identifier: str, actor=AUTH, db=DB):
@@ -313,6 +325,7 @@ def create_app(settings=None):
     @app.patch('/api/v1/messages/{identifier}/transcript')
     async def transcript(identifier: str, body: TranscriptEdit, actor=AUTH, db=DB):
         item = await owned(db, Message, identifier, actor, lock=True)
+        await active_message(db, identifier, actor)
         if not await db.scalar(select(Attachment.id).where(Attachment.message_id == item.id, Attachment.kind == 'audio')):
             problem(422, '仅语音消息可以修正转写')
         if item.transcript_revision != body.expectedRevision:
@@ -328,6 +341,7 @@ def create_app(settings=None):
     @app.post('/api/v1/jobs/{identifier}/retry')
     async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         item = await owned(db, Job, identifier, actor, lock=True)
+        await active_message(db, item.target_id, actor) if item.kind == 'message' else await owned(db, Report, item.target_id, actor)
         if item.state not in ('failed', 'awaiting_retry'):
             problem(409, '当前任务不需要重试')
         item.state, item.error, item.request_started = 'queued', '', False
@@ -342,17 +356,18 @@ def create_app(settings=None):
 
     @app.get('/api/v1/work-items')
     async def work_items(actor=AUTH, db=DB):
-        return {'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.owner_id == actor.id).order_by(WorkItem.updated_at.desc()).limit(100))).all()]}
+        return {'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == actor.id).order_by(WorkItem.updated_at.desc()).limit(100))).all()]}
 
     @app.get('/api/v1/work-items/{identifier}')
     async def work_item(identifier: str, actor=AUTH, db=DB):
         item = await owned(db, WorkItem, identifier, actor, read=True)
         history = (await db.scalars(select(WorkRevision).where(WorkRevision.work_id == item.id).order_by(WorkRevision.revision.desc()).limit(100))).all()
-        return {**work_dto(item), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'createdAt': r.created_at.isoformat()} for r in history]}
+        return {**work_dto(item), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history]}
 
     @app.patch('/api/v1/progress-drafts/{identifier}')
     async def edit_draft(identifier: str, body: DraftEdit, actor=AUTH, db=DB):
         draft = await owned(db, ProgressDraft, identifier, actor, lock=True)
+        await active_message(db, draft.message_id, actor)
         version(draft, body.expectedRevision)
         if draft.status != 'pending':
             problem(409, '建议已处理')
@@ -385,7 +400,9 @@ def create_app(settings=None):
 
     @app.get('/api/v1/reports')
     async def reports(kind: str = 'daily', cursor: str | None = None, actor=AUTH, db=DB):
-        query = select(Report).where(Report.owner_id == actor.id, Report.kind == kind)
+        if actor.role != 'employee':
+            problem(403, '管理员通过团队查看员工报告')
+        query = select(Report).where(Report.deleted.is_(False), Report.owner_id == actor.id, Report.kind == kind)
         if cursor:
             query = query.where(Report.period < cursor)
         rows = (await db.scalars(query.order_by(Report.period.desc()).limit(51))).all()
@@ -400,7 +417,7 @@ def create_app(settings=None):
         report = await owned(db, Report, identifier, actor, read=True)
         dto = await report_dto(db, report, actor)
         sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(dto['sourceIds']), WorkRevision.company_id == actor.company_id, WorkRevision.owner_id == report.owner_id))).all()
-        return {'items': [{'id': r.id, 'workId': r.work_id, 'title': r.content['title'], 'revision': r.revision, 'sourceIds': r.source_ids} for r in sources]}
+        return {'items': [{'id': r.id, 'workId': r.work_id, 'title': r.content['title'], 'revision': r.revision, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'workDeleted': (await db.get(WorkItem, r.work_id)).deleted} for r in sources]}
 
     @app.post('/api/v1/reports/generate', status_code=202)
     async def generate_report(body: GenerateReport, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
@@ -412,6 +429,8 @@ def create_app(settings=None):
 
     @app.patch('/api/v1/reports/{identifier}')
     async def edit_report(identifier: str, body: ReportEdit, actor=AUTH, db=DB):
+        if actor.role != 'employee':
+            problem(403, '管理员不编辑个人报告')
         report = await owned(db, Report, identifier, actor, lock=True)
         version(report, body.expectedRevision)
         report.content, report.edited, report.updated_at = body.content.model_dump(), True, now()
@@ -420,6 +439,8 @@ def create_app(settings=None):
 
     @app.post('/api/v1/reports/{identifier}/candidate')
     async def adopt_candidate(identifier: str, body: Revision, actor=AUTH, db=DB):
+        if actor.role != 'employee':
+            problem(403, '管理员不编辑个人报告')
         report = await owned(db, Report, identifier, actor, lock=True)
         version(report, body.expectedRevision)
         if not report.candidate:
@@ -432,6 +453,8 @@ def create_app(settings=None):
 
     @app.post('/api/v1/reports/{identifier}/submit')
     async def submit(identifier: str, body: Revision, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
+        if actor.role != 'employee':
+            problem(403, '管理员不提交个人报告')
         action = f'submit:{identifier}'
         prior, digest = await idem_begin(db, actor, action, idempotency_key, body.model_dump())
         if prior:
@@ -469,7 +492,7 @@ def create_app(settings=None):
         people = (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee').order_by(Member.created_at))).all()
         result = []
         for member in people:
-            query = select(WorkItem).where(WorkItem.owner_id == member.id)
+            query = select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == member.id)
             if status:
                 query = query.where(WorkItem.content['status'].astext == status)
             if start:
@@ -477,8 +500,8 @@ def create_app(settings=None):
             if end:
                 query = query.where(WorkItem.updated_at < datetime.combine(end, datetime.min.time(), zone) + timedelta(days=1))
             work = (await db.scalars(query.order_by(WorkItem.updated_at.desc()).limit(100))).all()
-            last = await db.scalar(select(func.max(Message.created_at)).where(Message.owner_id == member.id))
-            report_count = await db.scalar(select(func.count()).select_from(Report).where(Report.owner_id == member.id, Report.published_revision > 0))
+            last = await db.scalar(select(func.max(Message.created_at)).where(Message.owner_id == member.id, Message.deleted.is_(False)))
+            report_count = await db.scalar(select(func.count()).select_from(Report).where(Report.owner_id == member.id, Report.deleted.is_(False), Report.published_revision > 0))
             result.append({'member': member_dto(member), 'work': [work_dto(w) for w in work], 'lastMessageAt': last.isoformat() if last else None, 'reportCount': report_count})
         return {'items': result, 'updatedAt': now().isoformat()}
 
@@ -490,16 +513,107 @@ def create_app(settings=None):
     @app.get('/api/v1/team/members/{identifier}/work')
     async def team_work(identifier: str, actor=ADMIN, db=DB):
         member = await visible_member(db, actor, identifier, employee_only=True)
-        return {'member': member_dto(member), 'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.owner_id == identifier).order_by(WorkItem.updated_at.desc()).limit(100))).all()]}
+        return {'member': member_dto(member), 'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == identifier).order_by(WorkItem.updated_at.desc()).limit(100))).all()]}
 
     @app.get('/api/v1/team/members/{identifier}/reports')
     async def team_reports(identifier: str, kind: str = 'daily', cursor: str | None = None, actor=ADMIN, db=DB):
         await visible_member(db, actor, identifier, employee_only=True)
-        query = select(Report).where(Report.owner_id == identifier, Report.kind == kind, Report.published_revision > 0)
+        query = select(Report).where(Report.deleted.is_(False), Report.owner_id == identifier, Report.kind == kind, Report.published_revision > 0)
         if cursor:
             query = query.where(Report.period < cursor)
         rows = (await db.scalars(query.order_by(Report.period.desc()).limit(51))).all()
         return {'items': [await report_dto(db, r, actor) for r in rows[:50]], 'nextCursor': rows[49].period if len(rows) > 50 else None}
+
+    async def deleted_sources(db, ids):
+        available = set((await db.scalars(select(Message.id).where(Message.id.in_(ids), Message.deleted.is_(False)))).all())
+        return [identifier for identifier in ids if identifier not in available]
+
+    @app.get('/api/v1/conversations')
+    async def conversations(q: str = Query('', max_length=120), cursor: str | None = None, actor=AUTH, db=DB):
+        query = select(Conversation).where(Conversation.owner_id == actor.id, Conversation.company_id == actor.company_id, Conversation.deleted.is_(False))
+        if q.strip():
+            query = query.where(Conversation.title.icontains(q.strip(), autoescape=True))
+        if cursor:
+            anchor = await owned(db, Conversation, cursor, actor)
+            query = query.where((Conversation.updated_at < anchor.updated_at) | ((Conversation.updated_at == anchor.updated_at) & (Conversation.id < anchor.id)))
+        rows = list((await db.scalars(query.order_by(Conversation.updated_at.desc(), Conversation.id.desc()).limit(51))).all())
+        return {'items': [conversation_dto(row) for row in rows[:50]], 'nextCursor': rows[49].id if len(rows) > 50 else None}
+
+    @app.post('/api/v1/conversations', status_code=201)
+    async def add_conversation(body: ConversationCreate, actor=AUTH, db=DB):
+        if not body.title.strip():
+            problem(422, '请输入会话名称')
+        item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip())
+        db.add(item)
+        await db.flush()
+        return conversation_dto(item)
+
+    @app.get('/api/v1/conversations/{identifier}')
+    async def get_conversation(identifier: str, actor=AUTH, db=DB):
+        return conversation_dto(await owned(db, Conversation, identifier, actor))
+
+    @app.patch('/api/v1/conversations/{identifier}')
+    async def rename_conversation(identifier: str, body: ConversationEdit, actor=AUTH, db=DB):
+        item = await owned(db, Conversation, identifier, actor, lock=True)
+        version(item, body.expectedRevision)
+        if not body.title.strip():
+            problem(422, '请输入会话名称')
+        item.title, item.revision = body.title.strip(), item.revision + 1
+        return conversation_dto(item)
+
+    @app.get('/api/v1/conversations/{identifier}/deletion')
+    async def conversation_deletion(identifier: str, actor=AUTH, db=DB):
+        from .deletion import conversation_impact
+        item = await owned(db, Conversation, identifier, actor)
+        messages, retained = await conversation_impact(db, item)
+        return {'messages': len(messages), 'retainedSources': len(retained)}
+
+    async def finish_deletion(db, owner_id):
+        from .deletion import clean_files
+        # Commit the durable tombstones before touching files. A failed cleanup
+        # remains hidden, is retried by maintenance and by the same DELETE URL.
+        await db.commit()
+        try:
+            await clean_files(db, settings, owner_id)
+        except OSError:
+            problem(503, '记录已移除，附件清理尚未完成，请重试删除', 'cleanup_pending')
+        return {'ok': True}
+
+    @app.delete('/api/v1/conversations/{identifier}')
+    async def delete_conversation(identifier: str, body: Revision, actor=AUTH, db=DB):
+        from .deletion import target, remove_conversation
+        item = await target(db, Conversation, identifier, actor, body.expectedRevision)
+        await remove_conversation(db, item)
+        return await finish_deletion(db, item.owner_id)
+
+    @app.delete('/api/v1/work-items/{identifier}')
+    async def delete_work(identifier: str, body: Revision, actor=AUTH, db=DB):
+        from .deletion import target, remove_work
+        item = await target(db, WorkItem, identifier, actor, body.expectedRevision)
+        await remove_work(db, item)
+        return await finish_deletion(db, item.owner_id)
+
+    @app.get('/api/v1/reports/{identifier}/deletion')
+    async def report_deletion(identifier: str, actor=AUTH, db=DB):
+        item = await owned(db, Report, identifier, actor, read=True)
+        if actor.role != 'admin' and item.published_revision:
+            problem(403, '已提交的报告不能删除')
+        revisions = (await db.scalars(select(ReportRevision).where(ReportRevision.report_id == item.id))).all()
+        ids = set(item.source_ids) | set((item.candidate or {}).get('sourceIds', []))
+        for revision in revisions:
+            ids.update(revision.source_ids)
+        sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(ids), WorkRevision.owner_id == item.owner_id))).all()
+        messages = {mid for source in sources for mid in source.source_ids}
+        count = await db.scalar(select(func.count()).select_from(Message).where(Message.id.in_(messages), Message.deleted.is_(False), Message.owner_id == item.owner_id))
+        attachments = await db.scalar(select(func.count()).select_from(Attachment).where(Attachment.message_id.in_(messages), Attachment.deleted.is_(False), Attachment.owner_id == item.owner_id))
+        return {'messages': count if actor.role == 'admin' else 0, 'attachments': attachments if actor.role == 'admin' else 0, 'revision': item.revision}
+
+    @app.delete('/api/v1/reports/{identifier}')
+    async def delete_report(identifier: str, body: Revision, actor=AUTH, db=DB):
+        from .deletion import target, remove_report
+        item = await target(db, Report, identifier, actor, body.expectedRevision)
+        await remove_report(db, item, actor)
+        return await finish_deletion(db, item.owner_id)
 
     return app
 

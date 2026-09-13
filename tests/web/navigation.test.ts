@@ -1,5 +1,11 @@
 import { expect, it } from 'vitest'
-import { detailContext, detailReturn, detailState, pageName } from '../../src/web/navigation'
+import {
+  breadcrumbPoints,
+  detailContext,
+  detailReturn,
+  detailState,
+  pageName,
+} from '../../src/web/navigation'
 
 it('preserves the team filters and selected member tab through nested report, work and source pages', () => {
   const team = { pathname: '/team', search: '?q=员工&status=blocked&start=2026-09-01', state: null }
@@ -40,4 +46,26 @@ it('has deterministic direct-entry fallbacks and rejects external or malformed r
     '/assistant',
   )
   expect(pageName('/messages/source')).toBe('原始上报')
+})
+
+it('retains every distinct business ancestor and rejects cyclic breadcrumb histories', () => {
+  const team = { pathname: '/team', search: '?status=blocked', state: null }
+  const member = { pathname: '/team/employee', search: '?tab=reports', state: detailState(team) }
+  const report = { pathname: '/reports/r', search: '', state: detailState(member) }
+  const work = { pathname: '/work/w', search: '', state: detailState(report) }
+  expect(breadcrumbPoints('/messages/m', detailState(work)).map((point) => point.path)).toEqual([
+    '/team?status=blocked',
+    '/team/employee?tab=reports',
+    '/reports/r',
+    '/work/w',
+    '/messages/m',
+  ])
+  const cycle: { returnTo: { path: string; state: unknown } } = {
+    returnTo: { path: '/work/w', state: null },
+  }
+  cycle.returnTo.state = cycle
+  expect(breadcrumbPoints('/messages/m', cycle)).toHaveLength(2)
+  expect(detailReturn('/messages/m', { returnTo: { path: '/assistant/conversation' } }).path).toBe(
+    '/assistant/conversation',
+  )
 })

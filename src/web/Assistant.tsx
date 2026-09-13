@@ -19,7 +19,8 @@ import type {
   Work,
   WorkMessage,
 } from '../shared/company-contracts'
-import { api, dateLabel, useResource, write } from './api'
+import { api, ApiError, dateLabel, useResource, write } from './api'
+import { usePagedResource } from './paged-resource'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
@@ -27,17 +28,28 @@ import { Markdown } from './Markdown'
 import { detailState, detailReturn } from './navigation'
 import { AutoTextarea, BusyButton, ConflictRecovery, Empty, ErrorNotice, Modal, Status } from './ui'
 
-export function Assistant() {
+export function ConversationChat({
+  conversationId,
+  onSent,
+}: {
+  conversationId: string
+  onSent: () => void
+}) {
+  const composerKey = `composer:${conversationId}`
   const { drafts, setDraft, notify } = useWorkspace()
+  const storedComposer = drafts[composerKey] as Composer | undefined
   const composer = useMemo(
-    () => (drafts.composer as Composer | undefined) ?? { text: '', files: [], key: '' },
-    [drafts.composer],
+    () => storedComposer ?? { text: '', files: [], key: '' },
+    [storedComposer],
   )
-  const { data, error, refresh } = useResource<Page<WorkMessage>>('/messages', 2000)
-  const [older, setOlder] = useState<WorkMessage[]>([])
-  const [cursor, setCursor] = useState<string | null | undefined>(undefined)
+  const { data, error, refresh, loadMore, loading } = usePagedResource<WorkMessage>(
+    `/messages?conversationId=${conversationId}`,
+    'createdAt',
+    2000,
+  )
   const [busy, setBusy] = useState(false)
   const [sendError, setSendError] = useState('')
+  const [limitError, setLimitError] = useState('')
   const [captureState, setCaptureState] = useState<CaptureState>('idle')
   const recording = captureState === 'recording'
   const capturing = captureState !== 'idle'
@@ -52,7 +64,7 @@ export function Assistant() {
   }, [composer])
   const change = (next: Composer) =>
     setDraft(
-      'composer',
+      composerKey,
       next.text || next.files.length || next.replyTo
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
@@ -66,7 +78,9 @@ export function Assistant() {
       },
       error: setSendError,
       file: (file) => {
-        setDraft('composer', (previous: Composer | undefined) => appendRecordedFile(previous, file))
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          appendRecordedFile(previous, file),
+        )
       },
     })
     capture.current = controller
@@ -88,7 +102,10 @@ export function Assistant() {
     if (!recording) return
     const controller = capture.current
     const timer = setInterval(() => setSeconds((n) => n + 1), 1000)
-    const limit = setTimeout(() => controller?.stop(), 180000)
+    const limit = setTimeout(() => {
+      controller?.stop()
+      setLimitError('已达到 3 分钟录音上限，已保留录音片段，可以试听后发送。')
+    }, 180000)
     return () => {
       clearInterval(timer)
       clearTimeout(limit)
@@ -102,7 +119,7 @@ export function Assistant() {
     if (!files.length) return
     const existing = composerRef.current
     if (files.some((f) => !['image/jpeg', 'image/png', 'image/webp'].includes(f.type))) {
-      setSendError('图片请使用 JPEG、PNG 或 WebP；语音请使用录音按钮或选择语音文件')
+      setLimitError('图片请使用 JPEG、PNG 或 WebP；语音请使用录音按钮或选择语音文件')
       return
     }
     if (
@@ -110,7 +127,7 @@ export function Assistant() {
       files.length + existing.files.length > 4 ||
       files.some((f) => f.size > 5 * 1024 * 1024)
     ) {
-      setSendError('每次最多 4 张图片，每张不超过 5 MiB；图片与语音请分开发送')
+      setLimitError('每次最多 4 张图片，每张不超过 5 MiB；图片与语音请分开发送')
       return
     }
     change({
@@ -125,7 +142,7 @@ export function Assistant() {
   }
   async function startRecording() {
     if (composer.files.length) {
-      setSendError('请先发送或移除已有附件')
+      setLimitError('请先发送或移除已有附件')
       return
     }
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
@@ -157,6 +174,7 @@ export function Assistant() {
       await write(
         '/messages',
         {
+          conversationId,
           text: current.text,
           attachmentIds: files.map((f) => f.attachment!.id),
           replyTo: current.replyTo ?? null,
@@ -165,37 +183,37 @@ export function Assistant() {
         current.key,
       )
       files.forEach((f) => URL.revokeObjectURL(f.url))
-      setDraft('composer', undefined)
+      setDraft(composerKey, undefined)
       refresh()
       notify('已发送')
+      onSent()
     } catch (e) {
-      setSendError((e as Error).message)
+      if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
+        setLimitError(e.message)
+      else setSendError((e as Error).message)
     } finally {
       setBusy(false)
     }
   }
-  const messages = [...older, ...(data?.items ?? [])]
-    .filter((m, index, all) => all.findIndex((x) => x.id === m.id) === index)
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  const nextCursor = cursor === undefined ? data?.nextCursor : cursor
+  const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const nextCursor = data?.nextCursor
   return (
     <div className="assistant-page">
+      {limitError && (
+        <Modal title="无法添加附件" onClose={() => setLimitError('')}>
+          <p>{limitError}</p>
+          <div className="form-actions">
+            <button className="primary" onClick={() => setLimitError('')}>
+              知道了
+            </button>
+          </div>
+        </Modal>
+      )}
       <div className="chat-scroll" ref={scroller}>
         <div className="chat-content">
           <ErrorNotice retry={refresh}>{error}</ErrorNotice>
           {nextCursor && (
-            <button
-              className="load-more"
-              onClick={async () => {
-                try {
-                  const page = await api<Page<WorkMessage>>(`/messages?cursor=${nextCursor}`)
-                  setOlder([...older, ...page.items])
-                  setCursor(page.nextCursor)
-                } catch (e) {
-                  notify((e as Error).message)
-                }
-              }}
-            >
+            <button className="load-more" disabled={loading} onClick={loadMore}>
               加载更早消息
             </button>
           )}
@@ -261,8 +279,8 @@ export function Assistant() {
               ))}
             </div>
           )}
-          <AutoTextarea
-            elementRef={textInput}
+          <textarea
+            ref={textInput}
             aria-label="工作消息"
             placeholder="今天有什么进展？也可以随时补充一条消息…"
             rows={1}
@@ -288,7 +306,7 @@ export function Assistant() {
               <button
                 className="icon-button"
                 aria-label="添加图片"
-                title="最多4张，每张5MiB，JPEG/PNG/WebP"
+                title="添加图片"
                 disabled={busy || capturing}
                 onClick={() => input.current?.click()}
               >
@@ -310,7 +328,7 @@ export function Assistant() {
               ) : (
                 <button
                   className="icon-button"
-                  title="最长3分钟"
+                  title="录制语音"
                   aria-label="录制语音"
                   disabled={busy}
                   onClick={startRecording}
@@ -329,7 +347,7 @@ export function Assistant() {
                     const file = e.target.files?.[0]
                     if (!file) return
                     if (composer.files.length || file.size > 20 * 1024 * 1024) {
-                      setSendError('每次一段语音，最长3分钟、20MiB，请先移除其他附件')
+                      setLimitError('每次一段语音，最长3分钟、20MiB，请先移除其他附件')
                       return
                     }
                     change({
@@ -352,7 +370,6 @@ export function Assistant() {
               发送
             </BusyButton>
           </div>
-          <small>图片最多 4 张／每张 5 MiB；语音最长 3 分钟／20 MiB。</small>
         </div>
       </div>
     </div>
@@ -552,7 +569,7 @@ export function JobNotice({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  if (job.state === 'succeeded') return null
+  if (job.state === 'succeeded' || job.state === 'cancelled') return null
   if (job.state === 'awaiting_input')
     return <p className="muted small-text">可继续发送消息补充信息。</p>
   if (job.state === 'queued' || job.state === 'running')

@@ -5,7 +5,7 @@ import json
 from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from fastapi import HTTPException
-from .models import Company, Idempotency, Job, Member, Message, ProgressDraft, Report, WorkItem, WorkRevision, now
+from .models import Conversation, Company, Idempotency, Job, Member, Message, ProgressDraft, Report, WorkItem, WorkRevision, now
 
 
 def problem(status, message, code=None):
@@ -19,7 +19,12 @@ async def owned(db, model, identifier, actor, *, read=False, lock=False):
     else:
         employees = select(Member.id).where(Member.company_id == actor.company_id, Member.role == 'employee')
         query = query.where((model.owner_id == actor.id) | model.owner_id.in_(employees))
+    if hasattr(model, 'deleted'):
+        query = query.where(model.deleted.is_(False))
     if lock:
+        owner_id = await db.scalar(query.with_only_columns(model.owner_id))
+        if owner_id:
+            await db.scalar(select(Member).where(Member.id == owner_id).with_for_update())
         query = query.with_for_update()
     item = await db.scalar(query)
     if item is None:
@@ -65,13 +70,15 @@ def period_bounds(report):
 
 async def report_inputs(db, report):
     start, end = period_bounds(report)
-    revisions = list((await db.scalars(select(WorkRevision).where(WorkRevision.owner_id == report.owner_id, WorkRevision.company_id == report.company_id, WorkRevision.created_at >= start, WorkRevision.created_at < end).order_by(WorkRevision.created_at, WorkRevision.id))).all())
+    revisions = list((await db.scalars(select(WorkRevision).join(WorkItem, WorkItem.id == WorkRevision.work_id).where(WorkItem.deleted.is_(False), WorkRevision.owner_id == report.owner_id, WorkRevision.company_id == report.company_id, WorkRevision.created_at >= start, WorkRevision.created_at < end).order_by(WorkRevision.created_at, WorkRevision.id))).all())
     # Latest revision per work within the selected period, not today's rewritten state.
     latest = {r.work_id: r for r in revisions}
     return list(latest.values())
 
 
 async def ensure_report(db, actor, kind, day, *, scheduled=False):
+    if actor.role != 'employee':
+        problem(403, '管理员不生成个人报告')
     company = await db.get(Company, actor.company_id)
     start, end = period(kind, day)
     await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
@@ -80,6 +87,10 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False):
         report = Report(company_id=actor.company_id, owner_id=actor.id, kind=kind, period=start.isoformat(), period_end=end.isoformat(), timezone=company.rules['timezone'], content={'completed': '', 'ongoing': '', 'blockers': '', 'next': ''})
         db.add(report)
         await db.flush()
+    if report.deleted:
+        if scheduled:
+            return report, None
+        problem(409, '该周期报告已删除，不能重新生成')
     existing = await db.scalar(select(Job).where(Job.owner_id == actor.id, Job.kind == 'report', Job.target_id == report.id).order_by(Job.created_at.desc()).limit(1))
     if existing is not None and (scheduled or existing.state in ('queued', 'running')):
         return report, existing
@@ -93,6 +104,7 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False):
 async def confirm_drafts(db, actor, items, ignore=False):
     drafts = [await owned(db, ProgressDraft, item.id, actor, lock=True) for item in sorted(items, key=lambda i: i.id)]
     for draft, item in zip(drafts, sorted(items, key=lambda i: i.id)):
+        await active_message(db, draft.message_id, actor)
         version(draft, item.expectedRevision)
         if draft.status != 'pending':
             problem(409, '这条建议已经处理')
@@ -132,3 +144,24 @@ def draft_dto(draft):
 
 def job_dto(job):
     return {'id': job.id, 'kind': job.kind, 'targetId': job.target_id, 'state': job.state, 'phase': job.phase, 'error': job.error, 'configAttempt': job.config_attempt, 'modelSource': {k: ({'service': v['name'], 'model': v['model'], 'revision': v['revision']} if isinstance(v, dict) and 'model' in v else v) for k, v in (job.model_binding or {}).items() if k in ('assistant', 'report', 'asr', 'source', 'routingRevision')}, 'updatedAt': job.updated_at.isoformat()}
+
+
+async def active_message(db, identifier, actor):
+    message = await owned(db, Message, identifier, actor)
+    if message.conversation_id:
+        await owned(db, Conversation, message.conversation_id, actor)
+    return message
+
+
+def conversation_dto(item):
+    return {'id': item.id, 'title': item.title, 'revision': item.revision, 'updatedAt': item.updated_at.isoformat()}
+
+
+async def default_conversation(db, actor):
+    await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
+    item = await db.scalar(select(Conversation).where(Conversation.owner_id == actor.id, Conversation.deleted.is_(False)).order_by(Conversation.created_at).limit(1))
+    if item is None:
+        item = Conversation(company_id=actor.company_id, owner_id=actor.id)
+        db.add(item)
+        await db.flush()
+    return item

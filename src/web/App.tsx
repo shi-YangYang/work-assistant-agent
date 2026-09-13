@@ -9,9 +9,7 @@ import {
   Settings,
   Users,
   LogOut,
-  ArrowLeft,
   AudioLines,
-  ChevronRight,
   Command,
   UserRound,
   Palette,
@@ -26,8 +24,9 @@ import { Workspace } from './workspace'
 import { BusyButton, ErrorNotice, Modal } from './ui'
 import type { DraftStore } from './workspace'
 import { ModelServices } from './ModelServices'
-import { detailContext, detailReturn, pageName } from './navigation'
-import { Assistant, SourcePage } from './Assistant'
+import { SourcePage } from './Assistant'
+import { Assistant } from './Conversations'
+import { Breadcrumbs } from './Breadcrumbs'
 import { WorkPage, WorkDetail, ReportsPage, ReportDetail } from './Records'
 import {
   AccountPage,
@@ -192,8 +191,12 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   }, [drafts])
   useEffect(
     () => () => {
-      const composer = latestDrafts.current.composer as { files?: { url: string }[] } | undefined
-      composer?.files?.forEach((file) => URL.revokeObjectURL(file.url))
+      for (const [key, value] of Object.entries(latestDrafts.current)) {
+        if (key.startsWith('composer:'))
+          (value as { files?: { url: string }[] }).files?.forEach((file) =>
+            URL.revokeObjectURL(file.url),
+          )
+      }
     },
     [],
   )
@@ -208,7 +211,11 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   }, [location.pathname, location.search])
 
   const allowedSettings = settingsPages.filter((p) => !p.admin || identity.member.role === 'admin')
-  const allowed = pages.filter((p) => !p.admin || identity.member.role === 'admin')
+  const allowed = pages.filter(
+    (p) =>
+      (!p.admin || identity.member.role === 'admin') &&
+      !(p.path === '/reports' && identity.member.role === 'admin'),
+  )
   const setDraft = (key: string, value: unknown) =>
     setDrafts((previous) => {
       const next = { ...previous }
@@ -256,12 +263,6 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
       setToast((e as Error).message)
     }
   }
-  const inSettings = location.pathname.startsWith('/settings/')
-  const inDetail = !inSettings && location.pathname.split('/').length > 2
-  const back = detailReturn(location.pathname, location.state)
-  const current =
-    [...allowed, ...allowedSettings].find((p) => location.pathname.startsWith(p.path))?.title ??
-    pageName(location.pathname)
   return (
     <Workspace.Provider value={{ identity, drafts, setDraft, notify: setToast }}>
       <div
@@ -298,7 +299,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           >
             {expandedNav ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
           </button>
-          <Link to="/assistant" className="brand">
+          <Link to={identity.member.role === 'admin' ? '/team' : '/assistant'} className="brand">
             <span className="brand-mark">
               <AudioLines size={22} />
             </span>
@@ -348,7 +349,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
               <span className="avatar">{identity.member.name.slice(0, 1)}</span>
               <span className="nav-label">
                 {identity.member.name}
-                <small>{identity.member.role === 'admin' ? '老板／管理员' : '员工'}</small>
+                <small>{identity.member.role === 'admin' ? '管理员' : '用户'}</small>
               </span>
               <button className="icon-button" aria-label="退出登录" onClick={logout}>
                 <LogOut size={17} />
@@ -359,21 +360,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
         <section className="main">
           <header className="topbar">
             <div className="topbar-title">
-              {inDetail && (
-                <button
-                  className="icon-button"
-                  aria-label={`返回${back.label}`}
-                  title={`返回${back.label}`}
-                  onClick={() => navigate(back.path, { state: back.state })}
-                >
-                  <ArrowLeft size={18} />
-                </button>
-              )}
-              <span className="breadcrumb-root">
-                {inSettings ? '设置' : detailContext(location.state)}
-              </span>
-              <ChevronRight size={14} aria-hidden="true" />
-              <strong>{inDetail ? pageName(location.pathname) : current}</strong>
+              <Breadcrumbs />
             </div>
             <div className="mobile-tools">
               <button
@@ -397,10 +384,20 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
               }
             />
             <Route path="/assistant" element={<Assistant />} />
+            <Route path="/assistant/:conversationId" element={<Assistant />} />
             <Route path="/messages/:id" element={<SourcePage />} />
             <Route path="/work" element={<WorkPage />} />
             <Route path="/work/:id" element={<WorkDetail />} />
-            <Route path="/reports" element={<ReportsPage />} />
+            <Route
+              path="/reports"
+              element={
+                identity.member.role === 'employee' ? (
+                  <ReportsPage />
+                ) : (
+                  <Navigate to="/team" replace />
+                )
+              }
+            />
             <Route path="/reports/:id" element={<ReportDetail />} />
             {identity.member.role === 'admin' && (
               <>

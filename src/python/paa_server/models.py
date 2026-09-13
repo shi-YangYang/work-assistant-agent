@@ -60,8 +60,18 @@ class Owned(Record):
     owner_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'), index=True)
 
 
+class Conversation(Owned, Base):
+    __tablename__ = 'company_conversation'
+    title: Mapped[str] = mapped_column(String(120), default='新会话')
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Message(Owned, Base):
     __tablename__ = 'company_message'
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey('company_conversation.id'), nullable=True, index=True)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     text: Mapped[str] = mapped_column(Text, default='')
     reply: Mapped[str] = mapped_column(Text, default='')
     suggestions: Mapped[list] = mapped_column(JSONB, default=list)
@@ -73,6 +83,7 @@ class Message(Owned, Base):
 
 class Attachment(Owned, Base):
     __tablename__ = 'company_attachment'
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     message_id: Mapped[str | None] = mapped_column(ForeignKey('company_message.id'), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(10))
     mime: Mapped[str] = mapped_column(String(80))
@@ -84,6 +95,7 @@ class Attachment(Owned, Base):
 
 class WorkItem(Owned, Base):
     __tablename__ = 'company_work_item'
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[dict] = mapped_column(JSONB)
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -112,6 +124,7 @@ class ProgressDraft(Owned, Base):
 
 class Report(Owned, Base):
     __tablename__ = 'company_report'
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     kind: Mapped[str] = mapped_column(String(10))
     period: Mapped[str] = mapped_column(String(10))
     period_end: Mapped[str] = mapped_column(String(10))

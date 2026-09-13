@@ -128,12 +128,13 @@ async def test_history_keeps_explicit_clarification_and_excludes_future_or_other
     settings, sessions, users, clients = setup
     actor = users['employee']
     instant = now()
+    conversation = (await clients['employee'].post('/api/v1/conversations', json={})).json()
     async with sessions.begin() as db:
-        parent = Message(company_id=actor.company_id, owner_id=actor.id, text='客户是哪一家的？', reply='请补充客户名称。', created_at=instant - timedelta(days=1))
+        parent = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation['id'], text='客户是哪一家的？', reply='请补充客户名称。', created_at=instant - timedelta(days=1))
         db.add(parent)
         await db.flush()
         for n in range(15):
-            db.add(Message(company_id=actor.company_id, owner_id=actor.id, text='较新的历史消息 ' + str(n), created_at=instant - timedelta(minutes=n + 1)))
+            db.add(Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation['id'], text='较新的历史消息 ' + str(n), created_at=instant - timedelta(minutes=n + 1)))
         db.add(Message(company_id=actor.company_id, owner_id=users['peer'].id, text='另一个员工的机密', created_at=instant - timedelta(minutes=1)))
     response = await clients['employee'].post('/api/v1/messages', json={'text': '是华远的方案', 'replyTo': parent.id}, headers={'Idempotency-Key': 'history-recovery'})
     assert response.status_code == 202
