@@ -4,7 +4,7 @@ Tombstones retain identity/version only. Source cleanup is durable and retryable
 confirmed business snapshots are deliberately not recursively removed.
 """
 from sqlalchemy import delete, select, text
-from .models import Attachment, Conversation, Idempotency, Job, Member, Message, ProgressDraft, Report, ReportRevision, WorkItem, WorkRevision, now
+from .models import DocumentChunk, Attachment, Conversation, Idempotency, Job, Member, Message, ProgressDraft, Report, ReportRevision, WorkItem, WorkRevision, now
 from .service import problem, version
 
 
@@ -55,7 +55,7 @@ async def purge_messages(db, ids):
     for message in messages:
         message.deleted = True
         message.text = message.reply = message.transcript = ''
-        message.suggestions = message.transcript_history = []
+        message.suggestions = message.transcript_history = message.citations = []
         message.reply_to = None
         message.transcript_revision += 1
     replies = (await db.scalars(select(Message).where(Message.reply_to.in_(ids)))).all()
@@ -68,6 +68,30 @@ async def purge_messages(db, ids):
     attachments = (await db.scalars(select(Attachment).where(Attachment.message_id.in_(ids)))).all()
     for item in attachments:
         item.deleted, item.name, item.sha256 = True, '', ''
+        item.extraction_status, item.extraction_info, item.parser_version = 'deleted', {}, ''
+        item.extraction_revision += 1
+        await db.execute(delete(DocumentChunk).where(DocumentChunk.attachment_id == item.id))
+        await invalidate_context(db, item.owner_id, item.company_id, {item.id})
+    attachment_ids = {item.id for item in attachments}
+    if attachment_ids:
+        owners = {item.owner_id for item in attachments}
+        jobs = (await db.scalars(select(Job).where(Job.owner_id.in_(owners), Job.kind == 'message'))).all()
+        dependent_ids = {job.target_id for job in jobs if any(evidence[0] in attachment_ids for evidence in job.result.get('documentReads', {}).values())}
+        others = (await db.scalars(select(Message).where(Message.owner_id.in_(owners), Message.deleted.is_(False)))).all()
+        for other in others:
+            if other.id not in dependent_ids and not any(citation.get('attachmentId') in attachment_ids for citation in other.citations):
+                continue
+            # An assistant reply may quote extracted text even without a citation.
+            # Purge dependent generated caches, retaining user text and confirmed
+            # Work/Report revisions. Pending suggestions are not confirmed facts.
+            other.reply, other.citations = '', []
+            drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == other.id, ProgressDraft.status == 'pending'))).all()
+            for draft in drafts:
+                draft.status, draft.content = 'deleted', {}
+                draft.revision += 1
+            pending = {draft.id for draft in drafts}
+            other.suggestions = [suggestion for suggestion in other.suggestions if suggestion['id'] not in pending]
+            await invalidate_context(db, other.owner_id, other.company_id, {other.id})
 
 
 async def remove_report(db, item, actor):
@@ -81,11 +105,13 @@ async def remove_report(db, item, actor):
         source_ids.update(revision.source_ids)
     sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(source_ids), WorkRevision.owner_id == item.owner_id, WorkRevision.company_id == item.company_id))).all()
     message_ids = {identifier for source in sources for identifier in source.source_ids}
-    await invalidate_context(db, item.owner_id, item.company_id, {item.id, *(message_ids if actor.role == 'admin' else [])}, sources_changed=actor.role == 'admin' and bool(message_ids))
     if actor.role == 'admin':
         # JSON references are still checked against actual ownership before purge.
         actual = (await db.scalars(select(Message.id).where(Message.id.in_(message_ids), Message.owner_id == item.owner_id, Message.company_id == item.company_id))).all()
         await purge_messages(db, actual)
+    # Consume documentReads before invalidation clears running job results.
+    # The owner lock fences tools/checkpoints until this transaction commits.
+    await invalidate_context(db, item.owner_id, item.company_id, {item.id, *(message_ids if actor.role == 'admin' else [])}, sources_changed=actor.role == 'admin' and bool(message_ids))
     item.deleted, item.content, item.candidate, item.source_ids = True, {}, None, []
     item.revision += 1
     await db.execute(delete(ReportRevision).where(ReportRevision.report_id == item.id))
@@ -119,8 +145,10 @@ async def remove_conversation(db, item):
     if item.deleted:
         return
     messages, retained = await conversation_impact(db, item)
-    await invalidate_context(db, item.owner_id, item.company_id, messages, sources_changed=bool(messages - retained))
     await purge_messages(db, messages - retained)
+    # Retained business-source messages may still have generated replies or
+    # suggestions depending on a discarded document from this conversation.
+    await invalidate_context(db, item.owner_id, item.company_id, messages, sources_changed=bool(messages - retained))
     drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id.in_(messages), ProgressDraft.status == 'pending'))).all()
     for draft in drafts:
         draft.status, draft.content = 'deleted', {}

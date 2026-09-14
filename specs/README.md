@@ -13,6 +13,7 @@
 | [009](spec-009-company-model-services/spec.md) | 公司模型服务管理、用途分配与真实业务联调 | ACCEPTANCE | [工程及真实文字／周报通过，图文／ASR 待验证](spec-009-company-model-services/acceptance.md) |
 | [010](spec-010-web-layout-and-responsive/spec.md) | Web 全页面排版、控件尺寸与响应式维护 | DONE | [PASS：Web 定向检查与逐页视口对照](spec-010-web-layout-and-responsive/acceptance.md) |
 | [011](spec-011-web-function-management/spec.md) | 多级面包屑、工作／报告管理、多会话、角色入口与汇报控件 | DONE | [PASS：管理与会话检查，实测边界见记录](spec-011-web-function-management/acceptance.md) |
+| [012](spec-012-assistant-documents/spec.md) | 工作助手文件发送、解析、来源引用与私有存储 | PASS | [验收](spec-012-assistant-documents/acceptance.md)；七格式真实解析，模型使用固定响应 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

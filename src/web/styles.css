@@ -2331,3 +2331,104 @@ dialog::backdrop {
     max-height: 96px;
   }
 }
+
+.document-card {
+  min-width: 0;
+  flex: 1 1 290px;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.document-heading {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.document-heading svg {
+  flex-shrink: 0;
+}
+.document-heading strong,
+.pending-file-info strong,
+.document-citations button {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.document-card p {
+  margin: 8px 0;
+}
+.document-card .card-actions {
+  flex-wrap: wrap;
+}
+.document-card a {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.document-warning {
+  color: var(--muted);
+  font-size: 13px;
+}
+.document-preview {
+  min-width: 0;
+}
+.document-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.document-preview section {
+  margin: 16px 0;
+}
+.document-citations {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.attachments.pending > .pending-file {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.pending-file-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.pending-file-info span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.pending-file > svg,
+.pending-file > button {
+  flex-shrink: 0;
+}
+.attachments.pending .pending-file img {
+  width: 52px;
+  height: 52px;
+}
+.attachments.pending .pending-file audio {
+  max-width: 150px;
+}
+@media (max-width: 600px) {
+  .attachments.pending .pending-file audio {
+    max-width: 100px;
+  }
+  .document-card {
+    flex-basis: 100%;
+  }
+}
+
+.document-citations button {
+  white-space: normal;
+  text-align: left;
+}

@@ -15,12 +15,34 @@ export interface Identity {
 }
 export interface Attachment {
   id: string
-  kind: 'image' | 'audio'
+  kind: 'image' | 'audio' | 'document'
   name: string
   size: number
   mime: string
   duration: number | null
+  extraction?: {
+    status: 'unsent' | 'pending' | 'processing' | 'ready' | 'partial' | 'failed'
+    revision: number
+    parserVersion: string
+    error?: string
+    warnings?: string[]
+    scope?: string
+    characters?: number
+    chunks?: number
+  } | null
   url: string
+}
+export interface DocumentCitation {
+  attachmentId: string
+  revision: number
+  ordinal: number
+  name: string
+  location: string
+}
+export interface ExtractionPage {
+  attachment: Attachment
+  items: { ordinal: number; location: string; text: string }[]
+  nextCursor: number | null
 }
 export interface Progress {
   title: string
@@ -60,7 +82,7 @@ export interface Draft {
 }
 export interface Job {
   id: string
-  kind: 'message' | 'report'
+  kind: 'message' | 'report' | 'document'
   targetId: string
   state:
     | 'queued'
@@ -80,6 +102,7 @@ export interface WorkMessage {
   ownerId: string
   text: string
   reply: string
+  citations?: DocumentCitation[]
   replyTo: string | null
   transcript: string
   transcriptRevision: number

@@ -1,7 +1,14 @@
 import type { Attachment } from '../shared/company-contracts'
 
 type PendingFile = { id: string; file: File; url: string; attachment?: Attachment }
-export type Composer = { text: string; files: PendingFile[]; key: string; replyTo?: string }
+export type Composer = {
+  text: string
+  files: PendingFile[]
+  key: string
+  replyTo?: string
+  sending?: boolean
+  uploading?: string
+}
 
 export function appendRecordedFile(previous: Composer | undefined, file: File): Composer {
   const current = previous ?? { text: '', files: [], key: '' }

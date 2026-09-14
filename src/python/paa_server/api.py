@@ -15,9 +15,10 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
+from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from .config import Settings
 from .db import database
-from .media import audio_mime, audio_wav, checksum, image_input
+from .media import audio_mime, audio_wav, image_input
 from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, Session, WorkItem, WorkRevision, now
 from .model_schemas import RetryJob
 from .model_provider import ProviderError
@@ -139,10 +140,7 @@ def create_app(settings=None):
         job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
         private = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id, ProgressDraft.status != 'deleted').order_by(ProgressDraft.created_at))).all() if actor.id == item.owner_id else []
         statuses = {d.id: d.status for d in (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id))).all()}
-        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text, 'reply': item.reply, 'replyTo': item.reply_to, 'transcript': item.transcript, 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments], 'job': job_dto(job) if job else None, 'drafts': [draft_dto(d) for d in private], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions]}
-
-    def attachment_dto(a):
-        return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content'}
+        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text, 'reply': item.reply, 'citations': item.citations, 'replyTo': item.reply_to, 'transcript': item.transcript, 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments], 'job': job_dto(job) if job else None, 'drafts': [draft_dto(d) for d in private], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions]}
 
     async def report_dto(db, report, actor):
         revisions = list((await db.scalars(select(ReportRevision).where(ReportRevision.report_id == report.id).order_by(ReportRevision.revision.desc()))).all())
@@ -233,28 +231,40 @@ def create_app(settings=None):
 
     @app.post('/api/v1/uploads', status_code=201)
     async def upload(file: UploadFile, actor=AUTH, db=DB):
-        data = await file.read(20 * 1024 * 1024 + 1)
-        if len(data) > 20 * 1024 * 1024:
-            problem(413, '文件不能超过 20 MiB')
-        if not data:
-            problem(422, '不能上传空文件')
-        kind = 'image' if (file.content_type or '').startswith('image/') else 'audio'
-        duration = None
-        if kind == 'image':
-            if len(data) > 5 * 1024 * 1024:
-                problem(413, '每张图片不能超过 5 MiB')
-            mime, _ = await run_in_threadpool(image_input, data)
-        else:
-            mime = audio_mime(data)
-        item = Attachment(id=str(uuid4()), company_id=actor.company_id, owner_id=actor.id, kind=kind, mime=mime, name=Path(file.filename or 'attachment').name[:180], size=len(data), sha256=checksum(data))
+        name = safe_name(file.filename)
+        mime = document_type(name, file.content_type)
+        suffix = Path(name).suffix.lower()
+        kind = 'document' if mime else 'image' if (file.content_type or '').startswith('image/') or suffix in ('.jpg', '.jpeg', '.png', '.webp') else 'audio'
+        if kind != 'image' and not mime and not ((file.content_type or '').startswith(('audio/', 'image/')) or Path(name).suffix.lower() in ('.m4a', '.wav', '.webm', '.mp4', '.aac')):
+            problem(415, '请使用 PDF、DOCX、PPTX、TXT、JSON、MD、CSV、图片或语音文件')
+        identifier = str(uuid4())
         settings.media_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        path = settings.media_dir / item.id
+        path = settings.media_dir / identifier
+        size, digest = 0, hashlib.sha256()
         try:
-            await run_in_threadpool(path.write_bytes, data)
-            path.chmod(0o600)
-            if kind == 'audio':
+            with path.open('xb') as target:
+                path.chmod(0o600)
+                while block := await file.read(65536):
+                    size += len(block)
+                    if size > (5 if kind == 'image' else 20) * 1024 * 1024:
+                        problem(413, '每张图片不能超过 5 MiB' if kind == 'image' else '文件不能超过 20 MiB')
+                    digest.update(block)
+                    await run_in_threadpool(target.write, block)
+            if not size:
+                problem(422, '不能上传空文件')
+            duration = None
+            if kind == 'image':
+                mime, _ = await run_in_threadpool(image_input, await run_in_threadpool(path.read_bytes))
+            elif kind == 'audio':
+                with path.open('rb') as raw:
+                    mime = audio_mime(raw.read(16))
                 _, duration = await audio_wav(path, settings)
-            item.duration = duration
+            elif Path(name).suffix.lower() in ('.pdf', '.docx', '.pptx'):
+                with path.open('rb') as raw:
+                    magic = raw.read(8)
+                if not (magic.startswith(b'%PDF-') if name.lower().endswith('.pdf') else magic.startswith(b'PK')):
+                    problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
+            item = Attachment(id=identifier, company_id=actor.company_id, owner_id=actor.id, kind=kind, mime=mime, name=name, size=size, sha256=digest.hexdigest(), duration=duration, extraction_status='unsent' if kind == 'document' else 'none')
             db.add(item)
             await db.flush()
         except BaseException:
@@ -264,13 +274,37 @@ def create_app(settings=None):
 
     @app.get('/api/v1/uploads/{identifier}/content')
     async def content(identifier: str, actor=AUTH, db=DB):
-        item = await owned(db, Attachment, identifier, actor, read=True)
-        if actor.id != item.owner_id and not item.message_id:
-            problem(404, '附件尚未发送或无权查看')
+        item = await visible_attachment(db, identifier, actor)
         path = settings.media_dir / item.id
         if not path.is_file():
             problem(404, '附件文件暂不可用')
-        return FileResponse(path, media_type=item.mime, headers={'Content-Disposition': 'inline'})
+        return FileResponse(path, media_type=item.mime, filename=item.name if item.kind == 'document' else None, content_disposition_type='attachment' if item.kind == 'document' else 'inline', headers={'Content-Security-Policy': "sandbox; default-src 'none'"} if item.kind == 'document' else {'Content-Disposition': 'inline'})
+
+    @app.get('/api/v1/uploads/{identifier}/extraction')
+    async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, actor=AUTH, db=DB):
+        item = await visible_attachment(db, identifier, actor)
+        if item.kind != 'document':
+            problem(422, '该附件没有文档提取内容')
+        if revision is not None and revision != item.extraction_revision:
+            problem(409, '文件提取版本已变化，请重新打开来源')
+        return await chunk_page(db, item, start, limit)
+
+    @app.post('/api/v1/uploads/{identifier}/retry', status_code=202)
+    async def retry_extraction(identifier: str, actor=AUTH, db=DB):
+        item = await owned(db, Attachment, identifier, actor, lock=True)
+        if item.kind != 'document' or not item.message_id:
+            problem(422, '请先发送文档')
+        await active_message(db, item.message_id, actor)
+        if item.extraction_status != 'failed':
+            problem(409, '仅失败文档需要重新解析')
+        active = await db.scalar(select(Job.id).where(Job.owner_id == actor.id, Job.target_id.in_([item.id, item.message_id]), Job.state.in_(['queued', 'running'])))
+        if active:
+            problem(409, '文件正在处理中，请稍后重试')
+        item.extraction_status = 'pending'
+        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='document', target_id=item.id)
+        db.add(job)
+        await db.flush()
+        return job_dto(job)
 
     @app.post('/api/v1/messages', status_code=202)
     async def send_message(body: SendMessage, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
@@ -280,8 +314,8 @@ def create_app(settings=None):
             return prior
         conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor)
         attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
-        if any(a.message_id for a in attached) or len({a.kind for a in attached}) > 1 or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
-            problem(422, '附件已使用或组合不受支持，请每次发送最多 4 张图片或一段语音')
+        if any(a.message_id for a in attached) or (any(a.kind == 'audio' for a in attached) and len(attached) != 1) or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
+            problem(422, '附件已使用或组合不受支持；文档与图片合计最多 4 个、20 MiB，语音单独发送')
         if body.replyTo:
             reply = await active_message(db, body.replyTo, actor)
             if reply.conversation_id != conversation.id:
@@ -291,10 +325,12 @@ def create_app(settings=None):
         await db.flush()
         conversation.updated_at = now()
         if conversation.title == '新会话':
-            conversation.title = body.text[:40] or ('图片上报' if attached[0].kind == 'image' else '语音上报')
+            conversation.title = body.text[:40] or ('文件上报' if attached[0].kind == 'document' else '图片上报' if attached[0].kind == 'image' else '语音上报')
             conversation.revision += 1
         for a in attached:
             a.message_id = item.id
+            if a.kind == 'document':
+                a.extraction_status = 'pending'
         job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id)
         db.add(job)
         await db.flush()
@@ -341,7 +377,11 @@ def create_app(settings=None):
     @app.post('/api/v1/jobs/{identifier}/retry')
     async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         item = await owned(db, Job, identifier, actor, lock=True)
-        await active_message(db, item.target_id, actor) if item.kind == 'message' else await owned(db, Report, item.target_id, actor)
+        if item.kind == 'document':
+            document = await owned(db, Attachment, item.target_id, actor)
+            await active_message(db, document.message_id, actor)
+        else:
+            await active_message(db, item.target_id, actor) if item.kind == 'message' else await owned(db, Report, item.target_id, actor)
         if item.state not in ('failed', 'awaiting_retry'):
             problem(409, '当前任务不需要重试')
         item.state, item.error, item.request_started = 'queued', '', False

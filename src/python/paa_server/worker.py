@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from .agent.harness import BudgetExceeded, LostLease, RunContext, invoke_harness, lease, reserve_call
 from .config import Settings
 from .db import database
+from .documents import prepare_document, verified_citations
 from .media import audio_wav, data_url, image_input
 from .models import Attachment, Company, Job, LoginAttempt, Member, Message, Report, Session, WorkRevision, now
 from .service import ensure_report, owned
@@ -68,7 +69,7 @@ async def asr(context, attachment):
 
 async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None):
     try:
-        await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider), timeout=180)
+        await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider), timeout=450)
     except asyncio.TimeoutError:
         async with sessions.begin() as db:
             current = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
@@ -82,17 +83,18 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
     context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
     heartbeat_task = asyncio.create_task(heartbeat(context))
     try:
-        from .model_services import bind_job
-        context.model_purpose = 'report' if job.kind == 'report' else 'assistant'
-        async with sessions.begin() as binding_db:
-            live, _ = await lease(binding_db, context)
-            context.model_binding = await bind_job(binding_db, live, settings)
-            context.config_attempt = live.config_attempt
+        if job.kind == 'document':
+            await prepare_document(context, job.target_id)
+            async with sessions.begin() as db:
+                live, _ = await lease(db, context)
+                live.state, live.phase, live.error, live.lease_until = 'succeeded', 'complete', '', None
+                live.updated_at = now()
+            return
         async with sessions() as db:
             _, actor = await lease(db, context)
             if job.kind == 'message':
                 message = await owned(db, Message, job.target_id, actor)
-                attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id))).all()
+                attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
                 transcript_revision = message.transcript_revision
                 text, transcript = message.text, message.transcript
                 reply_to = message.reply_to
@@ -101,6 +103,39 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(job.result.get('sourceIds', [])), WorkRevision.owner_id == actor.id, WorkRevision.company_id == actor.company_id))).all()
                 text = '请根据以下已确认工作修订生成报告，调用 draft_report 保存草稿。禁止使用其他未确认内容。\n' + json.dumps({'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'confirmed': [{'revisionId': r.id, 'content': r.content} for r in sources]}, ensure_ascii=False)
                 attachments, transcript, reply_to = [], '', None
+        documents = []
+        for attachment in attachments:
+            if attachment.kind == 'document':
+                documents.append(await prepare_document(context, attachment.id))
+        # Parsing is independent of credentials and survives model configuration errors.
+        from .model_services import bind_job
+        context.model_purpose = 'report' if job.kind == 'report' else 'assistant'
+        async with sessions.begin() as binding_db:
+            live, _ = await lease(binding_db, context)
+            context.model_binding = await bind_job(binding_db, live, settings)
+            context.config_attempt = live.config_attempt
+        # A resumed graph may already have read tools in its checkpoint. Restore
+        # only server-recorded, still-authorized evidence; changed file revisions
+        # also enter the input digest so stale tool outputs cannot be resumed.
+        from .documents import agent_attachment, document_statement
+        import hashlib
+        async with sessions() as db:
+            live, actor = await lease(db, context)
+            statement = await document_statement(db, actor, live)
+            versions = (await db.execute(statement.with_only_columns(Attachment.id, Attachment.extraction_revision, Attachment.extraction_status).order_by(Attachment.id))).all()
+            context.document_snapshot = hashlib.sha256(json.dumps([list(row) for row in versions]).encode()).hexdigest() if versions else ''
+            for token, evidence in live.result.get('documentReads', {}).items():
+                aid, revision, ordinal = evidence
+                try:
+                    document = await agent_attachment(db, aid, actor, live)
+                except HTTPException:
+                    continue
+                context.document_versions[aid] = document.extraction_revision
+                if document.extraction_revision == revision:
+                    context.document_reads[token] = tuple(evidence)
+        import time
+        context.started = time.monotonic()
+        context.document_versions.update({item['id']: item['extraction']['revision'] for item in documents})
         blocks = []
         for attachment in attachments:
             if attachment.kind == 'audio' and not transcript:
@@ -122,6 +157,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         if job.kind == 'message':
             context.source_revision = transcript_revision
         blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text + ('\n语音转写（员工可纠正）：' + transcript if transcript else '')})
+        if documents:
+            blocks[0]['text'] += '\n本次文件目录（正文需通过工具读取；状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
         if not model and not context.model_binding.get(context.model_purpose):
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
         answer = await invoke_harness(context, checkpointer, blocks, model)
@@ -129,7 +166,21 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             live, actor = await lease(db, context)
             if job.kind == 'message':
                 message = await owned(db, Message, job.target_id, actor, lock=True)
-                message.reply = answer
+                message.reply, message.citations = await verified_citations(db, context, answer)
+                source_ids = set(context.document_versions) | {row['id'] for row in documents}
+                if source_ids:
+                    source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
+                    coverage = []
+                    for document in source_documents:
+                        read = len({entry[2] for entry in context.document_reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
+                        if document.extraction_status == 'failed':
+                            detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
+                        else:
+                            detail = f"实际读取 {read}/{document.extraction_info.get('chunks', 0)} 个文字分段"
+                            if document.extraction_status == 'partial':
+                                detail += '；文件仅部分可读'
+                        coverage.append(document.name + '：' + detail)
+                    message.reply += '\n\n材料范围：\n' + '\n'.join(coverage)
                 live.state = 'succeeded' if message.suggestions else 'awaiting_input'
             else:
                 if not live.result.get('reportSaved'):

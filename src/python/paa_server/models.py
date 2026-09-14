@@ -74,6 +74,7 @@ class Message(Owned, Base):
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     text: Mapped[str] = mapped_column(Text, default='')
     reply: Mapped[str] = mapped_column(Text, default='')
+    citations: Mapped[list] = mapped_column(JSONB, default=list)
     suggestions: Mapped[list] = mapped_column(JSONB, default=list)
     transcript: Mapped[str] = mapped_column(Text, default='')
     transcript_revision: Mapped[int] = mapped_column(Integer, default=0)
@@ -91,6 +92,20 @@ class Attachment(Owned, Base):
     size: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
     duration: Mapped[float | None] = mapped_column(nullable=True)
+    extraction_status: Mapped[str] = mapped_column(String(16), default='none')
+    extraction_revision: Mapped[int] = mapped_column(Integer, default=0)
+    parser_version: Mapped[str] = mapped_column(String(80), default='')
+    extraction_info: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class DocumentChunk(Owned, Base):
+    __tablename__ = 'company_document_chunk'
+    attachment_id: Mapped[str] = mapped_column(ForeignKey('company_attachment.id', ondelete='CASCADE'), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    location: Mapped[str] = mapped_column(String(300))
+    text: Mapped[str] = mapped_column(Text)
+    __table_args__ = (UniqueConstraint('attachment_id', 'revision', 'ordinal'),)
 
 
 class WorkItem(Owned, Base):

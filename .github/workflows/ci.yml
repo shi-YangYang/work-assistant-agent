@@ -65,16 +65,16 @@ jobs:
       postgres:
         image: postgres:17.11-bookworm
         env:
-          POSTGRES_DB: paa_company
+          POSTGRES_DB: paa_company_test
           POSTGRES_USER: paa
           POSTGRES_PASSWORD: controlled-ci-password
         ports: ['5432:5432']
         options: >-
-          --health-cmd "pg_isready -U paa -d paa_company"
+          --health-cmd "pg_isready -U paa -d paa_company_test"
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company
-      DATABASE_TEST_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company
+      DATABASE_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company_test
+      DATABASE_TEST_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company_test
       PAA_COOKIE_SECURE: 'false'
       PAA_WEB_ORIGIN: http://test
     steps:

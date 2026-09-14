@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
 import {
   ImagePlus,
+  FileText,
   Mic,
   Send,
   Square,
@@ -25,6 +26,8 @@ import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } fr
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
 import { Markdown } from './Markdown'
+import { DocumentCard, DocumentCitations } from './Documents'
+import { fileAccept, fileKind, fileSelectionError, fileSize, updateSendingDraft } from './files'
 import { detailState, detailReturn } from './navigation'
 import { AutoTextarea, BusyButton, ConflictRecovery, Empty, ErrorNotice, Modal, Status } from './ui'
 
@@ -47,7 +50,8 @@ export function ConversationChat({
     'createdAt',
     2000,
   )
-  const [busy, setBusy] = useState(false)
+  const [sending, setBusy] = useState(false)
+  const busy = sending || !!composer.sending
   const [sendError, setSendError] = useState('')
   const [limitError, setLimitError] = useState('')
   const [captureState, setCaptureState] = useState<CaptureState>('idle')
@@ -118,16 +122,9 @@ export function ConversationChat({
   async function addFiles(files: File[]) {
     if (!files.length) return
     const existing = composerRef.current
-    if (files.some((f) => !['image/jpeg', 'image/png', 'image/webp'].includes(f.type))) {
-      setLimitError('图片请使用 JPEG、PNG 或 WebP；语音请使用录音按钮或选择语音文件')
-      return
-    }
-    if (
-      existing.files.some((f) => f.file.type.startsWith('audio/')) ||
-      files.length + existing.files.length > 4 ||
-      files.some((f) => f.size > 5 * 1024 * 1024)
-    ) {
-      setLimitError('每次最多 4 张图片，每张不超过 5 MiB；图片与语音请分开发送')
+    const error = fileSelectionError([...existing.files.map((item) => item.file), ...files])
+    if (error) {
+      setLimitError(error)
       return
     }
     change({
@@ -146,7 +143,7 @@ export function ConversationChat({
       return
     }
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setSendError('当前浏览器无法录音，请使用安全的 HTTPS 地址，或选择语音文件、输入文字')
+      setSendError('当前浏览器无法录音，请使用安全的 HTTPS 地址，或通过“文件”选择语音、输入文字')
       return
     }
     setSendError('')
@@ -157,10 +154,14 @@ export function ConversationChat({
     setBusy(true)
     setSendError('')
     let current = composer
+    setDraft(composerKey, { ...composer, sending: true })
     try {
       const files = [...composer.files]
       for (let i = 0; i < files.length; i++) {
         if (!files[i].attachment) {
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, { uploading: files[i].id }),
+          )
           const form = new FormData()
           form.append('file', files[i].file)
           files[i] = {
@@ -169,7 +170,9 @@ export function ConversationChat({
           }
         }
         current = { ...current, files }
-        change(current)
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, { files, uploading: undefined }),
+        )
       }
       await write(
         '/messages',
@@ -183,7 +186,9 @@ export function ConversationChat({
         current.key,
       )
       files.forEach((f) => URL.revokeObjectURL(f.url))
-      setDraft(composerKey, undefined)
+      setDraft(composerKey, (previous: Composer | undefined) =>
+        updateSendingDraft(previous, composer.key, null),
+      )
       refresh()
       notify('已发送')
       onSent()
@@ -192,6 +197,9 @@ export function ConversationChat({
         setLimitError(e.message)
       else setSendError((e as Error).message)
     } finally {
+      setDraft(composerKey, (previous: Composer | undefined) =>
+        updateSendingDraft(previous, composer.key, { sending: false, uploading: undefined }),
+      )
       setBusy(false)
     }
   }
@@ -219,7 +227,7 @@ export function ConversationChat({
           )}
           {!messages.length && !error && (
             <Empty title="从今天的工作开始">
-              发一段进展、现场图片或语音，工作助手会帮你整理。你确认后，再计入工作记录。
+              发送进展、文件、现场图片或语音，工作助手会帮你整理。你确认后，再计入工作记录。
             </Empty>
           )}
           {messages.map((message) => (
@@ -228,10 +236,14 @@ export function ConversationChat({
               message={message}
               own
               onChange={refresh}
-              onReply={() => {
-                change({ ...composer, replyTo: message.id })
-                textInput.current?.focus()
-              }}
+              onReply={
+                busy
+                  ? undefined
+                  : () => {
+                      change({ ...composer, replyTo: message.id, key: '' })
+                      textInput.current?.focus()
+                    }
+              }
             />
           ))}
         </div>
@@ -245,7 +257,8 @@ export function ConversationChat({
               <button
                 className="icon-button"
                 aria-label="取消补充关联"
-                onClick={() => change({ ...composer, replyTo: undefined })}
+                disabled={busy}
+                onClick={() => change({ ...composer, replyTo: undefined, key: '' })}
               >
                 <X size={14} />
               </button>
@@ -254,12 +267,26 @@ export function ConversationChat({
           {composer.files.length > 0 && (
             <div className="attachments pending">
               {composer.files.map((item) => (
-                <div key={item.id}>
-                  {item.file.type.startsWith('image/') ? (
+                <div key={item.id} className="pending-file">
+                  {fileKind(item.file) === 'image' ? (
                     <img src={item.url} alt={item.file.name} />
-                  ) : (
+                  ) : fileKind(item.file) === 'audio' ? (
                     <audio controls src={item.url} preload="metadata" />
+                  ) : (
+                    <FileText size={24} />
                   )}
+                  <div className="pending-file-info">
+                    <strong>{item.file.name}</strong>
+                    <span>
+                      {item.file.name.split('.').pop()?.toUpperCase()} · {fileSize(item.file.size)}{' '}
+                      ·{' '}
+                      {composer.uploading === item.id
+                        ? '正在上传…'
+                        : item.attachment
+                          ? '上传完成'
+                          : '待上传'}
+                    </span>
+                  </div>
                   <button
                     className="icon-button"
                     disabled={busy}
@@ -337,24 +364,15 @@ export function ConversationChat({
                 </button>
               )}
               <label className="file-label">
-                语音文件
+                文件
                 <input
                   type="file"
-                  accept="audio/webm,audio/mp4,audio/aac,audio/wav,.m4a"
+                  accept={fileAccept}
+                  multiple
                   hidden
                   disabled={busy || capturing}
                   onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (!file) return
-                    if (composer.files.length || file.size > 20 * 1024 * 1024) {
-                      setLimitError('每次一段语音，最长3分钟、20MiB，请先移除其他附件')
-                      return
-                    }
-                    change({
-                      ...composer,
-                      key: '',
-                      files: [{ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) }],
-                    })
+                    void addFiles(Array.from(e.target.files ?? []))
                     e.target.value = ''
                   }}
                 />
@@ -428,6 +446,8 @@ export function MessageCard({
             <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
               <img src={a.url} alt={a.name} loading="lazy" />
             </a>
+          ) : a.kind === 'document' ? (
+            <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
           ) : (
             <audio key={a.id} controls src={a.url} preload="metadata" aria-label={a.name} />
           ),
@@ -452,6 +472,7 @@ export function MessageCard({
             工作助手
           </h3>
           <Markdown text={message.reply} />
+          <DocumentCitations citations={message.citations ?? []} />
         </div>
       )}
       {own

@@ -51,7 +51,7 @@ class SendMessage(Input):
     def content_present(self):
         self.text = self.text.strip()
         if not self.text and not self.attachmentIds:
-            raise ValueError('请输入文字或添加图片、语音')
+            raise ValueError('请输入文字或添加文件、图片、语音')
         if len(set(self.attachmentIds)) != len(self.attachmentIds):
             raise ValueError('附件重复')
         return self
