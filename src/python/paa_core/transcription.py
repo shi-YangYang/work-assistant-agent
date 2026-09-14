@@ -7,7 +7,7 @@ import sys
 import threading
 import wave
 
-from .asr_worker import ASRWorker, DEFAULT_CONFIG, InferenceToken
+from .asr_worker import ASRWorker, DEFAULT_CONFIG, InferenceToken, config_for_mode
 from .model_manager import MODEL_ID, REVISION, ModelManager
 from .repository import ACTIVE, DomainError
 from .transcript_store import JOB_ACTIVE, TranscriptStore
@@ -77,29 +77,61 @@ class Transcription:
         self.stop_event = threading.Event()
         self.wake = threading.Event()
         self.pausing = threading.Event()
-        self.control_lock = threading.Lock()
+        self.control_lock = threading.RLock()
+        if hasattr(self.model, 'references'): self.model.references = self.store.references
         self.token = InferenceToken()
         self.failure = None
         self.thread = threading.Thread(target=self.run, name='transcription-scheduler', daemon=True)
         self.thread.start()
 
-    def start(self, meeting_id):
+    def _resolve(self, model_id, revision):
+        if hasattr(self.model, 'resolve'):
+            return self.model.resolve(model_id, revision)
+        if model_id != MODEL_ID or revision != REVISION:
+            raise DomainError('model_mismatch', '任务模型版本不可用。')
         if self.model.status()['state'] != 'ready':
-            raise DomainError('model_not_ready', '请先在设置中下载并准备本地转写模型。')
+            raise DomainError('model_not_ready', '请先下载本地转写模型。')
+        return self.model.path
+
+    def _resume(self, meeting_id):
+        if self.pausing.is_set():
+            self.token = InferenceToken()
+            self.pausing.clear()
+        if self.failure and self.failure[0] == meeting_id: self.failure = None
+        self.wake.set()
+
+    def start(self, meeting_id):
         with self.control_lock:
             if self.stop_event.is_set():
                 raise DomainError('transcription_paused', '转写已暂停，可以稍后继续。')
             current = self.store.job(meeting_id)
-            if current and (current['modelId'] != MODEL_ID or current['revision'] != REVISION):
-                raise DomainError('model_mismatch', '此任务需要的模型版本不可用，请保留数据并联系维护者。')
-            self.store.start(meeting_id, MODEL_ID, REVISION, self.config)
-            if self.pausing.is_set():
-                self.token = InferenceToken()
-                self.pausing.clear()
-            if self.failure and self.failure[0] == meeting_id:
-                self.failure = None
-        self.wake.set()
+            model_id, revision, config = (current['modelId'], current['revision'], current['config']) if current else self.model.selected() if hasattr(self.model, 'selected') else (MODEL_ID, REVISION, self.config)
+            self._resolve(model_id, revision)
+            self.store.start(meeting_id, model_id, revision, config)
+            self._resume(meeting_id)
         return self.status(meeting_id)
+
+    def rerun(self, meeting_id, model_id, language):
+        with self.control_lock:
+            entry = self.model.entry(model_id)
+            self._resolve(entry['modelId'], entry['revision'])
+            self.store.rerun(meeting_id, entry['modelId'], entry['revision'], config_for_mode(language))
+            self._resume(meeting_id)
+        return self.status(meeting_id)
+
+    def cancel_rerun(self, meeting_id):
+        with self.control_lock:
+            self.store.cancel_rerun(meeting_id)
+            # A late result is rejected by the persisted generation check. Cancel only
+            # the in-flight token when it belongs to this meeting, never another job.
+            if getattr(self, 'inflight', None) == meeting_id:
+                self.token.cancel()
+                self.token = InferenceToken()
+        return self.status(meeting_id)
+
+    def model_action(self, action, **params):
+        with self.control_lock:
+            return getattr(self.model, action)(**params)
 
     def auto_start(self, meeting_id):
         if self.model.status()['state'] == 'ready':
@@ -113,12 +145,37 @@ class Transcription:
         recording = self.recorder.status()
         elapsed = recording['elapsedMs'] if recording['meetingId'] == meeting_id and recording['state'] in ACTIVE else meeting['durationMs']
         job = self.store.job(meeting_id)
+        published = self.store.job(meeting_id, published=True)
         processed = round(job['processedFrames'] * 1000 / meeting['sampleRate']) if job else 0
+        blocked_reason = self.continuation_blocked_reason(job)
         return {'meetingId': meeting_id, 'state': job['state'] if job else 'not_started',
                 'processedMs': processed, 'audioMs': elapsed, 'pendingMs': max(0, elapsed - processed),
                 'targetFrames': job['targetFrames'] if job else None,
                 'error': self.failure[1] if self.failure and self.failure[0] == meeting_id else (job['error'] if job else None),
-                'sourceIncomplete': meeting['status'] == 'interrupted'}
+                'sourceIncomplete': meeting['status'] == 'interrupted',
+                'candidate': bool(job and job['candidate']),
+                'actual': self.snapshot(job), 'published': self.snapshot(published),
+                'publication': published['generation'] if published else 'legacy',
+                'canContinue': blocked_reason is None,
+                'continuationBlockedReason': blocked_reason}
+
+    @staticmethod
+    def snapshot(job):
+        if not job: return None
+        config = job['config']
+        return {'modelId': job['modelId'], 'revision': job['revision'],
+                'language': config.get('mode', config.get('language') or 'mixed'),
+                'configVersion': config.get('version', 1)}
+
+    def continuation_blocked_reason(self, job):
+        if not job:
+            model = self.model.status()
+            return None if model['state'] == 'ready' else (model['error'] or '请先下载并准备默认转写模型。')
+        try:
+            self._resolve(job['modelId'], job['revision'])
+            return None
+        except DomainError as exc:
+            return str(exc)
 
     def activity(self):
         return {'active': bool(self.store.pending())}
@@ -175,11 +232,12 @@ class Transcription:
             worked = False
             meeting_id = None
             token = None
+            job = None
             try:
                 with self.control_lock:
                     token = self.token
                     if self.failure:
-                        self.store.state(self.failure[0], 'failed', self.failure[1])
+                        self.store.state(self.failure[0], 'failed', self.failure[1], job=self.failure[2])
                         self.failure = None
                     pending = self.store.pending() if self.current(token) else []
                 live_id = self.recorder.status()['meetingId']
@@ -194,8 +252,7 @@ class Transcription:
                     window = self.read_window(meeting_id, job)
                     if window is None:
                         continue
-                    if self.model.status()['state'] != 'ready':
-                        raise DomainError('model_not_ready', '模型尚未就绪，请在设置中准备后继续转写。')
+                    model_path = self._resolve(job['modelId'], job['revision'])
                     chunk, pcm, rate, target = window
                     # Reading and inference do not hold the control lock. Claiming a
                     # window, committing it and pausing share one short state boundary.
@@ -203,10 +260,11 @@ class Transcription:
                         if not self.current(token):
                             break
                         if chunk is None:
-                            self.store.state(meeting_id, 'completed', target=target)
+                            self.store.state(meeting_id, 'completed', target=target, job=job)
                             continue
-                        self.store.state(meeting_id, 'draining' if target is not None else 'running', target=target)
-                    words = self.worker.infer(self.model.path, pcm, rate, job['config'], token=token)
+                        self.store.state(meeting_id, 'draining' if target is not None else 'running', target=target, job=job)
+                        self.inflight = meeting_id
+                    words = self.worker.infer(model_path, pcm, rate, job['config'], token=token)
                     segments = owned_segments(words, chunk, rate)
                     with self.control_lock:
                         if self.current(token):
@@ -217,10 +275,11 @@ class Transcription:
                 with self.control_lock:
                     if meeting_id and self.current(token):
                         try:
-                            self.store.state(meeting_id, 'failed', str(exc) if isinstance(exc, DomainError) else '转写保存失败，请检查存储空间后继续；原始录音和已提交文字保留。')
+                            self.store.state(meeting_id, 'failed', str(exc) if isinstance(exc, DomainError) else '转写保存失败，请检查存储空间后继续；原始录音和已提交文字保留。', job=job)
                         except Exception:
                             # SQLite may be locked; retry recording the failure after a bounded wait.
-                            self.failure = (meeting_id, '转写进度暂时无法保存，请排除数据库占用后继续；原始音频保留。')
+                            self.failure = (meeting_id, '转写进度暂时无法保存，请排除数据库占用后继续；原始音频保留。', job)
+            self.inflight = None
             if not worked:
                 self.wake.wait(0.3)
                 self.wake.clear()
@@ -234,8 +293,6 @@ class Transcription:
             self.token.cancel()
             self.pausing.set()
             self.failure = None
-            if hasattr(self.worker, 'interrupt'):
-                self.worker.interrupt()
             self.store.pause()
         return {'active': False}
 

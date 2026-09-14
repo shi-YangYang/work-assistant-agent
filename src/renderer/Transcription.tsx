@@ -1,111 +1,18 @@
-import { CollapsibleSection } from './CollapsibleSection'
+export { ModelSettings } from './LocalModelSettings'
+import { languageNames } from './LocalModelSettings'
 import { useEffect, useRef, useState } from 'react'
-import type { ModelState, TranscriptionStatus, TranscriptSegment } from '../shared/contracts'
+import type {
+  ModelState,
+  TranscriptionLanguage,
+  TranscriptionStatus,
+  TranscriptSegment,
+} from '../shared/contracts'
 
 export const time = (milliseconds: number): string => {
   const seconds = Math.floor(milliseconds / 1000)
   return `${Math.floor(seconds / 60)
     .toString()
     .padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
-}
-export function ModelSettings({
-  model,
-  refresh,
-}: {
-  model: ModelState | null
-  refresh: () => void
-}): React.JSX.Element {
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const preparing = model?.state === 'downloading' || model?.state === 'verifying'
-  async function act(cancel = false): Promise<void> {
-    setBusy(true)
-    setError('')
-    try {
-      const result = await (cancel
-        ? window.paa.cancelModelDownload()
-        : window.paa.downloadTranscriptionModel())
-      if (!result.ok) setError(result.message)
-      refresh()
-    } catch {
-      setError('无法确认模型状态，请稍后重试。')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <section className="settings-card model-card" aria-label="本地转写模型">
-      <div className="section-heading">
-        <h2>Whisper small</h2>
-        <span className="status-badge">
-          {model?.state === 'ready' ? '本地转写已就绪' : '准备本地转写'}
-        </span>
-      </div>
-      <dl className="model-facts">
-        <div>
-          <dt>识别语言</dt>
-          <dd>中文及中英混合</dd>
-        </div>
-        <div>
-          <dt>模型体积</dt>
-          <dd>约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB</dd>
-          <small>请预留 1.1 GB 磁盘空间</small>
-        </div>
-        <div>
-          <dt>使用方式</dt>
-          <dd>本地转写</dd>
-          <small>下载需要联网，完成后可离线使用</small>
-        </div>
-      </dl>
-      <strong role="status">
-        {model?.state === 'ready'
-          ? '模型已就绪'
-          : model?.state === 'downloading'
-            ? '正在下载模型'
-            : model?.state === 'verifying'
-              ? '正在准备模型'
-              : model?.state === 'error'
-                ? '模型准备失败'
-                : '模型尚未准备'}
-      </strong>
-      {preparing && (
-        <div className="model-progress">
-          <progress
-            aria-label="模型下载进度"
-            max={model?.totalBytes}
-            value={model?.downloadedBytes}
-          />
-          <span>
-            {Math.floor((model?.downloadedBytes ?? 0) / 1e6)} /{' '}
-            {Math.ceil((model?.totalBytes ?? 1) / 1e6)} MB
-          </span>
-        </div>
-      )}
-      {(error || model?.error) && (
-        <p role="alert" className="audio-warning">
-          {error || model?.error}
-        </p>
-      )}
-      {model?.state !== 'ready' && (
-        <button
-          className="secondary-button"
-          disabled={!model || busy}
-          onClick={() => void act(preparing)}
-        >
-          {preparing ? '取消准备' : model?.state === 'error' ? '重试下载模型' : '下载默认模型'}
-        </button>
-      )}
-      {model?.state !== 'ready' && <p>可先录音，模型就绪后再补转写。</p>}
-      <CollapsibleSection
-        id="model-information"
-        title="模型信息"
-        summary="Whisper small · 多语言 · CPU INT8"
-      >
-        <p>Whisper small 多语言</p>
-        <p>来源：{model?.source ?? 'Hugging Face · SYSTRAN'} · MIT 许可</p>
-      </CollapsibleSection>
-    </section>
-  )
 }
 const states: Record<TranscriptionStatus['state'], string> = {
   not_started: '尚未转写',
@@ -125,6 +32,7 @@ export function Transcript({
   live = false,
   connected = true,
   target,
+  onModels,
 }: {
   meetingId: string
   modelReady: boolean
@@ -134,7 +42,19 @@ export function Transcript({
   live?: boolean
   connected?: boolean
   target?: { id: string; request: number } | null
+  onModels: () => void
 }): React.JSX.Element {
+  const [rerunModel, setRerunModel] = useState<ModelState | null>(null)
+  const [rerunOpen, setRerunOpen] = useState(false)
+  const [selectedModel, setSelectedModel] = useState('small')
+  const [selectedLanguage, setSelectedLanguage] = useState<TranscriptionLanguage>('zh')
+  const [summaryBusy, setSummaryBusy] = useState(false)
+  const rerunDialog = useRef<HTMLDialogElement>(null)
+  const rerunTrigger = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (rerunOpen) rerunDialog.current?.showModal()
+  }, [rerunOpen])
+  const publication = useRef<string | undefined>(undefined)
   const [status, setStatus] = useState<TranscriptionStatus | null>(null)
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [error, setError] = useState('')
@@ -162,15 +82,31 @@ export function Transcript({
           return
         }
         setStatus(state.value)
+        if (publication.current !== state.value.publication) {
+          publication.current = state.value.publication
+          cursor.current = -1
+          loaded.current = []
+          more.current = true
+          explicitLoad = true
+          setSegments([])
+        }
         const looking = !!target && !loaded.current.some((segment) => segment.id === target.id)
         if (looking) setLocating(true)
         // A citation can reference any page. Consume sequential cursors until found,
         // while ordinary historical reading fetches only an explicitly requested page.
         if (explicitLoad || looking || live || !more.current) {
           do {
-            const page = await window.paa.listTranscript(meetingId, cursor.current)
+            const page = await window.paa.listTranscript(
+              meetingId,
+              cursor.current,
+              publication.current,
+            )
             if (!alive) return
             if (!page.ok) {
+              if (page.code === 'transcript_changed') {
+                publication.current = undefined
+                return
+              }
               setError(page.message)
               return
             }
@@ -242,15 +178,86 @@ export function Transcript({
       setBusy(false)
     }
   }
+  async function openRerun(): Promise<void> {
+    setBusy(true)
+    setError('')
+    try {
+      const [models, summary] = await Promise.all([
+        window.paa.getTranscriptionModel(),
+        window.paa.getSummary(meetingId),
+      ])
+      if (!models.ok) {
+        setError(models.message)
+        return
+      }
+      if (!summary.ok) {
+        setError(summary.message)
+        return
+      }
+      setRerunModel(models.value)
+      setSelectedModel(models.value.defaultModel)
+      setSelectedLanguage(models.value.language)
+      setSummaryBusy(
+        !!summary.value.task && ['queued', 'running'].includes(summary.value.task.state),
+      )
+      setRerunOpen(true)
+    } catch {
+      setError('无法读取转写设置，请稍后重试。')
+    } finally {
+      setBusy(false)
+    }
+  }
+  function closeRerun(): void {
+    rerunDialog.current?.close()
+    setRerunOpen(false)
+    rerunTrigger.current?.focus()
+  }
+  async function rerun(cancel = false): Promise<void> {
+    setBusy(true)
+    setError('')
+    try {
+      const result = await (cancel
+        ? window.paa.cancelRetranscription(meetingId)
+        : window.paa.rerunTranscription(meetingId, selectedModel, selectedLanguage))
+      if (result.ok) {
+        setStatus(result.value)
+        if (!cancel) closeRerun()
+      } else setError(result.message)
+    } catch {
+      setError('请求未确认，请查看转写状态后重试。')
+    } finally {
+      setBusy(false)
+    }
+  }
   const canStart = status && ['not_started', 'paused', 'failed'].includes(status.state)
   return (
     <section className="transcript-card" aria-label="会议文字">
       <div className="section-heading">
         <h2>{live ? '实时文字' : '会议文字'}</h2>
         <span role="status">
-          {locating ? '正在定位引用…' : status ? states[status.state] : '正在读取文字'}
+          {locating
+            ? '正在定位引用…'
+            : status
+              ? `${status.candidate ? '重新转写 · ' : ''}${states[status.state]}`
+              : '正在读取文字'}
         </span>
       </div>
+      {status?.published && (
+        <p className="transcript-configuration">
+          当前文字：
+          {status.published.modelId
+            .split('/')
+            .at(-1)
+            ?.replace('faster-whisper-', 'Whisper ')} · {languageNames[status.published.language]}
+        </p>
+      )}
+      {status?.actual && (!status.published || status.candidate) && (
+        <p className="transcript-configuration">
+          {status.candidate ? '本次重新转写' : '本次转写'}：
+          {status.actual.modelId.split('/').at(-1)?.replace('faster-whisper-', 'Whisper ')} ·{' '}
+          {languageNames[status.actual.language]}
+        </p>
+      )}
       {status && (
         <p className="transcript-progress">
           已处理 {time(status.processedMs)} / 录音 {time(status.audioMs)}
@@ -310,10 +317,32 @@ export function Transcript({
         {canStart && (
           <button
             className="secondary-button"
-            disabled={!modelReady || busy || !connected}
+            disabled={!(status?.canContinue ?? modelReady) || busy || !connected}
             onClick={() => void start()}
           >
             {busy ? '正在请求…' : status.state === 'not_started' ? '生成转写' : '继续转写'}
+          </button>
+        )}
+        {!live &&
+          playable &&
+          status &&
+          !['queued', 'running', 'draining', 'not_started'].includes(status.state) && (
+            <button
+              ref={rerunTrigger}
+              className="secondary-button"
+              disabled={busy || !connected}
+              onClick={() => void openRerun()}
+            >
+              重新转写
+            </button>
+          )}
+        {status?.candidate && (
+          <button
+            className="text-button"
+            disabled={busy || !connected}
+            onClick={() => void rerun(true)}
+          >
+            取消重新转写
           </button>
         )}
         {hasMore && (
@@ -338,7 +367,78 @@ export function Transcript({
         )}
         {!playable && <small>回放暂不可用。</small>}
       </div>
-      {!modelReady && <p>在本地转写模型页下载模型后即可使用，录音不受影响。</p>}
+      {rerunOpen && (
+        <dialog
+          ref={rerunDialog}
+          className="library-dialog"
+          onCancel={(event) => {
+            event.preventDefault()
+            if (!busy) closeRerun()
+          }}
+        >
+          <h2>重新转写这场会议</h2>
+          <p>成功后替换当前文字。原纪要将保留并标记待更新，由你手动重新生成。</p>
+          <label>
+            转写模型
+            <select
+              value={selectedModel}
+              onChange={(event) => setSelectedModel(event.target.value)}
+              disabled={busy}
+            >
+              {rerunModel?.models.map((item) => (
+                <option value={item.id} key={item.id} disabled={item.state !== 'ready'}>
+                  {item.name}
+                  {item.state !== 'ready' ? '（未就绪）' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            识别语言
+            <select
+              value={selectedLanguage}
+              onChange={(event) => setSelectedLanguage(event.target.value as TranscriptionLanguage)}
+              disabled={busy}
+            >
+              {Object.entries(languageNames).map(([value, name]) => (
+                <option key={value} value={value}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {summaryBusy && <p className="audio-warning">纪要正在生成，请完成后重试。</p>}
+          {error && (
+            <p role="alert" className="audio-warning">
+              {error}
+            </p>
+          )}
+          <div className="button-row">
+            <button className="secondary-button" disabled={busy} onClick={closeRerun}>
+              取消
+            </button>
+            <button
+              className="primary-button"
+              disabled={
+                busy ||
+                summaryBusy ||
+                rerunModel?.models.find((item) => item.id === selectedModel)?.state !== 'ready'
+              }
+              onClick={() => void rerun()}
+            >
+              确认重新转写
+            </button>
+          </div>
+        </dialog>
+      )}
+      {canStart && status.continuationBlockedReason && (
+        <p className="audio-warning" role="status">
+          {status.continuationBlockedReason}{' '}
+          <button className="text-button" onClick={onModels}>
+            查看本地转写模型
+          </button>
+        </p>
+      )}
     </section>
   )
 }

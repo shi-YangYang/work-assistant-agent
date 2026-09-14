@@ -134,6 +134,9 @@ def document_lines(db, meeting_id, options):
         yield ''
         yield heading('会议纪要')
         yield f"生成时间：{summary['generatedAt']}"
+        stale = db.execute('SELECT summaryStale FROM transcript_publications WHERE meetingId=?', (meeting_id,)).fetchone()
+        if stale and stale[0]:
+            yield '文字记录已更新，纪要待更新（此纪要基于旧文字记录）。'
         if summary['sourceIncomplete']:
             yield '纪要资料不完整：仅依据保留下来的内容。'
         content = json.loads(summary['content'])

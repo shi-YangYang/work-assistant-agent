@@ -13,6 +13,8 @@ export const CHANNELS = {
   summaryGet: 'paa:summary-get',
   summaryGenerate: 'paa:summary-generate',
   summarySource: 'paa:summary-source',
+  modelManage: 'paa:model-manage',
+  transcriptionRerun: 'paa:transcription-rerun',
   modelStatus: 'paa:model-status',
   modelDownload: 'paa:model-download',
   modelCancel: 'paa:model-cancel',
@@ -95,12 +97,27 @@ export interface DesktopApi extends LibraryApi {
   getSummary(meetingId: string): Promise<Result<SummaryView>>
   generateSummary(meetingId: string): Promise<Result<SummaryView>>
   getSummarySource(meetingId: string, segmentId: string): Promise<Result<SummarySource>>
+  manageTranscriptionModel(
+    action: 'download' | 'cancel' | 'configure' | 'remove',
+    id: string,
+    language?: TranscriptionLanguage,
+  ): Promise<Result<ModelState>>
+  rerunTranscription(
+    meetingId: string,
+    modelId: string,
+    language: TranscriptionLanguage,
+  ): Promise<Result<TranscriptionStatus>>
+  cancelRetranscription(meetingId: string): Promise<Result<TranscriptionStatus>>
   getTranscriptionModel(): Promise<Result<ModelState>>
   downloadTranscriptionModel(): Promise<Result<ModelState>>
   cancelModelDownload(): Promise<Result<ModelState>>
   startTranscription(meetingId: string): Promise<Result<TranscriptionStatus>>
   getTranscriptionStatus(meetingId: string): Promise<Result<TranscriptionStatus>>
-  listTranscript(meetingId: string, cursor?: number): Promise<Result<TranscriptPage>>
+  listTranscript(
+    meetingId: string,
+    cursor?: number,
+    publication?: string,
+  ): Promise<Result<TranscriptPage>>
   getStatus(): Promise<CoreStatus>
   retryCore(): Promise<CoreStatus>
   listMeetings(offset?: number): Promise<MeetingsResult>
@@ -128,7 +145,23 @@ export const ACTIVE_STATES: string[] = [
   'stopping',
 ]
 
-export type ModelState = {
+export type TranscriptionLanguage = 'zh' | 'en' | 'mixed'
+export type ModelEntry = {
+  id: string
+  name: string
+  parameters: number
+  description: string
+  occupiedBytes: number
+  default: boolean
+  deleteBlockedReason: string | null
+} & ModelStateBase
+export type ModelState = ModelStateBase & {
+  defaultModel: string
+  language: TranscriptionLanguage
+  preparingModel: string | null
+  models: ModelEntry[]
+}
+export type ModelStateBase = {
   modelId: string
   revision: string
   state: 'missing' | 'downloading' | 'verifying' | 'ready' | 'error'
@@ -148,6 +181,18 @@ export type TranscriptionStatus = {
   targetFrames: number | null
   error: string | null
   sourceIncomplete: boolean
+  candidate: boolean
+  actual: TranscriptionSnapshot | null
+  published: TranscriptionSnapshot | null
+  publication: string
+  canContinue: boolean
+  continuationBlockedReason: string | null
+}
+export type TranscriptionSnapshot = {
+  modelId: string
+  revision: string
+  language: TranscriptionLanguage
+  configVersion: number
 }
 export type TranscriptSegment = {
   id: string
@@ -160,4 +205,9 @@ export type TranscriptSegment = {
   speaker: string | null
   confidence: number | null
 }
-export type TranscriptPage = { segments: TranscriptSegment[]; nextCursor: number; hasMore: boolean }
+export type TranscriptPage = {
+  segments: TranscriptSegment[]
+  nextCursor: number
+  hasMore: boolean
+  publication?: string
+}

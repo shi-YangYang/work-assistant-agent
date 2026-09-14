@@ -77,7 +77,8 @@ function trustedCaller(event: IpcMainInvokeEvent): void {
 function parameters(args: unknown[], kind: 'none' | 'id' | 'offset' | 'transcript'): void {
   if (kind === 'transcript') {
     if (
-      args.length !== 2 ||
+      args.length !== 3 ||
+      (args[2] !== null && (typeof args[2] !== 'string' || args[2].length > 64)) ||
       typeof args[0] !== 'string' ||
       !ID_PATTERN.test(args[0]) ||
       !Number.isSafeInteger(args[1]) ||
@@ -361,6 +362,43 @@ if (hasLock)
         }
       }
     })
+    ipcMain.handle(CHANNELS.modelManage, (event, input: unknown) => {
+      trustedCaller(event)
+      if (!input || typeof input !== 'object' || Array.isArray(input))
+        throw new Error('Invalid parameters')
+      const params = input as Record<string, unknown>
+      if (
+        Object.keys(params).sort().join(',') !== 'action,id,language' ||
+        !['download', 'cancel', 'configure', 'remove'].includes(String(params.action)) ||
+        !['tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3'].includes(
+          String(params.id),
+        ) ||
+        (params.action === 'configure'
+          ? !['zh', 'en', 'mixed'].includes(String(params.language))
+          : params.language !== null)
+      )
+        throw new Error('Invalid parameters')
+      return core.modelState('manage', params)
+    })
+    ipcMain.handle(CHANNELS.transcriptionRerun, (event, input: unknown) => {
+      trustedCaller(event)
+      if (!input || typeof input !== 'object' || Array.isArray(input))
+        throw new Error('Invalid parameters')
+      const params = input as Record<string, unknown>
+      if (typeof params.meetingId !== 'string' || !ID_PATTERN.test(params.meetingId))
+        throw new Error('Invalid parameters')
+      const keys = Object.keys(params).sort().join(',')
+      if (
+        keys !== 'meetingId' &&
+        (keys !== 'language,meetingId,modelId' ||
+          !['tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3'].includes(
+            String(params.modelId),
+          ) ||
+          !['zh', 'en', 'mixed'].includes(String(params.language)))
+      )
+        throw new Error('Invalid parameters')
+      return core.rerunTranscription(params)
+    })
     register(CHANNELS.modelStatus, 'none', () => core.modelState())
     register(CHANNELS.modelDownload, 'none', () => core.modelState('download'))
     register(CHANNELS.modelCancel, 'none', () => core.modelState('cancel'))
@@ -368,8 +406,8 @@ if (hasLock)
       core.transcriptionStatus(id as string, true),
     )
     register(CHANNELS.transcriptionStatus, 'id', (id) => core.transcriptionStatus(id as string))
-    register(CHANNELS.transcript, 'transcript', (id, cursor) =>
-      core.transcript(id as string, cursor as number),
+    register(CHANNELS.transcript, 'transcript', (id, cursor, publication) =>
+      core.transcript(id as string, cursor as number, publication as string | null),
     )
     register(CHANNELS.status, 'none', () => core.getStatus())
     register(CHANNELS.retry, 'none', async () => {

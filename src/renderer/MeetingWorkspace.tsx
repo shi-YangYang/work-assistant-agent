@@ -18,6 +18,7 @@ export function MeetingWorkspace({
   modelReady,
   onBack,
   onServices,
+  onModels,
 }: {
   meeting: Meeting
   hit?: MeetingHit | null
@@ -29,6 +30,7 @@ export function MeetingWorkspace({
   modelReady: boolean
   onBack: () => void
   onServices: () => void
+  onModels: () => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<'minutes' | 'transcript'>(
     hit?.source === 'transcript' ? 'transcript' : 'minutes',
@@ -167,6 +169,7 @@ export function MeetingWorkspace({
               className="meeting-panel"
             >
               <Transcript
+                onModels={onModels}
                 meetingId={meeting.id}
                 modelReady={modelReady}
                 playable={playable && meeting.audioAvailable}

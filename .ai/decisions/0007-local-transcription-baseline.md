@@ -2,7 +2,7 @@
 
 2026-09-10 · 已在 Spec 003 落地。
 
-## 决定
+## 最初基线（Spec 003）
 
 - 用户选择中文为主、兼顾中英混合，应用内提示并下载默认模型。
 - 一个 faster-whisper Provider，使用多语言 Whisper small、CPU INT8；不要求 CUDA，不声明 Apple GPU 加速。固定模型来源、revision、清单与 SHA256，校验及本地加载成功后才就绪。
@@ -11,6 +11,8 @@
 - 默认约 10 秒业务块、静音边界、前后各最多 4 秒上下文，beam 5 / 4 线程；VAD 区间分别解码，以时间归属避免重叠重复。只使用“简体中文”通用提示，不喂参考稿。
 
 ## 取舍与实施调整
+
+2026-09-14：[Spec 013](../../specs/spec-013-local-model-library/spec.md) 将上述固定 small 基线扩展为六款多语言模型，仍默认 small＋中文。新任务锁定模型及语言；旧会议手动重转写，候选成功后原子发布，失败保留旧文字和纪要，旧纪要由用户手动更新。效果展示仅含错误率与内存占用，固定公开真人语料用于比较；耗时只作内部超时依据。实际结果与未完成项见 [Spec 013 实测](../../specs/spec-013-local-model-library/verification.md)，实施状态以该 Spec 为准。
 
 Python 核心已有稳定边界，faster-whisper 易于隔离并返回时间信息。small 是资源与中文效果的起点，不是最佳模型承诺。whisper.cpp / Metal 留待确有 GPU 或原生分发需求时评估；云 ASR 涉及外发与费用，不在本轮范围。
 

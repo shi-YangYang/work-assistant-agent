@@ -12,7 +12,7 @@ import unittest
 import uuid
 from pathlib import Path
 from functools import partial
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/python'))
 from paa_core.audio_store import AudioWriter
@@ -315,6 +315,28 @@ class TranscriptionTests(unittest.TestCase):
         self.assertEqual(callbacks, [0, 1.5, 3, 5, 6.5, 7.1])
         self.assertFalse((self.root / 'meetings.schema1.backup.staging').exists())
         self.assertFalse((self.root / 'meetings.schema1.backup.sqlite3').exists())
+
+    def test_worker_allows_slow_inference_but_bounds_loading_and_overrides(self):
+        for operation, elapsed, override, succeeds in (
+            ('load', 91, None, False),
+            ('infer', 91, None, True),
+            ('infer', 181, None, False),
+            ('infer', 1, 0.3, False),
+        ):
+            with self.subTest(operation=operation, elapsed=elapsed, override=override):
+                worker = ASRWorker()
+                worker.process, worker.connection = Mock(), Mock()
+                worker.process.is_alive.return_value = True
+                worker.connection.poll.side_effect = [False, True]
+                worker.connection.recv.return_value = {'ok': True}
+                worker.timeout = override
+                with patch('paa_core.asr_worker.time.monotonic', side_effect=[0, elapsed]), patch.object(worker, 'reset') as reset:
+                    if succeeds:
+                        self.assertEqual(worker._request({'op': operation}), {'ok': True})
+                        reset.assert_not_called()
+                    else:
+                        with self.assertRaises(DomainError): worker._request({'op': operation})
+                        reset.assert_called_once()
 
     def test_worker_crash_and_timeout_are_bounded_and_leave_no_child(self):
         for mode, timeout in [('crash', 5), ('slow', 0.3)]:

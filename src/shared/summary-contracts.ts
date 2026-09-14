@@ -77,6 +77,7 @@ export type SummaryView = {
     generatedAt: string
     serviceName: string
     model: string
+    stale?: boolean
     sourceIncomplete: boolean
     parameters: Record<string, JsonValue>
     content: SummaryContent

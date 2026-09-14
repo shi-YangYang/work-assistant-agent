@@ -12,8 +12,8 @@
 | 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0 |
 | 核心与通信 | Python 3.12、venv／pip、`requirements.lock`；main 管理无 shell 子进程，以带请求 ID 的 UTF-8 JSON Lines／stdio 控制 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream → 有界队列 → 写盘，不在回调调用数据库／ASR |
-| 存储 | SQLite schema 5＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图 |
-| ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；Whisper small 多语言、CPU INT8，4 线程／beam 5；受管 spawn worker，全局一次推理 |
+| 存储 | SQLite schema 6＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
+| ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；六款 Whisper 多语言模型，默认 small／中文；CPU INT8，4 线程／beam 5；受管 spawn worker，全局一次推理 |
 | LLM | httpx 0.28.1、OpenAI 兼容 Chat Completions；单后台网络 worker，可选 SSE，不自动重试付费请求 |
 | 模型设置 | main 多服务管理，safeStorage 加密 Key；按服务／模型保存自定义强度或受限 JSON，不硬编码厂商档位 |
 | 分发 | electron-builder 26.15.3＋PyInstaller 6.22.2 onedir；macOS ARM64 DMG／Windows x64 NSIS 测试包，签名／公证未纳入 |
@@ -66,7 +66,7 @@
 ## 数据与安全边界
 
 - 桌面 userData 下保存 `meetings.sqlite3`、`meetings/<UUIDv4>/` 音频、`models/` 和加密 `model-services.json`；路径相对存储，stdio 不传整场音频。录音与推理解耦、音频持续写盘，积压由磁盘和检查点承接。
-- ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；块参数和锁定值见 [Spec 003 验证记录](../specs/spec-003-local-transcription/verification.md)。纪要任务固定完整转写／配置快照，失败保留旧结果，凭证不入业务数据库。
+- ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；任务锁定模型与语言，默认设置不改变历史任务。模型清单、候选发布与三语言实测见 [Spec 013](../specs/spec-013-local-model-library/spec.md)。纪要任务固定完整转写／配置快照，失败保留旧结果；重转写成功标记旧纪要过期，由用户手动更新，凭证不入业务数据库。
 - 页面导航不改变桌面 renderer URL／IPC 信任边界；会议页签共享唯一播放器，服务编辑器保留草稿。`paa.appearance.theme` 仅存外观偏好，不存 Key。
 - 本机桌面验收直接 `npm run dev` 使用默认日常资料。自动故障测试继续使用临时数据，不能让含清理或故障注入的测试操作用户资料；不为 GUI 验收设置隔离 userData。
 - 公司配置来自忽略的 `.env.company` 及数据库。API／worker 共用独立私有主密钥文件，凭证只在服务端短暂解密；数据库与密钥分开备份、配对恢复。旧环境模式仅为升级公司保留，显式导入后不回退。

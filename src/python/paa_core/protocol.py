@@ -42,6 +42,7 @@ class CoreService:
         expected = {'library.start': {'kind', 'input'}, 'library.status': {'id'}, 'library.release': {'id'}, 'library.read': {'id', 'offset'}, 'meetings.rename': {'meetingId', 'title'}, 'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
                     'meetings.list': set(), 'transcription.start': {'meetingId'},
+                    'model.manage': {'action', 'id', 'language'}, 'transcription.rerun': {'meetingId', 'modelId', 'language'}, 'transcription.cancelRerun': {'meetingId'},
                     'transcription.status': {'meetingId'}, 'transcript.list': {'meetingId', 'cursor'},
                     'summary.validateModel': {'config'}, 'summary.forgetModels': {'profileId'},
                     'summary.configure': {'config', 'automatic'}, 'summary.generate': {'meetingId'},
@@ -51,6 +52,9 @@ class CoreService:
         if method == 'meetings.list' and set(params) == {'offset'}:
             if type(params['offset']) is not int or not 0 <= params['offset'] <= 1_000_000:
                 raise DomainError('invalid_params', '分页位置无效。')
+        elif method == 'transcript.list' and set(params) == {'meetingId', 'cursor', 'publication'}:
+            if params['publication'] is not None and (not isinstance(params['publication'], str) or len(params['publication']) > 64):
+                raise DomainError('invalid_params', '文字版本无效。')
         elif set(params) != keys:
             raise DomainError('invalid_params', '请求参数无效。')
         if 'meetingId' in params and not valid_id(params['meetingId']):
@@ -122,9 +126,22 @@ class CoreService:
             if self.transcription:
                 self.transcription.shutdown()
             return {'stopping': True}, True
-        if method in ('model.status', 'model.download', 'model.cancel', 'transcription.start', 'transcription.status', 'transcription.activity', 'transcription.pause', 'transcript.list'):
+        if method in ('model.manage', 'transcription.rerun', 'transcription.cancelRerun', 'model.status', 'model.download', 'model.cancel', 'transcription.start', 'transcription.status', 'transcription.activity', 'transcription.pause', 'transcript.list'):
             if not self.transcription:
                 raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
+            if method == 'model.manage':
+                action, id, language = params['action'], params['id'], params['language']
+                if action not in ('download', 'cancel', 'configure', 'remove'):
+                    raise DomainError('invalid_params', '模型操作无效。')
+                self.transcription.model.entry(id)
+                if action != 'configure' and language is not None:
+                    raise DomainError('invalid_params', '请求参数无效。')
+                extra = {'language': language} if action == 'configure' else {}
+                return self.transcription.model_action(action, id=id, **extra), False
+            if method == 'transcription.rerun':
+                return self.transcription.rerun(params['meetingId'], params['modelId'], params['language']), False
+            if method == 'transcription.cancelRerun':
+                return self.transcription.cancel_rerun(params['meetingId']), False
             actions = {'model.status': self.transcription.model.status,
                        'model.download': self.transcription.model.download,
                        'model.cancel': self.transcription.model.cancel,
@@ -133,7 +150,7 @@ class CoreService:
             if method in actions:
                 return actions[method](), False
             if method == 'transcript.list':
-                return self.transcription.store.page(params['meetingId'], params['cursor']), False
+                return self.transcription.store.page(params['meetingId'], params['cursor'], params.get('publication')), False
             return (self.transcription.start(params['meetingId']) if method == 'transcription.start' else self.transcription.status(params['meetingId'])), False
         if method not in ('recording.start', 'recording.status', 'recording.stop', 'recording.pause', 'recording.resume', 'recording.interrupt', 'meetings.list', 'meetings.get'):
             raise DomainError('method_not_found', 'Unknown method')

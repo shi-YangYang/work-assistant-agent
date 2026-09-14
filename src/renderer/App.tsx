@@ -531,6 +531,7 @@ export function App(): React.JSX.Element {
               </section>
               {connected && recording.meetingId && (
                 <Transcript
+                  onModels={() => navigate('local-model')}
                   key={recording.meetingId}
                   meetingId={recording.meetingId}
                   modelReady={model?.state === 'ready'}
@@ -554,6 +555,7 @@ export function App(): React.JSX.Element {
               modelReady={model?.state === 'ready'}
               onBack={() => navigate('meetings')}
               onServices={() => navigate('services')}
+              onModels={() => navigate('local-model')}
             />
           )}
           <div hidden={page !== 'services'} className="page-content settings-page">
