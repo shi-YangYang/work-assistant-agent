@@ -388,7 +388,7 @@ main {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 9px;
-  overflow: hidden;
+  overflow: visible;
 }
 .meeting-row {
   display: flex;
@@ -1372,6 +1372,15 @@ summary {
   border-bottom: 1px solid var(--line);
   background: var(--surface);
   transition: background-color 150ms ease;
+}
+.library-row:first-child {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+.library-row:last-child {
+  border-bottom: 0;
+  border-bottom-left-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 .library-row:is(:hover, :focus-within) {
   background: var(--subtle);
