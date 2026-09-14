@@ -7,6 +7,7 @@ it('submits explicit new-work null after normal editing and keeping edits throug
     id: 'draft',
     messageId: 'source',
     workId: 'old-work',
+    baseRevision: 1,
     revision: 1,
     status: 'pending',
     content: {

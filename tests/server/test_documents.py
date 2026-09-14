@@ -85,7 +85,9 @@ async def test_upload_parsing_without_key_per_file_failure_and_model_retry_reuse
 async def test_seven_formats_refresh_private_download_and_mixed_image(setup):
     settings, sessions, users, c = setup
     conv = await conversation(c['employee'])
-    docs = [await upload(c['employee'], name, data) for name, data in samples().items()]
+    # Office archives embed timestamps; compare downloads with the uploaded bytes.
+    originals = samples()
+    docs = [await upload(c['employee'], name, data) for name, data in originals.items()]
     raw = io.BytesIO(); Image.new('RGB', (2, 2)).save(raw, 'PNG')
     image = await upload(c['employee'], 'image.png', raw.getvalue(), 'image/png')
     for group in (docs[:4], [*docs[4:], image]):
@@ -102,7 +104,7 @@ async def test_seven_formats_refresh_private_download_and_mixed_image(setup):
             response = await c['employee'].get(item['url'])
             assert response.status_code == 200
             if item['kind'] == 'document':
-                assert response.content == samples()[item['name']]
+                assert response.content == originals[item['name']]
                 assert response.headers['Content-Disposition'].startswith('attachment;')
                 extracted = (await c['employee'].get(f"/api/v1/uploads/{item['id']}/extraction")).json()
                 assert extracted['attachment']['extraction']['status'] == 'ready' and extracted['items']

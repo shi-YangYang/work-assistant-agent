@@ -18,13 +18,11 @@ describe('company HTTP boundary', () => {
   it('preserves server revision conflict rather than returning a fake success', async () => {
     vi.stubGlobal(
       'fetch',
-      vi
-        .fn()
-        .mockResolvedValue({
-          ok: false,
-          status: 409,
-          json: async () => ({ error: { code: 'revision_conflict', message: '请读取最新版本' } }),
-        }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: { code: 'revision_conflict', message: '请读取最新版本' } }),
+      }),
     )
     await expect(api('/reports/report')).rejects.toMatchObject({
       status: 409,

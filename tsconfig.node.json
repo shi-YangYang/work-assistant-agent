@@ -14,7 +14,8 @@
     "src/desktop/**/*.ts",
     "src/shared/**/*.ts",
     "src/renderer/env.d.ts",
-    "tests/**/*.ts",
+    "tests/desktop/**/*.ts",
+    "tests/smoke/**/*.ts",
     "*.ts"
   ]
 }

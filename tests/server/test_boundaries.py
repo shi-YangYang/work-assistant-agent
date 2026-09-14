@@ -92,10 +92,11 @@ async def test_long_conversation_is_summarized_before_hard_context_limit(setup):
     from paa_server.agent.harness import invoke_harness
     settings,sessions,users,c=setup
     actor=users['employee']
+    sent=await send(c['employee'],'今天继续方案。'*700)
     async with sessions.begin() as db:
+        current=await db.get(Message,sent['messageId'])
         for index in range(10):
-            db.add(Message(company_id=actor.company_id,owner_id=actor.id,text='历史方案讨论。'*180,reply='此前的讨论记录。'*100,created_at=now()-timedelta(minutes=index+1)))
-    await send(c['employee'],'今天继续方案。'*700)
+            db.add(Message(company_id=actor.company_id,owner_id=actor.id,conversation_id=current.conversation_id,text='历史方案讨论。'*180,reply='此前的讨论记录。'*100,created_at=current.created_at-timedelta(minutes=index+1)))
     job=await claim(sessions,actor.id)
     context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings,source_revision=0)
     model=controlled_model()

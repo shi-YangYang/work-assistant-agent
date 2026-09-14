@@ -5,6 +5,8 @@
     "src/web/**/*.tsx",
     "src/shared/company-contracts.ts",
     "src/ui/**/*.ts",
-    "src/ui/**/*.tsx"
+    "src/ui/**/*.tsx",
+    "tests/web/**/*.ts",
+    "tests/web/**/*.tsx"
   ]
 }
