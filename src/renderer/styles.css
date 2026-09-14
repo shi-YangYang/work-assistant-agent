@@ -242,14 +242,6 @@ button:not(:disabled):hover {
   white-space: nowrap;
   font: inherit;
 }
-.workspace-label {
-  padding: 18px 10px 8px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.settings-label {
-  padding-top: 30px;
-}
 .navigation {
   display: flex;
   flex: 1;
@@ -262,8 +254,9 @@ button:not(:disabled):hover {
 .navigation > div {
   flex-shrink: 0;
 }
-.navigation > div:has(.settings-label) {
+.navigation > .nav-settings-start {
   margin-top: auto;
+  padding-top: 12px;
 }
 .nav-item {
   display: flex;
@@ -361,17 +354,17 @@ main {
   color: var(--muted);
   margin-top: 6px;
 }
-.meeting-page {
+:is(.meeting-page, .meetings-page) {
   padding-top: 14px;
 }
-.meeting-page .page-heading {
+:is(.meeting-page, .meetings-page) .page-heading {
   align-items: center;
   padding-bottom: 8px;
 }
-.meeting-page .page-heading h1 {
+:is(.meeting-page, .meetings-page) .page-heading h1 {
   font-size: 22px;
 }
-.meeting-page .page-heading .primary-button,
+:is(.meeting-page, .meetings-page) .page-heading .primary-button,
 .meeting-context .secondary-button,
 .minutes-heading-actions .secondary-button {
   padding: 5px 10px;
@@ -385,6 +378,11 @@ main {
   display: block;
   margin-top: 6px;
   max-width: 270px;
+}
+.meetings-page .page-heading p,
+.meetings-page .meeting-action small {
+  margin-top: 2px;
+  font-size: 12px;
 }
 .page-content {
   flex: 1;
@@ -413,7 +411,31 @@ main {
   margin-left: 8px;
 }
 .meetings-section {
-  padding-top: 3px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.list-page {
+  display: flex;
+  overflow: hidden;
+  padding-bottom: 12px;
+}
+.meetings-section > :not(.library-scroll) {
+  flex-shrink: 0;
+}
+.meetings-section .section-heading {
+  margin-bottom: 8px;
+}
+.library-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+  padding: 3px;
+  margin: -3px;
 }
 .meeting-list {
   background: var(--surface);
@@ -1456,7 +1478,7 @@ summary {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin: 0 0 14px;
+  margin: 0 0 8px;
 }
 .library-filters label {
   display: flex;
@@ -1511,7 +1533,7 @@ summary {
 .library-pagination {
   justify-content: space-between;
   flex-wrap: wrap;
-  margin-top: 14px;
+  margin-top: 8px;
   color: var(--muted);
   font-size: 12px;
 }

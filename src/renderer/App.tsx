@@ -411,8 +411,7 @@ export function App(): React.JSX.Element {
         </button>
         <nav aria-label="主导航" className="navigation">
           {navItems.map(({ page: target, icon: Icon }) => (
-            <div key={target}>
-              {target === 'services' && <p className="workspace-label settings-label">设置</p>}
+            <div key={target} className={target === 'services' ? 'nav-settings-start' : undefined}>
               <button
                 className={`nav-item ${page === target || (page === 'meeting' && target === 'meetings') ? 'active' : ''}`}
                 aria-current={
@@ -438,7 +437,11 @@ export function App(): React.JSX.Element {
           <ChevronRight size={14} />
           <strong>{pageLabels[page]}</strong>
         </header>
-        <main className={page === 'meeting' ? 'meeting-page' : undefined}>
+        <main
+          className={
+            page === 'meeting' ? 'meeting-page' : page === 'meetings' ? 'meetings-page' : undefined
+          }
+        >
           {(error ||
             recording.error ||
             interruptedConnection ||
@@ -492,8 +495,9 @@ export function App(): React.JSX.Element {
               </div>
             )}
           </div>
-          <div ref={listViewport} hidden={page !== 'meetings'} className="page-content list-page">
+          <div hidden={page !== 'meetings'} className="page-content list-page">
             <MeetingLibraryList
+              viewportRef={listViewport}
               connected={connected}
               visible={page === 'meetings'}
               refreshVersion={listRefreshVersion}
