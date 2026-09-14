@@ -120,7 +120,7 @@ export function MeetingLibraryList({
       </div>
       <div className="library-filters">
         <label className="library-search">
-          <Search size={18} />
+          <Search size={18} aria-hidden="true" />
           <input
             aria-label="搜索会议"
             placeholder="搜索名称、文字记录和纪要"
@@ -141,12 +141,13 @@ export function MeetingLibraryList({
             }}
           />
         </label>
-        <label>
-          开始日期
+        <label className="library-date">
+          <span>开始日期</span>
           <input
             key={`from-${dateReset}`}
             type="date"
             value={from}
+            onClick={(event) => event.currentTarget.showPicker()}
             onInput={() => setDatesEdited(true)}
             onChange={(event) => {
               invalidateQuery()
@@ -154,12 +155,13 @@ export function MeetingLibraryList({
             }}
           />
         </label>
-        <label>
-          结束日期
+        <label className="library-date">
+          <span>结束日期</span>
           <input
             key={`to-${dateReset}`}
             type="date"
             value={to}
+            onClick={(event) => event.currentTarget.showPicker()}
             onInput={() => setDatesEdited(true)}
             onChange={(event) => {
               invalidateQuery()
