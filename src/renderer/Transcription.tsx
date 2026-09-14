@@ -41,9 +41,22 @@ export function ModelSettings({
           {model?.state === 'ready' ? '本地转写已就绪' : '准备本地转写'}
         </span>
       </div>
-      <p>支持中文及中英混合转写。</p>
-      <p>下载约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB，请预留 1.1 GB 磁盘空间。</p>
-      <p>下载需要联网，完成后可离线转写。</p>
+      <dl className="model-facts">
+        <div>
+          <dt>识别语言</dt>
+          <dd>中文及中英混合</dd>
+        </div>
+        <div>
+          <dt>模型体积</dt>
+          <dd>约 {model ? Math.ceil(model.totalBytes / 1e6) : 487} MB</dd>
+          <small>请预留 1.1 GB 磁盘空间</small>
+        </div>
+        <div>
+          <dt>使用方式</dt>
+          <dd>本地转写</dd>
+          <small>下载需要联网，完成后可离线使用</small>
+        </div>
+      </dl>
       <strong role="status">
         {model?.state === 'ready'
           ? '模型已就绪'

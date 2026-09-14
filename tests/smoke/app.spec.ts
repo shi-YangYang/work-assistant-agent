@@ -75,6 +75,7 @@ test('real desktop exposes actual capabilities and empty history with strict bou
   try {
     const page = await ready(app)
     await expect(page.getByRole('button', { name: '开始会议', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
     await expect(page.getByText('暂无会议记录', { exact: true })).toBeVisible()
     expect((await page.evaluate(() => window.paa.getStatus())).capabilities).toEqual([
       { id: 'recording', available: true },
@@ -155,6 +156,7 @@ test('real desktop exposes actual capabilities and empty history with strict bou
     await expect
       .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
       .toBe('ready')
+    await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
     const newPid = (await page.evaluate(() => window.paa.getStatus())).processId!
     const closed = app.waitForEvent('close')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
@@ -225,7 +227,9 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     })
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
     await expect.poll(() => recordingState(app)).toBe('recording')
-    await page.getByRole('button', { name: '重新连接', exact: true }).click()
+    await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
+    // The normal UI hides recovery; direct callers still cannot bypass the recording guard.
+    await page.evaluate(() => window.paa.retryCore())
     expect(await recordingState(app)).toBe('recording')
     const current = await page.evaluate(() => window.paa.getRecordingStatus())
     expect(current.ok && initial.ok && current.value.meetingId === initial.value.meetingId).toBe(
