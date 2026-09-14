@@ -139,7 +139,16 @@ export function MeetingMinutes({
     <section className="minutes-card" aria-label="会议纪要">
       <div className="section-heading">
         <h2>会议纪要</h2>
-        <span role="status">{view?.task ? labels[view.task.state] : '尚未生成'}</span>
+        <div className="minutes-heading-actions">
+          <span role="status">{view?.task ? labels[view.task.state] : '尚未生成'}</span>
+          <button
+            className="secondary-button"
+            disabled={!!active || busy || !connected || configured === false}
+            onClick={() => void generate()}
+          >
+            {active ? '生成中…' : content ? '重新生成纪要' : '生成纪要'}
+          </button>
+        </div>
       </div>
       {!content && !active && (
         <div className="minutes-empty">
@@ -170,13 +179,6 @@ export function MeetingMinutes({
           {error || view?.task?.error}
         </p>
       )}
-      <button
-        className="secondary-button"
-        disabled={!!active || busy || !connected || configured === false}
-        onClick={() => void generate()}
-      >
-        {active ? '生成中…' : content ? '重新生成纪要' : '生成纪要'}
-      </button>
       <div className={`minutes-layout ${source ? 'with-source' : ''}`}>
         {view?.result && content && (
           <article ref={article} className="minutes-content">

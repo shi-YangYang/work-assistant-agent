@@ -438,7 +438,7 @@ export function App(): React.JSX.Element {
           <ChevronRight size={14} />
           <strong>{pageLabels[page]}</strong>
         </header>
-        <main>
+        <main className={page === 'meeting' ? 'meeting-page' : undefined}>
           {(error ||
             recording.error ||
             interruptedConnection ||

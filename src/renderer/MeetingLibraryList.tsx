@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { AudioLines, Search, X } from 'lucide-react'
+import { AudioLines, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import type { Meeting } from '../shared/contracts'
 import type { LibraryPage, MeetingHit } from '../shared/library-contracts'
 import { MeetingActions } from './MeetingActions'
 import { MeetingProcessingState } from './MeetingProcessingState'
 import { audioTime } from './AudioPlayer'
-import { highlightedParts, meetingQuery, QueryGeneration } from './meeting-library-query'
+import {
+  highlightedParts,
+  meetingQuery,
+  QueryGeneration,
+  MEETINGS_PER_PAGE,
+} from './meeting-library-query'
 export function Highlight({ text, query }: { text: string; query: string }): React.JSX.Element {
   return (
     <>
@@ -36,6 +41,8 @@ export function MeetingLibraryList({
   const [datesEdited, setDatesEdited] = useState(false),
     [dateReset, setDateReset] = useState(0)
   const [items, setItems] = useState<LibraryPage['items']>([])
+  const [page, setPage] = useState(0)
+  const section = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [loaded, setLoaded] = useState(false)
@@ -64,6 +71,7 @@ export function MeetingLibraryList({
         if (!result.ok) throw new Error(result.message)
         generation.current.apply(version, query)
         setItems(result.value.items)
+        setPage(0)
         setMore(result.value.hasMore)
         setLoaded(true)
       } catch (cause) {
@@ -74,8 +82,8 @@ export function MeetingLibraryList({
       }
     }
   }, [text, from, to, connected, composing, refresh, refreshVersion])
-  async function next(): Promise<void> {
-    const request = generation.current.page(items.length)
+  async function turnPage(target: number): Promise<void> {
+    const request = generation.current.page(target * MEETINGS_PER_PAGE)
     if (!request) return
     const { version, query } = request
     setBusy(true)
@@ -84,13 +92,14 @@ export function MeetingLibraryList({
       const result = await window.paa.queryMeetings(query)
       if (!generation.current.current(version)) return
       if (!result.ok) throw new Error(result.message)
-      setItems((previous) => [
-        ...previous,
-        ...result.value.items.filter(
-          (item) => !previous.some((old) => old.meeting.id === item.meeting.id),
-        ),
-      ])
+      if (!result.value.items.length && target > 0) {
+        invalidate()
+        return
+      }
+      setItems(result.value.items)
+      setPage(target)
       setMore(result.value.hasMore)
+      section.current?.scrollIntoView({ block: 'start' })
     } catch (cause) {
       if (generation.current.current(version))
         setError(cause instanceof Error ? cause.message : '加载失败，请重试。')
@@ -102,18 +111,16 @@ export function MeetingLibraryList({
   function invalidateQuery(): void {
     generation.current.next()
     setMore(false)
-    setBusy(false)
+    setBusy(true)
   }
   function invalidate(): void {
     invalidateQuery()
     setRefresh((value) => value + 1)
   }
   return (
-    <section className="meetings-section" aria-labelledby="meetings-title">
+    <section ref={section} className="meetings-section" aria-labelledby="meetings-title">
       <div className="section-heading">
-        <h2 id="meetings-title">
-          我的会议 <span>{loaded ? items.length : '—'}</span>
-        </h2>
+        <h2 id="meetings-title">我的会议</h2>
         <button className="text-button" disabled={!connected || busy} onClick={invalidate}>
           刷新记录
         </button>
@@ -281,10 +288,31 @@ export function MeetingLibraryList({
           </p>
         </div>
       )}
-      {more && (
-        <button className="text-button" disabled={busy || !connected} onClick={() => void next()}>
-          加载更多
-        </button>
+      {loaded && (
+        <nav className="library-pagination" aria-label="会议分页">
+          <span>
+            本页 {items.length} 条 · 每页 {MEETINGS_PER_PAGE} 条
+          </span>
+          <div>
+            <button
+              className="secondary-button"
+              disabled={busy || !connected || page === 0}
+              onClick={() => void turnPage(page - 1)}
+            >
+              <ChevronLeft size={16} />
+              上一页
+            </button>
+            <span aria-live="polite">第 {page + 1} 页</span>
+            <button
+              className="secondary-button"
+              disabled={busy || !connected || !more}
+              onClick={() => void turnPage(page + 1)}
+            >
+              下一页
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </nav>
       )}
     </section>
   )
