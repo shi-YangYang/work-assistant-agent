@@ -2,7 +2,7 @@
 
 面向 macOS 和 Windows 的个人工作助手，从会议记录起步，逐步连接周报与历史工作信息，帮助个人回顾讨论、跟踪行动与积累长期记忆。
 
-当前已实现 **默认麦克风录音、WAV / SQLite 本地保存、历史列表与回放**。点击开始会议后采集真实声音，结束并保存后可重新启动应用查找和播放。已接入本地 Whisper small 转写、带时间的文字记录和历史补转写；本轮接入可配置的在线模型纪要，验证状态见 [Spec 004](specs/spec-004-meeting-minutes/spec.md)。周报和长期 Memory 尚未接入。
+当前已实现 **默认麦克风录音、WAV / SQLite 本地保存、历史列表与回放**。点击开始会议后采集真实声音，结束并保存后可重新启动应用查找和播放。已接入本地 Whisper small 转写、带时间的文字记录和历史补转写；本轮接入可配置的在线模型纪要，验证状态见 [Spec 004](specs/spec-004-meeting-minutes/spec.md)。公司员工消息、工作进展和日报／周报另由 [独立 Web 与服务端](#公司工作助手-webspec-008) 提供；长期 Memory 尚未接入。
 
 ## 背景
 
@@ -167,8 +167,13 @@ Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打�
 src/
 ├── desktop/              # 主进程、preload、Python 客户端、受限媒体
 ├── renderer/             # React 中文工作区
-├── shared/               # 有限 IPC API 与状态契约
-└── python/paa_core/      # 录音、WAV / SQLite、模型、转写与控制核心
+├── shared/               # 桌面 IPC 与公司 HTTP 契约
+├── ui/                   # 跨端共用语义主题
+├── web/                  # 公司工作助手 Web
+└── python/
+    ├── paa_core/         # 桌面录音、SQLite、转写与纪要
+    └── paa_server/       # 公司 API、任务、harness 与迁移
+deploy/company/          # 公司 Web／API 的独立部署
 tests/                   # 桌面、Python 与真实 Electron 场景
 scripts/                 # 安装与验证辅助脚本
 docs/                    # 产品定义与架构
@@ -185,3 +190,79 @@ renderer 启用沙箱与上下文隔离，关闭 Node integration。preload 仅�
 ## 许可证
 
 [MIT](LICENSE)。
+
+## 公司工作助手 Web（Spec 008）
+
+Electron 继续使用 `npm run dev`。公司账号、员工图文语音、工作进展和汇报看板使用独立 Web＋服务端，不读取或上传 Electron 的会议、模型与密钥。电脑与手机使用同一个网址，布局按宽度自动调整。
+
+### 本地启动
+
+准备 Node 24、Python 3.12、Docker Desktop 和 FFmpeg。服务端使用独立环境，安装过程不下载转写模型：
+
+```sh
+npm ci
+python3.12 -m venv .venv-server
+.venv-server/bin/python -m pip install -r requirements-server.lock
+cp .env.company.example .env.company
+```
+
+Windows 使用 `py -3.12 -m venv .venv-server`，安装命令改为 `.venv-server\Scripts\python.exe -m pip install -r requirements-server.lock`。其余 npm 命令相同。
+
+编辑 `.env.company`，设置随机 `POSTGRES_PASSWORD` 并同步 `DATABASE_URL`；`PAA_FFMPEG` 可指定 FFmpeg 可执行文件路径。不要提交这个文件，也不要使用 Electron 的配置文件替代。然后：
+
+```sh
+docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d
+npm run db:company
+node scripts/company.mjs model-key
+npm run admin:company
+npm run dev:company
+```
+
+`admin:company` 通过交互提示创建首家公司和管理员，密码不写入命令历史；公司已初始化时不会覆盖。打开 [本地 Web](http://127.0.0.1:5174)，管理员在“成员管理”创建员工临时账号；员工首次登录需修改密码。`dev:company` 同时启动 Web、API 与处理进程，Ctrl+C 一起停止。也可分别执行 `dev:web`、`dev:server`、`dev:worker`。API 修改后重启，Web 有热更新。
+
+已有环境升级到 `0004_documents` 时，先停止开发服务，备份数据库与私有附件，再安装当前 `requirements-server.lock`，运行 `npm run db:company`、`npm run dev:company`。增量迁移保留原消息、附件和业务引用；更早的环境会先将旧消息归入各自的“默认会话”。不需要重新创建账号或填写模型配置。生产备份与恢复方法见下方部署说明。
+
+管理员在“设置 → 模型服务管理”添加服务，在“用途分配”指定工作助手、报告与语音模型；保存后新任务即时生效，无需重启。聊天支持兼容 Chat Completions，默认流式；语音选择文件转写或 Qwen-ASR 兼容协议。Base URL 已包含版本路径，不自动补 `/v1`。目录失败可以手填模型 ID，“服务默认”不追加推理参数。获取模型、保存服务、主动小样本检测是独立操作；检测可能计费，不自动调用，目录可见不代表业务能力已通过。
+
+服务器以 AES-GCM 保存 API 密钥，Web 只显示“已设置”。`PAA_MODEL_KEY_FILE` 指定独立的 32 字节主密钥文件，本地默认在忽略的 `data/company/model-master.key`；初始化命令不会覆盖已有文件，数据库已有密文时不会在文件缺失后另造密钥。API 与 worker 必须读取同一私有文件（Unix 权限 600）。不要向聊天发送 Key，不要使用 Electron 的配置文件替代。
+
+升级到 schema `0002_model_services` 前已有公司可继续使用原环境配置，并在管理页明确导入；导入后数据库用途接管，清空用途不会重新落回环境变量。新公司不能继承环境 Key，直接在 Web 配置。原任务固定所用配置修订，普通重试沿用旧配置；失败后也可主动“使用当前配置重新处理”，这可能再次计费。撤销服务使旧任务不能再使用它，历史工作不被删除。
+
+默认只允许公共 HTTPS 模型地址，DNS 解析检查后固定实际连接 IP，不接受重定向和环境代理。部署方确有私有网关时可在 `PAA_MODEL_ALLOWED_ORIGINS` 放行精确源站（逗号分隔），Web 管理员无法放宽此边界。未配置时仍可登录、管理账号、保存消息、手动编辑／提交报告；AI 处理说明缺少的用途并保留输入。
+
+员工发送的原始工作消息、助手回复与附件对公司管理员可见；尚未发送的输入、独立进展编辑草稿和未提交报告仅本人可见。工作进展需员工确认，报告需员工提交。自动日报／周报初始不启用，管理员配置有效日期和时间后生效。
+
+工作助手支持新建、搜索、重命名和删除会话，切换时分别保留未发送草稿。聊天历史按会话组织，已确认工作仍可跨会话跟进；删除会话会保留已被工作／报告引用的原始材料。管理员保留工作助手和我的工作，通过团队看板查看员工报告，不生成个人日报／周报；成员管理仅维护员工账号。
+
+工作及从未提交的报告可由本人编辑／删除，员工不能删除已提交报告。管理员删除报告时同步清理其引用的原始消息和附件；其他引用同一消息的工作／报告仍保留，来源显示已删除。删除的周期报告不会自动重新生成，操作前确认框会说明关联影响。完整功能范围见 [Spec 011](specs/spec-011-web-function-management/spec.md)。
+
+工作助手的“文件”入口支持 PDF、DOCX、PPTX、TXT、JSON、MD、CSV，以及原有图片和语音。文档与图片可混合发送，每次最多 4 个、合计 20 MiB；图片单张最多 5 MiB。语音单独发送，限制仍为 3 分钟／20 MiB。
+
+文档在后台提取，不依赖模型密钥；文件卡片可以查看提取内容、下载原件和重试失败解析。当前仅提取已有文字，不做扫描件 OCR，也不支持旧版 DOC／PPT。达到解析上限或只有部分页面可读时会明确标注。总结、问答和提取工作信息需要配置工作助手模型，工作进展仍需本人确认。
+
+原文件存放在 API／worker 共用的私有附件目录，PostgreSQL 保存元数据、提取文字与位置；访问和删除沿用消息及业务来源权限。备份须包含数据库和附件目录。当前按会话使用文件，不会自动加入公司知识库；详细边界见 [Spec 012](specs/spec-012-assistant-documents/spec.md)。
+
+### 服务端和 Web 验证
+
+`npm run typecheck:web`、`npm run test:web`、`npm run build:web` 分别检查新 Web 的类型、快速单元和普通构建。`npm run test:server` 在真实 PostgreSQL 中验证权限、事务、幂等、任务恢复与实际 harness 工具流程，外部模型和 ASR 使用受控响应；不会调用付费服务。
+
+本地测试使用单独的 `paa_company_test` 数据库，在 `.env.company` 配置 `DATABASE_TEST_URL`。先创建该库，再临时将 `DATABASE_URL` 指向测试库执行一次 `npm run db:company`，恢复开发地址后运行测试。测试不清空开发库、录音或本地模型；它只清理自己创建的测试实体。只跑一个文件可用 `npm run test:server -- tests/server/test_boundaries.py`。服务端环境及数据库都独立于桌面 `.venv` 与 SQLite。
+
+CI 原触发方式保持不变；新增的 **Company API and Web** 在单个 Linux＋PostgreSQL 环境跑服务端固定样本、Web 单元／类型／普通构建，纳入 `CI required`。不运行真实 API、实体麦克风、模型下载或发行包。本地执行上述命令不触发远端 CI。
+
+### Linux 单机部署
+
+`deploy/company/compose.yml` 包含 Caddy、API、一个处理进程和 PostgreSQL。部署前设置 `.env.company` 的生产域名、`PAA_WEB_ORIGIN=https://你的域名`、数据库密码与 `PAA_MODEL_KEY_HOST_PATH`；域名需解析到服务器，80／443 可达。生产 cookie 强制 Secure；PostgreSQL 不发布公网端口。
+
+先在宿主机仓库外创建一次 32 字节随机密钥文件，设置所属用户为容器服务账户 UID 10001、权限 600，并在 `.env.company` 的 `PAA_MODEL_KEY_HOST_PATH` 指向该现有绝对路径。API／worker 以只读绑定挂载使用它，Compose 不会自动创建缺失文件，也不能把密钥放进镜像。保留原文件与独立备份，不在升级时重新生成。
+
+```sh
+docker compose --env-file .env.company -f deploy/company/compose.yml up --build -d
+docker compose --env-file .env.company -f deploy/company/compose.yml exec api python -m paa_server.cli bootstrap-admin
+```
+
+迁移任务先成功，API 和处理进程才启动；Web 独立构建后由 Caddy 同源提供。生产镜像固定 Python、数据库和 FFmpeg 版本，服务端依赖使用独立锁文件；日后安全升级需更新固定版本并验证。部署本身不会自动准备模型凭证。手机前台录音需要有效 HTTPS；手机访问开发电脑 IP 不享有 localhost 的安全例外，也不保证锁屏持续采集。
+
+2 核 2 GB 是试点部署起点，尚未通过实际负载验证。默认单处理并发、数据库小连接池，AI／ASR 由外部服务承担。每任务限制调用、工具次数、时间和 token 预算，另有公司每日调用额度；不将请求已发出但结果未知的情况自动重跑。
+
+升级前在维护窗口备份，设置已有的私有 `PAA_BACKUP_DIR` 后运行 `deploy/company/backup.sh`：暂时停止 Web／API／处理进程，保存 PostgreSQL dump、媒体与校验清单，然后恢复服务，保留最近 7 份完成的备份。主密钥必须另存于独立私有位置，`PAA_MODEL_KEY_BACKUP_DIR` 指定该目录；脚本为同一备份时间戳保存密钥副本及其校验值，不与数据库归档混放。两类备份由运维分别复制到受控异机位置。恢复时先验证两个 SHA256SUMS，停止写服务，使用对应镜像将 dump 导入空库、媒体还原到私有卷，并安装同一时间戳的主密钥（UID 10001／600），核对后再启动；不要把新 schema 自动降级到旧版本。主密钥丢失时旧凭证无法恢复；先保存业务数据库备份，由部署管理员撤销不可读服务并在确认所有旧密文已撤销后重新初始化主密钥，再重新输入各服务 Key。不要将损坏密文当成明文或静默恢复环境 Key。本轮未执行云部署、真实付费模型联调、手机实机录音或生产恢复演练。

@@ -4,7 +4,7 @@
 
 ACCEPTANCE · 2026-09-11。用户已体验并认可原型，实施完成，正在独立验收及核对本次 CI。已确认中性灰阶与蓝色强调、浅深色及跟随系统、已结束会议默认纪要／活动会议默认文字，以及录音控制条、引用联动和命令面板。调研与取舍见 [决策 0009](../../.ai/decisions/0009-interface-design-direction.md)，工程安排见 [Plan](plan.md)。
 
-设计参考：[交互原型](prototype.html)。可直接在浏览器打开，使用内置示例数据演示页面与状态；录音、播放、连接测试和保存为模拟，不访问应用数据或外部服务。实际实施须接入已有业务逻辑，不复制模拟结果。
+设计参考：[历史交互原型](https://github.com/shi-YangYang/work-assistant-agent/blob/236a9c4e32785e4d35b0673e2165e237cbe16b2c/specs/spec-006-interface-and-navigation/prototype.html)。原型使用模拟状态，仅作设计依据；正式实现接入已有业务，不以模拟结果作为运行验收。
 
 ## 背景与当前行为
 

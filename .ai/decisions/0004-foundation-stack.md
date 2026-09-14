@@ -17,7 +17,7 @@
 
 ## 取舍与约束
 
-- stdio 满足单机控制需求，暂不引入 HTTP / FastAPI、PostgreSQL、pgvector 或编排框架。ASR / LLM 保留 Provider 边界，选型在相应 Spec 落地。
+- stdio 满足桌面单机控制需求，桌面核心不引入 HTTP / FastAPI、PostgreSQL、pgvector 或编排框架；后续公司服务另见决策 0011。ASR / LLM 保留 Provider 边界，选型在相应 Spec 落地。
 - React / TypeScript 用于状态与契约；不引入额外组件库。electron-vite 5 的 peer 范围包含 Vite 7，不能无依据升级到不兼容大版本。
 - Electron 44 的按需下载与 electron-vite 读取 `path.txt` 的行为不同，因此显式使用 `postinstall: install-electron`，保证 `npm ci` 准备运行时；首次安装需要网络。
 - Spec 001 只交付开发骨架，不含录音、模型、业务数据库或安装包。正式用户无需安装运行时的约束见 [决策 0005](0005-self-contained-desktop-distribution.md)。

@@ -7,21 +7,26 @@
 | [003](spec-003-local-transcription/spec.md) | 模型准备、持续转写与恢复 | DONE | [PASS](spec-003-local-transcription/acceptance.md) |
 | [004](spec-004-meeting-minutes/spec.md) | API 管理、会后纪要与重试 | ACCEPTANCE | [工程缺陷已关闭，待外部验证](spec-004-meeting-minutes/acceptance.md) |
 | [005](spec-005-desktop-distribution-and-controls/spec.md) | 内置运行时打包、设置折叠、暂停录音与播放器 | ACCEPTANCE | [许可缺陷已关闭，待平台／交互验证](spec-005-desktop-distribution-and-controls/acceptance.md) |
-| [006](spec-006-interface-and-navigation/spec.md) | 配色层级、页面导航与会议交互重设计 | ACCEPTANCE | 实施完成，独立验收及本次 CI 待闭环 |
+| [006](spec-006-interface-and-navigation/spec.md) | 配色层级、页面导航与会议交互重设计 | ACCEPTANCE | [工程 PASS，平台／交互范围见报告](spec-006-interface-and-navigation/acceptance.md) |
 | [007](spec-007-meeting-library/spec.md) | 会议搜索与筛选、重命名、复制导出及删除 | ACCEPTANCE | [工程 PASS，日期控件界面复验待解锁](spec-007-meeting-library/acceptance.md) |
+| [008](spec-008-meeting-followup/spec.md) | 员工工作助手、进展、日报／周报与老板看板；Web 延续桌面设计 | ACCEPTANCE | [工程 PASS，待真实服务／设备与部署验证](spec-008-meeting-followup/acceptance.md) |
+| [009](spec-009-company-model-services/spec.md) | 公司模型服务管理、用途分配与真实业务联调 | ACCEPTANCE | [工程及真实文字／周报通过，图文／ASR 待验证](spec-009-company-model-services/acceptance.md) |
+| [010](spec-010-web-layout-and-responsive/spec.md) | Web 全页面排版、控件尺寸与响应式维护 | DONE | [PASS：Web 定向检查与逐页视口对照](spec-010-web-layout-and-responsive/acceptance.md) |
+| [011](spec-011-web-function-management/spec.md) | 多级面包屑、工作／报告管理、多会话、角色入口与汇报控件 | DONE | [PASS：管理与会话检查，实测边界见记录](spec-011-web-function-management/acceptance.md) |
+| [012](spec-012-assistant-documents/spec.md) | 工作助手文件发送、解析、来源引用与私有存储 | PASS | [验收](spec-012-assistant-documents/acceptance.md)；七格式真实解析，模型使用固定响应 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 
 ## 文档分工
 
-- `.ai/decisions/`：为什么选这个方案、否决了什么、有哪些长期约束；不复制运行日志。
+- `.ai/decisions/`：为什么选这个方案、否决了什么、有哪些长期约束；不复制运行日志、依赖版本表或实施清单。
 - `spec.md`：目标、行为、边界和验收标准；通过引用使用已有技术决策。
-- `plan.md`：模块、数据流、实施顺序、迁移和针对性验证方案；不重抄需求。
+- `plan.md`：模块、数据流、接口／恢复契约、迁移和针对性验证方案；不重抄需求、安装命令或通用 Agent 流程。
 - `implementation.md`：最终实现摘要、必要实现细节和已关闭的返工记录。
 - `acceptance.md`：独立验收结论、覆盖、证据来源和未验证项；不能由实施者自评替代。
 - `verification.md`：仅在有较多实测数据时使用，集中样本、参数、计时与 CI 证据；其他文档引用它。
 
-每条事实只在职责最匹配的位置详述。短 Spec 按模板简写，已写清的内容不为填章节反复展开；已完成返工合入实施 / 验收记录，不为每次 CI 调整永久增加一份重复报告。
+状态与验收入口只在本索引汇总；路线图记录优先级，技术栈记录实际技术，README 记录运行步骤，三者不复制逐轮测试日志。每条事实只在职责最匹配的位置详述。短 Spec 按模板简写，已写清的内容不为填章节反复展开；已完成返工合入实施 / 验收记录，不为每次 CI 调整永久增加一份重复报告。
 
 ## 生命周期
 
@@ -32,3 +37,5 @@
 2026-09-10 按用户要求整理：保留编号、需求、历史 PASS / FAIL、修复依据及证据，把已结束的分轮报告归并到各 Spec 的实施摘要与验收记录。本次仅整理文档，没有重新运行测试或改变验收结论。整理前完整原文可在 [Git 快照 23ba685](https://github.com/shi-YangYang/work-assistant-agent/tree/23ba685f5af58039ec30297d8e20af91eef61f10/specs) 查阅，也可用 `git show 23ba685:specs/<目录>/<原文件>` 恢复。
 
 已完成的 Spec 001～003 专用交接文件于 2026-09-11 删除，结论保留在各 Spec；旧交接可通过 `git show e91748f:.ai/prompts/<原文件>` 查阅。后续只维护当前交接，避免重复保存已归档任务指令。
+
+2026-09-13 按用户要求再次精简：保留 Spec／Decision 编号、需求和验收结论，归并重复方案与实施过程。旧 Spec 006／008 静态原型及首版形态比较改用固定 Git 链接；移除已落后于 package.json 的 pnpm 锁文件，沿用现有 npm／package-lock。整理前完整内容在 [236a9c4 快照](https://github.com/shi-YangYang/work-assistant-agent/tree/236a9c4e32785e4d35b0673e2165e237cbe16b2c)，可用 `git show 236a9c4:<路径>` 恢复；本次只做文档与引用检查，不代表重新验收。
