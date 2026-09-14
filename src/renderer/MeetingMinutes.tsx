@@ -63,6 +63,10 @@ export function MeetingMinutes({
         if (!alive) return
         if (response.ok) {
           setView(response.value)
+          if (response.value.result?.stale) {
+            setSource(null)
+            sourceRequest.current++
+          }
           onSummaryAvailable?.(!!response.value.result)
         } else setError(response.message)
       } catch {
@@ -121,11 +125,12 @@ export function MeetingMinutes({
   }
   const refs = (ids: string[]): React.JSX.Element => (
     <span className="source-links">
-      {ids.map((id, index) => (
-        <button className="text-button" key={id} onClick={() => void showSource(id)}>
-          原文 {index + 1}
-        </button>
-      ))}
+      {!view?.result?.stale &&
+        ids.map((id, index) => (
+          <button className="text-button" key={id} onClick={() => void showSource(id)}>
+            原文 {index + 1}
+          </button>
+        ))}
     </span>
   )
   function closeSource(): void {
@@ -139,7 +144,16 @@ export function MeetingMinutes({
     <section className="minutes-card" aria-label="会议纪要">
       <div className="section-heading">
         <h2>会议纪要</h2>
-        <span role="status">{view?.task ? labels[view.task.state] : '尚未生成'}</span>
+        <div className="minutes-heading-actions">
+          <span role="status">{view?.task ? labels[view.task.state] : '尚未生成'}</span>
+          <button
+            className="secondary-button"
+            disabled={!!active || busy || !connected || configured === false}
+            onClick={() => void generate()}
+          >
+            {active ? '生成中…' : content ? '重新生成纪要' : '生成纪要'}
+          </button>
+        </div>
       </div>
       {!content && !active && (
         <div className="minutes-empty">
@@ -170,13 +184,6 @@ export function MeetingMinutes({
           {error || view?.task?.error}
         </p>
       )}
-      <button
-        className="secondary-button"
-        disabled={!!active || busy || !connected || configured === false}
-        onClick={() => void generate()}
-      >
-        {active ? '生成中…' : content ? '重新生成纪要' : '生成纪要'}
-      </button>
       <div className={`minutes-layout ${source ? 'with-source' : ''}`}>
         {view?.result && content && (
           <article ref={article} className="minutes-content">
@@ -185,6 +192,11 @@ export function MeetingMinutes({
               {view.result.serviceName} · {view.result.model} ·{' '}
               {new Date(view.result.generatedAt).toLocaleString()}
             </small>
+            {view.result.stale && (
+              <p className="audio-warning" role="status">
+                文字记录已更新，纪要待更新。此纪要基于旧文字记录。
+              </p>
+            )}
             {view.result.sourceIncomplete && (
               <p className="audio-warning">录音曾中断，本纪要仅依据保留下来的内容。</p>
             )}

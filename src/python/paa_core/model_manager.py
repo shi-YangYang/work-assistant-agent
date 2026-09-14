@@ -1,4 +1,4 @@
-"""User-initiated, pinned model downloads, atomically published after validation."""
+"""Pinned multi-model downloads and persistent defaults; inference remains offline."""
 from __future__ import annotations
 
 import hashlib
@@ -9,19 +9,14 @@ import certifi
 import threading
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
+from .asr_worker import config_for_mode, InferenceToken
 from .repository import DomainError
+from .model_catalog import CATALOG
 
-MODEL_ID = 'Systran/faster-whisper-small'
-REVISION = '536b0662742c02347bc0e980a01041f333bce120'
-FILES = {
-    'config.json': (2370, 'b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828'),
-    'model.bin': (483546902, '3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671'),
-    'tokenizer.json': (2203239, 'fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab'),
-    'vocabulary.txt': (459861, '34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913'),
-    'README.md': (1998, '329373481008c7c38654aff8ecdcf0163c211557cc7ba8e2ef6f2f84b4f75ec8'),
-}
+MODEL_ID = CATALOG['small']['modelId']
+REVISION = CATALOG['small']['revision']
+FILES = CATALOG['small']['files']
 DOWNLOAD_BYTES = sum(item[0] for item in FILES.values())
 REQUIRED_BYTES = DOWNLOAD_BYTES * 2 + 50_000_000
 
@@ -34,16 +29,15 @@ class HTTPSRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def verify_files(path, cancelled=lambda: False):
-    for name, (size, checksum) in FILES.items():
+def verify_files(path, cancelled=lambda: False, files=None):
+    for name, (size, checksum) in (FILES if files is None else files).items():
         file = path / name
         if path.is_symlink() or file.is_symlink() or file.stat().st_size != size:
             raise OSError('Model file size mismatch')
         digest = hashlib.sha256()
         with file.open('rb') as source:
             while data := source.read(1024 * 1024):
-                if cancelled():
-                    raise InterruptedError('Cancelled')
+                if cancelled(): raise InterruptedError('Cancelled')
                 digest.update(data)
         if digest.hexdigest() != checksum:
             raise OSError('Model checksum mismatch')
@@ -52,115 +46,191 @@ def verify_files(path, cancelled=lambda: False):
 class ModelManager:
     def __init__(self, root, worker):
         self.root = root / 'models'
-        self.path = self.root / ('whisper-small-' + REVISION)
-        self.staging = self.root / ('whisper-small-' + REVISION + '.staging')
+        self.settings_path = root / 'transcription-settings.json'
         self.worker = worker
         self.lock = threading.RLock()
         self.cancelled = threading.Event()
+        self.prepare_token = None
         self.thread = None
-        self.response = None
-        self.state = 'missing'
-        self.downloaded = 0
-        self.error = None
-        if self.path.exists():
-            self._begin(False)
+        self.preparing = None
+        self.references = lambda _model, _revision: False
+        self.default_id, self.language = 'small', 'zh'
+        try:
+            settings = json.loads(self.settings_path.read_text())
+            self.entry(settings['modelId'])
+            config_for_mode(settings['language'])
+            self.default_id, self.language = settings['modelId'], settings['language']
+        except (OSError, ValueError, KeyError, TypeError, DomainError):
+            pass
+        self.states = {id: {'state': 'missing', 'downloadedBytes': 0, 'error': None} for id in CATALOG}
+        self.path = self.path_for('small') # Compatibility for old integration tools.
+        self.staging = self.staging_for('small')
+        existing = [id for id in CATALOG if self.path_for(id).exists()]
+        if existing:
+            for id in existing: self.states[id]['state'] = 'verifying'
+            self.thread = threading.Thread(target=self._scan, args=(existing,), name='model-cache-check', daemon=True)
+            self.thread.start()
 
-    def status(self):
+    def entry(self, id):
+        if not isinstance(id, str) or id not in CATALOG:
+            raise DomainError('invalid_model', '请选择列表中的转写模型。')
+        return CATALOG[id]
+
+    def path_for(self, id):
+        return self.root / ('whisper-' + id + '-' + self.entry(id)['revision'])
+
+    def staging_for(self, id):
+        return self.path_for(id).with_name(self.path_for(id).name + '.staging')
+
+    def files(self, id):
+        return FILES if id == 'small' else self.entry(id)['files']
+
+    def _scan(self, ids):
+        try:
+            for id in ids:
+                try:
+                    if self.root.is_symlink(): raise OSError('Invalid directory')
+                    verify_files(self.path_for(id), self.cancelled.is_set, self.files(id))
+                    result = {'state': 'ready', 'downloadedBytes': sum(v[0] for v in self.files(id).values()), 'error': None}
+                except Exception:
+                    result = {'state': 'error', 'downloadedBytes': 0, 'error': '模型文件不完整，请重新下载。'}
+                with self.lock: self.states[id] = result
+        finally:
+            with self.lock: self.thread = None
+
+    def _status(self, id):
+        entry = self.entry(id)
+        total = sum(item[0] for item in self.files(id).values())
+        path = self.path_for(id)
+        occupied = sum(p.stat().st_size for p in path.iterdir() if p.is_file() and not p.is_symlink()) if path.is_dir() and not path.is_symlink() else 0
+        reason = '请先选择其他默认模型。' if id == self.default_id else '模型正在准备。' if id == self.preparing else '尚未完成的转写任务需要此模型，请先完成任务或取消重新转写。' if self.references(entry['modelId'], entry['revision']) else None
+        return {'id': id, 'name': 'Whisper ' + id, 'modelId': entry['modelId'], 'revision': entry['revision'],
+                **self.states[id], 'totalBytes': total, 'requiredBytes': total * 2 + 50_000_000,
+                'occupiedBytes': occupied, 'parameters': entry['parameters'], 'description': entry['description'],
+                'source': entry['modelId'], 'license': entry.get('license', 'MIT'),
+                'default': id == self.default_id, 'deleteBlockedReason': reason}
+
+    def status(self, id=None):
         with self.lock:
-            return {'modelId': MODEL_ID, 'revision': REVISION, 'state': self.state,
-                    'downloadedBytes': self.downloaded, 'totalBytes': DOWNLOAD_BYTES,
-                    'requiredBytes': REQUIRED_BYTES, 'source': 'Hugging Face · SYSTRAN',
-                    'license': 'MIT', 'error': self.error}
+            if id is not None: return self._status(id)
+            return {**self._status(self.default_id), 'defaultModel': self.default_id, 'language': self.language,
+                    'preparingModel': self.preparing, 'models': [self._status(key) for key in CATALOG]}
 
-    def _begin(self, download):
-        self.cancelled.clear()
-        self.state = 'downloading' if download else 'verifying'
-        self.downloaded = 0
-        self.error = None
-        self.thread = threading.Thread(target=self._prepare, args=(download,), name='model-prepare', daemon=True)
-        self.thread.start()
-
-    def download(self):
+    def selected(self):
         with self.lock:
-            if self.state in ('downloading', 'verifying', 'ready') or (self.thread and self.thread.is_alive()):
-                return self.status()
-            self._begin(True)
+            entry = self.entry(self.default_id)
+            return entry['modelId'], entry['revision'], config_for_mode(self.language)
+
+    def resolve(self, model_id, revision):
+        with self.lock:
+            for id, entry in CATALOG.items():
+                if entry['modelId'] == model_id and entry['revision'] == revision:
+                    if self.states[id]['state'] != 'ready':
+                        raise DomainError('model_not_ready', f'请先下载并准备 Whisper {id}，此任务继续使用原来的模型和语言。')
+                    return self.path_for(id)
+        name = next(('Whisper ' + id for id, entry in CATALOG.items() if entry['modelId'] == model_id), model_id)
+        raise DomainError('model_mismatch', f'任务所需的 {name} 固定版本 {revision} 不可用，请保留资料并联系维护者。')
+
+    def configure(self, id, language):
+        with self.lock:
+            self.entry(id)
+            config_for_mode(language)
+            if self.states[id]['state'] != 'ready' and id != self.default_id:
+                raise DomainError('model_not_ready', '请先下载并准备此模型。')
+            target = self.settings_path.with_suffix('.staging')
+            if target.is_symlink() or self.settings_path.is_symlink(): raise OSError('Invalid settings file')
+            target.write_text(json.dumps({'modelId': id, 'language': language}), encoding='utf-8')
+            target.replace(self.settings_path)
+            self.default_id, self.language = id, language
             return self.status()
 
-    def cancel(self):
-        self.cancelled.set()
-        if self.state == 'verifying' and hasattr(self.worker, 'interrupt'):
-            self.worker.interrupt()
-        # Reads have a finite network timeout. Do not block the control loop on a stalled socket.
-        return self.status()
+    def download(self, id=None):
+        with self.lock:
+            id = id or self.default_id
+            self.entry(id)
+            if self.states[id]['state'] == 'ready': return self.status()
+            if self.thread is not None:
+                raise DomainError('model_busy', '正在准备其他模型，请完成或取消后重试。')
+            self.preparing = id
+            self.cancelled.clear()
+            self.prepare_token = InferenceToken()
+            self.states[id] = {'state': 'downloading', 'downloadedBytes': 0, 'error': None}
+            self.thread = threading.Thread(target=self._prepare, args=(id,), name='model-prepare', daemon=True)
+            self.thread.start()
+            return self.status()
 
-    def _prepare(self, download):
-        target = self.staging if download else self.path
+    def cancel(self, id=None):
+        with self.lock:
+            if id is not None: self.entry(id)
+            if id is None or id == self.preparing:
+                self.cancelled.set()
+                if self.prepare_token: self.prepare_token.cancel()
+            return self.status()
+
+    def remove(self, id):
+        with self.lock:
+            state = self._status(id)
+            if state['deleteBlockedReason']: raise DomainError('model_in_use', state['deleteBlockedReason'])
+            path = self.path_for(id)
+            if self.root.is_symlink() or path.is_symlink(): raise OSError('Invalid model directory')
+            if hasattr(self.worker, 'release'): self.worker.release(path)
+            try:
+                if path.exists(): shutil.rmtree(path)
+            except OSError as exc:
+                self.states[id]['state'] = 'error'
+                self.states[id]['error'] = '模型文件未完整删除，请重试删除或重新下载。'
+                raise DomainError('model_remove_failed', '模型文件仍被占用，请稍后重试删除。') from exc
+            self.states[id] = {'state': 'missing', 'downloadedBytes': 0, 'error': None}
+            return self.status()
+
+    def _prepare(self, id):
+        entry, files = self.entry(id), self.files(id)
+        target, path = self.staging_for(id), self.path_for(id)
         terminal_state, terminal_error = 'ready', None
         try:
-            if self.root.is_symlink() or target.is_symlink():
-                raise OSError('Invalid model directory')
+            if self.root.is_symlink() or target.is_symlink() or path.is_symlink(): raise OSError('Invalid model directory')
             self.root.mkdir(parents=True, exist_ok=True)
-            if download:
-                if shutil.disk_usage(self.root).free < REQUIRED_BYTES:
-                    raise DomainError('model_space', '磁盘空间不足，请至少预留 1.1 GB 后重试下载。')
-                if self.staging.exists():
-                    shutil.rmtree(self.staging)
-                self.staging.mkdir()
-                # urllib honors the OS proxy settings on macOS/Windows and normal TLS validation.
-                opener = urllib.request.build_opener(HTTPSRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())))
-                for name, (size, _checksum) in FILES.items():
-                    if self.cancelled.is_set():
-                        raise InterruptedError('Cancelled')
-                    url = f'https://huggingface.co/{MODEL_ID}/resolve/{REVISION}/{name}'
-                    with opener.open(url, timeout=10) as response, (target / name).open('xb') as destination:
-                        count = 0
-                        while data := response.read(256 * 1024):
-                            if self.cancelled.is_set():
-                                raise InterruptedError('Cancelled')
-                            count += len(data)
-                            if count > size:
-                                raise OSError('Unexpected model size')
-                            destination.write(data)
-                            with self.lock:
-                                self.downloaded += len(data)
-                        if count != size:
-                            raise OSError('Incomplete model download')
-            with self.lock:
-                self.state = 'verifying'
-            verify_files(target, self.cancelled.is_set)
-            if self.cancelled.is_set():
-                raise InterruptedError('Cancelled')
-            self.worker.load(target)
-            if self.cancelled.is_set():
-                raise InterruptedError('Cancelled')
-            if download:
-                if self.path.exists():
-                    # Only the fixed, previously invalid model directory can be replaced.
-                    shutil.rmtree(self.path)
-                target.replace(self.path)
-        except InterruptedError:
-            terminal_state = 'missing'
+            required = sum(v[0] for v in files.values()) * 2 + 50_000_000
+            if shutil.disk_usage(self.root).free < required:
+                raise DomainError('model_space', f'磁盘空间不足，请至少预留 {required / 1e9:.1f} GB 后重试。')
+            if target.exists(): shutil.rmtree(target)
+            target.mkdir()
+            opener = urllib.request.build_opener(HTTPSRedirect(), urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=certifi.where())))
+            for name, (size, _checksum) in files.items():
+                if self.cancelled.is_set(): raise InterruptedError('Cancelled')
+                url = f"https://huggingface.co/{entry['modelId']}/resolve/{entry['revision']}/{name}"
+                with opener.open(url, timeout=10) as response, (target / name).open('xb') as destination:
+                    count = 0
+                    while data := response.read(256 * 1024):
+                        if self.cancelled.is_set(): raise InterruptedError('Cancelled')
+                        count += len(data)
+                        if count > size: raise OSError('Unexpected model size')
+                        destination.write(data)
+                        with self.lock: self.states[id]['downloadedBytes'] += len(data)
+                    if count != size: raise OSError('Incomplete model download')
+            with self.lock: self.states[id]['state'] = 'verifying'
+            verify_files(target, self.cancelled.is_set, files)
+            if self.cancelled.is_set(): raise InterruptedError('Cancelled')
+            if hasattr(self.worker, 'validate'):
+                self.worker.validate(target, config_for_mode('zh'), self.prepare_token)
+            else: self.worker.load(target)
+            if self.cancelled.is_set(): raise InterruptedError('Cancelled')
+            if path.exists(): shutil.rmtree(path)
+            target.replace(path)
         except Exception as exc:
             terminal_state = 'missing' if self.cancelled.is_set() else 'error'
-            terminal_error = None if self.cancelled.is_set() else str(exc) if isinstance(exc, DomainError) else '模型准备失败，请检查网络、磁盘空间后重试下载；录音仍可使用。'
+            terminal_error = None if self.cancelled.is_set() else str(exc) if isinstance(exc, DomainError) else '模型准备失败，请检查网络、磁盘空间与可用内存后重试。'
         finally:
             try:
-                if download and self.staging.exists() and not self.staging.is_symlink():
-                    shutil.rmtree(self.staging)
+                if target.exists() and not target.is_symlink(): shutil.rmtree(target)
             except OSError:
-                terminal_state, terminal_error = 'error', '模型临时文件清理失败，请检查磁盘权限后重试下载；录音仍可使用。'
-            finally:
-                # Terminal status and ownership are published together, after all file work.
-                # A caller observing missing/error can retry without racing this worker.
-                with self.lock:
-                    self.state, self.error = terminal_state, terminal_error
-                    if terminal_state == 'ready':
-                        self.downloaded = DOWNLOAD_BYTES
-                    self.thread = None
+                terminal_state, terminal_error = 'error', '模型临时文件清理失败，请检查磁盘权限后重试。'
+            with self.lock:
+                self.states[id]['state'], self.states[id]['error'] = terminal_state, terminal_error
+                if terminal_state == 'ready': self.states[id]['downloadedBytes'] = sum(v[0] for v in files.values())
+                self.thread = self.preparing = self.prepare_token = None
 
     def shutdown(self):
-        thread = self.thread
         self.cancel()
-        if thread:
-            thread.join(timeout=0.2)
+        thread = self.thread
+        if thread: thread.join(timeout=0.2)

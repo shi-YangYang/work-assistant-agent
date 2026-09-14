@@ -261,10 +261,11 @@ export class CoreManager extends EventEmitter {
     throw new Error('录音仍在保存，窗口会保持打开；请稍后查看状态。')
   }
   async modelState(
-    action: 'status' | 'download' | 'cancel' = 'status',
+    action: 'status' | 'download' | 'cancel' | 'manage' = 'status',
+    params?: Record<string, unknown>,
   ): Promise<Result<ModelState>> {
     try {
-      const value = await this.request(`model.${action}`)
+      const value = await this.request(`model.${action}`, params)
       if (!isModelState(value)) throw new CoreError('invalid_model', '模型状态数据无效。')
       const available = value.state === 'ready'
       if (
@@ -301,9 +302,30 @@ export class CoreManager extends EventEmitter {
       return this.failure(error)
     }
   }
-  async transcript(meetingId: string, cursor: number): Promise<Result<TranscriptPage>> {
+  async rerunTranscription(params: Record<string, unknown>): Promise<Result<TranscriptionStatus>> {
     try {
-      const value = await this.request('transcript.list', { meetingId, cursor })
+      const value = await this.request(
+        'modelId' in params ? 'transcription.rerun' : 'transcription.cancelRerun',
+        params,
+      )
+      if (!isTranscription(value) || value.meetingId !== params.meetingId)
+        throw new CoreError('invalid_transcription', '转写状态数据无效。')
+      return { ok: true, value }
+    } catch (error) {
+      return this.failure(error)
+    }
+  }
+  async transcript(
+    meetingId: string,
+    cursor: number,
+    publication?: string | null,
+  ): Promise<Result<TranscriptPage>> {
+    try {
+      const value = await this.request('transcript.list', {
+        meetingId,
+        cursor,
+        publication: publication ?? null,
+      })
       if (!isTranscriptPage(value, meetingId, cursor))
         throw new CoreError('invalid_transcript', '转写文字数据无效。')
       return { ok: true, value }
@@ -392,7 +414,7 @@ function isHealth(value: unknown): value is Pick<CoreStatus, 'capabilities' | 's
     )
   )
 }
-function isModelState(value: unknown): value is ModelState {
+function isModelBase(value: unknown): value is ModelState {
   if (!value || typeof value !== 'object') return false
   const row = value as ModelState
   return (
@@ -411,6 +433,32 @@ function isModelState(value: unknown): value is ModelState {
     (row.error === null || typeof row.error === 'string')
   )
 }
+const LOCAL_MODELS = ['tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3']
+function isModelState(value: unknown): value is ModelState {
+  if (!isModelBase(value)) return false
+  const row = value as ModelState
+  return (
+    LOCAL_MODELS.includes(row.defaultModel) &&
+    ['zh', 'en', 'mixed'].includes(row.language) &&
+    (row.preparingModel === null || LOCAL_MODELS.includes(row.preparingModel)) &&
+    Array.isArray(row.models) &&
+    row.models.length === LOCAL_MODELS.length &&
+    row.models.every(
+      (model, index) =>
+        isModelBase(model) &&
+        model.id === LOCAL_MODELS[index] &&
+        typeof model.name === 'string' &&
+        typeof model.description === 'string' &&
+        Number.isSafeInteger(model.parameters) &&
+        model.parameters > 0 &&
+        Number.isSafeInteger(model.occupiedBytes) &&
+        model.occupiedBytes >= 0 &&
+        typeof model.default === 'boolean' &&
+        model.default === (model.id === row.defaultModel) &&
+        (model.deleteBlockedReason === null || typeof model.deleteBlockedReason === 'string'),
+    )
+  )
+}
 function isTranscription(value: unknown): value is TranscriptionStatus {
   if (!value || typeof value !== 'object') return false
   const row = value as TranscriptionStatus
@@ -424,6 +472,20 @@ function isTranscription(value: unknown): value is TranscriptionStatus {
     (row.targetFrames === null ||
       (Number.isSafeInteger(row.targetFrames) && row.targetFrames >= 0)) &&
     typeof row.sourceIncomplete === 'boolean' &&
+    typeof row.candidate === 'boolean' &&
+    typeof row.canContinue === 'boolean' &&
+    (row.continuationBlockedReason === null || typeof row.continuationBlockedReason === 'string') &&
+    typeof row.publication === 'string' &&
+    row.publication.length <= 64 &&
+    [row.actual, row.published].every(
+      (snapshot) =>
+        snapshot === null ||
+        (!!snapshot &&
+          typeof snapshot.modelId === 'string' &&
+          typeof snapshot.revision === 'string' &&
+          ['zh', 'en', 'mixed'].includes(snapshot.language) &&
+          Number.isSafeInteger(snapshot.configVersion)),
+    ) &&
     (row.error === null || typeof row.error === 'string')
   )
 }
@@ -436,6 +498,8 @@ function isTranscriptPage(
   const page = value as TranscriptPage
   let previous = cursor
   if (
+    typeof page.publication !== 'string' ||
+    page.publication.length > 64 ||
     !Array.isArray(page.segments) ||
     page.segments.length > 100 ||
     typeof page.hasMore !== 'boolean'

@@ -8,6 +8,8 @@ import {
 import { mkdirSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, resolve, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { pythonCommand } from '../../src/desktop/python-command'
 const roots: string[] = []
 mkdirSync('artifacts/spec002', { recursive: true })
 function temp(): string {
@@ -75,6 +77,7 @@ test('real desktop exposes actual capabilities and empty history with strict bou
   try {
     const page = await ready(app)
     await expect(page.getByRole('button', { name: '开始会议', exact: true })).toBeEnabled()
+    await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
     await expect(page.getByText('暂无会议记录', { exact: true })).toBeVisible()
     expect((await page.evaluate(() => window.paa.getStatus())).capabilities).toEqual([
       { id: 'recording', available: true },
@@ -155,11 +158,80 @@ test('real desktop exposes actual capabilities and empty history with strict bou
     await expect
       .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
       .toBe('ready')
+    await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
     const newPid = (await page.evaluate(() => window.paa.getStatus())).processId!
     const closed = app.waitForEvent('close')
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
     await closed
     expect(() => process.kill(newPid, 0)).toThrow()
+  } finally {
+    await app.close().catch(() => {})
+  }
+})
+
+test('meeting pagination replaces ten rows, preserves filters and recovers from an empty last page', async () => {
+  const root = temp()
+  const { command, args } = pythonCommand(resolve('.'))
+  execFileSync(command, [
+    ...args,
+    '-c',
+    `
+import sys, uuid
+from pathlib import Path
+sys.path.insert(0, str(Path('src/python').resolve()))
+from paa_core.repository import Repository
+repo = Repository(Path(sys.argv[1]))
+for index in range(1, 24):
+    mid = str(uuid.uuid4())
+    repo.create(mid, str(uuid.uuid4()))
+    repo.update(mid, status='completed', startedAt=f'2026-09-{index:02}T00:00:00+00:00')
+    repo.rename(mid, f'项目 {"A" if index <= 13 else "B"} · {index:02}')
+`,
+    root,
+  ])
+  const app = await launch(root)
+  try {
+    const page = await ready(app)
+    const rows = page.locator('.meeting-row')
+    const pager = page.getByRole('navigation', { name: '会议分页' })
+    const next = pager.getByRole('button', { name: '下一页' })
+    const previous = pager.getByRole('button', { name: '上一页' })
+    await expect(rows).toHaveCount(10)
+    await expect(rows.first()).toContainText('项目 B · 23')
+    await expect(previous).toBeDisabled()
+    await next.click()
+    await expect(pager).toContainText('第 2 页')
+    await expect(rows).toHaveCount(10)
+    await expect(rows.first()).toContainText('项目 A · 13')
+    await next.click()
+    await expect(rows).toHaveCount(3)
+    await expect(pager).toContainText('第 3 页')
+    await expect(next).toBeDisabled()
+    await previous.click()
+    await expect(rows.first()).toContainText('项目 A · 13')
+    await page.getByRole('textbox', { name: '搜索会议' }).fill('项目 A')
+    await expect(pager).toContainText('第 1 页')
+    await expect(rows).toHaveCount(10)
+    await next.click()
+    await expect(rows).toHaveCount(3)
+    await expect(next).toBeDisabled()
+    await page.getByRole('button', { name: '清除', exact: true }).click()
+    await expect(rows.first()).toContainText('项目 B · 23')
+    await next.click()
+    await expect(pager).toContainText('第 2 页')
+    // Only this test's disposable records: emulate a page disappearing after it was listed.
+    await page.evaluate(async () => {
+      const result = await window.paa.queryMeetings({ text: '', from: null, to: null, offset: 20 })
+      if (!result.ok) throw new Error(result.message)
+      for (const { meeting } of result.value.items) {
+        const deleted = await window.paa.deleteMeeting(meeting.id)
+        if (!deleted.ok) throw new Error(deleted.message)
+      }
+    })
+    await next.click()
+    await expect(pager).toContainText('第 1 页')
+    await expect(rows).toHaveCount(10)
+    await expect(previous).toBeDisabled()
   } finally {
     await app.close().catch(() => {})
   }
@@ -225,7 +297,9 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     })
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
     await expect.poll(() => recordingState(app)).toBe('recording')
-    await page.getByRole('button', { name: '重新连接', exact: true }).click()
+    await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
+    // The normal UI hides recovery; direct callers still cannot bypass the recording guard.
+    await page.evaluate(() => window.paa.retryCore())
     expect(await recordingState(app)).toBe('recording')
     const current = await page.evaluate(() => window.paa.getRecordingStatus())
     expect(current.ok && initial.ok && current.value.meetingId === initial.value.meetingId).toBe(
@@ -310,6 +384,18 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     expect(
       await page.locator('audio').evaluate((element) => (element as HTMLAudioElement).muted),
     ).toBe(false)
+    const shortcuts = player.getByRole('button', { name: '播放器快捷键' })
+    const tooltip = player.getByRole('tooltip')
+    const playerHeight = (await player.boundingBox())!.height
+    await shortcuts.hover()
+    await expect(tooltip).toBeVisible()
+    expect((await player.boundingBox())!.height).toBe(playerHeight)
+    await player.getByRole('button', { name: '播放录音', exact: true }).hover()
+    await expect(tooltip).toBeHidden()
+    await shortcuts.focus()
+    await expect(tooltip).toBeVisible()
+    await shortcuts.press('Escape')
+    await expect(tooltip).toBeHidden()
     const rows = await page.evaluate(() => window.paa.listMeetings())
     expect(rows.ok && rows.meetings[0].audioAvailable).toBe(true)
     expect(rows.ok && Object.hasOwn(rows.meetings[0], 'audioPath')).toBe(false)

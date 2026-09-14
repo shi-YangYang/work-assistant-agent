@@ -98,7 +98,8 @@ test('installed package starts its bundled core without Python, Node or source c
         'aria-current',
         'page',
       )
-      await page.getByRole('button', { name: '重新连接', exact: true }).click()
+      await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
+      await page.evaluate(() => window.paa.retryCore())
       await expect
         .poll(
           async () => {
@@ -112,7 +113,7 @@ test('installed package starts its bundled core without Python, Node or source c
           { timeout: 30_000 },
         )
         .toBe(true)
-      await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeEnabled()
+      await expect(page.getByRole('button', { name: '重新连接', exact: true })).toBeHidden()
       mkdirSync('artifacts/spec005', { recursive: true })
       await page.screenshot({ path: `artifacts/spec005/installed-${process.platform}.png` })
     } finally {

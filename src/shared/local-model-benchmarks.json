@@ -1,0 +1,227 @@
+{
+  "version": 1,
+  "measuredAt": "2026-09-14T08:55:50.440208+00:00",
+  "environment": {
+    "hardware": "Apple M5 · 16 GiB",
+    "os": "macOS 26.4 ARM64",
+    "engine": "faster-whisper 1.2.1 / CTranslate2 4.8.2",
+    "computeType": "CPU INT8",
+    "threads": 4,
+    "beam": 5
+  },
+  "method": "本应用参考机实测；错误率越低越好，不同语言指标不能直接比较。峰值 RSS 为独立基准转写进程峰值，包含模型加载、解码与评分开销，不是文件体积、整应用内存或其他电脑的保证值。",
+  "normalization": "NFKC + casefold; retain Unicode letters/numbers only; no traditional/simplified, homophone or number-word equivalence. CER: each letter/number character. WER: punctuation/space-separated words (apostrophes removed). MER: individual Han characters + contiguous non-Han letters/numbers; digits form one contiguous token; punctuation separates tokens.",
+  "datasetManifestSha256": "c29ec827a1a4a159b21fff94c80d3a4ed6e4236406a9487a6476fa1593e85a7a",
+  "groups": {
+    "zh": {
+      "metric": "CER",
+      "sampleCount": 10,
+      "audioSeconds": 128.34,
+      "sourceAudioSeconds": 123.84,
+      "source": "https://huggingface.co/datasets/google/fleurs",
+      "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+      "license": "CC-BY-4.0",
+      "referenceUnits": 368,
+      "audioSha256": "e3d327541b10d7089b312ad3d139fcbeacd8918e513f932598b59b41ec6c1ee7",
+      "attribution": "Google FLEURS · Conneau et al. (2022)",
+      "selection": "validation rows: 20,21,22,23,24,25,26,27,28,29"
+    },
+    "en": {
+      "metric": "WER",
+      "sampleCount": 16,
+      "audioSeconds": 132.3,
+      "sourceAudioSeconds": 124.80000000000001,
+      "source": "https://huggingface.co/datasets/google/fleurs",
+      "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+      "license": "CC-BY-4.0",
+      "referenceUnits": 319,
+      "audioSha256": "2efdc58c3aeae1fd0ce93f11b4c244658f556a17b5d38045cd24039fc804d421",
+      "attribution": "Google FLEURS · Conneau et al. (2022)",
+      "selection": "validation rows: 20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35"
+    },
+    "mixed": {
+      "metric": "MER",
+      "sampleCount": 29,
+      "audioSeconds": 134.9899375,
+      "sourceAudioSeconds": 120.98993749999998,
+      "source": "https://huggingface.co/datasets/CAiRE/ASCEND",
+      "revision": "737e9800ae31be9932ba8464c80366559bd28424",
+      "license": "CC-BY-SA-4.0",
+      "referenceUnits": 470,
+      "audioSha256": "b29b010e0c6133a285c853af2d7d6ed91da9ece03234d1644eef41fc9ec9b2b0",
+      "attribution": "HKUST CAiRE ASCEND · Lovenia et al. (2022)",
+      "selection": "validation rows: 1,4,5,7,10,11,15,16,21,23,28,30,35,37,41,43,57,62,67,68,78,83,86,95,119,134,142,158,181"
+    }
+  },
+  "models": {
+    "tiny": {
+      "revision": "d90ca5fe260221311c53c58e660288d3deb8d356",
+      "languages": {
+        "zh": {
+          "substitutions": 84,
+          "deletions": 10,
+          "insertions": 6,
+          "referenceUnits": 368,
+          "errorRate": 0.2717391304347826,
+          "peakRssBytes": 484458496
+        },
+        "en": {
+          "substitutions": 27,
+          "deletions": 8,
+          "insertions": 3,
+          "referenceUnits": 319,
+          "errorRate": 0.11912225705329153,
+          "peakRssBytes": 464977920
+        },
+        "mixed": {
+          "substitutions": 234,
+          "deletions": 17,
+          "insertions": 185,
+          "referenceUnits": 470,
+          "errorRate": 0.9276595744680851,
+          "peakRssBytes": 484114432
+        }
+      }
+    },
+    "base": {
+      "revision": "ebe41f70d5b6dfa9166e2c581c45c9c0cfc57b66",
+      "languages": {
+        "en": {
+          "substitutions": 22,
+          "deletions": 6,
+          "insertions": 3,
+          "referenceUnits": 319,
+          "errorRate": 0.09717868338557993,
+          "peakRssBytes": 698335232
+        },
+        "mixed": {
+          "substitutions": 152,
+          "deletions": 32,
+          "insertions": 15,
+          "referenceUnits": 470,
+          "errorRate": 0.42340425531914894,
+          "peakRssBytes": 696336384
+        }
+      },
+      "missingReasons": {
+        "zh": "参考样本的解码输出超过单块上限，测试未完成。"
+      }
+    },
+    "small": {
+      "revision": "536b0662742c02347bc0e980a01041f333bce120",
+      "languages": {
+        "en": {
+          "substitutions": 13,
+          "deletions": 4,
+          "insertions": 0,
+          "referenceUnits": 319,
+          "errorRate": 0.05329153605015674,
+          "peakRssBytes": 993001472
+        },
+        "mixed": {
+          "substitutions": 110,
+          "deletions": 36,
+          "insertions": 7,
+          "referenceUnits": 470,
+          "errorRate": 0.32553191489361705,
+          "peakRssBytes": 968179712
+        },
+        "zh": {
+          "substitutions": 40,
+          "deletions": 9,
+          "insertions": 4,
+          "referenceUnits": 368,
+          "errorRate": 0.14402173913043478,
+          "peakRssBytes": 1027145728
+        }
+      }
+    },
+    "medium": {
+      "revision": "08e178d48790749d25932bbc082711ddcfdfbc4f",
+      "languages": {
+        "zh": {
+          "substitutions": 14,
+          "deletions": 5,
+          "insertions": 2,
+          "referenceUnits": 368,
+          "errorRate": 0.057065217391304345,
+          "peakRssBytes": 2036154368
+        },
+        "en": {
+          "substitutions": 11,
+          "deletions": 3,
+          "insertions": 2,
+          "referenceUnits": 319,
+          "errorRate": 0.050156739811912224,
+          "peakRssBytes": 2029879296
+        },
+        "mixed": {
+          "substitutions": 112,
+          "deletions": 41,
+          "insertions": 10,
+          "referenceUnits": 470,
+          "errorRate": 0.3468085106382979,
+          "peakRssBytes": 2057814016
+        }
+      }
+    },
+    "large-v3": {
+      "revision": "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+      "languages": {
+        "zh": {
+          "substitutions": 21,
+          "deletions": 8,
+          "insertions": 3,
+          "referenceUnits": 368,
+          "errorRate": 0.08695652173913043,
+          "peakRssBytes": 2817654784
+        },
+        "en": {
+          "substitutions": 8,
+          "deletions": 8,
+          "insertions": 0,
+          "referenceUnits": 319,
+          "errorRate": 0.050156739811912224,
+          "peakRssBytes": 3338354688
+        },
+        "mixed": {
+          "substitutions": 85,
+          "deletions": 45,
+          "insertions": 9,
+          "referenceUnits": 470,
+          "errorRate": 0.2957446808510638,
+          "peakRssBytes": 3124854784
+        }
+      }
+    },
+    "large-v3-turbo": {
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "languages": {
+        "en": {
+          "substitutions": 9,
+          "deletions": 5,
+          "insertions": 0,
+          "referenceUnits": 319,
+          "errorRate": 0.0438871473354232,
+          "peakRssBytes": 2126118912
+        },
+        "zh": {
+          "substitutions": 18,
+          "deletions": 5,
+          "insertions": 4,
+          "referenceUnits": 368,
+          "errorRate": 0.07336956521739131,
+          "peakRssBytes": 1965195264
+        },
+        "mixed": {
+          "substitutions": 138,
+          "deletions": 34,
+          "insertions": 29,
+          "referenceUnits": 470,
+          "errorRate": 0.4276595744680851,
+          "peakRssBytes": 2127806464
+        }
+      }
+    }
+  }
+}

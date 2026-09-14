@@ -1,12 +1,13 @@
 import {
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
   type Ref,
   type KeyboardEvent,
 } from 'react'
-import { Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from 'lucide-react'
+import { Keyboard, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from 'lucide-react'
 
 export type AudioPlayerHandle = { pause(): void; release(): void; seek(milliseconds: number): void }
 export function audioTime(seconds: number): string {
@@ -40,6 +41,8 @@ export function AudioPlayer({
   const [volume, setVolume] = useState(1)
   const [muted, setMuted] = useState(false)
   const [error, setError] = useState('')
+  const shortcutsId = useId()
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   useEffect(() => {
     alive.current = true
     const element = audio.current
@@ -271,20 +274,70 @@ export function AudioPlayer({
               onChange={(event) => setAudioVolume(Number(event.target.value))}
             />
           </div>
+          <div
+            className="player-shortcuts"
+            onMouseEnter={() => setShortcutsOpen(true)}
+            onMouseLeave={() => setShortcutsOpen(false)}
+            onFocus={() => setShortcutsOpen(true)}
+            onBlur={() => setShortcutsOpen(false)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.stopPropagation()
+                setShortcutsOpen(false)
+              }
+            }}
+          >
+            <button
+              className="player-icon"
+              aria-label="播放器快捷键"
+              aria-describedby={shortcutsId}
+            >
+              <Keyboard size={19} />
+            </button>
+            <div
+              id={shortcutsId}
+              role="tooltip"
+              className="player-shortcut-tip"
+              hidden={!shortcutsOpen}
+            >
+              <strong>播放器快捷键</strong>
+              <p>播放器获得焦点后使用</p>
+              <dl>
+                <div>
+                  <dt>播放／暂停</dt>
+                  <dd>
+                    <kbd>空格</kbd> / <kbd>K</kbd>
+                  </dd>
+                </div>
+                <div>
+                  <dt>后退／前进 10 秒</dt>
+                  <dd>
+                    <kbd>←</kbd> / <kbd>→</kbd> 或 <kbd>J</kbd> / <kbd>L</kbd>
+                  </dd>
+                </div>
+                <div>
+                  <dt>调节音量</dt>
+                  <dd>
+                    <kbd>↑</kbd> / <kbd>↓</kbd>
+                  </dd>
+                </div>
+                <div>
+                  <dt>静音／取消静音</dt>
+                  <dd>
+                    <kbd>M</kbd>
+                  </dd>
+                </div>
+              </dl>
+              <p>进度条获得焦点后，可用方向键微调。</p>
+            </div>
+          </div>
         </div>
       </fieldset>
       <p className="player-status" role={error ? 'alert' : 'status'}>
         {(!enabled ? '录音或重新连接期间暂停回放。' : '') ||
           error ||
-          (waiting ? '正在缓冲…' : !ready ? '正在读取录音…' : ended ? '播放结束' : '\u00a0')}
+          (waiting ? '正在缓冲…' : !ready ? '正在读取录音…' : ended ? '播放结束' : '')}
       </p>
-      <details className="player-shortcuts">
-        <summary>快捷键</summary>
-        <p>
-          播放器获得焦点后：空格 / K 播放或暂停，← / J 后退 10 秒，→ / L 前进 10 秒，↑ / ↓
-          调节音量，M 静音。进度条获得焦点后可用方向键微调。
-        </p>
-      </details>
     </section>
   )
 }

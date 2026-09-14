@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/python'))
-from paa_core.llm_provider import Provider, Limits, config, parameters
+from paa_core.llm_provider import Provider, Limits, _StreamReply, config, parameters
 from paa_core.meeting_summary import MeetingSummary, validate
 from paa_core.repository import Repository, DomainError
 from paa_core.protocol import CoreService, handle
@@ -214,7 +214,7 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM transcript_segments').fetchone()[0], 61)
         self.assertTrue((self.repo.root / 'meetings.schema2.backup.sqlite3').exists())
         upgraded = Repository(self.repo.root)
-        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 5)
+        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 6)
         self.assertEqual(upgraded.get(mid)['status'], 'completed')
         self.service = MeetingSummary(upgraded, self.provider)
 
@@ -278,7 +278,7 @@ class Handler(BaseHTTPRequestHandler):
         self.server.calls.append((self.path, self.headers.get('Authorization'), json.loads(body) if body else None))
         time.sleep(self.server.delay)
         self.send_response(self.server.status)
-        self.send_header('Content-Length', str(len(self.server.payload)))
+        self.send_header('Content-Length', str(len(self.server.payload) + self.server.missing_tail))
         self.end_headers()
         try:
             if self.server.partial_stall:
@@ -297,6 +297,7 @@ class TransportTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.server.daemon_threads = True
         self.server.calls = []; self.server.delay = 0; self.server.status = 200
+        self.server.missing_tail = 0
         self.server.partial_stall = False; self.server.release = threading.Event()
         self.server.payload = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': 'OK'}}]}).encode()
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': .02}, daemon=True); self.thread.start()
@@ -422,6 +423,67 @@ class TransportTests(unittest.TestCase):
         for data in (body, body.replace(b'"stop"', b'"length"') + b'data: [DONE]\n\n', b'data: [DONE]\n\n'):
             self.server.payload = data
             with self.assertRaises(DomainError): self.provider.check(self.config)
+
+    def test_long_meeting_sse_discards_reasoning_overhead_and_saves_complete_minutes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Repository(Path(directory))
+            mid = seed(repo, 492)
+            service = MeetingSummary(repo, self.provider)
+            try:
+                snapshot = service.store.snapshot(mid)
+                expected = content(snapshot['segments'])
+                reasoning = ('data: ' + json.dumps({'choices': [{'delta': {'reasoning_content': '思考' * 1000}}]}, ensure_ascii=False) + '\n\n').encode()
+                answer = ('data: ' + json.dumps({'choices': [{'delta': {'content': json.dumps(expected, ensure_ascii=False)}, 'finish_reason': 'stop'}]}, ensure_ascii=False) + '\n\n').encode()
+                self.server.payload = reasoning * 200 + answer + b'data: [DONE]\n\n'
+                self.assertGreater(len(self.server.payload), self.provider.limits.response)
+                self.provider.limits.deadline = 2
+                service.configure({**self.config, 'stream': True}, False)
+                service.generate(mid)
+                wait_for(lambda: service.get(mid)['task']['state'] in ('completed', 'failed'))
+                saved = service.get(mid)
+                self.assertEqual(saved['task']['state'], 'completed', saved['task'])
+                self.assertEqual(saved['result']['content'], expected)
+                self.assertEqual(len(self.server.calls), 1)
+                source = json.loads(self.server.calls[0][2]['messages'][-1]['content'])
+                self.assertEqual(source['segments'], snapshot['segments'])
+            finally:
+                service.shutdown()
+
+    def test_sse_done_finishes_before_broken_http_tail(self):
+        self.config['stream'] = True
+        self.server.payload = b'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        self.server.missing_tail = 1
+        self.assertEqual(self.provider.complete(self.config, [{'role': 'user', 'content': 'test'}]), 'OK')
+        self.assertEqual(len(self.server.calls), 1)
+
+    def test_sse_disconnect_before_done_rejects_partial_reply_without_retry(self):
+        self.config['stream'] = True
+        self.server.payload = b'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":"stop"}]}\n\n'
+        self.server.missing_tail = 1
+        with self.assertRaises(DomainError) as caught:
+            self.provider.check(self.config)
+        self.assertEqual(caught.exception.code, 'response_interrupted')
+        self.assertNotIn('fake-private-test-key', str(caught.exception))
+        self.assertEqual(len(self.server.calls), 1)
+
+    def test_sse_keeps_event_and_answer_memory_bounded(self):
+        self.config['stream'] = True
+        self.provider.limits.response = 256
+        frame = b'data: {"choices":[{"delta":{"content":"' + b'x' * 100 + b'"}}]}\n\n'
+        for payload in (frame * 3, b'data: ' + b'x' * 257, b'data: ' + b'x' * 257 + b'\n\n'):
+            with self.subTest(size=len(payload)):
+                self.server.payload = payload
+                with self.assertRaises(DomainError) as caught:
+                    self.provider.check(self.config)
+                self.assertEqual(caught.exception.code, 'response_too_large')
+
+    def test_sse_preserves_utf8_and_crlf_across_fragmented_packets(self):
+        stream = _StreamReply(1024)
+        data = ': heartbeat\r\n\r\ndata: {"choices":[{"delta":{"content":"会议已整理"},"finish_reason":"stop"}]}\r\n\r\ndata: [DONE]\r\n\r\n'.encode()
+        for value in data[:-1]:
+            self.assertFalse(stream.feed(bytes([value])))
+        self.assertTrue(stream.feed(data[-1:]))
+        self.assertEqual(json.loads(stream.response())['choices'][0]['message']['content'], '会议已整理')
     def test_alibaba_metadata_pagination_and_same_origin(self):
         source = settings('https://cn-hongkong.dashscope.aliyuncs.com/compatible-mode/v1')
         pages = [{'output': {'models': [{'model': f'qwen-{i}'} for i in range(100)]}},

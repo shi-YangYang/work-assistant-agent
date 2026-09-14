@@ -35,15 +35,22 @@ class SummaryStore:
                 raise DomainError('meeting_missing', '未找到这场会议。')
             if meeting[0] not in ('completed', 'interrupted') or not job or job[0] != 'completed':
                 raise DomainError('transcript_incomplete', '请先完成这场会议的转写。')
+            if db.execute("SELECT 1 FROM candidate_jobs WHERE meetingId=?", (meeting_id,)).fetchone():
+                raise DomainError('transcription_busy', '请先完成或取消重新转写，再生成纪要。')
+            generation = db.execute('SELECT generation FROM transcript_publications WHERE meetingId=?', (meeting_id,)).fetchone()
             segments = [dict(row) for row in db.execute('SELECT id,startMs,endMs,text FROM transcript_segments WHERE meetingId=? ORDER BY sequence', (meeting_id,))]
         source = {'sourceIncomplete': meeting[0] == 'interrupted', 'segments': segments}
         encoded = json.dumps(source, ensure_ascii=False, sort_keys=True).encode()
         source['inputHash'] = hashlib.sha256(encoded).hexdigest()
+        source['publication'] = generation[0] if generation else 'legacy'
         return source
 
     def register(self, meeting_id, snapshot, settings, automatic):
         with self.repo.lock, self.repo.connect() as db:
             self.repo.assert_available(db, meeting_id)
+            generation = db.execute('SELECT generation FROM transcript_publications WHERE meetingId=?', (meeting_id,)).fetchone()
+            if db.execute('SELECT 1 FROM candidate_jobs WHERE meetingId=?', (meeting_id,)).fetchone() or snapshot.get('publication', 'legacy') != (generation[0] if generation else 'legacy'):
+                raise DomainError('transcript_changed', '文字记录正在更新，请稍后重新生成纪要。')
             if automatic:
                 inserted = db.execute('INSERT OR IGNORE INTO summary_attempts VALUES (?,?)', (meeting_id, snapshot['inputHash'])).rowcount
                 if not inserted:
@@ -79,6 +86,7 @@ class SummaryStore:
                 (job['meetingId'], task, snapshot['inputHash'], now(), settings['profileId'], settings['name'], settings['model'],
                  json.dumps(settings['parameters']), int(snapshot['sourceIncomplete']), json.dumps(content, ensure_ascii=False)))
             db.execute("UPDATE summary_jobs SET state='completed' WHERE id=?", (task,))
+            db.execute('UPDATE transcript_publications SET summaryStale=0 WHERE meetingId=?', (job['meetingId'],))
 
     def interrupt_all(self):
         with self.repo.lock, self.repo.connect() as db:
@@ -100,10 +108,12 @@ class SummaryStore:
         with self.repo.lock, self.repo.connect() as db:
             self.repo.assert_available(db, meeting_id)
             job = db.execute('SELECT * FROM summary_jobs WHERE meetingId=? ORDER BY rowid DESC LIMIT 1', (meeting_id,)).fetchone()
+            stale = db.execute('SELECT summaryStale FROM transcript_publications WHERE meetingId=?', (meeting_id,)).fetchone()
             result = db.execute('SELECT * FROM meeting_summaries WHERE meetingId=?', (meeting_id,)).fetchone()
         result = dict(result) if result else None
         if result:
             result['content'] = json.loads(result['content'])
             result['parameters'] = json.loads(result['parameters'])
             result['sourceIncomplete'] = bool(result['sourceIncomplete'])
+            result['stale'] = bool(stale and stale[0])
         return {'task': dict(job) if job else None, 'result': result}

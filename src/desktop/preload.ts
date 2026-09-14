@@ -21,12 +21,19 @@ const api: DesktopApi = {
   getSummary: (id) => ipcRenderer.invoke(CHANNELS.summaryGet, id),
   generateSummary: (id) => ipcRenderer.invoke(CHANNELS.summaryGenerate, id),
   getSummarySource: (id, segmentId) => ipcRenderer.invoke(CHANNELS.summarySource, id, segmentId),
+  manageTranscriptionModel: (action, id, language) =>
+    ipcRenderer.invoke(CHANNELS.modelManage, { action, id, language: language ?? null }),
+  rerunTranscription: (meetingId, modelId, language) =>
+    ipcRenderer.invoke(CHANNELS.transcriptionRerun, { meetingId, modelId, language }),
+  cancelRetranscription: (meetingId) =>
+    ipcRenderer.invoke(CHANNELS.transcriptionRerun, { meetingId }),
   getTranscriptionModel: () => ipcRenderer.invoke(CHANNELS.modelStatus),
   downloadTranscriptionModel: () => ipcRenderer.invoke(CHANNELS.modelDownload),
   cancelModelDownload: () => ipcRenderer.invoke(CHANNELS.modelCancel),
   startTranscription: (id) => ipcRenderer.invoke(CHANNELS.transcriptionStart, id),
   getTranscriptionStatus: (id) => ipcRenderer.invoke(CHANNELS.transcriptionStatus, id),
-  listTranscript: (id, cursor = -1) => ipcRenderer.invoke(CHANNELS.transcript, id, cursor),
+  listTranscript: (id, cursor = -1, publication) =>
+    ipcRenderer.invoke(CHANNELS.transcript, id, cursor, publication ?? null),
   getStatus: () => ipcRenderer.invoke(CHANNELS.status),
   retryCore: () => ipcRenderer.invoke(CHANNELS.retry),
   listMeetings: (offset = 0) => ipcRenderer.invoke(CHANNELS.meetings, offset),

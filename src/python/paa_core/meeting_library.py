@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .repository import ACTIVE, DomainError
 
+PAGE_SIZE = 10
 
 def summary_fields(content):
     for key in ('title', 'abstract'):
@@ -74,9 +75,9 @@ def search(repo, value):
         try:
             rows = db.execute(f'''SELECT m.*,d.meetingId IS NOT NULL AS deleting,d.error AS deletionError FROM meetings m
                 LEFT JOIN meeting_deletions d ON m.id=d.meetingId WHERE {where}
-                ORDER BY julianday(COALESCE(m.startedAt,m.createdAt)) DESC,m.id DESC LIMIT 26 OFFSET ?''', (*args, value['offset'])).fetchall()
+                ORDER BY julianday(COALESCE(m.startedAt,m.createdAt)) DESC,m.id DESC LIMIT ? OFFSET ?''', (*args, PAGE_SIZE + 1, value['offset'])).fetchall()
             values = []
-            for row in rows[:25]:
+            for row in rows[:PAGE_SIZE]:
                 hit = None
                 if keyword and not row['deleting']:
                     if fold(keyword) in fold(row['title']):
@@ -93,7 +94,7 @@ def search(repo, value):
                                         hit = {'source': 'summary', 'text': preview(text, keyword), 'locator': locator, 'generatedAt': summary['generatedAt']}
                                         break
                 values.append({'meeting': repo.present(dict(row)), 'hit': hit})
-            return {'items': values, 'hasMore': len(rows) > 25}
+            return {'items': values, 'hasMore': len(rows) > PAGE_SIZE}
         except sqlite3.OperationalError as exc:
             if 'interrupted' in str(exc):
                 raise DomainError('search_timeout', '搜索范围较大，请缩小日期范围后重试。') from None
@@ -133,6 +134,9 @@ def document_lines(db, meeting_id, options):
         yield ''
         yield heading('会议纪要')
         yield f"生成时间：{summary['generatedAt']}"
+        stale = db.execute('SELECT summaryStale FROM transcript_publications WHERE meetingId=?', (meeting_id,)).fetchone()
+        if stale and stale[0]:
+            yield '文字记录已更新，纪要待更新（此纪要基于旧文字记录）。'
         if summary['sourceIncomplete']:
             yield '纪要资料不完整：仅依据保留下来的内容。'
         content = json.loads(summary['content'])

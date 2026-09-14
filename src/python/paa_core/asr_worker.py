@@ -15,6 +15,15 @@ DEFAULT_CONFIG = {'chunkSeconds': 10, 'contextSeconds': 4, 'language': 'zh', 'be
                   'cpuThreads': 4, 'computeType': 'int8', 'version': 1}
 
 
+def config_for_mode(mode):
+    if mode not in ('zh', 'en', 'mixed'):
+        raise DomainError('invalid_language', '请选择中文、英文或中英混合。')
+    return {**DEFAULT_CONFIG, 'version': 2, 'mode': mode,
+            'language': None if mode == 'mixed' else mode,
+            'multilingual': mode == 'mixed',
+            'initialPrompt': '简体中文' if mode == 'zh' else None}
+
+
 class InferenceToken:
     """A cancelled scheduling generation cannot be revived by a later continue request."""
     def __init__(self):
@@ -55,7 +64,9 @@ class WhisperProvider:
             segments, _info = self.model.transcribe(
                 audio[interval['start']:interval['end']], language=self.config['language'], task='transcribe',
                 beam_size=self.config['beamSize'], temperature=0, word_timestamps=True,
-                vad_filter=False, condition_on_previous_text=False, initial_prompt='简体中文')
+                vad_filter=False, condition_on_previous_text=False,
+                multilingual=self.config.get('multilingual', False),
+                initial_prompt=self.config.get('initialPrompt', '简体中文'))
             for segment in segments:
                 for word in segment.words or []:
                     if len(words) >= 500:
@@ -80,6 +91,7 @@ def worker_main(connection, parent_pid, provider_class):
                 break
             try:
                 if command['op'] == 'load':
+                    provider = None
                     provider = provider_class(command['path'], command['config'])
                     response = {'ok': True}
                 elif command['op'] == 'infer' and provider:
@@ -96,10 +108,10 @@ def worker_main(connection, parent_pid, provider_class):
 
 
 class ASRWorker:
-    def __init__(self, provider_class=WhisperProvider, timeout=90):
+    def __init__(self, provider_class=WhisperProvider, timeout=None):
         self.provider_class = provider_class
         self.timeout = timeout
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.process = None
         self.connection = None
         self.loaded = None
@@ -127,7 +139,10 @@ class ASRWorker:
                 self.check_cancelled(token)
                 self.interrupted.clear()
                 self.connection.send(command)
-            deadline = time.monotonic() + self.timeout
+            # Large-model decoding needs more headroom than loading; explicit
+            # overrides still apply per request for bounded fault tests.
+            budget = self.timeout if self.timeout is not None else (180 if command['op'] == 'infer' else 90)
+            deadline = time.monotonic() + budget
             while not self.connection.poll(0.1):
                 self.check_cancelled(token)
                 if self.closed or self.interrupted.is_set() or not self.process.is_alive() or time.monotonic() >= deadline:
@@ -153,9 +168,21 @@ class ASRWorker:
                 self.loaded = key
 
     def infer(self, path, pcm, sample_rate, config, token=None):
-        self.load(path, config, token)
         with self.lock:
+            self.load(path, config, token)
             return self._request({'op': 'infer', 'pcm': pcm, 'sampleRate': sample_rate}, token)['words']
+
+    def validate(self, path, config=DEFAULT_CONFIG, token=None):
+        with self.lock:
+            self.load(path, config, token)
+            self.reset()
+
+    def release(self, path):
+        if not self.loaded or self.loaded[0] != str(path):
+            return
+        with self.lock:
+            if self.loaded and self.loaded[0] == str(path):
+                self.reset()
 
     def reset(self, graceful=False):
         if graceful and self.process and self.process.is_alive() and self.connection:

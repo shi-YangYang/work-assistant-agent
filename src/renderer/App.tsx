@@ -332,11 +332,6 @@ export function App(): React.JSX.Element {
     }
     setListRefreshVersion((value) => value + 1)
   }
-  const connectionLabel = connected
-    ? '已连接'
-    : status.connection === 'starting'
-      ? '连接中'
-      : '未连接'
   const interruptedConnection = active && !connected
   const canStart = connected && !!available && !active && !busy && !uncertain && !retrying
   const navItems = [
@@ -415,10 +410,8 @@ export function App(): React.JSX.Element {
           <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
         </button>
         <nav aria-label="主导航" className="navigation">
-          {navItems.map(({ page: target, icon: Icon }, index) => (
-            <div key={target}>
-              {index === 0 && <p className="workspace-label">工作空间</p>}
-              {target === 'services' && <p className="workspace-label settings-label">设置</p>}
+          {navItems.map(({ page: target, icon: Icon }) => (
+            <div key={target} className={target === 'services' ? 'nav-settings-start' : undefined}>
               <button
                 className={`nav-item ${page === target || (page === 'meeting' && target === 'meetings') ? 'active' : ''}`}
                 aria-current={
@@ -435,20 +428,6 @@ export function App(): React.JSX.Element {
             </div>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <div className="connection-status">
-            <span className={`connection-dot ${connected ? 'connected' : ''}`} />
-            <span>{connectionLabel}</span>
-            <button
-              className="text-button"
-              disabled={retrying || status.connection === 'starting'}
-              onClick={() => void retry()}
-            >
-              {retrying ? '正在连接…' : '重新连接'}
-            </button>
-          </div>
-          <small>录音与文字保存在本机</small>
-        </div>
       </aside>
       <div className="main-shell">
         <header className="topbar">
@@ -458,7 +437,11 @@ export function App(): React.JSX.Element {
           <ChevronRight size={14} />
           <strong>{pageLabels[page]}</strong>
         </header>
-        <main>
+        <main
+          className={
+            page === 'meeting' ? 'meeting-page' : page === 'meetings' ? 'meetings-page' : undefined
+          }
+        >
           {(error ||
             recording.error ||
             interruptedConnection ||
@@ -470,6 +453,13 @@ export function App(): React.JSX.Element {
                   ? '录音连接已中断，请重新连接以恢复已保存的内容。'
                   : error || recording.error?.message || status.storageError || status.message}
               </span>
+              <button
+                className="text-button"
+                disabled={retrying || status.connection === 'starting'}
+                onClick={() => void retry()}
+              >
+                {retrying ? '正在连接…' : '重新连接'}
+              </button>
             </div>
           )}
           <div className="page-heading">
@@ -505,8 +495,9 @@ export function App(): React.JSX.Element {
               </div>
             )}
           </div>
-          <div ref={listViewport} hidden={page !== 'meetings'} className="page-content list-page">
+          <div hidden={page !== 'meetings'} className="page-content list-page">
             <MeetingLibraryList
+              viewportRef={listViewport}
               connected={connected}
               visible={page === 'meetings'}
               refreshVersion={listRefreshVersion}
@@ -540,6 +531,7 @@ export function App(): React.JSX.Element {
               </section>
               {connected && recording.meetingId && (
                 <Transcript
+                  onModels={() => navigate('local-model')}
                   key={recording.meetingId}
                   meetingId={recording.meetingId}
                   modelReady={model?.state === 'ready'}
@@ -563,6 +555,7 @@ export function App(): React.JSX.Element {
               modelReady={model?.state === 'ready'}
               onBack={() => navigate('meetings')}
               onServices={() => navigate('services')}
+              onModels={() => navigate('local-model')}
             />
           )}
           <div hidden={page !== 'services'} className="page-content settings-page">

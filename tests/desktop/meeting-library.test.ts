@@ -41,9 +41,9 @@ it('keeps pagination bound to applied results through debounce, stale pages and 
   const requests = new QueryGeneration()
   const oldQuery = meetingQuery('旧条件', '', '')
   requests.apply(requests.next(), oldQuery)
-  const latePage = requests.page(25)!
-  expect(latePage.query).toEqual({ ...oldQuery, offset: 25 })
-  expect(requests.page(25)).toBeNull()
+  const latePage = requests.page(10)!
+  expect(latePage.query).toEqual({ ...oldQuery, offset: 10 })
+  expect(requests.page(10)).toBeNull()
 
   const replacement = meetingQuery('新条件', '2026-09-12', '')
   const version = requests.next()
@@ -51,32 +51,32 @@ it('keeps pagination bound to applied results through debounce, stale pages and 
   setTimeout(() => {
     firstPageAccepted = requests.apply(version, replacement)
   }, 250)
-  expect(requests.page(25)).toBeNull()
+  expect(requests.page(10)).toBeNull()
   await vi.advanceTimersByTimeAsync(249)
-  expect(requests.page(25)).toBeNull()
+  expect(requests.page(10)).toBeNull()
   expect(requests.apply(latePage.version, latePage.query)).toBe(false)
   requests.finish(latePage.version)
   await vi.advanceTimersByTimeAsync(1)
   expect(firstPageAccepted).toBe(true)
-  const newPage = requests.page(25)!
-  expect(newPage.query).toEqual({ ...replacement, offset: 25 })
+  const newPage = requests.page(10)!
+  expect(newPage.query).toEqual({ ...replacement, offset: 10 })
 
   // Composition invalidates a page already in flight, even before its text changes.
   requests.next()
-  expect(requests.page(25)).toBeNull()
+  expect(requests.page(10)).toBeNull()
   expect(requests.apply(newPage.version, newPage.query)).toBe(false)
   requests.finish(newPage.version)
   requests.next()
-  expect(requests.page(25)).toBeNull()
+  expect(requests.page(10)).toBeNull()
   const committed = meetingQuery('中文已提交', '', '')
   expect(requests.apply(requests.next(), committed)).toBe(true)
-  expect(requests.page(25)?.query).toEqual({ ...committed, offset: 25 })
+  expect(requests.page(10)?.query).toEqual({ ...committed, offset: 10 })
 
   // Clearing filters also waits for its own first page before any further paging.
   const clearedVersion = requests.next()
-  expect(requests.page(25)).toBeNull()
+  expect(requests.page(10)).toBeNull()
   expect(requests.apply(clearedVersion, meetingQuery('', '', ''))).toBe(true)
-  expect(requests.page(25)?.query).toEqual(meetingQuery('', '', '', 25))
+  expect(requests.page(10)?.query).toEqual(meetingQuery('', '', '', 10))
 })
 it('sanitizes portable filenames without interpreting user text as a path', () => {
   expect(safeFilename('../../CON:notes?', '2026-09-12', 'md')).toBe(

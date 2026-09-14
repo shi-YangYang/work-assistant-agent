@@ -84,6 +84,68 @@ class Limits:
         self.connect, self.deadline, self.response, self.request = connect, deadline, response, request
 
 
+def invalid_response():
+    return DomainError('invalid_response', '未收到完整有效的文字回复，请检查模型、输出上限及传输模式；本次未自动重试。')
+
+
+class _StreamReply:
+    """Bound each SSE event and the accumulated answer, discarding wire metadata."""
+    def __init__(self, limit):
+        self.limit = limit
+        self.pending = bytearray()
+        self.content = bytearray()
+        self.finish = None
+        self.done = False
+
+    def bounded(self, size):
+        if size > self.limit:
+            raise DomainError('response_too_large', '服务返回内容过大，请调整模型输出限制。')
+
+    def feed(self, chunk):
+        self.pending.extend(chunk)
+        while match := re.search(rb'\r?\n\r?\n', self.pending):
+            self.bounded(match.start())
+            event = bytes(self.pending[:match.start()])
+            del self.pending[:match.end()]
+            try:
+                lines = [line[5:].lstrip() for line in event.decode('utf-8').splitlines() if line.startswith('data:')]
+                if not lines:
+                    continue
+                raw = '\n'.join(lines)
+                if raw == '[DONE]':
+                    self.done = True
+                    self.pending.clear()
+                    return True
+                item = json.loads(raw)
+                choices = item.get('choices')
+                if choices == []:  # Optional usage event.
+                    continue
+                if not isinstance(choices, list) or len(choices) != 1:
+                    raise ValueError()
+                choice = choices[0]
+                delta = choice['delta']
+                if delta.get('tool_calls') or delta.get('function_call') or delta.get('refusal'):
+                    raise ValueError()
+                part = delta.get('content')
+                if part is not None:
+                    if not isinstance(part, str):
+                        raise ValueError()
+                    encoded = part.encode('utf-8')
+                    self.bounded(len(self.content) + len(encoded))
+                    self.content.extend(encoded)
+                if choice.get('finish_reason'):
+                    self.finish = choice['finish_reason']
+            except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+                raise invalid_response() from None
+        self.bounded(len(self.pending))
+        return False
+
+    def response(self):
+        if not self.done or self.finish != 'stop':
+            raise invalid_response()
+        return json.dumps({'choices': [{'finish_reason': self.finish, 'message': {'content': self.content.decode('utf-8')}}]}, ensure_ascii=False).encode('utf-8')
+
+
 class _Resolver:
     """One outstanding OS lookup per provider, without an executor shutdown wait."""
     def __init__(self):
@@ -161,6 +223,8 @@ class Provider:
             return asyncio.run(self._request(settings, path, body, query, deadline))
         except (TimeoutError, httpx.TimeoutException):
             raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。') from None
+        except (httpx.ReadError, httpx.RemoteProtocolError):
+            raise DomainError('response_interrupted', '模型服务在回复完成前断开了连接，请稍后手动重试；已有纪要和原文已保留。') from None
         except (httpx.HTTPError, RuntimeError, OSError):
             if time.monotonic() >= deadline:
                 raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。') from None
@@ -194,65 +258,41 @@ class Provider:
                     code, message = 'redirect', '服务要求重定向，请直接填写最终 API 地址并重新输入密钥。'
                 raise DomainError(code, message)
             content = bytearray()
+            stream = _StreamReply(self.limits.response) if body is not None and settings['stream'] else None
             async for chunk in response.aiter_bytes():
                 if time.monotonic() > deadline:
                     raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。')
-                content.extend(chunk)
+                if stream is not None:
+                    if stream.feed(chunk):
+                        # [DONE] ends the reply, even if a gateway keeps the HTTP
+                        # body open or disconnects without a final transfer chunk.
+                        return stream.response()
+                else:
+                    content.extend(chunk)
                 if len(content) > self.limits.response:
                     raise DomainError('response_too_large', '服务返回内容过大，请调整模型输出限制。')
             if time.monotonic() > deadline:
                 raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。')
-            return bytes(content)
+            return stream.response() if stream is not None else bytes(content)
 
     def complete(self, settings, messages):
         settings = config(settings, self.allow_loopback)
         self.assert_text_model(settings)
         data = self.request(settings, '/chat/completions', self.payload(settings, messages))
         try:
-            if settings['stream']:
-                content, finish, done = [], None, False
-                for event in re.split(r'\r?\n\r?\n', data.decode('utf-8')):
-                    lines = [line[5:].lstrip() for line in event.splitlines() if line.startswith('data:')]
-                    if not lines:
-                        continue
-                    raw = '\n'.join(lines)
-                    if raw == '[DONE]':
-                        done = True
-                        break
-                    item = json.loads(raw)
-                    choices = item.get('choices')
-                    if choices == []:  # Optional usage event.
-                        continue
-                    if not isinstance(choices, list) or len(choices) != 1:
-                        raise ValueError()
-                    choice = choices[0]
-                    delta = choice['delta']
-                    if delta.get('tool_calls') or delta.get('function_call') or delta.get('refusal'):
-                        raise ValueError()
-                    part = delta.get('content')
-                    if part is not None:
-                        if not isinstance(part, str):
-                            raise ValueError()
-                        content.append(part)
-                    if choice.get('finish_reason'):
-                        finish = choice['finish_reason']
-                if not done or finish != 'stop':
-                    raise ValueError()
-                result = ''.join(content)
-            else:
-                payload = json.loads(data)
-                choices = payload['choices']
-                if not isinstance(choices, list) or len(choices) != 1 or choices[0]['finish_reason'] != 'stop':
-                    raise ValueError()
-                message = choices[0]['message']
-                if message.get('tool_calls') or message.get('function_call') or message.get('refusal'):
-                    raise ValueError()
-                result = message['content']
+            payload = json.loads(data)
+            choices = payload['choices']
+            if not isinstance(choices, list) or len(choices) != 1 or choices[0]['finish_reason'] != 'stop':
+                raise ValueError()
+            message = choices[0]['message']
+            if message.get('tool_calls') or message.get('function_call') or message.get('refusal'):
+                raise ValueError()
+            result = message['content']
             if not isinstance(result, str) or not result.strip():
                 raise ValueError()
             return result.strip()
-        except (ValueError, TypeError, KeyError, IndexError):
-            raise DomainError('invalid_response', '未收到完整有效的文字回复，请检查模型、输出上限及传输模式；本次未自动重试。') from None
+        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+            raise invalid_response() from None
 
     def check(self, settings):
         started = time.monotonic()

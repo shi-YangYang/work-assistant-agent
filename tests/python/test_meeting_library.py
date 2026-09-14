@@ -69,8 +69,13 @@ class LibraryTests(unittest.TestCase):
         for internal in ['secret-ref', 'private-param', 'private-profile']:
             self.assertEqual(self.query(internal)['items'], [])
         found = []
-        for offset in [0, 25, 50]:
-            found.extend(item['meeting']['id'] for item in self.query(offset=offset)['items'])
+        for offset in range(0, 56, 10):
+            page = self.query(offset=offset)
+            self.assertEqual(len(page['items']), min(10, 56 - offset))
+            self.assertEqual(page['hasMore'], offset + 10 < 56)
+            found.extend(item['meeting']['id'] for item in page['items'])
+        self.assertEqual(self.query(offset=60), {'items': [], 'hasMore': False})
+        self.assertEqual([item['meeting']['id'] for item in self.query(offset=10)['items']], found[10:20])
         self.assertEqual(len(set(found)), 56)
         self.assertEqual(found[-1], mid)
     def test_date_offsets_same_instants_and_inclusive_local_days(self):

@@ -1,4 +1,5 @@
 import type { MeetingQuery } from '../shared/library-contracts'
+export const MEETINGS_PER_PAGE = 10
 export function meetingQuery(text: string, from: string, to: string, offset = 0): MeetingQuery {
   function boundary(date: string, end: boolean): string | null {
     if (!date) return null

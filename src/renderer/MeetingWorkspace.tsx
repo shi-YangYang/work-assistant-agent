@@ -18,6 +18,7 @@ export function MeetingWorkspace({
   modelReady,
   onBack,
   onServices,
+  onModels,
 }: {
   meeting: Meeting
   hit?: MeetingHit | null
@@ -29,6 +30,7 @@ export function MeetingWorkspace({
   modelReady: boolean
   onBack: () => void
   onServices: () => void
+  onModels: () => void
 }): React.JSX.Element {
   const [tab, setTab] = useState<'minutes' | 'transcript'>(
     hit?.source === 'transcript' ? 'transcript' : 'minutes',
@@ -49,19 +51,6 @@ export function MeetingWorkspace({
   }
   return (
     <section className="meeting-detail" aria-label="会议工作区">
-      <MeetingActions
-        meeting={meeting}
-        detail
-        summaryAvailable={summaryAvailable}
-        onChanged={onChanged}
-        onDeleted={onDeleted}
-        beforeDelete={() => audioRef.current?.release()}
-      />
-      {meeting.deleting && (
-        <p role="alert" className="audio-warning">
-          {meeting.deletionError || '删除尚未完成，请从操作菜单重试删除。'}
-        </p>
-      )}
       <div className="meeting-context">
         <button className="text-button" onClick={onBack}>
           <ArrowLeft size={16} />
@@ -89,7 +78,20 @@ export function MeetingWorkspace({
             <p>录音未成功保存，请检查麦克风、磁盘空间与目录权限后重试。</p>
           )}
         </details>
+        <MeetingActions
+          meeting={meeting}
+          detail
+          summaryAvailable={summaryAvailable}
+          onChanged={onChanged}
+          onDeleted={onDeleted}
+          beforeDelete={() => audioRef.current?.release()}
+        />
       </div>
+      {meeting.deleting && (
+        <p role="alert" className="audio-warning">
+          {meeting.deletionError || '删除尚未完成，请从操作菜单重试删除。'}
+        </p>
+      )}
       {!meeting.deleting && (
         <>
           <div
@@ -167,6 +169,7 @@ export function MeetingWorkspace({
               className="meeting-panel"
             >
               <Transcript
+                onModels={onModels}
                 meetingId={meeting.id}
                 modelReady={modelReady}
                 playable={playable && meeting.audioAvailable}

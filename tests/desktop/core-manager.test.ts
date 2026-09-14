@@ -103,3 +103,37 @@ it('missing packaged runtime reports an application fault without system fallbac
   expect(status.message).toContain('重新安装应用')
   expect(status.message).not.toContain('Python')
 })
+
+it('exposes six pinned local models and validates settings before mutating defaults', async () => {
+  const manager = createManager()
+  expect((await manager.start()).connection).toBe('ready')
+  const catalog = await manager.modelState()
+  expect(catalog.ok).toBe(true)
+  if (!catalog.ok) return
+  expect(catalog.value.models.map((model) => model.id)).toEqual([
+    'tiny',
+    'base',
+    'small',
+    'medium',
+    'large-v3-turbo',
+    'large-v3',
+  ])
+  expect(catalog.value.defaultModel).toBe('small')
+  expect(catalog.value.language).toBe('zh')
+  expect(
+    await manager.modelState('manage', { action: 'configure', id: 'small', language: 'en' }),
+  ).toMatchObject({ ok: true, value: { language: 'en' } })
+  expect(
+    await manager.modelState('manage', { action: 'configure', id: '../model', language: 'mixed' }),
+  ).toMatchObject({ ok: false, code: 'invalid_model' })
+  expect(
+    await manager.modelState('manage', { action: 'configure', id: 'large-v3', language: 'mixed' }),
+  ).toMatchObject({ ok: false, code: 'model_not_ready' })
+  expect(
+    await manager.modelState('manage', { action: 'remove', id: 'small', language: null }),
+  ).toMatchObject({ ok: false, code: 'model_in_use' })
+  expect(await manager.modelState()).toMatchObject({
+    ok: true,
+    value: { defaultModel: 'small', language: 'en' },
+  })
+})
