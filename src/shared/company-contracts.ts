@@ -39,6 +39,26 @@ export interface DocumentCitation {
   name: string
   location: string
 }
+export interface BusinessCitation {
+  kind: 'business'
+  token?: string
+  unavailable?: boolean
+  objectType?: 'work' | 'report' | 'message' | 'document' | 'member'
+  objectId?: string
+  ownerId?: string
+  employeeName?: string
+  employeeActive?: boolean
+  title?: string
+  revision?: number
+  at?: string
+  location?: string
+}
+export interface BusinessSource extends BusinessCitation {
+  content: Record<string, string>
+  currentRevision?: number
+  period?: string
+  periodEnd?: string
+}
 export interface ExtractionPage {
   attachment: Attachment
   items: { ordinal: number; location: string; text: string }[]
@@ -58,6 +78,8 @@ export interface Conversation {
   updatedAt: string
 }
 export interface Work extends Progress {
+  businessLinks?: BusinessCitation[]
+  hasBusinessLinks?: boolean
   id: string
   ownerId: string
   revision: number
@@ -72,6 +94,7 @@ export interface Work extends Progress {
   }[]
 }
 export interface Draft {
+  businessLinks?: BusinessCitation[]
   id: string
   messageId: string
   workId: string | null
@@ -103,6 +126,8 @@ export interface WorkMessage {
   text: string
   reply: string
   citations?: DocumentCitation[]
+  businessCitations?: BusinessCitation[]
+  businessUnavailable?: boolean
   replyTo: string | null
   transcript: string
   transcriptRevision: number

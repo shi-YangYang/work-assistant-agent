@@ -70,6 +70,7 @@ class Conversation(Owned, Base):
 
 class Message(Owned, Base):
     __tablename__ = 'company_message'
+    access: Mapped[dict] = mapped_column(JSONB, default=dict)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey('company_conversation.id'), nullable=True, index=True)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     text: Mapped[str] = mapped_column(Text, default='')
@@ -110,6 +111,8 @@ class DocumentChunk(Owned, Base):
 
 class WorkItem(Owned, Base):
     __tablename__ = 'company_work_item'
+    business_links: Mapped[list] = mapped_column(JSONB, default=list)
+    access: Mapped[dict] = mapped_column(JSONB, default=dict)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     title: Mapped[str] = mapped_column(String(200))
     content: Mapped[dict] = mapped_column(JSONB)
@@ -119,6 +122,8 @@ class WorkItem(Owned, Base):
 
 class WorkRevision(Owned, Base):
     __tablename__ = 'company_work_revision'
+    business_links: Mapped[list] = mapped_column(JSONB, default=list)
+    access: Mapped[dict] = mapped_column(JSONB, default=dict)
     work_id: Mapped[str] = mapped_column(ForeignKey('company_work_item.id'), index=True)
     revision: Mapped[int] = mapped_column(Integer)
     content: Mapped[dict] = mapped_column(JSONB)
@@ -128,6 +133,8 @@ class WorkRevision(Owned, Base):
 
 class ProgressDraft(Owned, Base):
     __tablename__ = 'company_progress_draft'
+    business_links: Mapped[list] = mapped_column(JSONB, default=list)
+    access: Mapped[dict] = mapped_column(JSONB, default=dict)
     message_id: Mapped[str] = mapped_column(ForeignKey('company_message.id'), index=True)
     work_id: Mapped[str | None] = mapped_column(ForeignKey('company_work_item.id'), nullable=True)
     base_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -165,6 +172,7 @@ class ReportRevision(Owned, Base):
 
 class Job(Owned, Base):
     __tablename__ = 'company_job'
+    access: Mapped[dict] = mapped_column(JSONB, default=dict)
     model_binding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     config_attempt: Mapped[int] = mapped_column(Integer, default=0)
     kind: Mapped[str] = mapped_column(String(12))

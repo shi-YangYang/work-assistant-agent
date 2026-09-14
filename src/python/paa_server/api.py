@@ -15,6 +15,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
+from . import business_access as business
 from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from .config import Settings
 from .db import database
@@ -109,6 +110,13 @@ def create_app(settings=None):
             problem(401, '请先登录', 'login_required')
         session = await db.scalar(select(Session).where(Session.token_hash == hashlib.sha256(raw.encode()).hexdigest(), Session.expires_at > now()))
         actor = await db.get(Member, session.member_id) if session else None
+        if actor is not None:
+            # Model probes and uploads can wait on network/decoders; they use
+            # their own final authorization checks rather than holding this lock.
+            long_operation = request.url.path in ('/api/v1/settings/model-services/models', '/api/v1/settings/model-services/test', '/api/v1/uploads') and request.method == 'POST'
+            if not long_operation:
+                await business.company_lock(db, actor.company_id)
+            actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
         if actor is None or not actor.active:
             problem(401, '登录已过期，请重新登录', 'login_required')
         if request.method not in ('GET', 'HEAD') and not secrets.compare_digest(request.headers.get('x-csrf-token', ''), session.csrf):
@@ -136,11 +144,12 @@ def create_app(settings=None):
         return target
 
     async def message_dto(db, item, actor):
+        allowed = await business.valid(db, actor, item.access)
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == item.id, Attachment.deleted.is_(False)))).all()
         job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
         private = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id, ProgressDraft.status != 'deleted').order_by(ProgressDraft.created_at))).all() if actor.id == item.owner_id else []
         statuses = {d.id: d.status for d in (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id))).all()}
-        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text, 'reply': item.reply, 'citations': item.citations, 'replyTo': item.reply_to, 'transcript': item.transcript, 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments], 'job': job_dto(job) if job else None, 'drafts': [draft_dto(d) for d in private], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions]}
+        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text if allowed else '', 'reply': item.reply if allowed else '', 'businessUnavailable': not allowed, 'citations': [c for c in item.citations if c.get('kind') != 'business'] if allowed else [], 'businessCitations': [c for c in item.citations if c.get('kind') == 'business'] if allowed else [], 'replyTo': item.reply_to, 'transcript': item.transcript if allowed else '', 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments] if allowed else [], 'job': job_dto(job) if job else None, 'drafts': [{**draft_dto(d), 'businessLinks': await business_link_dtos(db, actor, d.business_links)} for d in private if allowed and await business.valid(db, actor, d.access)], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions] if allowed else []}
 
     async def report_dto(db, report, actor):
         revisions = list((await db.scalars(select(ReportRevision).where(ReportRevision.report_id == report.id).order_by(ReportRevision.revision.desc()))).all())
@@ -264,6 +273,11 @@ def create_app(settings=None):
                     magic = raw.read(8)
                 if not (magic.startswith(b'%PDF-') if name.lower().endswith('.pdf') else magic.startswith(b'PK')):
                     problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
+            initial_company = actor.company_id
+            await business.company_lock(db, initial_company)
+            actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
+            if not actor.active or actor.company_id != initial_company:
+                problem(403, '账号权限已变化，请重新登录')
             item = Attachment(id=identifier, company_id=actor.company_id, owner_id=actor.id, kind=kind, mime=mime, name=name, size=size, sha256=digest.hexdigest(), duration=duration, extraction_status='unsent' if kind == 'document' else 'none')
             db.add(item)
             await db.flush()
@@ -318,6 +332,7 @@ def create_app(settings=None):
             problem(422, '附件已使用或组合不受支持；文档与图片合计最多 4 个、20 MiB，语音单独发送')
         if body.replyTo:
             reply = await active_message(db, body.replyTo, actor)
+            await business.require(db, actor, reply.access)
             if reply.conversation_id != conversation.id:
                 problem(422, '回复必须属于当前会话')
         item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, text=body.text, reply_to=body.replyTo)
@@ -331,7 +346,7 @@ def create_app(settings=None):
             a.message_id = item.id
             if a.kind == 'document':
                 a.extraction_status = 'pending'
-        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id)
+        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business.scope(actor))
         db.add(job)
         await db.flush()
         return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})
@@ -347,6 +362,34 @@ def create_app(settings=None):
             query = query.where((Message.created_at < anchor.created_at) | ((Message.created_at == anchor.created_at) & (Message.id < anchor.id)))
         rows = list((await db.scalars(query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1))).all())
         return {'items': [await message_dto(db, m, actor) for m in rows[:limit]], 'nextCursor': rows[limit - 1].id if len(rows) > limit else None}
+
+    async def business_link_dtos(db, actor, links):
+        items = []
+        for link in links:
+            try:
+                item = await business.source_dto(db, actor, link['evidence'], link['token'])
+                items.append({k: v for k, v in item.items() if k not in ('content', 'sourceIds')})
+            except HTTPException:
+                items.append({'kind': 'business', 'unavailable': True})
+        return items
+
+    @app.get('/api/v1/business-sources/{message_id}/{token}')
+    async def business_source(message_id: str, token: str, actor=AUTH, db=DB):
+        item = await owned(db, Message, message_id, actor)
+        await business.require(db, actor, item.access)
+        evidence = item.access.get('reads', {}).get(token)
+        if not evidence:
+            problem(404, '来源不存在或无权查看')
+        return await business.source_dto(db, actor, evidence, token)
+
+    @app.get('/api/v1/work-items/{identifier}/business-sources/{token}')
+    async def work_business_source(identifier: str, token: str, actor=AUTH, db=DB):
+        item = await owned(db, WorkItem, identifier, actor)
+        await business.require(db, actor, item.access, retained=True)
+        link = next((link for link in item.business_links if link['token'] == token), None)
+        if not link:
+            problem(404, '来源不存在或无权查看')
+        return await business.source_dto(db, actor, link['evidence'], token)
 
     @app.get('/api/v1/messages')
     async def messages(conversationId: str | None = None, cursor: str | None = None, limit: int = Query(50, ge=1, le=100), actor=AUTH, db=DB):
@@ -384,6 +427,9 @@ def create_app(settings=None):
             await active_message(db, item.target_id, actor) if item.kind == 'message' else await owned(db, Report, item.target_id, actor)
         if item.state not in ('failed', 'awaiting_retry'):
             problem(409, '当前任务不需要重试')
+        await business.require(db, actor, item.access)
+        if item.access and item.access.get('role') != actor.role:
+            problem(403, '账号权限已变化，请重新提问')
         item.state, item.error, item.request_started = 'queued', '', False
         if body.useCurrentConfig:
             item.model_binding = None
@@ -396,22 +442,28 @@ def create_app(settings=None):
 
     @app.get('/api/v1/work-items')
     async def work_items(actor=AUTH, db=DB):
-        return {'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == actor.id).order_by(WorkItem.updated_at.desc()).limit(100))).all()]}
+        return {'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == actor.id).order_by(WorkItem.updated_at.desc()).limit(100))).all() if await business.valid(db, actor, w.access, retained=True)]}
 
     @app.get('/api/v1/work-items/{identifier}')
     async def work_item(identifier: str, actor=AUTH, db=DB):
         item = await owned(db, WorkItem, identifier, actor, read=True)
+        await business.require(db, actor, item.access, retained=True)
         history = (await db.scalars(select(WorkRevision).where(WorkRevision.work_id == item.id).order_by(WorkRevision.revision.desc()).limit(100))).all()
-        return {**work_dto(item), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history]}
+        return {**work_dto(item), 'businessLinks': await business_link_dtos(db, actor, item.business_links), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history if await business.valid(db, actor, r.access, retained=True)]}
 
     @app.patch('/api/v1/progress-drafts/{identifier}')
     async def edit_draft(identifier: str, body: DraftEdit, actor=AUTH, db=DB):
         draft = await owned(db, ProgressDraft, identifier, actor, lock=True)
-        await active_message(db, draft.message_id, actor)
+        message = await active_message(db, draft.message_id, actor)
+        await business.require(db, actor, message.access)
+        await business.require(db, actor, draft.access)
         version(draft, body.expectedRevision)
         if draft.status != 'pending':
             problem(409, '建议已处理')
         work = await owned(db, WorkItem, body.workId, actor) if body.workId else None
+        if work:
+            await business.require(db, actor, work.access, retained=True)
+        business.inherit(actor, draft, message, *([work] if work else []))
         draft.work_id, draft.base_revision = (work.id, work.revision) if work else (None, None)
         draft.content = body.model_dump(exclude={'expectedRevision', 'workId'})
         draft.revision += 1
@@ -430,12 +482,15 @@ def create_app(settings=None):
     @app.post('/api/v1/work-items/{identifier}/progress')
     async def edit_work(identifier: str, body: WorkEdit, actor=AUTH, db=DB):
         work = await owned(db, WorkItem, identifier, actor, lock=True)
+        await business.require(db, actor, work.access, retained=True)
         version(work, body.expectedRevision)
         for source in body.sourceIds:
-            await owned(db, Message, source, actor)
+            message = await active_message(db, source, actor)
+            await business.require(db, actor, message.access)
+            business.inherit(actor, work, message, include_message_links=True)
         work.content = body.model_dump(exclude={'expectedRevision', 'sourceIds'})
         work.title, work.revision, work.updated_at = body.title, work.revision + 1, now()
-        db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=body.sourceIds))
+        db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=body.sourceIds, access=work.access, business_links=work.business_links))
         return work_dto(work)
 
     @app.get('/api/v1/reports')
@@ -542,7 +597,7 @@ def create_app(settings=None):
             work = (await db.scalars(query.order_by(WorkItem.updated_at.desc()).limit(100))).all()
             last = await db.scalar(select(func.max(Message.created_at)).where(Message.owner_id == member.id, Message.deleted.is_(False)))
             report_count = await db.scalar(select(func.count()).select_from(Report).where(Report.owner_id == member.id, Report.deleted.is_(False), Report.published_revision > 0))
-            result.append({'member': member_dto(member), 'work': [work_dto(w) for w in work], 'lastMessageAt': last.isoformat() if last else None, 'reportCount': report_count})
+            result.append({'member': member_dto(member), 'work': [work_dto(w) for w in work if await business.valid(db, actor, w.access, retained=True)], 'lastMessageAt': last.isoformat() if last else None, 'reportCount': report_count})
         return {'items': result, 'updatedAt': now().isoformat()}
 
     @app.get('/api/v1/team/members/{identifier}/messages')
@@ -553,7 +608,7 @@ def create_app(settings=None):
     @app.get('/api/v1/team/members/{identifier}/work')
     async def team_work(identifier: str, actor=ADMIN, db=DB):
         member = await visible_member(db, actor, identifier, employee_only=True)
-        return {'member': member_dto(member), 'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == identifier).order_by(WorkItem.updated_at.desc()).limit(100))).all()]}
+        return {'member': member_dto(member), 'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == identifier).order_by(WorkItem.updated_at.desc()).limit(100))).all() if await business.valid(db, actor, w.access, retained=True)]}
 
     @app.get('/api/v1/team/members/{identifier}/reports')
     async def team_reports(identifier: str, kind: str = 'daily', cursor: str | None = None, actor=ADMIN, db=DB):

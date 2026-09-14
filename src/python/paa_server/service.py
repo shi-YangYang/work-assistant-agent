@@ -40,6 +40,8 @@ def version(record, expected):
 async def idem_begin(db, actor, action, key, payload):
     if not key or len(key) > 100:
         problem(422, '缺少有效的操作编号')
+    from .business_access import company_lock
+    await company_lock(db, actor.company_id)
     # Serializes all writes for this identity, including repeat concurrent requests.
     await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
@@ -70,7 +72,7 @@ def period_bounds(report):
 
 async def report_inputs(db, report):
     start, end = period_bounds(report)
-    revisions = list((await db.scalars(select(WorkRevision).join(WorkItem, WorkItem.id == WorkRevision.work_id).where(WorkItem.deleted.is_(False), WorkRevision.owner_id == report.owner_id, WorkRevision.company_id == report.company_id, WorkRevision.created_at >= start, WorkRevision.created_at < end).order_by(WorkRevision.created_at, WorkRevision.id))).all())
+    revisions = list((await db.scalars(select(WorkRevision).join(WorkItem, WorkItem.id == WorkRevision.work_id).where(WorkItem.deleted.is_(False), WorkRevision.owner_id == report.owner_id, WorkRevision.company_id == report.company_id, WorkRevision.created_at >= start, WorkRevision.created_at < end, WorkRevision.access['team'].as_boolean().is_not(True)).order_by(WorkRevision.created_at, WorkRevision.id))).all())
     # Latest revision per work within the selected period, not today's rewritten state.
     latest = {r.work_id: r for r in revisions}
     return list(latest.values())
@@ -102,9 +104,21 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False):
 
 
 async def confirm_drafts(db, actor, items, ignore=False):
+    from . import business_access as business
+    await business.company_lock(db, actor.company_id)
     drafts = [await owned(db, ProgressDraft, item.id, actor, lock=True) for item in sorted(items, key=lambda i: i.id)]
     for draft, item in zip(drafts, sorted(items, key=lambda i: i.id)):
-        await active_message(db, draft.message_id, actor)
+        message = await active_message(db, draft.message_id, actor)
+        await business.require(db, actor, message.access)
+        business.inherit(actor, draft, message)
+        if draft.work_id:
+            work = await owned(db, WorkItem, draft.work_id, actor, lock=True)
+            await business.require(db, actor, work.access, retained=True)
+            business.inherit(actor, draft, work)
+        await business.require(db, actor, draft.access)
+        if not ignore:
+            for link in draft.business_links:
+                await business.resolve(db, actor, link['evidence'], latest=True)
         version(draft, item.expectedRevision)
         if draft.status != 'pending':
             problem(409, '这条建议已经处理')
@@ -113,6 +127,7 @@ async def confirm_drafts(db, actor, items, ignore=False):
         if not ignore:
             if draft.work_id:
                 work = await owned(db, WorkItem, draft.work_id, actor, lock=True)
+                await business.require(db, actor, work.access, retained=True)
                 version(work, draft.base_revision)
                 work.revision += 1
                 work.content = draft.content
@@ -123,7 +138,8 @@ async def confirm_drafts(db, actor, items, ignore=False):
                 db.add(work)
                 await db.flush()
                 draft.work_id = work.id
-            db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=[draft.message_id]))
+            business.inherit(actor, work, draft)
+            db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=[draft.message_id], access=work.access, business_links=work.business_links))
             result.append(work.id)
         draft.status = 'ignored' if ignore else 'confirmed'
         draft.revision += 1
@@ -135,7 +151,7 @@ def member_dto(member):
 
 
 def work_dto(work):
-    return {'id': work.id, 'ownerId': work.owner_id, **work.content, 'revision': work.revision, 'updatedAt': work.updated_at.isoformat()}
+    return {'id': work.id, 'ownerId': work.owner_id, **work.content, 'revision': work.revision, 'updatedAt': work.updated_at.isoformat(), 'hasBusinessLinks': bool(work.business_links)}
 
 
 def draft_dto(draft):

@@ -1,9 +1,8 @@
 # Task Handoff — 当前状态
 
-2026-09-14 · [Spec 013](../../specs/spec-013-local-model-library/spec.md) DONE，新的独立验收 [PASS](../../specs/spec-013-local-model-library/acceptance.md)。业务、R2 恢复提示返工和三项日常 GUI 补充检查已闭环，无待修问题。
+2026-09-15 · [Spec 014](../../specs/spec-014-admin-business-assistant/spec.md) DONE，[独立验收 PASS](../../specs/spec-014-admin-business-assistant/acceptance.md)。用户已授权清理后 commit／push 到 dev。
 
-- 实际功能、检查及边界分别见实施／验收报告；六模型三语言共 18 组尝试，17 组成功、base 中文异常中断明确留空，唯一完整矩阵在 [验证记录](../../specs/spec-013-local-model-library/verification.md)。不得将失败组或未测 Windows 性能表述为通过。
-- 用户允许 Playwright 后已完成语言切换与持久化、重转写弹窗取消／焦点恢复、900×640 原生窗口布局；没有重转写用户会议。资料摘要与截图在 ignored artifacts/spec013/gui-completion.json 和 gui-check.md。
-- 已恢复 small／中文及原窗口大小，关闭临时调试端口并以普通 npm run dev 启动。使用默认用户数据，原有录音、文字与密钥保留。后续仍按用户约定使用日常桌面环境，不另建隔离 GUI userData。
-- 在 dev；用户已要求 commit／push，本次交付包含 Spec 013 实现与验收记录。实际提交 SHA 和远端状态以 Git 为准；提供 dev → main 的 PR 链接，由用户合并，不自动合并或手动运行 CI。
-- 必要检查已通过；没有新改动或具体失败时不重复工程检查、基准或 GUI。原始音频、权重和证据仍放 ignored artifacts／日常缓存，不作为仓库提交内容。
+- 已实现管理员业务问答、来源与本人督办，授权边界按 [决策 0014](../decisions/0014-team-assistant-authorization.md)。工程、固定输入界面及真实 API 证据分别记录在验收文件。
+- 真实同名及督办验证已补齐；模型接口 500、一次 checkpoint 恢复和短 ID 展示偏差集中记录在验收文件，不需重跑已通过流程。
+- 合成业务及临时联调脚本已清理，关键结果保留在 artifacts/spec014/，日常资料／配置和迁移备份保留；不提交密钥或备份。
+- 本次收尾只压缩重复文档和清理临时产物，按 S0 检查。提交与远端 CI 状态以实际 Git／GitHub 为准；交付 dev → main 链接，由用户合并，不手动触发或持续等待 CI。

@@ -1,3 +1,4 @@
+import { BusinessSources } from './BusinessSources'
 import { DeleteRecord, ReportActions } from './RecordManagement'
 import { timezoneLabel } from './timezones'
 import { usePagedResource } from './paged-resource'
@@ -234,7 +235,7 @@ export function WorkDetail() {
   const [deleting, setDeleting] = useState(false)
   const location = useLocation()
   const { id } = useParams()
-  const { data, error, refresh } = useResource<Work>(`/work-items/${id}`)
+  const { data, error, refresh } = useResource<Work>(`/work-items/${id}`, 5000)
   const { identity } = useWorkspace()
   const [editing, setEditing] = useState(false)
   return (
@@ -266,6 +267,10 @@ export function WorkDetail() {
               更新于 {dateLabel(data.updatedAt)} · 第 {data.revision} 版
             </small>
           </div>
+          <BusinessSources
+            sources={data.businessLinks ?? []}
+            endpoint={`/work-items/${data.id}/business-sources`}
+          />
           {deleting && (
             <DeleteRecord
               kind="work-items"

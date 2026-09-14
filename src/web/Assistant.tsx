@@ -1,3 +1,4 @@
+import { BusinessReply, BusinessSources } from './BusinessSources'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
 import {
@@ -25,7 +26,6 @@ import { usePagedResource } from './paged-resource'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
-import { Markdown } from './Markdown'
 import { DocumentCard, DocumentCitations } from './Documents'
 import { fileAccept, fileKind, fileSelectionError, fileSize, updateSendingDraft } from './files'
 import { detailState, detailReturn } from './navigation'
@@ -39,7 +39,7 @@ export function ConversationChat({
   onSent: () => void
 }) {
   const composerKey = `composer:${conversationId}`
-  const { drafts, setDraft, notify } = useWorkspace()
+  const { drafts, setDraft, notify, identity } = useWorkspace()
   const storedComposer = drafts[composerKey] as Composer | undefined
   const composer = useMemo(
     () => storedComposer ?? { text: '', files: [], key: '' },
@@ -226,8 +226,26 @@ export function ConversationChat({
             </button>
           )}
           {!messages.length && !error && (
-            <Empty title="从今天的工作开始">
-              发送进展、文件、现场图片或语音，工作助手会帮你整理。你确认后，再计入工作记录。
+            <Empty title={identity.member.role === 'admin' ? '从团队进展开始' : '从今天的工作开始'}>
+              {identity.member.role === 'admin' ? (
+                <span className="assistant-examples">
+                  {['团队当前有哪些阻碍？', '本周员工有哪些工作进展？', '查看最近提交的周报'].map(
+                    (text) => (
+                      <button
+                        key={text}
+                        onClick={() => {
+                          change({ ...composer, text })
+                          textInput.current?.focus()
+                        }}
+                      >
+                        {text}
+                      </button>
+                    ),
+                  )}
+                </span>
+              ) : (
+                '发送进展、文件、现场图片或语音，工作助手会帮你整理。你确认后，再计入工作记录。'
+              )}
             </Empty>
           )}
           {messages.map((message) => (
@@ -409,7 +427,11 @@ export function MessageCard({
   const [transcript, setTranscript] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const { notify } = useWorkspace()
+  const { notify, drafts: storedDrafts, setDraft } = useWorkspace()
+  useEffect(() => {
+    if (message.businessUnavailable && editing && storedDrafts[`progress:${editing.id}`])
+      setDraft(`progress:${editing.id}`, undefined)
+  }, [message.businessUnavailable, editing, storedDrafts, setDraft])
   const act = async (drafts: Draft[], action: 'confirm' | 'ignore') => {
     setBusy(true)
     try {
@@ -431,7 +453,7 @@ export function MessageCard({
   return (
     <article className="message">
       <header>
-        <span className="eyebrow">工作上报</span>
+        <span className="eyebrow">工作消息</span>
         <time>{dateLabel(message.createdAt)}</time>
         {onReply && (
           <button className="text-button" onClick={onReply}>
@@ -464,6 +486,9 @@ export function MessageCard({
           )}
         </div>
       )}
+      {message.businessUnavailable && (
+        <p className="notice">这条回答的关联资料或权限已变化，请重新提问。</p>
+      )}
       {message.job && <JobNotice job={message.job} refresh={onChange} />}
       {message.reply && (
         <div className="assistant-reply">
@@ -471,7 +496,11 @@ export function MessageCard({
             <Sparkles size={16} />
             工作助手
           </h3>
-          <Markdown text={message.reply} />
+          <BusinessReply
+            text={message.reply}
+            sources={message.businessCitations ?? []}
+            endpoint={`/business-sources/${message.id}`}
+          />
           <DocumentCitations citations={message.citations ?? []} />
         </div>
       )}
@@ -485,6 +514,10 @@ export function MessageCard({
               <p>{d.content.summary}</p>
               {d.content.blocker && <p className="blocker">阻碍：{d.content.blocker}</p>}
               {d.content.nextStep && <p className="muted">下一步：{d.content.nextStep}</p>}
+              <BusinessSources
+                sources={d.businessLinks ?? []}
+                endpoint={`/business-sources/${message.id}`}
+              />
               {d.status === 'pending' && (
                 <div className="card-actions">
                   <button
@@ -493,7 +526,7 @@ export function MessageCard({
                     onClick={() => void act([d], 'confirm')}
                   >
                     <Check size={15} />
-                    确认进展
+                    {d.businessLinks?.length ? '确认我的督办' : '确认进展'}
                   </button>
                   <button disabled={busy} onClick={() => setEditing(d)}>
                     <Pencil size={14} />
@@ -528,7 +561,7 @@ export function MessageCard({
         </button>
       )}
       <ErrorNotice>{error}</ErrorNotice>
-      {editing && (
+      {editing && !message.businessUnavailable && (
         <ProgressEditor
           draft={editing}
           onClose={() => setEditing(null)}

@@ -60,7 +60,13 @@ export function useResource<T>(path: string | null, interval = 0) {
       } catch (e) {
         if (!controller.signal.aborted) {
           setError(e instanceof Error ? e.message : '连接失败')
-          if (e instanceof ApiError && [403, 404].includes(e.status)) setLoaded(null)
+          if (
+            e instanceof ApiError &&
+            ([403, 404].includes(e.status) ||
+              e.code === 'business_access_changed' ||
+              e.code === 'source_changed')
+          )
+            setLoaded(null)
         }
       }
       if (interval && !controller.signal.aborted)

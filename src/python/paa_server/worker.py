@@ -10,12 +10,13 @@ from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import aliased
 from fastapi import HTTPException
 
+from . import business_access as business
 from .agent.harness import BudgetExceeded, LostLease, RunContext, invoke_harness, lease, reserve_call
 from .config import Settings
 from .db import database
 from .documents import prepare_document, verified_citations
 from .media import audio_wav, data_url, image_input
-from .models import Attachment, Company, Job, LoginAttempt, Member, Message, Report, Session, WorkRevision, now
+from .models import Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, Session, WorkRevision, now
 from .service import ensure_report, owned
 
 log = logging.getLogger('paa.company')
@@ -33,6 +34,8 @@ async def claim(sessions, owner_id=None):
         job = await db.scalar(select(Job).join(Member, Member.id == Job.owner_id).where(Job.state == 'queued', Member.active.is_(True), ((Job.kind != 'report') | (Member.role == 'employee')), ~exists(select(running.id).where(running.owner_id == Job.owner_id, running.state == 'running')), *([Job.owner_id == owner_id] if owner_id else [])).order_by(Job.created_at).with_for_update(of=(Job, Member), skip_locked=True).limit(1))
         if not job:
             return None
+        if not job.access:
+            job.access = business.scope(await db.get(Member, job.owner_id))
         job.state, job.fence, job.lease_until, job.updated_at = 'running', job.fence + 1, now() + timedelta(seconds=90), now()
         return job
 
@@ -167,6 +170,15 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             if job.kind == 'message':
                 message = await owned(db, Message, job.target_id, actor, lock=True)
                 message.reply, message.citations = await verified_citations(db, context, answer)
+                message.access = live.access
+                drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status == 'pending'))).all()
+                for draft in drafts:
+                    business.inherit(actor, draft, live)
+                    await business.require(db, actor, draft.access)
+                if live.access.get('team'):
+                    message.reply, references = await business.citations(db, actor, live.access, message.reply)
+                    message.citations = [*message.citations, *references]
+                    message.reply += await business.query_summary(db, live.result.get('businessQueries', []))
                 source_ids = set(context.document_versions) | {row['id'] for row in documents}
                 if source_ids:
                     source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
@@ -202,7 +214,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         async with sessions.begin() as db:
             live = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
             if live.fence == context.fence and live.state == 'running':
-                live.state = 'awaiting_retry' if live.request_started else 'failed'
+                revoked = (isinstance(error, HTTPException) and isinstance(error.detail, dict) and error.detail.get('code') == 'business_access_changed') or (isinstance(error, ValueError) and str(error).startswith('账号权限已变化'))
+                live.state = 'cancelled' if revoked else 'awaiting_retry' if live.request_started else 'failed'
                 live.error, live.lease_until, live.updated_at = reason, None, now()
     finally:
         heartbeat_task.cancel()

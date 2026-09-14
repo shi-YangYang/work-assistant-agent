@@ -6,9 +6,11 @@ confirmed business snapshots are deliberately not recursively removed.
 from sqlalchemy import delete, select, text
 from .models import DocumentChunk, Attachment, Conversation, Idempotency, Job, Member, Message, ProgressDraft, Report, ReportRevision, WorkItem, WorkRevision, now
 from .service import problem, version
+from . import business_access as business
 
 
 async def target(db, model, identifier, actor, expected):
+    await business.company_lock(db, actor.company_id)
     query = select(model).where(model.id == identifier, model.company_id == actor.company_id)
     if model is not Report or actor.role != 'admin':
         query = query.where(model.owner_id == actor.id)
@@ -58,6 +60,9 @@ async def purge_messages(db, ids):
         message.suggestions = message.transcript_history = message.citations = []
         message.reply_to = None
         message.transcript_revision += 1
+    await db.flush()
+    for company_id in {m.company_id for m in messages}:
+        await business.invalidate_deleted(db, company_id)
     replies = (await db.scalars(select(Message).where(Message.reply_to.in_(ids)))).all()
     for reply in replies:
         reply.reply_to = None
@@ -114,6 +119,8 @@ async def remove_report(db, item, actor):
     await invalidate_context(db, item.owner_id, item.company_id, {item.id, *(message_ids if actor.role == 'admin' else [])}, sources_changed=actor.role == 'admin' and bool(message_ids))
     item.deleted, item.content, item.candidate, item.source_ids = True, {}, None, []
     item.revision += 1
+    await db.flush()
+    await business.invalidate_deleted(db, item.company_id)
     await db.execute(delete(ReportRevision).where(ReportRevision.report_id == item.id))
     await db.execute(delete(Idempotency).where(Idempotency.owner_id == item.owner_id, ((Idempotency.action == f'submit:{item.id}') | ((Idempotency.action == 'generate-report') & (Idempotency.response['reportId'].astext == item.id)))))
 
@@ -127,6 +134,8 @@ async def remove_work(db, item):
     await invalidate_context(db, item.owner_id, item.company_id, {item.id, *affected_reports}, sources_changed=True)
     item.deleted, item.title, item.content = True, '', {}
     item.revision += 1
+    await db.flush()
+    await business.invalidate_deleted(db, item.company_id)
     # Keep revisions referenced by reports; they are confirmed business facts.
     drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.work_id == item.id, ProgressDraft.status == 'pending'))).all()
     for draft in drafts:
