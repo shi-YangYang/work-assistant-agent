@@ -23,6 +23,7 @@ const api: DesktopApi = {
   getSummarySource: (id, segmentId) => ipcRenderer.invoke(CHANNELS.summarySource, id, segmentId),
   manageTranscriptionModel: (action, id, language) =>
     ipcRenderer.invoke(CHANNELS.modelManage, { action, id, language: language ?? null }),
+  setTranscriptionDevice: (device) => ipcRenderer.invoke(CHANNELS.inferenceDevice, device),
   rerunTranscription: (meetingId, modelId, language) =>
     ipcRenderer.invoke(CHANNELS.transcriptionRerun, { meetingId, modelId, language }),
   cancelRetranscription: (meetingId) =>

@@ -191,23 +191,40 @@ def prepare():
     print('Frozen manifest SHA256:', digest(manifest_path.read_bytes()), flush=True)
 
 
-def run(model, mode, cache):
+def result_path(model, mode, backend):
+    suffix = '' if backend == 'cpu' else f'-{backend}'
+    return ARTIFACTS / f'result-{model}{suffix}-{mode}.json'
+
+
+def run(model, mode, cache, backend='cpu'):
     sys.path.insert(0, str(ROOT / 'apps/desktop/core/src'))
     from paa_core.asr_worker import WhisperProvider, config_for_mode
-    from paa_core.model_catalog import CATALOG
+    from paa_core.model_catalog import CATALOG, MLX_CATALOG
     from paa_core.transcription import choose_boundary, owned_segments
     provider_start_sha = digest((ROOT / 'apps/desktop/core/src/paa_core/asr_worker.py').read_bytes())
     manifest_path = ARTIFACTS / 'dataset-manifest.json'
     manifest = json.loads(manifest_path.read_text())
-    spec, group = CATALOG[model], manifest['groups'][mode]
-    path = cache / f"whisper-{model}-{spec['revision']}"
-    output = ARTIFACTS / f'result-{model}-{mode}.json'
+    spec, group = (MLX_CATALOG if backend == 'mlx' else CATALOG)[model], manifest['groups'][mode]
+    prefix = 'whisper-mlx-' if backend == 'mlx' else 'whisper-'
+    path = cache / f"{prefix}{model}-{spec['revision']}"
+    output = result_path(model, mode, backend)
     if output.exists() or output.with_suffix('.failure.json').exists():
         raise SystemExit('Result already exists; preserve measurements and failure evidence.')
     audio_path = ARTIFACTS / f'audio/{mode}-combined.wav'
     if digest(audio_path.read_bytes()) != group['audioSha256']:
         raise RuntimeError('Frozen audio hash mismatch')
     config = config_for_mode(mode)
+    gpu_memory = None
+    if backend != 'cpu':
+        from paa_core.inference_device import apply_device
+        from paa_core.model_manager import verify_files
+        config = apply_device(config, 'gpu')
+        if config['backend'] != backend:
+            raise RuntimeError('Requested GPU backend is not available on this machine')
+        verify_files(path, files=spec['files'])
+    if backend == 'mlx':
+        import mlx.core as mx
+        mx.reset_peak_memory()
     started = time.monotonic()
     provider = WhisperProvider(path, config)
     load_seconds = time.monotonic() - started
@@ -239,8 +256,15 @@ def run(model, mode, cache):
     silence = provider.transcribe(bytes(RATE * 2 * 10), RATE)
     text = ' '.join(segment['text'] for chunk in chunks for segment in chunk['segments'])
     score = edits(tokens(group['reference'], mode), tokens(text, mode))
+    if backend == 'mlx':
+        mx.synchronize()
+        assert mx.default_device() == mx.gpu
+        gpu_memory = mx.get_peak_memory()
+        assert gpu_memory > 0
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     result = {'model': model, 'mode': mode, 'modelRevision': spec['revision'], 'config': config,
+              'backend': backend, 'peakGpuBytes': gpu_memory,
+              'benchmarkSha256': digest(Path(__file__).read_bytes()),
               'measuredAt': datetime.now(timezone.utc).isoformat(), 'datasetManifestSha256': digest(manifest_path.read_bytes()),
               'providerStartSha256': provider_start_sha,
               'providerSha256': digest((ROOT / 'apps/desktop/core/src/paa_core/asr_worker.py').read_bytes()),
@@ -257,6 +281,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', choices=('tiny', 'base', 'small', 'medium', 'large-v3-turbo', 'large-v3'))
     parser.add_argument('--mode', choices=tuple(SOURCES))
     parser.add_argument('--cache', type=Path)
+    parser.add_argument('--backend', choices=('cpu', 'mlx', 'cuda'), default='cpu')
     args = parser.parse_args()
     if args.command == 'prepare':
         prepare()
@@ -264,12 +289,13 @@ if __name__ == '__main__':
         parser.error('run needs --model, --mode and --cache')
     else:
         try:
-            run(args.model, args.mode, args.cache)
+            run(args.model, args.mode, args.cache, args.backend)
         except Exception as error:
             rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            failure = {'model': args.model, 'mode': args.mode, 'state': 'failed',
+            failure = {'model': args.model, 'mode': args.mode, 'backend': args.backend, 'state': 'failed',
                        'measuredAt': datetime.now(timezone.utc).isoformat(),
                        'errorType': type(error).__name__, 'reason': str(error),
                        'partialPeakRssBytes': rss if sys.platform == 'darwin' else rss * 1024}
-            write_json(ARTIFACTS / f'result-{args.model}-{args.mode}.failure.json', failure)
+            failure_path = result_path(args.model, args.mode, args.backend).with_suffix('.failure.json')
+            if not failure_path.exists(): write_json(failure_path, failure)
             raise

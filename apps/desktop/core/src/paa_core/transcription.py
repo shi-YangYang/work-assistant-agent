@@ -115,7 +115,8 @@ class Transcription:
         with self.control_lock:
             entry = self.model.entry(model_id)
             self._resolve(entry['modelId'], entry['revision'])
-            self.store.rerun(meeting_id, entry['modelId'], entry['revision'], config_for_mode(language))
+            config = self.model.config(language) if hasattr(self.model, 'config') else config_for_mode(language)
+            self.store.rerun(meeting_id, entry['modelId'], entry['revision'], config)
             self._resume(meeting_id)
         return self.status(meeting_id)
 
@@ -165,6 +166,7 @@ class Transcription:
         config = job['config']
         return {'modelId': job['modelId'], 'revision': job['revision'],
                 'language': config.get('mode', config.get('language') or 'mixed'),
+                'device': config.get('device', 'cpu'),
                 'configVersion': config.get('version', 1)}
 
     def continuation_blocked_reason(self, job):

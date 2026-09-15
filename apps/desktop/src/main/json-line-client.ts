@@ -128,6 +128,8 @@ export class JsonLineClient {
           'transcription_paused',
           'invalid_model',
           'invalid_language',
+          'invalid_device',
+          'gpu_unavailable',
           'model_not_ready',
           'model_mismatch',
           'model_in_use',

@@ -18,10 +18,11 @@ if __name__ == '__main__':
     parser.add_argument('--runtime-check', action='store_true')
     parser.add_argument('--model-path', type=Path)
     parser.add_argument('--audio-path', type=Path)
+    parser.add_argument('--inference-device', choices=('cpu', 'gpu'), default='cpu')
     args = parser.parse_args()
     if args.runtime_check:
         from paa_core.runtime_check import check
-        check(args.model_path, args.audio_path)
+        check(args.model_path, args.audio_path, args.inference_device)
     else:
         if args.data_dir is None:
             parser.error('--data-dir is required')

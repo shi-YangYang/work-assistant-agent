@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "measuredAt": "2026-09-14T08:55:50.440208+00:00",
   "environment": {
     "hardware": "Apple M5 · 16 GiB",
@@ -220,6 +220,57 @@
           "referenceUnits": 470,
           "errorRate": 0.4276595744680851,
           "peakRssBytes": 2127806464
+        }
+      }
+    }
+  },
+  "gpu": {
+    "mlx": {
+      "measuredAt": "2026-09-15T13:16:06.638853+00:00",
+      "environment": {
+        "hardware": "Apple M5 · 16 GiB",
+        "os": "macOS 26.4 ARM64",
+        "engine": "mlx-whisper 0.4.3 / MLX 0.32.2",
+        "computeType": "GPU FP16（Metal）",
+        "beam": 1,
+        "decoding": "greedy"
+      },
+      "datasetManifestSha256": "c29ec827a1a4a159b21fff94c80d3a4ed6e4236406a9487a6476fa1593e85a7a",
+      "benchmarkSha256": "596388305fa1dc1b074d8199879746c712258f0cd6e4722f3dbee0748f76eb01",
+      "providerSha256": "2cc4623f518296937b920d3ffbffd6d2936613a6e3470ac97ea1502af486c2f7",
+      "method": "相同冻结语料与业务分块。每语言独立进程；评分后记录进程峰值 RSS 与从模型加载开始的 MLX GPU 分配峰值。Apple GPU 使用共享内存，两个统计范围不同，不能相加；不是整应用内存或其他设备的保证值。",
+      "models": {
+        "medium": {
+          "revision": "7fc08c4eac4c316526498f147dfdee6f6303f975",
+          "languages": {
+            "zh": {
+              "substitutions": 15,
+              "deletions": 5,
+              "insertions": 2,
+              "referenceUnits": 368,
+              "errorRate": 0.059782608695652176,
+              "peakRssBytes": 1081802752,
+              "peakGpuBytes": 2220523062
+            },
+            "en": {
+              "substitutions": 13,
+              "deletions": 3,
+              "insertions": 1,
+              "referenceUnits": 319,
+              "errorRate": 0.05329153605015674,
+              "peakRssBytes": 1000521728,
+              "peakGpuBytes": 2214592026
+            },
+            "mixed": {
+              "substitutions": 131,
+              "deletions": 35,
+              "insertions": 6,
+              "referenceUnits": 470,
+              "errorRate": 0.3659574468085106,
+              "peakRssBytes": 2057420800,
+              "peakGpuBytes": 2212773762
+            }
+          }
         }
       }
     }

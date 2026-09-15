@@ -14,7 +14,7 @@
 
 2026-09-14：[Spec 013](../../specs/spec-013-local-model-library/spec.md) 将上述固定 small 基线扩展为六款多语言模型，仍默认 small＋中文。新任务锁定模型及语言；旧会议手动重转写，候选成功后原子发布，失败保留旧文字和纪要，旧纪要由用户手动更新。效果展示仅含错误率与内存占用，固定公开真人语料用于比较；耗时只作内部超时依据。实际结果与未完成项见 [Spec 013 实测](../../specs/spec-013-local-model-library/verification.md)，实施状态以该 Spec 为准。
 
-Python 核心已有稳定边界，faster-whisper 易于隔离并返回时间信息。small 是资源与中文效果的起点，不是最佳模型承诺。whisper.cpp / Metal 留待确有 GPU 或原生分发需求时评估；云 ASR 涉及外发与费用，不在本轮范围。
+Python 核心已有稳定边界，faster-whisper 易于隔离并返回时间信息。small 是资源与中文效果的起点，不是最佳模型承诺；云 ASR 涉及外发与费用，不在本轮范围。
 
 首轮 beam 1、较短上下文和 VAD 拼接解码漏掉句首及 WiFi 整句，因此改用上述参数；长通用提示曾在噪声窗诱发复读，缩为语言提示。采用同一固定样本复测，没有换参考稿降低错误率。用户指定的公开人声经扬声器→物理麦克风回采，与文件推理分别记录。
 
@@ -23,3 +23,11 @@ Python 核心已有稳定边界，faster-whisper 易于隔离并返回时间信�
 ## 依据
 
 2026-09-10：[faster-whisper](https://github.com/SYSTRAN/faster-whisper)、[CTranslate2 硬件支持](https://opennmt.net/CTranslate2/hardware_support.html)、[small 模型卡](https://huggingface.co/Systran/faster-whisper-small)、[whisper.cpp](https://github.com/ggml-org/whisper.cpp)。性能结论以项目实测为准。
+
+## 2026-09-15：CPU／GPU 选择（用户要求直接修改）
+
+- 默认优先使用可用 GPU；主动选择 CPU 后持久保留。展示 CPU 和 GPU 名称，缺少支持时禁用 GPU 并说明原因，不将 CPU 推理标为 GPU。
+- Windows 保留 CTranslate2，使用 NVIDIA CUDA FP16；同时检查驱动识别、FP16 和 CUDA 12／cuDNN 9 运行库。AMD／Intel GPU 暂不支持。Apple Silicon 采用 [MLX Whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) Metal FP16，条件依赖随 macOS 核心打包；Intel Mac 保留 CPU。
+- 六款模型均提供固定 MLX revision／SHA256，和 CPU 缓存分目录；Windows CPU／CUDA 共用原权重。下载、校验、取消和磁盘保护沿用已有机制。
+- 新任务保存设备／后端与解码配置，旧任务缺少设备字段时按 CPU 解释；切换不改历史文字，不自动重跑或外发音频。MLX 暂不支持 beam search，使用 greedy；中英混合在每个 VAD 区间自动识别语言，效果不能与 CPU beam 5 等同。
+- 已有 CPU 基准不用于 GPU。M5／medium 的三语言 GPU 公开语音、CPU 中文及冻结核心离线 GPU 转写通过，功能证据在忽略的 `artifacts/desktop-inference-device/`。随后按用户要求完成 medium 的三语言定量评测并展示，口径与结果集中见 [Spec 013 实测增补](../../specs/spec-013-local-model-library/verification.md#2026-09-15medium-gpu-增补)，不扩展为其他 GPU 模型实测。Windows 已做 CUDA 分流／不可用检测的固定输入测试，未做 GPU 实机验证。

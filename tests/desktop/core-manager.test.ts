@@ -120,6 +120,16 @@ it('exposes six pinned local models and validates settings before mutating defau
   ])
   expect(catalog.value.defaultModel).toBe('small')
   expect(catalog.value.language).toBe('zh')
+  expect(catalog.value.hardware.cpuName).not.toBe('')
+  expect(catalog.value.device).toBe(catalog.value.hardware.gpuAvailable ? 'gpu' : 'cpu')
+  expect(await manager.modelState('device', { device: 'cpu' })).toMatchObject({
+    ok: true,
+    value: { device: 'cpu', backend: 'ctranslate2' },
+  })
+  expect(await manager.modelState('device', { device: 'automatic' })).toMatchObject({
+    ok: false,
+    code: 'invalid_device',
+  })
   expect(
     await manager.modelState('manage', { action: 'configure', id: 'small', language: 'en' }),
   ).toMatchObject({ ok: true, value: { language: 'en' } })
@@ -135,5 +145,10 @@ it('exposes six pinned local models and validates settings before mutating defau
   expect(await manager.modelState()).toMatchObject({
     ok: true,
     value: { defaultModel: 'small', language: 'en' },
+  })
+  await manager.start()
+  expect(await manager.modelState()).toMatchObject({
+    ok: true,
+    value: { defaultModel: 'small', language: 'en', device: 'cpu' },
   })
 })

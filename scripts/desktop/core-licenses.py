@@ -5,6 +5,7 @@ import re
 import sys
 import sysconfig
 from pathlib import Path
+from packaging.requirements import Requirement
 
 root = Path(__file__).resolve().parents[2]
 python_license_candidates = (
@@ -25,11 +26,13 @@ output = root / 'dist/core/paa-core/licenses'
 output.mkdir(parents=True, exist_ok=True)
 # Wheels without notices: upstream release-tag LICENSE files stored in apps/desktop/resources/licenses.
 # github.com/OpenNMT/CTranslate2 v4.8.2; google/flatbuffers v25.12.19; huggingface/tokenizers v0.23.2.
+# mlx-whisper 0.4.3 omits its notice; apps/desktop/resources/licenses retains mlx-examples/LICENSE (Apple MIT).
 manifest = []
 for requirement in (root / 'apps/desktop/core/requirements.lock').read_text().splitlines():
     if not requirement or requirement.startswith('#'): continue
-    name, version = requirement.split(';')[0].strip().split('==')
-    if ';' in requirement and 'win32' in requirement and sys.platform != 'win32': continue
+    parsed = Requirement(requirement)
+    if parsed.marker and not parsed.marker.evaluate(): continue
+    name, version = parsed.name, next(iter(parsed.specifier)).version
     distribution = importlib.metadata.distribution(name)
     if distribution.version != version: raise RuntimeError(f'Runtime lock mismatch: {name}')
     notices = []

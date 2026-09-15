@@ -497,7 +497,8 @@ class TranscriptionTests(unittest.TestCase):
         finally:
             release.release()
 
-    def test_corrupt_model_is_not_ready_and_download_cancel_and_retry_are_atomic(self):
+    @patch('paa_core.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
+    def test_corrupt_model_is_not_ready_and_download_cancel_and_retry_are_atomic(self, _hardware):
         import hashlib
         import shutil
         data=b'controlled model fixture';files={'model.bin':(len(data),hashlib.sha256(data).hexdigest())}

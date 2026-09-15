@@ -40,10 +40,22 @@ class WhisperProvider:
         # These switches also prevent future library changes from silently fetching assets.
         os.environ['HF_HUB_OFFLINE'] = '1'
         os.environ['TRANSFORMERS_OFFLINE'] = '1'
-        from faster_whisper import WhisperModel
-        self.model = WhisperModel(str(path), device='cpu', compute_type=config['computeType'],
-                                  cpu_threads=config['cpuThreads'], num_workers=1, local_files_only=True)
         self.config = config
+        self.path = str(path)
+        self.backend = config.get('backend', 'cpu')
+        if self.backend == 'mlx':
+            import mlx.core as mx
+            from mlx_whisper.transcribe import ModelHolder
+            if not mx.metal.is_available():
+                raise RuntimeError('Apple GPU unavailable')
+            mx.set_default_device(mx.gpu)
+            self.model = ModelHolder.get_model(self.path, mx.float16)
+        else:
+            from faster_whisper import WhisperModel
+            if self.backend not in ('cpu', 'cuda'):
+                raise ValueError('Unsupported inference backend')
+            self.model = WhisperModel(self.path, device=self.backend, compute_type=config['computeType'],
+                                      cpu_threads=config['cpuThreads'], num_workers=1, local_files_only=True)
 
     def transcribe(self, pcm, sample_rate):
         from faster_whisper.audio import decode_audio
@@ -61,6 +73,19 @@ class WhisperProvider:
         words = []
         for interval in intervals:
             offset = interval['start'] / 16000
+            if self.backend == 'mlx':
+                import mlx_whisper
+                result = mlx_whisper.transcribe(
+                    audio[interval['start']:interval['end']], path_or_hf_repo=self.path,
+                    language=self.config['language'], task='transcribe', temperature=0,
+                    word_timestamps=True, condition_on_previous_text=False, verbose=None,
+                    initial_prompt=self.config.get('initialPrompt'), fp16=True)
+                for segment in result['segments']:
+                    for word in segment.get('words', []):
+                        if len(words) >= 500:
+                            raise ValueError('ASR output exceeds a bounded audio window')
+                        words.append({'start': offset + float(word['start']), 'end': offset + float(word['end']), 'text': word['word'][:300]})
+                continue
             segments, _info = self.model.transcribe(
                 audio[interval['start']:interval['end']], language=self.config['language'], task='transcribe',
                 beam_size=self.config['beamSize'], temperature=0, word_timestamps=True,

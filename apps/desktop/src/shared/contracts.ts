@@ -14,6 +14,7 @@ export const CHANNELS = {
   summaryGenerate: 'paa:summary-generate',
   summarySource: 'paa:summary-source',
   modelManage: 'paa:model-manage',
+  inferenceDevice: 'paa:inference-device',
   transcriptionRerun: 'paa:transcription-rerun',
   modelStatus: 'paa:model-status',
   modelDownload: 'paa:model-download',
@@ -102,6 +103,7 @@ export interface DesktopApi extends LibraryApi {
     id: string,
     language?: TranscriptionLanguage,
   ): Promise<Result<ModelState>>
+  setTranscriptionDevice(device: 'cpu' | 'gpu'): Promise<Result<ModelState>>
   rerunTranscription(
     meetingId: string,
     modelId: string,
@@ -156,6 +158,16 @@ export type ModelEntry = {
   deleteBlockedReason: string | null
 } & ModelStateBase
 export type ModelState = ModelStateBase & {
+  device: 'cpu' | 'gpu'
+  backend: 'ctranslate2' | 'mlx'
+  hardware: {
+    cpuName: string
+    gpuNames: string[]
+    gpuName: string | null
+    gpuAvailable: boolean
+    gpuBackend: 'mlx' | 'cuda' | null
+    gpuReason: string | null
+  }
   defaultModel: string
   language: TranscriptionLanguage
   preparingModel: string | null
@@ -189,6 +201,7 @@ export type TranscriptionStatus = {
   continuationBlockedReason: string | null
 }
 export type TranscriptionSnapshot = {
+  device?: 'cpu' | 'gpu'
   modelId: string
   revision: string
   language: TranscriptionLanguage

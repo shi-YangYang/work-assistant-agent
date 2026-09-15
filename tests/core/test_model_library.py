@@ -26,6 +26,8 @@ from test_summary import settings as summary_config, content
 
 class ModelLibraryTests(unittest.TestCase):
     def setUp(self):
+        device = patch('paa_core.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
+        device.start(); self.addCleanup(device.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = Repository(self.root)

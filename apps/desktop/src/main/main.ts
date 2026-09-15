@@ -365,6 +365,11 @@ if (hasLock)
         }
       }
     })
+    ipcMain.handle(CHANNELS.inferenceDevice, (event, device: unknown) => {
+      trustedCaller(event)
+      if (device !== 'cpu' && device !== 'gpu') throw new Error('Invalid parameters')
+      return core.modelState('device', { device })
+    })
     ipcMain.handle(CHANNELS.modelManage, (event, input: unknown) => {
       trustedCaller(event)
       if (!input || typeof input !== 'object' || Array.isArray(input))

@@ -1,4 +1,4 @@
-"""Pinned official CTranslate2 manifests, verified 2026-09-14. No floating aliases."""
+"""Pinned Whisper manifests: CTranslate2 (2026-09-14), MLX (2026-09-15). No floating aliases."""
 
 CATALOG = {'tiny': {'modelId': 'Systran/faster-whisper-tiny',
           'revision': 'd90ca5fe260221311c53c58e660288d3deb8d356',
@@ -68,3 +68,40 @@ CATALOG = {'tiny': {'modelId': 'Systran/faster-whisper-tiny',
               'license': 'MIT',
               'parameters': 1550,
               'description': '完整大模型，适合对照实测选择；占用更多资源。'}}
+
+# Apple GPU weights use an independent pinned cache; existing CPU caches remain valid.
+MLX_CATALOG = {'tiny': {'modelId': 'mlx-community/whisper-tiny-mlx',
+          'revision': '6caf9c55601caafbe6508a8b0d216bdf4783c4e8',
+          'files': {'config.json': [262, 'aaff20ce8f69beddee3fe0cc1e08f4e92f58586cb9f12ba00a6f73cbfec1cb1c'],
+                    'weights.npz': [74418540,
+                                    '0e03a5993d6eea43b07ee2dcc772b0e4cef5bb227257dacc24bf289387d49186']}},
+ 'base': {'modelId': 'mlx-community/whisper-base-mlx',
+          'revision': '1e3e249fb8d01c655324bd6841b1deadffd6d04c',
+          'files': {'config.json': [262, '737220a6d958b3ad48e78f840fa991556266983c84ea2ca40e413389c62e4c2f'],
+                    'weights.npz': [143724204,
+                                    '2f57d5f3ef473054c638961f90716f4ee415e8108de81313eccb2c5fd62eff0b']}},
+ 'small': {'modelId': 'mlx-community/whisper-small-mlx',
+           'revision': '45f3915923c7a79a5a5b5a7d909d39aeb0e5630e',
+           'files': {'config.json': [266, 'e8f58e638208af66d5d5d67801259dc7a12d199e971967a9f9d33a8e3635668e'],
+                     'weights.npz': [481307592,
+                                     '55b6674c9b339702d486e2b1573839a66f8ec8f821ed2886993ef717a86b09f5']}},
+ 'medium': {'modelId': 'mlx-community/whisper-medium-mlx',
+            'revision': '7fc08c4eac4c316526498f147dfdee6f6303f975',
+            'files': {'config.json': [268,
+                                      '3ff0b3f17a5a3a614327ffd835a3c8f6c78f39cbd39e84dbff4b0ae267c4d2e4'],
+                      'weights.npz': [1524924912,
+                                      '10b597c2bcb1bcc38b2d3d24cd4f0885f461a7cd70e8444d6ad5a763ece549ea']}},
+ 'large-v3-turbo': {'modelId': 'mlx-community/whisper-large-v3-turbo',
+                    'revision': 'a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb',
+                    'files': {'config.json': [268,
+                                              'b34fc29e4e11e0a25e812775dd67f4dd16fc2c8eb43d28ae25ff7d660ecb6379'],
+                              'weights.safetensors': [1613977612,
+                                                      '951ed3fc1203e6a62467abb2144a96ce7eafca8fa77e3704fdb8635ff3e7f8a6']}},
+ 'large-v3': {'modelId': 'mlx-community/whisper-large-v3-mlx',
+              'revision': '49e6aa286ad60c14352c404340ded53710378a11',
+              'files': {'config.json': [269,
+                                        '34982ce6ae286095000f82ae9583b3431639e8b092bf60c961f203745e6500e3'],
+                        'weights.npz': [3083520416,
+                                        '05ff791ce3630fae47e7c51004e9666204d786246ec07cac6110af768099b40d']}}}
+for _id, _entry in MLX_CATALOG.items():
+    MLX_CATALOG[_id] = {**CATALOG[_id], **_entry}
