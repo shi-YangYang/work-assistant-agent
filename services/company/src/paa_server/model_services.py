@@ -254,13 +254,14 @@ async def resolve_bound(db, settings, company_id, binding, purpose):
     return config, key
 
 
-async def reserve_probe(sessions, settings, actor):
+async def reserve_probe(sessions, settings, actor, choice=None):
     async with sessions.begin() as db:
         await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
         count = await db.scalar(select(func.count()).select_from(ModelUsage).where(ModelUsage.company_id == actor.company_id, ModelUsage.created_at >= now().replace(hour=0, minute=0, second=0, microsecond=0)))
         if count >= settings.daily_calls:
             raise ProviderError('quota', '今天的模型调用额度已用完')
-        usage = ModelUsage(company_id=actor.company_id, owner_id=actor.id, job_id=None, kind='admin_test')
+        from .usage import usage_fields
+        usage = ModelUsage(company_id=actor.company_id, owner_id=actor.id, job_id=None, kind='admin_test', **usage_fields(choice))
         db.add(usage)
         await db.flush()
         return usage.id
@@ -292,37 +293,42 @@ async def probe(request_db, sessions, settings, actor, body, config, key, finger
         saved_key = decrypt(settings.model_key_file, credential, actor.company_id, body.serviceId, body.expectedRevision)
         return key if body.apiKey else saved_key
 
+    from .usage import RequestRecord
+    choice = {'serviceId':body.serviceId, 'name':body.name or '未保存配置', 'model':config['model'] if config else None}
     async def request(messages, **kw):
         nonlocal known_usage
-        usage_id = await reserve_probe(sessions, settings, actor)
-        outgoing_key = await request_key()
-        response = await asyncio.wait_for(chat(settings, config, outgoing_key, messages, max_tokens=256, **kw), 60)
+        usage_id = await reserve_probe(sessions, settings, actor, choice)
+        record = RequestRecord(sessions, usage_id)
+        try:
+            outgoing_key = await request_key()
+            response = await record.run(lambda event: asyncio.wait_for(chat(settings, config, outgoing_key, messages, max_tokens=256, on_event=event, **kw), 60))
+        except BaseException as error:
+            await record.finish(error)
+            raise
         usage = response.get('usage') or {}
         if usage:
             known_usage = True
             totals['inputTokens'] += int(usage.get('prompt_tokens', 0))
             totals['outputTokens'] += int(usage.get('completion_tokens', 0))
-            async with sessions.begin() as db:
-                record = await db.get(ModelUsage, usage_id)
-                record.input_tokens, record.output_tokens = int(usage.get('prompt_tokens', 0)), int(usage.get('completion_tokens', 0))
         return response['choices'][0]['message']
     try:
         if not config or ((body.purpose == 'asr') != (config['protocol'] != 'chat')):
             raise ProviderError('protocol', '请选择适用于当前用途的模型协议')
         if body.purpose == 'asr':
-            usage_id = await reserve_probe(sessions, settings, actor)
-            speech = (Path(__file__).parent / 'assets/probe-zh.wav').read_bytes()
-            outgoing_key = await request_key()
-            transcript, usage = await asyncio.wait_for(transcribe(settings, config, outgoing_key, speech), 60)
+            usage_id = await reserve_probe(sessions, settings, actor, choice)
+            record = RequestRecord(sessions, usage_id)
+            try:
+                speech = (Path(__file__).parent / 'assets/probe-zh.wav').read_bytes()
+                outgoing_key = await request_key()
+                transcript, usage = await record.run(lambda event: asyncio.wait_for(transcribe(settings, config, outgoing_key, speech, on_event=event), 60))
+            except BaseException as error:
+                await record.finish(error)
+                raise
             cleaned = ''.join(c for c in transcript if c.isalnum())
             if not all(word in cleaned for word in ('今天', '工作', '完成')):
                 raise ProviderError('invalid_response', '语音接口返回了文字，但未识别固定中文样本的主要内容')
             result['checks'][0]['state'] = 'passed'
             result['usage'] = usage
-            if usage:
-                async with sessions.begin() as db:
-                    record = await db.get(ModelUsage, usage_id)
-                    record.input_tokens, record.output_tokens = usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0)
         else:
             answer = await request([{'role': 'user', 'content': '这是连通性测试。只回复：测试成功'}])
             if '测试成功' not in (answer.get('content') or ''):

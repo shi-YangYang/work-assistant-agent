@@ -17,6 +17,7 @@
 | [013](spec-013-local-model-library/spec.md) | Electron 六款转写模型、三语言模式、旧会议重转写；展示错误率与内存 | DONE | [PASS；base 中文实测异常如实保留](spec-013-local-model-library/acceptance.md) |
 | [014](spec-014-admin-business-assistant/spec.md) | 管理员团队问答、业务来源与本人督办；服务端授权及历史失效 | DONE | [PASS；真实同名及督办确认已补齐，保留接口 500 与恢复记录](spec-014-admin-business-assistant/acceptance.md) |
 | [015](spec-015-monorepo-structure/spec.md) | 多端仓库、npm workspaces、构建路径迁移与无用文件清理 | DONE | [PASS](spec-015-monorepo-structure/acceptance.md)；Windows／远端 CI 未运行 |
+| [016](spec-016-web-search-metrics-and-feedback/spec.md) | Web 工作分页与搜索、看板统计口径、聊天反馈与模型用量 | DONE | [PASS](spec-016-web-search-metrics-and-feedback/acceptance.md)；固定模型与本地页面验证 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

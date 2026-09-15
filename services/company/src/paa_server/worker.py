@@ -6,11 +6,13 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from sqlalchemy import delete, exists, select
+from sqlalchemy import delete, exists, select, update
 from sqlalchemy.orm import aliased
 from fastapi import HTTPException
 
 from . import business_access as business
+from .feedback import publish, update_feedback
+from .usage import RequestRecord, interrupt_usage
 from .agent.harness import BudgetExceeded, LostLease, RunContext, invoke_harness, lease, reserve_call
 from .config import Settings
 from .db import database
@@ -26,6 +28,8 @@ async def claim(sessions, owner_id=None):
     async with sessions.begin() as db:
         expired = (await db.scalars(select(Job).where(Job.state == 'running', Job.lease_until < now(), *([Job.owner_id == owner_id] if owner_id else [])).with_for_update(skip_locked=True))).all()
         for job in expired:
+            await interrupt_usage(db, job)
+            update_feedback(job)
             job.state = 'awaiting_retry' if job.request_started else 'queued'
             job.error = '处理意外中断，服务可能已计费；请确认后重试' if job.request_started else ''
             job.lease_until, job.fence, job.updated_at = None, job.fence + 1, now()
@@ -37,6 +41,7 @@ async def claim(sessions, owner_id=None):
         if not job.access:
             job.access = business.scope(await db.get(Member, job.owner_id))
         job.state, job.fence, job.lease_until, job.updated_at = 'running', job.fence + 1, now() + timedelta(seconds=90), now()
+        update_feedback(job, 'preparing', '')
         return job
 
 
@@ -54,19 +59,15 @@ async def asr(context, attachment):
     settings = context.settings
     wav, _ = await audio_wav(settings.media_dir / attachment.id, settings)
     usage_id = await reserve_call(context, 'asr')
-    async with context.sessions() as db:
-        await lease(db, context)
-        config, key = await resolve_bound(db, settings, context.company_id, context.model_binding or {}, 'asr')
+    record = RequestRecord(context.sessions, usage_id)
     try:
-        transcript, usage = await asyncio.wait_for(transcribe(settings, config, key, wav), 60)
-    except Exception as error:
-        raise safe_error(error) from None
-    if usage:
-        from .models import ModelUsage
-        async with context.sessions.begin() as db:
+        async with context.sessions() as db:
             await lease(db, context)
-            row = await db.get(ModelUsage, usage_id)
-            row.input_tokens, row.output_tokens = usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0)
+            config, key = await resolve_bound(db, settings, context.company_id, context.model_binding or {}, 'asr')
+        transcript, usage = await record.run(lambda event: asyncio.wait_for(transcribe(settings, config, key, wav, on_event=event), 60))
+    except Exception as error:
+        await record.finish(error)
+        raise safe_error(error) from None
     return transcript
 
 
@@ -77,6 +78,8 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
         async with sessions.begin() as db:
             current = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
             if current.state == 'running' and current.fence == job.fence:
+                await interrupt_usage(db, current)
+                update_feedback(current)
                 current.state = 'awaiting_retry' if current.request_started else 'failed'
                 current.error = '处理超时，原始内容已保存；服务可能已计费，请确认后重试'
                 current.lease_until, current.updated_at = None, now()
@@ -142,6 +145,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         blocks = []
         for attachment in attachments:
             if attachment.kind == 'audio' and not transcript:
+                await publish(context, 'transcribing', force=True)
                 transcript = await (asr_provider(context, attachment) if asr_provider else asr(context, attachment))
                 async with sessions.begin() as db:
                     await lease(db, context)
@@ -164,6 +168,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             blocks[0]['text'] += '\n本次文件目录（正文需通过工具读取；状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
         if not model and not context.model_binding.get(context.model_purpose):
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
+        await publish(context, 'generating', force=True)
         answer = await invoke_harness(context, checkpointer, blocks, model)
         async with sessions.begin() as db:
             live, actor = await lease(db, context)
@@ -198,6 +203,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 if not live.result.get('reportSaved'):
                     raise ValueError('报告没有生成有效草稿，请重试')
                 live.state = 'succeeded'
+            update_feedback(live, 'complete', '')
             live.phase, live.error, live.lease_until, live.updated_at = 'complete', '', None, now()
     except LostLease:
         log.info('job=%s lost lease', job.id)
@@ -214,6 +220,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         async with sessions.begin() as db:
             live = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
             if live.fence == context.fence and live.state == 'running':
+                await interrupt_usage(db, live)
+                update_feedback(live)
                 revoked = (isinstance(error, HTTPException) and isinstance(error.detail, dict) and error.detail.get('code') == 'business_access_changed') or (isinstance(error, ValueError) and str(error).startswith('账号权限已变化'))
                 live.state = 'cancelled' if revoked else 'awaiting_retry' if live.request_started else 'failed'
                 live.error, live.lease_until, live.updated_at = reason, None, now()
@@ -249,6 +257,7 @@ async def maintenance(sessions, settings):
         for attachment in old:
             (settings.media_dir / attachment.id).unlink(missing_ok=True)
             await db.delete(attachment)
+        await db.execute(update(Job).where(Job.state.in_(('succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled')), Job.updated_at < now() - timedelta(days=1), Job.feedback != {}).values(feedback={}))
         await db.execute(delete(Session).where(Session.expires_at < now()))
         await db.execute(delete(LoginAttempt).where(LoginAttempt.created_at < now() - timedelta(minutes=10)))
 

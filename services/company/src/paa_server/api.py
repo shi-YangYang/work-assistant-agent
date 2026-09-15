@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pwdlib import PasswordHash
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -74,7 +74,7 @@ def create_app(settings=None):
             response = await call_next(request)
         except SQLAlchemyError:
             response = JSONResponse({'error': {'code': 'service_unavailable', 'message': '服务暂不可用，请稍后重试', 'requestId': request.state.request_id}}, status_code=503)
-        response.headers.update({'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Request-ID': request.state.request_id})
+        response.headers.update({'Cache-Control': response.headers.get('Cache-Control', 'no-store'), 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Request-ID': request.state.request_id})
         return response
 
     @app.exception_handler(HTTPException)
@@ -114,6 +114,7 @@ def create_app(settings=None):
             # Model probes and uploads can wait on network/decoders; they use
             # their own final authorization checks rather than holding this lock.
             long_operation = request.url.path in ('/api/v1/settings/model-services/models', '/api/v1/settings/model-services/test', '/api/v1/uploads') and request.method == 'POST'
+            long_operation = long_operation or request.url.path.endswith(('/events', '/feedback'))
             if not long_operation:
                 await business.company_lock(db, actor.company_id)
             actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
@@ -424,7 +425,23 @@ def create_app(settings=None):
 
     @app.get('/api/v1/jobs/{identifier}')
     async def get_job(identifier: str, actor=AUTH, db=DB):
-        return job_dto(await owned(db, Job, identifier, actor))
+        item = await owned(db, Job, identifier, actor)
+        await business.require(db, actor, item.access)
+        return job_dto(item)
+
+    @app.get('/api/v1/jobs/{identifier}/feedback')
+    async def job_feedback(identifier: str, request: Request, actor=AUTH):
+        from .feedback import snapshot
+        return await snapshot(sessions, hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest(), identifier)
+
+    @app.get('/api/v1/jobs/{identifier}/events')
+    async def job_events(identifier: str, request: Request, actor=AUTH):
+        from .feedback import snapshot, events
+        if request.headers.get('origin') not in (None, settings.web_origin) or request.headers.get('sec-fetch-site') == 'cross-site':
+            problem(403, '请求来源不被允许')
+        token_hash = hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest()
+        await snapshot(sessions, token_hash, identifier)
+        return StreamingResponse(events(sessions, token_hash, identifier), media_type='text/event-stream', headers={'Cache-Control':'no-store, no-transform', 'X-Accel-Buffering':'no'})
 
     @app.post('/api/v1/jobs/{identifier}/retry')
     async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
@@ -446,19 +463,30 @@ def create_app(settings=None):
             if item.kind == 'report':
                 item.result = {k: v for k, v in item.result.items() if k != 'reportSaved'}
         item.attempt += 1
+        from .feedback import update_feedback
+        update_feedback(item, 'queued', '')
         item.updated_at = now()
         return job_dto(item)
 
     @app.get('/api/v1/work-items')
-    async def work_items(actor=AUTH, db=DB):
-        return {'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == actor.id).order_by(WorkItem.updated_at.desc()).limit(100))).all() if await business.valid(db, actor, w.access, retained=True)]}
+    async def work_items(q: str = Query('', max_length=200), status: str = '', cursor: str | None = None, limit: int = Query(20, ge=1, le=20), actor=AUTH, db=DB):
+        from .queries import work_page
+        return await work_page(db, actor, actor.id, q, status, cursor, limit)
 
     @app.get('/api/v1/work-items/{identifier}')
-    async def work_item(identifier: str, actor=AUTH, db=DB):
+    async def work_item(identifier: str, revision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
         item = await owned(db, WorkItem, identifier, actor, read=True)
         await business.require(db, actor, item.access, retained=True)
         history = (await db.scalars(select(WorkRevision).where(WorkRevision.work_id == item.id).order_by(WorkRevision.revision.desc()).limit(100))).all()
-        return {**work_dto(item), 'businessLinks': await business_link_dtos(db, actor, item.business_links), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history if await business.valid(db, actor, r.access, retained=True)]}
+        dto = work_dto(item)
+        if revision is not None:
+            from .queries import revision_work
+            selected = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == item.id, WorkRevision.revision == revision))
+            if not selected or not await business.valid(db, actor, selected.access, retained=True):
+                problem(404, '工作修订不存在或无权查看')
+            dto = revision_work(item, selected)
+            history = [row for row in history if row.revision <= revision]
+        return {**dto, 'businessLinks': await business_link_dtos(db, actor, selected.business_links if revision is not None else item.business_links), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history if await business.valid(db, actor, r.access, retained=True)]}
 
     @app.patch('/api/v1/progress-drafts/{identifier}')
     async def edit_draft(identifier: str, body: DraftEdit, actor=AUTH, db=DB):
@@ -513,13 +541,25 @@ def create_app(settings=None):
         return {'items': [await report_dto(db, r, actor) for r in rows[:50]], 'nextCursor': rows[49].period if len(rows) > 50 else None}
 
     @app.get('/api/v1/reports/{identifier}')
-    async def get_report(identifier: str, actor=AUTH, db=DB):
-        return await report_dto(db, await owned(db, Report, identifier, actor, read=True), actor)
-
-    @app.get('/api/v1/reports/{identifier}/sources')
-    async def report_sources(identifier: str, actor=AUTH, db=DB):
+    async def get_report(identifier: str, revision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
         report = await owned(db, Report, identifier, actor, read=True)
         dto = await report_dto(db, report, actor)
+        if revision is not None:
+            selected = next((row for row in dto['revisions'] if row['revision'] == revision), None)
+            if not selected:
+                problem(404, '报告修订不存在或无权查看')
+            dto.update(content=selected['content'], sourceIds=selected['sourceIds'], revision=revision, publishedRevision=revision, updatedAt=selected['submittedAt'], historical=True)
+        return dto
+
+    @app.get('/api/v1/reports/{identifier}/sources')
+    async def report_sources(identifier: str, revision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
+        report = await owned(db, Report, identifier, actor, read=True)
+        dto = await report_dto(db, report, actor)
+        if revision is not None and revision != dto['revision']:
+            historical = next((row for row in dto['revisions'] if row['revision'] == revision), None)
+            if not historical:
+                problem(404, '报告修订不存在或无权查看')
+            dto = historical
         sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(dto['sourceIds']), WorkRevision.company_id == actor.company_id, WorkRevision.owner_id == report.owner_id))).all()
         return {'items': [{'id': r.id, 'workId': r.work_id, 'title': r.content['title'], 'revision': r.revision, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'workDeleted': (await db.get(WorkItem, r.work_id)).deleted} for r in sources]}
 
@@ -586,28 +626,24 @@ def create_app(settings=None):
         company.revision += 1
         return {**company.rules, 'revision': company.revision}
 
+    @app.get('/api/v1/settings/model-usage')
+    async def model_usage(period: str = 'this_week', start: date | None = None, end: date | None = None, service: str = Query('', max_length=36), model: str = Query('', max_length=200), purpose: str = Query('', max_length=16), cursor: str | None = None, limit: int = Query(20, ge=1, le=20), actor=ADMIN, db=DB):
+        from .usage import usage_page
+        return await usage_page(db, actor, period=period, start=start, end=end, service=service, model=model, purpose=purpose, cursor=cursor, limit=limit)
+
     @app.get('/api/v1/team')
-    async def team(start: date | None = None, end: date | None = None, status: str = '', actor=ADMIN, db=DB):
-        from zoneinfo import ZoneInfo
-        company = await db.get(Company, actor.company_id)
-        zone = ZoneInfo(company.rules['timezone'])
-        if start and end and start > end:
-            problem(422, '开始日期不能晚于结束日期')
-        people = (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee').order_by(Member.created_at))).all()
-        result = []
-        for member in people:
-            query = select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == member.id)
-            if status:
-                query = query.where(WorkItem.content['status'].astext == status)
-            if start:
-                query = query.where(WorkItem.updated_at >= datetime.combine(start, datetime.min.time(), zone))
-            if end:
-                query = query.where(WorkItem.updated_at < datetime.combine(end, datetime.min.time(), zone) + timedelta(days=1))
-            work = (await db.scalars(query.order_by(WorkItem.updated_at.desc()).limit(100))).all()
-            last = await db.scalar(select(func.max(Message.created_at)).where(Message.owner_id == member.id, Message.deleted.is_(False)))
-            report_count = await db.scalar(select(func.count()).select_from(Report).where(Report.owner_id == member.id, Report.deleted.is_(False), Report.published_revision > 0))
-            result.append({'member': member_dto(member), 'work': [work_dto(w) for w in work if await business.valid(db, actor, w.access, retained=True)], 'lastMessageAt': last.isoformat() if last else None, 'reportCount': report_count})
-        return {'items': result, 'updatedAt': now().isoformat()}
+    async def team(period: str = 'this_week', start: date | None = None, end: date | None = None, q: str = Query('', max_length=200), status: str = '', members: str = 'active', actor=ADMIN, db=DB):
+        from .queries import team_data
+        summary, _ = await team_data(db, actor, period=period, start=start, end=end, q=q, status=status, members=members)
+        return summary
+
+    @app.get('/api/v1/team/details')
+    async def team_details(metric: str, period: str = 'this_week', start: date | None = None, end: date | None = None, q: str = Query('', max_length=200), status: str = '', members: str = 'active', cursor: str | None = None, limit: int = Query(20, ge=1, le=20), actor=ADMIN, db=DB):
+        from .queries import team_data, detail_page
+        if metric not in ('messages', 'blocked', 'reports'):
+            problem(422, '统计指标无效')
+        summary, details = await team_data(db, actor, period=period, start=start, end=end, q=q, status=status, members=members)
+        return {**detail_page(details[metric], cursor, limit), 'range': summary['range'], 'metrics': summary['metrics'], 'total': len(details[metric])}
 
     @app.get('/api/v1/team/members/{identifier}/messages')
     async def team_messages(identifier: str, cursor: str | None = None, limit: int = Query(50, ge=1, le=100), actor=ADMIN, db=DB):
@@ -615,9 +651,10 @@ def create_app(settings=None):
         return await list_messages(db, actor, identifier, cursor, limit)
 
     @app.get('/api/v1/team/members/{identifier}/work')
-    async def team_work(identifier: str, actor=ADMIN, db=DB):
+    async def team_work(identifier: str, q: str = Query('', max_length=200), status: str = '', cursor: str | None = None, limit: int = Query(20, ge=1, le=20), actor=ADMIN, db=DB):
+        from .queries import work_page
         member = await visible_member(db, actor, identifier, employee_only=True)
-        return {'member': member_dto(member), 'items': [work_dto(w) for w in (await db.scalars(select(WorkItem).where(WorkItem.deleted.is_(False), WorkItem.owner_id == identifier).order_by(WorkItem.updated_at.desc()).limit(100))).all() if await business.valid(db, actor, w.access, retained=True)]}
+        return {'member': member_dto(member), **await work_page(db, actor, identifier, q, status, cursor, limit)}
 
     @app.get('/api/v1/team/members/{identifier}/reports')
     async def team_reports(identifier: str, kind: str = 'daily', cursor: str | None = None, actor=ADMIN, db=DB):

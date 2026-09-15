@@ -9,6 +9,8 @@ interface WorkspaceState {
   drafts: DraftStore
   setDraft: (key: string, value: unknown) => void
   notify: (value: string) => void
+  lastConversationId: string | null
+  rememberConversation: (id: string | null) => void
 }
 // Keep identity in a module separate from frequently refreshed UI components.
 export const Workspace = createContext<WorkspaceState | null>(null)

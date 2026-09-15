@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { List, MessageSquare, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { Conversation, Page } from '@paa/api-contracts'
 import type { Composer } from './audio-capture'
@@ -7,13 +7,33 @@ import { api, useResource, write } from './api'
 import { ConversationChat } from './Assistant'
 import { BusyButton, ErrorNotice, Modal } from './ui'
 import { useWorkspace } from './workspace'
+import { resumeConversation } from './assistant-session'
 
 export function Assistant() {
   const { conversationId } = useParams()
   const navigate = useNavigate()
-  const { drafts, setDraft, notify } = useWorkspace()
+  const [params, setParams] = useSearchParams()
+  const { drafts, setDraft, notify, lastConversationId, rememberConversation } = useWorkspace()
+  const explicitNew = params.get('new') === '1'
+  const showConversations = params.get('conversations') === '1'
+  const [resumed, setResumed] = useState(false)
+  const [resumeError, setResumeError] = useState('')
+  const [resumeRevision, setResumeRevision] = useState(0)
+  const newDraft = !!drafts['composer:new']
   const [search, setSearch] = useState('')
-  const [expanded, setExpanded] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const expanded = pickerOpen || showConversations
+  const setExpanded = useCallback(
+    (open: boolean) => {
+      setPickerOpen(open)
+      if (!open && showConversations) {
+        const next = new URLSearchParams(params)
+        next.delete('conversations')
+        setParams(next, { replace: true })
+      }
+    },
+    [params, setParams, showConversations],
+  )
   const picker = useRef<HTMLDivElement>(null)
   const pickerButton = useRef<HTMLButtonElement>(null)
   const closePicker = () => {
@@ -27,7 +47,7 @@ export function Assistant() {
     }
     document.addEventListener('pointerdown', closeOutside)
     return () => document.removeEventListener('pointerdown', closeOutside)
-  }, [expanded])
+  }, [expanded, setExpanded])
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
   const [editing, setEditing] = useState<Conversation | null>(null)
@@ -41,6 +61,41 @@ export function Assistant() {
   const current = useResource<Conversation>(
     conversationId ? `/conversations/${conversationId}` : null,
   )
+  useEffect(() => {
+    if (conversationId || explicitNew || newDraft) return
+    let active = true
+    const controller = new AbortController()
+    void resumeConversation(lastConversationId, (path) => api(path, { signal: controller.signal }))
+      .then((id) => {
+        if (!active) return
+        rememberConversation(id)
+        setResumeError('')
+        setResumed(true)
+        if (id)
+          navigate(`/assistant/${id}${showConversations ? '?conversations=1' : ''}`, {
+            replace: true,
+          })
+      })
+      .catch((error) => {
+        if (active) setResumeError((error as Error).message)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [
+    conversationId,
+    explicitNew,
+    newDraft,
+    lastConversationId,
+    rememberConversation,
+    navigate,
+    showConversations,
+    resumeRevision,
+  ])
+  useEffect(() => {
+    if (current.data && current.data.id === conversationId) rememberConversation(current.data.id)
+  }, [current.data, conversationId, rememberConversation])
   const items = [...(list.data?.items ?? []), ...older]
     .filter(
       (item, i, all) =>
@@ -60,8 +115,8 @@ export function Assistant() {
   }
   function create() {
     if (!stopBeforeAction()) return
-    navigate('/assistant')
     setExpanded(false)
+    navigate('/assistant?new=1')
     setFailure('')
   }
   return (
@@ -207,7 +262,19 @@ export function Assistant() {
           </div>
         </header>
         <ErrorNotice>{failure || (conversationId ? current.error : '')}</ErrorNotice>
-        {(!conversationId || current.data) && (
+        {!conversationId && !explicitNew && !newDraft && (
+          <>
+            <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
+              {resumeError}
+            </ErrorNotice>
+            {(!resumed || lastConversationId) && !resumeError && (
+              <p className="muted">正在打开上次会话…</p>
+            )}
+          </>
+        )}
+        {(current.data ||
+          (!conversationId &&
+            (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))) && (
           <ConversationChat
             key={conversationId ?? 'new'}
             conversationId={conversationId}
@@ -286,6 +353,7 @@ export function Assistant() {
                   setDraft(key, undefined)
                   setOlder((rows) => rows.filter((row) => row.id !== deleting.id))
                   setRemoved((previous) => [...previous, deleting.id])
+                  if (lastConversationId === deleting.id) rememberConversation(null)
                   if (conversationId === deleting.id) navigate('/assistant', { replace: true })
                   setDeleting(null)
                   updated()

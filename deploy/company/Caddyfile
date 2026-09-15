@@ -10,7 +10,9 @@
         Content-Security-Policy "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     }
     handle /api/* {
-        reverse_proxy api:8000
+        reverse_proxy api:8000 {
+            flush_interval -1
+        }
     }
     handle {
         root * /srv

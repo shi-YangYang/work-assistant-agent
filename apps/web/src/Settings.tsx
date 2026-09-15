@@ -1,3 +1,6 @@
+import { useCursorPage, filterParams } from './list-state'
+import { Pagination, WorkFilters, PeriodFilter } from './ListControls'
+import type { DateRange, TeamDetail, TeamMetrics } from '@paa/api-contracts'
 import { ReportActions } from './RecordManagement'
 import { companyTimezones, timezoneLabel } from './timezones'
 import { TimeField } from './ui'
@@ -501,20 +504,11 @@ export function MembersPage() {
 export function TeamPage() {
   const location = useLocation()
   const [params, setParams] = useSearchParams()
-  const filter = params.get('q') ?? ''
-  const status = params.get('status') ?? ''
-  const path = `/team?${new URLSearchParams({ status, ...(params.get('start') ? { start: params.get('start')! } : {}), ...(params.get('end') ? { end: params.get('end')! } : {}) })}`
-  const { data, error, refresh } = useResource<Team>(path, 30000)
-  const update = (key: string, value: string) => {
-    const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setParams(next, { replace: true })
-  }
-  const items =
-    data?.items.filter(
-      (item) => item.member.name.includes(filter) && (!status || item.work.length),
-    ) ?? []
+  const { data, error, refresh } = useResource<Team>(`/team?${params}`, 30000)
+  const update = (values: Record<string, string>) =>
+    setParams(filterParams(params, values), { replace: true })
+  const details = (metric: string) =>
+    `/team/details?${new URLSearchParams({ ...Object.fromEntries(params), metric, ...(data ? { period: 'custom', start: data.range.start, end: data.range.end } : {}) })}`
   return (
     <div className="page">
       <div className="page-heading">
@@ -527,113 +521,174 @@ export function TeamPage() {
           刷新
         </button>
       </div>
-      <ErrorNotice retry={refresh}>{error}</ErrorNotice>
-      <div className="metrics">
-        <div>
-          <small>已上报员工</small>
-          <strong>
-            {data?.items.filter((i) => i.lastMessageAt).length ?? 0}
-            <span> / {data?.items.length ?? 0}</span>
-          </strong>
-        </div>
-        <div>
-          <small>有阻碍的工作</small>
-          <strong>
-            {data?.items.flatMap((i) => i.work).filter((w) => w.status === 'blocked' || w.blocker)
-              .length ?? 0}
-          </strong>
-        </div>
-        <div>
-          <small>已提交报告</small>
-          <strong>{data?.items.reduce((n, i) => n + i.reportCount, 0) ?? 0}</strong>
-        </div>
-      </div>
       <div className="filters team-filters">
         <input
           aria-label="搜索员工"
           placeholder="搜索员工"
-          value={filter}
-          onChange={(e) => update('q', e.target.value)}
+          value={params.get('q') || ''}
+          onChange={(e) => update({ q: e.target.value })}
         />
         <select
-          aria-label="进展状态"
-          value={status}
-          onChange={(e) => update('status', e.target.value)}
+          aria-label="员工范围"
+          value={params.get('members') || 'active'}
+          onChange={(e) => update({ members: e.target.value })}
         >
-          <option value="">全部状态</option>
+          <option value="active">在职员工</option>
+          <option value="inactive">停用员工</option>
+          <option value="all">全部员工</option>
+        </select>
+        <select
+          aria-label="进展状态"
+          value={params.get('status') || ''}
+          onChange={(e) => update({ status: e.target.value })}
+        >
+          <option value="">全部工作状态</option>
           <option value="in_progress">进行中</option>
           <option value="blocked">有阻碍</option>
           <option value="done">已完成</option>
         </select>
-        <div className="team-date-range" role="group" aria-label="进展更新日期范围">
-          <label>
-            开始日期
-            <input
-              type="date"
-              max={params.get('end') || undefined}
-              value={params.get('start') ?? ''}
-              onChange={(e) => update('start', e.target.value)}
-            />
-          </label>
-          <span aria-hidden="true">至</span>
-          <label>
-            结束日期
-            <input
-              type="date"
-              min={params.get('start') || undefined}
-              value={params.get('end') ?? ''}
-              onChange={(e) => update('end', e.target.value)}
-            />
-          </label>
-        </div>
-        {(params.get('start') || params.get('end')) && (
-          <button
-            onClick={() => {
-              const next = new URLSearchParams(params)
-              next.delete('start')
-              next.delete('end')
-              setParams(next)
-            }}
-          >
-            清除日期
-          </button>
-        )}
+        <PeriodFilter params={params} range={data?.range} change={update} />
       </div>
-      {items.length ? (
-        <div className="record-list">
-          {items.map((item) => (
+      <ErrorNotice retry={refresh}>{error}</ErrorNotice>
+      {data && (
+        <>
+          <div className="metrics">
             <Link
-              className="record-row team-row"
-              to={`/team/${item.member.id}`}
+              to={details('messages')}
               state={detailState(location)}
-              key={item.member.id}
+              title="所选期间发送过工作消息的员工"
             >
-              <span className="avatar">{item.member.name.slice(0, 1)}</span>
-              <div className="record-main">
-                <h3>
-                  {item.member.name}
-                  {!item.member.active && <small> · 已停用</small>}
-                </h3>
-                <p className="record-summary">{item.work[0]?.summary ?? '尚无已确认进展'}</p>
-              </div>
-              <small className="record-updated">
-                {item.lastMessageAt
-                  ? `最近上报 ${dateLabel(item.lastMessageAt)}`
-                  : '尚未上报，不代表未开展工作'}
-              </small>
-              {item.work.some((w) => w.blocker || w.status === 'blocked') && (
-                <span className="status blocked">有阻碍</span>
-              )}
-              <ChevronRight size={18} />
+              <small>已上报员工</small>
+              <strong>
+                {data.metrics.reported}
+                <span> / {data.metrics.members}</span>
+              </strong>
             </Link>
-          ))}
-        </div>
-      ) : (
-        <Empty title="没有符合条件的员工">可调整筛选条件，或先添加员工账号。</Empty>
+            <Link
+              to={details('blocked')}
+              state={detailState(location)}
+              title="期间有确认更新、期末仍未完成的阻碍工作"
+            >
+              <small>有阻碍的工作</small>
+              <strong>{data.metrics.blocked}</strong>
+            </Link>
+            <Link
+              to={details('reports')}
+              state={detailState(location)}
+              title="所选期间实际提交过的报告，每份只计一次"
+            >
+              <small>已提交报告</small>
+              <strong>{data.metrics.reports}</strong>
+            </Link>
+          </div>
+          {data.items.length ? (
+            <div className="record-list">
+              {data.items.map((item) => (
+                <Link
+                  className="record-row team-row"
+                  to={`/team/${item.member.id}`}
+                  state={detailState(location)}
+                  key={item.member.id}
+                >
+                  <span className="avatar">{item.member.name.slice(0, 1)}</span>
+                  <div className="record-main">
+                    <h3>
+                      {item.member.name}
+                      {!item.member.active && <small> · 已停用</small>}
+                    </h3>
+                    <p className="record-summary">
+                      {item.work[0]?.summary || '本期无符合条件的工作更新'}
+                    </p>
+                    <small>
+                      {item.workCount} 项工作 · {item.reportCount} 份报告
+                    </small>
+                  </div>
+                  <small className="record-updated">
+                    {item.lastMessageAt
+                      ? `本期最近上报 ${dateLabel(item.lastMessageAt)}`
+                      : '本期未上报'}
+                  </small>
+                  {item.blockedCount > 0 && (
+                    <span className="status blocked">{item.blockedCount} 项阻碍</span>
+                  )}
+                  <ChevronRight size={18} />
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <Empty title="没有符合条件的员工">可调整筛选条件，或先添加员工账号。</Empty>
+          )}
+        </>
       )}
+      {!data && !error && <p className="muted">正在读取看板…</p>}
       <Link className="mobile-only" to="/members">
         管理成员
       </Link>
+    </div>
+  )
+}
+export function TeamMetricPage() {
+  const location = useLocation()
+  const [params] = useSearchParams()
+  const query = new URLSearchParams(params)
+  query.delete('after')
+  const list = useCursorPage<TeamDetail, { range: DateRange; metrics: TeamMetrics; total: number }>(
+    `/team/details?${query}`,
+  )
+  const metric = params.get('metric') || 'messages'
+  return (
+    <div className="page">
+      <div className="page-heading">
+        <div>
+          <h2>
+            {{ messages: '本期工作上报', blocked: '本期阻碍工作', reports: '本期已提交报告' }[
+              metric
+            ] || '统计明细'}
+          </h2>
+          {list.data && (
+            <p>
+              {list.data.range.start} — {list.data.range.end} ·{' '}
+              {metric === 'messages'
+                ? `${list.data.metrics.reported} 位员工，${list.data.total} 条消息`
+                : `${list.data.total} 条记录`}
+            </p>
+          )}
+        </div>
+      </div>
+      <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
+      {list.data &&
+        (list.data.items.length ? (
+          <div className="record-list">
+            {list.data.items.map((item) => (
+              <Link
+                key={item.id}
+                to={item.href}
+                state={detailState(location)}
+                className="record-row"
+              >
+                <div className="record-main">
+                  <h3>{item.title}</h3>
+                  <p>
+                    {item.member.name}
+                    {item.work?.blocker ? ` · ${item.work.blocker}` : ''}
+                  </p>
+                </div>
+                <time>{dateLabel(item.at)}</time>
+                <ChevronRight size={18} />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <Empty title="本期没有符合条件的记录" />
+        ))}
+      {list.data && (
+        <Pagination
+          page={list.page}
+          hasNext={!!list.data.nextCursor}
+          previous={list.previous}
+          next={list.next}
+        />
+      )}
     </div>
   )
 }
@@ -643,7 +698,9 @@ export function TeamMemberPage() {
   const [params, setParams] = useSearchParams()
   const tab = params.get('tab') ?? 'work'
   const kind = params.get('kind') ?? 'daily'
-  const work = useResource<Page<Work> & { member: Member }>(`/team/members/${id}/work`, 30000)
+  const work = useCursorPage<Work, { member: Member }>(
+    `/team/members/${id}/work?${new URLSearchParams({ q: params.get('q') || '', status: params.get('status') || '' })}`,
+  )
   const messages = usePagedResource<WorkMessage>(`/team/members/${id}/messages`, 'createdAt', 30000)
   const reports = useResource<Page<Report>>(
     tab === 'reports' ? `/team/members/${id}/reports?kind=${kind}` : null,
@@ -673,12 +730,36 @@ export function TeamMemberPage() {
         ))}
       </div>
       <ErrorNotice>{work.error || messages.error || reports.error}</ErrorNotice>
-      {tab === 'work' &&
-        (work.data?.items.length ? (
-          <WorkList items={work.data.items} refresh={work.refresh} />
-        ) : (
-          <Empty title="尚无已确认进展" />
-        ))}
+      {tab === 'work' && (
+        <>
+          <WorkFilters
+            query={params.get('q') || ''}
+            status={params.get('status') || ''}
+            change={work.filter}
+          />
+          {work.data ? (
+            work.data.items.length ? (
+              <WorkList items={work.data.items} refresh={work.refresh} />
+            ) : (
+              <Empty
+                title={
+                  params.get('q') || params.get('status') ? '没有符合条件的工作' : '尚无已确认进展'
+                }
+              />
+            )
+          ) : (
+            !work.error && <p className="muted">正在读取工作…</p>
+          )}
+          {work.data && (
+            <Pagination
+              page={work.page}
+              hasNext={!!work.data.nextCursor}
+              previous={work.previous}
+              next={work.next}
+            />
+          )}
+        </>
+      )}
       {tab === 'messages' && (
         <div className="raw-messages">
           {messages.data?.items.map((m) => (
