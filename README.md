@@ -125,7 +125,7 @@ docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d -
 npm run dev:company
 ```
 
-访问 **http://127.0.0.1:5174**。该命令同时启动 Web、API（8000）和 worker；`Ctrl+C` 一起停止应用进程，数据库继续运行。Web 支持热更新，修改 API 后需重启。只启 Web 不会启动后台任务处理。
+访问 **http://127.0.0.1:5174**；开发服务器会将 `localhost:5174` 自动跳转到此地址，以匹配服务端的来源校验。该命令同时启动 Web、API（8000）和 worker；`Ctrl+C` 一起停止应用进程，数据库继续运行。Web 支持热更新，修改 API 后需重启。只启 Web 不会启动后台任务处理。
 
 1. 管理员登录后，在“成员管理”创建员工账号；员工首次登录修改临时密码。
 2. 在“模型服务管理”添加服务，为工作助手、报告、语音分配模型。Base URL 需包含服务要求的版本路径，不自动补 `/v1`；获取目录失败可手填模型 ID。
