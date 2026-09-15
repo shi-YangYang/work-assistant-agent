@@ -1916,11 +1916,17 @@ dialog::backdrop {
 }
 .model-section-heading {
   border-top: 1px solid var(--line);
-  padding-top: 16px;
+  padding: 16px 0;
   flex-wrap: wrap;
+}
+.model-section-heading h3 {
+  margin: 0;
 }
 .model-section-heading .card-actions {
   margin: 0;
+}
+.model-section-heading .card-actions button {
+  min-height: 36px;
 }
 .model-placeholder {
   display: flex;
@@ -2052,6 +2058,14 @@ dialog::backdrop {
   }
   .connection-fields {
     grid-template-columns: minmax(180px, 0.7fr) minmax(260px, 1.3fr);
+  }
+}
+@container (max-width: 420px) {
+  .model-section-heading .card-actions {
+    flex-basis: 100%;
+  }
+  .model-section-heading .card-actions button {
+    flex: 1;
   }
 }
 
