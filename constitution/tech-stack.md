@@ -1,6 +1,6 @@
 # 技术栈与工程约束
 
-本文记录实际技术、目录及运行边界。需求与状态见 [Spec 索引](../specs/README.md)，选型理由见 `.ai/decisions/`，安装／使用／部署步骤只在 [README](../README.md) 维护；版本以对应锁文件为准。
+本文记录实际技术、目录及运行边界。需求与状态见 [Spec 索引](../specs/README.md)，选型理由见 `.ai/decisions/`；[README](../README.md) 提供使用入口，详细安装／部署／备份步骤集中在[使用指南](../docs/setup.md)。版本以对应锁文件为准。
 
 ## 桌面技术基线
 
