@@ -1,4 +1,5 @@
 import { DesktopLibrary } from './meeting-library'
+import appIcon from '@paa/ui-web/app-icon.png?asset'
 import {
   app,
   clipboard,
@@ -216,6 +217,7 @@ function createWindow(): void {
     minHeight: 640,
     show: false,
     title: '个人工作助手',
+    icon: appIcon,
     backgroundColor: '#f8f9f6',
     autoHideMenuBar: true,
     webPreferences: {
@@ -248,6 +250,7 @@ function createWindow(): void {
 }
 if (hasLock)
   void app.whenReady().then(async () => {
+    app.dock?.setIcon(appIcon)
     await summarySettings.load()
     // Native Python capture has its own permission check; no Chromium device access is needed.
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>

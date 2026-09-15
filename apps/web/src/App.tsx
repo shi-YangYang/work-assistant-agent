@@ -9,7 +9,6 @@ import {
   Settings,
   Users,
   LogOut,
-  AudioLines,
   Command,
   UserRound,
   Palette,
@@ -146,9 +145,7 @@ function Login({
         }}
       >
         <div className="brand">
-          <span className="brand-mark">
-            <AudioLines size={22} />
-          </span>{' '}
+          <span className="brand-mark" aria-hidden="true" />
           工作助手
         </div>
         <h1>欢迎回来</h1>
@@ -300,9 +297,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             {expandedNav ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
           </button>
           <Link to={identity.member.role === 'admin' ? '/team' : '/assistant'} className="brand">
-            <span className="brand-mark">
-              <AudioLines size={22} />
-            </span>
+            <span className="brand-mark" aria-hidden="true" />
             <span className="nav-label">{identity.company.name}</span>
           </Link>
           <button
