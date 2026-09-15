@@ -2,7 +2,7 @@
 
 ## 项目背景
 
-Personal Agent Assistant 从面向 macOS 和 Windows 的会议桌面助手起步，长期目标是让 Agent 参与公司真实业务，连接员工工作记录、组织架构、工作画像、项目进度与公司知识。用户最新方向见 [决策 0011](../.ai/decisions/0011-company-agent-direction.md)。
+work-assistant-agent 从面向 macOS 和 Windows 的会议桌面助手起步，长期目标是让 Agent 参与公司真实业务，连接员工工作记录、组织架构、工作画像、项目进度与公司知识。用户最新方向见 [决策 0011](../.ai/decisions/0011-company-agent-direction.md)。
 
 本文根据用户提供的项目背景整理，描述长期方向与已明确约束，不代表各项能力均已实现。
 

@@ -5,7 +5,7 @@ import type { Conversation, Page } from '@paa/api-contracts'
 import type { Composer } from './audio-capture'
 import { api, useResource, write } from './api'
 import { ConversationChat } from './Assistant'
-import { BusyButton, Empty, ErrorNotice, Modal } from './ui'
+import { BusyButton, ErrorNotice, Modal } from './ui'
 import { useWorkspace } from './workspace'
 
 export function Assistant() {
@@ -222,20 +222,15 @@ export function Assistant() {
           </div>
         </header>
         <ErrorNotice>{failure || current.error}</ErrorNotice>
-        {current.data ? (
+        {(!conversationId || current.data) && (
           <ConversationChat
-            key={current.data.id}
-            conversationId={current.data.id}
-            onSent={updated}
+            key={conversationId ?? 'new'}
+            conversationId={conversationId}
+            onSent={(id) => {
+              if (!conversationId) navigate(`/assistant/${id}`, { replace: true })
+              updated()
+            }}
           />
-        ) : (
-          !conversationId && (
-            <Empty title="开始新的会话">
-              <button className="primary" onClick={() => void create()}>
-                新建会话
-              </button>
-            </Empty>
-          )
         )}
       </section>
       {editing && (

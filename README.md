@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="packages/ui-web/assets/app-icon.png" alt="个人工作助手 Logo" width="120" height="120" />
+  <img src="packages/ui-web/assets/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
 </p>
 
-<h1 align="center">Personal Agent Assistant</h1>
+<h1 align="center">work-assistant-agent</h1>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-345BD8?style=flat-square" alt="许可证：MIT" /></a>
@@ -13,7 +13,7 @@
 
 个人工作助手提供两种使用方式：用桌面端记录会议、转写录音和生成纪要；用公司 Web 上报工作、整理日报／周报、查询团队进展和跟进待办。电脑与手机可访问同一个 Web 地址。
 
-本仓库名为 `work-assistant-agent`，以 npm workspace 包 `personal-agent-assistant-workspace` 统一管理应用与共享代码；产品名称沿用 Personal Agent Assistant。
+项目名为 `work-assistant-agent`，Web 侧栏显示“公司工作助手”，Electron 侧栏显示“桌面会议助手”；以 npm workspace 包 `personal-agent-assistant-workspace` 统一管理应用与共享代码。
 
 ## 目录
 

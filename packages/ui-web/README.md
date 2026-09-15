@@ -1,6 +1,6 @@
 # Web UI 与品牌资源
 
-两端通过本包共用主题、选择控件和品牌样式。品牌采用用户于 2026-09-15 确认的「相扣的 W」，表示 Work、协作与持续推进；不替代各公司的显示名称。
+两端通过本包共用主题、选择控件和品牌样式。品牌采用用户于 2026-09-15 确认的「相扣的 W」，表示 Work、协作与持续推进；项目及两端侧栏名称见 [README](../../README.md)。
 
 - `src/brand.css` 使用 `assets/mark.png` 的透明轮廓，颜色取主题 `--accent`，适配浅色／深色界面。标志旁有名称时使用 `aria-hidden`。
 - `assets/app-icon.png` 是同一轮廓的蓝底白标，用于 Electron 窗口／Dock。`public/` 提供 Web favicon 和触屏图标，由两端 Vite 复制；Electron 的 ICNS／ICO 在 `apps/desktop/resources/icons/`。

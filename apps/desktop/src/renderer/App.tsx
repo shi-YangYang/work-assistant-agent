@@ -400,7 +400,7 @@ export function App(): React.JSX.Element {
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true" />
-          <strong>个人工作助手</strong>
+          <strong>桌面会议助手</strong>
         </div>
         <button className="command-trigger" onClick={() => setCommandOpen(true)}>
           <Command size={16} />

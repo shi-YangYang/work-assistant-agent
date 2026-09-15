@@ -299,7 +299,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           </button>
           <Link to={identity.member.role === 'admin' ? '/team' : '/assistant'} className="brand">
             <span className="brand-mark" aria-hidden="true" />
-            <span className="nav-label">{identity.company.name}</span>
+            <span className="nav-label">公司工作助手</span>
           </Link>
           <button
             className="search-launch"
