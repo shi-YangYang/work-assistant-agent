@@ -3,6 +3,7 @@ from dataclasses import replace
 import io
 import json
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from PIL import Image
@@ -75,7 +76,9 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     assert changed.status_code == 200, changed.text
     conflict = await employee.post('/api/v1/progress-drafts/confirm', json={'items': [{'id': next_draft['id'], 'expectedRevision': next_draft['revision']}]}, headers=keyed())
     assert conflict.status_code == 409
-    day = now().date().isoformat()
+    async with sessions() as db:
+        company = await db.get(Company, users['employee'].company_id)
+        day = now().astimezone(ZoneInfo(company.rules['timezone'])).date().isoformat()
     generated = await employee.post('/api/v1/reports/generate', json={'kind':'daily', 'date': day}, headers=keyed())
     assert generated.status_code == 202, generated.text
     report_id = generated.json()['reportId']

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Composer } from '../../src/web/audio-capture'
+import type { Composer } from '../../apps/web/src/audio-capture'
 import {
   currentCitation,
   fileKind,
   fileSelectionError,
   updateSendingDraft,
-} from '../../src/web/files'
+} from '../../apps/web/src/files'
 const file = (name: string, size = 100, type = '') => ({ name, size, type }) as File
 
 describe('document composer', () => {

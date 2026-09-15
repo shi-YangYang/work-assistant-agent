@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { JsonLineClient } from '../../src/desktop/json-line-client'
+import { JsonLineClient } from '../../apps/desktop/src/main/json-line-client'
 
 const clients: JsonLineClient[] = []
 const createClient = (): { client: JsonLineClient; failure: ReturnType<typeof vi.fn> } => {

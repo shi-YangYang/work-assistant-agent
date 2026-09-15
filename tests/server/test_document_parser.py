@@ -73,7 +73,7 @@ async def test_partial_limits_and_blank_pages_are_explicit(tmp_path):
 
 
 async def test_timeout_reaps_real_child_and_resource_guard(tmp_path):
-    parser_path = Path(__file__).parents[2] / 'src/python/paa_server/document_parser.py'
+    parser_path = Path(__file__).parents[2] / 'services/company/src/paa_server/document_parser.py'
     runner = tmp_path / 'runner.py'
     marker = tmp_path / 'child.json'
     runner.write_text('import sys, os, time, json, runpy, resource\n'

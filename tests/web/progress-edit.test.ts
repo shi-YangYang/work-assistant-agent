@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
-import type { Draft } from '../../src/shared/company-contracts'
-import { progressEditValue } from '../../src/web/progress-edit'
+import type { Draft } from '@paa/api-contracts'
+import { progressEditValue } from '../../apps/web/src/progress-edit'
 
 it('submits explicit new-work null after normal editing and keeping edits through a conflict', () => {
   const draft: Draft = {

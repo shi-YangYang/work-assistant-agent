@@ -1,27 +1,29 @@
 # Personal Agent Assistant
 
-面向 macOS 和 Windows 的个人工作助手，从会议记录起步，逐步连接周报与历史工作信息，帮助个人回顾讨论、跟踪行动与积累长期记忆。
+连接会议记录与公司工作汇报的 Agent 助手。Electron 提供本地会议录音、转写与纪要；公司 Web 提供员工上报、工作进展、日报／周报、团队问答和管理员督办。
 
 当前已实现 **默认麦克风录音、WAV / SQLite 本地保存、历史列表与回放**。点击开始会议后采集真实声音，结束并保存后可重新启动应用查找和播放。本地转写支持六款 Whisper 模型、中文／英文／中英混合，以及带时间的文字记录和历史重转写，见 [Spec 013](specs/spec-013-local-model-library/spec.md)；在线模型纪要支持多家服务配置。公司员工消息、工作进展和日报／周报另由 [独立 Web 与服务端](#公司工作助手-webspec-008) 提供；长期 Memory 尚未接入。
 
 ## 背景
 
-首个业务目标是 Meeting Agent MVP：持续录音 → 本地转写并保存完整记录 → 结束会议 → 整理结构化纪要。采集必须独立于 ASR / LLM，不能因推理延迟中断。目标与边界见 [产品定义](docs/product-definition.md)、[项目使命](constitution/mission.md) 和 [路线图](constitution/roadmap.md)。
+首个业务目标是 Meeting Agent MVP：持续录音 → 本地转写并保存完整记录 → 结束会议 → 整理结构化纪要。采集必须独立于 ASR / LLM，不能因推理延迟中断。目标与边界见 [项目使命](constitution/mission.md) 和 [路线图](constitution/roadmap.md)。
 
-已在 Spec 001 工程基础上完成 [Spec 002](specs/spec-002-meeting-recording-and-storage/spec.md) 的录音与保存闭环，独立验收 [PASS](specs/spec-002-meeting-recording-and-storage/acceptance.md)；[Spec 003](specs/spec-003-local-transcription/spec.md) 接入本地转写，工程与真实样本验证结果见其实施报告，最终验收状态以独立报告为准。[Spec 004](specs/spec-004-meeting-minutes/spec.md) 补充多服务模型管理及自动会议纪要。
+各项功能与实际验证范围统一见 [Spec 索引](specs/README.md)；当前系统关系见 [架构说明](docs/architecture.md)。
 
 ## 开发环境安装
 
+所有下述命令从仓库根执行。npm workspaces 管理应用和共享包，根保留唯一 `package-lock.json`；现有 `npm run dev`、`dev:company` 等命令继续可用。`.venv`、`.venv-server` 和环境配置文件仍在根目录，源码移动不迁移用户资料。
+
 以下步骤面向开发者。正式用户版本安装应用后直接使用，由应用自带所需运行时，不要求用户安装 Python、Node.js 或手动启动后台进程。安装测试包的构建方法见下方“制作安装包”；下列源码启动方式需要开发环境。
 
-准备 Node.js **24**、npm **11** 和 Python **3.12**。录音依赖锁定在 `requirements.lock`：sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；macOS / Windows wheel 附带 PortAudio。转写使用 faster-whisper 1.2.1 / CTranslate2 4.8.2 / CPU INT8，相关 NumPy、PyAV 与 VAD 运行依赖也已锁定。启动无需模型或 LLM 密钥；开始会议时需要麦克风权限。
+准备 Node.js **24**、npm **11** 和 Python **3.12**。录音依赖锁定在 `apps/desktop/core/requirements.lock`：sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；macOS / Windows wheel 附带 PortAudio。转写使用 faster-whisper 1.2.1 / CTranslate2 4.8.2 / CPU INT8，相关 NumPy、PyAV 与 VAD 运行依赖也已锁定。启动无需模型或 LLM 密钥；开始会议时需要麦克风权限。
 
 macOS：
 
 ```sh
 python3.12 -m venv .venv
 npm ci
-node scripts/install-python.mjs
+node scripts/desktop/install-python.mjs
 ```
 
 Windows PowerShell：
@@ -29,12 +31,12 @@ Windows PowerShell：
 ```powershell
 py -3.12 -m venv .venv
 npm ci
-node scripts/install-python.mjs
+node scripts/desktop/install-python.mjs
 ```
 
-如果 Python 3.12 命令名称不同，请用对应解释器创建 `.venv`，不要替换系统 Python。启动自动使用项目 `.venv`，无需激活虚拟环境。安装脚本等价于使用项目 Python 执行 `-m pip install -r requirements.lock`。
+如果 Python 3.12 命令名称不同，请用对应解释器创建 `.venv`，不要替换系统 Python。启动自动使用项目 `.venv`，无需激活虚拟环境。安装脚本等价于使用项目 Python 执行 `-m pip install -r apps/desktop/core/requirements.lock`。
 
-首次 Node 安装通过 `postinstall: install-electron` 下载 Electron 二进制，需要网络，不下载 ASR 模型。下载失败可参考 [Electron 安装文档](https://www.electronjs.org/docs/latest/tutorial/installation) 配置网络后重试。
+首次 Node 安装由根 `postinstall` 调用桌面 workspace 的 `install-electron` 下载 Electron 二进制，需要网络，不下载 ASR 模型。下载失败可参考 [Electron 安装文档](https://www.electronjs.org/docs/latest/tutorial/installation) 配置网络后重试。
 
 ## 制作安装包
 
@@ -43,15 +45,17 @@ node scripts/install-python.mjs
 完成上面的开发环境准备后运行：
 
 ```bash
-node scripts/install-build-python.mjs
+node scripts/desktop/install-build-python.mjs
 npm run package
 ```
 
-产物位于 `dist/desktop/`。`npm run package:dir` 仅生成未封装的应用目录。构建依赖锁定于 `requirements-build.lock` 与 `package-lock.json`，不用 pip 在线安装运行时到用户机器。应用用户数据路径与开发版相同，安装和卸载不会清除录音、模型和服务设置；请勿同时运行两份应用。
+产物位于 `dist/desktop/`。`npm run package:dir` 仅生成未封装的应用目录。构建依赖锁定于 `apps/desktop/core/requirements-build.lock` 与 `package-lock.json`，不用 pip 在线安装运行时到用户机器。应用用户数据路径与开发版相同，安装和卸载不会清除录音、模型和服务设置；请勿同时运行两份应用。
 
 macOS 首次从开发版切换到安装版，系统可能询问是否允许访问“个人工作助手 Safe Storage”钥匙串条目。允许应用访问后即可沿用原服务密钥，无需重新填写 API Key。测试包使用 ad-hoc 签名，重新构建后的应用可能再次请求授权。
 
 `npm run test:package` 验证实际应用资源内的冻结核心、无外部 Python/Node 的启动、离线 small 推理、VAD、证书和合成录音暂停续录；先通过 `npm run test:asr` 准备公开测试素材。CI 另外安装 DMG/NSIS 产物并启动桌面检查。它们与本机真实麦克风验收的范围不同，实际结果见 [Spec 005 实施报告](specs/spec-005-desktop-distribution-and-controls/implementation.md)。
+
+仅验证路径或打包资源改动时，可用 `npm run test:package -- --runtime-only` 检查冻结核心启动、资源和许可证；此模式不做模型推理，不能替代发布前的完整分发检查。
 
 ## 使用
 
@@ -98,7 +102,7 @@ npm start
 
 最小化和切换页面不会停止录音。录音中关闭窗口、退出或重连时，可选择继续录音或停止保存；保存失败会保持窗口可见。休眠、设备失效与异常退出的记录明确标记为中断，下次启动恢复已经落盘的完整音频帧。
 
-开发 UI 只绑定 `127.0.0.1:5173`；Python 控制核心通过标准输入输出通信，不监听业务网络端口。构建预览加载本地资源。`npm run build` 只生成 `out/`；使用 `npm run package` 才会内嵌运行时并生成安装包，暂未实现正式签名、公证或自动更新。
+开发 UI 只绑定 `127.0.0.1:5173`；Python 控制核心通过标准输入输出通信，不监听业务网络端口。构建预览加载本地资源。`npm run build` 只生成 `apps/desktop/out/`；使用 `npm run package` 才会内嵌运行时并生成安装包，暂未实现正式签名、公证或自动更新。
 
 ### 配置与故障恢复
 
@@ -140,7 +144,7 @@ macOS 拒绝麦克风后，在系统设置 → 隐私与安全性 → 麦克风�
 | `npm run test:smoke:quick` | 受控桌面流程，用于手动或发布前检查，不运行真实模型与安装包场景 |
 | `npm run test:smoke:asr` | 仅运行真实模型桌面流程，需先准备样本并设置 `PAA_REAL_ASR_SMOKE=1` |
 
-Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打开短暂窗口，需要图形会话。默认自动测试不打开真实麦克风，故障与生命周期由 `tests/python/smoke_core.py` 显式注入合成 PCM，经测试专用可执行文件启动；产品没有假录音回退。POSIX 合成启动器在 Windows 跳过。测试数据为临时隔离目录，截图与实录证据位于忽略的 `artifacts/spec002/`。
+Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打开短暂窗口，需要图形会话。默认自动测试不打开真实麦克风，故障与生命周期由 `tests/core/smoke_core.py` 显式注入合成 PCM，经测试专用可执行文件启动；产品没有假录音回退。POSIX 合成启动器在 Windows 跳过。测试数据为临时隔离目录，截图与实录证据位于忽略的 `artifacts/spec002/`。
 
 ### CI 分层
 
@@ -168,23 +172,25 @@ Smoke 使用 Electron 自带 Chromium，无需 `playwright install`；它会打�
 ## 目录
 
 ```text
-src/
-├── desktop/              # 主进程、preload、Python 客户端、受限媒体
-├── renderer/             # React 中文工作区
-├── shared/               # 桌面 IPC 与公司 HTTP 契约
-├── ui/                   # 跨端共用语义主题
-├── web/                  # 公司工作助手 Web
-└── python/
-    ├── paa_core/         # 桌面录音、SQLite、转写与纪要
-    └── paa_server/       # 公司 API、任务、harness 与迁移
-deploy/company/          # 公司 Web／API 的独立部署
-tests/                   # 桌面、Python 与真实 Electron 场景
-scripts/                 # 安装与验证辅助脚本
-docs/                    # 产品定义与架构
-constitution/            # 使命、路线与技术约束
-specs/                   # Spec、实施与验收报告
-.ai/                     # 决策、工作流、交接和规则
-AGENTS.md                # 开发规范
+apps/
+  desktop/               # Electron main、preload、renderer、专用配置及内置 core
+  web/                   # 公司 Web 与专用配置
+services/company/        # Python API、worker、harness、迁移与资源
+packages/
+  api-contracts/         # 公司 HTTP 类型
+  model-config/          # 两端共用的纯参数校验
+  ui-web/                # 浏览器语义主题与选择控件样式
+tests/
+  desktop/ · core/        # 桌面 TypeScript 与本地 Python 回归
+  web/ · server/          # 公司 Web 与后端回归
+  e2e/desktop/            # 手动／发布前的桌面流程
+scripts/
+  desktop/ · company/    # 安装、开发、验证与打包入口
+  benchmarks/ · lib/     # 手动模型评测与工程脚本共用函数
+deploy/company/          # Compose、Dockerfile、Caddy 与备份
+docs/                    # 当前架构说明
+constitution/            # 使命、路线与实际技术
+specs/ · .ai/ · AGENTS.md # 规格、决策与开发规则
 ```
 
 renderer 启用沙箱与上下文隔离，关闭 Node integration。preload 仅公开有限会议、录音、模型准备与转写 API，播放入口只接受合法会议 ID，并经受限 `paa-audio://meeting/<会议ID>` 访问音频，不能读取任意本地路径。原生采集在用户开始会议时检查麦克风权限；renderer 的麦克风、摄像头等设备权限继续拒绝。不加载远程脚本，阻止外部导航与新窗口。
@@ -206,25 +212,25 @@ Electron 继续使用 `npm run dev`。公司账号、员工图文语音、工作
 ```sh
 npm ci
 python3.12 -m venv .venv-server
-.venv-server/bin/python -m pip install -r requirements-server.lock
+.venv-server/bin/python -m pip install -r services/company/requirements.lock
 cp .env.company.example .env.company
 ```
 
-Windows 使用 `py -3.12 -m venv .venv-server`，安装命令改为 `.venv-server\Scripts\python.exe -m pip install -r requirements-server.lock`。其余 npm 命令相同。
+Windows 使用 `py -3.12 -m venv .venv-server`，安装命令改为 `.venv-server\Scripts\python.exe -m pip install -r services/company/requirements.lock`。其余 npm 命令相同。
 
 编辑 `.env.company`，设置随机 `POSTGRES_PASSWORD` 并同步 `DATABASE_URL`；`PAA_FFMPEG` 可指定 FFmpeg 可执行文件路径。不要提交这个文件，也不要使用 Electron 的配置文件替代。然后：
 
 ```sh
 docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d
 npm run db:company
-node scripts/company.mjs model-key
+node scripts/company/run.mjs model-key
 npm run admin:company
 npm run dev:company
 ```
 
 `admin:company` 通过交互提示创建首家公司和管理员，密码不写入命令历史；公司已初始化时不会覆盖。打开 [本地 Web](http://127.0.0.1:5174)，管理员在“成员管理”创建员工临时账号；员工首次登录需修改密码。`dev:company` 同时启动 Web、API 与处理进程，Ctrl+C 一起停止。也可分别执行 `dev:web`、`dev:server`、`dev:worker`。API 修改后重启，Web 有热更新。
 
-已有环境升级到 `0004_documents` 时，先停止开发服务，备份数据库与私有附件，再安装当前 `requirements-server.lock`，运行 `npm run db:company`、`npm run dev:company`。增量迁移保留原消息、附件和业务引用；更早的环境会先将旧消息归入各自的“默认会话”。不需要重新创建账号或填写模型配置。生产备份与恢复方法见下方部署说明。
+已有环境升级到 `0005_business_access` 时，先停止开发服务，备份数据库与私有附件，再安装当前 `services/company/requirements.lock`，运行 `npm run db:company`、`npm run dev:company`。增量迁移保留原消息、附件和业务引用；更早的环境会先将旧消息归入各自的“默认会话”。不需要重新创建账号或填写模型配置。生产备份与恢复方法见下方部署说明。
 
 管理员在“设置 → 模型服务管理”添加服务，在“用途分配”指定工作助手、报告与语音模型；保存后新任务即时生效，无需重启。聊天支持兼容 Chat Completions，默认流式；语音选择文件转写或 Qwen-ASR 兼容协议。Base URL 已包含版本路径，不自动补 `/v1`。目录失败可以手填模型 ID，“服务默认”不追加推理参数。获取模型、保存服务、主动小样本检测是独立操作；检测可能计费，不自动调用，目录可见不代表业务能力已通过。
 
@@ -237,6 +243,8 @@ npm run dev:company
 员工发送的原始工作消息、助手回复与附件对公司管理员可见；尚未发送的输入、独立进展编辑草稿和未提交报告仅本人可见。工作进展需员工确认，报告需员工提交。自动日报／周报初始不启用，管理员配置有效日期和时间后生效。
 
 工作助手支持新建、搜索、重命名和删除会话，切换时分别保留未发送草稿。聊天历史按会话组织，已确认工作仍可跨会话跟进；删除会话会保留已被工作／报告引用的原始材料。管理员保留工作助手和我的工作，通过团队看板查看员工报告，不生成个人日报／周报；成员管理仅维护员工账号。
+
+管理员可在工作助手中询问本公司员工的已确认工作、已提交报告及其关联材料，查看回答使用的具体来源版本。未关联原始消息、他人会话与未提交草稿不纳入助手的团队检索；员工仍只查询本人资料。明确要求跟进后，助手生成管理员本人的待确认督办建议，确认才写入“我的工作”，不会给员工派单或改写员工记录。权限变化或来源删除后，相关历史回答不能继续作为查询上下文。范围与边界见 [Spec 014](specs/spec-014-admin-business-assistant/spec.md)。
 
 工作及从未提交的报告可由本人编辑／删除，员工不能删除已提交报告。管理员删除报告时同步清理其引用的原始消息和附件；其他引用同一消息的工作／报告仍保留，来源显示已删除。删除的周期报告不会自动重新生成，操作前确认框会说明关联影响。完整功能范围见 [Spec 011](specs/spec-011-web-function-management/spec.md)。
 

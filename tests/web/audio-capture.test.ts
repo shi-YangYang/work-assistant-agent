@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AudioCapture, appendRecordedFile, type Composer } from '../../src/web/audio-capture'
+import { AudioCapture, appendRecordedFile, type Composer } from '../../apps/web/src/audio-capture'
 
 class ControlledRecorder {
   static instances: ControlledRecorder[] = []

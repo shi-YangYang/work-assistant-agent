@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
-import { Markdown } from '../../src/web/Markdown'
+import { Markdown } from '../../apps/web/src/Markdown'
 
 const render = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }))
 
@@ -33,4 +33,26 @@ it('allows explicit web and mail links without interpreting labels as HTML', () 
   expect(html).toContain('href="mailto:work@example.com"')
   expect(html).toContain('rel="noreferrer noopener"')
   expect(html).toContain('&lt;img&gt;</a>')
+})
+
+it('renders numbered business references only through the supplied verified-source resolver', () => {
+  const indexes: number[] = []
+  const html = renderToStaticMarkup(
+    createElement(Markdown, {
+      text: '**报价待确认**〔来源 1〕。\n\n- 原始材料〔来源2〕\n- 伪造编号〔来源999〕\n\n`〔来源1〕`',
+      renderBusinessCitation: (index) => {
+        indexes.push(index)
+        return index <= 2
+          ? createElement('button', { type: 'button' }, `查看来源 ${index}`)
+          : '来源未核实'
+      },
+    }),
+  )
+  expect(indexes).toEqual([1, 2, 999])
+  expect(html).toContain('<button type="button">查看来源 1</button>')
+  expect(html).toContain('<button type="button">查看来源 2</button>')
+  expect(html).toContain('来源未核实')
+  expect(html).toContain('<code>〔来源1〕</code>')
+  expect(html).not.toContain('href=')
+  expect(render('保留未知标记〔来源 1〕')).toContain('〔来源 1〕')
 })

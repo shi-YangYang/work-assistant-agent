@@ -24,7 +24,7 @@ FLEURS 的[固定版本数据卡](https://huggingface.co/datasets/google/fleurs/
 
 峰值内存为独立基准转写进程在模型加载、导入、样本解码、末尾静音及编辑距离评分阶段的峰值 RSS；脚本在评分完成后读取，包含基准包装与评分开销，没有声称已扣除它们。已完成组保持相同采样阶段，失败组不借用数值；macOS `ru_maxrss` 原值为 bytes。不是模型文件大小、整应用占用或其他机器保证值。每组额外运行 10 秒纯静音，单独记录输出，没有错误率分母。耗时仅在内部 artifacts 中用于 worker 等待预算，不展示在产品效果区域。
 
-重现入口为 [scripts/spec013-benchmark.py](../../scripts/spec013-benchmark.py)：先 `prepare` 冻结公开语料，再对每个模型和语言串行运行 `run --model <id> --mode <zh|en|mixed> --cache <日常 models 目录>`。模型版本从本提交的 `paa_core.model_catalog.CATALOG` 获取，先在应用中下载／校验所选模型即可，不需要私有 manifest。脚本拒绝覆盖已冻结清单或已有结果；数据服务版本变化时拒绝静默换样本。需要既有桌面 Python 依赖与已校验固定模型缓存，不读取用户录音、模型密钥或默认设置，不创建虚假会议。完整清单、原始输出、块时间、替换／删除／插入和静音结果分别在 `dataset-manifest.json`、`result-<模型>-<语言>.json`；UI 只引用 `src/shared/local-model-benchmarks.json` 中的轻量指标与必要条件。
+重现入口为 [scripts/benchmarks/local-asr.py](../../scripts/benchmarks/local-asr.py)（Spec 015 仅迁移路径）：先 `prepare` 冻结公开语料，再对每个模型和语言串行运行 `run --model <id> --mode <zh|en|mixed> --cache <日常 models 目录>`。模型版本从 `paa_core.model_catalog.CATALOG` 获取，先在应用中下载／校验所选模型即可，不需要私有 manifest。脚本拒绝覆盖已冻结清单或已有结果；数据服务版本变化时拒绝静默换样本。需要既有桌面 Python 依赖与已校验固定模型缓存，不读取用户录音、模型密钥或默认设置，不创建虚假会议。完整清单、原始输出、块时间、替换／删除／插入和静音结果分别在 `dataset-manifest.json`、`result-<模型>-<语言>.json`；UI 只引用 `apps/desktop/src/shared/local-model-benchmarks.json` 中的轻量指标与必要条件。本页结果仍对应原实验版本，不代表目录迁移后重跑了矩阵。
 
 结果中的 `providerSha256` 是组结束时整个 `asr_worker.py` 的 hash，不是启动时 hash。矩阵期间该文件的 worker 生命周期代码有修改，但 `WhisperProvider`、语言配置与业务分块未改变；后启动的 large／medium 进程另外记录 `providerStartSha256`。没有用文件级 hash 的非解码变化要求重复已完成矩阵。
 

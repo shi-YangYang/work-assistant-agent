@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, setCsrf, write, todayIn } from '../../src/web/api'
+import { api, ApiError, setCsrf, write, todayIn } from '../../apps/web/src/api'
 afterEach(() => {
   vi.unstubAllGlobals()
   setCsrf('')

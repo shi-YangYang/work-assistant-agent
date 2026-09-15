@@ -1,0 +1,12 @@
+{
+  "name": "@paa/ui-web",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./theme.css": "./src/theme.css",
+    "./select.css": "./src/select.css"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
+}

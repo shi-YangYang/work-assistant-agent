@@ -13,9 +13,11 @@
 
 以用户所在公司建立“员工消息 → 可纠正进展 → 日报／周报 → 老板看板”的真实使用流程，衡量重复汇报是否减少、老板是否更容易理解有依据的进展。优先电脑和手机浏览器，Electron 保留会议能力，不同时建设全部客户端。
 
-[Spec 009 验收](../specs/spec-009-company-model-services/acceptance.md) 已补真实文字／周报链路；图文、ASR、手机实机、生产部署／恢复和容量仍待验证。用户当前选择先完善已有功能：[Spec 011](../specs/spec-011-web-function-management/spec.md) 已完成导航、工作／报告管理、多会话、角色入口和输入控件；验证范围以其验收记录为准。[Spec 012](../specs/spec-012-assistant-documents/spec.md) 已扩展七种格式的文件发送、原生文字解析、来源引用与私有存储；不含 OCR 或公司级知识库。管理员跨员工问答与 Agent 督办留到后续 Spec；试点上线仍为候选方向，不代表授权部署。
+[Spec 009 验收](../specs/spec-009-company-model-services/acceptance.md) 已补真实文字／周报链路；图文、ASR、手机实机、生产部署／恢复和容量仍待验证。[Spec 011](../specs/spec-011-web-function-management/spec.md) 已完成导航、工作／报告管理、多会话、角色入口和输入控件；验证范围以其验收记录为准。[Spec 012](../specs/spec-012-assistant-documents/spec.md) 已扩展七种格式的文件发送、原生文字解析、来源引用与私有存储；不含 OCR 或公司级知识库。[Spec 014](../specs/spec-014-admin-business-assistant/spec.md) 已实现管理员业务问答与本人督办，授权及验证边界见对应规格；试点上线仍为候选方向，不代表授权部署。
 
 ## 后续候选方向
+
+当前工程整理见 [Spec 015](../specs/spec-015-monorepo-structure/spec.md)：为后续终端明确应用、服务和共享边界，清理无用文件；本轮不包含移动 App 开发。
 
 1. **会议与工作跟进**：从纪要确认责任事项，关联员工工作与报告，再按实际需求加入会议安排、提醒偏好和跨周进展。
 2. **Memory 与业务问答**：关联人员、项目、任务、会议、决策和报告，带来源回答进展、阻碍及历史决策。

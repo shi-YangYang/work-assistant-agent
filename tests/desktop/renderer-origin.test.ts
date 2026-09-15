@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { CHANNELS } from '../../src/shared/contracts'
+import { CHANNELS } from '../../apps/desktop/src/shared/contracts'
 
 const state = vi.hoisted(() => ({
   windows: true,
@@ -74,14 +74,14 @@ vi.mock('electron', async () => {
     dialog: {},
   }
 })
-vi.mock('../../src/desktop/core-manager', () => ({
+vi.mock('../../apps/desktop/src/main/core-manager', () => ({
   CoreManager: class {
     getStatus = state.getStatus
     on = vi.fn()
     start = async () => ({ connection: 'ready' })
   },
 }))
-vi.mock('../../src/desktop/summary-settings', () => ({
+vi.mock('../../apps/desktop/src/main/summary-settings', () => ({
   SummarySettings: class {
     load = async () => {}
     sync = async () => {}
@@ -111,7 +111,7 @@ afterEach(() => {
 })
 
 async function start() {
-  await import('../../src/desktop/main')
+  await import('../../apps/desktop/src/main/main')
   await vi.waitFor(() => expect(state.contents.mainFrame.url).not.toBe(''))
   const invoke = state.handlers.get(CHANNELS.status)!
   return () => invoke({ sender: state.contents, senderFrame: state.contents.mainFrame })

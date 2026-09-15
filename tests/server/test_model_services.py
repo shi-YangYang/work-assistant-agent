@@ -167,7 +167,7 @@ async def test_streamed_tools_are_complete_and_audio_protocols_are_distinct(setu
     assert result['choices'][0]['message']['tool_calls'][0]['function']=={'name':'probe_echo','arguments':'{"value":"测试成功"}'}
     mode[0]='incomplete'
     with pytest.raises(ProviderError,match='未完整结束'):await chat(settings,config,SECRET,[{'role':'user','content':'test'}])
-    wav=(Path(__file__).parents[2]/'src/python/paa_server/assets/probe-zh.wav').read_bytes()
+    wav=(Path(__file__).parents[2]/'services/company/src/paa_server/assets/probe-zh.wav').read_bytes()
     for protocol in ('transcriptions','qwen-asr'):
         transcript,_=await transcribe(settings,{**config,'protocol':protocol},SECRET,wav)
         assert '工作' in transcript

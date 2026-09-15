@@ -3,9 +3,9 @@ import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
-import { SummarySettings, validateDraft } from '../../src/desktop/summary-settings'
-import { selectedParameters } from '../../src/shared/reasoning'
-import type { RuntimeConfig, ServiceDraft } from '../../src/shared/summary-contracts'
+import { SummarySettings, validateDraft } from '../../apps/desktop/src/main/summary-settings'
+import { selectedParameters } from '../../apps/desktop/src/shared/reasoning'
+import type { RuntimeConfig, ServiceDraft } from '../../apps/desktop/src/shared/summary-contracts'
 const directories: string[] = []
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })))

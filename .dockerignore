@@ -1,11 +1,11 @@
 .git
-node_modules
+**/node_modules
 .venv
 .venv-server
 .env*
 data
 models
 artifacts
-out
+**/out
 dist
-__pycache__
+**/__pycache__

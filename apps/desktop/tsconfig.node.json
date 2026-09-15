@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "src/main/**/*.ts",
+    "src/preload/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/renderer/env.d.ts",
+    "../../tests/desktop/**/*.ts",
+    "../../tests/e2e/desktop/**/*.ts",
+    "*.ts",
+    "../../playwright.config.ts"
+  ]
+}

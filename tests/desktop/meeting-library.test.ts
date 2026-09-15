@@ -2,14 +2,18 @@ import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { CoreManager } from '../../src/desktop/core-manager'
-import { DesktopLibrary, safeFilename, writeSnapshot } from '../../src/desktop/meeting-library'
-import { MediaAccess, serveMedia } from '../../src/desktop/media'
+import { CoreManager } from '../../apps/desktop/src/main/core-manager'
+import {
+  DesktopLibrary,
+  safeFilename,
+  writeSnapshot,
+} from '../../apps/desktop/src/main/meeting-library'
+import { MediaAccess, serveMedia } from '../../apps/desktop/src/main/media'
 import {
   highlightedParts,
   meetingQuery,
   QueryGeneration,
-} from '../../src/renderer/meeting-library-query'
+} from '../../apps/desktop/src/renderer/meeting-library-query'
 const id = 'e40feee8-7aac-403a-8f45-4ae1018109bf'
 const roots: string[] = []
 afterEach(async () => {

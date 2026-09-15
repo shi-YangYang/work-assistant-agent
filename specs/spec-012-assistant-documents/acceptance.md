@@ -18,7 +18,7 @@
 
 已复现触发顺序：文档成为已确认工作／报告来源 → 另一会话的运行中任务通过真实 `read_document` 读取该文件 → `propose_progress` 保存待确认建议 → 最终回复尚未写入时，管理员删除来源报告。任务正确变为 `cancelled`，但其消息的 `drafts` 和 `suggestions` 仍包含 `pending` 的文件摘录；此时没有最终引用可供备用匹配。违反 R4 的衍生内容清理要求。
 
-返工后的 [remove_report／remove_conversation](../../src/python/paa_server/deletion.py) 均先调用 `purge_messages` 消费读取证据，再失效剩余上下文。API 的 `target` 从读取删除目标起持有 owner 行锁，真实读取工具、建议写入、最终回复及 `GuardedSaver` 均通过同一 owner 锁上的 `lease` 校验；事务提交前完成依赖清理、fence 递增和上下文清空，晚到写入无法越过旧租约。附件专属任务的失效不提前清空消息任务证据，依赖消息集合在逐一清理前已收集。
+返工后的 [remove_report／remove_conversation](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/src/python/paa_server/deletion.py) 均先调用 `purge_messages` 消费读取证据，再失效剩余上下文。API 的 `target` 从读取删除目标起持有 owner 行锁，真实读取工具、建议写入、最终回复及 `GuardedSaver` 均通过同一 owner 锁上的 `lease` 校验；事务提交前完成依赖清理、fence 递增和上下文清空，晚到写入无法越过旧租约。附件专属任务的失效不提前清空消息任务证据，依赖消息集合在逐一清理前已收集。
 
 ## Tests
 
