@@ -117,6 +117,8 @@ async def remove_report(db, item, actor):
     # Consume documentReads before invalidation clears running job results.
     # The owner lock fences tools/checkpoints until this transaction commits.
     await invalidate_context(db, item.owner_id, item.company_id, {item.id, *(message_ids if actor.role == 'admin' else [])}, sources_changed=actor.role == 'admin' and bool(message_ids))
+    from .report_schedule import link_report
+    await link_report(db, item, cancelled=True)
     item.deleted, item.content, item.candidate, item.source_ids = True, {}, None, []
     item.revision += 1
     await db.flush()

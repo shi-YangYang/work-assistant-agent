@@ -78,7 +78,7 @@ async def report_inputs(db, report):
     return list(latest.values())
 
 
-async def ensure_report(db, actor, kind, day, *, scheduled=False):
+async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezone=None):
     if actor.role != 'employee':
         problem(403, '管理员不生成个人报告')
     company = await db.get(Company, actor.company_id)
@@ -86,9 +86,11 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False):
     await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
     report = await db.scalar(select(Report).where(Report.owner_id == actor.id, Report.kind == kind, Report.period == start.isoformat()))
     if report is None:
-        report = Report(company_id=actor.company_id, owner_id=actor.id, kind=kind, period=start.isoformat(), period_end=end.isoformat(), timezone=company.rules['timezone'], content={'completed': '', 'ongoing': '', 'blockers': '', 'next': ''})
+        report = Report(company_id=actor.company_id, owner_id=actor.id, kind=kind, period=start.isoformat(), period_end=end.isoformat(), timezone=report_timezone or company.rules['timezone'], content={'completed': '', 'ongoing': '', 'blockers': '', 'next': ''})
         db.add(report)
         await db.flush()
+    from .report_schedule import link_report
+    await link_report(db, report)
     if report.deleted:
         if scheduled:
             return report, None
@@ -97,7 +99,7 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False):
     if existing is not None and (scheduled or existing.state in ('queued', 'running')):
         return report, existing
     inputs = await report_inputs(db, report)
-    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued' if inputs else 'succeeded', phase='saved' if inputs else 'empty', result={'sourceIds': [r.id for r in inputs]})
+    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued' if inputs else 'succeeded', phase='saved' if inputs else 'empty', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2})
     db.add(job)
     await db.flush()
     return report, job

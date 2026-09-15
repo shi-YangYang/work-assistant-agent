@@ -529,30 +529,22 @@ async def test_failed_probe_does_not_claim_other_capabilities_or_reveal_remote_e
     assert SECRET not in result.text and len(requests)==1
 
 
-async def test_report_current_config_attempt_preserves_saved_draft_as_new_candidate(setup,monkeypatch):
-    from paa_server import worker
+async def test_report_current_config_attempt_preserves_saved_draft_as_new_candidate(setup):
     from paa_server.models import Report
+    from test_report_reliability import prepared, ReportModel, CONTENT
     settings,sessions,users,c=setup
     saved=await create(c['admin']);await c['admin'].put('/api/v1/settings/model-routing',json=route(saved))
-    actor=users['employee']
+    report,job,_=await prepared(setup)
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'原报告'})))
     async with sessions.begin() as db:
-        report=Report(company_id=actor.company_id,owner_id=actor.id,kind='daily',period='2026-09-12',period_end='2026-09-12',timezone='Asia/Shanghai')
-        db.add(report);await db.flush()
-        job=Job(company_id=actor.company_id,owner_id=actor.id,kind='report',target_id=report.id,base_revision=1)
-        db.add(job);await db.flush();job_id=job.id;report_id=report.id
-    invoke=worker.invoke_harness
-    async def after_saved(*args,**kwargs):
-        await invoke(*args,**kwargs)
-        raise RuntimeError('Controlled failure after saved report')
-    monkeypatch.setattr(worker,'invoke_harness',after_saved)
-    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
-        await process_job(await claim(sessions,actor.id),sessions,settings,saver,model=model('原报告','report'))
-        async with sessions() as db:assert (await db.get(Job,job_id)).result['reportSaved']
-        assert (await c['employee'].post('/api/v1/jobs/'+job_id+'/retry',json={'useCurrentConfig':True})).status_code==200
-        monkeypatch.setattr(worker,'invoke_harness',invoke)
-        await process_job(await claim(sessions,actor.id),sessions,settings,saver,model=model('新候选','report'))
+        live=await db.get(Job,job.id)
+        assert live.result['reportSaved']
+        # A legacy tool-flow receipt may predate the final worker success write.
+        live.state='failed'
+    assert (await c['employee'].post('/api/v1/jobs/'+job.id+'/retry',json={'useCurrentConfig':True})).status_code==200
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'新候选'})))
     async with sessions() as db:
-        report=await db.get(Report,report_id)
+        report=await db.get(Report,report.id)
         assert report.content['completed']=='原报告' and report.candidate['content']['completed']=='新候选' and report.published_revision==0
 
 

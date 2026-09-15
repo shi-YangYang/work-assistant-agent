@@ -16,11 +16,12 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from . import business_access as business
+from . import report_schedule as reporting
 from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from .config import Settings
 from .db import database
 from .media import audio_mime, audio_wav, image_input
-from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, Session, WorkItem, WorkRevision, now
+from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, ReportObligation, ReportNotification, Session, WorkItem, WorkRevision, now
 from .model_schemas import RetryJob
 from .model_provider import ProviderError
 from .model_secrets import SecretUnavailable
@@ -220,6 +221,7 @@ def create_app(settings=None):
         item = Member(company_id=actor.company_id, username=body.username.lower(), name=body.name, role=body.role, password_hash=await run_in_threadpool(passwords.hash, body.password))
         db.add(item)
         await db.flush()
+        await reporting.eligibility_changed(db, item)
         return member_dto(item)
 
     @app.patch('/api/v1/members/{identifier}')
@@ -227,6 +229,7 @@ def create_app(settings=None):
         await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
         item = await visible_member(db, actor, identifier, employee_only=True)
         item.active = body.active
+        await reporting.eligibility_changed(db, item)
         if not item.active:
             await db.execute(delete(Session).where(Session.member_id == item.id))
         return member_dto(item)
@@ -530,6 +533,47 @@ def create_app(settings=None):
         db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=body.sourceIds, access=work.access, business_links=work.business_links))
         return work_dto(work)
 
+    @app.get('/api/v1/report-obligations')
+    async def report_obligations(kind: str = 'daily', status: str = '', period: date | None = None, cursor: int = Query(0, ge=0), actor=AUTH, db=DB):
+        if actor.role != 'employee':
+            problem(403, '管理员没有个人汇报待办')
+        return await reporting.obligation_page(db, actor, kind=kind, status=status, selected_period=period, cursor=cursor)
+
+    @app.get('/api/v1/team/report-obligations')
+    async def team_report_obligations(kind: str = 'daily', status: str = '', period: date | None = None, cursor: int = Query(0, ge=0), actor=ADMIN, db=DB):
+        if period is None:
+            from zoneinfo import ZoneInfo
+            company = await db.get(Company, actor.company_id)
+            period = now().astimezone(ZoneInfo(company.rules['timezone'])).date()
+        return await reporting.obligation_page(db, actor, kind=kind, status=status, selected_period=period, cursor=cursor, team=True)
+
+    @app.post('/api/v1/report-obligations/{identifier}/prepare')
+    async def prepare_obligation(identifier: str, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
+        prior, digest = await idem_begin(db, actor, 'prepare-obligation:' + identifier, idempotency_key, {})
+        if prior:
+            return prior
+        obligation = await owned(db, ReportObligation, identifier, actor, lock=True)
+        if obligation.state == 'cancelled':
+            problem(409, '这项汇报安排已撤销')
+        report, job = await ensure_report(db, actor, obligation.kind, date.fromisoformat(obligation.period), report_timezone=obligation.timezone)
+        obligation.report_id = report.id
+        return idem_save(db, actor, 'prepare-obligation:' + identifier, idempotency_key, digest, {'reportId': report.id, 'jobId': job.id})
+
+    @app.get('/api/v1/notifications')
+    async def notifications(cursor: int = Query(0, ge=0), actor=AUTH, db=DB):
+        if actor.role != 'employee':
+            return {'items': [], 'nextCursor': None, 'unread': 0}
+        base = select(ReportNotification, ReportObligation).join(ReportObligation, ReportObligation.id == ReportNotification.obligation_id).where(ReportNotification.company_id == actor.company_id, ReportNotification.owner_id == actor.id, ReportObligation.state == 'pending')
+        unread = await db.scalar(select(func.count()).select_from(base.where(ReportNotification.read_at.is_(None)).subquery()))
+        rows = (await db.execute(base.order_by(ReportNotification.updated_at.desc(), ReportNotification.id).offset(cursor).limit(21))).all()
+        return {'items': [{'id': notice.id, 'stage': notice.stage, 'read': notice.read_at is not None, 'updatedAt': notice.updated_at.isoformat(), 'obligation': reporting.obligation_dto(obligation, now(), own=True)} for notice, obligation in rows[:20]], 'nextCursor': str(cursor + 20) if len(rows) > 20 else None, 'unread': unread}
+
+    @app.post('/api/v1/notifications/{identifier}/read')
+    async def read_notification(identifier: str, actor=AUTH, db=DB):
+        notice = await owned(db, ReportNotification, identifier, actor, lock=True)
+        notice.read_at = notice.read_at or now()
+        return {'ok': True}
+
     @app.get('/api/v1/reports')
     async def reports(kind: str = 'daily', cursor: str | None = None, actor=AUTH, db=DB):
         if actor.role != 'employee':
@@ -611,12 +655,13 @@ def create_app(settings=None):
             problem(422, '请先填写报告内容')
         db.add(ReportRevision(company_id=actor.company_id, owner_id=actor.id, report_id=report.id, revision=report.revision, content=report.content, source_ids=report.source_ids))
         report.published_revision, report.updated_at = report.revision, now()
+        await reporting.link_report(db, report, submitted=True)
         return idem_save(db, actor, action, idempotency_key, digest, {'ok': True, 'revision': report.revision})
 
     @app.get('/api/v1/settings/report-rules')
     async def get_rules(actor=AUTH, db=DB):
         company = await db.get(Company, actor.company_id)
-        return {**company.rules, 'revision': company.revision}
+        return {**company.rules, 'revision': company.revision, 'effectivePeriods': await reporting.effective_periods(db, company)}
 
     @app.put('/api/v1/settings/report-rules')
     async def save_rules(body: Rules, actor=ADMIN, db=DB):
@@ -624,7 +669,8 @@ def create_app(settings=None):
         version(company, body.expectedRevision)
         company.rules, company.rules_effective_at = body.model_dump(exclude={'expectedRevision'}), now()
         company.revision += 1
-        return {**company.rules, 'revision': company.revision}
+        await reporting.save_schedule(db, company)
+        return {**company.rules, 'revision': company.revision, 'effectivePeriods': await reporting.effective_periods(db, company)}
 
     @app.get('/api/v1/settings/model-usage')
     async def model_usage(period: str = 'this_week', start: date | None = None, end: date | None = None, service: str = Query('', max_length=36), model: str = Query('', max_length=200), purpose: str = Query('', max_length=16), cursor: str | None = None, limit: int = Query(20, ge=1, le=20), actor=ADMIN, db=DB):

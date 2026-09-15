@@ -1,3 +1,4 @@
+import { ReportObligations } from './ReportObligations'
 import { useCursorPage } from './list-state'
 import { Pagination, WorkFilters } from './ListControls'
 import { BusinessSources } from './BusinessSources'
@@ -336,8 +337,9 @@ export function ReportsPage() {
   const location = useLocation()
   const [params, setParams] = useSearchParams()
   const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
+  const todo = params.get('view') !== 'all'
   const { data, error, refresh, loadMore, loading } = usePagedResource<Report>(
-    `/reports?kind=${kind}`,
+    todo ? null : `/reports?kind=${kind}`,
     'period',
     2000,
   )
@@ -355,55 +357,71 @@ export function ReportsPage() {
         </div>
         <button onClick={() => setShowRules(true)}>汇报安排</button>
       </div>
+      <div className="tabs report-view-tabs">
+        <button className={todo ? 'active' : ''} onClick={() => setParams({ kind, view: 'todo' })}>
+          汇报待办
+        </button>
+        <button className={!todo ? 'active' : ''} onClick={() => setParams({ kind, view: 'all' })}>
+          全部报告
+        </button>
+      </div>
       <div className="toolbar report-toolbar">
         <div className="tabs">
           <button
             className={kind === 'daily' ? 'active' : ''}
-            onClick={() => setParams({ kind: 'daily', date: selectedDate })}
+            onClick={() =>
+              setParams({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
+            }
           >
             日报
           </button>
           <button
             className={kind === 'weekly' ? 'active' : ''}
-            onClick={() => setParams({ kind: 'weekly', date: selectedDate })}
+            onClick={() =>
+              setParams({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
+            }
           >
             周报
           </button>
         </div>
-        <div className="inline report-generate">
-          <input
-            type="date"
-            aria-label="报告日期"
-            value={selectedDate}
-            onChange={(e) => setParams({ kind, date: e.target.value })}
-          />
-          <BusyButton
-            busy={busy}
-            className="primary"
-            onClick={async () => {
-              setBusy(true)
-              try {
-                await write(
-                  '/reports/generate',
-                  { kind, date: selectedDate },
-                  'POST',
-                  crypto.randomUUID(),
-                )
-                refresh()
-                notify('已准备报告，生成状态会自动更新')
-              } catch (e) {
-                setFailure((e as Error).message)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            生成{kind === 'daily' ? '日报' : '周报'}
-          </BusyButton>
-        </div>
+        {!todo && (
+          <div className="inline report-generate">
+            <input
+              type="date"
+              aria-label="报告日期"
+              value={selectedDate}
+              onChange={(e) => setParams({ kind, date: e.target.value, view: 'all' })}
+            />
+            <BusyButton
+              busy={busy}
+              className="primary"
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await write(
+                    '/reports/generate',
+                    { kind, date: selectedDate },
+                    'POST',
+                    crypto.randomUUID(),
+                  )
+                  refresh()
+                  notify('已准备报告，生成状态会自动更新')
+                } catch (e) {
+                  setFailure((e as Error).message)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              生成{kind === 'daily' ? '日报' : '周报'}
+            </BusyButton>
+          </div>
+        )}
       </div>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
-      {data?.items.length ? (
+      {todo ? (
+        <ReportObligations />
+      ) : data?.items.length ? (
         <div className="record-list">
           {data.items.map((report) => (
             <div className="record-row report-row" key={report.id}>
@@ -458,6 +476,18 @@ export function ReportsPage() {
                       ? `${rules.data![k].days.map((d) => ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][d]).join('、')} ${rules.data![k].generateTime} 生成，${rules.data![k].deadline} 前提交`
                       : '尚未启用自动生成，可手动准备报告'}
                   </p>
+                  {rules.data!.effectivePeriods?.[k] && (
+                    <p className="muted">
+                      当前设置从 {rules.data!.effectivePeriods[k]} 起的周期生效
+                    </p>
+                  )}
+                  {rules.data![k].enabled && (
+                    <p className="muted">
+                      {rules.data![k].reminders === false
+                        ? '站内提醒已关闭'
+                        : `草稿就绪、截止前 ${rules.data![k].beforeMinutes ?? 30} 分钟及逾期后提醒`}
+                    </p>
+                  )}
                 </div>
               ))}
             </>
