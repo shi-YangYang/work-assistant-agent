@@ -1,3 +1,4 @@
+import { ModelUsagePage } from './ModelUsage'
 import { useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router'
 import {
@@ -14,6 +15,7 @@ import {
   Palette,
   CalendarClock,
   Cpu,
+  ChartColumn,
   PanelLeftOpen,
   PanelLeftClose,
 } from 'lucide-react'
@@ -33,6 +35,7 @@ import {
   MembersPage,
   RulesPage,
   TeamPage,
+  TeamMetricPage,
   TeamMemberPage,
 } from './Settings'
 
@@ -48,6 +51,7 @@ const settingsPages = [
   { path: '/settings/appearance', title: '外观', icon: Palette },
   { path: '/settings/rules', title: '汇报规则', icon: CalendarClock },
   { path: '/settings/models', title: '模型服务管理', icon: Cpu, admin: true },
+  { path: '/settings/usage', title: '模型用量', icon: ChartColumn, admin: true },
 ]
 export function App() {
   const [identity, setIdentity] = useState<Identity | null>(null)
@@ -395,6 +399,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             {identity.member.role === 'admin' && (
               <>
                 <Route path="/team" element={<TeamPage />} />
+                <Route path="/team/details" element={<TeamMetricPage />} />
                 <Route path="/team/:id" element={<TeamMemberPage />} />
                 <Route path="/members" element={<MembersPage />} />
               </>
@@ -424,7 +429,10 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
                     <Route path="appearance" element={<AppearancePage />} />
                     <Route path="rules" element={<RulesPage />} />
                     {identity.member.role === 'admin' && (
-                      <Route path="models" element={<ModelServices />} />
+                      <>
+                        <Route path="models" element={<ModelServices />} />
+                        <Route path="usage" element={<ModelUsagePage />} />
+                      </>
                     )}
                     <Route path="*" element={<Navigate to="/settings/account" replace />} />
                   </Routes>

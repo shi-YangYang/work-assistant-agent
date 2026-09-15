@@ -174,18 +174,23 @@ async def catalog(settings, base_url, key):
     raise ProviderError('limit', '模型目录超过分页上限，请手动填写模型 ID')
 
 
-async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000):
+async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None):
     body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming'], 'max_tokens': max_tokens}
     if tools:
         body['tools'] = tools
     if tool_choice:
         body['tool_choice'] = tool_choice
+    endpoint = normalize_url(config['baseUrl'], settings) + '/chat/completions'
+    if on_event:
+        await on_event('started')
     async with client(settings) as http:
-        async with http.stream('POST', normalize_url(config['baseUrl'], settings) + '/chat/completions', headers={'Authorization': f'Bearer {key}'}, json=body) as response:
+        async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body) as response:
             status_error(response)
             if not config['streaming']:
                 await response.aread()
                 result = response.json()
+                if on_event:
+                    await on_event('usage', result.get('usage'))
             else:
                 content, calls, finish, done, usage = '', {}, None, False, None
                 async for line in response.aiter_lines():
@@ -203,12 +208,17 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         raise ProviderError('protocol', '流式接口报告请求失败，请核对模型参数')
                     if part.get('usage'):
                         usage = part['usage']
+                        if on_event:
+                            await on_event('usage', usage)
                     choices = part.get('choices', [])
                     if not choices:
                         continue
                     item = choices[0]
                     delta = item.get('delta', {})
-                    content += delta.get('content') or ''
+                    fragment_text = delta.get('content') or ''
+                    if not isinstance(fragment_text, str) or len(content) + len(fragment_text) > 32000:
+                        raise ProviderError('invalid_response', '模型正文无效或过长')
+                    content += fragment_text
                     for fragment in delta.get('tool_calls') or []:
                         index = fragment.get('index')
                         if not isinstance(index, int) or not 0 <= index < 16:
@@ -217,6 +227,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         call['id'] += fragment.get('id') or ''
                         call['function']['name'] += fragment.get('function', {}).get('name') or ''
                         call['function']['arguments'] += fragment.get('function', {}).get('arguments') or ''
+                    if on_text and (fragment_text or delta.get('tool_calls')):
+                        await on_text(content, bool(calls))
                     if item.get('finish_reason'):
                         finish = item['finish_reason']
                 if not done or not finish:
@@ -267,10 +279,12 @@ def dashscope_asr_text(data):
     return None
 
 
-async def transcribe(settings, config, key, wav):
+async def transcribe(settings, config, key, wav, *, on_event=None):
     if len(wav) > 6 * 1024 * 1024:
         raise ProviderError('limit', '规范化语音超过上传限制，请缩短语音')
     base = normalize_url(config['baseUrl'], settings)
+    if on_event:
+        await on_event('started')
     async with client(settings) as http:
         headers = {'Authorization': f'Bearer {key}'}
         if config['protocol'] == 'transcriptions':
@@ -296,6 +310,8 @@ async def transcribe(settings, config, key, wav):
             raise ProviderError('protocol', '请选择支持的语音转写协议')
         status_error(response)
         data = response.json()
+        if on_event:
+            await on_event('usage', data.get('usage'))
         if config['protocol'] == 'dashscope-asr':
             text = dashscope_asr_text(data)
         elif config['protocol'] == 'transcriptions':

@@ -26,7 +26,7 @@ export function Breadcrumbs() {
       let ownerId: string | undefined
       let conversationId: string | null | undefined
       let label = pageName(point.path)
-      if (id && section === 'team')
+      if (id && id !== 'details' && section === 'team')
         label = (
           await api<{ member: Member }>(`/team/members/${id}/work`, { signal: controller.signal })
         ).member.name
@@ -53,9 +53,13 @@ export function Breadcrumbs() {
     void (async () => {
       if (location.pathname.startsWith('/settings/')) {
         const name =
-          { account: '账户', appearance: '外观', rules: '汇报规则', models: '模型服务管理' }[
-            location.pathname.split('/')[2]
-          ] ?? '设置'
+          {
+            account: '账户',
+            appearance: '外观',
+            rules: '汇报规则',
+            models: '模型服务管理',
+            usage: '模型用量',
+          }[location.pathname.split('/')[2]] ?? '设置'
         setLoaded({
           path,
           points: [

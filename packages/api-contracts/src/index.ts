@@ -78,6 +78,7 @@ export interface Conversation {
   updatedAt: string
 }
 export interface Work extends Progress {
+  historical?: boolean
   businessLinks?: BusinessCitation[]
   hasBusinessLinks?: boolean
   id: string
@@ -104,6 +105,9 @@ export interface Draft {
   revision: number
 }
 export interface Job {
+  stage?: string
+  attempt?: number
+  fence?: number
   id: string
   kind: 'message' | 'report' | 'document'
   targetId: string
@@ -144,6 +148,7 @@ export interface ReportContent {
   next: string
 }
 export interface Report {
+  historical?: boolean
   id: string
   ownerId: string
   kind: 'daily' | 'weekly'
@@ -177,9 +182,38 @@ export interface Rules {
   weekly: Schedule
   revision: number
 }
+export interface DateRange {
+  period: string
+  start: string
+  end: string
+  timezone: string
+}
+export interface TeamMetrics {
+  reported: number
+  members: number
+  blocked: number
+  reports: number
+}
 export interface Team {
-  items: { member: Member; work: Work[]; lastMessageAt: string | null; reportCount: number }[]
+  items: {
+    member: Member
+    work: Work[]
+    workCount: number
+    blockedCount: number
+    lastMessageAt: string | null
+    reportCount: number
+  }[]
+  metrics: TeamMetrics
+  range: DateRange
   updatedAt: string
+}
+export interface TeamDetail {
+  id: string
+  member: Member
+  title: string
+  at: string
+  href: string
+  work?: Work
 }
 export interface Page<T> {
   items: T[]
@@ -246,4 +280,47 @@ export interface ModelCheck {
   }[]
   usage: Record<string, number> | null
   requestId: string
+}
+
+export interface JobFeedback {
+  jobId: string
+  attempt: number
+  fence: number
+  seq: number
+  stage: string
+  state: Job['state']
+  text: string
+  error: string
+  updatedAt: string
+}
+export interface UsageRecord {
+  id: string
+  serviceId: string | null
+  service: string | null
+  model: string | null
+  purpose: string
+  state: string
+  startedAt: string | null
+  createdAt: string
+  elapsedMs: number | null
+  inputTokens: number | null
+  outputTokens: number | null
+  errorCode: string | null
+  error: string | null
+}
+export interface ModelUsage extends Page<UsageRecord> {
+  range: DateRange
+  summary: {
+    calls: number
+    successRate: number | null
+    states: Record<string, number>
+    averageMs: number | null
+    durationKnown: number
+    inputTokens: number
+    outputTokens: number
+    inputKnown: number
+    outputKnown: number
+  }
+  services: { id: string; name: string }[]
+  models: string[]
 }

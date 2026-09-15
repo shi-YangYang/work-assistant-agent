@@ -149,6 +149,8 @@ async def prepare_document(context, identifier):
         revision, checksum = item.extraction_revision, item.sha256
         item.extraction_status, item.parser_version, item.extraction_info = 'processing', PARSER_VERSION, {}
         name = item.name
+        from .feedback import update_feedback
+        update_feedback(job, 'parsing', '')
         job.phase, job.updated_at = 'document', now()
     path = context.settings.media_dir / identifier
     try:

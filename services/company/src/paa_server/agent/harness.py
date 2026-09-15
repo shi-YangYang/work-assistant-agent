@@ -93,6 +93,7 @@ class RunContext:
     role: str = 'employee'
     access: dict = field(default_factory=dict)
     own_work_searched: bool = False
+    feedback_at: float = 0
 
 
 async def lease(db, context):
@@ -153,9 +154,13 @@ async def reserve_call(context, kind, estimate=0):
         count = await db.scalar(select(func.count()).select_from(ModelUsage).where(ModelUsage.company_id == context.company_id, ModelUsage.created_at >= midnight))
         if count >= context.settings.daily_calls:
             raise BudgetExceeded('今天的模型处理额度已用完，请联系管理员')
-        usage = ModelUsage(company_id=context.company_id, owner_id=context.owner_id, job_id=context.job_id, kind=kind, input_tokens=estimate)
+        from ..usage import usage_fields
+        usage = ModelUsage(company_id=context.company_id, owner_id=context.owner_id, job_id=context.job_id, kind=kind, input_tokens=estimate, **usage_fields((context.model_binding or {}).get(kind), attempt=job.attempt, fence=job.fence))
         db.add(usage)
         job.request_started, job.phase, job.updated_at = True, kind, now()
+        if job.kind == 'report':
+            from ..feedback import update_feedback
+            update_feedback(job, 'generating', '')
         await db.flush()
         usage_id = usage.id
     context.calls += 1
@@ -173,15 +178,35 @@ class BoundedChatModel(ChatOpenAI):
             raise BudgetExceeded('本次上下文较长，请分段上报')
         from ..model_services import resolve_bound
         from ..model_provider import chat, safe_error
+        from ..usage import RequestRecord
+        from ..feedback import publish, presentation_text
         usage_id = await reserve_call(context, context.model_purpose, estimate)
-        async with context.sessions() as db:
-            await lease(db, context)
-            config, key = await resolve_bound(db, context.settings, context.company_id, context.model_binding or {}, context.model_purpose)
+        record = RequestRecord(context.sessions, usage_id)
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
+        is_reply = bool(payload.get('tools')) and context.model_purpose == 'assistant'
+        if is_reply:
+            await publish(context, 'generating', call_id=usage_id, force=True)
+        first_fragment = True
+        async def visible_text(text, has_tools):
+            nonlocal first_fragment
+            if is_reply and not context.document_versions and not context.access.get('team'):
+                await publish(context, 'generating', '' if has_tools else presentation_text(text), usage_id, force=has_tools or first_fragment)
+                if text:
+                    first_fragment = False
         try:
-            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=min(4000, 8000 - context.output_tokens)), 60)
+            async with context.sessions() as db:
+                await lease(db, context)
+                config, key = await resolve_bound(db, context.settings, context.company_id, context.model_binding or {}, context.model_purpose)
+            response = await record.run(lambda event: asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=min(4000, 8000 - context.output_tokens), on_event=event, on_text=visible_text), 60))
+            # Framework conversion/tool validation remains after a fully received
+            # provider response. A later business failure is not a request failure.
             result = self._create_chat_result(response)
+            if is_reply:
+                await visible_text('', True)
         except Exception as error:
+            await record.finish(error)
+            if isinstance(error, (LostLease, InputChanged, HTTPException)):
+                raise
             raise safe_error(error) from None
         output = sum((g.message.usage_metadata or {}).get('output_tokens', 0) or len(str(g.message.content)) + len(json.dumps(g.message.tool_calls, ensure_ascii=False)) for g in result.generations)
         context.output_tokens += output
@@ -257,6 +282,9 @@ class ToolBoundary(AgentMiddleware):
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
         if request.tool_call['name'] not in allowed:
             raise RuntimeError('Tool is not allowed')
+        if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_')):
+            from ..feedback import publish
+            await publish(context, 'searching', force=True)
         context.tools += 1
         if context.tools > 16:
             raise BudgetExceeded('本次处理步骤已达到限制')

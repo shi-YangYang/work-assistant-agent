@@ -1,3 +1,5 @@
+import { useCursorPage } from './list-state'
+import { Pagination, WorkFilters } from './ListControls'
 import { BusinessSources } from './BusinessSources'
 import { DeleteRecord, ReportActions } from './RecordManagement'
 import { timezoneLabel } from './timezones'
@@ -5,7 +7,7 @@ import { usePagedResource } from './paged-resource'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useLocation, useParams, useSearchParams } from 'react-router'
 import { ChevronRight, RefreshCw, FileText } from 'lucide-react'
-import type { Page, Progress, Report, ReportContent, Rules, Work } from '@paa/api-contracts'
+import type { Progress, Report, ReportContent, Rules, Work } from '@paa/api-contracts'
 import { api, dateLabel, todayIn, useResource, write } from './api'
 import { useWorkspace } from './workspace'
 import {
@@ -37,7 +39,11 @@ export function WorkList({
     <div className="record-list">
       {items.map((work) => (
         <div className="record-row work-row" key={work.id}>
-          <Link className="record-main" to={`/work/${work.id}`} state={detailState(location)}>
+          <Link
+            className="record-main"
+            to={`/work/${work.id}${work.historical ? `?revision=${work.revision}` : ''}`}
+            state={detailState(location)}
+          >
             <div className="row-between">
               <h3>{work.title}</h3>
               <Status value={work.status} />
@@ -93,49 +99,38 @@ export function WorkList({
   )
 }
 export function WorkPage() {
-  const { data, error, refresh } = useResource<Page<Work>>('/work-items')
-  const [search, setSearch] = useSearchParams()
+  const [search] = useSearchParams()
   const query = search.get('q') ?? ''
   const status = search.get('status') ?? ''
-  const items =
-    data?.items.filter(
-      (w) => `${w.title} ${w.summary}`.includes(query) && (!status || w.status === status),
-    ) ?? []
+  const list = useCursorPage<Work>(`/work-items?${new URLSearchParams({ q: query, status })}`)
   return (
     <div className="page">
       <div className="page-heading">
-        <div>
-          <h2>我的工作</h2>
-        </div>
-        <button aria-label="刷新工作" onClick={refresh}>
+        <h2>我的工作</h2>
+        <button aria-label="刷新工作" onClick={list.refresh}>
           <RefreshCw size={16} />
         </button>
       </div>
-      <div className="filters">
-        <input
-          aria-label="搜索工作"
-          placeholder="搜索工作事项"
-          value={query}
-          onChange={(e) => setSearch({ q: e.target.value, status }, { replace: true })}
+      <WorkFilters query={query} status={status} change={list.filter} />
+      <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
+      {!list.data && !list.error && <p className="muted">正在读取工作…</p>}
+      {list.data &&
+        (list.data.items.length ? (
+          <WorkList items={list.data.items} own refresh={list.refresh} />
+        ) : (
+          <Empty title={query || status ? '没有符合条件的工作' : '还没有已确认的工作'}>
+            {query || status
+              ? '试试其他关键词或状态。'
+              : '在工作助手中发送进展，并确认助手整理的建议。'}
+          </Empty>
+        ))}
+      {list.data && (
+        <Pagination
+          page={list.page}
+          hasNext={!!list.data.nextCursor}
+          previous={list.previous}
+          next={list.next}
         />
-        <select
-          aria-label="工作状态"
-          value={status}
-          onChange={(e) => setSearch({ q: query, status: e.target.value }, { replace: true })}
-        >
-          <option value="">全部状态</option>
-          <option value="in_progress">进行中</option>
-          <option value="blocked">有阻碍</option>
-          <option value="done">已完成</option>
-        </select>
-      </div>
-      <ErrorNotice retry={refresh}>{error}</ErrorNotice>
-      {items.length ? (
-        <WorkList items={items} own refresh={refresh} />
-      ) : (
-        <Empty title={query || status ? '没有符合条件的工作' : '还没有已确认的工作'}>
-          在工作助手中发送进展，并确认助手整理的建议。
-        </Empty>
       )}
     </div>
   )
@@ -228,7 +223,7 @@ export function WorkDetail() {
   const [deleting, setDeleting] = useState(false)
   const location = useLocation()
   const { id } = useParams()
-  const { data, error, refresh } = useResource<Work>(`/work-items/${id}`, 5000)
+  const { data, error, refresh } = useResource<Work>(`/work-items/${id}${location.search}`, 5000)
   const { identity } = useWorkspace()
   const [editing, setEditing] = useState(false)
   return (
@@ -239,9 +234,10 @@ export function WorkDetail() {
           <div className="page-heading">
             <div>
               <Status value={data.status} />
+              {data.historical && <small>历史修订 · 第 {data.revision} 版</small>}
               <h2>{data.title}</h2>
             </div>
-            {data.ownerId === identity.member.id && (
+            {data.ownerId === identity.member.id && !data.historical && (
               <Actions label="管理工作">
                 <button role="menuitem" onClick={() => setEditing(true)}>
                   编辑工作
@@ -478,7 +474,7 @@ export function ReportDetail() {
   const location = useLocation()
   const [deleting, setDeleting] = useState(false)
   const { id } = useParams()
-  const { data, error, refresh } = useResource<Report>(`/reports/${id}`, 2000)
+  const { data, error, refresh } = useResource<Report>(`/reports/${id}${location.search}`, 2000)
   const { identity, drafts, setDraft, notify } = useWorkspace()
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('edit') === '1')
   const [submit, setSubmit] = useState(false)
@@ -488,7 +484,8 @@ export function ReportDetail() {
   const key = `report:${id}`
   const saved = drafts[key] as { content: ReportContent; revision: number } | undefined
   const value = saved?.content ?? data?.content
-  const own = data?.ownerId === identity.member.id && identity.member.role === 'employee'
+  const own =
+    data?.ownerId === identity.member.id && identity.member.role === 'employee' && !data.historical
   async function save() {
     if (!data || !value) return
     setBusy(true)

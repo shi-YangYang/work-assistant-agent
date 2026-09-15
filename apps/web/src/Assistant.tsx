@@ -1,3 +1,4 @@
+import { useJobFeedback, stageNames } from './job-feedback'
 import { BusinessReply, BusinessSources } from './BusinessSources'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
@@ -56,6 +57,8 @@ export function ConversationChat({
   const capture = useRef<AudioCapture | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const active = useRef(true)
+  const atBottom = useRef(true)
+  const [newReply, setNewReply] = useState(false)
   const composerRef = useRef(composer)
   useEffect(() => {
     composerRef.current = composer
@@ -111,10 +114,17 @@ export function ConversationChat({
       clearTimeout(limit)
     }
   }, [recording])
-  const latestId = data?.items[0]?.id
   useEffect(() => {
-    if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
-  }, [latestId])
+    const scroll = scroller.current
+    const content = scroll?.querySelector('.chat-content')
+    if (!scroll || !content) return
+    const observer = new ResizeObserver(() => {
+      if (atBottom.current) scroll.scrollTop = scroll.scrollHeight
+      else setNewReply(true)
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
   async function addFiles(files: File[]) {
     if (!files.length) return
     const existing = composerRef.current
@@ -214,7 +224,29 @@ export function ConversationChat({
           </div>
         </Modal>
       )}
-      <div className="chat-scroll" ref={scroller}>
+      {newReply && (
+        <button
+          className="new-reply"
+          onClick={() => {
+            if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+            atBottom.current = true
+            setNewReply(false)
+          }}
+        >
+          有新回复 · 回到最新
+        </button>
+      )}
+      <div
+        className="chat-scroll"
+        ref={scroller}
+        onScroll={() => {
+          const node = scroller.current
+          if (node) {
+            atBottom.current = node.scrollHeight - node.scrollTop - node.clientHeight < 80
+            if (atBottom.current) setNewReply(false)
+          }
+        }}
+      >
         <div className="chat-content">
           <ErrorNotice retry={refresh}>{error}</ErrorNotice>
           {nextCursor && (
@@ -419,6 +451,7 @@ export function MessageCard({
   onChange: () => void
   onReply?: () => void
 }) {
+  const live = useJobFeedback(message.job, own && !message.businessUnavailable, onChange)
   const location = useLocation()
   const [editing, setEditing] = useState<Draft | null>(null)
   const [transcript, setTranscript] = useState(false)
@@ -486,7 +519,36 @@ export function MessageCard({
       {message.businessUnavailable && (
         <p className="notice">这条回答的关联资料或权限已变化，请重新提问。</p>
       )}
-      {message.job && <JobNotice job={message.job} refresh={onChange} />}
+      {message.job && (
+        <JobNotice
+          job={{
+            ...message.job,
+            ...(live.feedback
+              ? {
+                  state: live.feedback.state,
+                  stage: live.feedback.stage,
+                  error: live.feedback.error,
+                }
+              : {}),
+          }}
+          refresh={onChange}
+        />
+      )}
+      {live.error && (
+        <p className="muted small-text" role="status">
+          {live.error}
+        </p>
+      )}
+      {!message.reply && !message.businessUnavailable && live.feedback?.text && (
+        <div className="assistant-reply provisional-reply">
+          <small>
+            {['queued', 'running'].includes(live.feedback.state)
+              ? '生成中，内容尚未完成'
+              : '回复未完成'}
+          </small>
+          <p className="preserve">{live.feedback.text}</p>
+        </div>
+      )}
       {message.reply && (
         <div className="assistant-reply">
           <h3>
@@ -626,7 +688,7 @@ export function JobNotice({
   if (job.state === 'queued' || job.state === 'running')
     return (
       <p className="processing" role="status">
-        {job.state === 'queued' ? '已发送，等待整理…' : '正在整理…'}
+        {job.state === 'queued' ? stageNames.queued : stageNames[job.stage || ''] || '正在处理…'}
       </p>
     )
   return (

@@ -27,7 +27,7 @@
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
 | 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
-| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0005_business_access`，私有附件、文档分段与业务来源授权 |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0006_feedback_usage`，私有附件、业务修订、任务反馈与模型请求记录 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、版本化来源与历史权限复核、持久恢复、人工确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |
 | 媒体 | Pillow 校验／规范图片，FFmpeg 处理有界短语音；外部图文／ASR API，不在服务端部署 faster-whisper |
@@ -75,6 +75,7 @@
 - 本机桌面验收直接 `npm run dev` 使用默认日常资料。自动故障测试继续使用临时数据，不能让含清理或故障注入的测试操作用户资料；不为 GUI 验收设置隔离 userData。
 - 公司配置来自忽略的 `.env.company` 及数据库。API／worker 共用独立私有主密钥文件，凭证只在服务端短暂解密；数据库与密钥分开备份、配对恢复。旧环境模式仅为升级公司保留，显式导入后不回退。
 - 公司出站校验 DNS 并固定连接 IP，保留 TLS 主机验证；工具与任务均受公司／员工权限、输入版本、配置修订及预算约束。完整协议和恢复契约分别见 [Spec 008 Plan](../specs/spec-008-meeting-followup/plan.md)、[Spec 009 Plan](../specs/spec-009-company-model-services/plan.md)。
+- 公司聊天通过 PostgreSQL 有界快照与同源 SSE 交付受控反馈；工具和来源仍需完整校验。请求记录保留调用时的服务／模型，实际 Token 与预算估算分离，缺失为未知；见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
 - 密钥、录音、模型、数据库和原始公司材料不入 Git、不输出到日志。测试库与开发库分离，自动检查不用真实 Key、会议或麦克风。
 
 ## 验证边界

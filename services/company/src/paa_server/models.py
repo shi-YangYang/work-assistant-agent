@@ -172,6 +172,7 @@ class ReportRevision(Owned, Base):
 
 class Job(Owned, Base):
     __tablename__ = 'company_job'
+    feedback: Mapped[dict] = mapped_column(JSONB, default=dict)
     access: Mapped[dict] = mapped_column(JSONB, default=dict)
     model_binding: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     config_attempt: Mapped[int] = mapped_column(Integer, default=0)
@@ -203,6 +204,19 @@ class Idempotency(Owned, Base):
 
 class ModelUsage(Owned, Base):
     __tablename__ = 'company_model_usage'
+    status: Mapped[str] = mapped_column(String(16), default='legacy')
+    service_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    service_name: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    model_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    job_attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    job_fence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    elapsed_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(300), nullable=True)
     job_id: Mapped[str | None] = mapped_column(ForeignKey('company_job.id'), nullable=True)
     kind: Mapped[str] = mapped_column(String(16))
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
