@@ -4,6 +4,39 @@
 * {
   box-sizing: border-box;
 }
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  min-width: 32px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--muted) 65%, transparent);
+}
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--muted);
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--muted) 40%, transparent) transparent;
+  }
+}
 html,
 body,
 #root {
@@ -240,16 +273,12 @@ svg {
   padding: 8px;
   font-size: 12px;
   flex-shrink: 0;
+  margin-bottom: 16px;
 }
 .search-launch kbd {
   margin-left: auto;
   font: inherit;
   font-size: 11px;
-}
-.workspace-label {
-  padding: 16px 12px 8px;
-  font-size: 12px;
-  color: var(--muted);
 }
 .sidebar nav,
 .sidebar-bottom {
@@ -1317,7 +1346,6 @@ dialog::backdrop {
     padding: 0 6px 16px;
   }
   .sidebar .nav-label,
-  .sidebar .workspace-label,
   .sidebar kbd,
   .sidebar .identity > .avatar {
     display: none;
@@ -1352,7 +1380,6 @@ dialog::backdrop {
   .nav-expanded .sidebar .nav-label {
     display: inline;
   }
-  .nav-expanded .sidebar .workspace-label,
   .nav-expanded .sidebar kbd,
   .nav-expanded .sidebar .identity > .avatar {
     display: block;
@@ -1365,7 +1392,7 @@ dialog::backdrop {
   }
   .nav-expanded .sidebar .search-launch {
     justify-content: flex-start;
-    margin-bottom: 0;
+    margin-bottom: 16px;
   }
   .nav-expanded .sidebar-toggle {
     align-self: flex-end;
@@ -2068,7 +2095,7 @@ dialog::backdrop {
   }
 }
 
-/* Conversation navigation belongs to the assistant workspace, not the global nav. */
+/* Conversation navigation floats over the chat instead of taking a column. */
 .assistant-workspace {
   display: flex;
   flex: 1;
@@ -2076,24 +2103,62 @@ dialog::backdrop {
   min-width: 0;
   overflow: hidden;
 }
-.conversation-sidebar {
-  width: 230px;
+.conversation-picker {
+  position: relative;
   flex-shrink: 0;
-  padding: 16px 10px;
-  border-right: 1px solid var(--line);
-  background: var(--canvas);
+}
+.conversation-picker > .icon-button[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--selection);
+}
+.conversation-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms;
+}
+.conversation-picker > .icon-button:hover + .conversation-tooltip,
+.conversation-picker > .icon-button:focus-visible + .conversation-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+.conversation-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(480px, calc(100dvh - 210px));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  overflow: auto;
+  gap: 10px;
 }
-.conversation-sidebar-heading,
+.conversation-popover > :not(.conversation-list) {
+  flex-shrink: 0;
+}
+.conversation-popover-heading,
 .conversation-heading {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.conversation-sidebar-heading h2 {
+.conversation-popover-heading h2 {
   flex: 1;
   font-size: 14px;
   margin: 0;
@@ -2102,6 +2167,7 @@ dialog::backdrop {
   position: relative;
   display: flex;
   align-items: center;
+  margin: 0;
 }
 .conversation-search svg {
   position: absolute;
@@ -2118,6 +2184,9 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .conversation-row {
   display: flex;
@@ -2150,9 +2219,24 @@ dialog::backdrop {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.conversation-row .icon-button {
-  width: 28px;
-  height: 28px;
+.conversation-row-actions {
+  display: flex;
+  flex-shrink: 0;
+  padding-right: 2px;
+}
+.conversation-row-actions .icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 6px;
+  color: var(--muted);
+}
+.conversation-row-actions .icon-button:hover {
+  color: var(--accent);
+}
+.conversation-row-actions .danger:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
 }
 .conversation-main {
   display: flex;
@@ -2174,9 +2258,6 @@ dialog::backdrop {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.conversation-toggle {
-  display: none;
 }
 .conversation-main > .assistant-page {
   flex: 1;
@@ -2272,27 +2353,15 @@ dialog::backdrop {
   gap: 16px;
 }
 @media (max-width: 1100px) {
-  .conversation-sidebar {
-    width: 190px;
-  }
   .conversation-heading {
     padding: 10px 16px;
   }
 }
 @media (max-width: 760px) {
-  .conversation-sidebar {
-    display: none;
-    width: 100%;
-    border: 0;
-  }
-  .conversations-expanded .conversation-sidebar {
-    display: flex;
-  }
-  .conversations-expanded .conversation-main {
-    display: none;
-  }
-  .conversation-toggle {
-    display: inline-flex;
+  .conversation-row-actions .icon-button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
   .conversation-heading {
     padding: 8px 12px;

@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { MessageSquare, PanelLeftClose, PanelLeftOpen, Plus, Search } from 'lucide-react'
+import { List, MessageSquare, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import type { Conversation, Page } from '@paa/api-contracts'
 import type { Composer } from './audio-capture'
 import { api, useResource, write } from './api'
 import { ConversationChat } from './Assistant'
-import { Actions, BusyButton, Empty, ErrorNotice, Modal } from './ui'
+import { BusyButton, Empty, ErrorNotice, Modal } from './ui'
 import { useWorkspace } from './workspace'
 
 export function Assistant() {
@@ -14,6 +14,20 @@ export function Assistant() {
   const { drafts, setDraft, notify } = useWorkspace()
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState(false)
+  const picker = useRef<HTMLDivElement>(null)
+  const pickerButton = useRef<HTMLButtonElement>(null)
+  const closePicker = () => {
+    setExpanded(false)
+    pickerButton.current?.focus()
+  }
+  useEffect(() => {
+    if (!expanded) return
+    const closeOutside = (event: PointerEvent) => {
+      if (!picker.current?.contains(event.target as Node)) setExpanded(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [expanded])
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState('')
   const [editing, setEditing] = useState<Conversation | null>(null)
@@ -66,121 +80,146 @@ export function Assistant() {
     }
   }
   return (
-    <div className={`assistant-workspace ${expanded ? 'conversations-expanded' : ''}`}>
-      <aside className="conversation-sidebar" aria-label="会话列表">
-        <div className="conversation-sidebar-heading">
-          <h2>会话</h2>
-          <BusyButton
-            busy={busy}
-            className="icon-button"
-            aria-label="新建会话"
-            onClick={() => void create()}
-          >
-            <Plus size={18} />
-          </BusyButton>
-          <button
-            className="icon-button conversation-toggle"
-            aria-label="收起会话列表"
-            onClick={() => setExpanded(false)}
-          >
-            <PanelLeftClose size={18} />
-          </button>
-        </div>
-        <label className="conversation-search">
-          <Search size={15} />
-          <input
-            aria-label="搜索会话"
-            placeholder="搜索会话"
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value)
-              setOlder([])
-              setCursor(undefined)
-            }}
-          />
-        </label>
-        <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-        <div className="conversation-list">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className={`conversation-row ${item.id === conversationId ? 'active' : ''}`}
-            >
-              <Link
-                to={`/assistant/${item.id}`}
-                title={item.title}
-                onClick={() => setExpanded(false)}
-              >
-                <MessageSquare size={16} />
-                <span>{item.title}</span>
-              </Link>
-              <Actions label={`管理会话：${item.title}`}>
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    if (stopBeforeAction()) setEditing(item)
-                  }}
-                >
-                  重命名
-                </button>
-                <button
-                  role="menuitem"
-                  className="danger"
-                  onClick={async () => {
-                    if (!stopBeforeAction()) return
-                    try {
-                      const latest = await api<Conversation>(`/conversations/${item.id}`)
-                      const value = await api<{ retainedSources: number }>(
-                        `/conversations/${item.id}/deletion`,
-                      )
-                      setImpact(value)
-                      setDeleting(latest)
-                    } catch (e) {
-                      setFailure((e as Error).message)
-                    }
-                  }}
-                >
-                  删除会话
-                </button>
-              </Actions>
-            </div>
-          ))}
-        </div>
-        {nextCursor && (
-          <button
-            onClick={async () => {
-              try {
-                const next = await api<Page<Conversation>>(
-                  `/conversations?q=${encodeURIComponent(search)}&cursor=${nextCursor}`,
-                )
-                setOlder((previous) => [...previous, ...next.items])
-                setCursor(next.nextCursor)
-              } catch (e) {
-                setFailure((e as Error).message)
-              }
-            }}
-          >
-            加载更多
-          </button>
-        )}
-        {!items.length && list.data && (
-          <p className="muted">{search ? '没有匹配的会话' : '还没有会话'}</p>
-        )}
-      </aside>
+    <div className="assistant-workspace">
       <section className="conversation-main">
         <header className="conversation-heading">
-          <button
-            className="icon-button conversation-toggle"
-            aria-label="展开会话列表"
-            onClick={() => setExpanded(true)}
-          >
-            <PanelLeftOpen size={18} />
-          </button>
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
           <BusyButton busy={busy} onClick={() => void create()}>
             <Plus size={16} />
             新会话
           </BusyButton>
+          <div
+            ref={picker}
+            className="conversation-picker"
+            onBlur={(event) => {
+              if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node))
+                setExpanded(false)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                closePicker()
+              }
+            }}
+          >
+            <button
+              ref={pickerButton}
+              className="icon-button"
+              aria-label="会话列表"
+              aria-haspopup="dialog"
+              aria-expanded={expanded}
+              aria-controls="conversation-picker"
+              aria-describedby={expanded ? undefined : 'conversation-picker-tip'}
+              onClick={() => setExpanded(!expanded)}
+            >
+              <List size={20} />
+            </button>
+            {!expanded && (
+              <span className="conversation-tooltip" role="tooltip" id="conversation-picker-tip">
+                会话列表
+              </span>
+            )}
+            {expanded && (
+              <div
+                className="conversation-popover"
+                id="conversation-picker"
+                role="dialog"
+                aria-label="会话列表"
+              >
+                <div className="conversation-popover-heading">
+                  <h2>会话</h2>
+                  <button className="icon-button" aria-label="收起会话列表" onClick={closePicker}>
+                    <X size={18} />
+                  </button>
+                </div>
+                <label className="conversation-search">
+                  <Search size={15} />
+                  <input
+                    autoFocus
+                    aria-label="搜索会话"
+                    placeholder="搜索会话"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value)
+                      setOlder([])
+                      setCursor(undefined)
+                    }}
+                  />
+                </label>
+                <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
+                <div className="conversation-list">
+                  {items.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`conversation-row ${item.id === conversationId ? 'active' : ''}`}
+                    >
+                      <Link to={`/assistant/${item.id}`} title={item.title} onClick={closePicker}>
+                        <MessageSquare size={16} />
+                        <span>{item.title}</span>
+                      </Link>
+                      <div className="conversation-row-actions">
+                        <button
+                          className="icon-button"
+                          aria-label={`重命名会话：${item.title}`}
+                          title="重命名"
+                          onClick={() => {
+                            if (stopBeforeAction()) {
+                              closePicker()
+                              setEditing(item)
+                            }
+                          }}
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          aria-label={`删除会话：${item.title}`}
+                          title="删除会话"
+                          onClick={async () => {
+                            if (!stopBeforeAction()) return
+                            closePicker()
+                            try {
+                              const latest = await api<Conversation>(`/conversations/${item.id}`)
+                              const value = await api<{ retainedSources: number }>(
+                                `/conversations/${item.id}/deletion`,
+                              )
+                              setImpact(value)
+                              setDeleting(latest)
+                            } catch (e) {
+                              setFailure((e as Error).message)
+                            }
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {nextCursor && (
+                  <button
+                    onClick={async () => {
+                      try {
+                        const next = await api<Page<Conversation>>(
+                          `/conversations?q=${encodeURIComponent(search)}&cursor=${nextCursor}`,
+                        )
+                        setOlder((previous) => [...previous, ...next.items])
+                        setCursor(next.nextCursor)
+                      } catch (e) {
+                        setFailure((e as Error).message)
+                      }
+                    }}
+                  >
+                    加载更多
+                  </button>
+                )}
+                {!items.length && list.data && (
+                  <p className="muted">{search ? '没有匹配的会话' : '还没有会话'}</p>
+                )}
+              </div>
+            )}
+          </div>
         </header>
         <ErrorNotice>{failure || current.error}</ErrorNotice>
         {current.data ? (
