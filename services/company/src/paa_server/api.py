@@ -322,11 +322,20 @@ def create_app(settings=None):
 
     @app.post('/api/v1/messages', status_code=202)
     async def send_message(body: SendMessage, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
-        prior, digest = await idem_begin(db, actor, 'message', idempotency_key, body.model_dump())
+        payload = body.model_dump()
+        if not body.newConversation:
+            # Keep retries of older clients compatible with their stored digest.
+            payload.pop('newConversation')
+        prior, digest = await idem_begin(db, actor, 'message', idempotency_key, payload)
         if prior:
             await active_message(db, prior['messageId'], actor)
             return prior
-        conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor)
+        if body.newConversation:
+            conversation = Conversation(company_id=actor.company_id, owner_id=actor.id)
+            db.add(conversation)
+            await db.flush()
+        else:
+            conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor)
         attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
         if any(a.message_id for a in attached) or (any(a.kind == 'audio' for a in attached) and len(attached) != 1) or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
             problem(422, '附件已使用或组合不受支持；文档与图片合计最多 4 个、20 MiB，语音单独发送')

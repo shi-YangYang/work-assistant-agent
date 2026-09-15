@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="packages/ui-web/assets/app-icon.png" alt="个人工作助手 Logo" width="120" height="120" />
+  <img src="packages/ui-web/assets/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
 </p>
 
-<h1 align="center">Personal Agent Assistant</h1>
+<h1 align="center">work-assistant-agent</h1>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-345BD8?style=flat-square" alt="许可证：MIT" /></a>
@@ -13,7 +13,7 @@
 
 个人工作助手提供两种使用方式：用桌面端记录会议、转写录音和生成纪要；用公司 Web 上报工作、整理日报／周报、查询团队进展和跟进待办。电脑与手机可访问同一个 Web 地址。
 
-本仓库名为 `work-assistant-agent`，以 npm workspace 包 `personal-agent-assistant-workspace` 统一管理应用与共享代码；产品名称沿用 Personal Agent Assistant。
+项目名为 `work-assistant-agent`，Web 侧栏显示“公司工作助手”，Electron 侧栏显示“桌面会议助手”；以 npm workspace 包 `personal-agent-assistant-workspace` 统一管理应用与共享代码。
 
 ## 目录
 
@@ -125,7 +125,7 @@ docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d -
 npm run dev:company
 ```
 
-访问 **http://127.0.0.1:5174**。该命令同时启动 Web、API（8000）和 worker；`Ctrl+C` 一起停止应用进程，数据库继续运行。Web 支持热更新，修改 API 后需重启。只启 Web 不会启动后台任务处理。
+访问 **http://127.0.0.1:5174**；开发服务器会将 `localhost:5174` 自动跳转到此地址，以匹配服务端的来源校验。该命令同时启动 Web、API（8000）和 worker；`Ctrl+C` 一起停止应用进程，数据库继续运行。Web 支持热更新，修改 API 后需重启。只启 Web 不会启动后台任务处理。
 
 1. 管理员登录后，在“成员管理”创建员工账号；员工首次登录修改临时密码。
 2. 在“模型服务管理”添加服务，为工作助手、报告、语音分配模型。Base URL 需包含服务要求的版本路径，不自动补 `/v1`；获取目录失败可手填模型 ID。

@@ -24,13 +24,16 @@
 
 ## 协议与参数边界
 
+Web 服务商预设提供 Token Plan、百炼北京／新加坡和自定义入口，按[官方 Base URL](https://help.aliyun.com/zh/model-studio/base-url)填充地址，保留可编辑地址与自定义名称；切换地址清除未保存密钥。已核实的域名／路径／地域及模型系列映射集中在 `apps/web/src/model-service-presets.ts`，只在编辑草稿时匹配；未知、异步文件转写、实时、TTS 和图片生成模型不会默认降为聊天。接口选择放入高级设置，新模型 `protocolMode=auto`，原有配置缺省 `manual`；保存具体 `protocol`，后端任务不运行自动推断或失败回退。手动覆盖会随模型配置保存，服务商预设本身仅为地址模板，不引入独立凭证或新存储表。
+
 | 协议 | 请求与结果 |
 | --- | --- |
 | 兼容聊天 | `POST {baseUrl}/chat/completions`，由现有 ChatOpenAI 集成承接文字、图片与工具往返；明确 `use_responses_api=False`、`max_retries=0` |
 | 文件语音转写 | `POST {baseUrl}/audio/transcriptions`，multipart 提交 `model` 和内部规范化 WAV 文件，首版读取 JSON `text`；不复用聊天消息结构 |
 | Qwen-ASR 兼容 | 保留聊天端点的 `input_audio.data` Data URL 请求并读取转写正文；不假定同名模型或所有地域都支持此方式 |
+| 阿里原生语音转写 | `dashscope-asr` 适配 Qwen-Audio-3.0-ASR-Flash 的同步接口：同源 Base URL 的 `/compatible-mode/v1` 转为 `/api/v1`，或直接使用原生 `/api/v1`，追加 `/services/aigc/multimodal-generation/generation`；`input.messages` 提交规范化 WAV Data URL，关闭 SSE，读取顶层或 `output` 内的文字；首版自动识别语言。协议显式选择，不根据模型名称自动改投接口，不影响原有 Qwen-ASR 配置。依据：[官方说明](https://help.aliyun.com/en/model-studio/non-realtime-speech-recognition-user-guide)。 |
 
-- Base URL 已包含版本路径，统一去除尾部斜杠后追加协议路径，不自动补 `/v1`。目录优先 `GET {baseUrl}/models`；百炼官方端点可沿用经核对的同源目录适配（含业务空间专属域名），其它端点不改投猜测的域名。目录限制分页、条目数、响应字节与总时限，目录 URL 不能接受任意完整地址。
+- Base URL 已包含版本路径，统一去除尾部斜杠后追加协议路径，不自动补 `/v1`。目录优先 `GET {baseUrl}/models`；普通百炼端点使用同源 `/api/v1/models`（含业务空间专属域名），Token Plan 专属域名仍使用 `{baseUrl}/models`，不能因域名外形相同而误用普通百炼路径。其它端点不改投猜测的域名。目录限制分页、条目数、响应字节与总时限，目录 URL 不能接受任意完整地址。
 - 文本预设简单值映射 `reasoning_effort`；高级 JSON 中标准参数与厂商扩展分别交给 SDK 的标准字段／`extra_body`。服务默认传空参数，移除当前全局 `enable_thinking=False` 回退。保留字段保护，递归拒绝输入、Key、URL／header、工具、`stream`、输出格式和资源限制覆盖，以及原型相关键；TS 与 Python 校验使用一致边界。
 - 聊天流式保持同一模型调用预算路径，完整汇总工具名称、ID 与参数后执行；超时、错误、无完整结束或工具参数不合法时失败。不能通过改用流式绕过 `reserve_call`、输出上限或工具次数限制；不自动请求服务未声明的 usage 扩展。
 - 语音继续使用现有有界 WAV 转换和 180 秒输入上限；按接口分别校验实际编码大小、响应长度与转写文本。首版语音使用非流式；只提供已支持的语言等结构化选项，不开放任意音频请求模板。

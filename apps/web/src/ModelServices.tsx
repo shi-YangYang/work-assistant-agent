@@ -14,6 +14,15 @@ import { AutoTextarea, BusyButton, ConflictRecovery, ErrorNotice, Modal } from '
 import { useWorkspace } from './workspace'
 import { cleanServiceDraft, newModel, validateCompanyParameters } from './model-service-drafts'
 import type { ServiceDraft } from './model-service-drafts'
+import {
+  changeModelProtocol,
+  detectServicePreset,
+  matchModelProtocol,
+  requireModelProtocols,
+  resolveModelProtocol,
+  servicePresets,
+} from './model-service-presets'
+import type { ServicePreset } from './model-service-presets'
 
 type Listing = { services: CompanyService[]; routing: ModelRouting }
 type Purpose = 'assistant' | 'report' | 'asr'
@@ -22,6 +31,7 @@ const protocolNames = {
   chat: '聊天 · Chat Completions',
   transcriptions: '语音 · 文件转写',
   'qwen-asr': '语音 · Qwen-ASR 兼容',
+  'dashscope-asr': '语音 · 阿里原生语音转写',
 }
 
 export function ModelServices() {
@@ -48,8 +58,14 @@ export function ModelServices() {
   const [presetJson, setPresetJson] = useState('{}')
   const drafts = (workspace.drafts.modelServices as Record<string, ServiceDraft>) || {}
   const services = resource.data?.services ?? []
-  const draft = selected ? (drafts[selected] ?? services.find((s) => s.id === selected)) : undefined
-  const model = draft?.models.find((m) => m.id === activeModel) ?? draft?.models[0]
+  const draft: ServiceDraft | undefined = selected
+    ? (drafts[selected] ?? services.find((s) => s.id === selected))
+    : undefined
+  const currentModel = draft?.models.find((m) => m.id === activeModel) ?? draft?.models[0]
+  const model =
+    currentModel && draft ? resolveModelProtocol(draft.baseUrl, currentModel) : undefined
+  const automaticMatch =
+    model?.protocolMode === 'auto' && draft ? matchModelProtocol(draft.baseUrl, model.model) : null
   const generation = useRef(0)
   const alive = useRef(true)
   const hasKeys = Object.values(keys).some(Boolean)
@@ -79,7 +95,13 @@ export function ModelServices() {
     setCheck(null)
     setError('')
     setConflict(false)
-    workspace.setDraft('modelServices', { ...drafts, [next.id]: cleanServiceDraft(next) })
+    workspace.setDraft('modelServices', {
+      ...drafts,
+      [next.id]: cleanServiceDraft({
+        ...next,
+        models: next.models.map((m) => resolveModelProtocol(next.baseUrl, m)),
+      }),
+    })
   }
   const select = (id: string | null) => {
     generation.current++
@@ -92,7 +114,12 @@ export function ModelServices() {
   }
   const updateModel = (next: CompanyModel) =>
     draft && update({ ...draft, models: draft.models.map((m) => (m.id === next.id ? next : m)) })
-  const capture = () => {
+  const changeAddress = (baseUrl: string, providerPreset: ServicePreset, name = draft?.name) => {
+    if (!draft) return
+    if (baseUrl !== draft.baseUrl) setKeys((previous) => ({ ...previous, [draft.id]: '' }))
+    update({ ...draft, name: name || draft.name, baseUrl, providerPreset })
+  }
+  const capture = (requireProtocols = true) => {
     if (!draft) throw new Error('请选择服务')
     for (const m of draft.models)
       for (const p of m.presets)
@@ -102,7 +129,7 @@ export function ModelServices() {
     return {
       name: draft.name,
       baseUrl: draft.baseUrl,
-      models: draft.models,
+      models: requireProtocols ? requireModelProtocols(draft.baseUrl, draft.models) : draft.models,
       expectedRevision: draft.revision,
       apiKey: keys[draft.id] || '',
     }
@@ -127,7 +154,7 @@ export function ModelServices() {
           : {
               name: target.name,
               baseUrl: target.baseUrl,
-              models: target.models,
+              models: requireModelProtocols(target.baseUrl, target.models),
               expectedRevision: target.revision,
               apiKey: keys[target.id] || '',
             }
@@ -140,7 +167,7 @@ export function ModelServices() {
       workspace.setDraft('modelServices', (previous: Record<string, ServiceDraft> = {}) => {
         const next = { ...previous }
         delete next[target.id]
-        next[saved.id] = cleanServiceDraft(saved)
+        next[saved.id] = cleanServiceDraft({ ...saved, providerPreset: target.providerPreset })
         return next
       })
       setKeys((previous) => {
@@ -173,7 +200,7 @@ export function ModelServices() {
       const value = await write<
         { models: string[]; source: string; truncated: boolean; draftVersion: string } | ModelCheck
       >(`/settings/model-services/${kind}`, {
-        ...capture(),
+        ...capture(kind === 'test'),
         serviceId: draft.revision ? draft.id : null,
         modelId: model?.id ?? null,
         purpose: testPurpose,
@@ -369,6 +396,30 @@ export function ModelServices() {
                 <legend>连接</legend>
                 <div className="field-grid connection-fields">
                   <label>
+                    服务商预设
+                    <select
+                      value={draft.providerPreset ?? detectServicePreset(draft.baseUrl)}
+                      onChange={(e) => {
+                        const id = e.target.value as ServicePreset
+                        const preset = servicePresets[id]
+                        const defaultName =
+                          draft.name === '新服务' ||
+                          Object.values(servicePresets).some((p) => p.name === draft.name)
+                        changeAddress(
+                          id === 'custom' ? draft.baseUrl : preset.baseUrl,
+                          id,
+                          id !== 'custom' && defaultName ? preset.name : draft.name,
+                        )
+                      }}
+                    >
+                      {Object.entries(servicePresets).map(([id, preset]) => (
+                        <option key={id} value={id}>
+                          {preset.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
                     服务名称
                     <input
                       value={draft.name}
@@ -376,14 +427,16 @@ export function ModelServices() {
                       onChange={(e) => update({ ...draft, name: e.target.value })}
                     />
                   </label>
-                  <label>
+                  <label className="full-field">
                     Base URL
                     <input
                       value={draft.baseUrl}
                       placeholder="https://api.example.com/v1"
                       maxLength={2048}
                       autoComplete="off"
-                      onChange={(e) => update({ ...draft, baseUrl: e.target.value })}
+                      onChange={(e) =>
+                        changeAddress(e.target.value, detectServicePreset(e.target.value))
+                      }
                     />
                   </label>
                   <label className="full-field">
@@ -421,7 +474,7 @@ export function ModelServices() {
                   <button
                     disabled={draft.models.length >= 32 || !!busy}
                     onClick={() => {
-                      const next = newModel()
+                      const next = newModel('', draft.baseUrl)
                       update({ ...draft, models: [...draft.models, next] })
                       setActiveModel(next.id)
                     }}
@@ -448,11 +501,10 @@ export function ModelServices() {
                         <button
                           key={id}
                           disabled={
-                            draft.models.length >= 32 ||
-                            draft.models.some((m) => m.model === id && m.protocol === 'chat')
+                            draft.models.length >= 32 || draft.models.some((m) => m.model === id)
                           }
                           onClick={() => {
-                            const next = newModel(id)
+                            const next = newModel(id, draft.baseUrl)
                             update({ ...draft, models: [...draft.models, next] })
                             setActiveModel(next.id)
                           }}
@@ -479,7 +531,13 @@ export function ModelServices() {
                   >
                     {draft.models.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.model || '未填写模型 ID'} · {protocolNames[m.protocol]}
+                        {m.model || '未填写模型 ID'} ·{' '}
+                        {m.protocolMode === 'auto' &&
+                        !matchModelProtocol(draft.baseUrl, m.model).protocol
+                          ? '待配置'
+                          : m.protocol === 'chat'
+                            ? '聊天'
+                            : '语音转写'}
                       </option>
                     ))}
                   </select>
@@ -497,30 +555,43 @@ export function ModelServices() {
                         onChange={(e) => updateModel({ ...model, model: e.target.value })}
                       />
                     </label>
-                    <label>
-                      接口协议
-                      <select
-                        value={model.protocol}
-                        onChange={(e) => {
-                          const protocol = e.target.value as CompanyModel['protocol']
-                          updateModel({
-                            ...model,
-                            protocol,
-                            presets: [],
-                            selectedPresetId: null,
-                            streaming: protocol === 'chat',
-                          })
-                          setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
-                        }}
-                      >
-                        {Object.entries(protocolNames).map(([id, name]) => (
-                          <option key={id} value={id}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    {model.protocol === 'chat' ? (
+                    <div className="model-protocol-status" role="status">
+                      {automaticMatch && !automaticMatch.protocol
+                        ? model.model
+                          ? automaticMatch.reason
+                          : '填写模型 ID 后自动匹配接口。'
+                        : `${automaticMatch ? '已自动匹配' : '当前接口'}：${protocolNames[model.protocol]}`}
+                    </div>
+                    <details className="model-advanced full-field" key={model.id}>
+                      <summary>高级设置</summary>
+                      <label>
+                        接口协议
+                        <select
+                          value={model.protocolMode === 'auto' ? 'auto' : model.protocol}
+                          onChange={(e) => {
+                            if (e.target.value === 'auto') {
+                              updateModel({ ...model, protocolMode: 'auto' })
+                            } else {
+                              const protocol = e.target.value as CompanyModel['protocol']
+                              updateModel({
+                                ...changeModelProtocol(model, protocol),
+                                protocolMode: 'manual',
+                              })
+                              setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
+                            }
+                          }}
+                        >
+                          <option value="auto">自动匹配</option>
+                          {Object.entries(protocolNames).map(([id, name]) => (
+                            <option key={id} value={id}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </details>
+                    {automaticMatch && !automaticMatch.protocol ? null : model.protocol ===
+                      'chat' ? (
                       <>
                         <label className="check-label">
                           <input
@@ -597,7 +668,8 @@ export function ModelServices() {
                         识别语言（可选）
                         <input
                           value={model.language}
-                          placeholder="例如 zh"
+                          disabled={model.protocol === 'dashscope-asr'}
+                          placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
                           maxLength={20}
                           onChange={(e) => updateModel({ ...model, language: e.target.value })}
                         />

@@ -1,5 +1,6 @@
 """Company model boundary regressions against PostgreSQL and controlled HTTP responses."""
 import asyncio
+import base64
 from dataclasses import replace
 import json
 from pathlib import Path
@@ -314,7 +315,7 @@ async def test_probe_keeps_original_revision_after_service_edit(setup, monkeypat
     assert all(check['state'] == 'passed' for check in response.json()['checks'])
 
 
-@pytest.mark.parametrize('protocol', ['transcriptions', 'qwen-asr'])
+@pytest.mark.parametrize('protocol', ['transcriptions', 'qwen-asr', 'dashscope-asr'])
 async def test_asr_probe_checks_revocation_immediately_before_outbound(setup, monkeypatch, protocol):
     from paa_server import model_services
     settings, sessions, users, clients = setup
@@ -341,6 +342,80 @@ async def test_asr_probe_checks_revocation_immediately_before_outbound(setup, mo
     assert calls == []
     assert response.json()['checks'][0]['state'] == 'failed'
     assert response.json()['checks'][0]['code'] == 'revoked'
+
+
+@pytest.mark.parametrize(('base', 'endpoint', 'response_body'), [
+    ('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/', 'https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1', {'text': '今天的工作已经完成'}),
+    ('https://dashscope.aliyuncs.com/api/v1', 'https://dashscope.aliyuncs.com/api/v1', {'output': {'text': '今天的工作已经完成'}}),
+    ('https://gateway.example/team/compatible-mode/v1', 'https://gateway.example/team/api/v1', {'output': {'output': {'sentence': {'text': '今天的工作已经完成'}}}}),
+    ('https://token-plan.cn-beijing.maas.aliyuncs.com', 'https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1', {'output': {'sentence': {'text': '今天的工作已经完成'}}}),
+])
+async def test_dashscope_asr_preserves_origin_and_decodes_native_response(monkeypatch, base, endpoint, response_body):
+    from paa_server.config import Settings
+    wav = (Path(__file__).parents[2] / 'services/company/src/paa_server/assets/probe-zh.wav').read_bytes()
+    calls = []
+
+    def response(request):
+        calls.append(request)
+        assert str(request.url) == endpoint + '/services/aigc/multimodal-generation/generation'
+        assert request.headers['Authorization'] == 'Bearer ' + SECRET
+        assert request.headers['X-DashScope-SSE'] == 'disable'
+        body = json.loads(request.content)
+        assert set(body) == {'model', 'input', 'parameters'}
+        assert body['model'] == 'qwen-audio-3.0-asr-flash'
+        assert body['parameters'] == {'format': 'wav', 'sample_rate': '16000'}
+        audio = body['input']['messages'][0]['content'][0]
+        assert audio['type'] == 'input_audio'
+        assert audio['input_audio']['data'].startswith('data:audio/wav;base64,')
+        assert base64.b64decode(audio['input_audio']['data'].split(',', 1)[1]) == wav
+        return httpx.Response(200, json=response_body)
+
+    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    result, usage = await transcribe(Settings(), {'baseUrl': base, 'model': 'qwen-audio-3.0-asr-flash', 'protocol': 'dashscope-asr'}, SECRET, wav)
+    assert result == '今天的工作已经完成' and usage is None
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('response_body', [{}, [], {'text': ''}, {'output': {'text': ' ' * 10}}, {'text': '字' * 8001}])
+async def test_dashscope_asr_rejects_invalid_text_without_retry(monkeypatch, response_body):
+    from paa_server.config import Settings
+    calls = []
+
+    def response(request):
+        calls.append(request)
+        return httpx.Response(200, json=response_body)
+
+    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    with pytest.raises(ProviderError, match='没有返回有效文字'):
+        await transcribe(Settings(), {'baseUrl': 'https://example.com/api/v1', 'model': 'asr', 'protocol': 'dashscope-asr'}, SECRET, b'RIFF')
+    assert len(calls) == 1
+
+
+async def test_dashscope_asr_saved_routing_and_real_audio_probe(setup, monkeypatch):
+    settings, sessions, users, clients = setup
+    body = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1')
+    body['models'][1].update(protocol='dashscope-asr', protocolMode='auto', model='qwen-audio-3.0-asr-flash')
+    saved = await create(clients['admin'], body)
+    assert saved['models'][1]['protocolMode'] == 'auto'
+    assert saved['models'][0]['protocolMode'] == 'manual'
+    response = await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))
+    assert response.status_code == 200
+    calls = []
+
+    def response(request):
+        calls.append(request)
+        assert request.url.path == '/api/v1/services/aigc/multimodal-generation/generation'
+        assert json.loads(request.content)['input']['messages'][0]['content'][0]['input_audio']['data'].startswith('data:audio/wav;base64,')
+        return httpx.Response(200, json={'output': {'text': '今天的工作已经完成，谢谢。'}})
+
+    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    result = await clients['admin'].post('/api/v1/settings/model-services/test', json=probe_body(saved, purpose='asr'))
+    assert result.status_code == 200
+    assert result.json()['checks'] == [{'name': '语音转写', 'state': 'passed'}]
+    assert len(calls) == 1
+    body['models'][1]['language'] = 'zh'
+    with pytest.raises(ValueError, match='自动语言识别'):
+        ServiceInput(**body)
 
 
 async def test_explicit_environment_import_preserves_behavior_and_clear_never_falls_back(setup):
@@ -400,6 +475,23 @@ async def test_directory_official_pagination_stays_same_origin_and_rejects_respo
     transport=SafeTransport(settings)
     with pytest.raises(ProviderError,match='压缩'):await transport.handle_async_request(httpx.Request('GET','https://example.com/v1/models'))
     await transport.aclose()
+
+
+async def test_directory_token_plan_uses_openai_catalog(setup, monkeypatch):
+    from paa_server.model_provider import catalog
+    settings, *_ = setup
+    calls = []
+    endpoint = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models'
+    def response(request):
+        calls.append(request)
+        if str(request.url) != endpoint:
+            return httpx.Response(404)
+        assert request.headers['Authorization'] == 'Bearer ' + SECRET
+        return httpx.Response(200, json={'data': [{'id': 'controlled-model'}], 'has_more': False})
+    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    result = await catalog(settings, endpoint.removesuffix('/models'), SECRET)
+    assert result == {'models': ['controlled-model'], 'source': endpoint, 'truncated': False}
+    assert len(calls) == 1
 
 
 async def test_master_key_pair_restore_and_missing_key_cannot_be_reinitialized(setup,monkeypatch):

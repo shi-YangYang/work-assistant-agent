@@ -174,6 +174,7 @@ function Login({
   )
 }
 function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => void }) {
+  const accountName = identity.member.role === 'admin' ? '管理员' : identity.member.name
   const [drafts, setDrafts] = useState<DraftStore>({})
   const [toast, setToast] = useState('')
   const [commands, setCommands] = useState(false)
@@ -298,7 +299,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           </button>
           <Link to={identity.member.role === 'admin' ? '/team' : '/assistant'} className="brand">
             <span className="brand-mark" aria-hidden="true" />
-            <span className="nav-label">{identity.company.name}</span>
+            <span className="nav-label">公司工作助手</span>
           </Link>
           <button
             className="search-launch"
@@ -309,7 +310,6 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             <Command size={16} /> <span className="nav-label">查找页面</span>
             <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
           </button>
-          <p className="workspace-label">工作空间</p>
           <nav aria-label="工作空间">
             {allowed.map((p) => (
               <NavLink
@@ -325,7 +325,6 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             ))}
           </nav>
           <div className="sidebar-bottom">
-            <p className="workspace-label">设置</p>
             <nav aria-label="设置">
               {allowedSettings.map((p) => (
                 <NavLink
@@ -341,10 +340,10 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
               ))}
             </nav>
             <div className="identity">
-              <span className="avatar">{identity.member.name.slice(0, 1)}</span>
+              <span className="avatar">{accountName.slice(0, 1)}</span>
               <span className="nav-label">
-                {identity.member.name}
-                <small>{identity.member.role === 'admin' ? '管理员' : '用户'}</small>
+                {accountName}
+                {identity.member.role !== 'admin' && <small>用户</small>}
               </span>
               <button className="icon-button" aria-label="退出登录" onClick={logout}>
                 <LogOut size={17} />
@@ -369,7 +368,6 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
                 <Settings size={19} />
               </Link>
             </div>
-            <span className="desktop-only muted">{identity.member.name}</span>
           </header>
           <Routes>
             <Route

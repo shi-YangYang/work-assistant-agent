@@ -196,7 +196,8 @@ export interface CompanyPreset {
 export interface CompanyModel {
   id: string
   model: string
-  protocol: 'chat' | 'transcriptions' | 'qwen-asr'
+  protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
+  protocolMode?: 'auto' | 'manual'
   presets: CompanyPreset[]
   selectedPresetId: string | null
   streaming: boolean

@@ -33,6 +33,15 @@ function server(initial: Row[]) {
 }
 
 describe('loaded page refresh', () => {
+  it('does not read messages before a conversation exists', async () => {
+    const source = server([row(1)])
+    const resource = new PagedResource<Row>(null, 'createdAt', source.read)
+    await resource.refresh()
+    await resource.loadMore()
+    expect(source.paths).toEqual([])
+    expect(resource.getSnapshot()).toEqual({ data: null, error: '', loading: false })
+  })
+
   it.each([
     ['/messages?conversationId=own', 'createdAt'],
     ['/team/members/member/messages', 'createdAt'],

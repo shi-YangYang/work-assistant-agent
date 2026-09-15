@@ -15,7 +15,7 @@ export class PagedResource<T extends { id: string }> {
   private listeners = new Set<() => void>()
 
   constructor(
-    private path: string,
+    private path: string | null,
     private order: keyof T,
     private read: (path: string, options: RequestInit) => Promise<Page<T>> = api<Page<T>>,
   ) {}
@@ -40,7 +40,7 @@ export class PagedResource<T extends { id: string }> {
   }
 
   private async load(extend: boolean) {
-    if (this.controller || (extend && !this.snapshot.data?.nextCursor)) return
+    if (!this.path || this.controller || (extend && !this.snapshot.data?.nextCursor)) return
     const controller = new AbortController()
     this.controller = controller
     this.update({ ...this.snapshot, loading: true })
@@ -91,13 +91,14 @@ export class PagedResource<T extends { id: string }> {
 }
 
 export function usePagedResource<T extends { id: string }>(
-  path: string,
+  path: string | null,
   order: keyof T,
   interval: number,
 ) {
   const resource = useMemo(() => new PagedResource<T>(path, order), [path, order])
   const snapshot = useSyncExternalStore(resource.subscribe, resource.getSnapshot)
   useEffect(() => {
+    if (!path) return
     const refresh = () => void resource.refresh()
     let disposed = false
     let timer: ReturnType<typeof setTimeout>
@@ -121,6 +122,6 @@ export function usePagedResource<T extends { id: string }>(
       document.removeEventListener('visibilitychange', visible)
       resource.dispose()
     }
-  }, [resource, interval])
+  }, [resource, interval, path])
   return { ...snapshot, refresh: resource.refresh, loadMore: resource.loadMore }
 }

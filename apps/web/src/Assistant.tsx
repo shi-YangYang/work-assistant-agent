@@ -28,10 +28,10 @@ export function ConversationChat({
   conversationId,
   onSent,
 }: {
-  conversationId: string
-  onSent: () => void
+  conversationId?: string
+  onSent: (conversationId: string) => void
 }) {
-  const composerKey = `composer:${conversationId}`
+  const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
   const storedComposer = drafts[composerKey] as Composer | undefined
   const composer = useMemo(
@@ -39,7 +39,7 @@ export function ConversationChat({
     [storedComposer],
   )
   const { data, error, refresh, loadMore, loading } = usePagedResource<WorkMessage>(
-    `/messages?conversationId=${conversationId}`,
+    conversationId ? `/messages?conversationId=${conversationId}` : null,
     'createdAt',
     2000,
   )
@@ -55,6 +55,7 @@ export function ConversationChat({
   const textInput = useRef<HTMLTextAreaElement>(null)
   const capture = useRef<AudioCapture | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  const active = useRef(true)
   const composerRef = useRef(composer)
   useEffect(() => {
     composerRef.current = composer
@@ -67,6 +68,7 @@ export function ConversationChat({
         : undefined,
     )
   useEffect(() => {
+    active.current = true
     const controller = new AudioCapture({
       state: (state) => {
         setCaptureState(state)
@@ -86,6 +88,7 @@ export function ConversationChat({
     }
     document.addEventListener('visibilitychange', guard)
     return () => {
+      active.current = false
       controller.dispose()
       capture.current = null
       setDraft('recording', undefined)
@@ -167,10 +170,11 @@ export function ConversationChat({
           updateSendingDraft(previous, composer.key, { files, uploading: undefined }),
         )
       }
-      await write(
+      const sent = await write<{ conversationId: string }>(
         '/messages',
         {
           conversationId,
+          ...(!conversationId ? { newConversation: true } : {}),
           text: current.text,
           attachmentIds: files.map((f) => f.attachment!.id),
           replyTo: current.replyTo ?? null,
@@ -184,7 +188,7 @@ export function ConversationChat({
       )
       refresh()
       notify('已发送')
-      onSent()
+      if (active.current) onSent(sent.conversationId)
     } catch (e) {
       if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
         setLimitError(e.message)
