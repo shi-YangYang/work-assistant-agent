@@ -12,7 +12,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import delete, text
 from sqlalchemy.engine import make_url
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src/python'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'services/company/src'))
 from paa_server.api import create_app
 from paa_server.config import Settings
 from paa_server.db import database

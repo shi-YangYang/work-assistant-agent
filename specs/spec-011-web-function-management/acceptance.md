@@ -19,9 +19,9 @@
 
 首轮验收者 `/root/accept_spec011` 于同日给出 **FAIL**，两项问题均直接违反 R2；新的实施 Agent `/root/rework_spec011` 完成修复后，由本轮新验收者复核。
 
-1. **P1：候选来源变化未使删除确认失效，已修复。** 原路径为管理员确认来源 A 后，在途任务把 B 写入 candidate，但报告版本不变，旧确认可以连带删除 B。[harness.py](../../src/python/paa_server/agent/harness.py) 现在对正文或 candidate 的成功写入统一递增 `revision`、更新修改时间；与 [deletion.py](../../src/python/paa_server/deletion.py) 的所有者锁及版本检查配合。UI 使用影响接口返回的版本提交删除。新增 `test_candidate_sources_invalidate_open_delete_confirmation` 实际调用候选写入工具，断言影响从 1 条变 2 条、版本递增、旧 DELETE 返回 409，A／B 消息及 B 的附件内容和文件仍保留。
+1. **P1：候选来源变化未使删除确认失效，已修复。** 原路径为管理员确认来源 A 后，在途任务把 B 写入 candidate，但报告版本不变，旧确认可以连带删除 B。[harness.py](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/src/python/paa_server/agent/harness.py) 现在对正文或 candidate 的成功写入统一递增 `revision`、更新修改时间；与 [deletion.py](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/src/python/paa_server/deletion.py) 的所有者锁及版本检查配合。UI 使用影响接口返回的版本提交删除。新增 `test_candidate_sources_invalidate_open_delete_confirmation` 实际调用候选写入工具，断言影响从 1 条变 2 条、版本递增、旧 DELETE 返回 409，A／B 消息及 B 的附件内容和文件仍保留。
 
-2. **P1：已展开旧页长期保留已删除正文，已修复。** 原助手、团队原始上报和个人报告列表将永久 `older` 缓存拼接到仅刷新的第一页。[paged-resource.ts](../../src/web/paged-resource.ts) 改为只保存已展开的最早边界，每次从第一页沿新游标读取并整体替换结果；新消息挤页时继续读到该边界，删除旧行或旧游标不保留其正文。已确认 `Assistant.tsx`、`Settings.tsx` 的团队原始上报、`Records.tsx` 的个人报告均实际使用该资源。轮询、窗口重新可见／获得焦点及本窗口管理事件触发重新校验，403／404 清空全部已加载内容，资源切换取消旧读取。6 项分页测试覆盖这三类路径、删除旧行／游标、新消息挤页、403／404 和晚到结果隔离。
+2. **P1：已展开旧页长期保留已删除正文，已修复。** 原助手、团队原始上报和个人报告列表将永久 `older` 缓存拼接到仅刷新的第一页。[paged-resource.ts](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/src/web/paged-resource.ts) 改为只保存已展开的最早边界，每次从第一页沿新游标读取并整体替换结果；新消息挤页时继续读到该边界，删除旧行或旧游标不保留其正文。已确认 `Assistant.tsx`、`Settings.tsx` 的团队原始上报、`Records.tsx` 的个人报告均实际使用该资源。轮询、窗口重新可见／获得焦点及本窗口管理事件触发重新校验，403／404 清空全部已加载内容，资源切换取消旧读取。6 项分页测试覆盖这三类路径、删除旧行／游标、新消息挤页、403／404 和晚到结果隔离。
 
 ## Tests
 

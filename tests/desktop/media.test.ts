@@ -2,9 +2,9 @@ import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { byteRange, serveMedia } from '../../src/desktop/media'
-import { CoreManager } from '../../src/desktop/core-manager'
-import { JsonLineClient, CoreError } from '../../src/desktop/json-line-client'
+import { byteRange, serveMedia } from '../../apps/desktop/src/main/media'
+import { CoreManager } from '../../apps/desktop/src/main/core-manager'
+import { JsonLineClient, CoreError } from '../../apps/desktop/src/main/json-line-client'
 const id = 'e40feee8-7aac-403a-8f45-4ae1018109bf'
 const roots: string[] = []
 afterEach(async () => {

@@ -10,7 +10,7 @@
 | 工具链 | Node 24、npm 11、`package-lock.json`；`npm ci` 的 postinstall 准备 Electron，首次需要网络 |
 | 桌面与界面 | Electron 44.3.0、React 19.2.8、TypeScript 5.9.3、CSS；renderer 内存导航，浅／深／系统语义主题 |
 | 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0 |
-| 核心与通信 | Python 3.12、venv／pip、`requirements.lock`；main 管理无 shell 子进程，以带请求 ID 的 UTF-8 JSON Lines／stdio 控制 |
+| 核心与通信 | Python 3.12、venv／pip、`apps/desktop/core/requirements.lock`；main 管理无 shell 子进程，以带请求 ID 的 UTF-8 JSON Lines／stdio 控制 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream → 有界队列 → 写盘，不在回调调用数据库／ASR |
 | 存储 | SQLite schema 6＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
 | ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；六款 Whisper 多语言模型，默认 small／中文；CPU INT8，4 线程／beam 5；受管 spawn worker，全局一次推理 |
@@ -25,8 +25,8 @@
 
 | 范围 | 当前选择 |
 | --- | --- |
-| Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `out/web/` |
-| 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`requirements-server.in`／`.lock` |
+| Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
+| 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
 | 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0005_business_access`，私有附件、文档分段与业务来源授权 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、版本化来源与历史权限复核、持久恢复、人工确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |
@@ -34,27 +34,31 @@
 | 文档 | pypdf、python-docx、python-pptx 与标准库；受管子进程提取原生文字，不做 OCR；原件在私有卷，分段及定位在 PostgreSQL |
 | 部署 | Linux Docker Compose＋Caddy、API、单并发 worker、PostgreSQL；模型推理外置，服务器容量待实测 |
 
-公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 共用 `src/ui/theme.css`、`src/ui/select.css`，按各自设备能力组织导航；不能只共用颜色而偏离实际桌面视觉。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
+公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 共用 `packages/ui-web/` 的主题与选择控件 CSS，按各自设备能力组织导航；不能只共用颜色而偏离实际桌面视觉。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
 
 ## 目录约定
 
 | 内容 | 位置 |
 | --- | --- |
-| Electron main／preload、React、桌面契约 | `src/desktop/`、`src/renderer/`、`src/shared/` |
-| 本地 Python 核心 | `src/python/paa_core/` |
-| 公司 Web、共享纯 UI | `src/web/`、`src/ui/` |
-| 公司 API、任务与 harness | `src/python/paa_server/`；HTTP DTO 为 `src/shared/company-contracts.ts` |
-| 测试、工程脚本、公司部署 | `tests/`、`scripts/`、`deploy/company/` |
+| Electron main／preload、React、桌面契约 | `apps/desktop/src/{main,preload,renderer,shared}/` |
+| 本地 Python 核心、依赖锁与构建元数据 | `apps/desktop/core/`；包为 `src/paa_core/` |
+| 公司 Web | `apps/web/` |
+| 公司 API、任务与 harness | `services/company/src/paa_server/` |
+| 公司 HTTP 类型、纯模型参数校验、浏览器 CSS | `packages/api-contracts/`、`packages/model-config/`、`packages/ui-web/` |
+| 测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
+| 工程脚本、公司部署 | `scripts/{desktop,company,benchmarks,lib}/`、`deploy/company/` |
 | 产品／架构、规格、决策／规则／交接 | `docs/`、`specs/`、`.ai/` |
 
-保留现有业务根目录及 `AGENTS.md`、`constitution/`、`specs/`、`.ai/` 的职责，不迁移或建立重复结构。
+目录按用户确认的 [Spec 015](../specs/spec-015-monorepo-structure/spec.md) 迁移；当前实施／验收状态以该 Spec 为准。Node 应用与共享包由 npm workspaces 管理，一个根 package-lock；各包显式声明依赖，共享包不反向依赖应用。Python 继续使用独立环境。`AGENTS.md`、`constitution/`、`specs/`、`.ai/` 的位置与职责不变，后续不任意建立重复结构。取舍见 [0015](../.ai/decisions/0015-multi-client-repository.md)。
+
+应用构建输出位于各自 `apps/*/out/`，发行包仍在根 `dist/desktop/`，冻结核心在 `dist/core/`。未来移动项目按技术选择放在 apps 下；本轮未创建移动 App，也未承诺原生界面能直接使用浏览器 CSS。
 
 ## 工程命令
 
 | 操作 | 命令 |
 | --- | --- |
 | 桌面开发／构建／预览 | `npm run dev`／`npm run build`／`npm start` |
-| 桌面 Python 依赖 | 用 Python 3.12 建立 `.venv`，执行 `node scripts/install-python.mjs` |
+| 桌面 Python 依赖 | 在仓库根用 Python 3.12 建立 `.venv`，执行 `node scripts/desktop/install-python.mjs` |
 | 公司开发 | `npm run dev:company` 启动 Web 5174、API 8000、worker；各自也有 `dev:web`、`dev:server`、`dev:worker` |
 | 公司初始化 | `npm run db:company` 迁移；`npm run admin:company` 交互创建首位管理员 |
 | 桌面定向检查入口 | `npm test`（unit＋Python）、`npm run typecheck`、`npm run lint`、`npm run format:check` |

@@ -2,8 +2,8 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { CoreManager } from '../../src/desktop/core-manager'
-import { coreLaunch, pythonCommand } from '../../src/desktop/python-command'
+import { CoreManager } from '../../apps/desktop/src/main/core-manager'
+import { coreLaunch, pythonCommand } from '../../apps/desktop/src/main/python-command'
 
 const managers: CoreManager[] = []
 const createManager = (): CoreManager => {

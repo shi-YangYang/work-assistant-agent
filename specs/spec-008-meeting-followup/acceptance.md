@@ -9,7 +9,7 @@
 ## Spec Coverage
 
 - R1～R7 的既有覆盖沿用前两轮独立审查与[实施证据](implementation.md)：服务端身份与材料隔离、人工确认与发布、可追溯进展、报告快照／修订与调度、Web 页面和交互均已形成；静态原型不作为业务验收依据。
-- 第 4 项修复满足 R2／R3 的文字纠正和恢复要求。[worker.py](../../src/python/paa_server/worker.py) 将实际消费的转写 revision 放入可信 RunContext；[harness.py](../../src/python/paa_server/agent/harness.py) 的消息 checkpoint 绑定公司／员工／job／revision／输入 SHA-256。纠正后启用新输入，旧 pending tools 和旧完成结果不再恢复；未变输入继续 pending steps 或直接复用完成答复。
+- 第 4 项修复满足 R2／R3 的文字纠正和恢复要求。[worker.py](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/src/python/paa_server/worker.py) 将实际消费的转写 revision 放入可信 RunContext；[harness.py](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/src/python/paa_server/agent/harness.py) 的消息 checkpoint 绑定公司／员工／job／revision／输入 SHA-256。纠正后启用新输入，旧 pending tools 和旧完成结果不再恢复；未变输入继续 pending steps 或直接复用完成答复。
 - 工具和最终答复事务通过 `lease` 按 Job → Message 顺序加锁并校验源 revision，锁保持到写入结束。转写 PATCH 只锁 Message，不反向申请 Job 锁；处理中已提交的纠正会阻止迟到写入，并留下可理解的失败和手动重试入口。
 - ASR 返回时在同一消息锁事务选择生效文字与 revision；途中人工纠正优先，迟到 ASR 不覆盖新文字，也不把新版本与旧文字组合。已落库的原始建议、音频、转写历史与人工确认修订保留；业务工具仍按同 job／内容幂等。
 - 报告保持公司／员工／job 独立 checkpoint 和本 job 的已确认修订快照，未引入消息输入分支；授权历史边界和上下文上限保持。本次未改 API、schema 或依赖。

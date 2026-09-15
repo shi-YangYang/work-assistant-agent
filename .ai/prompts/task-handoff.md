@@ -1,8 +1,7 @@
 # Task Handoff — 当前状态
 
-2026-09-15 · [Spec 014](../../specs/spec-014-admin-business-assistant/spec.md) DONE，[独立验收 PASS](../../specs/spec-014-admin-business-assistant/acceptance.md)。用户已授权清理后 commit／push 到 dev。
+2026-09-15 · [Spec 015](../../specs/spec-015-monorepo-structure/spec.md) DONE，已通过[独立验收](../../specs/spec-015-monorepo-structure/acceptance.md)，首轮依赖声明 FAIL 及返工历史保留。迁移基线为 `6e83d28`；用户已要求提交并推送 `dev`，交付结果以 Git 记录及当前回复为准，不自动合并 `main`。
 
-- 已实现管理员业务问答、来源与本人督办，授权边界按 [决策 0014](../decisions/0014-team-assistant-authorization.md)。工程、固定输入界面及真实 API 证据分别记录在验收文件。
-- 真实同名及督办验证已补齐；模型接口 500、一次 checkpoint 恢复和短 ID 展示偏差集中记录在验收文件，不需重跑已通过流程。
-- 合成业务及临时联调脚本已清理，关键结果保留在 artifacts/spec014/，日常资料／配置和迁移备份保留；不提交密钥或备份。
-- 本次收尾只压缩重复文档和清理临时产物，按 S0 检查。提交与远端 CI 状态以实际 Git／GitHub 为准；交付 dev → main 链接，由用户合并，不手动触发或持续等待 CI。
+- 目录已迁为 `apps`／`services`／`packages`，根命令、虚拟环境、用户资料及固定治理目录保留；实际路径见[技术栈](../../constitution/tech-stack.md)，删除依据及测试见本 Spec 实施报告。
+- 日常 Electron 与公司 Web／API／worker 已由根命令启动，原会议、模型、设置及公司数据可见，未发起业务或模型请求。证据为 ignored `artifacts/spec015/daily-startup.json` 及同目录日志；服务保持运行。
+- 两端检查、冻结核心／目录包及 Docker 路径验证通过；Docker 使用临时同版本镜像前缀绕过官方源网络失败。Windows、远端 CI 与完整 E2E 未执行。源码未变时不重复已通过的检查；后续提交／推送仍按用户指令。

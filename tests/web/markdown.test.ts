@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
-import { Markdown } from '../../src/web/Markdown'
+import { Markdown } from '../../apps/web/src/Markdown'
 
 const render = (text: string) => renderToStaticMarkup(createElement(Markdown, { text }))
 

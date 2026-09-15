@@ -3,7 +3,7 @@ import {
   cleanServiceDraft,
   newModel,
   validateCompanyParameters,
-} from '../../src/web/model-service-drafts'
+} from '../../apps/web/src/model-service-drafts'
 
 describe('company model drafts', () => {
   it('retains ordinary edits without retaining write-only credentials', () => {

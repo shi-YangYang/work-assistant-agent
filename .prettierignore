@@ -1,5 +1,5 @@
 package-lock.json
-out/
-node_modules/
+**/out/
+**/node_modules/
 artifacts/
 .venv/

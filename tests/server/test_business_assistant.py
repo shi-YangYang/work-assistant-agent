@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import json
 from types import SimpleNamespace
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
@@ -399,7 +400,7 @@ async def test_historical_window_and_duplicate_names_are_explicit(setup):
         _, _, window = business.date_range(company, 'last_week')
         assert date.fromisoformat(window['start']).weekday() == 0
         assert date.fromisoformat(window['end']).weekday() == 6
-    day = (now() - timedelta(days=9)).date().isoformat()
+    day = prior.created_at.astimezone(ZoneInfo(company.rules['timezone'])).date().isoformat()
     old_result = json.loads(await query_team_business.coroutine(runtime=rt, period='custom', start=day, end=day))
     assert old_result['items'][0]['content']['status'] == 'blocked'
     current_result = json.loads(await query_team_business.coroutine(runtime=rt))

@@ -1,17 +1,8 @@
 # 项目文档
 
-此目录用于产品说明、技术设计、使用说明及后续运行维护文档。
+- [安装、启动与部署](../README.md)
+- [当前技术架构](architecture.md)
+- [项目使命](../constitution/mission.md)、[路线图](../constitution/roadmap.md)、[技术约束](../constitution/tech-stack.md)
+- [功能规格与验收](../specs/README.md)、[开发规范](../AGENTS.md)
 
-当前可阅读：
-
-- [项目入口](../README.md)
-- [项目使命](../constitution/mission.md)
-- [首版产品定义](product-definition.md)
-- [初始技术架构](architecture.md)
-- [路线图](../constitution/roadmap.md)
-- [技术约束与待定事项](../constitution/tech-stack.md)
-- [桌面形态决策](../.ai/decisions/0003-electron-desktop.md)（含历史比较归档）
-- [Spec 001：产品与技术基础](../specs/spec-001-product-and-technical-foundation/spec.md)
-- [开发规范](../AGENTS.md)
-
-功能规格统一放在 `specs/`，重要决策统一放在 `.ai/decisions/`，本目录不建立重复的规格或决策体系。
+本目录只维护当前架构说明，不复制 Spec 或部署步骤。已过时的首版产品定义于 Spec 015 清理，有效产品原则由使命和各 Spec 维护；旧文档可在 [6e83d28 快照](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/docs/product-definition.md) 查看。

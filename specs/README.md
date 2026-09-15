@@ -16,6 +16,7 @@
 | [012](spec-012-assistant-documents/spec.md) | 工作助手文件发送、解析、来源引用与私有存储 | PASS | [验收](spec-012-assistant-documents/acceptance.md)；七格式真实解析，模型使用固定响应 |
 | [013](spec-013-local-model-library/spec.md) | Electron 六款转写模型、三语言模式、旧会议重转写；展示错误率与内存 | DONE | [PASS；base 中文实测异常如实保留](spec-013-local-model-library/acceptance.md) |
 | [014](spec-014-admin-business-assistant/spec.md) | 管理员团队问答、业务来源与本人督办；服务端授权及历史失效 | DONE | [PASS；真实同名及督办确认已补齐，保留接口 500 与恢复记录](spec-014-admin-business-assistant/acceptance.md) |
+| [015](spec-015-monorepo-structure/spec.md) | 多端仓库、npm workspaces、构建路径迁移与无用文件清理 | DONE | [PASS](spec-015-monorepo-structure/acceptance.md)；Windows／远端 CI 未运行 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 
@@ -35,6 +36,8 @@
 目录用 `spec-XXX-short-name/`。协调 Agent 起草决策并轻量自查，交用户审查，不安排决策子 Agent 或独立验收。关键决策确认 → 实施 Agent 开发 → 新的独立验收 → PASS 交付；FAIL 记录具体问题，交新的实施 Agent 返工，再由新的独立验收 Agent 检查。不开 Spec 的修改由协调 Agent 直接完成。具体遵循 [Spec 工作规则](../.ai/rules/spec-decision-workflow.md) 及 AGENTS.md 的验证 / 停止和分支收尾规则。
 
 ## 历史记录
+
+Spec 001～014 的实施命令、源码路径与结果描述对应当时版本，不作为当前启动指南。Spec 015 迁移前内容可在 [6e83d28 快照](https://github.com/shi-YangYang/work-assistant-agent/tree/6e83d289a16a0783705ae17c879d39d1e059e839) 查阅；现行目录见 [技术栈](../constitution/tech-stack.md#目录约定)，新旧路径映射见 [Spec 015 Plan](spec-015-monorepo-structure/plan.md)。持续使用的评测入口及文档超链接随迁移更新，历史测试记录不改写成新命令。
 
 2026-09-10 按用户要求整理：保留编号、需求、历史 PASS / FAIL、修复依据及证据，把已结束的分轮报告归并到各 Spec 的实施摘要与验收记录。本次仅整理文档，没有重新运行测试或改变验收结论。整理前完整原文可在 [Git 快照 23ba685](https://github.com/shi-YangYang/work-assistant-agent/tree/23ba685f5af58039ec30297d8e20af91eef61f10/specs) 查阅，也可用 `git show 23ba685:specs/<目录>/<原文件>` 恢复。
 
