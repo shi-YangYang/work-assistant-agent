@@ -27,12 +27,12 @@
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
 | 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
-| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0006_feedback_usage`，私有附件、业务修订、任务反馈与模型请求记录 |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0007_report_obligations`，私有附件、业务修订、任务反馈、模型请求及汇报待办／通知 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、版本化来源与历史权限复核、持久恢复、人工确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |
 | 媒体 | Pillow 校验／规范图片，FFmpeg 处理有界短语音；外部图文／ASR API，不在服务端部署 faster-whisper |
 | 文档 | pypdf、python-docx、python-pptx 与标准库；受管子进程提取原生文字，不做 OCR；原件在私有卷，分段及定位在 PostgreSQL |
-| 部署 | Linux Docker Compose＋Caddy、API、单并发 worker、PostgreSQL；模型推理外置，服务器容量待实测 |
+| 部署 | Linux Docker Compose＋Caddy、API、单 worker 进程、PostgreSQL；任务有界并发，默认 3、可配 1～8，同一成员串行；模型推理外置，服务器容量待实测 |
 
 公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 共用 `packages/ui-web/` 的主题与选择控件 CSS，按各自设备能力组织导航；不能只共用颜色而偏离实际桌面视觉。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
 
@@ -76,6 +76,7 @@
 - 公司配置来自忽略的 `.env.company` 及数据库。API／worker 共用独立私有主密钥文件，凭证只在服务端短暂解密；数据库与密钥分开备份、配对恢复。旧环境模式仅为升级公司保留，显式导入后不回退。
 - 公司出站校验 DNS 并固定连接 IP，保留 TLS 主机验证；工具与任务均受公司／员工权限、输入版本、配置修订及预算约束。完整协议和恢复契约分别见 [Spec 008 Plan](../specs/spec-008-meeting-followup/plan.md)、[Spec 009 Plan](../specs/spec-009-company-model-services/plan.md)。
 - 公司聊天通过 PostgreSQL 有界快照与同源 SSE 交付受控反馈；工具和来源仍需完整校验。请求记录保留调用时的服务／模型，实际 Token 与预算估算分离，缺失为未知；见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
+- 公司报告采用受控结构化输出、服务端校验和事务保存；周期安排保存版本与生效边界，汇报待办独立于生成结果，站内提醒不调用模型。行为与验证入口见 [Spec 017](../specs/spec-017-report-reliability-and-reminders/spec.md)。
 - 密钥、录音、模型、数据库和原始公司材料不入 Git、不输出到日志。测试库与开发库分离，自动检查不用真实 Key、会议或麦克风。
 
 ## 验证边界

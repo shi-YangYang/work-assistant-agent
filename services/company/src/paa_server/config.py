@@ -35,6 +35,12 @@ class Settings:
     ffmpeg: str = field(default_factory=lambda: os.getenv('PAA_FFMPEG', 'ffmpeg'))
     daily_calls: int = field(default_factory=lambda: int(os.getenv('PAA_DAILY_MODEL_CALLS', '200')))
 
+    worker_concurrency: int = field(default_factory=lambda: int(os.getenv('PAA_WORKER_CONCURRENCY', '3')))
+
+    def __post_init__(self):
+        if not 1 <= self.worker_concurrency <= 8:
+            raise ValueError('PAA_WORKER_CONCURRENCY must be between 1 and 8')
+
     @property
     def checkpoint_url(self) -> str:
         return self.database_url.replace('postgresql+psycopg://', 'postgresql://', 1)

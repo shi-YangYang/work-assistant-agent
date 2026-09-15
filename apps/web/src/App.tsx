@@ -1,3 +1,4 @@
+import { ReportNotifications, ReportObligations } from './ReportObligations'
 import { ModelUsagePage } from './ModelUsage'
 import { useCallback, useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router'
@@ -475,17 +476,20 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             <div className="topbar-title">
               <Breadcrumbs />
             </div>
-            <div className="mobile-tools">
-              <button
-                className="icon-button"
-                aria-label="查找页面与操作"
-                onClick={() => setCommands(true)}
-              >
-                <Search size={19} />
-              </button>
-              <Link className="icon-button" aria-label="设置" to="/settings/account">
-                <Settings size={19} />
-              </Link>
+            <div className="topbar-actions">
+              <ReportNotifications />
+              <div className="mobile-tools">
+                <button
+                  className="icon-button"
+                  aria-label="查找页面与操作"
+                  onClick={() => setCommands(true)}
+                >
+                  <Search size={19} />
+                </button>
+                <Link className="icon-button" aria-label="设置" to="/settings/account">
+                  <Settings size={19} />
+                </Link>
+              </div>
             </div>
           </header>
           <Routes>
@@ -515,6 +519,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
               <>
                 <Route path="/team" element={<TeamPage />} />
                 <Route path="/team/details" element={<TeamMetricPage />} />
+                <Route path="/team/reports" element={<ReportObligations team />} />
                 <Route path="/team/:id" element={<TeamMemberPage />} />
                 <Route path="/members" element={<MembersPage />} />
               </>

@@ -97,15 +97,26 @@ async def test_timeout_reaps_real_child_and_resource_guard(tmp_path):
 
 async def test_cancellation_reaps_child(tmp_path):
     runner = tmp_path / 'runner.py'; marker = tmp_path / 'pid'
-    runner.write_text("import sys, os, time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\ntime.sleep(10)\n")
+    # Publish readiness only after the complete PID has been written and closed.
+    runner.write_text(
+        "import sys, os, time\nfrom pathlib import Path\n"
+        "marker = Path(sys.argv[1])\nstaged = marker.with_suffix('.tmp')\n"
+        "staged.write_text(str(os.getpid()))\nstaged.replace(marker)\ntime.sleep(10)\n"
+    )
     task = asyncio.create_task(parse_process(marker, '.txt', entrypoint=runner))
-    for _ in range(50):
-        if marker.exists(): break
-        await asyncio.sleep(.01)
-    pid = int(marker.read_text())
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError): await task
-    with pytest.raises(ProcessLookupError): os.kill(pid, 0)
+    try:
+        for _ in range(50):
+            if marker.exists(): break
+            await asyncio.sleep(.01)
+        assert marker.exists(), 'Parser child did not publish its PID'
+        pid = int(marker.read_text())
+        os.kill(pid, 0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError): await task
+        with pytest.raises(ProcessLookupError): os.kill(pid, 0)
+    finally:
+        if not task.done(): task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_pdf_decompression_is_bounded(tmp_path):

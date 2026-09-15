@@ -170,6 +170,50 @@ class ReportRevision(Owned, Base):
     __table_args__ = (UniqueConstraint('report_id', 'revision'),)
 
 
+class ReportSchedule(Record, Base):
+    __tablename__ = 'company_report_schedule'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    revision: Mapped[int] = mapped_column(Integer)
+    timezone: Mapped[str] = mapped_column(String(80))
+    rule: Mapped[dict] = mapped_column(JSONB)
+    effective_period: Mapped[str] = mapped_column(String(10))
+    next_period: Mapped[str] = mapped_column(String(10))
+    __table_args__ = (UniqueConstraint('company_id', 'kind', 'revision'),)
+
+
+class ReportEligibility(Owned, Base):
+    __tablename__ = 'company_report_eligibility'
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportObligation(Owned, Base):
+    __tablename__ = 'company_report_obligation'
+    kind: Mapped[str] = mapped_column(String(10))
+    period: Mapped[str] = mapped_column(String(10))
+    period_end: Mapped[str] = mapped_column(String(10))
+    timezone: Mapped[str] = mapped_column(String(80))
+    rule_revision: Mapped[int] = mapped_column(Integer)
+    generate_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reminders: Mapped[bool] = mapped_column(Boolean)
+    before_minutes: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(16), default='pending')
+    report_id: Mapped[str | None] = mapped_column(ForeignKey('company_report.id'), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    generation_checked: Mapped[bool] = mapped_column(Boolean, default=False)
+    __table_args__ = (UniqueConstraint('owner_id', 'kind', 'period'),)
+
+
+class ReportNotification(Owned, Base):
+    __tablename__ = 'company_report_notification'
+    obligation_id: Mapped[str] = mapped_column(ForeignKey('company_report_obligation.id'), unique=True)
+    stage: Mapped[str] = mapped_column(String(16))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Job(Owned, Base):
     __tablename__ = 'company_job'
     feedback: Mapped[dict] = mapped_column(JSONB, default=dict)

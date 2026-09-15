@@ -1,8 +1,8 @@
 import asyncio
-from datetime import datetime, time, timedelta
+from datetime import timedelta
 import json
 import logging
-from zoneinfo import ZoneInfo
+import signal
 
 import httpx
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -18,24 +18,52 @@ from .config import Settings
 from .db import database
 from .documents import prepare_document, verified_citations
 from .media import audio_wav, data_url, image_input
-from .models import Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, Session, WorkRevision, now
-from .service import ensure_report, owned
+from .models import Attachment, Job, LoginAttempt, Member, Message, ModelUsage, ProgressDraft, Session, now
+from .service import owned
+from .report_schedule import schedule_once
 
 log = logging.getLogger('paa.company')
 
 
-async def claim(sessions, owner_id=None):
-    async with sessions.begin() as db:
-        expired = (await db.scalars(select(Job).where(Job.state == 'running', Job.lease_until < now(), *([Job.owner_id == owner_id] if owner_id else [])).with_for_update(skip_locked=True))).all()
-        for job in expired:
+async def interrupted_state(db, job):
+    if job.result.get('reportSaved'):
+        return 'queued'
+    rows = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == job.id, ModelUsage.job_attempt == job.attempt, ModelUsage.job_fence == job.fence))).all()
+    # A reservation is not a sent request. Old jobs without request records use
+    # their conservative legacy marker; never silently repeat an unknown call.
+    sent = any(row.started_at is not None for row in rows) if rows else job.request_started
+    return 'awaiting_retry' if sent else 'queued'
+
+
+async def claim(sessions, owner_id=None, *, company_id=None):
+    scope = [*([Job.owner_id == owner_id] if owner_id else []), *([Job.company_id == company_id] if company_id else [])]
+    async with sessions() as db:
+        expired = (await db.execute(select(Job.id, Job.company_id, Job.owner_id).where(Job.state == 'running', Job.lease_until < now(), *scope).order_by(Job.created_at, Job.id).limit(50))).all()
+    for identifier, company, owner in expired:
+        async with sessions.begin() as db:
+            await business.company_lock(db, company)
+            actor = await db.scalar(select(Member).where(Member.id == owner).with_for_update())
+            job = await db.scalar(select(Job).where(Job.id == identifier).with_for_update())
+            if job.state != 'running' or job.lease_until is None or job.lease_until >= now():
+                continue
             await interrupt_usage(db, job)
             update_feedback(job)
-            job.state = 'awaiting_retry' if job.request_started else 'queued'
-            job.error = '处理意外中断，服务可能已计费；请确认后重试' if job.request_started else ''
+            job.state = await interrupted_state(db, job)
+            if job.state == 'queued':
+                job.request_started = False
+            if not actor.active or (job.kind == 'report' and actor.role != 'employee'):
+                job.state = 'cancelled'
+            job.error = '处理意外中断，请确认后重试' if job.state == 'awaiting_retry' else ''
             job.lease_until, job.fence, job.updated_at = None, job.fence + 1, now()
-        await db.flush()
+    async with sessions.begin() as db:
         running = aliased(Job)
-        job = await db.scalar(select(Job).join(Member, Member.id == Job.owner_id).where(Job.state == 'queued', Member.active.is_(True), ((Job.kind != 'report') | (Member.role == 'employee')), ~exists(select(running.id).where(running.owner_id == Job.owner_id, running.state == 'running')), *([Job.owner_id == owner_id] if owner_id else [])).order_by(Job.created_at).with_for_update(of=(Job, Member), skip_locked=True).limit(1))
+        query = select(Job).join(Member, Member.id == Job.owner_id).where(Job.state == 'queued', Member.active.is_(True), ((Job.kind != 'report') | (Member.role == 'employee')), ~exists(select(running.id).where(running.owner_id == Job.owner_id, running.state == 'running')), *scope).order_by(Job.created_at, Job.id)
+        company = await db.scalar(query.with_only_columns(Job.company_id).limit(1))
+        if not company:
+            return None
+        # Same order as all API/harness writes, including expired-lease recovery.
+        await business.company_lock(db, company)
+        job = await db.scalar(query.where(Job.company_id == company).with_for_update(of=(Job, Member), skip_locked=True).limit(1))
         if not job:
             return None
         if not job.access:
@@ -89,6 +117,10 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
     context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
     heartbeat_task = asyncio.create_task(heartbeat(context))
     try:
+        if job.kind == 'report':
+            from .report_generation import generate
+            await generate(context, model)
+            return
         if job.kind == 'document':
             await prepare_document(context, job.target_id)
             async with sessions.begin() as db:
@@ -98,24 +130,18 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             return
         async with sessions() as db:
             _, actor = await lease(db, context)
-            if job.kind == 'message':
-                message = await owned(db, Message, job.target_id, actor)
-                attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
-                transcript_revision = message.transcript_revision
-                text, transcript = message.text, message.transcript
-                reply_to = message.reply_to
-            else:
-                report = await owned(db, Report, job.target_id, actor)
-                sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(job.result.get('sourceIds', [])), WorkRevision.owner_id == actor.id, WorkRevision.company_id == actor.company_id))).all()
-                text = '请根据以下已确认工作修订生成报告，调用 draft_report 保存草稿。禁止使用其他未确认内容。\n' + json.dumps({'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'confirmed': [{'revisionId': r.id, 'content': r.content} for r in sources]}, ensure_ascii=False)
-                attachments, transcript, reply_to = [], '', None
+            message = await owned(db, Message, job.target_id, actor)
+            attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
+            transcript_revision = message.transcript_revision
+            text, transcript = message.text, message.transcript
+            reply_to = message.reply_to
         documents = []
         for attachment in attachments:
             if attachment.kind == 'document':
                 documents.append(await prepare_document(context, attachment.id))
         # Parsing is independent of credentials and survives model configuration errors.
         from .model_services import bind_job
-        context.model_purpose = 'report' if job.kind == 'report' else 'assistant'
+        context.model_purpose = 'assistant'
         async with sessions.begin() as binding_db:
             live, _ = await lease(binding_db, context)
             context.model_binding = await bind_job(binding_db, live, settings)
@@ -172,37 +198,32 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         answer = await invoke_harness(context, checkpointer, blocks, model)
         async with sessions.begin() as db:
             live, actor = await lease(db, context)
-            if job.kind == 'message':
-                message = await owned(db, Message, job.target_id, actor, lock=True)
-                message.reply, message.citations = await verified_citations(db, context, answer)
-                message.access = live.access
-                drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status == 'pending'))).all()
-                for draft in drafts:
-                    business.inherit(actor, draft, live)
-                    await business.require(db, actor, draft.access)
-                if live.access.get('team'):
-                    message.reply, references = await business.citations(db, actor, live.access, message.reply)
-                    message.citations = [*message.citations, *references]
-                    message.reply += await business.query_summary(db, live.result.get('businessQueries', []))
-                source_ids = set(context.document_versions) | {row['id'] for row in documents}
-                if source_ids:
-                    source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
-                    coverage = []
-                    for document in source_documents:
-                        read = len({entry[2] for entry in context.document_reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
-                        if document.extraction_status == 'failed':
-                            detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
-                        else:
-                            detail = f"实际读取 {read}/{document.extraction_info.get('chunks', 0)} 个文字分段"
-                            if document.extraction_status == 'partial':
-                                detail += '；文件仅部分可读'
-                        coverage.append(document.name + '：' + detail)
-                    message.reply += '\n\n材料范围：\n' + '\n'.join(coverage)
-                live.state = 'succeeded' if message.suggestions else 'awaiting_input'
-            else:
-                if not live.result.get('reportSaved'):
-                    raise ValueError('报告没有生成有效草稿，请重试')
-                live.state = 'succeeded'
+            message = await owned(db, Message, job.target_id, actor, lock=True)
+            message.reply, message.citations = await verified_citations(db, context, answer)
+            message.access = live.access
+            drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status == 'pending'))).all()
+            for draft in drafts:
+                business.inherit(actor, draft, live)
+                await business.require(db, actor, draft.access)
+            if live.access.get('team'):
+                message.reply, references = await business.citations(db, actor, live.access, message.reply)
+                message.citations = [*message.citations, *references]
+                message.reply += await business.query_summary(db, live.result.get('businessQueries', []))
+            source_ids = set(context.document_versions) | {row['id'] for row in documents}
+            if source_ids:
+                source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
+                coverage = []
+                for document in source_documents:
+                    read = len({entry[2] for entry in context.document_reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
+                    if document.extraction_status == 'failed':
+                        detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
+                    else:
+                        detail = f"实际读取 {read}/{document.extraction_info.get('chunks', 0)} 个文字分段"
+                        if document.extraction_status == 'partial':
+                            detail += '；文件仅部分可读'
+                    coverage.append(document.name + '：' + detail)
+                message.reply += '\n\n材料范围：\n' + '\n'.join(coverage)
+            live.state = 'succeeded' if message.suggestions else 'awaiting_input'
             update_feedback(live, 'complete', '')
             live.phase, live.error, live.lease_until, live.updated_at = 'complete', '', None, now()
     except LostLease:
@@ -230,25 +251,6 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         await asyncio.gather(heartbeat_task, return_exceptions=True)
 
 
-async def schedule_once(sessions, instant=None):
-    instant = instant or now()
-    async with sessions.begin() as db:
-        companies = (await db.scalars(select(Company))).all()
-        for company in companies:
-            zone = ZoneInfo(company.rules['timezone'])
-            local = instant.astimezone(zone)
-            for kind in ('daily', 'weekly'):
-                rule = company.rules[kind]
-                if not rule['enabled'] or not rule['generateTime'] or local.weekday() not in rule['days']:
-                    continue
-                due = datetime.combine(local.date(), time.fromisoformat(rule['generateTime']), zone)
-                if due > local or due <= company.rules_effective_at:
-                    continue
-                members = (await db.scalars(select(Member).where(Member.company_id == company.id, Member.active.is_(True), Member.role == 'employee'))).all()
-                for member in members:
-                    await ensure_report(db, member, kind, local.date(), scheduled=True)
-
-
 async def maintenance(sessions, settings):
     from .deletion import clean_files
     async with sessions.begin() as db:
@@ -272,22 +274,90 @@ async def scheduler(sessions, settings):
         await asyncio.sleep(60)
 
 
+async def worker_slot(sessions, settings, stop, *, saver_factory=None, runner=process_job):
+    factory = saver_factory or (lambda: AsyncPostgresSaver.from_conn_string(settings.checkpoint_url))
+    async with factory() as saver:
+        while not stop.is_set():
+            job = None
+            try:
+                job = await claim(sessions)
+                if job:
+                    await runner(job, sessions, settings, saver)
+                else:
+                    try:
+                        await asyncio.wait_for(stop.wait(), 1)
+                    except asyncio.TimeoutError:
+                        pass
+            except asyncio.CancelledError:
+                if job:
+                    async with sessions.begin() as db:
+                        await business.company_lock(db, job.company_id)
+                        await db.scalar(select(Member).where(Member.id == job.owner_id).with_for_update())
+                        live = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
+                        if live.state == 'running' and live.fence == job.fence:
+                            await interrupt_usage(db, live)
+                            live.state = await interrupted_state(db, live)
+                            if live.state == 'queued':
+                                live.request_started = False
+                            live.error = '处理已中断，请确认后重试' if live.state == 'awaiting_retry' else ''
+                            live.fence, live.lease_until, live.updated_at = live.fence + 1, None, now()
+                            update_feedback(live)
+                raise
+            except Exception as error:
+                log.warning('worker slot failure_type=%s', type(error).__name__)
+                try:
+                    await asyncio.wait_for(stop.wait(), 1)
+                except asyncio.TimeoutError:
+                    pass
+
+
+async def run_slots(sessions, settings, stop, *, saver_factory=None, runner=process_job, shutdown_timeout=10):
+    tasks = [asyncio.create_task(worker_slot(sessions, settings, stop, saver_factory=saver_factory, runner=runner)) for _ in range(settings.worker_concurrency)]
+    try:
+        stop_task = asyncio.create_task(stop.wait())
+        done, _ = await asyncio.wait([stop_task, *tasks], return_when=asyncio.FIRST_COMPLETED)
+        if stop_task not in done:
+            stop_task.cancel()
+            await asyncio.gather(stop_task, return_exceptions=True)
+            for task in done:
+                task.result()
+            raise RuntimeError('Worker processing slot exited unexpectedly')
+        await asyncio.wait(tasks, timeout=shutdown_timeout)
+    finally:
+        if 'stop_task' in locals() and not stop_task.done():
+            stop_task.cancel()
+            await asyncio.gather(stop_task, return_exceptions=True)
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 async def main():
     settings = Settings()
     engine, sessions = database(settings)
-    timer = asyncio.create_task(scheduler(sessions, settings))
-    try:
-        async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
-            while True:
-                job = await claim(sessions)
-                if job:
-                    await process_job(job, sessions, settings, saver)
-                else:
-                    await asyncio.sleep(1)
-    finally:
-        timer.cancel()
-        await asyncio.gather(timer, return_exceptions=True)
-        await engine.dispose()
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(signum, stop.set)
+        except NotImplementedError:
+            pass
+    # This deployment deliberately runs one bounded worker. A second process
+    # exits instead of silently multiplying model requests and connections.
+    from psycopg import AsyncConnection
+    async with await AsyncConnection.connect(settings.checkpoint_url, autocommit=True) as guard:
+        row = await (await guard.execute('SELECT pg_try_advisory_lock(17017)')).fetchone()
+        if not row[0]:
+            await engine.dispose()
+            raise RuntimeError('A company worker is already running')
+        timer = asyncio.create_task(scheduler(sessions, settings))
+        try:
+            await run_slots(sessions, settings, stop)
+        finally:
+            timer.cancel()
+            await asyncio.gather(timer, return_exceptions=True)
+            await engine.dispose()
 
 
 if __name__ == '__main__':

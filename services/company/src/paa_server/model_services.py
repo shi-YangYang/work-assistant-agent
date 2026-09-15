@@ -270,7 +270,7 @@ async def reserve_probe(sessions, settings, actor, choice=None):
 async def probe(request_db, sessions, settings, actor, body, config, key, fingerprint):
     started = time.monotonic()
     result = {'draftVersion': body.draftVersion, 'fingerprint': fingerprint, 'service': body.name, 'model': config['model'] if config else '', 'revision': body.expectedRevision, 'purpose': body.purpose, 'time': now().isoformat(), 'checks': [], 'usage': None}
-    names = ['语音转写'] if body.purpose == 'asr' else ['文字', *(['图片'] if body.purpose == 'assistant' else []), '工具往返']
+    names = ['语音转写'] if body.purpose == 'asr' else (['文字', '图片', '工具往返'] if body.purpose == 'assistant' else ['文字', '报告结构'])
     result['checks'] = [{'name': name, 'state': 'untested'} for name in names]
     current = 0
     totals = {'inputTokens': 0, 'outputTokens': 0}
@@ -339,16 +339,22 @@ async def probe(request_db, sessions, settings, actor, body, config, key, finger
                 if '红' not in (answer.get('content') or ''):
                     raise ProviderError('invalid_response', '模型未正确识别固定图片，不能确认图片能力')
                 result['checks'][current]['state'] = 'passed'; current += 1
-            tools = [{'type': 'function', 'function': {'name': 'probe_echo', 'description': 'Return the supplied value for this capability test; no business writes.', 'parameters': {'type': 'object', 'properties': {'value': {'type': 'string'}}, 'required': ['value'], 'additionalProperties': False}}}]
-            messages = [{'role': 'user', 'content': '调用 probe_echo，value 为 测试成功，然后根据工具返回值只回答测试成功。'}]
-            answer = await request(messages, tools=tools, tool_choice={'type': 'function', 'function': {'name': 'probe_echo'}})
-            calls = answer.get('tool_calls') or []
-            if len(calls) != 1 or calls[0]['function']['name'] != 'probe_echo' or json.loads(calls[0]['function']['arguments']) != {'value': '测试成功'}:
-                raise ProviderError('invalid_response', '模型没有返回所要求的完整工具调用')
-            messages += [answer, {'role': 'tool', 'tool_call_id': calls[0]['id'], 'content': '测试成功'}]
-            answer = await request(messages, tools=tools)
-            if answer.get('tool_calls') or '测试成功' not in (answer.get('content') or ''):
-                raise ProviderError('invalid_response', '模型没有根据工具结果完成回复')
+            if body.purpose == 'report':
+                answer = await request([{'role': 'user', 'content': '报告格式测试：返回 JSON 对象，字段 completed、ongoing、blockers、next 均为字符串，completed 填写“已完成测试”，其余为空。不要调用工具。'}])
+                from langchain_core.messages import AIMessage
+                from .report_generation import parse_report
+                parse_report(AIMessage(content=answer.get('content') or ''))
+            else:
+                tools = [{'type': 'function', 'function': {'name': 'probe_echo', 'description': 'Return the supplied value for this capability test; no business writes.', 'parameters': {'type': 'object', 'properties': {'value': {'type': 'string'}}, 'required': ['value'], 'additionalProperties': False}}}]
+                messages = [{'role': 'user', 'content': '调用 probe_echo，value 为 测试成功，然后根据工具返回值只回答测试成功。'}]
+                answer = await request(messages, tools=tools, tool_choice={'type': 'function', 'function': {'name': 'probe_echo'}})
+                calls = answer.get('tool_calls') or []
+                if len(calls) != 1 or calls[0]['function']['name'] != 'probe_echo' or json.loads(calls[0]['function']['arguments']) != {'value': '测试成功'}:
+                    raise ProviderError('invalid_response', '模型没有返回所要求的完整工具调用')
+                messages += [answer, {'role': 'tool', 'tool_call_id': calls[0]['id'], 'content': '测试成功'}]
+                answer = await request(messages, tools=tools)
+                if answer.get('tool_calls') or '测试成功' not in (answer.get('content') or ''):
+                    raise ProviderError('invalid_response', '模型没有根据工具结果完成回复')
             result['checks'][current]['state'] = 'passed'
     except Exception as error:
         failure = safe_error(error)

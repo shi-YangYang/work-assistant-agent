@@ -26,7 +26,7 @@ export function Breadcrumbs() {
       let ownerId: string | undefined
       let conversationId: string | null | undefined
       let label = pageName(point.path)
-      if (id && id !== 'details' && section === 'team')
+      if (id && !['details', 'reports'].includes(id) && section === 'team')
         label = (
           await api<{ member: Member }>(`/team/members/${id}/work`, { signal: controller.signal })
         ).member.name

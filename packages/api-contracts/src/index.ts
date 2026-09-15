@@ -175,8 +175,11 @@ export interface Schedule {
   days: number[]
   generateTime: string
   deadline: string
+  reminders?: boolean
+  beforeMinutes?: number
 }
 export interface Rules {
+  effectivePeriods?: Partial<Record<'daily' | 'weekly', string>>
   timezone: string
   daily: Schedule
   weekly: Schedule
@@ -323,4 +326,39 @@ export interface ModelUsage extends Page<UsageRecord> {
   }
   services: { id: string; name: string }[]
   models: string[]
+}
+
+export interface ReportObligation {
+  id: string
+  ownerId: string
+  name: string | null
+  kind: 'daily' | 'weekly'
+  period: string
+  periodEnd: string
+  timezone: string
+  deadlineAt: string
+  state: 'pending' | 'overdue' | 'submitted' | 'cancelled'
+  submittedAt: string | null
+  reportId: string | null
+  job?: Job | null
+}
+export interface ObligationPage extends Page<ReportObligation> {
+  period: string | null
+  counts: {
+    expected: number
+    submitted: number
+    pending: number
+    overdue: number
+    cancelled: number
+  }
+}
+export interface ReportNotification {
+  id: string
+  stage: 'ready' | 'due' | 'overdue'
+  read: boolean
+  updatedAt: string
+  obligation: ReportObligation
+}
+export interface NotificationPage extends Page<ReportNotification> {
+  unread: number
 }

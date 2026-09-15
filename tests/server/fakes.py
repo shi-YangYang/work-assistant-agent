@@ -32,8 +32,8 @@ class ControlledModel(ChatOpenAI):
                 facts = json.loads(raw[raw.index('{'):])['confirmed']
                 rows = [r['content'] for r in facts]
                 args = {'completed': '\n'.join(r['summary'] for r in rows if r['status'] == 'done'), 'ongoing': '\n'.join(r['summary'] for r in rows if r['status'] != 'done'), 'blockers': '\n'.join(r['blocker'] for r in rows if r['blocker']), 'next': '\n'.join(r['nextStep'] for r in rows if r['nextStep'])}
-                return ChatResult(generations=[ChatGeneration(message=call('draft_report', args))])
-            reply = AIMessage(content='报告草稿已准备，等待审阅。') if isinstance(last, ToolMessage) else call('draft_report', {'completed': '已完成方案初稿', 'ongoing': '项目继续推进', 'blockers': '等待报价', 'next': '核对报价'})
+                return ChatResult(generations=[ChatGeneration(message=AIMessage(content=json.dumps(args, ensure_ascii=False)))])
+            reply = AIMessage(content=json.dumps({'completed': '已完成方案初稿', 'ongoing': '项目继续推进', 'blockers': '等待报价', 'next': '核对报价'}, ensure_ascii=False))
         elif self.scenario == 'clarify':
             reply = AIMessage(content='这是哪个工作事项的进展？请补充名称。')
         elif isinstance(last, HumanMessage):

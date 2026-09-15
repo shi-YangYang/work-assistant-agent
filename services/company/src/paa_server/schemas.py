@@ -121,6 +121,8 @@ class Schedule(Input):
     days: list[int] = Field(default_factory=list, max_length=7)
     generateTime: str = ''
     deadline: str = ''
+    reminders: bool = True
+    beforeMinutes: int = Field(default=30, ge=0, le=1440)
 
     @model_validator(mode='after')
     def valid_schedule(self):

@@ -158,16 +158,16 @@ async def test_missing_provider_is_honest_and_expired_lease_requires_manual_retr
 async def test_report_schedule_rules_period_dedup_and_empty_regeneration(setup):
     settings,sessions,users,c=setup
     rules=(await c['admin'].get('/api/v1/settings/report-rules')).json()
-    new={k:v for k,v in rules.items() if k!='revision'}
+    new={k:v for k,v in rules.items() if k not in ('revision','effectivePeriods')}
     new['expectedRevision']=rules['revision']; new['daily']={'enabled':True,'days':list(range(7)),'generateTime':'10:00','deadline':'18:00'}
     new['timezone']='Asia/Shanghai'
     assert (await c['employee'].put('/api/v1/settings/report-rules',json=new)).status_code==403
     assert (await c['admin'].put('/api/v1/settings/report-rules',json=new)).status_code==200
     assert (await c['admin'].put('/api/v1/settings/report-rules',json=new)).status_code==409
-    async with sessions.begin() as db:
-        company=await db.get(Company,users['employee'].company_id);company.rules_effective_at=now()-timedelta(days=2)
+    from datetime import datetime
     from zoneinfo import ZoneInfo
-    instant=now().astimezone(ZoneInfo('Asia/Shanghai')).replace(hour=11,minute=0)
+    effective=(await c['admin'].get('/api/v1/settings/report-rules')).json()['effectivePeriods']['daily']
+    instant=datetime.fromisoformat(effective).replace(hour=11,tzinfo=ZoneInfo('Asia/Shanghai'))
     await schedule_once(sessions,instant);await schedule_once(sessions,instant)
     async with sessions() as db:
         reports=(await db.scalars(select(Report).where(Report.owner_id==users['employee'].id))).all()

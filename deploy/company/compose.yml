@@ -43,6 +43,7 @@ services:
     env_file: ../../.env.company
     environment: *service-env
     command: ['python', '-m', 'paa_server.worker']
+    stop_grace_period: 20s
     volumes:
       - media:/data/media
       - type: bind

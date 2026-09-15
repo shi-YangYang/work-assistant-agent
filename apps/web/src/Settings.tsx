@@ -198,7 +198,7 @@ export function RulesPage() {
             <section className="panel schedule-panel" key={kind}>
               <div className="row-between">
                 <h3>{kind === 'daily' ? '日报' : '周报'}</h3>
-                <span className="status">{value[kind].enabled ? '自动生成' : '未启用'}</span>
+                <span className="status">{value[kind].enabled ? '已启用' : '未启用'}</span>
               </div>
               {value[kind].enabled ? (
                 <dl className="summary-grid">
@@ -221,6 +221,16 @@ export function RulesPage() {
                 </dl>
               ) : (
                 <p className="muted">可在我的报告中手动准备报告。</p>
+              )}
+              {value[kind].enabled && (
+                <p className="muted">
+                  {value[kind].reminders === false
+                    ? '站内提醒已关闭'
+                    : `草稿就绪、截止前 ${value[kind].beforeMinutes ?? 30} 分钟及逾期后提醒`}
+                </p>
+              )}
+              {value.effectivePeriods?.[kind] && (
+                <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
               )}
             </section>
           ))}
@@ -277,7 +287,7 @@ export function RulesPage() {
                     checked={value[kind].enabled}
                     onChange={(e) => update(kind, { ...value[kind], enabled: e.target.checked })}
                   />
-                  自动生成
+                  启用汇报安排
                 </label>
               </div>
               <div className="weekdays">
@@ -321,6 +331,32 @@ export function RulesPage() {
                   />
                 </label>
               </div>
+              <div className="reminder-settings">
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={value[kind].reminders ?? true}
+                    onChange={(e) => update(kind, { ...value[kind], reminders: e.target.checked })}
+                  />
+                  站内提醒
+                </label>
+                <label>
+                  截止前提醒（分钟）
+                  <input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    disabled={value[kind].reminders === false}
+                    value={value[kind].beforeMinutes ?? 30}
+                    onChange={(e) =>
+                      update(kind, { ...value[kind], beforeMinutes: Number(e.target.value) })
+                    }
+                  />
+                </label>
+              </div>
+              {value.effectivePeriods?.[kind] && (
+                <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
+              )}
             </fieldset>
           ))}
           <p className="muted">
@@ -516,10 +552,15 @@ export function TeamPage() {
           <h2>团队看板</h2>
           <p>{data ? `更新于 ${dateLabel(data.updatedAt)}` : '查看员工已确认的进展与上报'}</p>
         </div>
-        <button onClick={refresh}>
-          <RefreshCw size={16} />
-          刷新
-        </button>
+        <div className="inline">
+          <Link className="button" to="/team/reports" state={detailState(location)}>
+            汇报情况
+          </Link>
+          <button onClick={refresh}>
+            <RefreshCw size={16} />
+            刷新
+          </button>
+        </div>
       </div>
       <div className="filters team-filters">
         <input

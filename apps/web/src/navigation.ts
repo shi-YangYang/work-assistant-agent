@@ -8,6 +8,7 @@ export function pageName(path: string) {
   const pathname = path.split('?')[0]
   if (pathname.startsWith('/assistant/')) return '会话'
   if (pathname.startsWith('/messages/')) return '原始上报'
+  if (pathname === '/team/reports') return '汇报情况'
   if (pathname === '/team/details') return '统计明细'
   if (pathname.startsWith('/team/')) return '员工详情'
   if (pathname.startsWith('/work/')) return '工作详情'

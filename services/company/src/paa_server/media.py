@@ -5,6 +5,7 @@ import io
 from pathlib import Path
 import tempfile
 import wave
+from weakref import WeakKeyDictionary
 from PIL import Image, UnidentifiedImageError
 from .service import problem
 
@@ -27,7 +28,17 @@ def image_input(data: bytes):
         problem(415, '图片无法读取，请转换为 JPEG、PNG 或 WebP 后重试')
 
 
+_conversion_limits = WeakKeyDictionary()
+
+
 async def audio_wav(path: Path, settings):
+    loop = asyncio.get_running_loop()
+    limit = _conversion_limits.setdefault(loop, asyncio.Semaphore(2))
+    async with limit:
+        return await _audio_wav(path, settings)
+
+
+async def _audio_wav(path: Path, settings):
     with tempfile.TemporaryDirectory(prefix='paa-audio-') as temp:
         output = Path(temp) / 'audio.wav'
         try:

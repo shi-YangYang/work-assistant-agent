@@ -43,85 +43,70 @@ def model(label, kind='message', fail_once=False):
     return RecoveryModel(model='controlled-recovery', api_key='no-network', base_url='http://127.0.0.1:1', max_retries=0, label=label, kind=kind, fail_once=fail_once)
 
 
-@pytest.mark.parametrize('kind', ['message', 'report'])
-async def test_retry_only_resumes_its_job_after_a_later_job_fails(setup, monkeypatch, kind):
+async def test_retry_only_resumes_its_message_job_after_a_later_job_fails(setup, monkeypatch):
     settings, sessions, users, clients = setup
     actor, employee = users['employee'], clients['employee']
-    if kind == 'message':
-        first = await send(employee, '只有 A 的原始事项')
-        first_id = first['jobId']
-    else:
-        async with sessions.begin() as db:
-            report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period='2026-09-12', period_end='2026-09-12', timezone='Asia/Shanghai')
-            db.add(report)
-            await db.flush()
-            report_id = report.id
-            a = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=1)
-            db.add(a)
-            await db.flush()
-            first_id = a.id
+    first = await send(employee, '只有 A 的原始事项')
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
-        first_job = await claim(sessions, actor.id)
-        assert first_job.id == first_id
-        await process_job(first_job, sessions, settings, saver, model=model('仅属于 A', kind, fail_once=True))
-        if kind == 'message':
-            second = await send(employee, '只有 B 的原始事项')
-            second_id = second['jobId']
-        else:
-            async with sessions.begin() as db:
-                b = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report_id, base_revision=1)
-                db.add(b)
-                await db.flush()
-                second_id = b.id
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=model('仅属于 A', fail_once=True))
+        second = await send(employee, '只有 B 的原始事项')
         original = ToolBoundary.awrap_tool_call
-        blocked = {second_id}
-
+        blocked = {second['jobId']}
         async def fail_before_b_tool(self, request, handler):
             if request.runtime.context.job_id in blocked:
                 blocked.remove(request.runtime.context.job_id)
                 raise RuntimeError('Controlled failure before B tool')
             return await original(self, request, handler)
-
         monkeypatch.setattr(ToolBoundary, 'awrap_tool_call', fail_before_b_tool)
-        second_job = await claim(sessions, actor.id)
-        assert second_job.id == second_id
-        await process_job(second_job, sessions, settings, saver, model=model('仅属于 B', kind))
-        assert (await employee.post(f'/api/v1/jobs/{first_id}/retry', json={})).status_code == 200
-        retried_a = await claim(sessions, actor.id)
-        retry_model = model('仅属于 A', kind)
-        await process_job(retried_a, sessions, settings, saver, model=retry_model)
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=model('仅属于 B'))
+        assert (await employee.post(f"/api/v1/jobs/{first['jobId']}/retry", json={})).status_code == 200
+        retry_model = model('仅属于 A')
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=retry_model)
         async with sessions() as db:
-            assert (await db.get(Job, first_id)).state == 'succeeded'
-            assert (await db.get(Job, second_id)).state == 'failed'
-            if kind == 'message':
-                drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.owner_id == actor.id))).all()
-                assert [(draft.message_id, draft.content['title']) for draft in drafts] == [(first['messageId'], '仅属于 A')]
-                assert '只有 B' not in str(retry_model.seen)
-            else:
-                assert (await db.get(Report, report_id)).content['completed'] == '仅属于 A'
-        # B must resume its own pending tool, without rerunning the model that
-        # proposed it. A different model label would expose an accidental restart.
-        assert (await employee.post(f'/api/v1/jobs/{second_id}/retry', json={})).status_code == 200
-        retried_b = await claim(sessions, actor.id)
-        resumed_model = model('不应重新生成的 C', kind)
-        await process_job(retried_b, sessions, settings, saver, model=resumed_model)
+            assert (await db.get(Job, first['jobId'])).state == 'succeeded'
+            assert (await db.get(Job, second['jobId'])).state == 'failed'
+            drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.owner_id == actor.id))).all()
+            assert [(draft.message_id, draft.content['title']) for draft in drafts] == [(first['messageId'], '仅属于 A')]
+            assert '只有 B' not in str(retry_model.seen)
+        assert (await employee.post(f"/api/v1/jobs/{second['jobId']}/retry", json={})).status_code == 200
+        resumed_model = model('不应重新生成的 C')
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=resumed_model)
         assert resumed_model.calls == 1
-        async with sessions() as db:
-            assert (await db.get(Job, second_id)).state == 'succeeded'
-            if kind == 'message':
-                b_draft = await db.scalar(select(ProgressDraft).where(ProgressDraft.message_id == second['messageId']))
-                assert b_draft.content['title'] == '仅属于 B'
-            else:
-                assert (await db.get(Report, report_id)).candidate['content']['completed'] == '仅属于 B'
-        # A graph completed before the worker's final DB write reuses its answer.
         async with sessions.begin() as db:
-            done = await db.get(Job, first_id)
+            assert (await db.get(Job, second['jobId'])).state == 'succeeded'
+            b_draft = await db.scalar(select(ProgressDraft).where(ProgressDraft.message_id == second['messageId']))
+            assert b_draft.content['title'] == '仅属于 B'
+            done = await db.get(Job, first['jobId'])
             done.state, done.fence, done.lease_until = 'running', done.fence + 1, now() + timedelta(seconds=90)
-        completed_model = model('不应发生的额外请求', kind)
+        completed_model = model('不应发生的额外请求')
         await process_job(done, sessions, settings, saver, model=completed_model)
         assert completed_model.calls == 0
-        for job_id in (first_id, second_id):
-            await saver.adelete_thread(f'{actor.company_id}:{actor.id}:job:{job_id}')
+
+
+async def test_report_retry_uses_its_input_and_old_saved_receipt_without_extra_call(setup):
+    from test_report_reliability import prepared, ReportModel, CONTENT
+    import json
+    settings,sessions,users,c=setup
+    report,first,_=await prepared(setup)
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel('invalid A'))
+    async with sessions.begin() as db:
+        second=Job(company_id=report.company_id,owner_id=report.owner_id,kind='report',target_id=report.id,base_revision=1,result=first.result)
+        db.add(second);await db.flush()
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel('invalid B'))
+    assert (await c['employee'].post('/api/v1/jobs/'+first.id+'/retry',json={})).status_code==200
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'仅属于 A'})))
+    async with sessions() as db:
+        assert (await db.get(Job,second.id)).state=='failed'
+    assert (await c['employee'].post('/api/v1/jobs/'+second.id+'/retry',json={})).status_code==200
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'仅属于 B'})))
+    async with sessions.begin() as db:
+        saved=await db.get(Report,report.id)
+        assert saved.content['completed']=='仅属于 A' and saved.candidate['content']['completed']=='仅属于 B'
+        done=await db.get(Job,first.id)
+        done.state,done.fence,done.lease_until='running',done.fence+1,now()+timedelta(seconds=90)
+    response=ReportModel('must not run')
+    await process_job(done,sessions,settings,None,model=response)
+    assert response.calls==0
 
 
 async def test_history_keeps_explicit_clarification_and_excludes_future_or_other_employee(setup):
