@@ -174,6 +174,7 @@ export function ConversationChat({
         '/messages',
         {
           conversationId,
+          ...(!conversationId ? { newConversation: true } : {}),
           text: current.text,
           attachmentIds: files.map((f) => f.attachment!.id),
           replyTo: current.replyTo ?? null,

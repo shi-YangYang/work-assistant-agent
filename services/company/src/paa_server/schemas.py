@@ -43,12 +43,15 @@ class ConversationEdit(ConversationCreate):
 
 class SendMessage(Input):
     conversationId: str | None = None
+    newConversation: bool = False
     text: str = Field(default='', max_length=8000)
     attachmentIds: list[str] = Field(default_factory=list, max_length=4)
     replyTo: str | None = None
 
     @model_validator(mode='after')
     def content_present(self):
+        if self.newConversation and self.conversationId:
+            raise ValueError('新会话不能同时指定已有会话')
         self.text = self.text.strip()
         if not self.text and not self.attachmentIds:
             raise ValueError('请输入文字或添加文件、图片、语音')

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import asyncio
 import io
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,6 +49,48 @@ async def confirmed(setup):
     work = (await client.get('/api/v1/work-items/' + response.json()['workIds'][0])).json()
     conv = (await client.get('/api/v1/conversations/' + conv['id'])).json()
     return conv, sent, uploaded, work
+
+
+@pytest.mark.parametrize('role', ['admin', 'employee'])
+async def test_new_chat_creates_only_on_send_without_reusing_history(setup, role):
+    _, _, _, clients = setup
+    client = clients[role]
+    for _ in range(2):
+        assert (await client.get('/api/v1/conversations')).json()['items'] == []
+        assert (await client.get('/api/v1/messages')).json()['items'] == []
+    empty = await client.post('/api/v1/messages', json={'newConversation': True, 'text': '  '}, headers=keyed())
+    assert empty.status_code == 422
+    assert (await client.get('/api/v1/conversations')).json()['items'] == []
+
+    async def send_new(value):
+        payload = {'newConversation': True, 'text': value}
+        headers = keyed()
+        first, retry = await asyncio.gather(*[
+            client.post('/api/v1/messages', json=payload, headers=headers) for _ in range(2)
+        ])
+        assert first.status_code == retry.status_code == 202
+        assert first.json() == retry.json()
+        return first.json()
+
+    old = await send_new('历史会话的消息')
+    sent = await send_new('全新会话的第一条消息')
+    assert sent['conversationId'] != old['conversationId']
+    rows = (await client.get('/api/v1/conversations')).json()['items']
+    assert len(rows) == 2
+    for item in (old, sent):
+        messages = (await client.get('/api/v1/messages', params={'conversationId': item['conversationId']})).json()['items']
+        assert [m['id'] for m in messages] == [item['messageId']]
+    conv = next(row for row in rows if row['id'] == sent['conversationId'])
+    assert conv['title'] == '全新会话的第一条消息'
+    followup = await message(client, conv, '同一会话的后续消息')
+    assert followup['conversationId'] == sent['conversationId']
+
+    invalid = await client.post('/api/v1/messages', json={'newConversation': True, 'text': '附件不可用', 'attachmentIds': [str(uuid4())]}, headers=keyed())
+    assert invalid.status_code == 404
+    conflict = await client.post('/api/v1/messages', json={'newConversation': True, 'conversationId': old['conversationId'], 'text': '矛盾的目标'}, headers=keyed())
+    assert conflict.status_code == 422
+    assert len((await client.get('/api/v1/conversations')).json()['items']) == 2
+    assert (await clients['outsider'].get('/api/v1/conversations/' + sent['conversationId'])).status_code == 404
 
 
 async def test_conversation_crud_reply_scope_history_and_empty_delete(setup):

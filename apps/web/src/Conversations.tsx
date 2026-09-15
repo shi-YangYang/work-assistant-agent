@@ -48,12 +48,6 @@ export function Assistant() {
     )
     .map((item) => (renamed[item.id]?.revision >= item.revision ? renamed[item.id] : item))
   const nextCursor = cursor === undefined ? list.data?.nextCursor : cursor
-  useEffect(() => {
-    if (!conversationId && !search && list.data?.items.some((item) => !removed.includes(item.id)))
-      navigate(`/assistant/${list.data.items.find((item) => !removed.includes(item.id))!.id}`, {
-        replace: true,
-      })
-  }, [conversationId, search, list.data, navigate, removed])
   const updated = () => {
     list.refresh()
     current.refresh()
@@ -64,30 +58,21 @@ export function Assistant() {
     notify('请先停止录音，再管理会话；录音会保留在当前会话。')
     return false
   }
-  async function create() {
+  function create() {
     if (!stopBeforeAction()) return
-    setBusy(true)
-    try {
-      const item = await write<Conversation>('/conversations', {})
-      navigate(`/assistant/${item.id}`)
-      setExpanded(false)
-      setSearch('')
-      updated()
-    } catch (e) {
-      setFailure((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+    navigate('/assistant')
+    setExpanded(false)
+    setFailure('')
   }
   return (
     <div className="assistant-workspace">
       <section className="conversation-main">
         <header className="conversation-heading">
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
-          <BusyButton busy={busy} onClick={() => void create()}>
+          <button onClick={create}>
             <Plus size={16} />
             新会话
-          </BusyButton>
+          </button>
           <div
             ref={picker}
             className="conversation-picker"
@@ -221,7 +206,7 @@ export function Assistant() {
             )}
           </div>
         </header>
-        <ErrorNotice>{failure || current.error}</ErrorNotice>
+        <ErrorNotice>{failure || (conversationId ? current.error : '')}</ErrorNotice>
         {(!conversationId || current.data) && (
           <ConversationChat
             key={conversationId ?? 'new'}
@@ -301,10 +286,7 @@ export function Assistant() {
                   setDraft(key, undefined)
                   setOlder((rows) => rows.filter((row) => row.id !== deleting.id))
                   setRemoved((previous) => [...previous, deleting.id])
-                  if (conversationId === deleting.id) {
-                    const next = items.find((item) => item.id !== deleting.id)
-                    navigate(next ? `/assistant/${next.id}` : '/assistant', { replace: true })
-                  }
+                  if (conversationId === deleting.id) navigate('/assistant', { replace: true })
                   setDeleting(null)
                   updated()
                   notify('会话已删除')
