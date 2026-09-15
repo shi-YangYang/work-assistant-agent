@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { resolve } from 'node:path'
 export default defineConfig({
   root: resolve(import.meta.dirname, 'src'),
+  publicDir: resolve(import.meta.dirname, '../../packages/ui-web/public'),
   plugins: [react()],
   server: {
     host: '127.0.0.1',

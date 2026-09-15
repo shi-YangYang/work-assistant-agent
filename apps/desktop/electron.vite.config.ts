@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   main: {
     build: {
-      externalizeDeps: { exclude: ['@paa/model-config'] },
+      externalizeDeps: { exclude: ['@paa/model-config', '@paa/ui-web'] },
       rollupOptions: { input: { index: resolve(import.meta.dirname, 'src/main/main.ts') } },
     },
   },
@@ -16,6 +16,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(import.meta.dirname, 'src/renderer'),
+    publicDir: resolve(import.meta.dirname, '../../packages/ui-web/public'),
     plugins: [
       react(),
       {

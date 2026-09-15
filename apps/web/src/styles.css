@@ -1,5 +1,6 @@
 @import '@paa/ui-web/theme.css';
 @import '@paa/ui-web/select.css';
+@import '@paa/ui-web/brand.css';
 * {
   box-sizing: border-box;
 }
@@ -224,16 +225,6 @@ fieldset {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.brand-mark {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  border-radius: 9px;
-  color: var(--accent-ink);
-  background: var(--accent);
 }
 .brand:hover {
   text-decoration: none;

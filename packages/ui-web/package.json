@@ -4,7 +4,9 @@
   "private": true,
   "exports": {
     "./theme.css": "./src/theme.css",
-    "./select.css": "./src/select.css"
+    "./select.css": "./src/select.css",
+    "./brand.css": "./src/brand.css",
+    "./app-icon.png": "./assets/app-icon.png"
   },
   "sideEffects": [
     "**/*.css"

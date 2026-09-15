@@ -399,9 +399,7 @@ export function App(): React.JSX.Element {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">
-            <AudioLines size={22} />
-          </span>
+          <span className="brand-mark" aria-hidden="true" />
           <strong>个人工作助手</strong>
         </div>
         <button className="command-trigger" onClick={() => setCommandOpen(true)}>
