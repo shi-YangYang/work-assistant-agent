@@ -58,7 +58,9 @@ class Preset(Input):
 class ServiceModel(Input):
     id: str = Field(min_length=1, max_length=80)
     model: str = Field(min_length=1, max_length=200)
-    protocol: Literal['chat', 'transcriptions', 'qwen-asr'] = 'chat'
+    protocol: Literal['chat', 'transcriptions', 'qwen-asr', 'dashscope-asr'] = 'chat'
+    # UI selection mode; execution always uses the saved concrete protocol.
+    protocolMode: Literal['auto', 'manual'] = 'manual'
     presets: list[Preset] = Field(default_factory=list, max_length=16)
     selectedPresetId: str | None = None
     streaming: bool = True
@@ -73,6 +75,8 @@ class ServiceModel(Input):
             raise ValueError('推理预设不存在或重复')
         if self.protocol != 'chat' and (self.presets or self.selectedPresetId):
             raise ValueError('语音接口不接受聊天推理预设')
+        if self.protocol == 'dashscope-asr' and self.language:
+            raise ValueError('阿里原生语音转写使用自动语言识别，请清空识别语言')
         return self
 
 

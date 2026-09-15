@@ -148,7 +148,9 @@ def request_options(model, preset_id=None):
 async def catalog(settings, base_url, key):
     base_url = normalize_url(base_url, settings)
     parsed = urlsplit(base_url)
-    official = parsed.hostname in ('dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com', 'dashscope-us.aliyuncs.com', 'cn-hongkong.dashscope.aliyuncs.com') or bool(re.fullmatch(r'[a-zA-Z0-9-]+\.(cn-beijing|ap-northeast-1|eu-central-1|us-east-1)\.maas\.aliyuncs\.com', parsed.hostname or ''))
+    # Token Plan shares the workspace hostname pattern, but exposes the OpenAI
+    # catalog at the configured base URL instead of DashScope's /api/v1/models.
+    official = parsed.hostname != 'token-plan.cn-beijing.maas.aliyuncs.com' and (parsed.hostname in ('dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com', 'dashscope-us.aliyuncs.com', 'cn-hongkong.dashscope.aliyuncs.com') or bool(re.fullmatch(r'[a-zA-Z0-9-]+\.(cn-beijing|ap-northeast-1|eu-central-1|us-east-1)\.maas\.aliyuncs\.com', parsed.hostname or '')))
     endpoint = f'{parsed.scheme}://{parsed.netloc}/api/v1/models' if official else base_url + '/models'
     ids, size, deadline = [], 0, time.monotonic() + 30
     async with client(settings) as http:
@@ -241,6 +243,30 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
         raise ProviderError('invalid_response', '模型未返回完整文字或有效工具调用') from None
 
 
+def dashscope_asr_endpoint(base):
+    # Keep the configured origin and any gateway prefix. Native ASR can share
+    # a service's OpenAI-compatible Base URL, without another host or API key.
+    if base.endswith('/compatible-mode/v1'):
+        base = base[:-len('/compatible-mode/v1')] + '/api/v1'
+    elif not urlsplit(base).path:
+        base += '/api/v1'
+    return base + '/services/aigc/multimodal-generation/generation'
+
+
+def dashscope_asr_text(data):
+    # Token Plan returns text directly; DashScope may wrap it in output.
+    for _ in range(3):
+        if not isinstance(data, dict):
+            break
+        if isinstance(data.get('text'), str):
+            return data['text']
+        sentence = data.get('sentence')
+        if isinstance(sentence, dict) and isinstance(sentence.get('text'), str):
+            return sentence['text']
+        data = data.get('output')
+    return None
+
+
 async def transcribe(settings, config, key, wav):
     if len(wav) > 6 * 1024 * 1024:
         raise ProviderError('limit', '规范化语音超过上传限制，请缩短语音')
@@ -252,14 +278,30 @@ async def transcribe(settings, config, key, wav):
             if config.get('language'):
                 fields['language'] = config['language']
             response = await http.post(base + '/audio/transcriptions', headers=headers, data=fields, files={'file': ('speech.wav', wav, 'audio/wav')})
-        else:
+        elif config['protocol'] == 'dashscope-asr':
+            if config.get('language'):
+                raise ProviderError('protocol', '阿里原生语音转写使用自动语言识别，请清空识别语言')
+            body = {
+                'model': config['model'],
+                'input': {'messages': [{'role': 'user', 'content': [{'type': 'input_audio', 'input_audio': {'data': 'data:audio/wav;base64,' + base64.b64encode(wav).decode()}}]}]},
+                'parameters': {'format': 'wav', 'sample_rate': '16000'},
+            }
+            response = await http.post(dashscope_asr_endpoint(base), headers={**headers, 'X-DashScope-SSE': 'disable'}, json=body)
+        elif config['protocol'] == 'qwen-asr':
             body = {'model': config['model'], 'messages': [{'role': 'user', 'content': [{'type': 'input_audio', 'input_audio': {'data': 'data:audio/wav;base64,' + base64.b64encode(wav).decode()}}]}], 'stream': False}
             if config.get('language'):
                 body['asr_options'] = {'language': config['language']}
             response = await http.post(base + '/chat/completions', headers=headers, json=body)
+        else:
+            raise ProviderError('protocol', '请选择支持的语音转写协议')
         status_error(response)
         data = response.json()
-        text = data.get('text') if config['protocol'] == 'transcriptions' else data['choices'][0]['message']['content']
+        if config['protocol'] == 'dashscope-asr':
+            text = dashscope_asr_text(data)
+        elif config['protocol'] == 'transcriptions':
+            text = data.get('text')
+        else:
+            text = data['choices'][0]['message']['content']
         if not isinstance(text, str) or not text.strip() or len(text) > 8000:
             raise ProviderError('invalid_response', '语音接口没有返回有效文字')
         return text, token_usage(data.get('usage'))

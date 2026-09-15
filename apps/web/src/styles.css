@@ -1895,6 +1895,25 @@ dialog::backdrop {
   font-weight: 400;
   font-size: 12px;
 }
+.model-protocol-status {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.model-advanced {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--subtle);
+}
+.model-advanced > summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.model-advanced[open] > summary {
+  margin-bottom: 12px;
+}
 .model-section-heading {
   border-top: 1px solid var(--line);
   padding-top: 16px;
