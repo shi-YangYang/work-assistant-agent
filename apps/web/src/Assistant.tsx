@@ -1,4 +1,5 @@
 import { useJobFeedback, stageNames } from './job-feedback'
+import { submitOnEnter } from './assistant-session'
 import { BusinessReply, BusinessSources } from './BusinessSources'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
@@ -33,7 +34,7 @@ export function ConversationChat({
   onSent: (conversationId: string) => void
 }) {
   const composerKey = `composer:${conversationId ?? 'new'}`
-  const { drafts, setDraft, notify, identity } = useWorkspace()
+  const { drafts, setDraft, notify, identity, rememberConversation } = useWorkspace()
   const storedComposer = drafts[composerKey] as Composer | undefined
   const composer = useMemo(
     () => storedComposer ?? { text: '', files: [], key: '' },
@@ -198,6 +199,7 @@ export function ConversationChat({
       )
       refresh()
       notify('已发送')
+      rememberConversation(sent.conversationId)
       if (active.current) onSent(sent.conversationId)
     } catch (e) {
       if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
@@ -362,6 +364,7 @@ export function ConversationChat({
             value={composer.text}
             disabled={busy}
             onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
+            onKeyDown={(event) => submitOnEnter(event, () => void send())}
           />
           <ErrorNotice>{sendError}</ErrorNotice>
           <div className="composer-actions">

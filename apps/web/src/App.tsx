@@ -1,5 +1,5 @@
 import { ModelUsagePage } from './ModelUsage'
-import { useEffect, useState, useRef, useLayoutEffect } from 'react'
+import { useCallback, useEffect, useState, useRef, useLayoutEffect } from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router'
 import {
   BriefcaseBusiness,
@@ -18,11 +18,14 @@ import {
   ChartColumn,
   PanelLeftOpen,
   PanelLeftClose,
+  Plus,
+  List,
 } from 'lucide-react'
 import type { Identity } from '@paa/api-contracts'
 import { api, setCsrf, write } from './api'
 import { Workspace } from './workspace'
-import { BusyButton, ErrorNotice, Modal } from './ui'
+import { BusyButton, ErrorNotice } from './ui'
+import { CommandPalette, type WebCommand } from './CommandPalette'
 import type { DraftStore } from './workspace'
 import { ModelServices } from './ModelServices'
 import { SourcePage } from './Assistant'
@@ -40,18 +43,62 @@ import {
 } from './Settings'
 
 const pages = [
-  { path: '/assistant', title: '工作助手', icon: MessageSquare },
-  { path: '/work', title: '我的工作', icon: BriefcaseBusiness },
-  { path: '/reports', title: '我的报告', icon: FileText },
-  { path: '/team', title: '团队看板', icon: LayoutDashboard, admin: true },
-  { path: '/members', title: '成员管理', icon: Users, admin: true },
+  {
+    path: '/assistant',
+    title: '工作助手',
+    detail: '继续对话，记录进展与查询资料',
+    icon: MessageSquare,
+  },
+  {
+    path: '/work',
+    title: '我的工作',
+    detail: '查找工作事项，更新进展与下一步',
+    icon: BriefcaseBusiness,
+  },
+  { path: '/reports', title: '我的报告', detail: '查看、编辑和提交日报与周报', icon: FileText },
+  {
+    path: '/team',
+    title: '团队看板',
+    detail: '了解员工进展、阻碍与汇报情况',
+    icon: LayoutDashboard,
+    admin: true,
+  },
+  {
+    path: '/members',
+    title: '成员管理',
+    detail: '管理员工账号与访问权限',
+    icon: Users,
+    admin: true,
+  },
 ]
 const settingsPages = [
-  { path: '/settings/account', title: '账户', icon: UserRound },
-  { path: '/settings/appearance', title: '外观', icon: Palette },
-  { path: '/settings/rules', title: '汇报规则', icon: CalendarClock },
-  { path: '/settings/models', title: '模型服务管理', icon: Cpu, admin: true },
-  { path: '/settings/usage', title: '模型用量', icon: ChartColumn, admin: true },
+  { path: '/settings/account', title: '账户', detail: '查看账号信息与修改密码', icon: UserRound },
+  {
+    path: '/settings/appearance',
+    title: '外观',
+    detail: '浅色、深色或跟随系统主题',
+    icon: Palette,
+  },
+  {
+    path: '/settings/rules',
+    title: '汇报规则',
+    detail: '查看汇报周期、时区与生成时间',
+    icon: CalendarClock,
+  },
+  {
+    path: '/settings/models',
+    title: '模型服务管理',
+    detail: '配置模型 API、服务连接与用途',
+    icon: Cpu,
+    admin: true,
+  },
+  {
+    path: '/settings/usage',
+    title: '模型用量',
+    detail: '查看调用状态、耗时与 Token 用量',
+    icon: ChartColumn,
+    admin: true,
+  },
 ]
 export function App() {
   const [identity, setIdentity] = useState<Identity | null>(null)
@@ -182,7 +229,26 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   const [drafts, setDrafts] = useState<DraftStore>({})
   const [toast, setToast] = useState('')
   const [commands, setCommands] = useState(false)
-  const [query, setQuery] = useState('')
+  const conversationStorageKey = `paa.company.last-conversation:${identity.company.id}:${identity.member.id}`
+  const [lastConversationId, setLastConversationId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem(conversationStorageKey)
+    } catch {
+      return null
+    }
+  })
+  const rememberConversation = useCallback(
+    (id: string | null) => {
+      setLastConversationId(id)
+      try {
+        if (id) sessionStorage.setItem(conversationStorageKey, id)
+        else sessionStorage.removeItem(conversationStorageKey)
+      } catch {
+        /* In-memory navigation still works when storage is unavailable. */
+      }
+    },
+    [conversationStorageKey],
+  )
   const [expandedNav, setExpandedNav] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
@@ -233,11 +299,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   }, [toast])
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (
-        e.isComposing ||
-        (e.target as HTMLElement).closest('input,textarea,[contenteditable=true]')
-      )
-        return
+      if (e.isComposing) return
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setCommands(true)
@@ -265,8 +327,61 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
       setToast((e as Error).message)
     }
   }
+  const openCommandPage = (path: string) => {
+    if (drafts.recording) {
+      setToast('请先停止录音，再切换页面；已录制的内容会保留。')
+      return
+    }
+    setExpandedNav(false)
+    navigate(path)
+  }
+  const commandItems: WebCommand[] = [
+    {
+      id: 'new-conversation',
+      label: '新会话',
+      detail: '从一个新的话题开始',
+      group: '快捷操作',
+      icon: Plus,
+      run: () => openCommandPage('/assistant?new=1'),
+    },
+    {
+      id: 'find-conversation',
+      label: '查找会话',
+      detail: '搜索、切换和管理已有会话',
+      group: '快捷操作',
+      icon: List,
+      run: () => openCommandPage('/assistant?conversations=1'),
+    },
+    ...allowed.map((page) => ({
+      id: page.path,
+      label: page.title,
+      detail: page.detail,
+      group: '工作空间',
+      icon: page.icon,
+      current: location.pathname === page.path || location.pathname.startsWith(page.path + '/'),
+      run: () => openCommandPage(page.path),
+    })),
+    ...allowedSettings.map((page) => ({
+      id: page.path,
+      label: page.title,
+      detail: page.detail,
+      group: '设置',
+      icon: page.icon,
+      current: location.pathname === page.path,
+      run: () => openCommandPage(page.path),
+    })),
+  ]
   return (
-    <Workspace.Provider value={{ identity, drafts, setDraft, notify: setToast }}>
+    <Workspace.Provider
+      value={{
+        identity,
+        drafts,
+        setDraft,
+        notify: setToast,
+        lastConversationId,
+        rememberConversation,
+      }}
+    >
       <div
         className={`company-shell ${expandedNav ? 'nav-expanded' : ''}`}
         onClickCapture={(event) => {
@@ -307,11 +422,11 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           </Link>
           <button
             className="search-launch"
-            title="查找页面"
-            aria-label="查找页面"
+            title="查找页面与操作"
+            aria-label="查找页面与操作"
             onClick={() => setCommands(true)}
           >
-            <Command size={16} /> <span className="nav-label">查找页面</span>
+            <Command size={16} /> <span className="nav-label">查找页面与操作</span>
             <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
           </button>
           <nav aria-label="工作空间">
@@ -363,7 +478,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             <div className="mobile-tools">
               <button
                 className="icon-button"
-                aria-label="查找页面"
+                aria-label="查找页面与操作"
                 onClick={() => setCommands(true)}
               >
                 <Search size={19} />
@@ -464,33 +579,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
           {toast}
         </div>
       )}
-      {commands && (
-        <Modal title="查找页面与操作" onClose={() => setCommands(false)}>
-          <input
-            autoFocus
-            placeholder="搜索页面"
-            aria-label="搜索页面"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className="command-list">
-            {[...allowed, ...allowedSettings]
-              .filter((p) => p.title.includes(query))
-              .map((p) => (
-                <button
-                  key={p.path}
-                  onClick={() => {
-                    navigate(p.path)
-                    setCommands(false)
-                    setQuery('')
-                  }}
-                >
-                  {p.title}
-                </button>
-              ))}
-          </div>
-        </Modal>
-      )}
+      {commands && <CommandPalette commands={commandItems} onClose={() => setCommands(false)} />}
     </Workspace.Provider>
   )
 }

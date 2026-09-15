@@ -1,8 +1,8 @@
 # Task Handoff — 当前状态
 
-2026-09-15 · [Spec 016](../../specs/spec-016-web-search-metrics-and-feedback/spec.md) 实施完成，新的独立验收为 [PASS](../../specs/spec-016-web-search-metrics-and-feedback/acceptance.md)。
+2026-09-15 · Web 会话恢复、Enter 发送及查找面板已由主 Agent 直接完成；用户已要求提交并推送到 `dev`，由用户通过 PR 决定合并。
 
-- 已完成工作分页与完整搜索、团队看板统一口径、受控聊天反馈及管理员模型用量。首轮发送前拒绝误计请求的缺陷已由新的实施／验收 Agent 闭环，证据集中在实施与验收报告。
-- 本轮通过公司子系统定向检查及日常环境电脑／手机页面检查，未调用真实在线模型、未运行远端 CI。没有向日常会话写测试消息。
+- 工作助手按账号记住上次会话，重新进入时验证可访问性；新会话用显式空白入口，首次发送才创建。Enter 发送、Shift+Enter 换行，过滤输入法确认和按键重复。
+- 查找面板增加快捷操作／工作空间／设置分组、图标、说明与键盘选择，保留角色过滤。5 项定向用例、Web 类型检查、修改文件 Lint 通过；电脑／390px 手机页面已检查，没有发送测试消息或调用真实模型。
 - 日常数据库已私密备份并迁移到 0006，最终 Web／API／worker 由 `npm run dev:company` 启动，Web 地址为 `http://127.0.0.1:5174`；保留原配置和业务数据。
-- 用户已要求提交并推送本轮改动到 `dev`，此前本地 README 提交 `04ef5d3` 随分支一并推送；由用户通过 `dev → main` PR 决定合并。
+- 上轮 [Spec 016](../../specs/spec-016-web-search-metrics-and-feedback/spec.md) 已独立验收 PASS，并以 `001f27a` 推送到 `dev`；GitHub 查询受限，未确认远端 CI。由用户通过 `dev → main` PR 决定合并。
