@@ -10,7 +10,7 @@ export const languageNames: Record<TranscriptionLanguage, string> = {
 }
 export const bytesLabel = (bytes: number): string =>
   bytes >= 1e9 ? `${(bytes / 1e9).toFixed(2)} GB` : `${Math.ceil(bytes / 1e6)} MB`
-type Measurement = { errorRate: number; peakRssBytes: number }
+type Measurement = { errorRate: number; peakRssBytes: number; peakGpuBytes?: number }
 type Evidence = {
   measuredAt?: string
   environment?: {
@@ -38,15 +38,25 @@ type Evidence = {
     string,
     {
       revision?: string
+      measuredAt?: string
       languages?: Record<string, Measurement | null>
       missingReasons?: Record<string, string>
     }
   >
 }
 
-function ModelEvidence({ model }: { model: ModelEntry }): React.JSX.Element {
-  const data = benchmarks as unknown as Evidence
-  const measured = data.models?.[model.id]
+function ModelEvidence({
+  model,
+  backend,
+}: {
+  model: ModelEntry
+  backend: 'cpu' | 'mlx' | 'cuda' | null
+}): React.JSX.Element {
+  const collection = benchmarks as unknown as Evidence & { gpu?: Record<string, Evidence> }
+  const data = backend === 'cpu' ? collection : backend ? collection.gpu?.[backend] : undefined
+  const candidate = data?.models?.[model.id]
+  const measured = candidate?.revision === model.revision ? candidate : undefined
+  const measuredAt = measured?.measuredAt ?? data?.measuredAt
   const hasMeasurements = Object.keys(measured?.languages ?? {}).length > 0
   return (
     <details className="local-model-evidence">
@@ -56,8 +66,7 @@ function ModelEvidence({ model }: { model: ModelEntry }): React.JSX.Element {
       <div className="local-model-evidence-body">
         <div className="model-quality-grid">
           {(Object.keys(languageNames) as TranscriptionLanguage[]).map((language) => {
-            const value =
-              measured?.revision === model.revision ? measured.languages?.[language] : null
+            const value = measured?.languages?.[language]
             const reason = measured?.missingReasons?.[language]
             return (
               <div key={language}>
@@ -80,11 +89,19 @@ function ModelEvidence({ model }: { model: ModelEntry }): React.JSX.Element {
                     </dd>
                   </div>
                   <div>
-                    <dt>峰值内存</dt>
+                    <dt>{backend === 'mlx' ? '进程峰值内存' : '峰值内存'}</dt>
                     <dd>
                       {value ? bytesLabel(value.peakRssBytes) : reason ? '测试未完成' : '未实测'}
                     </dd>
                   </div>
+                  {backend === 'mlx' && (
+                    <div>
+                      <dt>GPU 峰值分配</dt>
+                      <dd>
+                        {value?.peakGpuBytes != null ? bytesLabel(value.peakGpuBytes) : '未实测'}
+                      </dd>
+                    </div>
+                  )}
                 </dl>
                 {reason && <p>{reason}</p>}
               </div>
@@ -93,17 +110,18 @@ function ModelEvidence({ model }: { model: ModelEntry }): React.JSX.Element {
         </div>
         <p>
           错误率越低越好；三种语言的计分单位不同。内存为基准转写进程峰值，含模型加载、解码与评分开销；不等于文件体积或整应用内存。
+          {backend === 'mlx' && 'GPU 使用共享内存，与进程内存统计范围不同，不能相加。'}
         </p>
         {hasMeasurements && (
           <p>
-            本应用参考机实测 ·{' '}
-            {data.measuredAt ? new Date(data.measuredAt).toLocaleDateString('zh-CN') : ''} ·{' '}
-            {data.environment?.hardware} · {data.environment?.os} · CPU INT8
+            本应用参考机实测 · {measuredAt ? new Date(measuredAt).toLocaleDateString('zh-CN') : ''}{' '}
+            · {data?.environment?.hardware} · {data?.environment?.os} ·{' '}
+            {data?.environment?.computeType}
           </p>
         )}
         {hasMeasurements && (
           <dl className="model-test-conditions">
-            {Object.entries(data.groups ?? {}).map(([language, group]) => (
+            {Object.entries(data?.groups ?? collection.groups ?? {}).map(([language, group]) => (
               <div key={language}>
                 <dt>{languageNames[language as TranscriptionLanguage]}</dt>
                 <dd>
@@ -161,6 +179,19 @@ export function ModelSettings({
     setRemoving(null)
     trigger.current?.focus()
   }
+  async function selectDevice(device: 'cpu' | 'gpu'): Promise<void> {
+    setBusy(true)
+    setError('')
+    try {
+      const result = await window.paa.setTranscriptionDevice(device)
+      if (!result.ok) setError(result.message)
+      refresh()
+    } catch {
+      setError('推理设备未切换，请重试。')
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <section className="local-model-library" aria-label="本地转写模型">
       <section className="settings-card local-model-defaults">
@@ -168,6 +199,33 @@ export function ModelSettings({
           <h2>默认转写设置</h2>
           <p>用于之后新建的转写任务</p>
         </div>
+        <label className="inference-device-select">
+          推理设备
+          <select
+            aria-label="推理设备"
+            value={model?.device ?? 'gpu'}
+            disabled={
+              !model ||
+              busy ||
+              !!model.preparingModel ||
+              model.models.some((item) => item.state === 'verifying')
+            }
+            onChange={(event) => void selectDevice(event.target.value as 'cpu' | 'gpu')}
+          >
+            <option value="gpu" disabled={!model?.hardware.gpuAvailable}>
+              GPU ·{' '}
+              {model?.hardware.gpuName ||
+                model?.hardware.gpuNames.join(' / ') ||
+                '未检测到可用设备'}
+              {model && !model.hardware.gpuAvailable ? '（不可用）' : ''}
+            </option>
+            <option value="cpu">CPU · {model?.hardware.cpuName || '处理器'}</option>
+          </select>
+          {model?.hardware.gpuReason && <small>{model.hardware.gpuReason}</small>}
+          {model?.backend === 'mlx' && model.state !== 'ready' && (
+            <small>请下载所选模型的 GPU 版本；已有 CPU 模型会保留。</small>
+          )}
+        </label>
         <label>
           默认模型
           <select
@@ -304,7 +362,10 @@ export function ModelSettings({
                   {item.error}
                 </p>
               )}
-              <ModelEvidence model={item} />
+              <ModelEvidence
+                model={item}
+                backend={model?.device === 'cpu' ? 'cpu' : (model?.hardware.gpuBackend ?? null)}
+              />
             </article>
           )
         })}

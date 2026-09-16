@@ -248,14 +248,24 @@ export function Transcript({
           {status.published.modelId
             .split('/')
             .at(-1)
-            ?.replace('faster-whisper-', 'Whisper ')} · {languageNames[status.published.language]}
+            ?.replace(/^(?:faster-)?whisper-/, 'Whisper ')
+            .replace(/-mlx$/, '')}{' '}
+          · {languageNames[status.published.language]}
+          {' · '}
+          {(status.published.device ?? 'cpu').toUpperCase()}
         </p>
       )}
       {status?.actual && (!status.published || status.candidate) && (
         <p className="transcript-configuration">
           {status.candidate ? '本次重新转写' : '本次转写'}：
-          {status.actual.modelId.split('/').at(-1)?.replace('faster-whisper-', 'Whisper ')} ·{' '}
-          {languageNames[status.actual.language]}
+          {status.actual.modelId
+            .split('/')
+            .at(-1)
+            ?.replace(/^(?:faster-)?whisper-/, 'Whisper ')
+            .replace(/-mlx$/, '')}{' '}
+          · {languageNames[status.actual.language]}
+          {' · '}
+          {(status.actual.device ?? 'cpu').toUpperCase()}
         </p>
       )}
       {status && (

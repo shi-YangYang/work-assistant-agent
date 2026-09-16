@@ -1,14 +1,58 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useContext, useMemo } from 'react'
+import type { KeyboardEventHandler, ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
 import { Clock3, MoreHorizontal, X } from 'lucide-react'
+import { Link } from 'react-router'
+import { ApiError, useRetryWait } from './api'
+import { Workspace } from './workspace'
+import { captureDiagnostics, copyText, diagnosticText } from './diagnostics'
 
-export function ErrorNotice({ children, retry }: { children: ReactNode; retry?: () => void }) {
-  return children ? (
+export function ErrorNotice({
+  children,
+  retry,
+}: {
+  children: ReactNode | Error
+  retry?: () => void
+}) {
+  const workspace = useContext(Workspace)
+  const [copied, setCopied] = useState('')
+  const wait = useRetryWait(children)
+  const failure = children instanceof ApiError ? children : null
+  const fallback = useMemo(
+    () => (children instanceof ApiError ? children.diagnostics : captureDiagnostics()),
+    [children],
+  )
+  if (!children || failure?.category === 'cancelled') return null
+  const diagnostics = failure?.diagnostics ?? fallback
+  return (
     <div className="notice error" role="alert">
-      <span>{children}</span>
-      {retry && <button onClick={retry}>重试</button>}
+      <span>{children instanceof Error ? children.message : children}</span>
+      {failure?.requestId && <small className="request-id">请求编号：{failure.requestId}</small>}
+      <div className="notice-actions">
+        {retry && (!failure || failure.retryable) && (
+          <button disabled={wait > 0} onClick={retry}>
+            {wait ? `${wait} 秒后重试` : '重试'}
+          </button>
+        )}
+        {workspace && (
+          <Link to="/settings/support" state={{ diagnostics }}>
+            问题反馈
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={() =>
+            void copyText(diagnosticText(diagnostics)).then(
+              () => setCopied('已复制诊断摘要'),
+              () => setCopied('复制失败，请打开问题反馈查看并选择摘要。'),
+            )
+          }
+        >
+          复制诊断摘要
+        </button>
+      </div>
+      {copied && <small role="status">{copied}</small>}
     </div>
-  ) : null
+  )
 }
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
@@ -73,10 +117,14 @@ export function Modal({
   title,
   children,
   onClose,
+  className,
+  onKeyDown,
 }: {
   title: string
+  className?: string
   children: ReactNode
   onClose: () => void
+  onKeyDown?: KeyboardEventHandler<HTMLDialogElement>
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -90,7 +138,9 @@ export function Modal({
   }, [])
   return (
     <dialog
+      className={className}
       ref={ref}
+      onKeyDown={onKeyDown}
       onCancel={(event) => {
         event.preventDefault()
         onClose()
@@ -118,10 +168,19 @@ export function Actions({ children, label = '更多操作' }: { children: ReactN
   const popup = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (!open || !popup.current) return
-    const above =
-      popup.current.getBoundingClientRect().bottom >
-      window.innerHeight - (window.innerWidth <= 760 ? 80 : 16)
-    popup.current.classList.toggle('above', above)
+    const position = () => {
+      if (!popup.current) return
+      const viewport = window.visualViewport
+      const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight
+      popup.current.classList.remove('above')
+      popup.current.classList.toggle(
+        'above',
+        popup.current.getBoundingClientRect().bottom > bottom - 16,
+      )
+    }
+    position()
+    window.visualViewport?.addEventListener('resize', position)
+    return () => window.visualViewport?.removeEventListener('resize', position)
   }, [open])
   useEffect(() => {
     if (!open) return
@@ -209,7 +268,7 @@ export function ConflictRecovery<T>({
 }) {
   const [latest, setLatest] = useState<T | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   return (
     <section className="conflict-recovery">
       <BusyButton
@@ -221,7 +280,7 @@ export function ConflictRecovery<T>({
             setLatest(await load())
             setError('')
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }

@@ -19,19 +19,21 @@
 | [015](spec-015-monorepo-structure/spec.md) | 多端仓库、npm workspaces、构建路径迁移与无用文件清理 | DONE | [PASS](spec-015-monorepo-structure/acceptance.md)；Windows／远端 CI 未运行 |
 | [016](spec-016-web-search-metrics-and-feedback/spec.md) | Web 工作分页与搜索、看板统计口径、聊天反馈与模型用量 | DONE | [PASS](spec-016-web-search-metrics-and-feedback/acceptance.md)；固定模型与本地页面验证 |
 | [017](spec-017-report-reliability-and-reminders/spec.md) | 多人任务处理、报告可靠性、汇报待办与提醒 | DONE | [PASS](spec-017-report-reliability-and-reminders/acceptance.md)；固定响应与电脑／手机 Web 验证 |
+| [018](spec-018-web-pilot-experience/spec.md) | 网络异常、首次使用、问题反馈与定位、手机实际操作 | ACCEPTANCE | [软件与本地验证 PASS](spec-018-web-pilot-experience/acceptance.md)；实体手机与 HTTPS 待实测 |
+| [019](spec-019-assistant-attachments/spec.md) | 粘贴／拖拽、语音混发、MP3／HEIC／XLSX、附件预览与图片质量 | DONE | [工程 PASS](spec-019-assistant-attachments/acceptance.md)；音频来源误判已修复，真实混合附件定向复测通过，真机未测 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 
 ## 文档分工
 
-- `.ai/decisions/`：为什么选这个方案、否决了什么、有哪些长期约束；不复制运行日志、依赖版本表或实施清单。
+- `.ai/decisions/`：只保留重要结论、必要理由和长期限制；不要求每项改动建档，写法见 [留痕规则](../AGENTS.md#10-重要决策留痕)。
 - `spec.md`：目标、行为、边界和验收标准；通过引用使用已有技术决策。
 - `plan.md`：模块、数据流、接口／恢复契约、迁移和针对性验证方案；不重抄需求、安装命令或通用 Agent 流程。
 - `implementation.md`：最终实现摘要、必要实现细节和已关闭的返工记录。
 - `acceptance.md`：独立验收结论、覆盖、证据来源和未验证项；不能由实施者自评替代。
 - `verification.md`：仅在有较多实测数据时使用，集中样本、参数、计时与 CI 证据；其他文档引用它。
 
-状态与验收入口只在本索引汇总；路线图记录优先级，技术栈记录实际技术，README 记录运行步骤，三者不复制逐轮测试日志。每条事实只在职责最匹配的位置详述。短 Spec 按模板简写，已写清的内容不为填章节反复展开；已完成返工合入实施 / 验收记录，不为每次 CI 调整永久增加一份重复报告。
+状态在本索引汇总；路线图写方向，技术栈写工程约束，README 写使用入口。每条事实只写一处，普通修复不默认更新整套文档；不套日期和编号前缀，不写过程流水账。
 
 ## 生命周期
 

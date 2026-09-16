@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AudioCapture, appendRecordedFile, type Composer } from '../../apps/web/src/audio-capture'
+import {
+  AudioCapture,
+  appendRecordedFile,
+  type Composer,
+  microphoneError,
+} from '../../apps/web/src/audio-capture'
 
 class ControlledRecorder {
   static instances: ControlledRecorder[] = []
@@ -150,4 +155,32 @@ describe('asynchronous microphone ownership', () => {
     expect(ControlledRecorder.instances[1].state).toBe('recording')
     newCapture.dispose()
   })
+})
+
+it.each([
+  ['NotAllowedError', '权限'],
+  ['NotFoundError', '未找到麦克风'],
+  ['NotReadableError', '占用'],
+])('explains microphone %s with a usable alternative', (name, expected) => {
+  const error = new DOMException('private device text', name)
+  expect(microphoneError(error)).toContain(expected)
+  expect(microphoneError(error)).toContain('文字')
+  expect(microphoneError(error)).not.toContain('private device')
+})
+
+it('stops at the remaining mixed-attachment budget without discarding recorded content', async () => {
+  const request = deferredStream()
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: () => request.promise } })
+  const events = callbacks()
+  const capture = new AudioCapture(events)
+  const starting = capture.start(10)
+  request.resolve()
+  await starting
+  const recorder = ControlledRecorder.instances[0]
+  recorder.ondataavailable?.({ data: new Blob(['captured bytes']) })
+  expect(recorder.state).toBe('inactive')
+  expect(events.error).toHaveBeenCalledWith(expect.stringContaining('容量上限'))
+  recorder.onstop?.()
+  expect(events.file).toHaveBeenCalledOnce()
+  expect(events.file.mock.calls[0][0].size).toBe(14)
 })

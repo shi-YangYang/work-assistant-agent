@@ -78,25 +78,28 @@ it('recovers a timed-out mutation with one authoritative query and coalesces pol
   const root = await mkdtemp(join(tmpdir(), 'paa-timeout-'))
   roots.push(root)
   const core = new CoreManager(process.cwd(), root)
-  await core.start()
-  const realRequest = JsonLineClient.prototype.request
-  const calls: string[] = []
-  const spy = vi.spyOn(JsonLineClient.prototype, 'request').mockImplementation(function (
-    this: JsonLineClient,
-    method,
-    timeout,
-    params,
-  ) {
-    calls.push(method)
-    if (method === 'recording.start')
-      return Promise.reject(new CoreError('timeout', 'test timeout'))
-    return realRequest.call(this, method, timeout, params)
-  })
-  expect((await core.startRecording(id)).ok).toBe(true)
-  expect(calls).toEqual(['recording.start', 'recording.status'])
-  calls.length = 0
-  await Promise.all([core.recordingStatus(), core.recordingStatus(), core.recordingStatus()])
-  expect(calls).toEqual(['recording.status'])
-  spy.mockRestore()
-  await core.stop()
-})
+  try {
+    const status = await core.start()
+    expect(status.connection, status.message).toBe('ready')
+    const realRequest = JsonLineClient.prototype.request
+    const calls: string[] = []
+    vi.spyOn(JsonLineClient.prototype, 'request').mockImplementation(function (
+      this: JsonLineClient,
+      method,
+      timeout,
+      params,
+    ) {
+      calls.push(method)
+      if (method === 'recording.start')
+        return Promise.reject(new CoreError('timeout', 'test timeout'))
+      return realRequest.call(this, method, timeout, params)
+    })
+    expect((await core.startRecording(id)).ok).toBe(true)
+    expect(calls).toEqual(['recording.start', 'recording.status'])
+    calls.length = 0
+    await Promise.all([core.recordingStatus(), core.recordingStatus(), core.recordingStatus()])
+    expect(calls).toEqual(['recording.status'])
+  } finally {
+    await core.stop()
+  }
+}, 20_000)

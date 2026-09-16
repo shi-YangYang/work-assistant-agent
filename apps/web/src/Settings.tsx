@@ -78,12 +78,13 @@ export function AccountPage({
   member?: Member
 }) {
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   return (
     <div className={force ? 'password-reset' : 'settings-page account-page'}>
       {!force && (
         <>
           <h2>账户</h2>
+          <Link to="/settings/support">问题反馈与处理结果</Link>
           <div className="account-summary">
             <span className="avatar">{member?.name.slice(0, 1)}</span>
             <div>
@@ -112,7 +113,7 @@ export function AccountPage({
             })
             onLogout()
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }
@@ -167,7 +168,7 @@ export function AccountPage({
               await write('/auth/logout', {})
               onLogout()
             } catch (e) {
-              setError((e as Error).message)
+              setError(e as Error)
             }
           }}
         >
@@ -182,7 +183,7 @@ export function RulesPage() {
   const { identity, drafts, setDraft, notify } = useWorkspace()
   const value = (drafts.rules as Rules | undefined) ?? data
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const canEdit = identity.member.role === 'admin'
   const update = (kind: 'daily' | 'weekly', schedule: Schedule) => {
     if (value) setDraft('rules', { ...value, [kind]: schedule })
@@ -257,7 +258,7 @@ export function RulesPage() {
               refresh()
               notify('汇报规则已保存，从后续安排生效')
             } catch (e) {
-              setFailure((e as Error).message)
+              setFailure(e as Error)
             } finally {
               setBusy(false)
             }
@@ -403,7 +404,7 @@ export function MembersPage() {
   const [create, setCreate] = useState(false)
   const [reset, setReset] = useState<Member | null>(null)
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const { notify } = useWorkspace()
   async function change(member: Member) {
     if (
@@ -414,7 +415,7 @@ export function MembersPage() {
       await write(`/members/${member.id}`, { active: !member.active }, 'PATCH')
       refresh()
     } catch (e) {
-      setFailure((e as Error).message)
+      setFailure(e as Error)
     }
   }
   return (
@@ -481,7 +482,7 @@ export function MembersPage() {
                 refresh()
                 notify('已保存，请将账号与临时密码交给成员；首次登录需修改')
               } catch (e) {
-                setFailure((e as Error).message)
+                setFailure(e as Error)
               } finally {
                 setBusy(false)
               }

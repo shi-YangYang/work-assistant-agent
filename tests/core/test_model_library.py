@@ -1,5 +1,6 @@
 """Small transactional fixtures for model defaults and candidate publication, never user data."""
 import sqlite3
+import sys
 import tempfile
 import threading
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 from functools import partial
 import multiprocessing
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.asr_worker import config_for_mode, DEFAULT_CONFIG, ASRWorker
 from paa_core.model_catalog import CATALOG
 from paa_core.model_manager import ModelManager, MODEL_ID, REVISION
@@ -26,6 +28,8 @@ from test_summary import settings as summary_config, content
 
 class ModelLibraryTests(unittest.TestCase):
     def setUp(self):
+        device = patch('paa_core.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
+        device.start(); self.addCleanup(device.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.repo = Repository(self.root)

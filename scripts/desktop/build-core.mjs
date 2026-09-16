@@ -51,6 +51,18 @@ const result = spawnSync(
     'sounddevice',
     '--copy-metadata',
     'httpx',
+    ...(process.platform === 'darwin'
+      ? [
+          '--collect-all',
+          'mlx',
+          '--collect-all',
+          'mlx_whisper',
+          '--collect-all',
+          'tiktoken_ext',
+          '--recursive-copy-metadata',
+          'mlx-whisper',
+        ]
+      : []),
     '--exclude-module',
     'tkinter',
     '--exclude-module',

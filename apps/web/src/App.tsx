@@ -1,6 +1,14 @@
 import { ReportNotifications, ReportObligations } from './ReportObligations'
 import { ModelUsagePage } from './ModelUsage'
-import { useCallback, useEffect, useState, useRef, useLayoutEffect } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+  useRef,
+  useLayoutEffect,
+  useSyncExternalStore,
+  useMemo,
+} from 'react'
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router'
 import {
   BriefcaseBusiness,
@@ -21,13 +29,18 @@ import {
   PanelLeftClose,
   Plus,
   List,
+  LifeBuoy,
+  ChevronRight,
 } from 'lucide-react'
 import type { Identity } from '@paa/api-contracts'
-import { api, setCsrf, write } from './api'
+import { api, setCsrf, write, isCancelled } from './api'
 import { Workspace } from './workspace'
 import { BusyButton, ErrorNotice } from './ui'
 import { CommandPalette, type WebCommand } from './CommandPalette'
-import type { DraftStore } from './workspace'
+import { SessionDrafts, identityScope } from './session-drafts'
+import { SupportPage } from './Support'
+import { ConnectionNotice } from './connection'
+import { useMobileViewport } from './mobile-viewport'
 import { ModelServices } from './ModelServices'
 import { SourcePage } from './Assistant'
 import { Assistant } from './Conversations'
@@ -73,6 +86,12 @@ const pages = [
   },
 ]
 const settingsPages = [
+  {
+    path: '/settings/support',
+    title: '问题反馈',
+    detail: '描述使用问题，查看管理员处理结果',
+    icon: LifeBuoy,
+  },
   { path: '/settings/account', title: '账户', detail: '查看账号信息与修改密码', icon: UserRound },
   {
     path: '/settings/appearance',
@@ -102,32 +121,48 @@ const settingsPages = [
   },
 ]
 export function App() {
+  const [vault] = useState(() => new SessionDrafts())
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState('')
+  const verified = useRef(false)
+  const [loadError, setLoadError] = useState<Error | string>('')
   useEffect(() => {
     const controller = new AbortController()
     void api<Identity>('/auth/me', { signal: controller.signal })
       .then((value) => {
+        if (controller.signal.aborted) return
         setCsrf(value.csrf)
+        vault.resume(value)
+        verified.current = true
         setIdentity(value)
       })
       .catch((e) => {
-        if (!controller.signal.aborted && e.status !== 401) setLoadError(e.message)
+        if (!controller.signal.aborted && !isCancelled(e) && e.status !== 401) setLoadError(e)
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
     const expire = () => {
-      setCsrf('')
+      vault.suspend()
+      if (verified.current) setLoadError('登录已过期，请重新登录。聊天草稿仅在原账号验证后恢复。')
       setIdentity(null)
     }
+    const forbidden = () => vault.clear()
     window.addEventListener('paa-session-expired', expire)
+    window.addEventListener('paa-access-forbidden', forbidden)
     return () => {
       controller.abort()
       window.removeEventListener('paa-session-expired', expire)
+      window.removeEventListener('paa-access-forbidden', forbidden)
     }
-  }, [])
+  }, [vault])
+  const logout = () => {
+    verified.current = false
+    vault.clear()
+    setCsrf('')
+    setLoadError('')
+    setIdentity(null)
+  }
   if (loading)
     return (
       <div className="login">
@@ -140,6 +175,9 @@ export function App() {
         initialError={loadError}
         onLogin={(value) => {
           setCsrf(value.csrf)
+          vault.resume(value)
+          verified.current = true
+          setLoadError('')
           setIdentity(value)
         }}
       />
@@ -150,27 +188,18 @@ export function App() {
         <div className="login-card">
           <h1>设置你的密码</h1>
           <p>首次登录，请更换管理员提供的临时密码。</p>
-          <AccountPage force member={identity.member} onLogout={() => setIdentity(null)} />
+          <AccountPage force member={identity.member} onLogout={logout} />
         </div>
       </div>
     )
-  return (
-    <Shell
-      key={identity.member.id}
-      identity={identity}
-      onLogout={() => {
-        setCsrf('')
-        setIdentity(null)
-      }}
-    />
-  )
+  return <Shell key={identityScope(identity)} identity={identity} vault={vault} onLogout={logout} />
 }
 function Login({
   onLogin,
   initialError,
 }: {
   onLogin: (value: Identity) => void
-  initialError: string
+  initialError: Error | string
 }) {
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
@@ -190,7 +219,7 @@ function Login({
               }),
             )
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }
@@ -225,9 +254,20 @@ function Login({
     </main>
   )
 }
-function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => void }) {
+function Shell({
+  identity,
+  onLogout,
+  vault,
+}: {
+  identity: Identity
+  onLogout: () => void
+  vault: SessionDrafts
+}) {
+  useMobileViewport()
   const accountName = identity.member.role === 'admin' ? '管理员' : identity.member.name
-  const [drafts, setDrafts] = useState<DraftStore>({})
+  const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
+  const writerGeneration = vault.version
+  const setDraft = useMemo(() => vault.writer(writerGeneration), [vault, writerGeneration])
   const [toast, setToast] = useState('')
   const [commands, setCommands] = useState(false)
   const conversationStorageKey = `paa.company.last-conversation:${identity.company.id}:${identity.member.id}`
@@ -252,23 +292,33 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
   )
   const [expandedNav, setExpandedNav] = useState(false)
   const location = useLocation()
-  const navigate = useNavigate()
-  const latestDrafts = useRef(drafts)
-  const scrollPositions = useRef(new Map<string, number>())
-  useEffect(() => {
-    latestDrafts.current = drafts
-  }, [drafts])
-  useEffect(
-    () => () => {
-      for (const [key, value] of Object.entries(latestDrafts.current)) {
-        if (key.startsWith('composer:'))
-          (value as { files?: { url: string }[] }).files?.forEach((file) =>
-            URL.revokeObjectURL(file.url),
-          )
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsTrigger = useRef<HTMLButtonElement>(null)
+  const settingsPanel = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!settingsOpen) return
+    const position = () => {
+      const panel = settingsPanel.current
+      const trigger = settingsTrigger.current
+      if (!panel || !trigger) return
+      if (window.innerWidth <= 760) {
+        panel.hidePopover()
+        return
       }
-    },
-    [],
-  )
+      const rect = trigger.getBoundingClientRect()
+      panel.style.left = `${Math.min(rect.right + 10, window.innerWidth - panel.offsetWidth - 12)}px`
+      panel.style.top = `${Math.max(12, Math.min(rect.bottom - panel.offsetHeight, window.innerHeight - panel.offsetHeight - 12))}px`
+    }
+    position()
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
+  }, [settingsOpen])
+  const navigate = useNavigate()
+  const scrollPositions = useRef(new Map<string, number>())
   useLayoutEffect(() => {
     const key = location.pathname + location.search
     const node = document.querySelector<HTMLElement>('.page, .settings-layout')
@@ -285,14 +335,6 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
       (!p.admin || identity.member.role === 'admin') &&
       !(p.path === '/reports' && identity.member.role === 'admin'),
   )
-  const setDraft = (key: string, value: unknown) =>
-    setDrafts((previous) => {
-      const next = { ...previous }
-      const resolved = typeof value === 'function' ? value(previous[key]) : value
-      if (resolved === undefined) delete next[key]
-      else next[key] = resolved
-      return next
-    })
   useEffect(() => {
     if (!toast) return
     const id = setTimeout(() => setToast(''), 4000)
@@ -445,20 +487,51 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
             ))}
           </nav>
           <div className="sidebar-bottom">
-            <nav aria-label="设置">
-              {allowedSettings.map((p) => (
-                <NavLink
-                  key={p.path}
-                  to={p.path}
-                  title={p.title}
-                  aria-label={p.title}
-                  onClick={() => setExpandedNav(false)}
-                >
-                  <p.icon size={18} />
-                  <span className="nav-label">{p.title}</span>
-                </NavLink>
-              ))}
-            </nav>
+            <button
+              ref={settingsTrigger}
+              className={`settings-toggle ${location.pathname.startsWith('/settings/') ? 'active' : ''}`}
+              aria-expanded={settingsOpen}
+              aria-controls="sidebar-settings"
+              title="系统设置"
+              popoverTarget="sidebar-settings"
+            >
+              <Settings size={18} />
+              <span className="nav-label">系统设置</span>
+              <ChevronRight size={15} className="settings-chevron nav-label" />
+            </button>
+            <div
+              ref={settingsPanel}
+              id="sidebar-settings"
+              className="settings-popover"
+              popover="auto"
+              onToggle={(event) => setSettingsOpen(event.newState === 'open')}
+            >
+              <nav aria-label="系统设置">
+                {[
+                  ...allowedSettings.filter((p) => p.path !== '/settings/support'),
+                  ...allowedSettings.filter((p) => p.path === '/settings/support'),
+                ].map((p) => (
+                  <NavLink
+                    key={p.path}
+                    to={p.path}
+                    className={
+                      p.path === '/settings/rules' || p.path === '/settings/support'
+                        ? 'settings-section-start'
+                        : undefined
+                    }
+                    title={p.title}
+                    aria-label={p.title}
+                    onClick={() => {
+                      settingsPanel.current?.hidePopover()
+                      setExpandedNav(false)
+                    }}
+                  >
+                    <p.icon size={16} />
+                    <span>{p.title}</span>
+                  </NavLink>
+                ))}
+              </nav>
+            </div>
             <div className="identity">
               <span className="avatar">{accountName.slice(0, 1)}</span>
               <span className="nav-label">
@@ -492,6 +565,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
               </div>
             </div>
           </header>
+          <ConnectionNotice />
           <Routes>
             <Route
               path="/"
@@ -546,6 +620,7 @@ function Shell({ identity, onLogout }: { identity: Identity; onLogout: () => voi
                       path="account"
                       element={<AccountPage member={identity.member} onLogout={onLogout} />}
                     />
+                    <Route path="support" element={<SupportPage />} />
                     <Route path="appearance" element={<AppearancePage />} />
                     <Route path="rules" element={<RulesPage />} />
                     {identity.member.role === 'admin' && (

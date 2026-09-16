@@ -23,7 +23,7 @@ export function DeleteRecord({
 }) {
   const { identity, setDraft, notify } = useWorkspace()
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const impact = useResource<{ messages: number; attachments: number; revision: number }>(
     kind === 'reports' ? `/reports/${id}/deletion` : null,
   )
@@ -65,7 +65,7 @@ export function DeleteRecord({
               onDeleted()
               window.dispatchEvent(new Event('paa-record-updated'))
             } catch (e) {
-              setError((e as Error).message)
+              setError(e as Error)
             } finally {
               setBusy(false)
             }

@@ -39,7 +39,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
     30000,
   )
   const [busy, setBusy] = useState<string | null>(null)
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const refresh = list.refresh
   useEffect(() => {
     window.addEventListener('focus', refresh)
@@ -170,7 +170,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
                       )
                       navigate(`/reports/${result.reportId}`, { state: detailState(location) })
                     } catch (error) {
-                      setFailure((error as Error).message)
+                      setFailure(error as Error)
                     } finally {
                       setBusy(null)
                     }
@@ -211,7 +211,7 @@ export function ReportNotifications() {
   const { identity, drafts } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [cursor, setCursor] = useState('0')
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const navigate = useNavigate()
   const list = useResource<NotificationPage>(
     identity.member.role === 'employee' ? `/notifications?cursor=${cursor}` : null,
@@ -262,7 +262,7 @@ export function ReportNotifications() {
                         setOpen(false)
                         navigate(obligationTarget(item.obligation))
                       } catch (error) {
-                        setFailure((error as Error).message)
+                        setFailure(error as Error)
                       }
                     }}
                   >
@@ -284,7 +284,7 @@ export function ReportNotifications() {
                           await write(`/notifications/${item.id}/read`, {})
                           list.refresh()
                         } catch (error) {
-                          setFailure((error as Error).message)
+                          setFailure(error as Error)
                         }
                       }}
                     >

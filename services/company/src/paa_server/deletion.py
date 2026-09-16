@@ -174,5 +174,6 @@ async def clean_files(db, settings, owner_id=None):
         query = query.where(Attachment.owner_id == owner_id)
     items = (await db.scalars(query)).all()
     for item in items:
-        (settings.media_dir / item.id).unlink(missing_ok=True)
+        from .media import remove_media
+        remove_media(settings, item.id)
     return len(items)

@@ -45,6 +45,6 @@ Electron 保留本地会议能力；公司 Web 与后端处理账号、员工消
 
 `packages/api-contracts` 仅提供公司 HTTP 的 TypeScript 类型；`model-config` 提供已被两端使用的纯校验；`ui-web` 提供浏览器 CSS。共享包不导入应用或服务端，桌面协议留在桌面。CSS 不是原生 Android／iOS UI，移动框架及原生适配尚待立项。
 
-JS 应用由 npm workspaces 管理，各自声明依赖与构建配置；Python 核心与后端保留不同锁文件和虚拟环境。测试仍集中在 `tests`，按对象分区；CI 分层唯一说明在 [README](../README.md#ci-分层)，具体通过与未验范围在 [各 Spec 验收](../specs/README.md)。
+JS 应用由 npm workspaces 管理，各自声明依赖与构建配置；Python 核心与后端保留不同锁文件和虚拟环境。测试仍集中在 `tests`，按对象分区；CI 触发与检查范围见 [工作流](../.github/workflows/ci.yml)，具体通过与未验范围在 [各 Spec 验收](../specs/README.md)。
 
 此前混入本页的旧 schema、协议清单和逐轮状态已归回各 Spec；整理前原文保留在 [6e83d28 快照](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/docs/architecture.md)，不把旧 CI 结果当成当前代码的验证。

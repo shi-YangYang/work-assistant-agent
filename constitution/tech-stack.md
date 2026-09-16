@@ -13,7 +13,7 @@
 | 核心与通信 | Python 3.12、venv／pip、`apps/desktop/core/requirements.lock`；main 管理无 shell 子进程，以带请求 ID 的 UTF-8 JSON Lines／stdio 控制 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream → 有界队列 → 写盘，不在回调调用数据库／ASR |
 | 存储 | SQLite schema 6＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
-| ASR | faster-whisper 1.2.1、CTranslate2 4.8.2；六款 Whisper 多语言模型，默认 small／中文；CPU INT8，4 线程／beam 5；受管 spawn worker，全局一次推理 |
+| ASR | 六款 Whisper 多语言模型，默认 small／中文；可用 GPU 优先。CPU：faster-whisper 1.2.1／CTranslate2 4.8.2、INT8、4 线程／beam 5；Windows NVIDIA：CUDA FP16／beam 5；Apple Silicon：mlx-whisper 0.4.3／MLX 0.32.2、Metal FP16／greedy；受管 spawn worker，全局一次推理 |
 | LLM | httpx 0.28.1、OpenAI 兼容 Chat Completions；单后台网络 worker，可选 SSE，不自动重试付费请求 |
 | 模型设置 | main 多服务管理，safeStorage 加密 Key；按服务／模型保存自定义强度或受限 JSON，不硬编码厂商档位 |
 | 分发 | electron-builder 26.15.3＋PyInstaller 6.22.2 onedir；macOS ARM64 DMG／Windows x64 NSIS 测试包，签名／公证未纳入 |
@@ -27,11 +27,11 @@
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
 | 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
-| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0007_report_obligations`，私有附件、业务修订、任务反馈、模型请求及汇报待办／通知 |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0008_support_feedback`，私有附件、业务修订、任务反馈、模型请求、汇报待办／通知及独立问题反馈 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、版本化来源与历史权限复核、持久恢复、人工确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |
-| 媒体 | Pillow 校验／规范图片，FFmpeg 处理有界短语音；外部图文／ASR API，不在服务端部署 faster-whisper |
-| 文档 | pypdf、python-docx、python-pptx 与标准库；受管子进程提取原生文字，不做 OCR；原件在私有卷，分段及定位在 PostgreSQL |
+| 媒体 | Pillow＋pillow-heif 校验／规范图片，FFmpeg 处理有界短语音（含 MP3）；外部图文／ASR API，不在服务端部署 faster-whisper |
+| 文档 | pypdf、python-docx、python-pptx、openpyxl 与标准库；受管子进程提取原生文字／可见表格，不做 OCR；原件在私有卷，分段及定位在 PostgreSQL；Web 用本地 PDF.js 预览原页 |
 | 部署 | Linux Docker Compose＋Caddy、API、单 worker 进程、PostgreSQL；任务有界并发，默认 3、可配 1～8，同一成员串行；模型推理外置，服务器容量待实测 |
 
 公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 共用 `packages/ui-web/` 的主题与选择控件 CSS，按各自设备能力组织导航；不能只共用颜色而偏离实际桌面视觉。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
@@ -65,12 +65,12 @@
 | 公司定向检查入口 | `npm run test:server`、`npm run test:web`、`npm run typecheck:web`、`npm run build:web` |
 | 手动／发布前 | `test:asr`、`test:smoke`、`test:smoke:quick`、`test:smoke:asr`；构建依赖准备后 `package`／`test:package` |
 
-命令是可用入口，不代表每次任务必跑。按 AGENTS.md 的 S0～S3 选择最小必要范围，源码仅格式化本次文件。CI 触发与分层唯一来源为 [README](../README.md#ci-分层)，不因新增 Spec 叠加重检查。
+命令是可用入口，不代表每次任务必跑。按 AGENTS.md 的 S0～S3 选择最小必要范围，源码仅格式化本次文件。CI 触发与检查范围以 [CI 工作流](../.github/workflows/ci.yml) 为准，不因新增 Spec 叠加重检查。
 
 ## 数据与安全边界
 
 - 桌面 userData 下保存 `meetings.sqlite3`、`meetings/<UUIDv4>/` 音频、`models/` 和加密 `model-services.json`；路径相对存储，stdio 不传整场音频。录音与推理解耦、音频持续写盘，积压由磁盘和检查点承接。
-- ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；任务锁定模型与语言，默认设置不改变历史任务。模型清单、候选发布与三语言实测见 [Spec 013](../specs/spec-013-local-model-library/spec.md)。纪要任务固定完整转写／配置快照，失败保留旧结果；重转写成功标记旧纪要过期，由用户手动更新，凭证不入业务数据库。
+- ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；任务锁定模型、语言与推理设备，默认设置不改变历史任务。Apple GPU 使用独立 MLX 权重目录，CPU 与 NVIDIA GPU 共用 CTranslate2 权重；已测 CPU 错误率／内存不作为 GPU 指标。模型清单、候选发布与 CPU 三语言实测见 [Spec 013](../specs/spec-013-local-model-library/spec.md)，设备策略见 [0007](../.ai/decisions/0007-local-transcription-baseline.md)。纪要任务固定完整转写／配置快照，失败保留旧结果；重转写成功标记旧纪要过期，由用户手动更新，凭证不入业务数据库。
 - 页面导航不改变桌面 renderer URL／IPC 信任边界；会议页签共享唯一播放器，服务编辑器保留草稿。`paa.appearance.theme` 仅存外观偏好，不存 Key。
 - 本机桌面验收直接 `npm run dev` 使用默认日常资料。自动故障测试继续使用临时数据，不能让含清理或故障注入的测试操作用户资料；不为 GUI 验收设置隔离 userData。
 - 公司配置来自忽略的 `.env.company` 及数据库。API／worker 共用独立私有主密钥文件，凭证只在服务端短暂解密；数据库与密钥分开备份、配对恢复。旧环境模式仅为升级公司保留，显式导入后不回退。

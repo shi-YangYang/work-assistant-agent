@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { Page } from '@paa/api-contracts'
-import { api, ApiError } from './api'
+import { api, ApiError, isCancelled } from './api'
 
 type Boundary = [string, string]
-type Snapshot<T> = { data: Page<T> | null; error: string; loading: boolean }
+type Snapshot<T> = { data: Page<T> | null; error: Error | string; loading: boolean }
 
 // Keep the oldest explicitly expanded boundary, not a cache of old rows. Each
 // read walks fresh cursors, so deleting an old row (including a cursor) cannot
@@ -11,6 +11,8 @@ type Snapshot<T> = { data: Page<T> | null; error: string; loading: boolean }
 export class PagedResource<T extends { id: string }> {
   private snapshot: Snapshot<T> = { data: null, error: '', loading: false }
   private through: Boundary | null = null
+  private retryAt = 0
+  private unavailable = false
   private controller: AbortController | null = null
   private listeners = new Set<() => void>()
 
@@ -40,7 +42,14 @@ export class PagedResource<T extends { id: string }> {
   }
 
   private async load(extend: boolean) {
-    if (!this.path || this.controller || (extend && !this.snapshot.data?.nextCursor)) return
+    if (
+      !this.path ||
+      this.unavailable ||
+      Date.now() < this.retryAt ||
+      this.controller ||
+      (extend && !this.snapshot.data?.nextCursor)
+    )
+      return
     const controller = new AbortController()
     this.controller = controller
     this.update({ ...this.snapshot, loading: true })
@@ -74,14 +83,20 @@ export class PagedResource<T extends { id: string }> {
       } while (cursor)
       const data = { items: [...items.values()], nextCursor: cursor }
       if (extend && data.items.length) this.through = this.boundary(data.items.at(-1)!)
+      this.retryAt = 0
       this.update({ data, error: '', loading: false })
     } catch (error) {
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || isCancelled(error)) return
       const unavailable = error instanceof ApiError && [403, 404].includes(error.status)
-      if (unavailable) this.through = null
+      if (unavailable) {
+        this.through = null
+        this.unavailable = true
+      }
+      if (error instanceof ApiError && error.status === 429)
+        this.retryAt = error.retryAt || Date.now() + 5000
       this.update({
         data: unavailable ? null : this.snapshot.data,
-        error: error instanceof Error ? error.message : '连接失败',
+        error: error instanceof Error ? error : '连接失败',
         loading: false,
       })
     } finally {
@@ -100,6 +115,9 @@ export function usePagedResource<T extends { id: string }>(
   useEffect(() => {
     if (!path) return
     const refresh = () => void resource.refresh()
+    const visibleRefresh = () => {
+      if (!document.hidden) refresh()
+    }
     let disposed = false
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
@@ -110,6 +128,7 @@ export function usePagedResource<T extends { id: string }>(
     void poll()
     window.addEventListener('paa-record-updated', refresh)
     window.addEventListener('focus', refresh)
+    window.addEventListener('online', visibleRefresh)
     const visible = () => {
       if (!document.hidden) refresh()
     }
@@ -119,6 +138,7 @@ export function usePagedResource<T extends { id: string }>(
       clearTimeout(timer)
       window.removeEventListener('paa-record-updated', refresh)
       window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', visibleRefresh)
       document.removeEventListener('visibilitychange', visible)
       resource.dispose()
     }

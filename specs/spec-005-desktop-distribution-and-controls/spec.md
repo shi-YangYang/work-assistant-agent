@@ -2,7 +2,7 @@
 
 ## 状态
 
-ACCEPTANCE · 2026-09-11。关键产品决策均已确认，实施结果已交独立验收；尚未声明完整交付。技术方案见 [Plan](plan.md)，分发原则沿用 [决策 0005](../../.ai/decisions/0005-self-contained-desktop-distribution.md)，暂停时间轴依据见 [决策 0006](../../.ai/decisions/0006-recording-and-storage-baseline.md#spec-005-暂停时间轴)。
+ACCEPTANCE · 2026-09-11。关键产品决策均已确认，实施结果已交独立验收；尚未声明完整交付。技术方案见 [Plan](plan.md)，分发原则沿用 [决策 0005](../../.ai/decisions/0005-self-contained-desktop-distribution.md)，暂停时间轴依据见 [决策 0006](../../.ai/decisions/0006-recording-and-storage-baseline.md#暂停时间轴)。
 
 ## 背景
 

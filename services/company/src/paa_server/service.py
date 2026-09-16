@@ -45,7 +45,7 @@ async def idem_begin(db, actor, action, key, payload):
     # Serializes all writes for this identity, including repeat concurrent requests.
     await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
     digest = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
-    existing = await db.scalar(select(Idempotency).where(Idempotency.owner_id == actor.id, Idempotency.action == action, Idempotency.key == key))
+    existing = await db.scalar(select(Idempotency).where(Idempotency.company_id == actor.company_id, Idempotency.owner_id == actor.id, Idempotency.action == action, Idempotency.key == key))
     if existing:
         if existing.digest != digest:
             problem(409, '同一操作编号不能用于不同内容')

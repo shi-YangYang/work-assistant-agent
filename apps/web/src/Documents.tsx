@@ -1,3 +1,4 @@
+import { PdfPreview } from './AttachmentPreview'
 import { useState } from 'react'
 import { FileText, Download } from 'lucide-react'
 import type { Attachment, DocumentCitation, ExtractionPage } from '@paa/api-contracts'
@@ -23,8 +24,9 @@ export function DocumentCard({
   refresh: () => void
 }) {
   const [open, setOpen] = useState(false)
+  const [pdf, setPdf] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const extraction = attachment.extraction
   return (
     <div className="document-card">
@@ -43,6 +45,11 @@ export function DocumentCard({
         </p>
       ))}
       <div className="card-actions">
+        {attachment.mime === 'application/pdf' && (
+          <button className="text-button" onClick={() => setPdf(true)}>
+            查看原页
+          </button>
+        )}
         {['ready', 'partial'].includes(extraction?.status ?? '') && (
           <button className="text-button" onClick={() => setOpen(true)}>
             查看提取内容
@@ -62,7 +69,7 @@ export function DocumentCard({
                 refresh()
                 setError('')
               } catch (e) {
-                setError((e as Error).message)
+                setError(e as Error)
               } finally {
                 setBusy(false)
               }
@@ -76,6 +83,9 @@ export function DocumentCard({
         <p className="muted small-text">可重新解析，或修正文件后重新发送。</p>
       )}
       <ErrorNotice>{error}</ErrorNotice>
+      {pdf && (
+        <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
+      )}
       {open && (
         <DocumentPreview
           attachmentId={attachment.id}

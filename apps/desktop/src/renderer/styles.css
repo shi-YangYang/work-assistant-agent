@@ -1699,9 +1699,22 @@ mark {
 }
 .local-model-defaults {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(180px, 1fr) minmax(140px, 0.7fr);
-  align-items: end;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.7fr);
+  align-items: start;
   gap: 16px;
+}
+.local-model-defaults > div {
+  grid-column: 1 / -1;
+}
+.local-model-defaults label,
+.local-model-defaults select {
+  min-width: 0;
+}
+.inference-device-select small {
+  color: var(--muted);
+  line-height: 1.5;
+  font-weight: normal;
+  overflow-wrap: anywhere;
 }
 .local-model-defaults h2 {
   font-size: 17px;
@@ -1840,6 +1853,9 @@ mark {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
   .local-model-defaults > div {
+    grid-column: 1 / -1;
+  }
+  .local-model-defaults .inference-device-select {
     grid-column: 1 / -1;
   }
   .model-quality-grid {

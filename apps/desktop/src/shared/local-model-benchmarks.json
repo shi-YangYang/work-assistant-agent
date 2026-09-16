@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "measuredAt": "2026-09-14T08:55:50.440208+00:00",
   "environment": {
     "hardware": "Apple M5 · 16 GiB",
@@ -220,6 +220,223 @@
           "referenceUnits": 470,
           "errorRate": 0.4276595744680851,
           "peakRssBytes": 2127806464
+        }
+      }
+    }
+  },
+  "gpu": {
+    "mlx": {
+      "measuredAt": "2026-09-16T01:22:02.515360+00:00",
+      "environment": {
+        "hardware": "Apple M5 · 16 GiB",
+        "os": "macOS 26.4 ARM64",
+        "engine": "mlx-whisper 0.4.3 / MLX 0.32.2",
+        "computeType": "GPU FP16（Metal）",
+        "beam": 1,
+        "decoding": "greedy"
+      },
+      "datasetManifestSha256": "c29ec827a1a4a159b21fff94c80d3a4ed6e4236406a9487a6476fa1593e85a7a",
+      "benchmarkSha256": "596388305fa1dc1b074d8199879746c712258f0cd6e4722f3dbee0748f76eb01",
+      "providerSha256": "2cc4623f518296937b920d3ffbffd6d2936613a6e3470ac97ea1502af486c2f7",
+      "method": "相同冻结语料与业务分块。每语言独立进程；评分后记录进程峰值 RSS 与从模型加载开始的 MLX GPU 分配峰值。Apple GPU 使用共享内存，两个统计范围不同，不能相加；不是整应用内存或其他设备的保证值。",
+      "models": {
+        "tiny": {
+          "revision": "6caf9c55601caafbe6508a8b0d216bdf4783c4e8",
+          "measuredAt": "2026-09-16T01:06:09.288967+00:00",
+          "languages": {
+            "zh": {
+              "substitutions": 96,
+              "deletions": 9,
+              "insertions": 4,
+              "referenceUnits": 368,
+              "errorRate": 0.296195652173913,
+              "peakRssBytes": 514359296,
+              "peakGpuBytes": 380928002
+            },
+            "en": {
+              "substitutions": 34,
+              "deletions": 8,
+              "insertions": 3,
+              "referenceUnits": 319,
+              "errorRate": 0.14106583072100312,
+              "peakRssBytes": 516915200,
+              "peakGpuBytes": 301575862
+            },
+            "mixed": {
+              "substitutions": 218,
+              "deletions": 26,
+              "insertions": 84,
+              "referenceUnits": 470,
+              "errorRate": 0.6978723404255319,
+              "peakRssBytes": 532545536,
+              "peakGpuBytes": 381238922
+            }
+          }
+        },
+        "base": {
+          "revision": "1e3e249fb8d01c655324bd6841b1deadffd6d04c",
+          "measuredAt": "2026-09-16T01:06:41.609982+00:00",
+          "languages": {
+            "zh": {
+              "substitutions": 67,
+              "deletions": 8,
+              "insertions": 5,
+              "referenceUnits": 368,
+              "errorRate": 0.21739130434782608,
+              "peakRssBytes": 624328704,
+              "peakGpuBytes": 685908186
+            },
+            "en": {
+              "substitutions": 23,
+              "deletions": 6,
+              "insertions": 4,
+              "referenceUnits": 319,
+              "errorRate": 0.10344827586206896,
+              "peakRssBytes": 611254272,
+              "peakGpuBytes": 549708602
+            },
+            "mixed": {
+              "substitutions": 165,
+              "deletions": 65,
+              "insertions": 13,
+              "referenceUnits": 470,
+              "errorRate": 0.5170212765957447,
+              "peakRssBytes": 643874816,
+              "peakGpuBytes": 680878302
+            }
+          }
+        },
+        "small": {
+          "revision": "45f3915923c7a79a5a5b5a7d909d39aeb0e5630e",
+          "measuredAt": "2026-09-16T01:07:47.031136+00:00",
+          "languages": {
+            "zh": {
+              "substitutions": 45,
+              "deletions": 8,
+              "insertions": 4,
+              "referenceUnits": 368,
+              "errorRate": 0.15489130434782608,
+              "peakRssBytes": 1025916928,
+              "peakGpuBytes": 1228117458
+            },
+            "en": {
+              "substitutions": 12,
+              "deletions": 6,
+              "insertions": 0,
+              "referenceUnits": 319,
+              "errorRate": 0.05642633228840126,
+              "peakRssBytes": 1032863744,
+              "peakGpuBytes": 1228117290
+            },
+            "mixed": {
+              "substitutions": 115,
+              "deletions": 33,
+              "insertions": 10,
+              "referenceUnits": 470,
+              "errorRate": 0.33617021276595743,
+              "peakRssBytes": 1062322176,
+              "peakGpuBytes": 1228608422
+            }
+          }
+        },
+        "medium": {
+          "revision": "7fc08c4eac4c316526498f147dfdee6f6303f975",
+          "measuredAt": "2026-09-15T13:16:06.638853+00:00",
+          "languages": {
+            "zh": {
+              "substitutions": 15,
+              "deletions": 5,
+              "insertions": 2,
+              "referenceUnits": 368,
+              "errorRate": 0.059782608695652176,
+              "peakRssBytes": 1081802752,
+              "peakGpuBytes": 2220523062
+            },
+            "en": {
+              "substitutions": 13,
+              "deletions": 3,
+              "insertions": 1,
+              "referenceUnits": 319,
+              "errorRate": 0.05329153605015674,
+              "peakRssBytes": 1000521728,
+              "peakGpuBytes": 2214592026
+            },
+            "mixed": {
+              "substitutions": 131,
+              "deletions": 35,
+              "insertions": 6,
+              "referenceUnits": 470,
+              "errorRate": 0.3659574468085106,
+              "peakRssBytes": 2057420800,
+              "peakGpuBytes": 2212773762
+            }
+          }
+        },
+        "large-v3-turbo": {
+          "revision": "a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb",
+          "measuredAt": "2026-09-16T01:10:45.960278+00:00",
+          "languages": {
+            "zh": {
+              "substitutions": 21,
+              "deletions": 7,
+              "insertions": 4,
+              "referenceUnits": 368,
+              "errorRate": 0.08695652173913043,
+              "peakRssBytes": 1994801152,
+              "peakGpuBytes": 2188996286
+            },
+            "en": {
+              "substitutions": 9,
+              "deletions": 6,
+              "insertions": 0,
+              "referenceUnits": 319,
+              "errorRate": 0.047021943573667714,
+              "peakRssBytes": 1986560000,
+              "peakGpuBytes": 2188995726
+            },
+            "mixed": {
+              "substitutions": 100,
+              "deletions": 52,
+              "insertions": 4,
+              "referenceUnits": 470,
+              "errorRate": 0.33191489361702126,
+              "peakRssBytes": 1999060992,
+              "peakGpuBytes": 2189438378
+            }
+          }
+        },
+        "large-v3": {
+          "revision": "49e6aa286ad60c14352c404340ded53710378a11",
+          "measuredAt": "2026-09-16T01:22:02.515360+00:00",
+          "languages": {
+            "zh": {
+              "substitutions": 19,
+              "deletions": 8,
+              "insertions": 5,
+              "referenceUnits": 368,
+              "errorRate": 0.08695652173913043,
+              "peakRssBytes": 3440476160,
+              "peakGpuBytes": 3658221534
+            },
+            "en": {
+              "substitutions": 11,
+              "deletions": 7,
+              "insertions": 1,
+              "referenceUnits": 319,
+              "errorRate": 0.05956112852664577,
+              "peakRssBytes": 3680305152,
+              "peakGpuBytes": 3658237358
+            },
+            "mixed": {
+              "substitutions": 111,
+              "deletions": 25,
+              "insertions": 8,
+              "referenceUnits": 470,
+              "errorRate": 0.30638297872340425,
+              "peakRssBytes": 2075770880,
+              "peakGpuBytes": 3658663546
+            }
+          }
         }
       }
     }

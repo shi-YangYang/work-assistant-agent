@@ -17,7 +17,7 @@ export function Assistant() {
   const explicitNew = params.get('new') === '1'
   const showConversations = params.get('conversations') === '1'
   const [resumed, setResumed] = useState(false)
-  const [resumeError, setResumeError] = useState('')
+  const [resumeError, setResumeError] = useState<Error | string>('')
   const [resumeRevision, setResumeRevision] = useState(0)
   const newDraft = !!drafts['composer:new']
   const [search, setSearch] = useState('')
@@ -49,7 +49,7 @@ export function Assistant() {
     return () => document.removeEventListener('pointerdown', closeOutside)
   }, [expanded, setExpanded])
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const [editing, setEditing] = useState<Conversation | null>(null)
   const [deleting, setDeleting] = useState<Conversation | null>(null)
   const [impact, setImpact] = useState<{ retainedSources: number } | null>(null)
@@ -77,7 +77,7 @@ export function Assistant() {
           })
       })
       .catch((error) => {
-        if (active) setResumeError((error as Error).message)
+        if (active) setResumeError(error as Error)
       })
     return () => {
       active = false
@@ -227,7 +227,7 @@ export function Assistant() {
                               setImpact(value)
                               setDeleting(latest)
                             } catch (e) {
-                              setFailure((e as Error).message)
+                              setFailure(e as Error)
                             }
                           }}
                         >
@@ -247,7 +247,7 @@ export function Assistant() {
                         setOlder((previous) => [...previous, ...next.items])
                         setCursor(next.nextCursor)
                       } catch (e) {
-                        setFailure((e as Error).message)
+                        setFailure(e as Error)
                       }
                     }}
                   >
@@ -302,7 +302,7 @@ export function Assistant() {
                 setEditing(null)
                 updated()
               } catch (e) {
-                setFailure((e as Error).message)
+                setFailure(e as Error)
               } finally {
                 setBusy(false)
               }
@@ -359,7 +359,7 @@ export function Assistant() {
                   updated()
                   notify('会话已删除')
                 } catch (e) {
-                  setFailure((e as Error).message)
+                  setFailure(e as Error)
                 } finally {
                   setBusy(false)
                 }

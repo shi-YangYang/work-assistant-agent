@@ -118,7 +118,8 @@ export class CoreManager extends EventEmitter {
     })
     this.client = client
     try {
-      const health = await client.request('health', this.resourcesPath ? 15_000 : undefined)
+      // Hardware discovery can exceed the 3s RPC timeout in both source and packaged builds.
+      const health = await client.request('health', 15_000)
       if (!isHealth(health)) throw new CoreError('invalid_health', '本地核心状态无效，请重新连接。')
       if (!/^3\.12\./.test(health.pythonVersion))
         throw new CoreError(
@@ -261,7 +262,7 @@ export class CoreManager extends EventEmitter {
     throw new Error('录音仍在保存，窗口会保持打开；请稍后查看状态。')
   }
   async modelState(
-    action: 'status' | 'download' | 'cancel' | 'manage' = 'status',
+    action: 'status' | 'download' | 'cancel' | 'manage' | 'device' = 'status',
     params?: Record<string, unknown>,
   ): Promise<Result<ModelState>> {
     try {
@@ -439,6 +440,16 @@ function isModelState(value: unknown): value is ModelState {
   const row = value as ModelState
   return (
     LOCAL_MODELS.includes(row.defaultModel) &&
+    ['cpu', 'gpu'].includes(row.device) &&
+    ['ctranslate2', 'mlx'].includes(row.backend) &&
+    !!row.hardware &&
+    typeof row.hardware.cpuName === 'string' &&
+    Array.isArray(row.hardware.gpuNames) &&
+    row.hardware.gpuNames.every((name) => typeof name === 'string') &&
+    typeof row.hardware.gpuAvailable === 'boolean' &&
+    (row.hardware.gpuName === null || typeof row.hardware.gpuName === 'string') &&
+    (row.hardware.gpuBackend === null || ['mlx', 'cuda'].includes(row.hardware.gpuBackend)) &&
+    (row.hardware.gpuReason === null || typeof row.hardware.gpuReason === 'string') &&
     ['zh', 'en', 'mixed'].includes(row.language) &&
     (row.preparingModel === null || LOCAL_MODELS.includes(row.preparingModel)) &&
     Array.isArray(row.models) &&

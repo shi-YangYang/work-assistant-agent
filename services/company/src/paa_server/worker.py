@@ -13,11 +13,11 @@ from fastapi import HTTPException
 from . import business_access as business
 from .feedback import publish, update_feedback
 from .usage import RequestRecord, interrupt_usage
-from .agent.harness import BudgetExceeded, LostLease, RunContext, invoke_harness, lease, reserve_call
+from .agent.harness import BudgetExceeded, LostLease, RunContext, attachment_inventory, invoke_harness, lease, reserve_call
 from .config import Settings
 from .db import database
 from .documents import prepare_document, verified_citations
-from .media import audio_wav, data_url, image_input
+from .media import audio_wav, data_url, image_process, remove_media, MAX_MESSAGE_IMAGE_BLOCKS, MAX_MESSAGE_IMAGE_PIXELS, MAX_MESSAGE_IMAGE_BYTES
 from .models import Attachment, Job, LoginAttempt, Member, Message, ModelUsage, ProgressDraft, Session, now
 from .service import owned
 from .report_schedule import schedule_once
@@ -132,6 +132,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             _, actor = await lease(db, context)
             message = await owned(db, Message, job.target_id, actor)
             attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
+            order = job.result.get('attachmentOrder', [])
+            attachments = sorted(attachments, key=lambda a: order.index(a.id) if a.id in order else a.created_at.timestamp())
             transcript_revision = message.transcript_revision
             text, transcript = message.text, message.transcript
             reply_to = message.reply_to
@@ -169,10 +171,14 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         context.started = time.monotonic()
         context.document_versions.update({item['id']: item['extraction']['revision'] for item in documents})
         blocks = []
+        image_manifest = []
+        image_pixels = image_bytes = 0
         for attachment in attachments:
             if attachment.kind == 'audio' and not transcript:
                 await publish(context, 'transcribing', force=True)
                 transcript = await (asr_provider(context, attachment) if asr_provider else asr(context, attachment))
+                if not transcript or not transcript.strip():
+                    raise ValueError('语音未识别出文字，请检查录音后重试或修正语音文字；其他材料已保留')
                 async with sessions.begin() as db:
                     await lease(db, context)
                     message = await db.scalar(select(Message).where(Message.id == job.target_id).with_for_update())
@@ -184,14 +190,26 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                     # source, including a correction made while ASR was in flight.
                     transcript_revision = message.transcript_revision
             elif attachment.kind == 'image':
-                raw = await asyncio.to_thread((settings.media_dir / attachment.id).read_bytes)
-                _, resized = await asyncio.to_thread(image_input, raw)
-                blocks.append({'type': 'image_url', 'image_url': {'url': data_url(resized, 'image/jpeg')}})
+                result = await image_process(settings.media_dir / attachment.id, 'model')
+                image_pixels += result['pixels']
+                image_bytes += result['bytes']
+                if len(blocks) + len(result['tiles']) > MAX_MESSAGE_IMAGE_BLOCKS or image_pixels > MAX_MESSAGE_IMAGE_PIXELS or image_bytes > MAX_MESSAGE_IMAGE_BYTES:
+                    raise ValueError('本次图片超出处理预算，请减少图片或裁剪后重新发送；原始材料已保存')
+                for tile in result['tiles']:
+                    blocks.append({'type': 'image_url', 'image_url': {'url': f"data:{tile['mime']};base64,{tile['data']}"}})
+                image_manifest.append({'attachmentId': attachment.id, 'name': attachment.name, 'size': [result['width'], result['height']], 'regions': [tile['box'] for tile in result['tiles']], 'complete': result['complete'], 'warnings': result['warnings']})
         if job.kind == 'message':
             context.source_revision = transcript_revision
-        blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text + ('\n语音转写（员工可纠正）：' + transcript if transcript else '')})
+        blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text})
+        if attachments:
+            blocks[0]['text'] += '\n本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：' + json.dumps(attachment_inventory(attachments, transcript, transcript_revision), ensure_ascii=False)
+        if transcript:
+            audio_names = [attachment.name for attachment in attachments if attachment.kind == 'audio']
+            blocks[0]['text'] += '\n语音内容来源：' + json.dumps({'receivedAudioFiles': audio_names, 'status': '已收到音频，以下为该音频的当前转写；如有用户纠正，以纠正版本为准', 'transcript': transcript}, ensure_ascii=False)
+        if image_manifest:
+            blocks[0]['text'] += '\n图片按附件及区域顺序排列，坐标为方向校正后的原图像素；必须如实说明未读取范围：' + json.dumps(image_manifest, ensure_ascii=False)
         if documents:
-            blocks[0]['text'] += '\n本次文件目录（正文需通过工具读取；状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
+            blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；正文需通过工具读取，状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
         if not model and not context.model_binding.get(context.model_purpose):
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
         await publish(context, 'generating', force=True)
@@ -223,6 +241,9 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                             detail += '；文件仅部分可读'
                     coverage.append(document.name + '：' + detail)
                 message.reply += '\n\n材料范围：\n' + '\n'.join(coverage)
+            image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
+            if image_warnings:
+                message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)
             live.state = 'succeeded' if message.suggestions else 'awaiting_input'
             update_feedback(live, 'complete', '')
             live.phase, live.error, live.lease_until, live.updated_at = 'complete', '', None, now()
@@ -257,7 +278,7 @@ async def maintenance(sessions, settings):
         await clean_files(db, settings)
         old = (await db.scalars(select(Attachment).where(Attachment.message_id.is_(None), Attachment.created_at < now() - timedelta(hours=24)).with_for_update(skip_locked=True))).all()
         for attachment in old:
-            (settings.media_dir / attachment.id).unlink(missing_ok=True)
+            remove_media(settings, attachment.id)
             await db.delete(attachment)
         await db.execute(update(Job).where(Job.state.in_(('succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled')), Job.updated_at < now() - timedelta(days=1), Job.feedback != {}).values(feedback={}))
         await db.execute(delete(Session).where(Session.expires_at < now()))

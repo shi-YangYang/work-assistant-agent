@@ -14,7 +14,7 @@ import uuid
 import wave
 from pathlib import Path
 
-from .asr_worker import ASRWorker, DEFAULT_CONFIG, WhisperProvider
+from .asr_worker import ASRWorker, config_for_mode, WhisperProvider
 from .recorder import NativeInput, Recorder
 from .repository import Repository
 
@@ -64,7 +64,7 @@ def wait(predicate, seconds=10):
     raise AssertionError('Runtime diagnostic timed out')
 
 
-def check(model_path, audio_path):
+def check(model_path, audio_path, device='cpu'):
     assert getattr(sys, 'frozen', False), 'Run this check from the frozen executable'
     assert platform.python_version().startswith('3.12.')
     assert model_path and audio_path, 'Provide the public fixture and prepared small model'
@@ -84,9 +84,11 @@ def check(model_path, audio_path):
     with wave.open(str(audio_path), 'rb') as source:
         pcm, rate = source.readframes(source.getnframes()), source.getframerate()
     worker = ASRWorker(OfflineProvider)
+    from .inference_device import apply_device
+    config = apply_device(config_for_mode('zh'), device)
     started = time.monotonic()
     try:
-        words = worker.infer(model_path, pcm, rate, DEFAULT_CONFIG)
+        words = worker.infer(model_path, pcm, rate, config)
         text = ''.join(word['text'] for word in words)
         assert '中介协会分析' in text, text
         assert worker.process and worker.process.pid != os.getpid()
@@ -114,5 +116,6 @@ def check(model_path, audio_path):
             recorder.shutdown()
     print(json.dumps({'frozen': True, 'executable': sys.executable, 'python': platform.python_version(),
                       'platform': platform.platform(), 'asrWorkerPid': worker_pid, 'inferenceSeconds': round(time.monotonic() - started, 3),
-                      'offlineAsrText': text, 'vad': True, 'certificateHttps': True, 'syntheticPauseResume': True,
+                      'offlineAsrText': text, 'inferenceDevice': device, 'backend': config['backend'],
+                      'vad': True, 'certificateHttps': True, 'syntheticPauseResume': True,
                       'nativeImports': [av.__version__, ctranslate2.__version__, onnxruntime.__version__, tokenizers.__version__]}, ensure_ascii=True), flush=True)

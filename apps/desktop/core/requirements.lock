@@ -1,4 +1,4 @@
-# Exact runtime dependencies; native CPU wheels verified with Python 3.12.
+# Exact Python 3.12 runtime dependencies; GPU dependencies are platform conditional.
 anyio==4.15.1
 av==18.1.0
 certifi==2026.7.22
@@ -26,3 +26,24 @@ tokenizers==0.23.2
 tqdm==4.70.0
 typing_extensions==4.16.0
 colorama==0.4.6; sys_platform == "win32"
+
+# Apple Silicon GPU backend; Windows retains CTranslate2.
+charset-normalizer==3.5.1; sys_platform == "darwin" and platform_machine == "arm64"
+Jinja2==3.1.6; sys_platform == "darwin" and platform_machine == "arm64"
+llvmlite==0.49.0; sys_platform == "darwin" and platform_machine == "arm64"
+MarkupSafe==3.0.3; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-metal==0.32.2; sys_platform == "darwin" and platform_machine == "arm64"
+mlx-whisper==0.4.3; sys_platform == "darwin" and platform_machine == "arm64"
+mlx==0.32.2; sys_platform == "darwin" and platform_machine == "arm64"
+more-itertools==11.1.0; sys_platform == "darwin" and platform_machine == "arm64"
+mpmath==1.3.0; sys_platform == "darwin" and platform_machine == "arm64"
+networkx==3.6.1; sys_platform == "darwin" and platform_machine == "arm64"
+numba==0.67.0; sys_platform == "darwin" and platform_machine == "arm64"
+regex==2026.9.10; sys_platform == "darwin" and platform_machine == "arm64"
+requests==2.34.2; sys_platform == "darwin" and platform_machine == "arm64"
+scipy==1.18.1; sys_platform == "darwin" and platform_machine == "arm64"
+setuptools==84.0.0; sys_platform == "darwin" and platform_machine == "arm64"
+sympy==1.14.0; sys_platform == "darwin" and platform_machine == "arm64"
+tiktoken==0.14.0; sys_platform == "darwin" and platform_machine == "arm64"
+torch==2.14.0; sys_platform == "darwin" and platform_machine == "arm64"
+urllib3==2.7.0; sys_platform == "darwin" and platform_machine == "arm64"

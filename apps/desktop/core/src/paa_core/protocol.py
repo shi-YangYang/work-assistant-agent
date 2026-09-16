@@ -42,7 +42,7 @@ class CoreService:
         expected = {'library.start': {'kind', 'input'}, 'library.status': {'id'}, 'library.release': {'id'}, 'library.read': {'id', 'offset'}, 'meetings.rename': {'meetingId', 'title'}, 'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
                     'meetings.list': set(), 'transcription.start': {'meetingId'},
-                    'model.manage': {'action', 'id', 'language'}, 'transcription.rerun': {'meetingId', 'modelId', 'language'}, 'transcription.cancelRerun': {'meetingId'},
+                    'model.device': {'device'}, 'model.manage': {'action', 'id', 'language'}, 'transcription.rerun': {'meetingId', 'modelId', 'language'}, 'transcription.cancelRerun': {'meetingId'},
                     'transcription.status': {'meetingId'}, 'transcript.list': {'meetingId', 'cursor'},
                     'summary.validateModel': {'config'}, 'summary.forgetModels': {'profileId'},
                     'summary.configure': {'config', 'automatic'}, 'summary.generate': {'meetingId'},
@@ -126,9 +126,11 @@ class CoreService:
             if self.transcription:
                 self.transcription.shutdown()
             return {'stopping': True}, True
-        if method in ('model.manage', 'transcription.rerun', 'transcription.cancelRerun', 'model.status', 'model.download', 'model.cancel', 'transcription.start', 'transcription.status', 'transcription.activity', 'transcription.pause', 'transcript.list'):
+        if method in ('model.device', 'model.manage', 'transcription.rerun', 'transcription.cancelRerun', 'model.status', 'model.download', 'model.cancel', 'transcription.start', 'transcription.status', 'transcription.activity', 'transcription.pause', 'transcript.list'):
             if not self.transcription:
                 raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
+            if method == 'model.device':
+                return self.transcription.model_action('set_device', device=params['device']), False
             if method == 'model.manage':
                 action, id, language = params['action'], params['id'], params['language']
                 if action not in ('download', 'cancel', 'configure', 'remove'):

@@ -14,6 +14,7 @@ from .service import owned, problem
 
 DOCUMENT_TYPES = {
     '.pdf': 'application/pdf',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.txt': 'text/plain', '.json': 'application/json', '.md': 'text/markdown', '.csv': 'text/csv',
@@ -29,19 +30,19 @@ def safe_name(name):
 def document_type(name, supplied_mime):
     suffix = Path(name).suffix.lower()
     if suffix in DOCUMENT_TYPES:
-        permitted = {DOCUMENT_TYPES[suffix], 'application/octet-stream', '', 'application/zip' if suffix in ('.docx', '.pptx') else 'text/plain'}
+        permitted = {DOCUMENT_TYPES[suffix], 'application/octet-stream', '', 'application/zip' if suffix in ('.docx', '.pptx', '.xlsx') else 'text/plain'}
         if suffix in ('.json', '.csv', '.md'):
             permitted |= {'text/json', 'application/csv', 'application/vnd.ms-excel', 'text/x-markdown'}
         if (supplied_mime or '').split(';')[0].lower() not in permitted:
             problem(415, '文件类型与扩展名不一致，请重新导出后上传')
         return DOCUMENT_TYPES[suffix]
-    if suffix in ('.doc', '.ppt', '.xls', '.xlsx', '.xlsm', '.docm', '.pptm'):
-        problem(415, '暂不支持旧版 Office、Excel 或含宏格式；请转换为 PDF、DOCX、PPTX 或 CSV')
+    if suffix in ('.doc', '.ppt', '.xls', '.xlsm', '.docm', '.pptm'):
+        problem(415, '暂不支持旧版 Office 或含宏格式；请转换为 PDF、DOCX、PPTX、XLSX 或 CSV')
     return None
 
 
 def attachment_dto(a):
-    return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **(a.extraction_info or {})} if a.kind == 'document' else None}
+    return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'previewUrl': f'/api/v1/uploads/{a.id}/preview' if a.kind == 'image' else None, 'image': a.extraction_info if a.kind == 'image' else None, 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **(a.extraction_info or {})} if a.kind == 'document' else None}
 
 
 async def visible_attachment(db, identifier, actor, *, lock=False):
@@ -84,7 +85,7 @@ async def agent_attachment(db, identifier, actor, job):
     return item
 
 
-async def parse_process(path, suffix, *, timeout=60, entrypoint=None):
+async def parse_process(path, suffix, *, timeout=60, entrypoint=None, max_output=2 * 1024 * 1024):
     """No credentials/config inherited, bounded pipe, cancellation always reaps child."""
     process = await asyncio.create_subprocess_exec(sys.executable, '-I', str(entrypoint or Path(__file__).with_name('document_parser.py')), str(path), suffix, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env={'LANG': 'C.UTF-8', **({'SYSTEMROOT': os.environ['SYSTEMROOT']} if 'SYSTEMROOT' in os.environ else {})})
     memory_exceeded = False
@@ -115,7 +116,7 @@ async def parse_process(path, suffix, *, timeout=60, entrypoint=None):
         output = bytearray()
         while block := await process.stdout.read(65536):
             output.extend(block)
-            if len(output) > 2 * 1024 * 1024:
+            if len(output) > max_output:
                 raise ValueError('文档提取结果超出限制，请拆分文件')
         await process.wait()
         if process.returncode or memory_exceeded:

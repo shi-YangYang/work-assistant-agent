@@ -59,6 +59,7 @@ export function Breadcrumbs() {
             rules: '汇报规则',
             models: '模型服务管理',
             usage: '模型用量',
+            support: '问题反馈',
           }[location.pathname.split('/')[2]] ?? '设置'
         setLoaded({
           path,

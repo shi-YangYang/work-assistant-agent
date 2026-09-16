@@ -41,7 +41,7 @@ export function ModelServices() {
   const [selected, setSelected] = useState<string | null>(null)
   const [keys, setKeys] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const [conflict, setConflict] = useState(false)
   const [activeModel, setActiveModel] = useState('')
   const [catalog, setCatalog] = useState<{
@@ -135,7 +135,7 @@ export function ModelServices() {
     }
   }
   const handleError = (e: unknown) => {
-    setError((e as Error).message)
+    setError(e as Error)
     if (e instanceof ApiError && e.status === 409) setConflict(true)
     if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
       setKeys({})
@@ -797,7 +797,7 @@ export function ModelServices() {
                 })
                 setPreset(null)
               } catch (e) {
-                setError((e as Error).message)
+                setError(e as Error)
               }
             }}
           >
@@ -951,7 +951,7 @@ function Routing({
   const { drafts, setDraft, notify } = useWorkspace()
   const value = (drafts.modelRouting as ModelRouting) || initial
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const [conflict, setConflict] = useState(false)
   if (!value) return <p>正在读取用途…</p>
   const change = (purpose: Purpose, choice: ModelSelection | 'follow' | null) => {
@@ -1093,7 +1093,7 @@ function Routing({
               refresh()
               notify('用途分配已保存')
             } catch (e) {
-              setError((e as Error).message)
+              setError(e as Error)
               setConflict(e instanceof ApiError && e.status === 409)
             } finally {
               setBusy(false)

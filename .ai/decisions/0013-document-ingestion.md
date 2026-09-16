@@ -1,21 +1,15 @@
-# 0013 — 文档解析与附件存储
+# 文档解析与附件存储
 
-2026-09-13 · **ACCEPTED**。用户已确认 [Spec 012](../../specs/spec-012-assistant-documents/spec.md) 的格式、非 OCR 范围、用途和私有存储方案；实际依赖、接口和验收结果在实施时记录。
+- 原件放私有文件存储，数据库保存身份、权限、引用、解析版本和可定位文本，供下载、纠正、重解析及回答溯源。受限文字先存 PostgreSQL，不因支持文件就引入向量库。
+- 当前使用私有磁盘和持久卷，沿用附件生命周期；多实例或容量增长后可迁到私有对象存储。客户端始终经业务授权读取，不使用公开桶或永久匿名链接。当前不启用 OSS。
+- 文档经受限子进程提取原生文字，通过授权工具逐段进入 harness；不开放宿主文件、任意 shell 或全公司资料。存了文件不等于开放公司知识库，共享范围另行确认。
+- 首期不做 OCR、复杂图表理解或 Office 转换。以后确需 OCR 时再选择独立模型用途或本地引擎，不提前增加服务。私有磁盘需要配对备份，解析资源限制不能只依赖上传大小。
 
-## 决策与理由
+## 图片与文档处理
 
-- 原文件保存在私有文件存储，数据库保存身份、权限、引用、解析版本和可定位文本。保留原件才能下载、纠正与重新解析；保留定位才能让 Agent 的回答对应证据。解析文字量受限，首版存 PostgreSQL 即可，不因支持文件就引入向量数据库。
-- 当前复用服务端私有磁盘和现有附件生命周期，部署时使用持久卷。以后多实例或容量增长时，将原文件迁到私有对象存储（例如阿里云 OSS）；客户端仍经业务授权读取，不依赖公开桶或永久匿名链接。这是演进方向，本轮不购买或启用 OSS。
-- 原生文字提取在服务器执行，模型继续用公司配置的在线服务。优先格式专用解析器，便于保留 PDF 页／幻灯片／段落位置；首版不引入 Office 转换服务、完整文档渲染器或本地 OCR 模型。以后若需要 OCR，可单独配置文档识别用途并按协议复用兼容服务；也可部署本地识别引擎，但需要承担运行资源。具体方案留到实际需要时选择。
-- 文档作为 harness 的受控业务输入，通过权限校验后的工具逐段读取。沿用既有 Deep Agents／LangGraph runtime、任务恢复与人工确认，不向 Agent 开放宿主文件系统、任意 shell 或公司的全部文件。
-- 先围绕会话与已确认业务来源使用材料，未来公司知识库的共享范围、检索、更新和保留规则另行确认；存了文件不自动赋予全公司查询权限。
+- HEIF 使用 [pillow-heif](https://pillow-heif.readthedocs.io/en/latest/) 接入 Pillow，由服务端生成授权预览并[纠正方向](https://pillow.readthedocs.io/en/stable/reference/ImageOps.html#PIL.ImageOps.exif_transpose)，不依赖浏览器原生解码。原件与派生缓存分开，不增加模型服务。
+- XLSX 使用 [openpyxl 只读模式](https://openpyxl.readthedocs.io/en/stable/optimized.html)，区分公式、[已保存缓存值](https://openpyxl.readthedocs.io/en/stable/api/openpyxl.reader.excel.html)和缺失结果；不计算公式、不把缓存当成实时结果，不运行宏或外链。
+- PDF 文字提取用 [pypdf](https://pypdf.readthedocs.io/en/stable/user/extract-text.html)，原页预览用本地 [PDF.js](https://mozilla.github.io/pdf.js/getting_started/)，不发给公共预览服务。预览与 Agent 读取独立，能显示扫描页不代表完成 OCR。
+- [python-docx](https://python-docx.readthedocs.io/en/latest/user/documents.html)／[python-pptx](https://python-pptx.readthedocs.io/en/latest/user/presentations.html) 处理 DOCX／PPTX，不据此宣称支持旧 DOC／PPT；保留段落、页码、幻灯片及备注定位。
 
-## 核对依据与取舍
-
-2026-09-13 核对官方资料：
-
-- [pypdf 文本提取](https://pypdf.readthedocs.io/en/stable/user/extract-text.html) 适合带文字层 PDF；不执行 OCR，复杂版式／表格提取有限，压缩文件的解析内存可能明显大于原文件体积。因此必须有单独的运行资源边界，不能只限制上传大小。
-- [python-docx](https://python-docx.readthedocs.io/en/latest/user/documents.html) 与 [python-pptx](https://python-pptx.readthedocs.io/en/latest/user/presentations.html) 支持现代 DOCX／PPTX，不能把它们的能力推断成支持旧 DOC／PPT；PPTX 的[演讲备注](https://python-pptx.readthedocs.io/en/latest/user/notes.html) 有独立读取入口。
-- [阿里云私有 OSS 应用方案](https://www.alibabacloud.com/help/en/oss/how-to-apply-the-private-permission-to-the-actual-business) 提供应用服务器代理及临时签名访问方式。将来选择哪种方式需结合权限撤销、下载流量和部署环境，当前仍沿用鉴权下载接口。
-
-取舍是首版可较轻地运行并保留多端共享能力，但私有磁盘需要配对备份，文本解析不能替代复杂图表理解。具体格式、限制与用户行为只在 Spec／Plan 维护。
+格式、预算与用户行为见 [附件方案](../../specs/spec-019-assistant-attachments/plan.md)。对象存储演进可参考 [私有 OSS 应用方案](https://www.alibabacloud.com/help/en/oss/how-to-apply-the-private-permission-to-the-actual-business)，具体下载方式需兼顾撤权和部署环境。

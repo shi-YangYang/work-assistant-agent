@@ -12,7 +12,8 @@ import urllib.request
 
 from .asr_worker import config_for_mode, InferenceToken
 from .repository import DomainError
-from .model_catalog import CATALOG
+from .model_catalog import CATALOG, MLX_CATALOG
+from .inference_device import hardware, apply_device
 
 MODEL_ID = CATALOG['small']['modelId']
 REVISION = CATALOG['small']['revision']
@@ -44,7 +45,7 @@ def verify_files(path, cancelled=lambda: False, files=None):
 
 
 class ModelManager:
-    def __init__(self, root, worker):
+    def __init__(self, root, worker, devices=None):
         self.root = root / 'models'
         self.settings_path = root / 'transcription-settings.json'
         self.worker = worker
@@ -54,47 +55,59 @@ class ModelManager:
         self.thread = None
         self.preparing = None
         self.references = lambda _model, _revision: False
+        self.hardware = hardware() if devices is None else devices
+        self.device = 'gpu' if self.hardware['gpuAvailable'] else 'cpu'
         self.default_id, self.language = 'small', 'zh'
         try:
             settings = json.loads(self.settings_path.read_text())
             self.entry(settings['modelId'])
             config_for_mode(settings['language'])
             self.default_id, self.language = settings['modelId'], settings['language']
+            if settings.get('device') == 'cpu': self.device = 'cpu'
         except (OSError, ValueError, KeyError, TypeError, DomainError):
             pass
-        self.states = {id: {'state': 'missing', 'downloadedBytes': 0, 'error': None} for id in CATALOG}
-        self.path = self.path_for('small') # Compatibility for old integration tools.
-        self.staging = self.staging_for('small')
-        existing = [id for id in CATALOG if self.path_for(id).exists()]
+        self.states_by_backend = {backend: {id: {'state': 'missing', 'downloadedBytes': 0, 'error': None} for id in CATALOG}
+                                  for backend in ('ctranslate2', 'mlx')}
+        self.states = self.states_by_backend['ctranslate2']
+        self.path = self.path_for('small', 'ctranslate2') # Compatibility for old integration tools.
+        self.staging = self.path.with_name(self.path.name + '.staging')
+        existing = [(backend, id) for backend in self.states_by_backend for id in CATALOG if self.path_for(id, backend).exists()]
         if existing:
-            for id in existing: self.states[id]['state'] = 'verifying'
+            for backend, id in existing: self.states_by_backend[backend][id]['state'] = 'verifying'
             self.thread = threading.Thread(target=self._scan, args=(existing,), name='model-cache-check', daemon=True)
             self.thread.start()
 
-    def entry(self, id):
+    @property
+    def backend(self):
+        return 'mlx' if self.device == 'gpu' and self.hardware['gpuBackend'] == 'mlx' else 'ctranslate2'
+
+    def entry(self, id, backend=None):
         if not isinstance(id, str) or id not in CATALOG:
             raise DomainError('invalid_model', '请选择列表中的转写模型。')
-        return CATALOG[id]
+        return (MLX_CATALOG if (backend or self.backend) == 'mlx' else CATALOG)[id]
 
-    def path_for(self, id):
-        return self.root / ('whisper-' + id + '-' + self.entry(id)['revision'])
+    def path_for(self, id, backend=None):
+        backend = backend or self.backend
+        prefix = 'whisper-mlx-' if backend == 'mlx' else 'whisper-'
+        return self.root / (prefix + id + '-' + self.entry(id, backend)['revision'])
 
     def staging_for(self, id):
         return self.path_for(id).with_name(self.path_for(id).name + '.staging')
 
-    def files(self, id):
-        return FILES if id == 'small' else self.entry(id)['files']
+    def files(self, id, backend=None):
+        backend = backend or self.backend
+        return FILES if id == 'small' and backend == 'ctranslate2' else self.entry(id, backend)['files']
 
     def _scan(self, ids):
         try:
-            for id in ids:
+            for backend, id in ids:
                 try:
                     if self.root.is_symlink(): raise OSError('Invalid directory')
-                    verify_files(self.path_for(id), self.cancelled.is_set, self.files(id))
-                    result = {'state': 'ready', 'downloadedBytes': sum(v[0] for v in self.files(id).values()), 'error': None}
+                    verify_files(self.path_for(id, backend), self.cancelled.is_set, self.files(id, backend))
+                    result = {'state': 'ready', 'downloadedBytes': sum(v[0] for v in self.files(id, backend).values()), 'error': None}
                 except Exception:
                     result = {'state': 'error', 'downloadedBytes': 0, 'error': '模型文件不完整，请重新下载。'}
-                with self.lock: self.states[id] = result
+                with self.lock: self.states_by_backend[backend][id] = result
         finally:
             with self.lock: self.thread = None
 
@@ -105,7 +118,7 @@ class ModelManager:
         occupied = sum(p.stat().st_size for p in path.iterdir() if p.is_file() and not p.is_symlink()) if path.is_dir() and not path.is_symlink() else 0
         reason = '请先选择其他默认模型。' if id == self.default_id else '模型正在准备。' if id == self.preparing else '尚未完成的转写任务需要此模型，请先完成任务或取消重新转写。' if self.references(entry['modelId'], entry['revision']) else None
         return {'id': id, 'name': 'Whisper ' + id, 'modelId': entry['modelId'], 'revision': entry['revision'],
-                **self.states[id], 'totalBytes': total, 'requiredBytes': total * 2 + 50_000_000,
+                **self.states_by_backend[self.backend][id], 'totalBytes': total, 'requiredBytes': total * 2 + 50_000_000,
                 'occupiedBytes': occupied, 'parameters': entry['parameters'], 'description': entry['description'],
                 'source': entry['modelId'], 'license': entry.get('license', 'MIT'),
                 'default': id == self.default_id, 'deleteBlockedReason': reason}
@@ -114,20 +127,26 @@ class ModelManager:
         with self.lock:
             if id is not None: return self._status(id)
             return {**self._status(self.default_id), 'defaultModel': self.default_id, 'language': self.language,
+                    'device': self.device, 'hardware': self.hardware, 'backend': self.backend,
                     'preparingModel': self.preparing, 'models': [self._status(key) for key in CATALOG]}
+
+    def config(self, language):
+        return apply_device(config_for_mode(language), self.device, self.hardware)
 
     def selected(self):
         with self.lock:
             entry = self.entry(self.default_id)
-            return entry['modelId'], entry['revision'], config_for_mode(self.language)
+            return entry['modelId'], entry['revision'], self.config(self.language)
 
     def resolve(self, model_id, revision):
         with self.lock:
-            for id, entry in CATALOG.items():
-                if entry['modelId'] == model_id and entry['revision'] == revision:
-                    if self.states[id]['state'] != 'ready':
-                        raise DomainError('model_not_ready', f'请先下载并准备 Whisper {id}，此任务继续使用原来的模型和语言。')
-                    return self.path_for(id)
+            for backend, catalog in (('ctranslate2', CATALOG), ('mlx', MLX_CATALOG)):
+                for id, entry in catalog.items():
+                    if entry['modelId'] == model_id and entry['revision'] == revision:
+                        if self.states_by_backend[backend][id]['state'] != 'ready':
+                            label = 'GPU' if backend == 'mlx' else 'CPU／NVIDIA GPU'
+                            raise DomainError('model_not_ready', f'请先在 {label} 设置中下载 Whisper {id}，此任务继续使用原来的模型和设备。')
+                        return self.path_for(id, backend)
         name = next(('Whisper ' + id for id, entry in CATALOG.items() if entry['modelId'] == model_id), model_id)
         raise DomainError('model_mismatch', f'任务所需的 {name} 固定版本 {revision} 不可用，请保留资料并联系维护者。')
 
@@ -135,26 +154,39 @@ class ModelManager:
         with self.lock:
             self.entry(id)
             config_for_mode(language)
-            if self.states[id]['state'] != 'ready' and id != self.default_id:
+            if self.states_by_backend[self.backend][id]['state'] != 'ready' and id != self.default_id:
                 raise DomainError('model_not_ready', '请先下载并准备此模型。')
             target = self.settings_path.with_suffix('.staging')
             if target.is_symlink() or self.settings_path.is_symlink(): raise OSError('Invalid settings file')
-            target.write_text(json.dumps({'modelId': id, 'language': language}), encoding='utf-8')
+            target.write_text(json.dumps({'modelId': id, 'language': language, 'device': self.device}), encoding='utf-8')
             target.replace(self.settings_path)
             self.default_id, self.language = id, language
             return self.status()
+
+    def set_device(self, device):
+        with self.lock:
+            apply_device(config_for_mode(self.language), device, self.hardware)
+            if self.thread is not None:
+                raise DomainError('model_busy', '模型正在准备，请完成或取消后切换推理设备。')
+            previous = self.device
+            self.device = device
+            try:
+                return self.configure(self.default_id, self.language)
+            except Exception:
+                self.device = previous
+                raise
 
     def download(self, id=None):
         with self.lock:
             id = id or self.default_id
             self.entry(id)
-            if self.states[id]['state'] == 'ready': return self.status()
+            if self.states_by_backend[self.backend][id]['state'] == 'ready': return self.status()
             if self.thread is not None:
                 raise DomainError('model_busy', '正在准备其他模型，请完成或取消后重试。')
             self.preparing = id
             self.cancelled.clear()
             self.prepare_token = InferenceToken()
-            self.states[id] = {'state': 'downloading', 'downloadedBytes': 0, 'error': None}
+            self.states_by_backend[self.backend][id] = {'state': 'downloading', 'downloadedBytes': 0, 'error': None}
             self.thread = threading.Thread(target=self._prepare, args=(id,), name='model-prepare', daemon=True)
             self.thread.start()
             return self.status()
@@ -177,10 +209,10 @@ class ModelManager:
             try:
                 if path.exists(): shutil.rmtree(path)
             except OSError as exc:
-                self.states[id]['state'] = 'error'
-                self.states[id]['error'] = '模型文件未完整删除，请重试删除或重新下载。'
+                self.states_by_backend[self.backend][id]['state'] = 'error'
+                self.states_by_backend[self.backend][id]['error'] = '模型文件未完整删除，请重试删除或重新下载。'
                 raise DomainError('model_remove_failed', '模型文件仍被占用，请稍后重试删除。') from exc
-            self.states[id] = {'state': 'missing', 'downloadedBytes': 0, 'error': None}
+            self.states_by_backend[self.backend][id] = {'state': 'missing', 'downloadedBytes': 0, 'error': None}
             return self.status()
 
     def _prepare(self, id):
@@ -206,13 +238,13 @@ class ModelManager:
                         count += len(data)
                         if count > size: raise OSError('Unexpected model size')
                         destination.write(data)
-                        with self.lock: self.states[id]['downloadedBytes'] += len(data)
+                        with self.lock: self.states_by_backend[self.backend][id]['downloadedBytes'] += len(data)
                     if count != size: raise OSError('Incomplete model download')
-            with self.lock: self.states[id]['state'] = 'verifying'
+            with self.lock: self.states_by_backend[self.backend][id]['state'] = 'verifying'
             verify_files(target, self.cancelled.is_set, files)
             if self.cancelled.is_set(): raise InterruptedError('Cancelled')
             if hasattr(self.worker, 'validate'):
-                self.worker.validate(target, config_for_mode('zh'), self.prepare_token)
+                self.worker.validate(target, self.config('zh'), self.prepare_token)
             else: self.worker.load(target)
             if self.cancelled.is_set(): raise InterruptedError('Cancelled')
             if path.exists(): shutil.rmtree(path)
@@ -226,8 +258,8 @@ class ModelManager:
             except OSError:
                 terminal_state, terminal_error = 'error', '模型临时文件清理失败，请检查磁盘权限后重试。'
             with self.lock:
-                self.states[id]['state'], self.states[id]['error'] = terminal_state, terminal_error
-                if terminal_state == 'ready': self.states[id]['downloadedBytes'] = sum(v[0] for v in files.values())
+                self.states_by_backend[self.backend][id]['state'], self.states_by_backend[self.backend][id]['error'] = terminal_state, terminal_error
+                if terminal_state == 'ready': self.states_by_backend[self.backend][id]['downloadedBytes'] = sum(v[0] for v in files.values())
                 self.thread = self.preparing = self.prepare_token = None
 
     def shutdown(self):

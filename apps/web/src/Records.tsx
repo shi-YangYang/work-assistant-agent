@@ -150,7 +150,7 @@ function WorkEditor({
   const stored = drafts[key] as { content: Progress; revision: number } | undefined
   const value = stored?.content ?? work
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   return (
     <Modal title="更正工作进展" onClose={onClose}>
       <form
@@ -172,7 +172,7 @@ function WorkEditor({
             window.dispatchEvent(new Event('paa-record-updated'))
             onSaved()
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }
@@ -345,7 +345,7 @@ export function ReportsPage() {
   )
   const rules = useResource<Rules>('/settings/report-rules')
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const [showRules, setShowRules] = useState(false)
   const { notify } = useWorkspace()
   const selectedDate = params.get('date') || todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
@@ -407,7 +407,7 @@ export function ReportsPage() {
                   refresh()
                   notify('已准备报告，生成状态会自动更新')
                 } catch (e) {
-                  setFailure((e as Error).message)
+                  setFailure(e as Error)
                 } finally {
                   setBusy(false)
                 }
@@ -510,7 +510,7 @@ export function ReportDetail() {
   const [submit, setSubmit] = useState(false)
   const [history, setHistory] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState('')
+  const [failure, setFailure] = useState<Error | string>('')
   const key = `report:${id}`
   const saved = drafts[key] as { content: ReportContent; revision: number } | undefined
   const value = saved?.content ?? data?.content
@@ -530,7 +530,7 @@ export function ReportDetail() {
       refresh()
       notify('草稿已保存')
     } catch (e) {
-      setFailure((e as Error).message)
+      setFailure(e as Error)
     } finally {
       setBusy(false)
     }
@@ -596,7 +596,7 @@ export function ReportDetail() {
                     return
                   void write(`/reports/${id}/candidate`, { expectedRevision: data.revision })
                     .then(refresh)
-                    .catch((e) => setFailure(e.message))
+                    .catch((e) => setFailure(e as Error))
                 }}
               >
                 采用生成结果
@@ -691,7 +691,7 @@ export function ReportDetail() {
                       refresh()
                       notify('报告已提交')
                     } catch (e) {
-                      setFailure((e as Error).message)
+                      setFailure(e as Error)
                     } finally {
                       setBusy(false)
                     }
