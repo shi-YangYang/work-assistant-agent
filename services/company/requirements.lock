@@ -87,3 +87,6 @@ websockets==16.1.1
 xlsxwriter==3.2.9
 xxhash==4.0.1
 zstandard==0.25.0
+pillow-heif==1.7.0
+openpyxl==3.1.5
+et_xmlfile==2.0.0

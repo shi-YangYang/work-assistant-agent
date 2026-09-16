@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import zipfile
 
-PARSER_VERSION = 'text-v1:pypdf6.18.1:docx1.2.0:pptx1.0.2'
+PARSER_VERSION = 'text-v2:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
 MAX_TEXT = 200_000
 MAX_CHUNKS = 2000
 MAX_PAGES = 100
@@ -96,9 +96,9 @@ def office_check(path, suffix):
     with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
         names = {entry.filename for entry in entries}
-        required = 'word/document.xml' if suffix == '.docx' else 'ppt/presentation.xml'
+        required = {'.docx': 'word/document.xml', '.pptx': 'ppt/presentation.xml', '.xlsx': 'xl/workbook.xml'}[suffix]
         if required not in names or '[Content_Types].xml' not in names:
-            raise ParseFailure('文件结构与扩展名不符，请保存为正确的 DOCX／PPTX')
+            raise ParseFailure('文件结构与扩展名不符，请保存为正确的 DOCX／PPTX／XLSX')
         if len(entries) > 2048 or len(names) != len(entries) or sum(e.file_size for e in entries) > MAX_EXPANDED:
             raise ParseFailure('文档解压后过大或条目过多，请拆分文件')
         for entry in entries:
@@ -127,6 +127,104 @@ def text_decode(data):
     return text
 
 
+MAX_SHEETS = 20
+MAX_ROWS = 20_000
+MAX_COLUMNS = 256
+MAX_CELL_SLOTS = 500_000
+MAX_NONEMPTY_CELLS = 20_000
+MAX_CELL_TEXT = 8000
+
+
+def extract_xlsx(path, add, warnings):
+    from datetime import date, datetime, time
+    from itertools import zip_longest
+    from lxml import etree
+    from openpyxl import load_workbook
+    from openpyxl.utils.cell import coordinate_to_tuple
+    # Private originals are UUID paths without extensions; file-like input avoids
+    # openpyxl's filename-extension check while office_check verifies the container.
+    raw = Path(path).read_bytes()
+    formulas = load_workbook(io.BytesIO(raw), read_only=True, data_only=False, keep_links=False)
+    saved = load_workbook(io.BytesIO(raw), read_only=True, data_only=True, keep_links=False)
+    slots = nonempty = 0
+    try:
+        with zipfile.ZipFile(path) as archive:
+            if len(formulas.worksheets) > MAX_SHEETS:
+                warnings.append('仅读取前 20 个工作表，后续工作表未读取')
+            for sheet in formulas.worksheets[:MAX_SHEETS]:
+                title = sheet.title
+                if sheet.sheet_state != 'visible':
+                    warnings.append(f'工作表「{title}」已隐藏，未读取')
+                    continue
+                # Inspect physical cells, never trust the untrusted dimension tag.
+                root = etree.fromstring(archive.read(sheet._worksheet_path), etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False))
+                ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+                hidden_rows = {int(row.get('r')) for row in root.findall('s:sheetData/s:row', ns) if row.get('hidden') in ('1', 'true')}
+                hidden_columns = [(int(col.get('min')), int(col.get('max'))) for col in root.findall('s:cols/s:col', ns) if col.get('hidden') in ('1', 'true')]
+                if hidden_rows or hidden_columns:
+                    warnings.append(f'工作表「{title}」隐藏的行／列未读取')
+                max_row = max_col = 0
+                clipped = False
+                for cell in root.findall('s:sheetData/s:row/s:c', ns):
+                    row, col = coordinate_to_tuple(cell.get('r'))
+                    if row > MAX_ROWS or col > MAX_COLUMNS:
+                        clipped = True
+                    max_row, max_col = max(max_row, min(row, MAX_ROWS)), max(max_col, min(col, MAX_COLUMNS))
+                if clipped:
+                    warnings.append(f'工作表「{title}」仅读取前 20000 行／256 列，超出区域未读取')
+                merges = [cell.get('ref') for cell in root.findall('s:mergeCells/s:mergeCell', ns)]
+                if merges:
+                    add(f'工作表「{title}」· 合并单元格', '合并范围仅以左上角单元格表示：' + '、'.join(merges[:100]))
+                    if len(merges) > 100:
+                        warnings.append(f'工作表「{title}」仅列出前 100 个合并范围')
+                if not max_row or not max_col:
+                    continue
+                sheet.reset_dimensions()
+                cache_sheet = saved[title]
+                cache_sheet.reset_dimensions()
+                for cells, cached in zip_longest(sheet.iter_rows(max_row=max_row, max_col=max_col), cache_sheet.iter_rows(max_row=max_row, max_col=max_col)):
+                    if cells is None or cached is None:
+                        raise ParseFailure('公式与保存值的行列结构不一致，请重新保存文件')
+                    parts = []
+                    first = last = None
+                    for cell, cache in zip(cells, cached):
+                        slots += 1
+                        if slots > MAX_CELL_SLOTS or nonempty >= MAX_NONEMPTY_CELLS:
+                            warnings.append('已达到表格遍历／非空单元格上限，剩余单元格未读取')
+                            return
+                        if cell.value is None or cell.row in hidden_rows or any(start <= cell.column <= end for start, end in hidden_columns):
+                            continue
+                        nonempty += 1
+                        address = cell.coordinate
+                        value = cell.value
+                        if cell.data_type == 'f':
+                            formula = value if isinstance(value, str) else getattr(value, 'text', '数组公式')
+                            if cache.value is None:
+                                value = f'{formula}；文件未保存计算结果，未计算'
+                                warning = '部分公式缺少保存值；未执行公式或重算'
+                                if warning not in warnings:
+                                    warnings.append(warning)
+                            else:
+                                value = f'{formula}；文件保存值（非实时计算）：{cache.value}'
+                        elif cell.data_type == 'e':
+                            value = f'错误值：{value}'
+                        elif isinstance(value, (date, datetime, time)):
+                            value = value.isoformat()
+                        value = str(value)
+                        if len(value) > MAX_CELL_TEXT:
+                            value = value[:MAX_CELL_TEXT] + '（此单元格后续文字未读取）'
+                            warning = '部分单元格超过 8000 字符，已截取并标注'
+                            if warning not in warnings:
+                                warnings.append(warning)
+                        parts.append(f'{address}：{value}')
+                        first, last = first or address, address
+                    if parts:
+                        add(f'工作表「{title}」!{first}' + (f':{last}' if first != last else ''), '\n'.join(parts))
+    finally:
+        formulas.close()
+        saved.close()
+
+
 def extract(path, suffix):
     chunks, warnings = [], []
     count = 0
@@ -143,7 +241,7 @@ def extract(path, suffix):
             if start + len(part) < len(text) and count >= MAX_TEXT:
                 raise Full()
     try:
-        if suffix in ('.docx', '.pptx'):
+        if suffix in ('.docx', '.pptx', '.xlsx'):
             office_check(path, suffix)
         if suffix == '.pdf':
             from pypdf import PdfReader, overwrite_configuration
@@ -179,6 +277,8 @@ def extract(path, suffix):
                     tables += 1
                     for rownum, row in enumerate(element.rows, 1):
                         add(f'表格 {tables} · 行 {rownum}', '\n'.join(f'列 {i}：{cell.text}' for i, cell in enumerate(row.cells, 1)))
+        elif suffix == '.xlsx':
+            extract_xlsx(path, add, warnings)
         elif suffix == '.pptx':
             from pptx import Presentation
             slides = Presentation(path).slides

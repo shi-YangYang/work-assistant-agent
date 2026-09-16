@@ -120,7 +120,11 @@ function responseFailure(
     ),
   }
 }
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  options: RequestInit = {},
+  format: 'json' | 'bytes' = 'json',
+): Promise<T> {
   const auth = path.startsWith('/auth/')
   if (!auth && expired) throw cancelledRequest()
   const generation = epoch
@@ -148,6 +152,13 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     })
     if (generation !== epoch || options.signal?.aborted) throw cancelledRequest()
     if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+    if (response.ok && format === 'bytes') {
+      const bytes = await response.arrayBuffer()
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError')
+      if (generation !== epoch || options.signal?.aborted) throw cancelledRequest()
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('paa-request-connected'))
+      return bytes as T
+    }
     const text = await response.text()
     if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError')
     if (generation !== epoch || options.signal?.aborted) throw cancelledRequest()

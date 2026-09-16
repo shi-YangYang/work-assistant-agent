@@ -20,6 +20,7 @@
 | [016](spec-016-web-search-metrics-and-feedback/spec.md) | Web 工作分页与搜索、看板统计口径、聊天反馈与模型用量 | DONE | [PASS](spec-016-web-search-metrics-and-feedback/acceptance.md)；固定模型与本地页面验证 |
 | [017](spec-017-report-reliability-and-reminders/spec.md) | 多人任务处理、报告可靠性、汇报待办与提醒 | DONE | [PASS](spec-017-report-reliability-and-reminders/acceptance.md)；固定响应与电脑／手机 Web 验证 |
 | [018](spec-018-web-pilot-experience/spec.md) | 网络异常、首次使用、问题反馈与定位、手机实际操作 | ACCEPTANCE | [软件与本地验证 PASS](spec-018-web-pilot-experience/acceptance.md)；实体手机与 HTTPS 待实测 |
+| [019](spec-019-assistant-attachments/spec.md) | 粘贴／拖拽、语音混发、MP3／HEIC／XLSX、附件预览与图片质量 | DONE | [PASS](spec-019-assistant-attachments/acceptance.md)；定向检查、本地 GUI 与部署 CSP，真机／真实模型未测 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

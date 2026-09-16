@@ -1,32 +1,34 @@
 import type { DocumentCitation } from '@paa/api-contracts'
 import type { Composer } from './audio-capture'
 
-const documents = new Set(['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv'])
-const images = new Set(['jpg', 'jpeg', 'png', 'webp'])
-const audio = new Set(['wav', 'webm', 'mp4', 'm4a', 'aac'])
+const documents = new Set(['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx'])
+const images = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'])
+const audio = new Set(['wav', 'webm', 'mp4', 'm4a', 'aac', 'mp3'])
 export const fileAccept =
-  '.pdf,.docx,.pptx,.txt,.json,.md,.csv,.jpg,.jpeg,.png,.webp,.wav,.webm,.mp4,.m4a,.aac'
+  '.pdf,.docx,.pptx,.txt,.json,.md,.csv,.xlsx,.jpg,.jpeg,.png,.webp,.heic,.heif,.wav,.webm,.mp4,.m4a,.aac,.mp3'
 export function fileKind(file: Pick<File, 'name' | 'type'>) {
   const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
   if (documents.has(extension)) return 'document'
-  if (images.has(extension) || ['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
+  if (
+    images.has(extension) ||
+    ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type)
+  )
     return 'image'
   if (
     audio.has(extension) ||
-    ['audio/wav', 'audio/webm', 'audio/mp4', 'audio/aac'].includes(file.type)
+    ['audio/wav', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/mpeg'].includes(file.type)
   )
     return 'audio'
   return null
 }
 export function fileSelectionError(files: File[]) {
   if (files.some((file) => !fileKind(file)))
-    return '支持 PDF、DOCX、PPTX、TXT、JSON、MD、CSV、图片和语音；旧版 Office、Excel 或含宏文件请先转换。'
+    return '支持 PDF、DOCX、PPTX、XLSX、TXT、JSON、MD、CSV、图片和语音；旧版 Office 或含宏文件请先转换。'
   if (files.some((file) => !file.size)) return '不能添加空文件'
-  if (files.some((file) => fileKind(file) === 'audio')) {
-    if (files.length !== 1 || files[0].size > 20 * 1024 * 1024)
-      return '每次一段语音，最长 3 分钟、20 MiB，请先移除其他附件'
-  } else if (files.length > 4 || files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024)
-    return '每次最多 4 个文档或图片，合计不超过 20 MiB'
+  if (files.length > 4 || files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024)
+    return '每次最多 4 个附件，合计不超过 20 MiB'
+  if (files.filter((file) => fileKind(file) === 'audio').length > 1)
+    return '每次最多一段语音，最长 3 分钟'
   if (files.some((file) => fileKind(file) === 'image' && file.size > 5 * 1024 * 1024))
     return '每张图片不能超过 5 MiB'
   return ''
@@ -74,4 +76,20 @@ export function messageSubmission(
       replyTo: composer.replyTo ?? null,
     },
   }
+}
+
+export function isHeif(file: Pick<File, 'name' | 'type'>) {
+  return /\.hei[cf]$/i.test(file.name) || /^image\/hei[cf]$/.test(file.type)
+}
+export function clipboardImages(data: DataTransfer): File[] {
+  return Array.from(data.items)
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null)
+}
+export function droppedFiles(data: DataTransfer) {
+  const items = Array.from(data.items)
+  if (items.some((item) => item.webkitGetAsEntry?.()?.isDirectory))
+    return { files: [], error: '请添加文件，不支持直接添加文件夹' }
+  return { files: Array.from(data.files), error: '' }
 }

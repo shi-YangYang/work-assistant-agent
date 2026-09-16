@@ -59,7 +59,7 @@ export class AudioCapture {
 
   constructor(private callbacks: CaptureCallbacks) {}
 
-  async start() {
+  async start(maxBytes = 20 * 1024 * 1024) {
     if (this.disposed || this.pending || this.session) return
     const generation = ++this.generation
     if (typeof window !== 'undefined' && window.isSecureContext === false) {
@@ -85,8 +85,18 @@ export class AudioCapture {
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
       const session: Session = { stream, recorder, chunks: [], keep: true, finished: false }
       this.session = session
+      let bytes = 0
       recorder.ondataavailable = (event) => {
-        if (!session.finished && session.keep && event.data.size) session.chunks.push(event.data)
+        if (!session.finished && session.keep && event.data.size) {
+          session.chunks.push(event.data)
+          bytes += event.data.size
+          if (bytes >= maxBytes && recorder.state !== 'inactive') {
+            this.callbacks.error(
+              '录音已达到附件容量上限，已保留录音；请移除其他附件或重新录制后发送。',
+            )
+            this.stop()
+          }
+        }
       }
       recorder.onstop = () => this.finish(session)
       recorder.onerror = () => {

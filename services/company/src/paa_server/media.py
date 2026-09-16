@@ -1,31 +1,41 @@
 import asyncio
 import base64
 import hashlib
-import io
 from pathlib import Path
 import tempfile
 import wave
 from weakref import WeakKeyDictionary
-from PIL import Image, UnidentifiedImageError
 from .service import problem
 
-Image.MAX_IMAGE_PIXELS = 20_000_000
-IMAGE_TYPES = {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'WEBP': 'image/webp'}
+# Decode work is isolated from the API event loop and process. Originals never change.
+IMAGE_PREVIEW_VERSION = 'image-v1'
+MAX_MESSAGE_IMAGE_BLOCKS = 8
+MAX_MESSAGE_IMAGE_PIXELS = 16_000_000
+MAX_MESSAGE_IMAGE_BYTES = 6 * 1024 * 1024
 
 
-def image_input(data: bytes):
-    try:
-        with Image.open(io.BytesIO(data)) as image:
-            if image.format not in IMAGE_TYPES or image.width * image.height > 20_000_000:
-                problem(415, '请使用不超过 2,000 万像素的 JPEG、PNG 或 WebP 图片')
-            mime = IMAGE_TYPES[image.format]
-            image.load()
-            image.thumbnail((2048, 2048))
-            buffer = io.BytesIO()
-            image.convert('RGB').save(buffer, 'JPEG', quality=85)
-            return mime, buffer.getvalue()
-    except (UnidentifiedImageError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
-        problem(415, '图片无法读取，请转换为 JPEG、PNG 或 WebP 后重试')
+async def image_process(path, mode='validate'):
+    from .documents import parse_process
+    loop = asyncio.get_running_loop()
+    limit = _image_limits.setdefault(loop, asyncio.Semaphore(2))
+    async with limit:
+        result = await parse_process(path, mode, timeout=30, entrypoint=Path(__file__).with_name('image_parser.py'), max_output=8 * 1024 * 1024)
+    if result.get('status') != 'ready':
+        problem(415, result.get('info', {}).get('error', '图片无法转换，请裁剪后重试'))
+    return result
+
+
+def preview_path(settings, identifier):
+    return settings.media_dir / f'{identifier}.{IMAGE_PREVIEW_VERSION}'
+
+
+def remove_media(settings, identifier):
+    (settings.media_dir / identifier).unlink(missing_ok=True)
+    # Known conversion versions only; no untrusted filename/glob path.
+    preview_path(settings, identifier).unlink(missing_ok=True)
+
+
+_image_limits = WeakKeyDictionary()
 
 
 _conversion_limits = WeakKeyDictionary()
@@ -55,7 +65,7 @@ async def _audio_wav(path: Path, settings):
                 raise
             problem(422, '语音处理超时，请使用较短录音')
         if process.returncode != 0:
-            problem(415, '语音文件无法读取，请使用 WebM、MP4、AAC 或 WAV')
+            problem(415, '语音文件无法读取，请使用 MP3、WebM、MP4、AAC 或 WAV')
         with wave.open(str(output)) as audio:
             duration = audio.getnframes() / audio.getframerate()
         if duration <= 0 or duration > 180:
@@ -72,7 +82,9 @@ def audio_mime(data):
         return 'audio/mp4'
     if len(data) > 2 and data[0] == 255 and data[1] & 0xF6 == 0xF0:
         return 'audio/aac'
-    problem(415, '请使用 WebM、MP4、AAC 或 WAV 语音文件')
+    if data.startswith(b'ID3') or (len(data) > 2 and data[0] == 255 and data[1] & 0xE0 == 0xE0 and data[1] & 0x06 != 0):
+        return 'audio/mpeg'
+    problem(415, '请使用 MP3、WebM、MP4、AAC 或 WAV 语音文件')
 
 
 def data_url(data, mime):

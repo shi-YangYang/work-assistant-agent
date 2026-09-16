@@ -19,3 +19,11 @@
 - [阿里云私有 OSS 应用方案](https://www.alibabacloud.com/help/en/oss/how-to-apply-the-private-permission-to-the-actual-business) 提供应用服务器代理及临时签名访问方式。将来选择哪种方式需结合权限撤销、下载流量和部署环境，当前仍沿用鉴权下载接口。
 
 取舍是首版可较轻地运行并保留多端共享能力，但私有磁盘需要配对备份，文本解析不能替代复杂图表理解。具体格式、限制与用户行为只在 Spec／Plan 维护。
+
+## Spec 019 扩展决策
+
+2026-09-16 · 用户确认扩展发送体验、混合语音、MP3／HEIC／XLSX、图片与 PDF 预览及图片质量，范围及验收状态见 [Spec 019](../../specs/spec-019-assistant-attachments/spec.md)；原 Spec 012 的历史边界保留。
+
+- HEIF 使用 [pillow-heif](https://pillow-heif.readthedocs.io/en/latest/) 接入已有 Pillow 管线，服务端提供受授权的浏览器预览，避免依赖每个浏览器原生解码；按 [Pillow 方向处理](https://pillow.readthedocs.io/en/stable/reference/ImageOps.html#PIL.ImageOps.exif_transpose) 保留正确显示方向。保留原件、独立派生缓存，不引入新模型服务。
+- XLSX 使用 [openpyxl 只读模式](https://openpyxl.readthedocs.io/en/stable/optimized.html) 扩展现有解析子进程；其 [data_only](https://openpyxl.readthedocs.io/en/stable/api/openpyxl.reader.excel.html) 读取已保存缓存值，不负责计算公式。因此必须区分公式、缓存与缺失，不能将缓存当作实时计算结果；仍不运行 Office、宏或外部链接。
+- PDF 原页预览采用本地打包的 [PDF.js display layer](https://mozilla.github.io/pdf.js/getting_started/)，统一桌面／手机控件与鉴权下载；不将私有文件发给公共在线预览服务。渲染可见内容与 Agent 提取文字是两条独立路径，不因能显示扫描页就声称完成 OCR。

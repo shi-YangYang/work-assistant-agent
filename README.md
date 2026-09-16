@@ -24,7 +24,7 @@
 | 多会话管理，查询自己的工作和报告 | 在线生成会议纪要、决策和行动项 |
 | 管理员查看团队看板、进展和阻碍 | 搜索会议、定位原文与录音、导出纪要 |
 
-Web 适配电脑与手机，支持 PDF、DOCX、PPTX、TXT、JSON、Markdown 和 CSV 文件；扫描件暂不支持文字识别。管理员可维护成员、汇报规则和模型服务。
+Web 适配电脑与手机，可粘贴截图、拖入文件，混合发送图片、文档和语音，支持 MP3、HEIC 照片及 PDF、DOCX、PPTX、XLSX、TXT、JSON、Markdown、CSV。图片和 PDF 可直接预览；扫描件暂不支持文字识别。管理员可维护成员、汇报规则和模型服务。
 
 桌面提供多款转写模型，支持中文、英文和中英混合。录音与转写保存在本机，模型下载后可离线转写；在线 AI 功能需要配置模型服务。
 
@@ -77,7 +77,7 @@ npm run dev
 | Agent | Deep Agents、LangGraph；通过 harness 管理工具调用、任务状态与人工确认 |
 | 数据存储 | PostgreSQL 存储公司数据，SQLite 存储桌面资料；SQLAlchemy、Alembic 管理服务端数据访问与迁移 |
 | 语音与媒体 | faster-whisper、CTranslate2 用于桌面本地转写；sounddevice 录音，FFmpeg 处理音频，Web 转写调用外部 API |
-| 文件解析 | pypdf、python-docx、python-pptx，提取 PDF、Word 和 PowerPoint 文字 |
+| 文件解析与预览 | pypdf、python-docx、python-pptx、openpyxl 提取文档与表格；Pillow／pillow-heif 处理图片，PDF.js 预览 PDF |
 | 部署与打包 | Docker Compose、Caddy 部署 Web；electron-builder、PyInstaller 打包桌面应用和 Python 核心 |
 | 测试与检查 | Vitest、pytest、unittest、Playwright、ESLint、Prettier |
 

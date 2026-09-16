@@ -31,6 +31,8 @@ export interface Attachment {
     chunks?: number
   } | null
   url: string
+  previewUrl?: string | null
+  image?: { width: number; height: number; warnings: string[] } | null
 }
 export interface DocumentCitation {
   attachmentId: string

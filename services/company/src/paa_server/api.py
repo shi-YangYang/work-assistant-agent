@@ -25,7 +25,7 @@ from . import report_schedule as reporting
 from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from .config import Settings
 from .db import database
-from .media import audio_mime, audio_wav, image_input
+from .media import audio_mime, audio_wav, image_process, preview_path
 from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, ReportObligation, ReportNotification, Session, WorkItem, WorkRevision, now
 from .model_schemas import RetryJob
 from .model_provider import ProviderError
@@ -173,7 +173,7 @@ def create_app(settings=None):
             # Model probes and uploads can wait on network/decoders; they use
             # their own final authorization checks rather than holding this lock.
             long_operation = request.url.path in ('/api/v1/settings/model-services/models', '/api/v1/settings/model-services/test', '/api/v1/uploads') and request.method == 'POST'
-            long_operation = long_operation or request.url.path.endswith(('/events', '/feedback'))
+            long_operation = long_operation or request.url.path.endswith(('/events', '/feedback')) or (request.url.path.startswith('/api/v1/uploads/') and request.url.path.endswith('/preview'))
             if not long_operation:
                 await business.company_lock(db, actor.company_id)
             actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
@@ -307,9 +307,9 @@ def create_app(settings=None):
         name = safe_name(file.filename)
         mime = document_type(name, file.content_type)
         suffix = Path(name).suffix.lower()
-        kind = 'document' if mime else 'image' if (file.content_type or '').startswith('image/') or suffix in ('.jpg', '.jpeg', '.png', '.webp') else 'audio'
-        if kind != 'image' and not mime and not ((file.content_type or '').startswith(('audio/', 'image/')) or Path(name).suffix.lower() in ('.m4a', '.wav', '.webm', '.mp4', '.aac')):
-            problem(415, '请使用 PDF、DOCX、PPTX、TXT、JSON、MD、CSV、图片或语音文件')
+        kind = 'document' if mime else 'image' if (file.content_type or '').startswith('image/') or suffix in ('.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif') else 'audio'
+        if kind != 'image' and not mime and not ((file.content_type or '').startswith(('audio/', 'image/')) or Path(name).suffix.lower() in ('.m4a', '.wav', '.webm', '.mp4', '.aac', '.mp3')):
+            problem(415, '请使用 PDF、DOCX、PPTX、XLSX、TXT、JSON、MD、CSV、图片或语音文件')
         identifier = str(uuid4())
         settings.media_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         path = settings.media_dir / identifier
@@ -325,24 +325,28 @@ def create_app(settings=None):
                     await run_in_threadpool(target.write, block)
             if not size:
                 problem(422, '不能上传空文件')
-            duration = None
+            duration, image_info = None, {}
             if kind == 'image':
-                mime, _ = await run_in_threadpool(image_input, await run_in_threadpool(path.read_bytes))
+                image_info = await image_process(path)
+                mime = image_info['mime']
+                expected = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.heic': 'image/heic', '.heif': 'image/heic'}.get(suffix)
+                if expected and expected != mime:
+                    problem(415, '图片实际格式与扩展名不一致，请重新导出后上传')
             elif kind == 'audio':
                 with path.open('rb') as raw:
                     mime = audio_mime(raw.read(16))
                 _, duration = await audio_wav(path, settings)
-            elif Path(name).suffix.lower() in ('.pdf', '.docx', '.pptx'):
+            elif Path(name).suffix.lower() in ('.pdf', '.docx', '.pptx', '.xlsx'):
                 with path.open('rb') as raw:
                     magic = raw.read(8)
-                if not (magic.startswith(b'%PDF-') if name.lower().endswith('.pdf') else magic.startswith(b'PK')):
+                if not (magic.startswith(b'%PDF-') if name.lower().endswith('.pdf') else magic.startswith(b'PK\x03\x04')):
                     problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
             initial_company = actor.company_id
             await business.company_lock(db, initial_company)
             actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
             if not actor.active or actor.company_id != initial_company:
                 problem(403, '账号权限已变化，请重新登录')
-            item = Attachment(id=identifier, company_id=actor.company_id, owner_id=actor.id, kind=kind, mime=mime, name=name, size=size, sha256=digest.hexdigest(), duration=duration, extraction_status='unsent' if kind == 'document' else 'none')
+            item = Attachment(id=identifier, company_id=actor.company_id, owner_id=actor.id, kind=kind, mime=mime, name=name, size=size, sha256=digest.hexdigest(), duration=duration, extraction_info=image_info, extraction_status='unsent' if kind == 'document' else 'none')
             db.add(item)
             await db.flush()
         except BaseException:
@@ -357,6 +361,43 @@ def create_app(settings=None):
         if not path.is_file():
             problem(404, '附件文件暂不可用')
         return FileResponse(path, media_type=item.mime, filename=item.name if item.kind == 'document' else None, content_disposition_type='attachment' if item.kind == 'document' else 'inline', headers={'Content-Security-Policy': "sandbox; default-src 'none'"} if item.kind == 'document' else {'Content-Disposition': 'inline'})
+
+    @app.get('/api/v1/uploads/{identifier}/preview')
+    async def image_preview(identifier: str, request: Request, actor=AUTH, db=DB):
+        import base64
+        import os
+        initial_company, initial_role = actor.company_id, actor.role
+        item = await visible_attachment(db, identifier, actor)
+        if item.kind != 'image':
+            problem(415, '此附件不是图片')
+        path = preview_path(settings, item.id)
+        result = await image_process(settings.media_dir / item.id, 'preview') if not path.is_file() else None
+        # Conversion runs without a company lock. Authorize again and serialize
+        # publication with deletion/permission changes only after it finishes.
+        await business.company_lock(db, initial_company)
+        current = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
+        session_live = await db.scalar(select(Session.id).where(Session.id == request.state.session.id, Session.expires_at > now()))
+        if not session_live:
+            problem(401, '登录已过期，请重新登录', 'login_required')
+        if not current.active or current.company_id != initial_company or current.role != initial_role:
+            problem(403, '账号权限已变化，请重新登录')
+        item = await visible_attachment(db, identifier, current, lock=True)
+        if not (settings.media_dir / item.id).is_file():
+            problem(404, '附件文件暂不可用')
+        if result is not None and not path.is_file():
+            staged = path.with_name(path.name + '.' + str(uuid4()) + '.tmp')
+            try:
+                with staged.open('xb') as output:
+                    os.chmod(staged, 0o600)
+                    output.write(base64.b64decode(result['preview']['data']))
+                os.replace(staged, path)
+            finally:
+                staged.unlink(missing_ok=True)
+        with path.open('rb') as source:
+            mime = 'image/png' if source.read(8) == b'\x89PNG\r\n\x1a\n' else 'image/jpeg'
+        # No browser cache survives a role/ownership change; this URL always authorizes.
+        from fastapi.responses import Response
+        return Response(path.read_bytes(), media_type=mime, headers={'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline'})
 
     @app.get('/api/v1/uploads/{identifier}/extraction')
     async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, actor=AUTH, db=DB):
@@ -401,8 +442,8 @@ def create_app(settings=None):
         else:
             conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor)
         attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
-        if any(a.message_id for a in attached) or (any(a.kind == 'audio' for a in attached) and len(attached) != 1) or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
-            problem(422, '附件已使用或组合不受支持；文档与图片合计最多 4 个、20 MiB，语音单独发送')
+        if any(a.message_id for a in attached) or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
+            problem(422, '附件已使用或组合不受支持；附件合计最多 4 个、20 MiB，其中最多一段语音')
         if body.replyTo:
             reply = await active_message(db, body.replyTo, actor)
             await business.require(db, actor, reply.access)
@@ -419,7 +460,7 @@ def create_app(settings=None):
             a.message_id = item.id
             if a.kind == 'document':
                 a.extraction_status = 'pending'
-        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business.scope(actor))
+        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business.scope(actor), result={'attachmentOrder': body.attachmentIds})
         db.add(job)
         await db.flush()
         return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})

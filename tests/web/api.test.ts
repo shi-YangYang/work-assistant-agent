@@ -197,3 +197,27 @@ describe('company HTTP boundary', () => {
     expect(todayIn('Asia/Shanghai')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 })
+
+it('loads private PDF bytes with the same identity epoch and error handling as JSON', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('%PDF-1.7', { status: 200 })))
+  const bytes = await api<ArrayBuffer>('/uploads/file/content', {}, 'bytes')
+  expect(new TextDecoder().decode(bytes)).toBe('%PDF-1.7')
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response({ error: { code: 'not_found' } }, 404)))
+  await expect(api('/uploads/file/content', {}, 'bytes')).rejects.toMatchObject({ status: 404 })
+  let resolve!: (value: ArrayBuffer) => void
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: () =>
+        new Promise<ArrayBuffer>((done) => {
+          resolve = done
+        }),
+    }),
+  )
+  const pending = api('/uploads/file/content', {}, 'bytes')
+  await Promise.resolve()
+  setCsrf('different-session')
+  resolve(new TextEncoder().encode('late').buffer)
+  await expect(pending).rejects.toMatchObject({ category: 'cancelled' })
+})

@@ -17,6 +17,8 @@
 
 [Spec 017](../specs/spec-017-report-reliability-and-reminders/spec.md) 已补齐多人后台任务处理、报告生成可靠性及日报／周报待办和站内提醒。[Spec 018](../specs/spec-018-web-pilot-experience/spec.md) 已实现网络异常恢复、首次使用入口、站内问题反馈与手机操作适配，本地独立验收通过；iPhone Safari／Android Chrome 真机及 HTTPS 验证仍待补齐。说话人识别按用户要求暂缓。
 
+[Spec 019](../specs/spec-019-assistant-attachments/spec.md) 已完善员工发送材料：粘贴／拖入、语音混发、常见格式、附件预览和图片质量；软件与本地验证通过，不含扫描件 OCR。
+
 ## 后续候选方向
 
 当前工程整理见 [Spec 015](../specs/spec-015-monorepo-structure/spec.md)：为后续终端明确应用、服务和共享边界，清理无用文件；本轮不包含移动 App 开发。

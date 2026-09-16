@@ -21,6 +21,7 @@ import { usePagedResource } from './paged-resource'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
+import { ImageGallery, PdfPreview, type PreviewImage } from './AttachmentPreview'
 import { DocumentCard, DocumentCitations } from './Documents'
 import {
   fileAccept,
@@ -29,6 +30,9 @@ import {
   fileSize,
   updateSendingDraft,
   messageSubmission,
+  clipboardImages,
+  droppedFiles,
+  isHeif,
 } from './files'
 import { detailState, detailReturn } from './navigation'
 import { AutoTextarea, BusyButton, ConflictRecovery, Empty, ErrorNotice, Modal, Status } from './ui'
@@ -52,12 +56,17 @@ export function ConversationChat({
     'createdAt',
     2000,
   )
+  const [previewUploading, setPreviewUploading] = useState(false)
+  const [gallery, setGallery] = useState<number | null>(null)
+  const [pdf, setPdf] = useState<File | null>(null)
+  const [dragging, setDragging] = useState(false)
+  const dragDepth = useRef(0)
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const [sendError, setSendError] = useState<Error | string>('')
   const retryWait = useRetryWait(sendError)
   const pending = !!composer.pending
-  const locked = busy || pending
+  const locked = busy || pending || previewUploading
   const sendingRef = useRef(false)
   const [limitError, setLimitError] = useState('')
   const [captureState, setCaptureState] = useState<CaptureState>('idle')
@@ -75,13 +84,15 @@ export function ConversationChat({
   useEffect(() => {
     composerRef.current = composer
   }, [composer])
-  const change = (next: Composer) =>
+  const change = (next: Composer) => {
+    composerRef.current = next
     setDraft(
       composerKey,
       next.text || next.files.length || next.replyTo || next.pending
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
     )
+  }
   useEffect(() => {
     active.current = true
     const controller = new AudioCapture({
@@ -135,7 +146,7 @@ export function ConversationChat({
     return () => observer.disconnect()
   }, [])
   async function addFiles(files: File[]) {
-    if (!files.length) return
+    if (!files.length || locked || capturing || sendingRef.current) return
     const existing = composerRef.current
     const error = fileSelectionError([...existing.files.map((item) => item.file), ...files])
     if (error) {
@@ -153,22 +164,35 @@ export function ConversationChat({
     setSendError('')
   }
   async function startRecording() {
-    if (composer.files.length) {
-      setLimitError('请先发送或移除已有附件')
+    if (locked) return
+    if (
+      composer.files.length >= 4 ||
+      composer.files.some((item) => fileKind(item.file) === 'audio') ||
+      composer.files.reduce((sum, item) => sum + item.file.size, 0) >= 20 * 1024 * 1024
+    ) {
+      setLimitError('每次最多 4 个附件、20 MiB，其中最多一段语音；请先移除一个附件')
       return
     }
     setSendError('')
-    await capture.current?.start()
+    await capture.current?.start(
+      20 * 1024 * 1024 - composer.files.reduce((sum, item) => sum + item.file.size, 0),
+    )
   }
   async function send() {
     if (
       sendingRef.current ||
       retryWait ||
       busy ||
+      previewUploading ||
       capturing ||
       (!composer.text.trim() && !composer.files.length)
     )
       return
+    const selectionError = fileSelectionError(composer.files.map((item) => item.file))
+    if (selectionError) {
+      setLimitError(selectionError)
+      return
+    }
     sendingRef.current = true
     setBusy(true)
     setSendError('')
@@ -252,10 +276,72 @@ export function ConversationChat({
       if (active.current) setBusy(false)
     }
   }
+  const previewImages: PreviewImage[] = composer.files
+    .filter((item) => fileKind(item.file) === 'image')
+    .map((item) => ({
+      id: item.id,
+      name: item.file.name,
+      original: item.url,
+      src: item.attachment?.previewUrl ?? (isHeif(item.file) ? undefined : item.url),
+      warnings: item.attachment?.image?.warnings,
+      prepare: async () => {
+        if (locked || capturing || sendingRef.current) throw new Error('请等待当前操作结束后再预览')
+        setPreviewUploading(true)
+        try {
+          const form = new FormData()
+          form.append('file', item.file)
+          const attachment = await api<Attachment>('/uploads', { method: 'POST', body: form })
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, {
+              files:
+                previous?.files.map((file) =>
+                  file.id === item.id ? { ...file, attachment, failed: false } : file,
+                ) ?? [],
+            }),
+          )
+          return attachment.previewUrl ?? attachment.url
+        } finally {
+          if (active.current) setPreviewUploading(false)
+        }
+      },
+    }))
   const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const nextCursor = data?.nextCursor
   return (
-    <div className="assistant-page">
+    <div
+      className={`assistant-page${dragging ? ' file-dragging' : ''}`}
+      onDragEnter={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        dragDepth.current++
+        if (!locked && !capturing) setDragging(true)
+      }}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('Files')) {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = locked || capturing ? 'none' : 'copy'
+        }
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (!dragDepth.current) setDragging(false)
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        dragDepth.current = 0
+        setDragging(false)
+        if (locked || capturing) return
+        const selected = droppedFiles(event.dataTransfer)
+        if (selected.error) setLimitError(selected.error)
+        else void addFiles(selected.files)
+      }}
+    >
+      {gallery !== null && previewImages[gallery] && (
+        <ImageGallery images={previewImages} initial={gallery} onClose={() => setGallery(null)} />
+      )}
+      {pdf && <PdfPreview name={pdf.name} file={pdf} onClose={() => setPdf(null)} />}
+      {dragging && <div className="file-drop-hint">松开以添加附件</div>}
       {limitError && (
         <Modal title="无法添加附件" onClose={() => setLimitError('')}>
           <p>{limitError}</p>
@@ -359,9 +445,30 @@ export function ConversationChat({
               {composer.files.map((item) => (
                 <div key={item.id} className="pending-file">
                   {fileKind(item.file) === 'image' ? (
-                    <img src={item.url} alt={item.file.name} />
+                    <button
+                      className="attachment-preview-button"
+                      aria-label={`预览${item.file.name}`}
+                      disabled={locked}
+                      onClick={() =>
+                        setGallery(previewImages.findIndex((image) => image.id === item.id))
+                      }
+                    >
+                      {isHeif(item.file) && !item.attachment ? (
+                        <span>HEIC</span>
+                      ) : (
+                        <img src={item.attachment?.previewUrl ?? item.url} alt={item.file.name} />
+                      )}
+                    </button>
                   ) : fileKind(item.file) === 'audio' ? (
                     <audio controls src={item.url} preload="metadata" />
+                  ) : item.file.name.toLowerCase().endsWith('.pdf') ? (
+                    <button
+                      className="attachment-preview-button"
+                      aria-label={`预览${item.file.name}`}
+                      onClick={() => setPdf(item.file)}
+                    >
+                      <FileText size={24} />
+                    </button>
                   ) : (
                     <FileText size={24} />
                   )}
@@ -405,9 +512,15 @@ export function ConversationChat({
             rows={1}
             maxLength={8000}
             value={composer.text}
-            disabled={busy}
+            disabled={busy || previewUploading}
             readOnly={pending}
             onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
+            onPaste={(event) => {
+              const images = clipboardImages(event.clipboardData)
+              if (!images.length) return
+              event.preventDefault()
+              void addFiles(images)
+            }}
             onKeyDown={(event) => submitOnEnter(event, () => void send())}
           />
           {pending && (
@@ -421,7 +534,7 @@ export function ConversationChat({
               <input
                 ref={input}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                 multiple
                 hidden
                 onChange={(e) => {
@@ -481,7 +594,10 @@ export function ConversationChat({
               busy={busy}
               className="primary"
               disabled={
-                !!retryWait || capturing || (!composer.text.trim() && !composer.files.length)
+                !!retryWait ||
+                previewUploading ||
+                capturing ||
+                (!composer.text.trim() && !composer.files.length)
               }
               onClick={send}
             >
@@ -508,6 +624,16 @@ export function MessageCard({
   const live = useJobFeedback(message.job, own && !message.businessUnavailable, onChange)
   const location = useLocation()
   const [editing, setEditing] = useState<Draft | null>(null)
+  const [gallery, setGallery] = useState<number | null>(null)
+  const images = message.attachments
+    .filter((item) => item.kind === 'image')
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      src: item.previewUrl ?? item.url,
+      original: item.url,
+      warnings: item.image?.warnings,
+    }))
   const [transcript, setTranscript] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
@@ -536,6 +662,9 @@ export function MessageCard({
   const pending = message.drafts.filter((d) => d.status === 'pending')
   return (
     <article className="message">
+      {gallery !== null && !message.businessUnavailable && images[gallery] && (
+        <ImageGallery images={images} initial={gallery} onClose={() => setGallery(null)} />
+      )}
       <header>
         <span className="eyebrow">工作消息</span>
         <time>{dateLabel(message.createdAt)}</time>
@@ -549,9 +678,14 @@ export function MessageCard({
       <div className="attachments">
         {message.attachments.map((a) =>
           a.kind === 'image' ? (
-            <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
-              <img src={a.url} alt={a.name} loading="lazy" />
-            </a>
+            <button
+              className="attachment-preview-button"
+              key={a.id}
+              aria-label={`预览${a.name}`}
+              onClick={() => setGallery(images.findIndex((item) => item.id === a.id))}
+            >
+              <img src={a.previewUrl ?? a.url} alt={a.name} loading="lazy" />
+            </button>
           ) : a.kind === 'document' ? (
             <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
           ) : (

@@ -167,3 +167,20 @@ it.each([
   expect(microphoneError(error)).toContain('文字')
   expect(microphoneError(error)).not.toContain('private device')
 })
+
+it('stops at the remaining mixed-attachment budget without discarding recorded content', async () => {
+  const request = deferredStream()
+  vi.stubGlobal('navigator', { mediaDevices: { getUserMedia: () => request.promise } })
+  const events = callbacks()
+  const capture = new AudioCapture(events)
+  const starting = capture.start(10)
+  request.resolve()
+  await starting
+  const recorder = ControlledRecorder.instances[0]
+  recorder.ondataavailable?.({ data: new Blob(['captured bytes']) })
+  expect(recorder.state).toBe('inactive')
+  expect(events.error).toHaveBeenCalledWith(expect.stringContaining('容量上限'))
+  recorder.onstop?.()
+  expect(events.file).toHaveBeenCalledOnce()
+  expect(events.file.mock.calls[0][0].size).toBe(14)
+})

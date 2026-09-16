@@ -132,7 +132,7 @@ async def test_images_remain_private_until_sent_and_enter_vision_harness(setup):
     assert (await c['admin'].get(attachment['url'])).status_code == 200
     assert (await c['peer'].get(attachment['url'])).status_code == 404
     model = await run_target(settings,sessions,users,result)
-    assert model.seen_images[0]['image_url']['url'].startswith('data:image/jpeg;base64,')
+    assert model.seen_images[0]['image_url']['url'].startswith('data:image/png;base64,')
     invalid = await c['employee'].post('/api/v1/uploads', files={'file':('fake.png',b'not an image','image/png')})
     assert invalid.status_code == 415
 

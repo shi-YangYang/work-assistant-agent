@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useContext, useMemo } from 'react'
-import type { ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
+import type { KeyboardEventHandler, ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
 import { Clock3, MoreHorizontal, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { ApiError, useRetryWait } from './api'
@@ -117,10 +117,14 @@ export function Modal({
   title,
   children,
   onClose,
+  className,
+  onKeyDown,
 }: {
   title: string
+  className?: string
   children: ReactNode
   onClose: () => void
+  onKeyDown?: KeyboardEventHandler<HTMLDialogElement>
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
@@ -134,7 +138,9 @@ export function Modal({
   }, [])
   return (
     <dialog
+      className={className}
       ref={ref}
+      onKeyDown={onKeyDown}
       onCancel={(event) => {
         event.preventDefault()
         onClose()
