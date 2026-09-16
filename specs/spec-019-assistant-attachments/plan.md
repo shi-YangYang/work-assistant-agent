@@ -2,7 +2,7 @@
 
 ## 对应 Spec 与状态
 
-[Spec 019](spec.md) · DONE，[独立验收通过](acceptance.md)。行为与边界以 Spec 为准，选型理由在 [0013](../../.ai/decisions/0013-document-ingestion.md#spec-019-扩展决策)。
+[Spec 019](spec.md) · DONE，[独立验收通过](acceptance.md)。行为与边界以 Spec 为准，选型理由在 [0013](../../.ai/decisions/0013-document-ingestion.md#图片与文档处理)。
 
 ## 模块、修改顺序与数据流
 

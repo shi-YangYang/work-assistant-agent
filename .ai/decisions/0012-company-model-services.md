@@ -1,26 +1,13 @@
-# 0012 — 公司模型服务与用途分配
+# 公司模型服务与用途分配
 
-2026-09-12 · ACCEPTED。用户审查 [Spec 009](../../specs/spec-009-company-model-services/spec.md) 后明确要求“开始实施”；以下作为实施依据，实际交付与验证以实施／验收报告为准。
+- 服务配置归公司，由管理员维护；服务连接与业务用途分开，工作助手、报告、语音独立分配，报告可显式跟随工作助手。推理预设沿用 [桌面接入原则](0008-meeting-minutes-provider.md)。
+- 按协议适配，不维护厂商／型号／推理档位大全。轻量预设只匹配已核实地址、地域与模型系列；未知项可手动选协议，目录失败仍能手填模型，不自动试探付费接口。
+- 保存具体协议和选择模式，旧配置默认手动；规则更新不改变已保存任务。支持 Chat Completions、文件转写、Qwen-ASR 兼容及阿里原生语音协议，不能混用路径或字段。具体契约见 [接口方案](../../specs/spec-009-company-model-services/plan.md)。
+- 公司 Key 只供服务端使用，以独立主密钥加密，不能读取或复用 Electron safeStorage 凭证。主密钥不入库或版本库，备份时与数据库分别保管。
+- 配置变更使旧检测失效；任务锁定配置快照，恢复区分输入版本和配置版本，不能把旧工具步骤交给新模型继续执行。
+- 工作助手保留受控工具循环与逐步反馈；报告返回固定栏目，经服务端校验后事务保存。纯文本连通不能证明报告模型可用。
+- 用量区分服务商实际返回值与预算估算，保留调用时的模型归属。连通测试和真实业务质量分别验证；CI 用固定响应／故障，真实调用不成为每次 PR 的自动步骤。
 
-## 决策与理由
+复用现有 runtime、网络与加密依赖，不引入网关产品或任意 HTTP 模板。数据库配置增加了凭证、版本和快照管理，但支持管理员切换服务而无需重启。
 
-- 多服务和推理预设沿用 [决策 0008](0008-meeting-minutes-provider.md)，公司服务配置归公司所有，由管理员维护；凭证仅供服务端使用，不能复用 Electron 的 safeStorage 文件或读取其 Key。
-- 服务连接与业务用途分开。工作助手、报告、语音各自分配，报告可显式跟随工作助手。[Spec 017](../../specs/spec-017-report-reliability-and-reminders/spec.md) 将报告改为模型返回固定栏目、服务端校验并事务保存；报告用途测试同步验证栏目结构，纯文本连通不足以证明报告模型可用。工作助手继续使用受控工具循环。
-- 按接口协议适配，不维护厂商／型号／推理档位大全。2026-09-15 用户确认增加轻量服务商预设：已核实的官方地址／地域及模型系列在编辑时自动匹配，未知服务或模型在高级设置手动选协议；保存具体协议及选择模式，旧配置默认手动，不因规则更新改变运行任务。模型目录失败仍允许手填，不自动试探付费接口。映射边界见 Plan。
-- 2026-09-15：用户授权补充阿里原生语音转写协议，解决 Qwen-Audio-3.0-ASR-Flash 无法使用现有聊天兼容转写的问题；复用同源服务及密钥，管理员显式选择协议，具体契约见 Plan。
-- 复用现有 Deep Agents／LangGraph 和已安装的网络、加密依赖；模型目录、连接测试、用途解析置于受控服务边界。无需引入网关产品、向量库、Redis 或另一个 Agent 框架。
-- 使用服务器独立主密钥加密公司 API Key；主密钥不入库或版本库，备份时与数据库分别保管。业务配置变更会使旧检测失效，任务恢复必须区分输入版本与配置版本，避免恢复旧模型的待执行步骤后换用新模型。
-- 三类用途的小样本测试与真实业务联调分别证明接口可用和业务质量。复用轻量 CI 检查固定响应／故障，真实调用不成为每次 PR 的自动步骤。
-- 2026-09-15 用户确认 [Spec 016](../../specs/spec-016-web-search-metrics-and-feedback/spec.md)：聊天增加受控阶段与逐步回复，沿用完整工具校验和来源授权；管理员用量统计区分服务商实际返回值与预算估算，保留调用时的模型归属。具体行为与验证以该 Spec 及验收报告为准。
-
-## 依据与兼容性限制
-
-本机已安装 SDK 提供 Chat Completions、`/audio/transcriptions` 文件转写及自定义请求参数入口；Qwen-ASR 兼容请求不能原样发给文件转写或阿里原生接口。路径、字段和适配职责集中在 [Plan](../../specs/spec-009-company-model-services/plan.md)，运行时仅使用已保存的具体协议。
-
-[LangChain 的 ChatOpenAI 文档](https://docs.langchain.com/oss/python/integrations/chat/openai) 区分标准参数与第三方 `extra_body`，并提示第三方能力有差异。保留显式 Chat Completions，禁止配置触发 SDK 自动切换 Responses；通用预设不携带本项目禁止用户覆盖的工具或输入字段。
-
-[Qwen-ASR 文档](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference) 的兼容方式使用 `input_audio`，与文件上传转写不同；不同模型／地域支持方式不同。[百炼模型目录](https://help.aliyun.com/zh/model-studio/list-models) 也有独立分页接口。以上于 2026-09-12 核对，属于接口依据，不能替代用户实际账号测试；不把某一地域 URL 或模型 ID 设为唯一可选项。
-
-## 取舍
-
-配置进入数据库后需要凭证保护、版本冲突和任务快照，代价大于简单增加表单，但可以让管理员日常切换服务而无需重启。首版限制为已定义的协议和有限参数，避免任意 HTTP 模板或自动探测全部能力带来的复杂度与额外调用。原业务规则、Electron 数据及公司部署方向继续遵循 [决策 0011](0011-company-agent-direction.md)。
+协议依据：[ChatOpenAI](https://docs.langchain.com/oss/python/integrations/chat/openai)、[Qwen-ASR](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference)、[百炼模型目录](https://help.aliyun.com/zh/model-studio/list-models)。保持显式 Chat Completions，不让 SDK 自动切换 Responses；参数预设不能覆盖工具、输入或凭证。供应商文档不替代真实账号验证。

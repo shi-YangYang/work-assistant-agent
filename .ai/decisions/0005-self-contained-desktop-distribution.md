@@ -1,6 +1,4 @@
-# 决策 0005 — 正式安装包自带运行环境
-
-2026-09-09 · 持续约束；分发实现与验证见 Spec 005。
+# 正式安装包自带运行环境
 
 ## 决定
 
@@ -10,8 +8,8 @@
 
 ## 取舍与后续验收
 
-分进程与统一安装包可以并存，无需仅为免装 Python 重写核心。2026-09-11 已在 [Spec 005](../../specs/spec-005-desktop-distribution-and-controls/spec.md) 实施，当前独立验收中；工具、资源打包及多进程约束见其 [Plan](../../specs/spec-005-desktop-distribution-and-controls/plan.md)，平台产物和验证边界见实施报告。
+分进程与统一安装包可以并存，无需仅为免装 Python 重写核心。资源打包及多进程边界见 [分发方案](../../specs/spec-005-desktop-distribution-and-controls/plan.md)。
 
-分发 Spec 须验证平台构建、资源路径、退出清理及无预装 Python / Node.js 的环境。签名、最低系统版本另行确定；ASR 模型现已由 [决策 0007](0007-local-transcription-baseline.md) 选择应用内下载。
+分发须验证平台构建、资源路径、退出清理及无预装 Python / Node.js 的环境。签名、最低系统版本另行确定；ASR 模型现已由 [本地转写](0007-local-transcription-baseline.md) 选择应用内下载。
 
-依据（2026-09-09）：[Electron 分发](https://www.electronjs.org/docs/latest/tutorial/distribution-overview)、[PyInstaller](https://pyinstaller.org/en/stable/)。
+依据：[Electron 分发](https://www.electronjs.org/docs/latest/tutorial/distribution-overview)、[PyInstaller](https://pyinstaller.org/en/stable/)。

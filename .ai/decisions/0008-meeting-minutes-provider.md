@@ -1,12 +1,10 @@
-# Decision 0008 — 会议纪要的模型接入
-
-状态：已确认，2026-09-10；用户要求恢复实施。
+# 会议纪要的模型接入
 
 ## 决策与依据
 
-用户选择在线模型 API，在应用设置中保存多家服务的地址、模型和密钥，选定一家在转写完成后自动生成纪要；支持动态模型列表、自定义推理预设和实际连通性检测。共享 OpenAI 兼容传输，不新增本地大模型。产品行为与验收见 [Spec 004](../../specs/spec-004-meeting-minutes/spec.md)，协议、存储和运行边界见 [Plan](../../specs/spec-004-meeting-minutes/plan.md)。
+用户选择在线模型 API，在应用设置中保存多家服务的地址、模型和密钥，选定一家在转写完成后自动生成纪要；支持动态模型列表、自定义推理预设和实际连通性检测。共享 OpenAI 兼容传输，不新增本地大模型。产品行为与验收见 [会议纪要生成](../../specs/spec-004-meeting-minutes/spec.md)，协议、存储和运行边界见 [Plan](../../specs/spec-004-meeting-minutes/plan.md)。
 
-多服务保存取代起草时单组配置的限制；本轮不引入多模型并行、自动路由或故障切换。
+支持多服务保存，不引入多模型并行、自动路由或故障切换。
 
 采用 Chat Completions 的文本请求协议。官方接口支持 `model`、`messages` 和非流式返回；本项目为满足第三方兼容需求采用该接口，未采用面向 OpenAI 原生新项目推荐的 Responses。各模型可选参数支持不同，因此不把专有结构化输出能力设为通用前提，应用仍负责校验返回结构与原文引用。[官方接口文档](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
 
@@ -14,11 +12,11 @@
 
 ## 自定义推理预设
 
-用户提出还需支持 MiniMax、Kimi 及其他未列出的模型，要求自行输入多个推理强度并选择，随后指示恢复实施。采用按服务／模型保存的自定义推理预设：简单模式填写 reasoning_effort 字符串，高级模式填写受约束的 JSON 参数。保留服务默认和实际连接检测；用户声明的选项不标记为服务已证实支持。
+推理预设按服务／模型保存，避免为每个新型号增加适配：简单模式填写 reasoning_effort 字符串，高级模式填写受约束的 JSON 参数。保留服务默认和实际连接检测；用户声明的选项不标记为服务已证实支持。
 
 取消原先逐厂商／型号硬编码强度的计划。参数由用户维护，可扩展新型号；同时校验请求边界，禁止覆盖会议输入、凭证、模型、工具和传输控制。参数被服务接受不等于其必然生效，不通过额外付费试探或静默降档来判断。
 
-## 模型能力依据（2026-09-10 核对）
+## 模型能力依据
 
 [OpenAI models](https://developers.openai.com/api/reference/resources/models/methods/list) 与 [DeepSeek models](https://api-docs.deepseek.com/api/list-models/) 返回基本目录，不能据此推断推理档位；[百炼目录](https://help.aliyun.com/zh/model-studio/list-models) 使用独立分页路径，可提供模态等元数据。目录可见与生成权限须分别验证。
 

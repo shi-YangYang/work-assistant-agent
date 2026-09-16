@@ -1,6 +1,4 @@
-# 0015 — 多端仓库与共享边界
-
-2026-09-15 · **已落地**。用户审查后明确要求开始实施目录重整和全项目无用文件清理；具体映射见 [Spec 015](../../specs/spec-015-monorepo-structure/spec.md) 与 Plan，实施完成与否以验收为准。
+# 多端仓库与共享边界
 
 ## 决策
 
@@ -15,7 +13,7 @@
 
 只重命名 `src` 子目录无法解决依赖清单混用；立即拆多仓会增加共享接口的发布协调；引入 Turborepo／Nx 目前没有足够任务规模依据。因此采用原生 npm workspace，不同时更换包管理器或增加调度层。
 
-本方案已实施，替代 [0001](0001-project-skeleton.md)、[0011](0011-company-agent-direction.md) 中“业务统一留在 src／暂不迁移”的阶段性目录约定。`AGENTS.md`、`constitution/`、`specs/`、`.ai/` 的位置和职责保持不变。
+本方案已实施，替代 [项目骨架](0001-project-skeleton.md)、[公司协作与业务 Agent](0011-company-agent-direction.md) 中“业务统一留在 src／暂不迁移”的阶段性目录约定。`AGENTS.md`、`constitution/`、`specs/`、`.ai/` 的位置和职责保持不变。
 
 ## 参考
 
