@@ -97,7 +97,7 @@
 - 用户合并前确认当前 PR 的必需检查；Agent 交付链接时如实报告已知状态，不默认等待或持续轮询 CI。合并后内容未变的回同步不重跑本地检查。核对结果时仍须对应实际提交，不能用旧 SHA 宣称新提交通过。
 - 区分代码缺陷、测试假设错误和运行环境问题。先修复具体根因，不能把所有失败称为 CI 不稳定，也不能通过无限加长等待、重跑到绿、降低有效断言或删除有价值的测试掩盖失败。没有新信息时不反复轮询和汇报相同状态。
 
-依据：[GitHub CI 说明](https://docs.github.com/en/actions/get-started/continuous-integration)、[Google 关于端到端测试的经验](https://testing.googleblog.com/2015/04/just-say-no-to-more-end-to-end-tests.html)。[README 的 CI 分层](README.md#ci-分层) 描述工作流实际状态；记录本规则不代表配置已经完成相应调整。
+依据：[GitHub CI 说明](https://docs.github.com/en/actions/get-started/continuous-integration)、[Google 关于端到端测试的经验](https://testing.googleblog.com/2015/04/just-say-no-to-more-end-to-end-tests.html)。实际触发与检查范围以 [CI 工作流](.github/workflows/ci.yml) 为准；记录本规则不代表配置已经完成相应调整。
 
 ---
 

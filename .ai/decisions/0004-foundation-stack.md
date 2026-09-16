@@ -20,7 +20,7 @@
 - stdio 满足桌面单机控制需求，桌面核心不引入 HTTP / FastAPI、PostgreSQL、pgvector 或编排框架；公司服务另有独立边界，ASR / LLM 保留 Provider 接口。
 - React / TypeScript 用于状态与契约；不引入额外组件库。electron-vite 5 的 peer 范围包含 Vite 7，不能无依据升级到不兼容大版本。
 - Electron 44 的按需下载与 electron-vite 读取 `path.txt` 的行为不同，因此由 postinstall 显式调用 `install-electron`，保证 `npm ci` 准备运行时；首次安装需要网络。
-- CI 分为日常检查与按风险触发的重检查，避免每次提交都运行真实模型和安装卸载。开发使用长期 `dev`，通过 CI 和 PR 后合入 `main` 并回同步；具体测试矩阵见 [README](../../README.md#ci-分层)，分支操作见 [分支规则](../rules/git-branch-workflow.md)。
+- CI 分为日常检查与按风险触发的重检查，避免每次提交都运行真实模型和安装卸载。开发使用长期 `dev`，通过 CI 和 PR 后合入 `main` 并回同步；具体测试矩阵见 [CI 工作流](../../.github/workflows/ci.yml)，分支操作见 [分支规则](../rules/git-branch-workflow.md)。
 
 ## 依据
 

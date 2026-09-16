@@ -65,7 +65,7 @@
 | 公司定向检查入口 | `npm run test:server`、`npm run test:web`、`npm run typecheck:web`、`npm run build:web` |
 | 手动／发布前 | `test:asr`、`test:smoke`、`test:smoke:quick`、`test:smoke:asr`；构建依赖准备后 `package`／`test:package` |
 
-命令是可用入口，不代表每次任务必跑。按 AGENTS.md 的 S0～S3 选择最小必要范围，源码仅格式化本次文件。CI 触发与分层唯一来源为 [README](../README.md#ci-分层)，不因新增 Spec 叠加重检查。
+命令是可用入口，不代表每次任务必跑。按 AGENTS.md 的 S0～S3 选择最小必要范围，源码仅格式化本次文件。CI 触发与检查范围以 [CI 工作流](../.github/workflows/ci.yml) 为准，不因新增 Spec 叠加重检查。
 
 ## 数据与安全边界
 
