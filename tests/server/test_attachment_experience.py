@@ -2,7 +2,9 @@ import asyncio
 import base64
 from datetime import timedelta
 import io
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -10,7 +12,7 @@ from fastapi import HTTPException
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from paa_server.documents import parse_process
 from paa_server.media import image_process, audio_mime, audio_wav, preview_path
-from paa_server.models import Attachment, Job, now
+from paa_server.models import Attachment, Job, Message, now
 from paa_server.worker import process_job, maintenance
 from attachment_samples import image_samples, spreadsheet_bytes, mp3_bytes
 from test_company import keyed
@@ -79,7 +81,7 @@ async def test_xlsx_preserves_addresses_saved_values_hidden_ranges_and_limits(tm
     assert (await parse_process(path, '.xlsx'))['status'] == 'failed'
 
 
-async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(setup, tmp_path):
+async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(setup, tmp_path, monkeypatch):
     settings, sessions, users, c = setup
     original = mp3_bytes(tmp_path, settings.ffmpeg)
     assert audio_mime(original[:16]) == 'audio/mpeg'
@@ -95,6 +97,15 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     sent = await c['employee'].post('/api/v1/messages', json=body, headers=headers)
     assert sent.status_code == 202, sent.text
     assert (await c['employee'].post('/api/v1/messages', json=body, headers=headers)).json() == sent.json()
+    import paa_server.worker as worker
+    from paa_server.agent.harness import get_message_context
+    received = []
+    original_harness = worker.invoke_harness
+    async def inspect_input(context, saver, blocks, model):
+        source = json.loads(await get_message_context.coroutine(message_id=sent.json()['messageId'], runtime=SimpleNamespace(context=context)))
+        received.append((blocks[0]['text'], source))
+        return await original_harness(context, saver, blocks, model)
+    monkeypatch.setattr(worker, 'invoke_harness', inspect_input)
     async def execute(provider):
         async with sessions.begin() as db:
             job = await db.get(Job, sent.json()['jobId']); job.state = 'running'; job.fence += 1; job.lease_until = now() + timedelta(seconds=90)
@@ -113,6 +124,27 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     assert result['job']['state'] == 'awaiting_input', result
     assert result['transcript'] == '今天完成现场检查，附件是进度资料'
     assert model.seen_images and next(a for a in result['attachments'] if a['kind'] == 'document')['extraction']['status'] == 'partial'
+    prompt, source = received[-1]
+    inventory = json.loads(prompt.split('本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：', 1)[1].split('\n', 1)[0])
+    assert {item['id']: item for item in inventory} == {item['id']: item for item in source['attachments']}
+    assert {item['id'] for item in inventory} == {image['id'], doc['id'], audio['id']}
+    voice = next(item for item in inventory if item['kind'] == 'audio')
+    assert voice == {'id': audio['id'], 'name': 'voice.mp3', 'kind': 'audio', 'uploadStatus': 'received', 'transcription': {'status': 'available', 'revision': 1}}
+    audio_source = json.loads(prompt.split('语音内容来源：', 1)[1].split('\n', 1)[0])
+    assert audio_source['receivedAudioFiles'] == ['voice.mp3'] and audio_source['transcript'] == source['transcript']
+    assert [item['id'] for item in source['documents']] == [doc['id']]
+    assert '今天完成现场检查，附件是进度资料' in prompt and source['transcript'] in prompt
+    assert '仅含文档，不含图片和语音' in prompt
+    # Reprocessing a corrected transcript preserves its source and never repeats ASR.
+    async with sessions.begin() as db:
+        row = await db.get(Message, sent.json()['messageId'])
+        row.transcript, row.transcript_revision = '纠正：现场检查尚未完成', 2
+    await execute(failed)
+    result = (await c['employee'].get('/api/v1/messages/' + sent.json()['messageId'])).json()
+    assert result['job']['state'] == 'awaiting_input', result
+    prompt, source = received[-1]
+    assert '纠正：现场检查尚未完成' in prompt and source['transcript'] in prompt
+    assert next(item for item in source['attachments'] if item['kind'] == 'audio')['transcription']['revision'] == 2
     second = await upload(c['employee'], 'second.mp3', original, 'audio/mpeg')
     third = await upload(c['employee'], 'third.mp3', original, 'audio/mpeg')
     rejected = await c['employee'].post('/api/v1/messages', json={'text': 'two voices', 'attachmentIds': [second['id'], third['id']]}, headers=keyed())

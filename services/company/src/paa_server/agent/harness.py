@@ -38,6 +38,7 @@ POLICY = '''你是公司的工作助手。仅处理当前员工上报的工作�
 用户补充或纠正优先于旧模型摘要。调用 get_work_item 获取当前修订，不用旧上下文覆盖新版本。
 历史回复中的“待确认”只表示当时的状态；当前是否确认以工具返回的 progress 状态和工作记录为准。
 文件问题用 find_documents 查目录或片段，用 read_document 读取实际分段；目录不是全文。
+attachments／完整附件清单列出已上传材料，documents／文档目录仅包含文档，不是全部附件。语音附件通过转写文本供你理解，可能已经用户纠正。回答语音文字内容时直接说明“根据 <音频文件名> 的转写”，不展示内部传输方式或修订号，不把转写中转说成“未提供音频”或“音频未读取”，也不声称自己直接听过录音。只有问题涉及音色、语气等转写无法提供的信息时，才解释无法仅凭转写判断。
 只能引用已由读取工具返回的 citation 标记，原样放入答案，例如 [[file:...]]，不要猜测来源。
 仅发文件而无处理意图时，读取少量内容给出简短概览并询问意图，不自动提出完成工作建议。
 必须说明使用了哪些文件、哪些解析失败或部分可读；只读部分分段时不能声称全文总结。预算不足时说明实际覆盖范围并请用户缩小问题。
@@ -350,7 +351,7 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext]) -> str:
 
 @tool
 async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext]) -> str:
-    """Read this employee's original sent message, corrected transcript and assistant reply."""
+    """Read the authorized message, attachment inventory, corrected transcript and reply."""
     async with runtime.context.sessions.begin() as db:
         _, actor = await lease(db, runtime.context)
         message = await referenced_record(db, Message, message_id, actor)
@@ -366,7 +367,19 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext])
         await business.require(db, actor, message.access)
         current_job.access = business.merge_access(current_job.access or business.scope(actor), message.access)
         drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.owner_id == actor.id, ProgressDraft.company_id == actor.company_id).order_by(ProgressDraft.created_at.desc()).limit(20))).all()
-        return clip({'id': message.id, 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], 'text': message.text, 'transcript': message.transcript, 'reply': message.reply, 'documents': [{'id': item.id, 'name': item.name, 'status': item.extraction_status} for item in (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False), Attachment.kind == 'document'))).all()]})
+        attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)).order_by(Attachment.created_at, Attachment.id))).all()
+        return clip({'id': message.id, 'attachments': attachment_inventory(attachments, message.transcript, message.transcript_revision), 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], 'text': message.text, 'transcript': message.transcript, 'reply': message.reply, 'documents': [{'id': item.id, 'name': item.name, 'status': item.extraction_status} for item in attachments if item.kind == 'document']})
+
+
+def attachment_inventory(attachments, transcript, transcript_revision):
+    """Describe uploaded sources separately from their model-readable representations."""
+    result = []
+    for attachment in attachments:
+        item = {'id': attachment.id, 'name': attachment.name, 'kind': attachment.kind, 'uploadStatus': 'received'}
+        if attachment.kind == 'audio':
+            item['transcription'] = {'status': 'available' if transcript.strip() else 'unavailable', 'revision': transcript_revision}
+        result.append(item)
+    return result
 
 
 @tool

@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from . import business_access as business
 from .feedback import publish, update_feedback
 from .usage import RequestRecord, interrupt_usage
-from .agent.harness import BudgetExceeded, LostLease, RunContext, invoke_harness, lease, reserve_call
+from .agent.harness import BudgetExceeded, LostLease, RunContext, attachment_inventory, invoke_harness, lease, reserve_call
 from .config import Settings
 from .db import database
 from .documents import prepare_document, verified_citations
@@ -200,11 +200,16 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 image_manifest.append({'attachmentId': attachment.id, 'name': attachment.name, 'size': [result['width'], result['height']], 'regions': [tile['box'] for tile in result['tiles']], 'complete': result['complete'], 'warnings': result['warnings']})
         if job.kind == 'message':
             context.source_revision = transcript_revision
-        blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text + ('\n语音转写（员工可纠正）：' + transcript if transcript else '')})
+        blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text})
+        if attachments:
+            blocks[0]['text'] += '\n本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：' + json.dumps(attachment_inventory(attachments, transcript, transcript_revision), ensure_ascii=False)
+        if transcript:
+            audio_names = [attachment.name for attachment in attachments if attachment.kind == 'audio']
+            blocks[0]['text'] += '\n语音内容来源：' + json.dumps({'receivedAudioFiles': audio_names, 'status': '已收到音频，以下为该音频的当前转写；如有用户纠正，以纠正版本为准', 'transcript': transcript}, ensure_ascii=False)
         if image_manifest:
             blocks[0]['text'] += '\n图片按附件及区域顺序排列，坐标为方向校正后的原图像素；必须如实说明未读取范围：' + json.dumps(image_manifest, ensure_ascii=False)
         if documents:
-            blocks[0]['text'] += '\n本次文件目录（正文需通过工具读取；状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
+            blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；正文需通过工具读取，状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
         if not model and not context.model_binding.get(context.model_purpose):
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
         await publish(context, 'generating', force=True)
