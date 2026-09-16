@@ -1,11 +1,13 @@
 """Device routing and cache compatibility without requiring a physical GPU."""
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.asr_worker import DEFAULT_CONFIG, WhisperProvider, config_for_mode
 from paa_core.inference_device import apply_device, hardware
 from paa_core.model_catalog import CATALOG, MLX_CATALOG

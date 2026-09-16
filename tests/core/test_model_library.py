@@ -1,5 +1,6 @@
 """Small transactional fixtures for model defaults and candidate publication, never user data."""
 import sqlite3
+import sys
 import tempfile
 import threading
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 from functools import partial
 import multiprocessing
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.asr_worker import config_for_mode, DEFAULT_CONFIG, ASRWorker
 from paa_core.model_catalog import CATALOG
 from paa_core.model_manager import ModelManager, MODEL_ID, REVISION
