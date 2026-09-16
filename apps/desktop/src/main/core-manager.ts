@@ -118,7 +118,8 @@ export class CoreManager extends EventEmitter {
     })
     this.client = client
     try {
-      const health = await client.request('health', this.resourcesPath ? 15_000 : undefined)
+      // Hardware discovery can exceed the 3s RPC timeout in both source and packaged builds.
+      const health = await client.request('health', 15_000)
       if (!isHealth(health)) throw new CoreError('invalid_health', '本地核心状态无效，请重新连接。')
       if (!/^3\.12\./.test(health.pythonVersion))
         throw new CoreError(

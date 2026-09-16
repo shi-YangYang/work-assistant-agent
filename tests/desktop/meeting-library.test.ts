@@ -190,7 +190,8 @@ it('uses the real core JSON Lines lifecycle for background search and validation
   roots.push(root)
   const core = new CoreManager(process.cwd(), root)
   try {
-    expect((await core.start()).connection).toBe('ready')
+    const status = await core.start()
+    expect(status.connection, status.message).toBe('ready')
     const library = new DesktopLibrary(core, { save: async () => null, copy: () => {} })
     expect(await library.execute('rename', { meetingId: id, title: '' })).toMatchObject({
       ok: false,
@@ -207,4 +208,4 @@ it('uses the real core JSON Lines lifecycle for background search and validation
   } finally {
     await core.stop()
   }
-})
+}, 20_000)
