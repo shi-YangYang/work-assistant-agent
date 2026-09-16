@@ -43,6 +43,7 @@ import { ConnectionNotice } from './connection'
 import { useMobileViewport } from './mobile-viewport'
 import { ModelServices } from './ModelServices'
 import { DingTalkLogin, DingTalkResult, LoginMethods } from './DingTalk'
+import { LoginBackground } from './LoginBackground'
 import { SourcePage } from './Assistant'
 import { Assistant } from './Conversations'
 import { Breadcrumbs } from './Breadcrumbs'
@@ -215,55 +216,63 @@ function Login({
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
   return (
-    <main className="login">
-      <form
-        className="login-card"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          const data = new FormData(e.currentTarget)
-          setBusy(true)
-          try {
-            onLogin(
-              await write<Identity>('/auth/login', {
-                username: data.get('username'),
-                password: data.get('password'),
-              }),
-            )
-          } catch (e) {
-            setError(e as Error)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        <div className="brand">
+    <main className="login login-page">
+      <LoginBackground />
+      <section className="login-panel" aria-labelledby="login-title">
+        <header className="login-heading">
           <span className="brand-mark" aria-hidden="true" />
-          工作助手
-        </div>
-        <h1>欢迎回来</h1>
+          <h1 id="login-title">登录工作助手</h1>
+        </header>
         <DingTalkResult />
-        <p>登录公司账号，继续记录和跟进工作。</p>
-        <label>
-          账号
-          <input name="username" autoComplete="username" required maxLength={80} />
-        </label>
-        <label>
-          密码
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            maxLength={128}
-          />
-        </label>
-        <ErrorNotice>{error}</ErrorNotice>
-        <BusyButton busy={busy} className="primary">
-          登录
-        </BusyButton>
         <DingTalkLogin vault={vault} />
-        <small>尚无账号？请联系公司的老板／管理员。</small>
-      </form>
+        <form
+          className="login-form"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const data = new FormData(e.currentTarget)
+            setBusy(true)
+            try {
+              onLogin(
+                await write<Identity>('/auth/login', {
+                  username: data.get('username'),
+                  password: data.get('password'),
+                }),
+              )
+            } catch (e) {
+              setError(e as Error)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <label>
+            账号
+            <input
+              name="username"
+              placeholder="输入账号"
+              autoComplete="username"
+              required
+              maxLength={80}
+            />
+          </label>
+          <label>
+            密码
+            <input
+              name="password"
+              type="password"
+              placeholder="输入密码"
+              autoComplete="current-password"
+              required
+              maxLength={128}
+            />
+          </label>
+          <ErrorNotice>{error}</ErrorNotice>
+          <BusyButton busy={busy} className="primary">
+            登录
+          </BusyButton>
+        </form>
+        <small className="login-help">尚无账号？请联系公司管理员</small>
+      </section>
     </main>
   )
 }

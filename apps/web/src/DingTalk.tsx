@@ -12,6 +12,7 @@ import { BusyButton, ErrorNotice, Modal } from './ui'
 import { Workspace, type DraftStore } from './workspace'
 import type { SessionDrafts } from './session-drafts'
 import { dingtalkDraftSummary, dingtalkResult, officialDingTalkUrl } from './dingtalk-flow'
+import dingtalkIcon from './assets/dingtalk.svg'
 
 export function DingTalkResult() {
   const location = useLocation()
@@ -143,8 +144,10 @@ export function DingTalkLogin({ vault }: { vault: SessionDrafts }) {
         busy={redirect.busy}
         onClick={() => redirect.launch('/auth/dingtalk/start')}
       >
+        <img src={dingtalkIcon} width={20} height={20} alt="" aria-hidden="true" />
         使用钉钉登录
       </BusyButton>
+      <div className="login-divider">或使用账号登录</div>
       {redirect.guard}
     </div>
   )
