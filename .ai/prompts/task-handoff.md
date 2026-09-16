@@ -1,9 +1,10 @@
 # Task Handoff — 当前状态
 
-2026-09-16 · 用户暂停说话人识别讨论，要求从 tiny 开始补齐 Electron 的 GPU 模型实测；本轮直接修改，由主 Agent 完成，未开新 Spec。
+2026-09-16 · 当前任务为 [Spec 018 — Web 试点使用体验](../../specs/spec-018-web-pilot-experience/spec.md)，实现与本地独立验收通过，真机待实测，尚未提交／推送。
 
-- 15 组新增实测已完成：tiny、base、small、large-v3-turbo、large-v3 × 中文／英文／中英混合。medium 沿用 2026-09-15 的三组结果，未重跑；六款 Apple GPU 共 18 组。固定语料、脚本和 Provider hash 一致，所有纯静音检查无输出。
-- 错误率、进程峰值 RSS、GPU 分配峰值已写入共享基准 JSON，界面按模型显示各自实测日期；CPU 旧结果保留，CUDA 未实测。完整口径、结果和原始证据入口见 [Spec 013 实测](../../specs/spec-013-local-model-library/verification.md#2026-09-16其余五款-apple-gpu-模型)。
-- 六款 GPU 模型已下载／校验并保留在默认日常缓存；默认 GPU／medium／中英混合未改，未创建测试会议、读取用户录音或接触服务凭证。
-- 改动源码已由 Prettier 整理，renderer 定向类型检查通过；在项目目录执行 `npm run dev`，实际检查日常 Electron 的 tiny、medium、large-v3 指标及各自日期，显示正确。开发窗口留在本地转写模型页面。
-- 未运行完整测试、打包或远端 CI；用户已要求本轮 commit／push，实际结果以 Git 记录和本轮交付为准。工作区留在 `dev`。说话人分段／声纹匹配尚未实施，后续需用户恢复该任务；此前 CPU／GPU 推理功能已在 `1ff5f79` 提交推送，Windows GPU 尚无实机验证。
+- 用户指定网络异常、首次使用、问题反馈与定位、手机实际操作四项，实施按 [Plan](../../specs/spec-018-web-pilot-experience/plan.md)。站内文字＋诊断摘要由本公司管理员处理，首版不含截图。
+- 首批优先适配 iPhone Safari／Android Chrome，同一套 Web 不按浏览器名称限制访问；录音为既有短语音消息，不新增 Web 会议录制。实体设备和 HTTPS 条件未提供，不能冒称真机验收通过。
+- 复用现有管理员空会话示例、消息幂等及请求编号；不包含跨刷新草稿、离线队列、生产部署或新增 AI 业务能力。保留 Enter 发送／Shift+Enter 换行规则。
+- 独立验收发现的 SSE 后段异常日志、`Retry-After` 恢复等待问题均已修复，最终软件／本地范围 [PASS](../../specs/spec-018-web-pilot-experience/acceptance.md)。[实施记录](../../specs/spec-018-web-pilot-experience/implementation.md) 保存范围内测试、界面证据及 Agent 创建上限下的分工记录；无未完成实施或验收 Agent。
+- 日常数据库备份后已迁移到 `0008_support_feedback`；`npm run dev:company` 会话 74087（API 24257）运行中。浏览器已恢复正常窗口尺寸与管理员身份，停留“问题反馈”。未发送测试业务消息或调用模型。
+- 工作分支为 `dev`；上一轮 GPU 基准已在 `5d73aad` 提交推送，远端 CI 状态未确认。实测证据见 [Spec 013](../../specs/spec-013-local-model-library/verification.md)，Windows CUDA 未实测。说话人分段／声纹匹配继续搁置。

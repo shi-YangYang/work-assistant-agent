@@ -55,3 +55,23 @@ export function currentCitation(citations: DocumentCitation[], selected: Documen
       )
     : undefined
 }
+
+export function messageSubmission(
+  composer: Composer,
+  conversationId?: string,
+): NonNullable<Composer['pending']> {
+  if (composer.pending) return composer.pending
+  return {
+    key: composer.key,
+    body: {
+      conversationId,
+      ...(!conversationId ? { newConversation: true } : {}),
+      text: composer.text,
+      attachmentIds: composer.files.map((file) => {
+        if (!file.attachment) throw new Error('附件尚未上传完成')
+        return file.attachment.id
+      }),
+      replyTo: composer.replyTo ?? null,
+    },
+  }
+}

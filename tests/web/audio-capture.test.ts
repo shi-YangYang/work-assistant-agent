@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AudioCapture, appendRecordedFile, type Composer } from '../../apps/web/src/audio-capture'
+import {
+  AudioCapture,
+  appendRecordedFile,
+  type Composer,
+  microphoneError,
+} from '../../apps/web/src/audio-capture'
 
 class ControlledRecorder {
   static instances: ControlledRecorder[] = []
@@ -150,4 +155,15 @@ describe('asynchronous microphone ownership', () => {
     expect(ControlledRecorder.instances[1].state).toBe('recording')
     newCapture.dispose()
   })
+})
+
+it.each([
+  ['NotAllowedError', '权限'],
+  ['NotFoundError', '未找到麦克风'],
+  ['NotReadableError', '占用'],
+])('explains microphone %s with a usable alternative', (name, expected) => {
+  const error = new DOMException('private device text', name)
+  expect(microphoneError(error)).toContain(expected)
+  expect(microphoneError(error)).toContain('文字')
+  expect(microphoneError(error)).not.toContain('private device')
 })

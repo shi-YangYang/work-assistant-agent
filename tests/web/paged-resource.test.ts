@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Page } from '@paa/api-contracts'
 import { ApiError } from '../../apps/web/src/api'
 import { PagedResource } from '../../apps/web/src/paged-resource'
@@ -33,6 +33,35 @@ function server(initial: Row[]) {
 }
 
 describe('loaded page refresh', () => {
+  it('gates both refresh and load-more until the same retry deadline expires', async () => {
+    vi.useFakeTimers()
+    try {
+      const read = vi
+        .fn()
+        .mockResolvedValueOnce({ items: [row(4), row(3)], nextCursor: '03' })
+        .mockRejectedValueOnce(new ApiError(429, 'limited', '请稍后重试', 'rate_limited', null, 60))
+        .mockResolvedValue({ items: [row(4), row(3)] })
+      const resource = new PagedResource<Row>('/messages?conversationId=own', 'createdAt', read)
+      await resource.refresh()
+      await resource.loadMore()
+      expect(read).toHaveBeenCalledTimes(2)
+      await resource.refresh()
+      await resource.loadMore()
+      await vi.advanceTimersByTimeAsync(59999)
+      await resource.refresh()
+      expect(read).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      await resource.refresh()
+      expect(read).toHaveBeenCalledTimes(3)
+      expect(resource.getSnapshot().error).toBe('')
+      await resource.refresh()
+      expect(read).toHaveBeenCalledTimes(4)
+      resource.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not read messages before a conversation exists', async () => {
     const source = server([row(1)])
     const resource = new PagedResource<Row>(null, 'createdAt', source.read)
@@ -101,7 +130,11 @@ describe('loaded page refresh', () => {
       expect(resource.getSnapshot().data?.items).toHaveLength(4)
       unavailable = true
       await resource.refresh()
-      expect(resource.getSnapshot()).toEqual({ data: null, error: '会话已删除', loading: false })
+      expect(resource.getSnapshot()).toMatchObject({
+        data: null,
+        error: { message: '会话已删除' },
+        loading: false,
+      })
     },
   )
 

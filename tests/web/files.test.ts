@@ -5,6 +5,7 @@ import {
   fileKind,
   fileSelectionError,
   updateSendingDraft,
+  messageSubmission,
 } from '../../apps/web/src/files'
 const file = (name: string, size = 100, type = '') => ({ name, size, type }) as File
 
@@ -54,4 +55,16 @@ describe('document composer', () => {
     expect(currentCitation([{ ...polled, revision: 2 }], selected)).toBeUndefined()
     expect(currentCitation([{ ...polled, attachmentId: 'another' }], selected)).toBeUndefined()
   })
+})
+
+it('holds the original message, reply target and uploaded IDs fixed for uncertain result recovery', () => {
+  const first: Composer = { text: '原消息', key: 'original', files: [], replyTo: 'original-source' }
+  const pending = messageSubmission(first)
+  const changed = { ...first, text: '修改后的输入', key: 'new-key', replyTo: 'new-source', pending }
+  expect(messageSubmission(changed)).toBe(pending)
+  expect(pending).toMatchObject({
+    key: 'original',
+    body: { text: '原消息', attachmentIds: [], replyTo: 'original-source', newConversation: true },
+  })
+  expect(messageSubmission({ ...changed, pending: undefined }, 'existing').key).toBe('new-key')
 })

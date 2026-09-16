@@ -24,7 +24,7 @@ export function DocumentCard({
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const extraction = attachment.extraction
   return (
     <div className="document-card">
@@ -62,7 +62,7 @@ export function DocumentCard({
                 refresh()
                 setError('')
               } catch (e) {
-                setError((e as Error).message)
+                setError(e as Error)
               } finally {
                 setBusy(false)
               }

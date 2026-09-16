@@ -1,6 +1,12 @@
 import type { Attachment } from '@paa/api-contracts'
 
-type PendingFile = { id: string; file: File; url: string; attachment?: Attachment }
+type PendingFile = {
+  id: string
+  file: File
+  url: string
+  attachment?: Attachment
+  failed?: boolean
+}
 export type Composer = {
   text: string
   files: PendingFile[]
@@ -8,6 +14,16 @@ export type Composer = {
   replyTo?: string
   sending?: boolean
   uploading?: string
+  pending?: {
+    key: string
+    body: {
+      conversationId?: string
+      newConversation?: boolean
+      text: string
+      attachmentIds: string[]
+      replyTo: string | null
+    }
+  }
 }
 
 export function appendRecordedFile(previous: Composer | undefined, file: File): Composer {
@@ -46,6 +62,14 @@ export class AudioCapture {
   async start() {
     if (this.disposed || this.pending || this.session) return
     const generation = ++this.generation
+    if (typeof window !== 'undefined' && window.isSecureContext === false) {
+      this.callbacks.error('此地址不是安全连接，无法录音。请使用 HTTPS，或发送文字、语音文件。')
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      this.callbacks.error('当前浏览器不支持录音，请输入文字或选择语音文件。')
+      return
+    }
     this.pending = true
     this.callbacks.state('requesting')
     let stream: MediaStream | undefined
@@ -73,7 +97,7 @@ export class AudioCapture {
       recorder.start(1000)
       this.pending = false
       this.callbacks.state('recording')
-    } catch {
+    } catch (error) {
       stream?.getTracks().forEach((track) => track.stop())
       if (this.disposed || generation !== this.generation) return
       const session = this.session
@@ -84,7 +108,7 @@ export class AudioCapture {
       }
       this.pending = false
       this.callbacks.state('idle')
-      this.callbacks.error('无法使用麦克风，请允许浏览器录音，或使用文字和语音文件')
+      this.callbacks.error(microphoneError(error))
     }
   }
 
@@ -99,6 +123,7 @@ export class AudioCapture {
     if (!this.disposed) this.callbacks.state('stopping')
     try {
       if (session.recorder.state !== 'inactive') session.recorder.stop()
+      else this.finish(session)
     } catch {
       this.finish(session)
     } finally {
@@ -130,4 +155,15 @@ export class AudioCapture {
       if (file.size) this.callbacks.file(file)
     }
   }
+}
+
+export function microphoneError(error: unknown) {
+  const name = error instanceof Error ? error.name : ''
+  if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name))
+    return '麦克风权限未获允许，请在浏览器设置中允许录音，或输入文字、选择语音文件。'
+  if (['NotFoundError', 'DevicesNotFoundError'].includes(name))
+    return '未找到麦克风，请连接设备，或输入文字、选择语音文件。'
+  if (['NotReadableError', 'TrackStartError', 'AbortError'].includes(name))
+    return '麦克风暂时不可用，可能正被其他应用占用。请关闭占用后重试，或输入文字、选择语音文件。'
+  return '无法开始录音，请检查麦克风，或输入文字、选择语音文件。'
 }

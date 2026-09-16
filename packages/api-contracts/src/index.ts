@@ -362,3 +362,46 @@ export interface ReportNotification {
 export interface NotificationPage extends Page<ReportNotification> {
   unread: number
 }
+
+export interface SupportDiagnostics {
+  occurredAt?: string | null
+  page?: string | null
+  category?:
+    | 'network'
+    | 'timeout'
+    | 'unauthorized'
+    | 'forbidden'
+    | 'rate_limited'
+    | 'server'
+    | 'invalid_response'
+    | 'conflict'
+    | 'validation'
+    | 'cancelled'
+    | 'unknown'
+    | null
+  httpStatus?: number | null
+  requestId?: string | null
+  appVersion?: string | null
+  browser?: string | null
+  os?: string | null
+  viewport?: string | null
+}
+export interface SupportFeedbackCreate {
+  description: string
+  diagnostics: SupportDiagnostics
+}
+export interface SupportFeedbackPatch {
+  state: 'pending' | 'resolved'
+  handlingNote: string
+  expectedRevision: number
+}
+export interface SupportFeedback extends SupportFeedbackCreate {
+  id: string
+  ownerId: string
+  ownerName: string
+  state: 'pending' | 'resolved'
+  handlingNote: string
+  revision: number
+  createdAt: string
+  updatedAt: string
+}

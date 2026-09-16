@@ -2,8 +2,11 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 import hashlib
+import json
+import logging
 import secrets
 from pathlib import Path
+from time import perf_counter
 from typing import Annotated
 from uuid import uuid4
 
@@ -14,6 +17,8 @@ from pwdlib import PasswordHash
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import MutableHeaders
+from starlette.requests import ClientDisconnect
 
 from . import business_access as business
 from . import report_schedule as reporting
@@ -31,6 +36,7 @@ from .service import active_message, conversation_dto, default_conversation, con
 passwords = PasswordHash.recommended()
 DUMMY_PASSWORD = passwords.hash('constant-not-a-login-password')
 COOKIE = 'paa_company_session'
+request_log = logging.getLogger('uvicorn.error.paa_requests')
 
 
 class BodyLimit:
@@ -65,31 +71,83 @@ def create_app(settings=None):
     app.state.sessions = sessions
     app.state.settings = settings
     app.add_middleware(BodyLimit)
+    # Uvicorn's default access line contains the full URL/query. The correlated
+    # request summary below deliberately records only a registered route template.
+    logging.getLogger('uvicorn.access').disabled = True
 
-    @app.middleware('http')
-    async def boundaries(request, call_next):
-        request.state.request_id = str(uuid4())
-        if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.headers.get('origin') != settings.web_origin:
-            return JSONResponse({'error': {'code': 'origin_rejected', 'message': '请求来源不被允许', 'requestId': request.state.request_id}}, status_code=403)
-        try:
-            response = await call_next(request)
-        except SQLAlchemyError:
-            response = JSONResponse({'error': {'code': 'service_unavailable', 'message': '服务暂不可用，请稍后重试', 'requestId': request.state.request_id}}, status_code=503)
-        response.headers.update({'Cache-Control': response.headers.get('Cache-Control', 'no-store'), 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Request-ID': request.state.request_id})
-        return response
+    class Boundaries:
+        def __init__(self, app):
+            self.app = app
+
+        async def __call__(self, scope, receive, send):
+            if scope['type'] != 'http':
+                return await self.app(scope, receive, send)
+            request = Request(scope, receive)
+            request.state.request_id = str(uuid4())
+            request.state.exception_type = None
+            started, status = perf_counter(), None
+
+            async def correlated_send(message):
+                nonlocal status
+                if message['type'] == 'http.response.start':
+                    status = message['status']
+                    headers = MutableHeaders(scope=message)
+                    headers.setdefault('Cache-Control', 'no-store')
+                    headers.update({'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Request-ID': request.state.request_id})
+                await send(message)
+
+            try:
+                if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.headers.get('origin') != settings.web_origin:
+                    response = JSONResponse({'error': {'code': 'origin_rejected', 'message': '请求来源不被允许', 'requestId': request.state.request_id}}, status_code=403)
+                    await response(scope, receive, correlated_send)
+                else:
+                    await self.app(scope, receive, correlated_send)
+            except asyncio.CancelledError:
+                request.state.exception_type = 'CancelledError'
+                raise
+            except ClientDisconnect:
+                request.state.exception_type = 'ClientDisconnect'
+            except Exception as error:
+                request.state.exception_type = type(error).__name__
+                if status is not None:
+                    # Headers are already on the wire. Leave a failed stream
+                    # incomplete so the server closes it, without forwarding
+                    # private exceptions to its traceback logger or pretending
+                    # that the response body completed successfully.
+                    return
+                if isinstance(error, HTTPException):
+                    response = await http_error(request, error)
+                elif isinstance(error, SQLAlchemyError):
+                    response = JSONResponse({'error': {'code': 'service_unavailable', 'message': '服务暂不可用，请稍后重试', 'requestId': request.state.request_id}}, status_code=503)
+                else:
+                    response = JSONResponse({'error': {'code': 'internal_error', 'message': '服务处理失败，请稍后重试', 'requestId': request.state.request_id}}, status_code=500)
+                await response(scope, receive, correlated_send)
+            finally:
+                request_log.info('request %s', json.dumps({
+                    'requestId': request.state.request_id,
+                    'route': getattr(scope.get('route'), 'path', '<unmatched>'),
+                    'status': status,
+                    'durationMs': round((perf_counter() - started) * 1000, 2),
+                    'exceptionType': request.state.exception_type,
+                }, ensure_ascii=True))
+
+    app.add_middleware(Boundaries)
 
     @app.exception_handler(HTTPException)
     async def http_error(request, error):
+        request.state.exception_type = type(error).__name__
         detail = error.detail if isinstance(error.detail, dict) else {'code': 'invalid_request', 'message': str(error.detail)}
-        return JSONResponse({'error': {**detail, 'requestId': request.state.request_id}}, status_code=error.status_code)
+        return JSONResponse({'error': {**detail, 'requestId': request.state.request_id}}, status_code=error.status_code, headers=error.headers)
 
     @app.exception_handler(ProviderError)
     @app.exception_handler(SecretUnavailable)
     async def model_error(request, error):
+        request.state.exception_type = type(error).__name__
         return JSONResponse({'error': {'code': getattr(error, 'code', 'secret_unavailable'), 'message': str(error), 'requestId': request.state.request_id}}, status_code=422 if isinstance(error, ProviderError) else 503)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
+        request.state.exception_type = type(error).__name__
         return JSONResponse({'error': {'code': 'validation_error', 'message': '请检查输入内容、日期和长度限制', 'requestId': request.state.request_id, 'fields': ['.'.join(map(str, e['loc'])) for e in error.errors()]}}, status_code=422)
 
     async def db_dep():
@@ -138,6 +196,8 @@ def create_app(settings=None):
     ADMIN = Depends(admin)
     from .model_services import register_routes
     register_routes(app, ADMIN, DB, settings, sessions)
+    from .support_feedback import register_routes as register_support_routes
+    register_support_routes(app, AUTH, ADMIN, DB)
 
     async def visible_member(db, actor, member_id, *, employee_only=False):
         target = await db.scalar(select(Member).where(Member.id == member_id, Member.company_id == actor.company_id))

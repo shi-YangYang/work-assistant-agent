@@ -1,5 +1,5 @@
 import { useJobFeedback, stageNames } from './job-feedback'
-import { submitOnEnter } from './assistant-session'
+import { submitOnEnter, exampleText } from './assistant-session'
 import { BusinessReply, BusinessSources } from './BusinessSources'
 import { useEffect, useRef, useState, useMemo } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
@@ -16,13 +16,20 @@ import {
   CornerUpLeft,
 } from 'lucide-react'
 import type { Attachment, Draft, Page, Progress, Work, WorkMessage } from '@paa/api-contracts'
-import { api, ApiError, dateLabel, useResource, write } from './api'
+import { api, ApiError, dateLabel, useResource, write, isCancelled, useRetryWait } from './api'
 import { usePagedResource } from './paged-resource'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
 import { DocumentCard, DocumentCitations } from './Documents'
-import { fileAccept, fileKind, fileSelectionError, fileSize, updateSendingDraft } from './files'
+import {
+  fileAccept,
+  fileKind,
+  fileSelectionError,
+  fileSize,
+  updateSendingDraft,
+  messageSubmission,
+} from './files'
 import { detailState, detailReturn } from './navigation'
 import { AutoTextarea, BusyButton, ConflictRecovery, Empty, ErrorNotice, Modal, Status } from './ui'
 
@@ -47,7 +54,11 @@ export function ConversationChat({
   )
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
-  const [sendError, setSendError] = useState('')
+  const [sendError, setSendError] = useState<Error | string>('')
+  const retryWait = useRetryWait(sendError)
+  const pending = !!composer.pending
+  const locked = busy || pending
+  const sendingRef = useRef(false)
   const [limitError, setLimitError] = useState('')
   const [captureState, setCaptureState] = useState<CaptureState>('idle')
   const recording = captureState === 'recording'
@@ -67,7 +78,7 @@ export function ConversationChat({
   const change = (next: Composer) =>
     setDraft(
       composerKey,
-      next.text || next.files.length || next.replyTo
+      next.text || next.files.length || next.replyTo || next.pending
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
     )
@@ -98,10 +109,7 @@ export function ConversationChat({
       setDraft('recording', undefined)
       document.removeEventListener('visibilitychange', guard)
     }
-    // Workspace's setter writes through to the current draft store. Capture owns a
-    // single mount session; replacing it on every composer update would stop audio.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [setDraft, composerKey])
   useEffect(() => {
     if (!recording) return
     const controller = capture.current
@@ -149,67 +157,99 @@ export function ConversationChat({
       setLimitError('请先发送或移除已有附件')
       return
     }
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-      setSendError('当前浏览器无法录音，请使用安全的 HTTPS 地址，或通过“文件”选择语音、输入文字')
-      return
-    }
     setSendError('')
     await capture.current?.start()
   }
   async function send() {
-    if (busy || capturing || (!composer.text.trim() && !composer.files.length)) return
+    if (
+      sendingRef.current ||
+      retryWait ||
+      busy ||
+      capturing ||
+      (!composer.text.trim() && !composer.files.length)
+    )
+      return
+    sendingRef.current = true
     setBusy(true)
     setSendError('')
-    let current = composer
-    setDraft(composerKey, { ...composer, sending: true })
+    let current = { ...composer, files: composer.files.map((file) => ({ ...file })) }
+    let uploading: string | undefined
+    setDraft(composerKey, { ...current, sending: true })
     try {
-      const files = [...composer.files]
-      for (let i = 0; i < files.length; i++) {
-        if (!files[i].attachment) {
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, { uploading: files[i].id }),
-          )
-          const form = new FormData()
-          form.append('file', files[i].file)
-          files[i] = {
-            ...files[i],
-            attachment: await api<Attachment>('/uploads', { method: 'POST', body: form }),
+      if (!current.pending) {
+        for (let i = 0; i < current.files.length; i++) {
+          if (!current.files[i].attachment) {
+            uploading = current.files[i].id
+            setDraft(composerKey, (previous: Composer | undefined) =>
+              updateSendingDraft(previous, composer.key, { uploading }),
+            )
+            const form = new FormData()
+            form.append('file', current.files[i].file)
+            const attachment = await api<Attachment>('/uploads', { method: 'POST', body: form })
+            current = {
+              ...current,
+              files: current.files.map((file, index) =>
+                index === i ? { ...file, attachment, failed: false } : file,
+              ),
+            }
           }
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, {
+              files: current.files,
+              uploading: undefined,
+            }),
+          )
         }
-        current = { ...current, files }
+        uploading = undefined
+        current.pending = messageSubmission(current, conversationId)
         setDraft(composerKey, (previous: Composer | undefined) =>
-          updateSendingDraft(previous, composer.key, { files, uploading: undefined }),
+          updateSendingDraft(previous, composer.key, { pending: current.pending }),
         )
       }
       const sent = await write<{ conversationId: string }>(
         '/messages',
-        {
-          conversationId,
-          ...(!conversationId ? { newConversation: true } : {}),
-          text: current.text,
-          attachmentIds: files.map((f) => f.attachment!.id),
-          replyTo: current.replyTo ?? null,
-        },
+        current.pending.body,
         'POST',
-        current.key,
+        current.pending.key,
       )
-      files.forEach((f) => URL.revokeObjectURL(f.url))
+      current.files.forEach((file) => URL.revokeObjectURL(file.url))
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, null),
       )
-      refresh()
-      notify('已发送')
-      rememberConversation(sent.conversationId)
-      if (active.current) onSent(sent.conversationId)
+      if (active.current) {
+        refresh()
+        notify('已发送')
+        rememberConversation(sent.conversationId)
+        onSent(sent.conversationId)
+      }
     } catch (e) {
-      if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
-        setLimitError(e.message)
-      else setSendError((e as Error).message)
+      if (uploading) {
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, {
+            files: current.files.map((file) =>
+              file.id === uploading ? { ...file, failed: true } : file,
+            ),
+          }),
+        )
+      }
+      // A structured 4xx rejection is definite, except authentication interruption
+      // and an idempotency conflict. Network/5xx/invalid replies remain uncertain.
+      if (e instanceof ApiError && [400, 403, 404, 413, 415, 422, 429].includes(e.status)) {
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, { pending: undefined }),
+        )
+      }
+      if (active.current && !isCancelled(e)) {
+        if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
+          setLimitError(e.message)
+        else setSendError(e instanceof Error ? e : '发送未完成')
+      }
     } finally {
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, { sending: false, uploading: undefined }),
       )
-      setBusy(false)
+      sendingRef.current = false
+      if (active.current) setBusy(false)
     }
   }
   const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -256,27 +296,28 @@ export function ConversationChat({
               加载更早消息
             </button>
           )}
-          {!messages.length && !error && (
+          {!messages.length && !error && (!conversationId || !!data) && (
             <Empty title={identity.member.role === 'admin' ? '从团队进展开始' : '从今天的工作开始'}>
-              {identity.member.role === 'admin' ? (
-                <span className="assistant-examples">
-                  {['团队当前有哪些阻碍？', '本周员工有哪些工作进展？', '查看最近提交的周报'].map(
-                    (text) => (
-                      <button
-                        key={text}
-                        onClick={() => {
-                          change({ ...composer, text })
-                          textInput.current?.focus()
-                        }}
-                      >
-                        {text}
-                      </button>
-                    ),
-                  )}
-                </span>
-              ) : (
-                '发送进展、文件、现场图片或语音，工作助手会帮你整理。你确认后，再计入工作记录。'
-              )}
+              <span className="assistant-examples">
+                {(identity.member.role === 'admin'
+                  ? ['团队当前有哪些阻碍？', '本周员工有哪些工作进展？', '查看最近提交的周报']
+                  : ['记录今天的工作：', '补充一项工作进展：', '查看我最近的工作进展']
+                ).map((text) => (
+                  <button
+                    key={text}
+                    disabled={locked}
+                    onClick={() => {
+                      const next = exampleText(composer.text, text)
+                      if (next === composer.text)
+                        notify('输入框已有内容，请继续编辑；示例没有覆盖它。')
+                      else change({ ...composer, text: next, key: '' })
+                      textInput.current?.focus()
+                    }}
+                  >
+                    {text}
+                  </button>
+                ))}
+              </span>
             </Empty>
           )}
           {messages.map((message) => (
@@ -286,7 +327,7 @@ export function ConversationChat({
               own
               onChange={refresh}
               onReply={
-                busy
+                locked
                   ? undefined
                   : () => {
                       change({ ...composer, replyTo: message.id, key: '' })
@@ -306,7 +347,7 @@ export function ConversationChat({
               <button
                 className="icon-button"
                 aria-label="取消补充关联"
-                disabled={busy}
+                disabled={locked}
                 onClick={() => change({ ...composer, replyTo: undefined, key: '' })}
               >
                 <X size={14} />
@@ -333,12 +374,14 @@ export function ConversationChat({
                         ? '正在上传…'
                         : item.attachment
                           ? '上传完成'
-                          : '待上传'}
+                          : item.failed
+                            ? '上传未完成，可重试'
+                            : '待上传'}
                     </span>
                   </div>
                   <button
                     className="icon-button"
-                    disabled={busy}
+                    disabled={locked}
                     aria-label={`移除${item.file.name}`}
                     onClick={() => {
                       URL.revokeObjectURL(item.url)
@@ -363,9 +406,15 @@ export function ConversationChat({
             maxLength={8000}
             value={composer.text}
             disabled={busy}
+            readOnly={pending}
             onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
             onKeyDown={(event) => submitOnEnter(event, () => void send())}
           />
+          {pending && (
+            <p className="notice" role="status">
+              原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
+            </p>
+          )}
           <ErrorNotice>{sendError}</ErrorNotice>
           <div className="composer-actions">
             <div>
@@ -384,7 +433,7 @@ export function ConversationChat({
                 className="icon-button"
                 aria-label="添加图片"
                 title="添加图片"
-                disabled={busy || capturing}
+                disabled={locked || capturing}
                 onClick={() => input.current?.click()}
               >
                 <ImagePlus size={20} />
@@ -407,7 +456,7 @@ export function ConversationChat({
                   className="icon-button"
                   title="录制语音"
                   aria-label="录制语音"
-                  disabled={busy}
+                  disabled={locked}
                   onClick={startRecording}
                 >
                   <Mic size={20} />
@@ -420,7 +469,7 @@ export function ConversationChat({
                   accept={fileAccept}
                   multiple
                   hidden
-                  disabled={busy || capturing}
+                  disabled={locked || capturing}
                   onChange={(e) => {
                     void addFiles(Array.from(e.target.files ?? []))
                     e.target.value = ''
@@ -431,11 +480,13 @@ export function ConversationChat({
             <BusyButton
               busy={busy}
               className="primary"
-              disabled={capturing || (!composer.text.trim() && !composer.files.length)}
+              disabled={
+                !!retryWait || capturing || (!composer.text.trim() && !composer.files.length)
+              }
               onClick={send}
             >
               <Send size={16} />
-              发送
+              {retryWait ? `${retryWait} 秒后再试` : pending ? '原样重试，确认结果' : '发送'}
             </BusyButton>
           </div>
         </div>
@@ -459,7 +510,7 @@ export function MessageCard({
   const [editing, setEditing] = useState<Draft | null>(null)
   const [transcript, setTranscript] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const { notify, drafts: storedDrafts, setDraft } = useWorkspace()
   useEffect(() => {
     if (message.businessUnavailable && editing && storedDrafts[`progress:${editing.id}`])
@@ -477,7 +528,7 @@ export function MessageCard({
       onChange()
       notify(action === 'confirm' ? '已更新到我的工作' : '已忽略建议')
     } catch (e) {
-      setError((e as Error).message)
+      setError(e as Error)
     } finally {
       setBusy(false)
     }
@@ -649,7 +700,7 @@ export function MessageCard({
                 setTranscript(false)
                 onChange()
               } catch (e) {
-                setError((e as Error).message)
+                setError(e as Error)
               } finally {
                 setBusy(false)
               }
@@ -684,7 +735,7 @@ export function JobNotice({
   refresh: () => void
 }) {
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   if (job.state === 'succeeded' || job.state === 'cancelled') return null
   if (job.state === 'awaiting_input')
     return <p className="muted small-text">可继续发送消息补充信息。</p>
@@ -696,7 +747,8 @@ export function JobNotice({
     )
   return (
     <div className="notice error">
-      <span>{error || job.error}</span>
+      <span>{job.error}</span>
+      <ErrorNotice>{error}</ErrorNotice>
       <BusyButton
         busy={busy}
         onClick={async () => {
@@ -710,7 +762,7 @@ export function JobNotice({
             await write(`/jobs/${job.id}/retry`, {})
             refresh()
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }
@@ -732,7 +784,7 @@ export function JobNotice({
             await write(`/jobs/${job.id}/retry`, { useCurrentConfig: true })
             refresh()
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }
@@ -819,7 +871,7 @@ function ProgressEditor({
   const { content: value, workId, revision } = edited
   const { data } = useResource<Page<Work>>('/work-items')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<Error | string>('')
   const change = (content: Progress, nextWork = workId) =>
     setDraft(key, { content, workId: nextWork, revision })
   return (
@@ -837,7 +889,7 @@ function ProgressEditor({
             setDraft(key, undefined)
             onSaved()
           } catch (e) {
-            setError((e as Error).message)
+            setError(e as Error)
           } finally {
             setBusy(false)
           }

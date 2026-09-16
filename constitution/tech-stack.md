@@ -27,7 +27,7 @@
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
 | 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
-| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0007_report_obligations`，私有附件、业务修订、任务反馈、模型请求及汇报待办／通知 |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0008_support_feedback`，私有附件、业务修订、任务反馈、模型请求、汇报待办／通知及独立问题反馈 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、版本化来源与历史权限复核、持久恢复、人工确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |
 | 媒体 | Pillow 校验／规范图片，FFmpeg 处理有界短语音；外部图文／ASR API，不在服务端部署 faster-whisper |
