@@ -30,6 +30,7 @@ import {
   Plus,
   List,
   LifeBuoy,
+  ChevronRight,
 } from 'lucide-react'
 import type { Identity } from '@paa/api-contracts'
 import { api, setCsrf, write, isCancelled } from './api'
@@ -291,6 +292,31 @@ function Shell({
   )
   const [expandedNav, setExpandedNav] = useState(false)
   const location = useLocation()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const settingsTrigger = useRef<HTMLButtonElement>(null)
+  const settingsPanel = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (!settingsOpen) return
+    const position = () => {
+      const panel = settingsPanel.current
+      const trigger = settingsTrigger.current
+      if (!panel || !trigger) return
+      if (window.innerWidth <= 760) {
+        panel.hidePopover()
+        return
+      }
+      const rect = trigger.getBoundingClientRect()
+      panel.style.left = `${Math.min(rect.right + 10, window.innerWidth - panel.offsetWidth - 12)}px`
+      panel.style.top = `${Math.max(12, Math.min(rect.bottom - panel.offsetHeight, window.innerHeight - panel.offsetHeight - 12))}px`
+    }
+    position()
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
+  }, [settingsOpen])
   const navigate = useNavigate()
   const scrollPositions = useRef(new Map<string, number>())
   useLayoutEffect(() => {
@@ -461,20 +487,51 @@ function Shell({
             ))}
           </nav>
           <div className="sidebar-bottom">
-            <nav aria-label="设置">
-              {allowedSettings.map((p) => (
-                <NavLink
-                  key={p.path}
-                  to={p.path}
-                  title={p.title}
-                  aria-label={p.title}
-                  onClick={() => setExpandedNav(false)}
-                >
-                  <p.icon size={18} />
-                  <span className="nav-label">{p.title}</span>
-                </NavLink>
-              ))}
-            </nav>
+            <button
+              ref={settingsTrigger}
+              className={`settings-toggle ${location.pathname.startsWith('/settings/') ? 'active' : ''}`}
+              aria-expanded={settingsOpen}
+              aria-controls="sidebar-settings"
+              title="系统设置"
+              popoverTarget="sidebar-settings"
+            >
+              <Settings size={18} />
+              <span className="nav-label">系统设置</span>
+              <ChevronRight size={15} className="settings-chevron nav-label" />
+            </button>
+            <div
+              ref={settingsPanel}
+              id="sidebar-settings"
+              className="settings-popover"
+              popover="auto"
+              onToggle={(event) => setSettingsOpen(event.newState === 'open')}
+            >
+              <nav aria-label="系统设置">
+                {[
+                  ...allowedSettings.filter((p) => p.path !== '/settings/support'),
+                  ...allowedSettings.filter((p) => p.path === '/settings/support'),
+                ].map((p) => (
+                  <NavLink
+                    key={p.path}
+                    to={p.path}
+                    className={
+                      p.path === '/settings/rules' || p.path === '/settings/support'
+                        ? 'settings-section-start'
+                        : undefined
+                    }
+                    title={p.title}
+                    aria-label={p.title}
+                    onClick={() => {
+                      settingsPanel.current?.hidePopover()
+                      setExpandedNav(false)
+                    }}
+                  >
+                    <p.icon size={16} />
+                    <span>{p.title}</span>
+                  </NavLink>
+                ))}
+              </nav>
+            </div>
             <div className="identity">
               <span className="avatar">{accountName.slice(0, 1)}</span>
               <span className="nav-label">
