@@ -1,6 +1,6 @@
 # 验证记录 — Spec 013
 
-本页只记录模型比较的实际证据；功能与独立验收由本 Spec 的实施／验收记录维护。CPU 矩阵 17 组完成、1 组失败保留；2026-09-15 的 medium GPU 三语言增补见末尾。
+本页只记录模型比较的实际证据；功能与独立验收由本 Spec 的实施／验收记录维护。CPU 矩阵 17 组完成、1 组失败保留；2026-09-15～16 的 Apple GPU 矩阵 18 组全部完成，见末尾增补。
 
 ## 固定语料与许可
 
@@ -81,4 +81,34 @@ FLEURS 的[固定版本数据卡](https://huggingface.co/datasets/google/fleurs/
 
 此表使用与应用一致的十进制 GB（10⁹ bytes）；上方 CPU 历史表使用 GiB。三组末尾 10 秒纯静音均为空输出。混合错误率仍较高，完整结果保留，不因结果优劣重跑或改参考稿。
 
-重现时在原 `run` 命令增加 `--model medium --backend mlx`，依次使用 `--mode zh|en|mixed`；缓存取日常 models 目录，仅只读模型，不操作会议或默认设置。原始记录为 `artifacts/spec013/result-medium-mlx-{zh,en,mixed}.json` 与对应 `run-medium-mlx-*.log`，包含逐块输出、时间、错误次数、原始内存 bytes 和代码 SHA256；三组清单／Provider／脚本 hash 均一致。轻量数据写入共享基准 JSON 的 `gpu.mlx.models.medium`，按后端及固定模型版本匹配；其他 GPU 模型继续显示“未实测”。
+重现时在原 `run` 命令增加 `--model medium --backend mlx`，依次使用 `--mode zh|en|mixed`；缓存取日常 models 目录，仅只读模型，不操作会议或默认设置。原始记录为 `artifacts/spec013/result-medium-mlx-{zh,en,mixed}.json` 与对应 `run-medium-mlx-*.log`，包含逐块输出、时间、错误次数、原始内存 bytes 和代码 SHA256；三组清单／Provider／脚本 hash 均一致。轻量数据写入共享基准 JSON 的 `gpu.mlx.models.medium`，按后端及固定模型版本匹配；其余五款 GPU 模型的后续结果见下节。
+
+## 2026-09-16：其余五款 Apple GPU 模型
+
+按用户要求从 tiny 开始，依次补测 base、small、large-v3-turbo、large-v3，每款三语言独立进程串行运行。沿用上节的 M5／16 GiB、Metal FP16／greedy、固定语料和业务分块；15 组的清单、评测脚本及 Provider 起止 hash 均与 medium 原记录一致。medium 的三组已通过结果未重跑、数值未改动；Apple GPU 六款共 18 组完成。
+
+下表每格为 **错误率 · 进程峰值 RSS / GPU 峰值分配**，单位为十进制 GB。两种内存统计范围不同，不能相加。
+
+| 模型 | 中文 CER | 英文 WER | 中英混合 MER |
+| --- | --- | --- | --- |
+| tiny | 29.62% · 0.51 / 0.38 GB | 14.11% · 0.52 / 0.30 GB | 69.79% · 0.53 / 0.38 GB |
+| base | 21.74% · 0.62 / 0.69 GB | 10.34% · 0.61 / 0.55 GB | 51.70% · 0.64 / 0.68 GB |
+| small | 15.49% · 1.03 / 1.23 GB | 5.64% · 1.03 / 1.23 GB | 33.62% · 1.06 / 1.23 GB |
+| large-v3-turbo | 8.70% · 1.99 / 2.19 GB | 4.70% · 1.99 / 2.19 GB | 33.19% · 2.00 / 2.19 GB |
+| large-v3 | 8.70% · 3.44 / 3.66 GB | 5.96% · 3.68 / 3.66 GB | 30.64% · 2.08 / 3.66 GB |
+
+这 15 组末尾的 10 秒纯静音均无输出。混合语言仍有较多错误；本小样本中中文 medium、英文 turbo、混合 large-v3 的错误率最低，不代表所有会议的排序，也不将错误率换算为通用准确率。保留所有识别输出，未更改样本、参考稿或推理参数。
+
+耗时仅作为内部运行证据：下表是整组业务块的累计推理秒数，包含 Provider 调用开销，不是稳态吞吐；不含文件下载、hash 校验、末尾静音和评分，不在产品中展示。
+
+| 模型 | 中文 / 英文 / 混合累计推理秒数 | 最长单块秒数 |
+| --- | --- | --- |
+| tiny | 4.61 / 3.70 / 4.98 | 1.72 |
+| base | 5.74 / 5.15 / 7.58 | 0.84 |
+| small | 10.46 / 11.94 / 18.59 | 2.21 |
+| large-v3-turbo | 29.98 / 36.62 / 66.25 | 5.83 |
+| large-v3 | 50.03 / 56.47 / 93.92 | 8.21 |
+
+运行入口仍为 `scripts/benchmarks/local-asr.py run --model <id> --mode <zh|en|mixed> --backend mlx --cache <日常 models 目录>`。全部固定 revision 与校验值沿用 `MLX_CATALOG`；新下载模型留在日常缓存，GPU／medium／中英混合的默认设置未更改，未读取用户会议或服务凭证。原始证据在 `artifacts/spec013/result-<model>-mlx-<mode>.json` 与同名 `run-*.log`。
+
+应用的 `gpu.mlx.models` 已录入全部结果，每款记录自己的实测日期；CPU 旧指标保持不变，CUDA 仍为未实测。已通过 renderer 定向类型检查；在日常 `npm run dev` 窗口核对 tiny、medium、large-v3 的三语言数值、GPU 内存与各自日期，显示正确。没有重跑完整测试、打包或 CI。

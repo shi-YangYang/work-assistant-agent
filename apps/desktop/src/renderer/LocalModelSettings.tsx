@@ -38,6 +38,7 @@ type Evidence = {
     string,
     {
       revision?: string
+      measuredAt?: string
       languages?: Record<string, Measurement | null>
       missingReasons?: Record<string, string>
     }
@@ -55,6 +56,7 @@ function ModelEvidence({
   const data = backend === 'cpu' ? collection : backend ? collection.gpu?.[backend] : undefined
   const candidate = data?.models?.[model.id]
   const measured = candidate?.revision === model.revision ? candidate : undefined
+  const measuredAt = measured?.measuredAt ?? data?.measuredAt
   const hasMeasurements = Object.keys(measured?.languages ?? {}).length > 0
   return (
     <details className="local-model-evidence">
@@ -112,9 +114,8 @@ function ModelEvidence({
         </p>
         {hasMeasurements && (
           <p>
-            本应用参考机实测 ·{' '}
-            {data?.measuredAt ? new Date(data.measuredAt).toLocaleDateString('zh-CN') : ''} ·{' '}
-            {data?.environment?.hardware} · {data?.environment?.os} ·{' '}
+            本应用参考机实测 · {measuredAt ? new Date(measuredAt).toLocaleDateString('zh-CN') : ''}{' '}
+            · {data?.environment?.hardware} · {data?.environment?.os} ·{' '}
             {data?.environment?.computeType}
           </p>
         )}
