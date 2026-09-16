@@ -57,6 +57,7 @@ export function Breadcrumbs() {
             account: '账户',
             appearance: '外观',
             rules: '汇报规则',
+            login: '登录方式',
             models: '模型服务管理',
             usage: '模型用量',
             support: '问题反馈',

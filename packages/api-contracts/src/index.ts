@@ -7,6 +7,7 @@ export interface Member {
   role: Role
   active: boolean
   mustChangePassword: boolean
+  hasPassword: boolean
 }
 export interface Identity {
   member: Member
@@ -406,4 +407,24 @@ export interface SupportFeedback extends SupportFeedbackCreate {
   revision: number
   createdAt: string
   updatedAt: string
+}
+
+export interface LoginProviders {
+  password: true
+  dingtalk: boolean
+}
+export interface DingTalkConfiguration {
+  corpId: string
+  clientId: string
+  hasSecret: boolean
+  enabled: boolean
+  revision: number
+  callbackUrl: string
+  verifiedAt: string | null
+}
+export interface DingTalkAccount {
+  bound: boolean
+  hasPassword: boolean
+  available: boolean
+  passwordVerified: boolean
 }

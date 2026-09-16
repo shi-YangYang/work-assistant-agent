@@ -85,16 +85,87 @@ npm run dev
 
 [生产 Compose](../deploy/company/compose.yml) 在 Linux 上运行 Caddy、API、worker 和 PostgreSQL，自动先执行数据库迁移。Web 与 API 同源，通过 HTTPS 提供访问；数据库不暴露公网端口。服务器调用外部 AI／ASR API，不部署桌面的 faster-whisper。
 
-部署前准备域名、Docker Compose 和 `.env.company`：
+部署前准备固定公网 IPv4 或域名、Docker Compose 和 `.env.company`：
 
-- 域名解析到服务器，开放 80／443；设置 `PAA_DOMAIN` 和 `PAA_WEB_ORIGIN=https://你的域名`。
+- 开放公网 TCP 80／443；仅 Web 暴露端口，API 和数据库保持在 Compose 内网。80 端口还用于证书首次签发和续期，不能只在首次申请时开放。
+- `PAA_DOMAIN` 填访问主机（沿用原变量名，也可填公网 IPv4）；`PAA_WEB_ORIGIN=https://同一个主机`，不带路径或末尾斜线。生产 Compose 强制启用 Secure Cookie。
 - 设置数据库随机密码；在仓库与镜像之外创建一次 **32 字节随机主密钥文件**，所属 UID 为 `10001`、权限为 `600`。
 - 将 `PAA_MODEL_KEY_HOST_PATH` 指向该文件的绝对路径。API 与 worker 只读共享它，文件缺失时不会自动创建；升级时不能重新生成。
+
+### 域名部署
+
+将域名解析到服务器，按以下命令启动。Caddy 自动申请并续期域名证书：
 
 ```sh
 docker compose --env-file .env.company -f deploy/company/compose.yml up --build -d
 docker compose --env-file .env.company -f deploy/company/compose.yml exec api python -m paa_server.cli bootstrap-admin
 ```
+
+### 公网 IP 部署
+
+无需先购买域名。`.env.company` 中将 `PAA_DOMAIN` 设为固定公网 IPv4，`PAA_WEB_ORIGIN` 设为 `https://该IP`，再使用 [IP Compose 配置](../deploy/company/compose.ip.yml)。不要只把 IP 填进默认域名配置：当前 Caddy 版本的默认 IP 证书不受员工浏览器信任。
+
+以下在 Linux 服务器执行，使用系统 Python 3 的 venv 支持（Debian／Ubuntu 可安装 `python3-venv`）与固定版本 `certbot==5.4.0`。证书与私钥保留在仓库之外；Caddy 只读挂载整个 `/etc/letsencrypt`，包含 `live/` 指向 `archive/` 的符号链接目标。
+
+```sh
+sudo python3 -m venv /opt/paa-certbot
+sudo /opt/paa-certbot/bin/pip install 'certbot==5.4.0'
+sudo install -d -m 700 /etc/letsencrypt
+sudo install -d -m 755 /var/lib/paa-acme /var/lib/letsencrypt
+
+# 首次仅启动 HTTP 验证文件服务；此配置不提供业务页面或 API。
+PAA_IP_CADDY_CONFIG=Caddyfile.ip-bootstrap docker compose --env-file .env.company \
+  -f deploy/company/compose.yml -f deploy/company/compose.ip.yml up --build -d --no-deps web
+```
+
+用真实公网 IP 和维护邮箱替换下列占位值。先验证 ACME 网络可达性；`--dry-run` 使用测试 CA，不保存或部署不受信的测试证书。成功后执行第二条申请生产证书：
+
+```sh
+sudo /opt/paa-certbot/bin/certbot certonly --dry-run --non-interactive --agree-tos \
+  --email '维护邮箱' --cert-name paa-ip --preferred-profile shortlived \
+  --webroot --webroot-path /var/lib/paa-acme --ip-address '固定公网IPv4'
+sudo /opt/paa-certbot/bin/certbot certonly --non-interactive --agree-tos \
+  --email '维护邮箱' --cert-name paa-ip --preferred-profile shortlived \
+  --webroot --webroot-path /var/lib/paa-acme --ip-address '固定公网IPv4'
+
+# 证书存在后切换到 HTTPS，并启动业务服务；不要持久设置 bootstrap 变量。
+docker compose --env-file .env.company -f deploy/company/compose.yml \
+  -f deploy/company/compose.ip.yml up --build -d
+docker compose --env-file .env.company -f deploy/company/compose.yml \
+  -f deploy/company/compose.ip.yml exec api python -m paa_server.cli bootstrap-admin
+```
+
+IP 证书有效期为 6 天，必须配置自动续期。[续期脚本](../deploy/company/ip-certificate.sh) 用 deploy hook 在签发成功后执行 `caddy reload --force`，以相同路径重新读取证书；重载失败会返回失败并保留标记，下次运行会先重试。Certbot 自身可能在 hook 失败时返回 0，因此定时任务要调用该脚本。
+
+```sh
+# 此步骤需要服务器公网 80 可达；验证续期及 hook，不替换正在使用的生产证书。
+sudo deploy/company/ip-certificate.sh renew --dry-run --run-deploy-hooks
+# 如需单独重载已有证书：
+sudo deploy/company/ip-certificate.sh reload
+```
+
+在 root 的 crontab（`sudo crontab -e`）加入下面一行，把仓库绝对路径换成实际位置；主机须安装并运行 cron。每天两次检查，未到续期时间不会重新申请。保留任务错误输出，并由运维监控续期失败与证书到期；不要丢弃到 `/dev/null`。
+
+```cron
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+17 3,15 * * * /绝对路径/work-assistant-agent/deploy/company/ip-certificate.sh renew
+```
+
+部署后从公司网络与手机流量访问 `https://该IP`，确认浏览器无证书警告，再验证钉钉回调和录音。自签证书／本地配置检查不能替代此步骤。以后切换域名时，停止这条 IP 续期任务，将域名解析到同一服务器，更新 `PAA_DOMAIN`、`PAA_WEB_ORIGIN` 及钉钉回调，改用上面的域名 Compose 命令重建服务；保留数据库、附件卷及主密钥，账号和业务数据不需重建，员工在新地址重新登录。
+
+依据：[Let’s Encrypt 的 IP 证书与 Certbot 说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)、[Certbot 续期与 hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)、[Caddy 强制重载](https://caddyserver.com/docs/command-line#caddy-reload)。
+
+### 钉钉登录配置
+
+1. 请公司钉钉主管理员授予「应用开发子管理员」，或由管理员创建企业内部应用并授予开发管理权限；需要管理应用凭证、接口权限、可用范围、安全设置与发布。
+2. 在钉钉开发者后台创建企业内部应用，取得企业 **CorpId**、应用 **AppKey／Client ID** 与 **AppSecret／Client Secret**。在「开发配置 → 权限管理」开通基础访问凭证权限 `open_app_api_base`、个人信息读权限 `Contact.User.Read` 和成员信息读权限 `qyapi_get_member`，供登录及核验企业成员。确认审批通过后发布应用版本。将**通讯录授权范围限定为允许登录的员工**，并与应用可使用范围保持一致；工作台可见性不能替代服务端成员准入校验。不需要考勤、审批或消息权限。
+3. 登记回调地址 **`PAA_WEB_ORIGIN` + `/api/v1/auth/dingtalk/callback`**，并发布给目标员工。公网 IP 回调是否被实际钉钉应用接受须在后台登记并实测；本机调试成功不代表生产 IP 回调已通过。
+4. 如果部署数据库只有一家公司，可留空 `PAA_LOGIN_COMPANY_ID`；多公司部署必须在 `.env.company` 指定试点公司的 UUID，重启 API 后生效。未指定且存在多家公司时，公共钉钉入口关闭，不会自动选第一家公司。
+5. 本系统管理员在「系统设置 → 登录方式」填写并保存应用配置，再进行试登录，验证成功后开启入口。Secret 留空保留原值；不要将 Secret、授权码、Token 或完整回调地址查询参数写入 Git、截图或日志。「已保存」仅表示字段已保存，不能当作真实授权成功。
+
+首次允许范围内的成员登录会创建员工账号；已有账号应先在「账户」验证身份并主动绑定，系统不按姓名合并，也不把钉钉管理员自动提升成本系统管理员。钉钉新账号可按需在账户中设置本地密码；密码登录入口始终保留。停用钉钉前先确认管理员密码可用，并为需要密码登录的员工设置密码。离职或收回权限时还需停用本系统账号，以撤销本地密码与已有会话访问。
+
+取得应用权限、凭证和公网服务器后，实际验证首次开户、再次登录、密码设置、外部人员及授权范围外成员拒绝，并在实体手机验证授权与返回。当前缺少这些条件时，只能完成软件验证。依据：[钉钉应用权限配置](https://help.aliyun.com/zh/agentcore/agentcore-configure-dingtalk-account-integration)、[官方第三方网站登录教程](https://open.dingtalk.com/document/orgapp-server/tutorial-obtaining-user-personal-information)。
 
 部署完成后登录 Web 配置模型用途。手机录音需要有效 HTTPS，访问开发电脑的局域网 HTTP 地址不满足条件，也不保证锁屏后持续录音。
 

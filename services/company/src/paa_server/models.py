@@ -37,7 +37,7 @@ class Member(Record, Base):
     username: Mapped[str] = mapped_column(String(80), unique=True)
     name: Mapped[str] = mapped_column(String(80))
     role: Mapped[str] = mapped_column(String(12), default='employee')
-    password_hash: Mapped[str] = mapped_column(Text)
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -53,6 +53,48 @@ class Session(Record, Base):
 class LoginAttempt(Record, Base):
     __tablename__ = 'company_login_attempt'
     identity: Mapped[str] = mapped_column(String(64), index=True)
+
+
+class DingTalkConfig(Record, Base):
+    __tablename__ = 'company_dingtalk_config'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), unique=True)
+    corp_id: Mapped[str] = mapped_column(String(128))
+    client_id: Mapped[str] = mapped_column(String(128))
+    credential: Mapped[str] = mapped_column(Text, default='')
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DingTalkIdentity(Record, Base):
+    __tablename__ = 'company_dingtalk_identity'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'), unique=True)
+    corp_id: Mapped[str] = mapped_column(String(128))
+    client_id: Mapped[str] = mapped_column(String(128))
+    union_id: Mapped[str] = mapped_column(String(256))
+    user_id: Mapped[str] = mapped_column(String(256))
+    __table_args__ = (
+        UniqueConstraint('company_id', 'corp_id', 'client_id', 'union_id'),
+        UniqueConstraint('company_id', 'corp_id', 'client_id', 'user_id'),
+    )
+
+
+class DingTalkAuthorization(Record, Base):
+    __tablename__ = 'company_dingtalk_authorization'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    state_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    browser_hash: Mapped[str] = mapped_column(String(64))
+    config_revision: Mapped[int] = mapped_column(Integer)
+    purpose: Mapped[str] = mapped_column(String(16))
+    member_id: Mapped[str | None] = mapped_column(ForeignKey('company_member.id'), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
+    proof_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    proof_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    proof_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Owned(Record):

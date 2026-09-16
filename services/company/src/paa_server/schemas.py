@@ -14,7 +14,8 @@ class Login(Input):
 
 
 class Password(Input):
-    currentPassword: str = Field(min_length=1, max_length=128)
+    currentPassword: str = Field(default='', max_length=128)
+    useDingTalk: bool = False
     newPassword: str = Field(min_length=12, max_length=128)
 
 

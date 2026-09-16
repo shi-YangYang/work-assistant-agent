@@ -24,4 +24,4 @@ RUN npm run build:web
 
 FROM caddy:2.10.2-alpine AS web
 COPY --from=web-build /app/apps/web/out /srv
-COPY deploy/company/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/company/Caddyfile* /etc/caddy/

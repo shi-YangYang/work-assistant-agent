@@ -55,7 +55,7 @@ services:
     restart: unless-stopped
   web:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: web }
-    environment: { PAA_DOMAIN: '${PAA_DOMAIN:?Set public domain}' }
+    environment: { PAA_DOMAIN: '${PAA_DOMAIN:?Set public domain or IP}' }
     ports: ['80:80', '443:443']
     volumes: [caddy_data:/data, caddy_config:/config]
     depends_on: [api]

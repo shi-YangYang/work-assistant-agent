@@ -42,6 +42,8 @@ import { SupportPage } from './Support'
 import { ConnectionNotice } from './connection'
 import { useMobileViewport } from './mobile-viewport'
 import { ModelServices } from './ModelServices'
+import { DingTalkLogin, DingTalkResult, LoginMethods } from './DingTalk'
+import { LoginBackground } from './LoginBackground'
 import { SourcePage } from './Assistant'
 import { Assistant } from './Conversations'
 import { Breadcrumbs } from './Breadcrumbs'
@@ -104,6 +106,13 @@ const settingsPages = [
     title: '汇报规则',
     detail: '查看汇报周期、时区与生成时间',
     icon: CalendarClock,
+  },
+  {
+    path: '/settings/login',
+    title: '登录方式',
+    detail: '配置钉钉登录与授权',
+    icon: UserRound,
+    admin: true,
   },
   {
     path: '/settings/models',
@@ -172,6 +181,7 @@ export function App() {
   if (!identity)
     return (
       <Login
+        vault={vault}
         initialError={loadError}
         onLogin={(value) => {
           setCsrf(value.csrf)
@@ -195,62 +205,74 @@ export function App() {
   return <Shell key={identityScope(identity)} identity={identity} vault={vault} onLogout={logout} />
 }
 function Login({
+  vault,
   onLogin,
   initialError,
 }: {
+  vault: SessionDrafts
   onLogin: (value: Identity) => void
   initialError: Error | string
 }) {
   const [error, setError] = useState(initialError)
   const [busy, setBusy] = useState(false)
   return (
-    <main className="login">
-      <form
-        className="login-card"
-        onSubmit={async (e) => {
-          e.preventDefault()
-          const data = new FormData(e.currentTarget)
-          setBusy(true)
-          try {
-            onLogin(
-              await write<Identity>('/auth/login', {
-                username: data.get('username'),
-                password: data.get('password'),
-              }),
-            )
-          } catch (e) {
-            setError(e as Error)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        <div className="brand">
+    <main className="login login-page">
+      <LoginBackground />
+      <section className="login-panel" aria-labelledby="login-title">
+        <header className="login-heading">
           <span className="brand-mark" aria-hidden="true" />
-          工作助手
-        </div>
-        <h1>欢迎回来</h1>
-        <p>登录公司账号，继续记录和跟进工作。</p>
-        <label>
-          账号
-          <input name="username" autoComplete="username" required maxLength={80} />
-        </label>
-        <label>
-          密码
-          <input
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            maxLength={128}
-          />
-        </label>
-        <ErrorNotice>{error}</ErrorNotice>
-        <BusyButton busy={busy} className="primary">
-          登录
-        </BusyButton>
-        <small>尚无账号？请联系公司的老板／管理员。</small>
-      </form>
+          <h1 id="login-title">登录工作助手</h1>
+        </header>
+        <DingTalkResult />
+        <DingTalkLogin vault={vault} />
+        <form
+          className="login-form"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            const data = new FormData(e.currentTarget)
+            setBusy(true)
+            try {
+              onLogin(
+                await write<Identity>('/auth/login', {
+                  username: data.get('username'),
+                  password: data.get('password'),
+                }),
+              )
+            } catch (e) {
+              setError(e as Error)
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          <label>
+            账号
+            <input
+              name="username"
+              placeholder="输入账号"
+              autoComplete="username"
+              required
+              maxLength={80}
+            />
+          </label>
+          <label>
+            密码
+            <input
+              name="password"
+              type="password"
+              placeholder="输入密码"
+              autoComplete="current-password"
+              required
+              maxLength={128}
+            />
+          </label>
+          <ErrorNotice>{error}</ErrorNotice>
+          <BusyButton busy={busy} className="primary">
+            登录
+          </BusyButton>
+        </form>
+        <small className="login-help">尚无账号？请联系公司管理员</small>
+      </section>
     </main>
   )
 }
@@ -566,6 +588,9 @@ function Shell({
             </div>
           </header>
           <ConnectionNotice />
+          {!['/settings/account', '/settings/login'].includes(location.pathname) && (
+            <DingTalkResult />
+          )}
           <Routes>
             <Route
               path="/"
@@ -626,6 +651,7 @@ function Shell({
                     {identity.member.role === 'admin' && (
                       <>
                         <Route path="models" element={<ModelServices />} />
+                        <Route path="login" element={<LoginMethods />} />
                         <Route path="usage" element={<ModelUsagePage />} />
                       </>
                     )}

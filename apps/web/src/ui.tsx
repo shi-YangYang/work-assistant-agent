@@ -29,7 +29,7 @@ export function ErrorNotice({
       {failure?.requestId && <small className="request-id">请求编号：{failure.requestId}</small>}
       <div className="notice-actions">
         {retry && (!failure || failure.retryable) && (
-          <button disabled={wait > 0} onClick={retry}>
+          <button type="button" disabled={wait > 0} onClick={retry}>
             {wait ? `${wait} 秒后重试` : '重试'}
           </button>
         )}

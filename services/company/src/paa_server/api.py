@@ -13,29 +13,26 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pwdlib import PasswordHash
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
 from starlette.requests import ClientDisconnect
 
+from .authentication import COOKIE, passwords, issue_session, limit_authenticated_request, revoke_member, verify_password
 from . import business_access as business
 from . import report_schedule as reporting
 from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from .config import Settings
 from .db import database
 from .media import audio_mime, audio_wav, image_process, preview_path
-from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, ReportObligation, ReportNotification, Session, WorkItem, WorkRevision, now
+from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, ReportObligation, ReportNotification, Session, DingTalkAuthorization, WorkItem, WorkRevision, now
 from .model_schemas import RetryJob
 from .model_provider import ProviderError
 from .model_secrets import SecretUnavailable
 from .schemas import ConversationCreate, ConversationEdit, Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit
 from .service import active_message, conversation_dto, default_conversation, confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
 
-passwords = PasswordHash.recommended()
-DUMMY_PASSWORD = passwords.hash('constant-not-a-login-password')
-COOKIE = 'paa_company_session'
 request_log = logging.getLogger('uvicorn.error.paa_requests')
 
 
@@ -93,7 +90,8 @@ def create_app(settings=None):
                     status = message['status']
                     headers = MutableHeaders(scope=message)
                     headers.setdefault('Cache-Control', 'no-store')
-                    headers.update({'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Request-ID': request.state.request_id})
+                    headers.setdefault('Referrer-Policy', 'same-origin')
+                    headers.update({'X-Content-Type-Options': 'nosniff', 'X-Request-ID': request.state.request_id})
                 await send(message)
 
             try:
@@ -176,12 +174,13 @@ def create_app(settings=None):
             long_operation = long_operation or request.url.path.endswith(('/events', '/feedback')) or (request.url.path.startswith('/api/v1/uploads/') and request.url.path.endswith('/preview'))
             if not long_operation:
                 await business.company_lock(db, actor.company_id)
+                session = await db.scalar(select(Session).where(Session.id == session.id, Session.expires_at > now()).execution_options(populate_existing=True))
             actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
-        if actor is None or not actor.active:
+        if actor is None or not actor.active or session is None:
             problem(401, '登录已过期，请重新登录', 'login_required')
         if request.method not in ('GET', 'HEAD') and not secrets.compare_digest(request.headers.get('x-csrf-token', ''), session.csrf):
             problem(403, '请求校验失败，请刷新后重试', 'csrf_rejected')
-        if actor.must_change_password and request.url.path not in ('/api/v1/auth/me', '/api/v1/auth/password', '/api/v1/auth/logout'):
+        if actor.must_change_password and request.url.path not in ('/api/v1/auth/me', '/api/v1/auth/password', '/api/v1/auth/logout', '/api/v1/auth/dingtalk/account', '/api/v1/auth/dingtalk/account/reauth'):
             problem(403, '请先修改临时密码', 'password_change_required')
         request.state.session = session
         return actor
@@ -198,6 +197,9 @@ def create_app(settings=None):
     register_routes(app, ADMIN, DB, settings, sessions)
     from .support_feedback import register_routes as register_support_routes
     register_support_routes(app, AUTH, ADMIN, DB)
+
+    from .dingtalk import register_routes as register_dingtalk_routes
+    register_dingtalk_routes(app, AUTH, ADMIN, DB, settings, sessions)
 
     async def visible_member(db, actor, member_id, *, employee_only=False):
         target = await db.scalar(select(Member).where(Member.id == member_id, Member.company_id == actor.company_id))
@@ -235,15 +237,20 @@ def create_app(settings=None):
         if count >= 8:
             problem(429, '尝试次数过多，请 10 分钟后重试')
         actor = await db.scalar(select(Member).where(Member.username == body.username.lower()))
-        valid = await run_in_threadpool(passwords.verify, body.password, actor.password_hash if actor else DUMMY_PASSWORD)
+        checked_hash = actor.password_hash if actor else None
+        valid = await verify_password(body.password, checked_hash)
+        if valid and actor is not None:
+            # Password checks are expensive: verify outside the company lock,
+            # then serialize issuance with password resets and member disable.
+            await business.company_lock(db, actor.company_id)
+            actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
+            valid = bool(actor and actor.password_hash == checked_hash)
         if not valid or actor is None or not actor.active:
             db.add(LoginAttempt(identity=ident))
             await db.commit()
             problem(401, '账号或密码不正确')
         await db.execute(delete(LoginAttempt).where(LoginAttempt.identity == ident))
-        token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        db.add(Session(member_id=actor.id, token_hash=hashlib.sha256(token.encode()).hexdigest(), csrf=csrf, expires_at=now() + timedelta(hours=8)))
-        response.set_cookie(COOKIE, token, httponly=True, secure=settings.cookie_secure, samesite='lax', max_age=8*3600, path='/')
+        csrf = issue_session(db, actor, response, settings)
         company = await db.get(Company, actor.company_id)
         return {'member': member_dto(actor), 'csrf': csrf, 'company': {'id': company.id, 'name': company.name}}
 
@@ -254,17 +261,24 @@ def create_app(settings=None):
 
     @app.post('/api/v1/auth/logout')
     async def logout(response: Response, request: Request, actor=AUTH, db=DB):
+        await db.execute(update(DingTalkAuthorization).where(DingTalkAuthorization.session_id == request.state.session.id).values(revoked=True, proof_hash=None))
         await db.delete(request.state.session)
         response.delete_cookie(COOKIE, path='/')
         return {'ok': True}
 
+    async def password_rate(request: Request):
+        await limit_authenticated_request(sessions, request, 'password')
+
     @app.post('/api/v1/auth/password')
-    async def password(body: Password, response: Response, actor=AUTH, db=DB):
-        if not await run_in_threadpool(passwords.verify, body.currentPassword, actor.password_hash):
-            problem(400, '当前密码不正确')
+    async def password(body: Password, response: Response, request: Request, limited=Depends(password_rate), actor=AUTH, db=DB):
+        from .dingtalk import proof, clear_auth_cookies
+        valid = await proof(db, request, actor, consume=True) if body.useDingTalk else await verify_password(body.currentPassword, actor.password_hash)
+        if not valid:
+            problem(400, '当前密码不正确或钉钉验证已过期，请重新验证')
+        clear_auth_cookies(response)
         actor.password_hash = await run_in_threadpool(passwords.hash, body.newPassword)
         actor.must_change_password = False
-        await db.execute(delete(Session).where(Session.member_id == actor.id))
+        await revoke_member(db, actor.id)
         response.delete_cookie(COOKIE, path='/')
         return {'ok': True}
 
@@ -291,7 +305,7 @@ def create_app(settings=None):
         item.active = body.active
         await reporting.eligibility_changed(db, item)
         if not item.active:
-            await db.execute(delete(Session).where(Session.member_id == item.id))
+            await revoke_member(db, item.id)
         return member_dto(item)
 
     @app.post('/api/v1/members/{identifier}/reset-password')
@@ -299,7 +313,7 @@ def create_app(settings=None):
         item = await visible_member(db, actor, identifier, employee_only=True)
         item.password_hash = await run_in_threadpool(passwords.hash, body.password)
         item.must_change_password = True
-        await db.execute(delete(Session).where(Session.member_id == item.id))
+        await revoke_member(db, item.id)
         return {'ok': True}
 
     @app.post('/api/v1/uploads', status_code=201)

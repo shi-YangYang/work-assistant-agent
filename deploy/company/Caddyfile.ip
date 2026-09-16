@@ -1,0 +1,19 @@
+{
+	# IP clients omit SNI; Docker's internal address differs from the certificate IP.
+	default_sni {$PAA_DOMAIN}
+}
+
+http://{$PAA_DOMAIN} {
+	handle /.well-known/acme-challenge/* {
+		root * /var/www/acme
+		file_server
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}
+
+https://{$PAA_DOMAIN} {
+	tls /etc/letsencrypt/live/paa-ip/fullchain.pem /etc/letsencrypt/live/paa-ip/privkey.pem
+	import Caddyfile.app
+}
