@@ -2,11 +2,11 @@
 import json
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_openai import ChatOpenAI
+from fakes import ReviewedFixtureModel
 from pydantic import Field
 
 
-class DocumentModel(ChatOpenAI):
+class DocumentModel(ReviewedFixtureModel):
     seen: list = Field(default_factory=list, exclude=True)
     query: str = ''
 

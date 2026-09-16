@@ -141,7 +141,7 @@ class GatedStream(httpx.AsyncByteStream):
 
 
 @pytest.mark.parametrize('role,interrupted,tools', [('employee',False,False),('admin',False,False),('employee',True,False),('employee',False,True)])
-async def test_real_incremental_snapshot_before_provider_finish_resume_and_usage(setup,monkeypatch,role,interrupted,tools):
+async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,monkeypatch,role,interrupted,tools):
     settings,sessions,users,c=setup
     saved=await create(c['admin'])
     assert (await c['admin'].put('/api/v1/settings/model-routing',json=route(saved))).status_code==200
@@ -151,6 +151,13 @@ async def test_real_incremental_snapshot_before_provider_finish_resume_and_usage
     calls=[]
     def handler(request):
         calls.append(request)
+        payload = json.loads(request.content)
+        if not payload.get('tools'):
+            # Independent presentation request is counted like every provider call.
+            verdict = json.dumps({'segments': [{'index': 0, 'kind': 'information', 'evidence': []}]})
+            event = {'choices': [{'delta': {'content': verdict}, 'finish_reason': 'stop'}]}
+            wire = 'data: ' + json.dumps(event) + '\n\ndata: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\ndata: [DONE]\n\n'
+            return httpx.Response(200, text=wire, headers={'content-type': 'text/event-stream'})
         return httpx.Response(200,stream=GatedStream(seen,release,interrupted=interrupted,tools=tools and len(calls)==1))
     monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
@@ -159,14 +166,14 @@ async def test_real_incremental_snapshot_before_provider_finish_resume_and_usage
             await asyncio.wait_for(seen.wait(),15)
             live=await c[role].get(f"/api/v1/jobs/{job.id}/feedback")
             assert live.status_code==200,live.text
-            assert live.json()['text']=='Hello ' and not task.done()
+            assert live.json()['text']=='' and live.json()['stage']=='generating' and not task.done()
             restored=await c[role].get(f"/api/v1/jobs/{job.id}/feedback")
             assert restored.json()==live.json() and len(calls)==1
             assert (await c['peer'].get(f"/api/v1/jobs/{job.id}/feedback")).status_code==404
             assert (await c['outsider'].get(f"/api/v1/jobs/{job.id}/feedback")).status_code==404
             token=hashlib.sha256(c[role].cookies.get('paa_company_session').encode()).hexdigest()
             stream=events(sessions,token,job.id)
-            assert 'Hello ' in await anext(stream)
+            assert '"stage": "generating"' in await anext(stream)
             await stream.aclose()  # Disconnect is read-only, worker remains running.
             assert not task.done()
             # Capture actual ASGI HTTP delivery: ASGITransport normally buffers
@@ -178,13 +185,13 @@ async def test_real_incremental_snapshot_before_provider_finish_resume_and_usage
             async def capture(event):
                 if event['type']=='http.response.body':
                     bodies.append(event.get('body',b''))
-                    if b'Hello ' in event.get('body',b''):
+                    if b'"stage": "generating"' in event.get('body',b''):
                         delivered.set()
             scope={'type':'http','asgi':{'version':'3.0','spec_version':'2.4'},'http_version':'1.1','method':'GET','scheme':'http','path':f'/api/v1/jobs/{job.id}/events','raw_path':f'/api/v1/jobs/{job.id}/events'.encode(),'query_string':b'','root_path':'','headers':[(b'host',b'test'),(b'cookie',f"paa_company_session={c[role].cookies.get('paa_company_session')}".encode())],'client':('127.0.0.1',1),'server':('test',80)}
             subscription=asyncio.create_task(c[role]._transport.app(scope,receive,capture))
             try:
                 await asyncio.wait_for(delivered.wait(),5)
-                assert not task.done() and b'secret argument' not in b''.join(bodies)
+                assert not task.done() and b'secret argument' not in b''.join(bodies) and b'Hello' not in b''.join(bodies)
             finally:
                 subscription.cancel()
                 await asyncio.gather(subscription,return_exceptions=True)
@@ -194,12 +201,12 @@ async def test_real_incremental_snapshot_before_provider_finish_resume_and_usage
     data=(await c[role].get('/api/v1/messages/'+sent['messageId'])).json()
     if interrupted:
         assert data['job']['state']=='awaiting_retry' and not data['reply']
-        assert (await c[role].get(f"/api/v1/jobs/{job.id}/feedback")).json()['text']
+        assert (await c[role].get(f"/api/v1/jobs/{job.id}/feedback")).json()['text']==''
     else:
         assert data['job']['state']=='awaiting_input' and data['reply']=='Hello world'
         assert (await c[role].get(f"/api/v1/jobs/{job.id}/feedback")).json()['text']==''
     usage=(await c['admin'].get('/api/v1/settings/model-usage')).json()
-    expected_calls=2 if tools else 1
+    expected_calls=(2 if tools else 1) + (0 if interrupted else 1)
     assert usage['summary']['calls']==expected_calls and usage['summary']['inputTokens']==0 and usage['summary']['inputKnown']==expected_calls
     row=usage['items'][0]
     assert row['inputTokens']==0 and row['outputTokens']==7 and row['model']=='controlled-chat'

@@ -18,7 +18,7 @@ from .config import Settings
 from .db import database
 from .documents import prepare_document, verified_citations
 from .media import audio_wav, data_url, image_process, remove_media, MAX_MESSAGE_IMAGE_BLOCKS, MAX_MESSAGE_IMAGE_PIXELS, MAX_MESSAGE_IMAGE_BYTES
-from .models import Attachment, Job, LoginAttempt, Member, Message, ModelUsage, ProgressDraft, Session, now
+from .models import BusinessAction, Attachment, Job, LoginAttempt, Member, Message, ModelUsage, ProgressDraft, Session, now
 from .service import owned
 from .report_schedule import schedule_once
 
@@ -99,9 +99,9 @@ async def asr(context, attachment):
     return transcript
 
 
-async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None):
+async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
     try:
-        await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider), timeout=450)
+        await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model), timeout=450)
     except asyncio.TimeoutError:
         async with sessions.begin() as db:
             current = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
@@ -113,7 +113,7 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
                 current.lease_until, current.updated_at = None, now()
 
 
-async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None):
+async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
     context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
     heartbeat_task = asyncio.create_task(heartbeat(context))
     try:
@@ -214,9 +214,13 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
         await publish(context, 'generating', force=True)
         answer = await invoke_harness(context, checkpointer, blocks, model)
+        from .agent.reply_review import review_reply
+        review = await review_reply(context, answer, model=reply_model or model)
         async with sessions.begin() as db:
             live, actor = await lease(db, context)
             message = await owned(db, Message, job.target_id, actor, lock=True)
+            from .business_actions import message_actions, receipt_reply
+            answer = receipt_reply(review, await message_actions(db, actor, message))
             message.reply, message.citations = await verified_citations(db, context, answer)
             message.access = live.access
             drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status == 'pending'))).all()
@@ -244,7 +248,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
             if image_warnings:
                 message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)
-            live.state = 'succeeded' if message.suggestions else 'awaiting_input'
+            has_actions = await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == message.id, BusinessAction.state.in_(['succeeded', 'pending', 'running'])).limit(1))
+            live.state = 'succeeded' if message.suggestions or has_actions else 'awaiting_input'
             update_feedback(live, 'complete', '')
             live.phase, live.error, live.lease_until, live.updated_at = 'complete', '', None, now()
     except LostLease:

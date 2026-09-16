@@ -1,3 +1,4 @@
+import { BusinessActionCard } from './BusinessActions'
 import { useJobFeedback, stageNames } from './job-feedback'
 import { submitOnEnter, exampleText } from './assistant-session'
 import { BusinessReply, BusinessSources } from './BusinessSources'
@@ -15,7 +16,15 @@ import {
   Pencil,
   CornerUpLeft,
 } from 'lucide-react'
-import type { Attachment, Draft, Page, Progress, Work, WorkMessage } from '@paa/api-contracts'
+import type {
+  Attachment,
+  BusinessAction,
+  Draft,
+  Page,
+  Progress,
+  Work,
+  WorkMessage,
+} from '@paa/api-contracts'
 import { api, ApiError, dateLabel, useResource, write, isCancelled, useRetryWait } from './api'
 import { usePagedResource } from './paged-resource'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
@@ -55,6 +64,10 @@ export function ConversationChat({
     conversationId ? `/messages?conversationId=${conversationId}` : null,
     'createdAt',
     2000,
+  )
+  const actionReceipts = useResource<{ items: BusinessAction[] }>(
+    conversationId ? `/business-actions?conversationId=${conversationId}&orphanOnly=true` : null,
+    3000,
   )
   const [previewUploading, setPreviewUploading] = useState(false)
   const [gallery, setGallery] = useState<number | null>(null)
@@ -387,7 +400,7 @@ export function ConversationChat({
               <span className="assistant-examples">
                 {(identity.member.role === 'admin'
                   ? ['团队当前有哪些阻碍？', '本周员工有哪些工作进展？', '查看最近提交的周报']
-                  : ['记录今天的工作：', '补充一项工作进展：', '查看我最近的工作进展']
+                  : ['帮我创建工作：', '生成今天的日报', '查看我还没交的报告']
                 ).map((text) => (
                   <button
                     key={text}
@@ -406,6 +419,15 @@ export function ConversationChat({
               </span>
             </Empty>
           )}
+          {actionReceipts.data?.items
+            .filter((action) => !messages.some((message) => message.id === action.messageId))
+            .map((action) => (
+              <BusinessActionCard
+                key={action.id}
+                action={action}
+                refresh={actionReceipts.refresh}
+              />
+            ))}
           {messages.map((message) => (
             <MessageCard
               key={message.id}
@@ -751,6 +773,10 @@ export function MessageCard({
           <DocumentCitations citations={message.citations ?? []} />
         </div>
       )}
+      {own &&
+        message.actions?.map((action) => (
+          <BusinessActionCard key={action.id} action={action} refresh={onChange} />
+        ))}
       {own
         ? message.drafts.map((d) => (
             <div className="progress-card" key={d.id}>
@@ -952,7 +978,6 @@ export function ProgressFields({
         <AutoTextarea
           rows={3}
           value={value.summary}
-          required
           maxLength={4000}
           onChange={(e) => change({ ...value, summary: e.target.value })}
         />
@@ -967,6 +992,15 @@ export function ProgressFields({
           <option value="blocked">有阻碍</option>
           <option value="done">整个事项已完成</option>
         </select>
+      </label>
+      <label>
+        截止日期（选填）
+        <input
+          type="date"
+          value={value.dueDate ?? ''}
+          onClick={(event) => event.currentTarget.showPicker?.()}
+          onChange={(event) => change({ ...value, dueDate: event.target.value || null })}
+        />
       </label>
       <label>
         问题或阻碍

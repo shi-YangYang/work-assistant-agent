@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_openai import ChatOpenAI
+from fakes import ReviewedFixtureModel
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import Field
 from sqlalchemy import select
@@ -17,7 +17,7 @@ from test_company import send
 pytestmark = pytest.mark.asyncio
 
 
-class RecoveryModel(ChatOpenAI):
+class RecoveryModel(ReviewedFixtureModel):
     label: str
     kind: str = 'message'
     fail_once: bool = False
@@ -134,7 +134,7 @@ async def test_history_keeps_explicit_clarification_and_excludes_future_or_other
     assert sum(len(item.content) for item in history) <= 20000 - (8000 + 4 * 2048)
 
 
-class ReferenceRecoveryModel(ChatOpenAI):
+class ReferenceRecoveryModel(ReviewedFixtureModel):
     work_id: str
     message_id: str
     new_reference: str | None = None

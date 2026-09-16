@@ -67,7 +67,27 @@ export interface ExtractionPage {
   items: { ordinal: number; location: string; text: string }[]
   nextCursor: number | null
 }
+export interface BusinessAction {
+  id: string
+  messageId: string
+  action: string
+  label: string
+  state: 'pending' | 'running' | 'succeeded' | 'failed' | 'conflict' | 'cancelled' | 'unavailable'
+  revision: number
+  createdAt: string
+  objectType?: 'work' | 'report'
+  objectId?: string
+  objectRevision?: number
+  title?: string
+  details?: Partial<Progress>
+  message?: string
+  canConfirm?: boolean
+  preview?: { title: string; content?: ReportContent; revision: number }
+  impact?: { messages: number; attachments: number }
+  job?: Job
+}
 export interface Progress {
+  dueDate?: string | null
   title: string
   summary: string
   status: 'in_progress' | 'blocked' | 'done'
@@ -81,6 +101,7 @@ export interface Conversation {
   updatedAt: string
 }
 export interface Work extends Progress {
+  origin?: 'manual' | 'assistant' | 'suggestion'
   historical?: boolean
   businessLinks?: BusinessCitation[]
   hasBusinessLinks?: boolean
@@ -127,6 +148,7 @@ export interface Job {
   updatedAt: string
 }
 export interface WorkMessage {
+  actions?: BusinessAction[]
   conversationId: string | null
   id: string
   ownerId: string

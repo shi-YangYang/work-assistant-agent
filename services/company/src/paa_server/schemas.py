@@ -68,7 +68,8 @@ class TranscriptEdit(Input):
 
 class Progress(Input):
     title: str = Field(min_length=1, max_length=200)
-    summary: str = Field(min_length=1, max_length=4000)
+    summary: str = Field(default='', max_length=4000)
+    dueDate: date | None = None
     status: Literal['in_progress', 'blocked', 'done'] = 'in_progress'
     blocker: str = Field(default='', max_length=2000)
     nextStep: str = Field(default='', max_length=2000)
