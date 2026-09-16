@@ -50,12 +50,13 @@ void main() {
   );
   float fold = smoothstep(0.28, 0.9, pattern);
   float sheen = smoothstep(0.72, 0.98, pattern);
-  vec3 silver = mix(vec3(0.68, 0.70, 0.73), vec3(0.88, 0.89, 0.90), fold);
-  silver = mix(silver, vec3(0.98, 0.975, 0.96), sheen * 0.6);
-  vec3 graphite = mix(vec3(0.05, 0.052, 0.06), vec3(0.20, 0.215, 0.24), fold);
-  graphite = mix(graphite, vec3(0.33, 0.34, 0.37), sheen * 0.4);
-  vec3 color = mix(silver, graphite, dark);
-  color += (noise(gl_FragCoord.xy) - 0.5) * 0.008;
+  // Match the shared canvas and accent palette in both appearance modes.
+  vec3 base = mix(vec3(238.0, 240.0, 245.0), vec3(12.0, 16.0, 23.0), dark) / 255.0;
+  vec3 accent = mix(vec3(52.0, 91.0, 216.0), vec3(154.0, 180.0, 255.0), dark) / 255.0;
+  float tint = mix(0.02, 0.24, 1.0 - fold);
+  vec3 color = mix(base, accent, tint);
+  color = mix(color, base, sheen * 0.4);
+  color += (noise(gl_FragCoord.xy) - 0.5) * 0.006;
   gl_FragColor = vec4(color, 1.0);
 }
 `

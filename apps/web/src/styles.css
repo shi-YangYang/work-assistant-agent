@@ -1252,18 +1252,13 @@ svg {
   margin-bottom: 24px;
 }
 .login-page {
-  --login-base: #e6e7e9;
-  --login-veil: #f0f0ee;
-  --login-edge: #b9bdc3;
+  --login-base: var(--canvas);
+  --login-veil: var(--canvas);
+  --login-edge: color-mix(in srgb, var(--accent) 16%, var(--canvas));
   position: relative;
   isolation: isolate;
   background: var(--login-base);
   padding: 48px 24px 72px;
-}
-:root[data-theme='dark'] .login-page {
-  --login-base: #202226;
-  --login-veil: #191b1f;
-  --login-edge: #41454d;
 }
 .login-ambient {
   position: fixed;
