@@ -9,7 +9,7 @@ import httpx
 import pytest_asyncio
 from pwdlib import PasswordHash
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'services/company/src'))
@@ -65,7 +65,7 @@ async def setup(tmp_path):
             await saver.adelete_thread(thread)
     async with sessions.begin() as db:
         from paa_server.models import Session
-        await db.execute(delete(Session).where(Session.member_id.in_([u.id for u in users.values()])))
+        await db.execute(delete(Session).where(Session.member_id.in_(select(Member.id).where(Member.company_id.in_(company_ids)))))
         for table in reversed(Base.metadata.sorted_tables):
             if 'company_id' in table.c:
                 await db.execute(table.delete().where(table.c.company_id.in_(company_ids)))

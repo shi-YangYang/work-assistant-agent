@@ -3505,3 +3505,24 @@ dialog::backdrop {
   right: 12px;
   z-index: 1;
 }
+
+.dingtalk-login > button {
+  width: 100%;
+}
+.login-methods .panel,
+.account-page .panel {
+  margin: 16px 0;
+}
+.login-methods input[readonly],
+.account-page input[readonly] {
+  overflow: auto;
+}
+.login-methods .panel > p,
+.account-page .panel > p {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.login-methods .form-actions,
+.account-page .form-actions {
+  flex-wrap: wrap;
+}

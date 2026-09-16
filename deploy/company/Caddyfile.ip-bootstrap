@@ -1,0 +1,9 @@
+http://{$PAA_DOMAIN} {
+	handle /.well-known/acme-challenge/* {
+		root * /var/www/acme
+		file_server
+	}
+	handle {
+		respond "HTTPS setup in progress" 503
+	}
+}

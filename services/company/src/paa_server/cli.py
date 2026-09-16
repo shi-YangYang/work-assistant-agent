@@ -40,13 +40,13 @@ async def bootstrap():
 
 async def prepare_model_key():
     from .model_secrets import initialize_key, SecretUnavailable
-    from .models import ModelServiceRevision
+    from .models import ModelServiceRevision, DingTalkConfig
     settings = Settings()
     if not settings.model_key_file.exists():
         engine, sessions = database(settings)
         try:
             async with sessions() as db:
-                if await db.scalar(select(ModelServiceRevision.id).where(ModelServiceRevision.credential != '').limit(1)):
+                if await db.scalar(select(ModelServiceRevision.id).where(ModelServiceRevision.credential != '').limit(1)) or await db.scalar(select(DingTalkConfig.id).where(DingTalkConfig.credential != '').limit(1)):
                     raise SecretUnavailable()
         finally:
             await engine.dispose()

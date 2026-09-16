@@ -27,12 +27,13 @@
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
 | 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
-| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0008_support_feedback`，私有附件、业务修订、任务反馈、模型请求、汇报待办／通知及独立问题反馈 |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0009_dingtalk_login`，业务数据、私有附件及公司钉钉身份／授权事务 |
+| 登录 | 账号密码与可选钉钉企业内部应用 OAuth；复用本地成员、角色、8 小时会话与 CSRF；自动开户仅限已核验的公司员工 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、版本化来源与历史权限复核、持久恢复、人工确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |
 | 媒体 | Pillow＋pillow-heif 校验／规范图片，FFmpeg 处理有界短语音（含 MP3）；外部图文／ASR API，不在服务端部署 faster-whisper |
 | 文档 | pypdf、python-docx、python-pptx、openpyxl 与标准库；受管子进程提取原生文字／可见表格，不做 OCR；原件在私有卷，分段及定位在 PostgreSQL；Web 用本地 PDF.js 预览原页 |
-| 部署 | Linux Docker Compose＋Caddy、API、单 worker 进程、PostgreSQL；任务有界并发，默认 3、可配 1～8，同一成员串行；模型推理外置，服务器容量待实测 |
+| 部署 | Linux Docker Compose＋Caddy、API、单 worker 进程、PostgreSQL；支持域名自动 HTTPS 或公网 IPv4 外部证书＋Certbot 续期；任务有界并发，默认 3、可配 1～8，同一成员串行；模型推理外置，服务器容量待实测 |
 
 公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 共用 `packages/ui-web/` 的主题与选择控件 CSS，按各自设备能力组织导航；不能只共用颜色而偏离实际桌面视觉。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
 

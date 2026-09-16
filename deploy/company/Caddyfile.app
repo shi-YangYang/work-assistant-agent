@@ -1,0 +1,20 @@
+encode zstd gzip
+request_body {
+	max_size 25MB
+}
+header {
+	X-Content-Type-Options nosniff
+	Referrer-Policy same-origin
+	Permissions-Policy "camera=(), microphone=(self)"
+	Content-Security-Policy "default-src 'self'; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+}
+handle /api/* {
+	reverse_proxy api:8000 {
+		flush_interval -1
+	}
+}
+handle {
+	root * /srv
+	try_files {path} /index.html
+	file_server
+}

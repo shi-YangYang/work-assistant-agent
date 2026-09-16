@@ -1,0 +1,22 @@
+# Add after compose.yml for a fixed public IPv4 address with an external certificate.
+services:
+  web:
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/${PAA_IP_CADDY_CONFIG:-Caddyfile.ip}
+      - --adapter
+      - caddyfile
+    volumes:
+      # Mount the complete tree: live/ contains symlinks into archive/.
+      - type: bind
+        source: /etc/letsencrypt
+        target: /etc/letsencrypt
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: /var/lib/paa-acme
+        target: /var/www/acme
+        read_only: true
+        bind: { create_host_path: false }
