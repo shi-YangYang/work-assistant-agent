@@ -261,22 +261,20 @@ it.each([true, false])(
 
 it('rejects invalid transcript options and inconsistent snapshots without touching the clipboard', async () => {
   const core = new CoreManager('', '')
-  const request = vi
-    .spyOn(core, 'libraryRequest')
-    .mockImplementation(
-      async (method) =>
-        ({
-          ok: true,
-          value:
-            method === 'library.start'
-              ? { id }
-              : method === 'library.status'
-                ? { state: 'completed', value: { bytes: 3, title: '会议', date: '2026-09-17' } }
-                : method === 'library.read'
-                  ? { data: Buffer.from('abc').toString('base64'), nextOffset: 3, done: false }
-                  : { released: true },
-        }) as never,
-    )
+  const request = vi.spyOn(core, 'libraryRequest').mockImplementation(
+    async (method) =>
+      ({
+        ok: true,
+        value:
+          method === 'library.start'
+            ? { id }
+            : method === 'library.status'
+              ? { state: 'completed', value: { bytes: 3, title: '会议', date: '2026-09-17' } }
+              : method === 'library.read'
+                ? { data: Buffer.from('abc').toString('base64'), nextOffset: 3, done: false }
+                : { released: true },
+      }) as never,
+  )
   const copy = vi.fn()
   const library = new DesktopLibrary(core, { copy, save: async () => null })
   for (const input of [
