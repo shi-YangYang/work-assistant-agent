@@ -51,15 +51,15 @@ test('installed package starts its bundled core without Python, Node or source c
         mount,
       ])
       mounted = true
-      run('/usr/bin/ditto', [join(mount, '个人工作助手.app'), join(install, '个人工作助手.app')])
+      run('/usr/bin/ditto', [join(mount, '桌面会议助手.app'), join(install, '桌面会议助手.app')])
       run('/usr/bin/hdiutil', ['detach', mount])
       mounted = false
-      executable = join(install, '个人工作助手.app/Contents/MacOS/个人工作助手')
+      executable = join(install, '桌面会议助手.app/Contents/MacOS/桌面会议助手')
     } else {
       // NSIS's /D argument must be last and unquoted; this CI-generated path has no spaces.
       const windowsInstall = join(root, 'installed')
       run(join(directory, artifact), ['/S', `/D=${windowsInstall}`])
-      executable = join(windowsInstall, '个人工作助手.exe')
+      executable = join(windowsInstall, '桌面会议助手.exe')
     }
     expect(existsSync(executable)).toBe(true)
     const env = Object.fromEntries(
@@ -144,7 +144,7 @@ test('installed package starts its bundled core without Python, Node or source c
     await cleanup(() => {
       if (process.platform !== 'win32') return
       const windowsInstall = join(root, 'installed')
-      const uninstall = join(windowsInstall, 'Uninstall 个人工作助手.exe')
+      const uninstall = join(windowsInstall, 'Uninstall 桌面会议助手.exe')
       if (!existsSync(uninstall)) return
       // NSIS otherwise starts a temporary copy and returns before uninstall completes.
       // Run our own copy outside the install directory; _?= must be last and unquoted.

@@ -28,6 +28,7 @@ import {
   type Result,
 } from '../shared/contracts'
 
+// Preserve the existing data directory and keychain identity; window/bundle titles are separate.
 app.setName('个人工作助手')
 // Tests opt into a separate userData directory before acquiring the single-instance lock.
 if (process.env.PAA_TEST_DATA_DIR) {
@@ -217,7 +218,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: '个人工作助手',
+    title: '桌面会议助手',
     icon: appIcon,
     backgroundColor: '#f8f9f6',
     autoHideMenuBar: true,
