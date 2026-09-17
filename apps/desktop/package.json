@@ -6,9 +6,9 @@
   "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ../../scripts/desktop/launch.mjs dev",
     "build": "electron-vite build",
-    "start": "electron-vite preview",
+    "start": "node ../../scripts/desktop/launch.mjs preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.renderer.json"
   },
   "devDependencies": {

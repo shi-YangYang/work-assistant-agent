@@ -1,3 +1,5 @@
+import { SpeakerPanel } from './SpeakerPanel'
+import type { SpeakerStatus } from '../shared/speaker-contracts'
 export { ModelSettings } from './LocalModelSettings'
 import { languageNames } from './LocalModelSettings'
 import { useEffect, useRef, useState } from 'react'
@@ -54,6 +56,9 @@ export function Transcript({
   useEffect(() => {
     if (rerunOpen) rerunDialog.current?.showModal()
   }, [rerunOpen])
+  const [speakerState, setSpeakerState] = useState<SpeakerStatus | null>(null)
+  const [speakerSegment, setSpeakerSegment] = useState<TranscriptSegment | null>(null)
+  const speakerVersion = useRef('')
   const publication = useRef<string | undefined>(undefined)
   const [status, setStatus] = useState<TranscriptionStatus | null>(null)
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
@@ -82,6 +87,19 @@ export function Transcript({
           return
         }
         setStatus(state.value)
+        if (!live && state.value.state === 'completed' && !state.value.candidate) {
+          const speakers = await window.paa.speakers({ action: 'status', meetingId })
+          if (!alive) return
+          if (speakers.ok && 'speakers' in speakers.value) {
+            const next = speakers.value
+            setSpeakerState(next)
+            const version = `${next.generation}:${next.revision}:${next.state}`
+            if (speakerVersion.current !== version) {
+              speakerVersion.current = version
+              publication.current = undefined
+            }
+          }
+        } else setSpeakerState(null)
         if (publication.current !== state.value.publication) {
           publication.current = state.value.publication
           cursor.current = -1
@@ -284,6 +302,15 @@ export function Transcript({
           {error || status?.error}
         </p>
       )}
+      {!live && (
+        <SpeakerPanel
+          key={speakerSegment?.id ?? 'toolbar'}
+          status={speakerState}
+          segment={speakerSegment}
+          onCloseSegment={() => setSpeakerSegment(null)}
+          connected={connected}
+        />
+      )}
       <div
         ref={viewport}
         className="transcript-lines"
@@ -296,18 +323,30 @@ export function Transcript({
       >
         {segments.length ? (
           segments.map((segment) => (
-            <button
-              className={`transcript-line ${segment.id === target?.id ? 'source-target' : ''}`}
-              key={segment.id}
-              data-segment-id={segment.id}
-              aria-disabled={!playable}
-              onClick={() => {
-                if (playable) onSeek?.(segment.startMs)
-              }}
-            >
-              <time>{time(segment.startMs)}</time>
-              <span>{segment.text}</span>
-            </button>
+            <div className="speaker-transcript-row" key={segment.id}>
+              {speakerState?.state === 'completed' && (
+                <button
+                  className="speaker-label"
+                  title="调整这段发言的说话人"
+                  onClick={() => setSpeakerSegment(segment)}
+                  disabled={!connected}
+                >
+                  {segment.speakerName || '多人／待确认'}
+                </button>
+              )}
+              <button
+                className={`transcript-line ${segment.id === target?.id ? 'source-target' : ''}`}
+                key={segment.id}
+                data-segment-id={segment.id}
+                aria-disabled={!playable}
+                onClick={() => {
+                  if (playable) onSeek?.(segment.startMs)
+                }}
+              >
+                <time>{time(segment.startMs)}</time>
+                <span>{segment.text}</span>
+              </button>
+            </div>
           ))
         ) : (
           <p className="transcript-empty">

@@ -13,7 +13,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
@@ -22,15 +22,17 @@ from starlette.requests import ClientDisconnect
 from .authentication import COOKIE, passwords, issue_session, limit_authenticated_request, revoke_member, verify_password
 from . import business_access as business
 from . import report_schedule as reporting
+from . import business_actions as actions
+from . import business_writes as writes
 from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from .config import Settings
 from .db import database
 from .media import audio_mime, audio_wav, image_process, preview_path
-from .models import Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, ReportObligation, ReportNotification, Session, DingTalkAuthorization, WorkItem, WorkRevision, now
+from .models import BusinessAction, Conversation, Attachment, Company, Job, LoginAttempt, Member, Message, ProgressDraft, Report, ReportRevision, ReportObligation, ReportNotification, Session, DingTalkAuthorization, WorkItem, WorkRevision, now
 from .model_schemas import RetryJob
 from .model_provider import ProviderError
 from .model_secrets import SecretUnavailable
-from .schemas import ConversationCreate, ConversationEdit, Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit
+from .schemas import ConversationCreate, ConversationEdit, Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit, Progress
 from .service import active_message, conversation_dto, default_conversation, confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
 
 request_log = logging.getLogger('uvicorn.error.paa_requests')
@@ -213,7 +215,7 @@ def create_app(settings=None):
         job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
         private = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id, ProgressDraft.status != 'deleted').order_by(ProgressDraft.created_at))).all() if actor.id == item.owner_id else []
         statuses = {d.id: d.status for d in (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id))).all()}
-        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text if allowed else '', 'reply': item.reply if allowed else '', 'businessUnavailable': not allowed, 'citations': [c for c in item.citations if c.get('kind') != 'business'] if allowed else [], 'businessCitations': [c for c in item.citations if c.get('kind') == 'business'] if allowed else [], 'replyTo': item.reply_to, 'transcript': item.transcript if allowed else '', 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments] if allowed else [], 'job': job_dto(job) if job else None, 'drafts': [{**draft_dto(d), 'businessLinks': await business_link_dtos(db, actor, d.business_links)} for d in private if allowed and await business.valid(db, actor, d.access)], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions] if allowed else []}
+        return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text if allowed else '', 'reply': item.reply if allowed else '', 'businessUnavailable': not allowed, 'citations': [c for c in item.citations if c.get('kind') != 'business'] if allowed else [], 'businessCitations': [c for c in item.citations if c.get('kind') == 'business'] if allowed else [], 'replyTo': item.reply_to, 'transcript': item.transcript if allowed else '', 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments] if allowed else [], 'job': job_dto(job) if job else None, 'drafts': [{**draft_dto(d), 'businessLinks': await business_link_dtos(db, actor, d.business_links)} for d in private if allowed and await business.valid(db, actor, d.access)], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions] if allowed else [], 'actions': await actions.message_actions(db, actor, item)}
 
     async def report_dto(db, report, actor):
         revisions = list((await db.scalars(select(ReportRevision).where(ReportRevision.report_id == report.id).order_by(ReportRevision.revision.desc()))).all())
@@ -586,6 +588,42 @@ def create_app(settings=None):
         item.updated_at = now()
         return job_dto(item)
 
+    @app.post('/api/v1/work-items', status_code=201)
+    async def create_work(body: Progress, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
+        prior, digest = await idem_begin(db, actor, 'create-work', idempotency_key, body.model_dump(mode='json'))
+        if prior:
+            item = await owned(db, WorkItem, prior['id'], actor)
+            await business.require(db, actor, item.access, retained=True)
+            return prior
+        item = await writes.save_work(db, actor, body.model_dump(mode='json'))
+        return idem_save(db, actor, 'create-work', idempotency_key, digest, work_dto(item))
+
+    @app.get('/api/v1/business-actions')
+    async def business_actions(conversationId: str, orphanOnly: bool = False, actor=AUTH, db=DB):
+        await owned(db, Conversation, conversationId, actor)
+        query = select(BusinessAction).where(BusinessAction.company_id == actor.company_id, BusinessAction.owner_id == actor.id, BusinessAction.conversation_id == conversationId)
+        if orphanOnly:
+            query = query.where(~exists(select(Message.id).where(Message.id == BusinessAction.message_id, Message.deleted.is_(False))))
+        rows = (await db.scalars(query.order_by(BusinessAction.created_at.desc()).limit(80))).all()
+        return {'items': [await actions.action_dto(db, actor, row) for row in rows]}
+
+    @app.post('/api/v1/business-actions/{identifier}/{choice}')
+    async def confirm_business_action(identifier: str, choice: str, body: Revision, actor=AUTH, db=DB):
+        if choice not in ('confirm', 'cancel'):
+            problem(404, '操作不存在')
+        row = await owned(db, BusinessAction, identifier, actor)
+        target_id = row.result.get('objectId') or row.params.get('targetId')
+        target = await db.get(Report if row.action.endswith('report') else WorkItem, target_id) if target_id else None
+        cleanup_owner = target.owner_id if target and target.company_id == actor.company_id else actor.id
+        result = await actions.confirm(db, actor, identifier, body.expectedRevision, cancel=choice == 'cancel')
+        await db.commit()
+        from .deletion import clean_files
+        try:
+            await clean_files(db, settings, cleanup_owner)
+        except OSError:
+            pass  # Persistent attachment tombstones are retried by normal cleanup.
+        return result
+
     @app.get('/api/v1/work-items')
     async def work_items(q: str = Query('', max_length=200), status: str = '', cursor: str | None = None, limit: int = Query(20, ge=1, le=20), actor=AUTH, db=DB):
         from .queries import work_page
@@ -620,7 +658,7 @@ def create_app(settings=None):
             await business.require(db, actor, work.access, retained=True)
         business.inherit(actor, draft, message, *([work] if work else []))
         draft.work_id, draft.base_revision = (work.id, work.revision) if work else (None, None)
-        draft.content = body.model_dump(exclude={'expectedRevision', 'workId'})
+        draft.content = {**draft.content, **body.model_dump(mode='json', exclude={'expectedRevision', 'workId'}, exclude_unset=True)}
         draft.revision += 1
         return draft_dto(draft)
 
@@ -636,16 +674,7 @@ def create_app(settings=None):
 
     @app.post('/api/v1/work-items/{identifier}/progress')
     async def edit_work(identifier: str, body: WorkEdit, actor=AUTH, db=DB):
-        work = await owned(db, WorkItem, identifier, actor, lock=True)
-        await business.require(db, actor, work.access, retained=True)
-        version(work, body.expectedRevision)
-        for source in body.sourceIds:
-            message = await active_message(db, source, actor)
-            await business.require(db, actor, message.access)
-            business.inherit(actor, work, message, include_message_links=True)
-        work.content = body.model_dump(exclude={'expectedRevision', 'sourceIds'})
-        work.title, work.revision, work.updated_at = body.title, work.revision + 1, now()
-        db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=body.sourceIds, access=work.access, business_links=work.business_links))
+        work = await writes.save_work(db, actor, body.model_dump(mode='json', exclude={'expectedRevision', 'sourceIds'}, exclude_unset=True), identifier=identifier, expected=body.expectedRevision, sources=body.sourceIds)
         return work_dto(work)
 
     @app.get('/api/v1/report-obligations')
@@ -732,12 +761,7 @@ def create_app(settings=None):
 
     @app.patch('/api/v1/reports/{identifier}')
     async def edit_report(identifier: str, body: ReportEdit, actor=AUTH, db=DB):
-        if actor.role != 'employee':
-            problem(403, '管理员不编辑个人报告')
-        report = await owned(db, Report, identifier, actor, lock=True)
-        version(report, body.expectedRevision)
-        report.content, report.edited, report.updated_at = body.content.model_dump(), True, now()
-        report.revision += 1
+        report = await writes.edit_report(db, actor, identifier, body.expectedRevision, body.content.model_dump())
         return await report_dto(db, report, actor)
 
     @app.post('/api/v1/reports/{identifier}/candidate')
@@ -762,15 +786,7 @@ def create_app(settings=None):
         prior, digest = await idem_begin(db, actor, action, idempotency_key, body.model_dump())
         if prior:
             return prior
-        report = await owned(db, Report, identifier, actor, lock=True)
-        version(report, body.expectedRevision)
-        if report.published_revision == report.revision:
-            problem(409, '这一版本已经提交')
-        if not any(str(v).strip() for v in report.content.values()):
-            problem(422, '请先填写报告内容')
-        db.add(ReportRevision(company_id=actor.company_id, owner_id=actor.id, report_id=report.id, revision=report.revision, content=report.content, source_ids=report.source_ids))
-        report.published_revision, report.updated_at = report.revision, now()
-        await reporting.link_report(db, report, submitted=True)
+        report = await writes.submit_report(db, actor, identifier, body.expectedRevision)
         return idem_save(db, actor, action, idempotency_key, digest, {'ok': True, 'revision': report.revision})
 
     @app.get('/api/v1/settings/report-rules')
@@ -890,31 +906,18 @@ def create_app(settings=None):
 
     @app.delete('/api/v1/work-items/{identifier}')
     async def delete_work(identifier: str, body: Revision, actor=AUTH, db=DB):
-        from .deletion import target, remove_work
-        item = await target(db, WorkItem, identifier, actor, body.expectedRevision)
-        await remove_work(db, item)
+        item = await writes.remove_record(db, actor, 'work', identifier, body.expectedRevision)
         return await finish_deletion(db, item.owner_id)
 
     @app.get('/api/v1/reports/{identifier}/deletion')
     async def report_deletion(identifier: str, actor=AUTH, db=DB):
         item = await owned(db, Report, identifier, actor, read=True)
-        if actor.role != 'admin' and item.published_revision:
-            problem(403, '已提交的报告不能删除')
-        revisions = (await db.scalars(select(ReportRevision).where(ReportRevision.report_id == item.id))).all()
-        ids = set(item.source_ids) | set((item.candidate or {}).get('sourceIds', []))
-        for revision in revisions:
-            ids.update(revision.source_ids)
-        sources = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(ids), WorkRevision.owner_id == item.owner_id))).all()
-        messages = {mid for source in sources for mid in source.source_ids}
-        count = await db.scalar(select(func.count()).select_from(Message).where(Message.id.in_(messages), Message.deleted.is_(False), Message.owner_id == item.owner_id))
-        attachments = await db.scalar(select(func.count()).select_from(Attachment).where(Attachment.message_id.in_(messages), Attachment.deleted.is_(False), Attachment.owner_id == item.owner_id))
-        return {'messages': count if actor.role == 'admin' else 0, 'attachments': attachments if actor.role == 'admin' else 0, 'revision': item.revision}
+        impact = await writes.deletion_impact(db, item, actor)
+        return {key: impact[key] for key in ('messages', 'attachments', 'revision')}
 
     @app.delete('/api/v1/reports/{identifier}')
     async def delete_report(identifier: str, body: Revision, actor=AUTH, db=DB):
-        from .deletion import target, remove_report
-        item = await target(db, Report, identifier, actor, body.expectedRevision)
-        await remove_report(db, item, actor)
+        item = await writes.remove_record(db, actor, 'report', identifier, body.expectedRevision)
         return await finish_deletion(db, item.owner_id)
 
     return app

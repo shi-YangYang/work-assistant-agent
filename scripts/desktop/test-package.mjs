@@ -18,7 +18,7 @@ const [resourcesArgument] = process.argv
 const resources = resolve(
   resourcesArgument ||
     (process.platform === 'darwin'
-      ? 'dist/desktop/mac-arm64/个人工作助手.app/Contents/Resources'
+      ? 'dist/desktop/mac-arm64/桌面会议助手.app/Contents/Resources'
       : 'dist/desktop/win-unpacked/resources'),
 )
 const executable = join(

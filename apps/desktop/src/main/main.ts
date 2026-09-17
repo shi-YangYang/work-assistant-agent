@@ -1,3 +1,4 @@
+import { validSpeakerRequest } from '../shared/speaker-contracts'
 import { DesktopLibrary } from './meeting-library'
 import appIcon from '@paa/ui-web/app-icon.png?asset'
 import {
@@ -27,6 +28,7 @@ import {
   type Result,
 } from '../shared/contracts'
 
+// Preserve the existing data directory and keychain identity; window/bundle titles are separate.
 app.setName('个人工作助手')
 // Tests opt into a separate userData directory before acquiring the single-instance lock.
 if (process.env.PAA_TEST_DATA_DIR) {
@@ -216,7 +218,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: '个人工作助手',
+    title: '桌面会议助手',
     icon: appIcon,
     backgroundColor: '#f8f9f6',
     autoHideMenuBar: true,
@@ -364,6 +366,12 @@ if (hasLock)
           message: error instanceof Error ? error.message : '设置操作失败，请重试。',
         }
       }
+    })
+    ipcMain.handle(CHANNELS.speakers, async (event, input: unknown) => {
+      trustedCaller(event)
+      if (!validSpeakerRequest(input)) throw new Error('请求参数无效。')
+      const { action, ...params } = input
+      return core.speakerRequest(action, params)
     })
     ipcMain.handle(CHANNELS.inferenceDevice, (event, device: unknown) => {
       trustedCaller(event)

@@ -80,7 +80,7 @@ async def work_page(db, actor, owner_id, q='', status='', cursor=None, limit=20)
 
 
 def revision_work(work, revision):
-    return {**work_dto(work), **revision.content, 'revision': revision.revision, 'updatedAt': revision.created_at.isoformat(), 'historical': True, 'hasBusinessLinks':bool(revision.business_links)}
+    return {**work_dto(work), 'dueDate': None, **revision.content, 'revision': revision.revision, 'updatedAt': revision.created_at.isoformat(), 'historical': True, 'hasBusinessLinks':bool(revision.business_links)}
 
 
 def blocked(work):

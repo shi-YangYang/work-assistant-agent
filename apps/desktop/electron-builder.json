@@ -1,6 +1,6 @@
 {
   "appId": "com.personal-agent-assistant.desktop",
-  "productName": "个人工作助手",
+  "productName": "桌面会议助手",
   "directories": {
     "output": "dist/desktop",
     "app": "apps/desktop"

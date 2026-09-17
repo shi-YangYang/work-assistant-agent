@@ -39,9 +39,9 @@ class Repository:
         with self.connect() as db:
             version = db.execute('PRAGMA user_version').fetchone()[0]
             tables = db.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-            if version not in (0, 1, 2, 3, 4, 5, 6) or (version == 0 and tables):
+            if version not in (0, 1, 2, 3, 4, 5, 6, 7) or (version == 0 and tables):
                 raise DomainError('storage_schema', '会议数据库版本不兼容，请保留数据并联系维护者。')
-            if version in (1, 2, 3, 4, 5):
+            if version in (1, 2, 3, 4, 5, 6):
                 self.backup_schema(db, version)
             db.execute('BEGIN IMMEDIATE')
             if version == 0:
@@ -68,6 +68,10 @@ class Repository:
                 from .transcript_store import migrate_library
                 migrate_library(db)
                 db.execute('PRAGMA user_version=6')
+            if version < 7:
+                from .speaker_store import migrate as migrate_speakers
+                migrate_speakers(db)
+                db.execute('PRAGMA user_version=7')
         self.recover_deletions()
         self.recover()
 
@@ -225,7 +229,7 @@ class Repository:
             if not meeting:
                 return {'deleted': True}
             if not recovery:
-                busy = (meeting[0] in ACTIVE or db.execute("SELECT 1 FROM candidate_jobs WHERE meetingId=? AND state IN ('queued','running','draining')", (meeting_id,)).fetchone() or db.execute("SELECT 1 FROM transcription_jobs WHERE meetingId=? AND state IN ('queued','running','draining')", (meeting_id,)).fetchone() or db.execute("SELECT 1 FROM summary_jobs WHERE meetingId=? AND state IN ('queued','running')", (meeting_id,)).fetchone())
+                busy = (meeting[0] in ACTIVE or db.execute("SELECT 1 FROM speaker_jobs WHERE meetingId=? AND state='running'", (meeting_id,)).fetchone() or db.execute("SELECT 1 FROM candidate_jobs WHERE meetingId=? AND state IN ('queued','running','draining')", (meeting_id,)).fetchone() or db.execute("SELECT 1 FROM transcription_jobs WHERE meetingId=? AND state IN ('queued','running','draining')", (meeting_id,)).fetchone() or db.execute("SELECT 1 FROM summary_jobs WHERE meetingId=? AND state IN ('queued','running')", (meeting_id,)).fetchone())
                 if busy:
                     raise DomainError('meeting_busy', '这场会议仍在录音、保存、转写或生成纪要，请完成后再删除。')
             db.execute('INSERT OR IGNORE INTO meeting_deletions VALUES (?,NULL)', (meeting_id,))
@@ -240,7 +244,7 @@ class Repository:
                     self.path(meeting_id, child.name).unlink(missing_ok=True)
                 directory.rmdir()
             with self.lock, self.connect() as db:
-                for table in ('candidate_segments', 'candidate_chunks', 'candidate_jobs', 'transcript_publications', 'meeting_summaries', 'summary_jobs', 'summary_attempts', 'transcript_segments', 'audio_chunks', 'transcription_jobs', 'meeting_deletions'):
+                for table in ('speaker_annotations', 'meeting_speakers', 'speaker_jobs', 'candidate_segments', 'candidate_chunks', 'candidate_jobs', 'transcript_publications', 'meeting_summaries', 'summary_jobs', 'summary_attempts', 'transcript_segments', 'audio_chunks', 'transcription_jobs', 'meeting_deletions'):
                     db.execute(f'DELETE FROM {table} WHERE meetingId=?', (meeting_id,))
                 db.execute('DELETE FROM meetings WHERE id=?', (meeting_id,))
             return {'deleted': True}

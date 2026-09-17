@@ -9,7 +9,7 @@ import pytest
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from langchain_openai import ChatOpenAI
+from fakes import ReviewedFixtureModel
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from pydantic import Field
 from sqlalchemy import func, select
@@ -45,7 +45,7 @@ async def runtime(setup, who='admin', text='团队现在有什么阻碍？'):
     return SimpleNamespace(context=context), job, sent
 
 
-class TeamModel(ChatOpenAI):
+class TeamModel(ReviewedFixtureModel):
     step: int = 0
     followup: bool = False
     token: str = ''

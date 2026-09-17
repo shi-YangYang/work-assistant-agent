@@ -7,7 +7,7 @@ import { timezoneLabel } from './timezones'
 import { usePagedResource } from './paged-resource'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useLocation, useParams, useSearchParams } from 'react-router'
-import { ChevronRight, RefreshCw, FileText } from 'lucide-react'
+import { ChevronRight, RefreshCw, FileText, Plus } from 'lucide-react'
 import type { Progress, Report, ReportContent, Rules, Work } from '@paa/api-contracts'
 import { api, dateLabel, todayIn, useResource, write } from './api'
 import { useWorkspace } from './workspace'
@@ -50,6 +50,7 @@ export function WorkList({
               <Status value={work.status} />
             </div>
             <p className="record-summary">{work.summary}</p>
+            {work.dueDate && <small className="record-note">截止 {work.dueDate}</small>}
             <small className="record-note">
               {work.blocker
                 ? `阻碍：${work.blocker}`
@@ -100,6 +101,7 @@ export function WorkList({
   )
 }
 export function WorkPage() {
+  const [creating, setCreating] = useState(false)
   const [search] = useSearchParams()
   const query = search.get('q') ?? ''
   const status = search.get('status') ?? ''
@@ -108,10 +110,25 @@ export function WorkPage() {
     <div className="page">
       <div className="page-heading">
         <h2>我的工作</h2>
-        <button aria-label="刷新工作" onClick={list.refresh}>
-          <RefreshCw size={16} />
-        </button>
+        <div className="card-actions">
+          <button aria-label="刷新工作" onClick={list.refresh}>
+            <RefreshCw size={16} />
+          </button>
+          <button className="primary" onClick={() => setCreating(true)}>
+            <Plus size={16} />
+            新建工作
+          </button>
+        </div>
       </div>
+      {creating && (
+        <CreateWork
+          onClose={() => setCreating(false)}
+          onSaved={() => {
+            setCreating(false)
+            list.refresh()
+          }}
+        />
+      )}
       <WorkFilters query={query} status={status} change={list.filter} />
       <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
       {!list.data && !list.error && <p className="muted">正在读取工作…</p>}
@@ -119,10 +136,8 @@ export function WorkPage() {
         (list.data.items.length ? (
           <WorkList items={list.data.items} own refresh={list.refresh} />
         ) : (
-          <Empty title={query || status ? '没有符合条件的工作' : '还没有已确认的工作'}>
-            {query || status
-              ? '试试其他关键词或状态。'
-              : '在工作助手中发送进展，并确认助手整理的建议。'}
+          <Empty title={query || status ? '没有符合条件的工作' : '还没有工作'}>
+            {query || status ? '试试其他关键词或状态。' : '新建一项工作，或让工作助手帮你创建。'}
           </Empty>
         ))}
       {list.data && (
@@ -134,6 +149,61 @@ export function WorkPage() {
         />
       )}
     </div>
+  )
+}
+function CreateWork({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const { drafts, setDraft } = useWorkspace()
+  const draft = drafts['work:new'] as { content: Progress; key: string } | undefined
+  const [initialKey] = useState(() => crypto.randomUUID())
+  const content = draft?.content ?? {
+    title: '',
+    summary: '',
+    status: 'in_progress' as const,
+    blocker: '',
+    nextStep: '',
+    dueDate: null,
+  }
+  const key = draft?.key ?? initialKey
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<Error | string>('')
+  return (
+    <Modal title="新建工作" onClose={() => !busy && onClose()}>
+      <form
+        onSubmit={async (event) => {
+          event.preventDefault()
+          setBusy(true)
+          setError('')
+          // Preserve the same key through an uncertain network response and reopening.
+          setDraft('work:new', { content, key })
+          try {
+            await write('/work-items', content, 'POST', key)
+            setDraft('work:new', undefined)
+            window.dispatchEvent(new Event('paa-record-updated'))
+            onSaved()
+          } catch (error) {
+            setError(error as Error)
+          } finally {
+            setBusy(false)
+          }
+        }}
+      >
+        <fieldset disabled={busy}>
+          <ProgressFields
+            value={content}
+            change={(value) => setDraft('work:new', { content: value, key: crypto.randomUUID() })}
+          />
+        </fieldset>
+        <ErrorNotice>{error}</ErrorNotice>
+        <div className="form-actions">
+          <button type="button" disabled={busy} onClick={onClose}>
+            稍后继续
+          </button>
+          <BusyButton busy={busy} className="primary">
+            创建工作
+          </BusyButton>
+        </div>
+      </form>
+    </Modal>
   )
 }
 function WorkEditor({
@@ -158,13 +228,14 @@ function WorkEditor({
           e.preventDefault()
           setBusy(true)
           try {
-            const { title, summary, status, blocker, nextStep } = value
+            const { title, summary, status, blocker, nextStep, dueDate } = value
             await write(`/work-items/${work.id}/progress`, {
               title,
               summary,
               status,
               blocker,
               nextStep,
+              dueDate,
               sourceIds: [],
               expectedRevision: stored?.revision ?? work.revision,
             })
@@ -250,6 +321,7 @@ export function WorkDetail() {
             )}
           </div>
           <div className="panel">
+            {data.dueDate && <p>截止日期：{data.dueDate}</p>}
             <p className="preserve">{data.summary}</p>
             {data.blocker && <p className="blocker">阻碍：{data.blocker}</p>}
             {data.nextStep && <p>下一步：{data.nextStep}</p>}
@@ -295,7 +367,9 @@ export function WorkDetail() {
                     ),
                   )
                 ) : (
-                  <small>员工手动更正</small>
+                  <small>
+                    {h.revision === 1 && data.origin === 'manual' ? '手动创建' : '手动更新'}
+                  </small>
                 )}
               </article>
             ))}

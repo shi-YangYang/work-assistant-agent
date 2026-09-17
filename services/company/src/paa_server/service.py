@@ -132,7 +132,7 @@ async def confirm_drafts(db, actor, items, ignore=False):
                 await business.require(db, actor, work.access, retained=True)
                 version(work, draft.base_revision)
                 work.revision += 1
-                work.content = draft.content
+                work.content = {**work.content, **draft.content}
                 work.title = draft.content['title']
                 work.updated_at = now()
             else:
@@ -153,7 +153,7 @@ def member_dto(member):
 
 
 def work_dto(work):
-    return {'id': work.id, 'ownerId': work.owner_id, **work.content, 'revision': work.revision, 'updatedAt': work.updated_at.isoformat(), 'hasBusinessLinks': bool(work.business_links)}
+    return {'id': work.id, 'ownerId': work.owner_id, 'dueDate': None, 'origin': work.origin, **work.content, 'revision': work.revision, 'updatedAt': work.updated_at.isoformat(), 'hasBusinessLinks': bool(work.business_links)}
 
 
 def draft_dto(draft):

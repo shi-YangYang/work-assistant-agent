@@ -44,7 +44,7 @@ def presentation_text(text):
     # validated message DTO. Do not expose a half-written marker or tool payload.
     if not isinstance(text, str):
         return ''
-    marker = re.search(r'\[|<|\{|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|(?:find_|get_|propose_|draft_|query_|read_)[a-z_]+', text, re.I)
+    marker = re.search(r'\[|<|\{|\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|(?:find_|get_|propose_|draft_|query_|read_|execute_)[a-z_]+', text, re.I)
     return text[:marker.start() if marker else 16000]
 
 

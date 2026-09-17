@@ -153,9 +153,9 @@ def document_lines(db, meeting_id, options):
         yield heading('文字记录')
         if not transcription or transcription['state'] != 'completed':
             yield '文字记录尚未完成：本次导出仅包含快照时已保存的片段。'
-        for segment in db.execute('SELECT startMs,endMs,text FROM transcript_segments WHERE meetingId=? ORDER BY sequence', (meeting_id,)):
+        for segment in db.execute('SELECT t.startMs,t.endMs,t.text,s.name FROM transcript_segments t LEFT JOIN speaker_annotations a ON a.meetingId=t.meetingId AND a.segmentId=t.id LEFT JOIN meeting_speakers s ON s.meetingId=a.meetingId AND s.id=a.speakerId WHERE t.meetingId=? ORDER BY t.sequence', (meeting_id,)):
             prefix = f"[{timestamp(segment['startMs'])} – {timestamp(segment['endMs'])}] " if options['timestamps'] else ''
-            yield text(prefix + segment['text'])
+            yield text(prefix + (segment['name'] + '：' if segment['name'] else '') + segment['text'])
 
 
 class MeetingLibrary:
