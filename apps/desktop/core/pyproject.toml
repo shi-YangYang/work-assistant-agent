@@ -3,7 +3,7 @@ name = "paa-core"
 version = "0.1.0"
 description = "Local recording and storage core for Personal Agent Assistant"
 requires-python = ">=3.12,<3.13"
-dependencies = ["sounddevice==0.5.6", "faster-whisper==1.2.1", "httpx==0.28.1", "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+dependencies = ["sounddevice==0.5.6", "faster-whisper==1.2.1", "httpx==0.28.1", "pyannote.audio==4.0.7", "torch==2.11.0", "torchaudio==2.11.0", "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 
 [tool.paa]
 entry-point = "src/paa_core/__main__.py"

@@ -1,3 +1,4 @@
+import { validSpeakerRequest } from '../shared/speaker-contracts'
 import { DesktopLibrary } from './meeting-library'
 import appIcon from '@paa/ui-web/app-icon.png?asset'
 import {
@@ -364,6 +365,12 @@ if (hasLock)
           message: error instanceof Error ? error.message : '设置操作失败，请重试。',
         }
       }
+    })
+    ipcMain.handle(CHANNELS.speakers, async (event, input: unknown) => {
+      trustedCaller(event)
+      if (!validSpeakerRequest(input)) throw new Error('请求参数无效。')
+      const { action, ...params } = input
+      return core.speakerRequest(action, params)
     })
     ipcMain.handle(CHANNELS.inferenceDevice, (event, device: unknown) => {
       trustedCaller(event)

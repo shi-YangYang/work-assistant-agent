@@ -1,2 +1,5 @@
 # Keep text checkouts consistent with Prettier on macOS and Windows.
 * text=auto eol=lf
+
+# Preserve pinned model hashes on Windows checkouts.
+apps/desktop/resources/models/speaker-community-1/** -text

@@ -1,3 +1,4 @@
+import { isSpeakerStatus, type SpeakerStatus } from '../shared/speaker-contracts'
 import type { RuntimeConfig } from '../shared/summary-contracts'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
@@ -349,6 +350,19 @@ export class CoreManager extends EventEmitter {
       ),
     })
   }
+  async speakerRequest(
+    action: string,
+    params: Record<string, unknown>,
+  ): Promise<Result<SpeakerStatus>> {
+    try {
+      const value = await this.request(`speakers.${action}`, params)
+      if (!isSpeakerStatus(value) || value.meetingId !== params.meetingId)
+        throw new CoreError('invalid_speakers', '说话人状态数据无效。')
+      return { ok: true, value }
+    } catch (error) {
+      return this.failure(error)
+    }
+  }
   async libraryRequest<T>(
     method:
       'library.start' | 'library.status' | 'library.release' | 'library.read' | 'meetings.rename',
@@ -530,7 +544,10 @@ function isTranscriptPage(
       typeof segment.text !== 'string' ||
       !segment.text.trim() ||
       segment.text.length > 300 ||
-      segment.speaker !== null ||
+      (segment.speaker !== null &&
+        (typeof segment.speaker !== 'string' || !/^speaker_\d{1,3}$/.test(segment.speaker))) ||
+      (segment.speakerName != null &&
+        (typeof segment.speakerName !== 'string' || segment.speakerName.length > 40)) ||
       segment.confidence !== null
     )
       return false

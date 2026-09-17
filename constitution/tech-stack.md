@@ -12,9 +12,10 @@
 | 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0 |
 | 核心与通信 | Python 3.12、venv／pip、`apps/desktop/core/requirements.lock`；main 管理无 shell 子进程，以带请求 ID 的 UTF-8 JSON Lines／stdio 控制 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream → 有界队列 → 写盘，不在回调调用数据库／ASR |
-| 存储 | SQLite schema 6＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
+| 存储 | SQLite schema 7＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
 | ASR | 六款 Whisper 多语言模型，默认 small／中文；可用 GPU 优先。CPU：faster-whisper 1.2.1／CTranslate2 4.8.2、INT8、4 线程／beam 5；Windows NVIDIA：CUDA FP16／beam 5；Apple Silicon：mlx-whisper 0.4.3／MLX 0.32.2、Metal FP16／greedy；受管 spawn worker，全局一次推理 |
 | LLM | httpx 0.28.1、OpenAI 兼容 Chat Completions；单后台网络 worker，可选 SSE，不自动重试付费请求 |
+| 说话人 | Community-1／pyannote.audio 4.0.7，本地 CPU／Apple MPS／可用 CUDA；固定权重随桌面核心打包，SHA256 校验，原始署名与 CC BY 4.0 许可随包分发；仅会内标签与人工姓名，不做自动实名匹配 |
 | 模型设置 | main 多服务管理，safeStorage 加密 Key；按服务／模型保存自定义强度或受限 JSON，不硬编码厂商档位 |
 | 分发 | electron-builder 26.15.3＋PyInstaller 6.22.2 onedir；macOS ARM64 DMG／Windows x64 NSIS 测试包，签名／公证未纳入 |
 | 检查 | Vitest 4.1.11、Python unittest、Playwright 1.63.0、TypeScript、ESLint 9.39.5、Prettier 3.9.6 |
@@ -78,7 +79,7 @@
 - 公司出站校验 DNS 并固定连接 IP，保留 TLS 主机验证；工具与任务均受公司／员工权限、输入版本、配置修订及预算约束。完整协议和恢复契约分别见 [Spec 008 Plan](../specs/spec-008-meeting-followup/plan.md)、[Spec 009 Plan](../specs/spec-009-company-model-services/plan.md)。
 - 公司聊天通过 PostgreSQL 有界快照与同源 SSE 交付受控反馈；工具和来源仍需完整校验。请求记录保留调用时的服务／模型，实际 Token 与预算估算分离，缺失为未知；见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
 - 公司报告采用受控结构化输出、服务端校验和事务保存；周期安排保存版本与生效边界，汇报待办独立于生成结果，站内提醒不调用模型。行为与验证入口见 [Spec 017](../specs/spec-017-report-reliability-and-reminders/spec.md)。
-- 密钥、录音、模型、数据库和原始公司材料不入 Git、不输出到日志。测试库与开发库分离，自动检查不用真实 Key、会议或麦克风。
+- 密钥、录音、用户下载的模型、数据库和原始公司材料不入 Git；已授权随包分发的固定 Community-1 公共权重保存在 `apps/desktop/resources/models/`、不输出到日志。测试库与开发库分离，自动检查不用真实 Key、会议或麦克风。
 
 ## 验证边界
 

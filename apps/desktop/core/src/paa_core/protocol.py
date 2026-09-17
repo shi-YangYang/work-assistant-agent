@@ -14,6 +14,7 @@ from .transcription import Transcription
 from .meeting_summary import MeetingSummary
 from .llm_provider import Provider
 from .meeting_library import MeetingLibrary
+from .speakers import Speakers
 
 MAX_LINE_BYTES = 65_536
 
@@ -26,6 +27,7 @@ class CoreService:
         self.transcription = None
         self.summary = None
         self.library = None
+        self.speakers = None
         if root is not None:
             try:
                 self.repository = Repository(root)
@@ -33,13 +35,14 @@ class CoreService:
                 self.recorder = Recorder(self.repository, source=source)
                 self.transcription = transcription_factory(self.repository, self.recorder)
                 self.summary = MeetingSummary(self.repository, summary_provider or Provider(allow_loopback=bool(os.environ.get('PAA_TEST_DATA_DIR')) and os.environ.get('PAA_TEST_ALLOW_HTTP') == '1'))
+                self.speakers = Speakers(self.repository, self.transcription)
                 if hasattr(self.transcription, "store"):
                     self.transcription.store.on_completed = self.summary.on_completed
             except (OSError, sqlite3.Error, DomainError):
                 self.storage_error = '无法打开会议存储，请检查数据目录权限、磁盘空间和数据库版本；不要删除已有数据。'
 
     def dispatch(self, method: str, params: dict):
-        expected = {'library.start': {'kind', 'input'}, 'library.status': {'id'}, 'library.release': {'id'}, 'library.read': {'id', 'offset'}, 'meetings.rename': {'meetingId', 'title'}, 'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
+        expected = {'speakers.status': {'meetingId'}, 'speakers.start': {'meetingId'}, 'speakers.cancel': {'meetingId'}, 'speakers.rename': {'meetingId','generation','revision','speakerId','name'}, 'speakers.assign': {'meetingId','generation','revision','speakerId','segmentId'}, 'library.start': {'kind', 'input'}, 'library.status': {'id'}, 'library.release': {'id'}, 'library.read': {'id', 'offset'}, 'meetings.rename': {'meetingId', 'title'}, 'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
                     'meetings.list': set(), 'transcription.start': {'meetingId'},
                     'model.device': {'device'}, 'model.manage': {'action', 'id', 'language'}, 'transcription.rerun': {'meetingId', 'modelId', 'language'}, 'transcription.cancelRerun': {'meetingId'},
@@ -61,6 +64,21 @@ class CoreService:
             raise DomainError('invalid_params', '会议标识无效。')
         if method == 'transcript.list' and (type(params['cursor']) is not int or not -1 <= params['cursor'] <= 1_000_000_000):
             raise DomainError('invalid_params', '文字分页位置无效。')
+        if method.startswith('speakers.'):
+            if not self.speakers:
+                raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
+            if method == 'speakers.start':
+                return self.speakers.start(params['meetingId']), False
+            if method == 'speakers.cancel':
+                if self.speakers.meeting_id in (None, params['meetingId']):
+                    self.speakers.pause()
+            elif method in ('speakers.rename', 'speakers.assign'):
+                if type(params['revision']) is not int or not isinstance(params['generation'], str):
+                    raise DomainError('invalid_params', '说话人版本无效。')
+                self.speakers.store.edit(params['meetingId'], params['generation'], params['revision'], speaker_id=params['speakerId'], name=params.get('name'), segment_id=params.get('segmentId'))
+            elif method != 'speakers.status':
+                raise DomainError('method_not_found', 'Unknown method')
+            return self.speakers.status(params['meetingId']), False
         if method.startswith('library.') or method == 'meetings.rename':
             if not self.library:
                 raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
@@ -119,6 +137,8 @@ class CoreService:
         if method == 'shutdown':
             if self.recorder and self.recorder.status()['state'] in ACTIVE:
                 raise DomainError('recording_active', '录音尚未完成保存，不能退出。')
+            if self.speakers:
+                self.speakers.shutdown()
             if self.library:
                 self.library.shutdown()
             if self.summary:
@@ -141,6 +161,8 @@ class CoreService:
                 extra = {'language': language} if action == 'configure' else {}
                 return self.transcription.model_action(action, id=id, **extra), False
             if method == 'transcription.rerun':
+                if self.speakers:
+                    self.speakers.pause()
                 return self.transcription.rerun(params['meetingId'], params['modelId'], params['language']), False
             if method == 'transcription.cancelRerun':
                 return self.transcription.cancel_rerun(params['meetingId']), False
@@ -149,16 +171,24 @@ class CoreService:
                        'model.cancel': self.transcription.model.cancel,
                        'transcription.activity': self.transcription.activity,
                        'transcription.pause': self.transcription.pause}
+            if method == 'transcription.pause' and self.speakers:
+                self.speakers.pause()
+            if method == 'transcription.activity' and self.speakers:
+                return {'active': self.transcription.activity()['active'] or self.speakers.active()}, False
             if method in actions:
                 return actions[method](), False
             if method == 'transcript.list':
                 return self.transcription.store.page(params['meetingId'], params['cursor'], params.get('publication')), False
+            if method == 'transcription.start' and self.speakers:
+                self.speakers.pause()
             return (self.transcription.start(params['meetingId']) if method == 'transcription.start' else self.transcription.status(params['meetingId'])), False
         if method not in ('recording.start', 'recording.status', 'recording.stop', 'recording.pause', 'recording.resume', 'recording.interrupt', 'meetings.list', 'meetings.get'):
             raise DomainError('method_not_found', 'Unknown method')
         if not self.repository or not self.recorder:
             raise DomainError('storage_unavailable', self.storage_error or '会议存储尚未配置。')
         if method == 'recording.start':
+            if self.speakers:
+                self.speakers.pause()
             result = self.recorder.start(params['operationId'])
             if self.transcription and result['meetingId']:
                 self.transcription.auto_start(result['meetingId'])
@@ -230,6 +260,8 @@ def serve(source: BinaryIO, destination: BinaryIO, service: CoreService | None =
             if stopping:
                 return
     finally:
+        if service and service.speakers:
+            service.speakers.shutdown()
         if service and service.library:
             service.library.shutdown()
         if service and service.summary:

@@ -120,6 +120,8 @@ class TranscriptStore:
         source = db.execute('SELECT frames,audioPath FROM meetings WHERE id=?', (meeting_id,)).fetchone()
         if not source or source['frames'] != job['sourceFrames'] or source['audioPath'] != job['sourceAudioPath']:
             raise DomainError('audio_changed', '录音来源已变化，本次结果未替换原文字。')
+        from .speaker_store import invalidate
+        invalidate(db, meeting_id)
         for table in ('transcript_segments', 'audio_chunks'):
             db.execute(f'DELETE FROM {table} WHERE meetingId=?', (meeting_id,))
         db.execute("INSERT INTO transcription_jobs (meetingId,state,modelId,revision,config,processedFrames,targetFrames,nextChunk,error) SELECT meetingId,state,modelId,revision,config,processedFrames,targetFrames,nextChunk,error FROM candidate_jobs WHERE meetingId=? ON CONFLICT(meetingId) DO UPDATE SET state=excluded.state, modelId=excluded.modelId, revision=excluded.revision, config=excluded.config, processedFrames=excluded.processedFrames, targetFrames=excluded.targetFrames, nextChunk=excluded.nextChunk, error=NULL", (meeting_id,))
@@ -186,6 +188,6 @@ class TranscriptStore:
             current = self.publication(db, meeting_id)
             if publication is not None and publication != current:
                 raise DomainError('transcript_changed', '文字记录已更新，正在重新读取。')
-            rows = db.execute('SELECT * FROM transcript_segments WHERE meetingId=? AND sequence>? ORDER BY sequence LIMIT 51', (meeting_id, cursor)).fetchall()
+            rows = db.execute('SELECT t.id,t.meetingId,t.chunkId,t.sequence,t.startMs,t.endMs,t.text,t.confidence,a.speakerId AS speaker, s.name AS speakerName FROM transcript_segments t LEFT JOIN speaker_annotations a ON a.meetingId=t.meetingId AND a.segmentId=t.id LEFT JOIN meeting_speakers s ON s.meetingId=a.meetingId AND s.id=a.speakerId WHERE t.meetingId=? AND t.sequence>? ORDER BY t.sequence LIMIT 51', (meeting_id, cursor)).fetchall()
         values = [dict(row) for row in rows[:50]]
         return {'segments': values, 'nextCursor': values[-1]['sequence'] if values else cursor, 'hasMore': len(rows) > 50, 'publication': current}

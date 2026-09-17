@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { CHANNELS, type CoreStatus, type DesktopApi } from '../shared/contracts'
 const api: DesktopApi = {
+  speakers: (input) => ipcRenderer.invoke(CHANNELS.speakers, input),
   queryMeetings: (query) => ipcRenderer.invoke(CHANNELS.library, 'search', query),
   renameMeeting: (id, title) =>
     ipcRenderer.invoke(CHANNELS.library, 'rename', { meetingId: id, title }),
