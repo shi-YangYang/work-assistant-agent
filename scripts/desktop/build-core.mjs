@@ -41,6 +41,8 @@ const result = spawnSync(
     'build/core',
     '--paths',
     'apps/desktop/core/src',
+    '--paths',
+    'packages/voiceprint-engine/src',
     '--add-data',
     `${resolve('apps/desktop/resources/models/speaker-community-1')}${delimiter}models/speaker-community-1`,
     '--collect-all',

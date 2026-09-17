@@ -61,6 +61,7 @@ export function Breadcrumbs() {
             models: '模型服务管理',
             usage: '模型用量',
             support: '问题反馈',
+            voiceprints: '公司声纹',
           }[location.pathname.split('/')[2]] ?? '设置'
         setLoaded({
           path,

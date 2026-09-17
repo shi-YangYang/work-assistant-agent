@@ -10,7 +10,11 @@ const python =
 const action = process.argv[2]
 const env = {
   ...process.env,
-  PYTHONPATH: [join(root, 'services/company/src'), process.env.PYTHONPATH]
+  PYTHONPATH: [
+    join(root, 'services/company/src'),
+    join(root, 'packages/voiceprint-engine/src'),
+    process.env.PYTHONPATH,
+  ]
     .filter(Boolean)
     .join(delimiter),
 }

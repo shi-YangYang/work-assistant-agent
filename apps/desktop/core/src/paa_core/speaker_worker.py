@@ -46,7 +46,7 @@ def verified(path):
         return False
 
 
-def infer(model, audio, preference, progress):
+def infer(model, audio, preference, progress, profiles=None):
     os.environ['PYANNOTE_METRICS_ENABLED'] = '0'
     os.environ['HF_HUB_OFFLINE'] = '1'
     os.environ['TRANSFORMERS_OFFLINE'] = '1'
@@ -78,7 +78,35 @@ def infer(model, audio, preference, progress):
         progress(f'{label} {done}/{total}' if done is not None and total else label)
     output = pipeline({'waveform': torch.from_numpy(audio).unsqueeze(0), 'sample_rate': 16000}, hook=hook)
     turns = [[round(turn.start * 1000), round(turn.end * 1000), label] for turn, _, label in output.speaker_diarization.itertracks(yield_label=True) if turn.end > turn.start]
-    return {'turns': turns, 'device': device}
+    result = {'turns': turns, 'device': device}
+    if profiles:
+        from paa_voiceprints import Extractor, VoiceprintError, isolated_turns, match
+        import numpy as np
+        extractor = Extractor(Path(model) / 'embedding/pytorch_model.bin', device=device)
+        identities, embeddings, ambiguous = {}, {}, []
+        for label,spans in isolated_turns(turns).items():
+            chunks, remaining = [], 180*16000
+            for start,end in spans:
+                if end-start<300 or remaining<=0: continue
+                piece=audio[round(start*16):round(end*16)][:remaining]
+                chunks.append(piece); remaining-=len(piece)
+            if not chunks: continue
+            samples = np.concatenate(chunks)
+            try:
+                # Short samples help link a continuing anonymous speaker; actual
+                # company identity matching still requires accumulated 3s speech.
+                features = extractor.extract(samples, minimum=.75)
+            except VoiceprintError:
+                continue
+            embeddings[label] = features
+            votes={(match([template],profiles,3) or {}).get('memberId') for template in features['templates']}
+            if len(votes)>1:
+                ambiguous.append(label)
+            identity = match(features['templates'], profiles, features['speechSeconds'])
+            if identity:
+                identities[label] = identity
+        result.update(identities=identities, embeddings=embeddings, ambiguousLabels=ambiguous)
+    return result
 
 
 def worker_main(connection, parent_pid, params):
@@ -89,7 +117,7 @@ def worker_main(connection, parent_pid, params):
                 os._exit(0)
     threading.Thread(target=guard, daemon=True).start()
     try:
-        result = infer(params['model'], params['audio'], params['device'], lambda message: connection.send({'progress': message}))
+        result = infer(params['model'], params['audio'], params['device'], lambda message: connection.send({'progress': message}), params.get('profiles'))
         connection.send({'result': result})
     except Exception as exc:
         connection.send({'error': type(exc).__name__})

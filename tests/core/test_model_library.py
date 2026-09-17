@@ -274,4 +274,4 @@ class ModelLibraryTests(unittest.TestCase):
         upgraded=Repository(self.root)
         self.assertTrue((self.root/'meetings.schema5.backup.sqlite3').exists())
         self.assertTrue(upgraded.get(mid)['audioAvailable']);self.assertEqual(TranscriptStore(upgraded).page(mid),before)
-        with upgraded.connect() as db:self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],7)
+        with upgraded.connect() as db:self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)

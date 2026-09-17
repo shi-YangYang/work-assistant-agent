@@ -1,3 +1,5 @@
+import type { VoiceprintStatus } from '../shared/company-contracts'
+import type { VoiceprintConfiguration } from './company-connection'
 import { isSpeakerStatus, type SpeakerStatus } from '../shared/speaker-contracts'
 import type { RuntimeConfig } from '../shared/summary-contracts'
 import { spawn } from 'node:child_process'
@@ -156,10 +158,14 @@ export class CoreManager extends EventEmitter {
       capabilities: UNAVAILABLE_CAPABILITIES,
     })
   }
-  private async request(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
+  private async request(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs?: number,
+  ): Promise<unknown> {
     if (this.status.connection !== 'ready' || !this.client)
       throw new CoreError('disconnected', '本地核心尚未连接，请重新连接以恢复会议记录。')
-    return this.client.request(method, undefined, params)
+    return this.client.request(method, timeoutMs, params)
   }
   private failure(error: unknown): { ok: false; message: string; code?: string } {
     return {
@@ -349,6 +355,28 @@ export class CoreManager extends EventEmitter {
         item.id === 'summary' ? { ...item, available: !!config } : item,
       ),
     })
+  }
+  async voiceprints(
+    action: 'configure' | 'status',
+    config?: VoiceprintConfiguration,
+  ): Promise<VoiceprintStatus> {
+    const value = (await this.request(
+      `voiceprints.${action}`,
+      config ?? {},
+      action === 'configure' ? 30_000 : undefined,
+    )) as VoiceprintStatus
+    if (
+      !value ||
+      typeof value.enabled !== 'boolean' ||
+      !Number.isSafeInteger(value.profileCount) ||
+      value.profileCount < 0 ||
+      value.profileCount > 500 ||
+      typeof value.modelId !== 'string' ||
+      !['disabled', 'ready', 'processing', 'failed'].includes(value.state) ||
+      (value.error !== null && typeof value.error !== 'string')
+    )
+      throw new CoreError('invalid_voiceprints', '公司声纹状态无效。')
+    return value
   }
   async speakerRequest(
     action: string,

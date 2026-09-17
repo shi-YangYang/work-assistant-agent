@@ -379,3 +379,43 @@ class ModelCheck(Record, Base):
     actor_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'))
     fingerprint: Mapped[str] = mapped_column(String(64))
     result: Mapped[dict] = mapped_column(JSONB)
+
+
+class DesktopAuthorization(Record, Base):
+    __tablename__ = 'company_desktop_authorization'
+    request_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    challenge: Mapped[str] = mapped_column(String(43))
+    state: Mapped[str] = mapped_column(String(16), default='pending')
+    company_id: Mapped[str | None] = mapped_column(ForeignKey('company.id'), nullable=True)
+    member_id: Mapped[str | None] = mapped_column(ForeignKey('company_member.id'), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(ForeignKey('company_session.id', ondelete='CASCADE'), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DesktopSession(Record, Base):
+    __tablename__ = 'company_desktop_session'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'), index=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey('company_session.id', ondelete='CASCADE'), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class Voiceprint(Record, Base):
+    __tablename__ = 'company_voiceprint'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'), unique=True)
+    state: Mapped[str] = mapped_column(String(16), default='queued')
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    model_id: Mapped[str] = mapped_column(String(120), default='')
+    templates: Mapped[list] = mapped_column(JSONB, default=list)
+    ready_path: Mapped[str] = mapped_column(String(80), default='')
+    pending_path: Mapped[str] = mapped_column(String(80), default='')
+    filename: Mapped[str] = mapped_column(String(160), default='')
+    error: Mapped[str] = mapped_column(String(220), default='')
+    speech_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    consent_by: Mapped[str] = mapped_column(ForeignKey('company_member.id'))
+    consent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

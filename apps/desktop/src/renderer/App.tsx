@@ -1,3 +1,4 @@
+import { CompanySettings, guestCompany } from './CompanySettings'
 import { MeetingLibraryList } from './MeetingLibraryList'
 import type { MeetingHit } from '../shared/library-contracts'
 import { Appearance, CommandPalette, pageLabels, useTheme, type Page } from './Navigation'
@@ -9,6 +10,7 @@ import type { ModelState } from '../shared/contracts'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AudioLines,
+  Building2,
   ChevronRight,
   Command,
   Monitor,
@@ -59,6 +61,15 @@ function duration(ms: number): string {
 }
 
 export function App(): React.JSX.Element {
+  const [company, setCompany] = useState(guestCompany)
+  useEffect(() => {
+    const unsubscribe = window.paa.onCompanyChanged(setCompany)
+    void window.paa
+      .company({ action: 'status' })
+      .then(setCompany)
+      .catch(() => undefined)
+    return unsubscribe
+  }, [])
   const [page, setPage] = useState<Page>('meetings')
   const [theme, setTheme] = useTheme()
   const [commandOpen, setCommandOpen] = useState(false)
@@ -342,10 +353,18 @@ export function App(): React.JSX.Element {
     { page: 'appearance' as const, icon: Monitor },
   ]
   const commands = [
+    {
+      id: 'company',
+      label: '公司连接',
+      detail: company.identity?.company.name ?? '登录与员工声纹',
+      run: () => navigate('company'),
+    },
     ...navItems.map((item) => ({
       id: item.page,
       label: pageLabels[item.page],
-      detail: ['services', 'local-model', 'appearance'].includes(item.page) ? '设置' : '工作空间',
+      detail: ['services', 'local-model', 'appearance', 'company'].includes(item.page)
+        ? '设置'
+        : '工作空间',
       // This callback runs only after a command is selected, never during render.
       // eslint-disable-next-line react-hooks/refs
       run: () => navigate(item.page),
@@ -426,11 +445,26 @@ export function App(): React.JSX.Element {
             </div>
           ))}
         </nav>
+        <button
+          className={`company-identity nav-item ${page === 'company' ? 'active' : ''}`}
+          onClick={() => navigate('company')}
+          aria-current={page === 'company' ? 'page' : undefined}
+          title="公司连接与员工声纹"
+        >
+          <Building2 size={19} />
+          <span>
+            <strong>{company.identity?.member.name ?? '连接公司'}</strong>
+            <small>{company.identity?.company.name ?? '当前以游客身份使用'}</small>
+          </span>
+          <ChevronRight size={14} />
+        </button>
       </aside>
       <div className="main-shell">
         <header className="topbar">
           <span>
-            {['services', 'local-model', 'appearance'].includes(page) ? '设置' : '工作空间'}
+            {['services', 'local-model', 'appearance', 'company'].includes(page)
+              ? '设置'
+              : '工作空间'}
           </span>
           <ChevronRight size={14} />
           <strong>{pageLabels[page]}</strong>
@@ -467,6 +501,7 @@ export function App(): React.JSX.Element {
               </h1>
               {page === 'meetings' && <p>保留讨论，回顾决定与下一步。</p>}
               {page === 'services' && <p>管理生成会议纪要所使用的服务。</p>}
+              {page === 'company' && <p>连接公司后，同步员工声纹，在会议中识别发言者。</p>}
               {page === 'current' && (
                 <p>
                   {recording.deviceName || '正在准备麦克风'} ·{' '}
@@ -561,6 +596,9 @@ export function App(): React.JSX.Element {
           </div>
           <div hidden={page !== 'local-model'} className="page-content settings-page">
             <ModelSettings model={model} refresh={() => setModelRefresh((value) => value + 1)} />
+          </div>
+          <div hidden={page !== 'company'} className="page-content settings-page">
+            <CompanySettings status={company} onChange={setCompany} visible={page === 'company'} />
           </div>
           <div hidden={page !== 'appearance'} className="page-content settings-page">
             <Appearance theme={theme} onChange={setTheme} />

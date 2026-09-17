@@ -39,7 +39,7 @@ services:
     depends_on: { migrate: { condition: service_completed_successfully } }
     restart: unless-stopped
   worker:
-    build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
+    build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: worker }
     env_file: ../../.env.company
     environment: *service-env
     command: ['python', '-m', 'paa_server.worker']

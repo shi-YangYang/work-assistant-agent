@@ -13,6 +13,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'services/company/src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/voiceprint-engine/src'))
 from paa_server.api import create_app
 from paa_server.config import Settings
 from paa_server.db import database

@@ -8,11 +8,13 @@ export function SpeakerPanel({
   segment,
   onCloseSegment,
   connected,
+  live = false,
 }: {
   status: SpeakerStatus | null
   segment: TranscriptSegment | null
   onCloseSegment: () => void
   connected: boolean
+  live?: boolean
 }): React.JSX.Element | null {
   const [mode, setMode] = useState<'name' | 'segment' | null>(segment ? 'segment' : null)
   const [speakerId, setSpeakerId] = useState(segment?.speaker ?? '')
@@ -77,27 +79,28 @@ export function SpeakerPanel({
           </span>
         )}
         <div className="speaker-toolbar-actions">
-          {running ? (
-            <button
-              className="text-button"
-              disabled={busy || !connected}
-              onClick={() => void request({ action: 'cancel', meetingId: current.meetingId })}
-            >
-              取消
-            </button>
-          ) : (
-            current.state !== 'completed' && (
+          {!live &&
+            (running ? (
               <button
-                className="secondary-button"
-                disabled={busy || !connected || current.model.state !== 'ready'}
-                onClick={() => void request({ action: 'start', meetingId: current.meetingId })}
+                className="text-button"
+                disabled={busy || !connected}
+                onClick={() => void request({ action: 'cancel', meetingId: current.meetingId })}
               >
-                {current.state === 'paused' || current.state === 'failed'
-                  ? '重新区分说话人'
-                  : '区分说话人'}
+                取消
               </button>
-            )
-          )}
+            ) : (
+              current.state !== 'completed' && (
+                <button
+                  className="secondary-button"
+                  disabled={busy || !connected || current.model.state !== 'ready'}
+                  onClick={() => void request({ action: 'start', meetingId: current.meetingId })}
+                >
+                  {current.state === 'paused' || current.state === 'failed'
+                    ? '重新区分说话人'
+                    : '区分说话人'}
+                </button>
+              )
+            ))}
         </div>
       </div>
       {!!current.speakers.length && (
@@ -135,7 +138,8 @@ export function SpeakerPanel({
               const base = {
                 meetingId: current.meetingId,
                 generation: generation.current,
-                revision: revision.current,
+                revision:
+                  current.generation === generation.current ? current.revision : revision.current,
               }
               if (mode === 'name')
                 void request({ action: 'rename', ...base, speakerId, name }, true)
@@ -159,7 +163,7 @@ export function SpeakerPanel({
                   autoFocus
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  maxLength={40}
+                  maxLength={100}
                   required
                 />
               </label>

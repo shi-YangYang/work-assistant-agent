@@ -19,6 +19,7 @@ class Speakers:
         self.meeting_id = None
         self.closed = False
         self.progress = ''
+        self.voiceprints = None
         self.model = {'state': 'ready' if verified(self.path) else 'missing', 'error': None}
         if self.model['state'] == 'missing':
             self.model['error'] = '内置说话人模型缺失或损坏，请重新安装应用。'
@@ -58,10 +59,15 @@ class Speakers:
 
     def _run(self, meeting, generation, preference):
         try:
-            params = {'audio': str(self.repo.root / meeting['audioPath']), 'model': str(self.path), 'device': preference}
+            version, scope, profiles = self.voiceprints.snapshot() if self.voiceprints else (None,None,[])
+            params = {'audio': str(self.repo.root / meeting['audioPath']), 'model': str(self.path), 'device': preference, 'profiles':profiles}
             result = self.runner(params, self.cancelled, lambda value: setattr(self, 'progress', value), max(180, meeting['durationMs'] / 1000 * 3))
             if not self.cancelled.is_set():
-                self.store.finish(meeting['id'], generation, result['turns'], result['device'])
+                if self.voiceprints:
+                    if not self.voiceprints.publish_final(version,meeting['id'],generation,result):
+                        self.store.stop(meeting['id'])
+                else:
+                    self.store.finish(meeting['id'], generation, result['turns'], result['device'])
         except Exception as exc:
             self.store.stop(meeting['id'], None if self.cancelled.is_set() else str(exc) if isinstance(exc, DomainError) else '区分说话人失败，原文字已保留，可重试。')
         finally:

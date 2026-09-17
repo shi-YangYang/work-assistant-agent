@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import MutableHeaders
 from starlette.requests import ClientDisconnect
 
+from .desktop_auth import NATIVE_WRITES
 from .authentication import COOKIE, passwords, issue_session, limit_authenticated_request, revoke_member, verify_password
 from . import business_access as business
 from . import report_schedule as reporting
@@ -97,7 +98,8 @@ def create_app(settings=None):
                 await send(message)
 
             try:
-                if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.headers.get('origin') != settings.web_origin:
+                native = request.url.path in NATIVE_WRITES and request.headers.get('origin') is None
+                if request.method not in ('GET', 'HEAD', 'OPTIONS') and request.headers.get('origin') != settings.web_origin and not native:
                     response = JSONResponse({'error': {'code': 'origin_rejected', 'message': '请求来源不被允许', 'requestId': request.state.request_id}}, status_code=403)
                     await response(scope, receive, correlated_send)
                 else:
@@ -202,6 +204,11 @@ def create_app(settings=None):
 
     from .dingtalk import register_routes as register_dingtalk_routes
     register_dingtalk_routes(app, AUTH, ADMIN, DB, settings, sessions)
+
+    from .desktop_auth import register_routes as register_desktop_routes
+    desktop_auth = register_desktop_routes(app, AUTH, DB, settings, sessions)
+    from .voiceprints import register_routes as register_voiceprint_routes
+    register_voiceprint_routes(app, ADMIN, desktop_auth, DB, settings)
 
     async def visible_member(db, actor, member_id, *, employee_only=False):
         target = await db.scalar(select(Member).where(Member.id == member_id, Member.company_id == actor.company_id))

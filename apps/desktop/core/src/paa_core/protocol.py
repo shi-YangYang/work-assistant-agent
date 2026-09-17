@@ -15,8 +15,10 @@ from .meeting_summary import MeetingSummary
 from .llm_provider import Provider
 from .meeting_library import MeetingLibrary
 from .speakers import Speakers
+from .voiceprints import Voiceprints
 
 MAX_LINE_BYTES = 65_536
+MAX_VOICEPRINT_BYTES = 48 * 1024 * 1024
 
 
 class CoreService:
@@ -28,6 +30,7 @@ class CoreService:
         self.summary = None
         self.library = None
         self.speakers = None
+        self.voiceprints = None
         if root is not None:
             try:
                 self.repository = Repository(root)
@@ -36,13 +39,15 @@ class CoreService:
                 self.transcription = transcription_factory(self.repository, self.recorder)
                 self.summary = MeetingSummary(self.repository, summary_provider or Provider(allow_loopback=bool(os.environ.get('PAA_TEST_DATA_DIR')) and os.environ.get('PAA_TEST_ALLOW_HTTP') == '1'))
                 self.speakers = Speakers(self.repository, self.transcription)
+                self.voiceprints = Voiceprints(self.repository,self.recorder,self.transcription,self.speakers)
+                self.speakers.voiceprints = self.voiceprints
                 if hasattr(self.transcription, "store"):
                     self.transcription.store.on_completed = self.summary.on_completed
             except (OSError, sqlite3.Error, DomainError):
                 self.storage_error = '无法打开会议存储，请检查数据目录权限、磁盘空间和数据库版本；不要删除已有数据。'
 
     def dispatch(self, method: str, params: dict):
-        expected = {'speakers.status': {'meetingId'}, 'speakers.start': {'meetingId'}, 'speakers.cancel': {'meetingId'}, 'speakers.rename': {'meetingId','generation','revision','speakerId','name'}, 'speakers.assign': {'meetingId','generation','revision','speakerId','segmentId'}, 'library.start': {'kind', 'input'}, 'library.status': {'id'}, 'library.release': {'id'}, 'library.read': {'id', 'offset'}, 'meetings.rename': {'meetingId', 'title'}, 'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
+        expected = {'voiceprints.configure': {'scope','modelId','profiles'}, 'voiceprints.status':set(), 'speakers.status': {'meetingId'}, 'speakers.start': {'meetingId'}, 'speakers.cancel': {'meetingId'}, 'speakers.rename': {'meetingId','generation','revision','speakerId','name'}, 'speakers.assign': {'meetingId','generation','revision','speakerId','segmentId'}, 'library.start': {'kind', 'input'}, 'library.status': {'id'}, 'library.release': {'id'}, 'library.read': {'id', 'offset'}, 'meetings.rename': {'meetingId', 'title'}, 'recording.start': {'operationId'}, 'recording.stop': {'meetingId'}, 'recording.pause': {'meetingId'}, 'recording.resume': {'meetingId'},
                     'recording.interrupt': {'meetingId'}, 'meetings.get': {'meetingId'},
                     'meetings.list': set(), 'transcription.start': {'meetingId'},
                     'model.device': {'device'}, 'model.manage': {'action', 'id', 'language'}, 'transcription.rerun': {'meetingId', 'modelId', 'language'}, 'transcription.cancelRerun': {'meetingId'},
@@ -64,12 +69,18 @@ class CoreService:
             raise DomainError('invalid_params', '会议标识无效。')
         if method == 'transcript.list' and (type(params['cursor']) is not int or not -1 <= params['cursor'] <= 1_000_000_000):
             raise DomainError('invalid_params', '文字分页位置无效。')
+        if method in ('voiceprints.configure','voiceprints.status'):
+            if not self.voiceprints:
+                raise DomainError('storage_unavailable',self.storage_error or '存储尚未配置。')
+            return (self.voiceprints.configure(params['scope'],params['modelId'],params['profiles']) if method=='voiceprints.configure' else self.voiceprints.status()),False
         if method.startswith('speakers.'):
             if not self.speakers:
                 raise DomainError('storage_unavailable', self.storage_error or '存储尚未配置。')
             if method == 'speakers.start':
                 return self.speakers.start(params['meetingId']), False
             if method == 'speakers.cancel':
+                if self.voiceprints:
+                    self.voiceprints.pause(params['meetingId'])
                 if self.speakers.meeting_id in (None, params['meetingId']):
                     self.speakers.pause()
             elif method in ('speakers.rename', 'speakers.assign'):
@@ -137,6 +148,8 @@ class CoreService:
         if method == 'shutdown':
             if self.recorder and self.recorder.status()['state'] in ACTIVE:
                 raise DomainError('recording_active', '录音尚未完成保存，不能退出。')
+            if self.voiceprints:
+                self.voiceprints.shutdown()
             if self.speakers:
                 self.speakers.shutdown()
             if self.library:
@@ -172,6 +185,8 @@ class CoreService:
                        'transcription.activity': self.transcription.activity,
                        'transcription.pause': self.transcription.pause}
             if method == 'transcription.pause' and self.speakers:
+                if self.voiceprints:
+                    self.voiceprints.pause()
                 self.speakers.pause()
             if method == 'transcription.activity' and self.speakers:
                 return {'active': self.transcription.activity()['active'] or self.speakers.active()}, False
@@ -192,13 +207,19 @@ class CoreService:
             result = self.recorder.start(params['operationId'])
             if self.transcription and result['meetingId']:
                 self.transcription.auto_start(result['meetingId'])
+            if self.voiceprints and result['meetingId']:
+                self.voiceprints.watch(result['meetingId'])
         elif method == 'recording.status':
             result = self.recorder.status()
         elif method in ('recording.pause', 'recording.resume'):
+            if self.voiceprints and method == 'recording.pause':
+                self.voiceprints.pause(params['meetingId'],keep_pending=True)
             result = (self.recorder.pause if method == 'recording.pause' else self.recorder.resume)(params['meetingId'])
         elif method in ('recording.stop', 'recording.interrupt'):
             result = self.recorder.stop(params['meetingId'], 'system_suspend' if method == 'recording.interrupt' else None)
             if method == 'recording.interrupt' and self.transcription:
+                if self.voiceprints:
+                    self.voiceprints.pause(params['meetingId'])
                 self.transcription.pause()
         elif method == 'meetings.list':
             result = self.repository.list(params.get('offset', 0))
@@ -236,12 +257,12 @@ def handle(request: object, service: CoreService | None = None) -> tuple[dict, b
 def serve(source: BinaryIO, destination: BinaryIO, service: CoreService | None = None):
     try:
         while True:
-            line = source.readline(MAX_LINE_BYTES + 1)
+            line = source.readline(MAX_VOICEPRINT_BYTES + 1)
             if not line:
                 return
-            if len(line) > MAX_LINE_BYTES:
+            if len(line) > MAX_VOICEPRINT_BYTES:
                 while not line.endswith(b'\n'):
-                    line = source.readline(MAX_LINE_BYTES + 1)
+                    line = source.readline(MAX_VOICEPRINT_BYTES + 1)
                     if not line:
                         break
                 response, stopping = error(None, 'invalid_request', 'Request is too large'), False
@@ -249,9 +270,12 @@ def serve(source: BinaryIO, destination: BinaryIO, service: CoreService | None =
                 try:
                     request = json.loads(line.decode('utf-8'))
                 except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
-                    response, stopping = error(None, 'invalid_json', 'Expected UTF-8 JSON'), False
+                    response, stopping = (error(None, 'invalid_request', 'Request is too large') if len(line)>MAX_LINE_BYTES else error(None, 'invalid_json', 'Expected UTF-8 JSON')), False
                 else:
-                    response, stopping = handle(request, service)
+                    if len(line)>MAX_LINE_BYTES and (not isinstance(request,dict) or request.get('method')!='voiceprints.configure'):
+                        response,stopping=error(None,'invalid_request','Request is too large'),False
+                    else:
+                        response, stopping = handle(request, service)
             encoded = (json.dumps(response, ensure_ascii=False) + '\n').encode('utf-8')
             if len(encoded) > MAX_LINE_BYTES:
                 encoded = (json.dumps(error(response.get('id'), 'response_too_large', '返回内容超限，请缩小请求范围。'), ensure_ascii=False) + '\n').encode('utf-8')
@@ -260,6 +284,8 @@ def serve(source: BinaryIO, destination: BinaryIO, service: CoreService | None =
             if stopping:
                 return
     finally:
+        if service and service.voiceprints:
+            service.voiceprints.shutdown()
         if service and service.speakers:
             service.speakers.shutdown()
         if service and service.library:

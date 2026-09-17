@@ -198,7 +198,7 @@ class RecordingTests(unittest.TestCase):
             db.execute('PRAGMA user_version=3')
         restored = Repository(self.root)
         self.assertTrue((self.root / 'meetings.schema3.backup.sqlite3').exists())
-        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
         self.assertEqual(restored.get(mid)['status'], 'interrupted')
         self.assertEqual(restored.get(mid)['frames'], before)
 
@@ -396,6 +396,8 @@ class RecordingTests(unittest.TestCase):
         handle({'id': 'x', 'method': 'recording.stop', 'params': {'meetingId': meeting_id}}, service)
         gate.set()
         service.recorder.shutdown()
+        service.voiceprints.shutdown()
+        service.speakers.shutdown()
         service.transcription.shutdown()
 
     def test_suspend_preserves_partial_and_final_commit_failure_is_visible(self):

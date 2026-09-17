@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paa-voiceprints"
+version = "0.1.0"
+description = "Shared, offline WeSpeaker enrollment and matching"
+requires-python = ">=3.12,<3.13"
+
+[project.optional-dependencies]
+runtime = ["torch==2.11.0", "torchaudio==2.11.0", "pyannote.audio==4.0.7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

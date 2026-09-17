@@ -23,6 +23,7 @@
 | [019](spec-019-assistant-attachments/spec.md) | 粘贴／拖拽、语音混发、MP3／HEIC／XLSX、附件预览与图片质量 | DONE | [工程 PASS](spec-019-assistant-attachments/acceptance.md)；音频来源误判已修复，真实混合附件定向复测通过，真机未测 |
 | [020](spec-020-dingtalk-login/spec.md) | Web 钉钉登录、管理员配置与员工自动开户 | ACCEPTANCE | [软件验证 PASS](spec-020-dingtalk-login/acceptance.md)；真实授权与公网部署待外部条件 |
 | [021](spec-021-assistant-business-actions/spec.md) | 工作助手执行工作／报告操作、汇报待办与统一业务入口 | ACCEPTANCE | [PASS](spec-021-assistant-business-actions/acceptance.md)，含真实模型联调 |
+| [022](spec-022-company-voiceprints/spec.md) | 桌面公司登录与游客模式、员工声纹管理同步及本地姓名识别 | ACCEPTANCE | [软件与公开语音实测 PASS](spec-022-company-voiceprints/acceptance.md)；原生桌面交互待解锁，Windows 未实测 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

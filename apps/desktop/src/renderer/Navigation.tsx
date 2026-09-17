@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 
-export type Page = 'meetings' | 'current' | 'meeting' | 'services' | 'local-model' | 'appearance'
+export type Page =
+  'meetings' | 'current' | 'meeting' | 'services' | 'local-model' | 'appearance' | 'company'
 export type Theme = 'system' | 'light' | 'dark'
 export const pageLabels: Record<Page, string> = {
+  company: '公司连接',
   meetings: '会议记录',
   current: '当前会议',
   meeting: '会议详情',

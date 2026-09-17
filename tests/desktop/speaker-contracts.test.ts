@@ -48,7 +48,10 @@ describe('speaker IPC boundaries', () => {
     }
     expect(isSpeakerStatus(status)).toBe(true)
     expect(
-      isSpeakerStatus({ ...status, speakers: [{ id: 'speaker_00', name: 'x'.repeat(41) }] }),
+      isSpeakerStatus({ ...status, speakers: [{ id: 'speaker_00', name: 'x'.repeat(100) }] }),
+    ).toBe(true)
+    expect(
+      isSpeakerStatus({ ...status, speakers: [{ id: 'speaker_00', name: 'x'.repeat(101) }] }),
     ).toBe(false)
     expect(isSpeakerStatus({ ...status, model: { state: 'preparing' } })).toBe(false)
     expect(isSpeakerStatus({ ...status, speakers: [null] })).toBe(false)

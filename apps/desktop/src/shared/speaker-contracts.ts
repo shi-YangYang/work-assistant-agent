@@ -70,7 +70,7 @@ export function validSpeakerRequest(input: unknown): input is SpeakerRequest {
     return (
       typeof value.name === 'string' &&
       value.name.trim().length > 0 &&
-      value.name.length <= 40 &&
+      value.name.length <= 100 &&
       !Array.from(value.name).some((char) => {
         const code = char.charCodeAt(0)
         return code < 32 || (code >= 127 && code < 160) || code === 0x2028 || code === 0x2029
@@ -100,7 +100,7 @@ export function isSpeakerStatus(input: unknown): input is SpeakerStatus {
         typeof speaker === 'object' &&
         /^speaker_\d{1,3}$/.test(speaker.id) &&
         typeof speaker.name === 'string' &&
-        speaker.name.length <= 40,
+        speaker.name.length <= 100,
     ) &&
     !!value.model &&
     ['missing', 'ready'].includes(value.model.state) &&

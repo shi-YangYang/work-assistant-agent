@@ -1,3 +1,6 @@
+import { DesktopConnect, useDesktopReturn } from './DesktopConnect'
+import { VoiceprintsPage } from './Voiceprints'
+import { AudioLines } from 'lucide-react'
 import { ReportNotifications, ReportObligations } from './ReportObligations'
 import { ModelUsagePage } from './ModelUsage'
 import {
@@ -89,6 +92,13 @@ const pages = [
 ]
 const settingsPages = [
   {
+    path: '/settings/voiceprints',
+    title: '公司声纹',
+    detail: '登记成员声音，供桌面会议识别发言者',
+    icon: AudioLines,
+    admin: true,
+  },
+  {
     path: '/settings/support',
     title: '问题反馈',
     detail: '描述使用问题，查看管理员处理结果',
@@ -133,6 +143,8 @@ export function App() {
   const [vault] = useState(() => new SessionDrafts())
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [loading, setLoading] = useState(true)
+  const location = useLocation()
+  useDesktopReturn(identity)
   const verified = useRef(false)
   const [loadError, setLoadError] = useState<Error | string>('')
   useEffect(() => {
@@ -202,6 +214,8 @@ export function App() {
         </div>
       </div>
     )
+  if (location.pathname === '/desktop/connect')
+    return <DesktopConnect identity={identity} onLogout={logout} />
   return <Shell key={identityScope(identity)} identity={identity} vault={vault} onLogout={logout} />
 }
 function Login({
@@ -651,6 +665,7 @@ function Shell({
                     {identity.member.role === 'admin' && (
                       <>
                         <Route path="models" element={<ModelServices />} />
+                        <Route path="voiceprints" element={<VoiceprintsPage />} />
                         <Route path="login" element={<LoginMethods />} />
                         <Route path="usage" element={<ModelUsagePage />} />
                       </>

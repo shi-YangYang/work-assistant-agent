@@ -119,7 +119,7 @@ def main():
         Path('artifacts/spec003/real-asr.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf8')
         # Console encodings such as Windows cp1252 cannot represent Chinese.
         print(json.dumps(result,ensure_ascii=True),flush=True)
-    finally:service.transcription.shutdown();service.recorder.shutdown()
+    finally:service.voiceprints.shutdown();service.speakers.shutdown();service.transcription.shutdown();service.recorder.shutdown()
 
 
 if __name__=='__main__':main()

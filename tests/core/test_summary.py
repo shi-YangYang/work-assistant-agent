@@ -214,7 +214,7 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM transcript_segments').fetchone()[0], 61)
         self.assertTrue((self.repo.root / 'meetings.schema2.backup.sqlite3').exists())
         upgraded = Repository(self.repo.root)
-        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 7)
+        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
         self.assertEqual(upgraded.get(mid)['status'], 'completed')
         self.service = MeetingSummary(upgraded, self.provider)
 
@@ -267,6 +267,7 @@ class SummaryTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 1)
         finally:
             self.provider.release.set()
+            core.voiceprints.shutdown(); core.speakers.shutdown()
             core.summary.shutdown(); core.transcription.shutdown(); core.recorder.shutdown()
 
 
