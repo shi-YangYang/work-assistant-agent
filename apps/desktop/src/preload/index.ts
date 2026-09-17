@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { CompanyStatus } from '../shared/company-contracts'
 import { CHANNELS, type CoreStatus, type DesktopApi } from '../shared/contracts'
 const api: DesktopApi = {
+  company: (input) => ipcRenderer.invoke(CHANNELS.company, input),
+  onCompanyChanged: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: CompanyStatus): void =>
+      listener(status)
+    ipcRenderer.on(CHANNELS.companyChanged, handler)
+    return () => ipcRenderer.removeListener(CHANNELS.companyChanged, handler)
+  },
   speakers: (input) => ipcRenderer.invoke(CHANNELS.speakers, input),
   queryMeetings: (query) => ipcRenderer.invoke(CHANNELS.library, 'search', query),
   renameMeeting: (id, title) =>

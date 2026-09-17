@@ -1,3 +1,5 @@
+import { CompanyConnection } from './company-connection'
+import { validCompanyRequest } from '../shared/company-contracts'
 import { validSpeakerRequest } from '../shared/speaker-contracts'
 import { DesktopLibrary } from './meeting-library'
 import appIcon from '@paa/ui-web/app-icon.png?asset'
@@ -11,6 +13,7 @@ import {
   protocol,
   session,
   safeStorage,
+  shell,
   systemPreferences,
   type IpcMainInvokeEvent,
 } from 'electron'
@@ -61,6 +64,15 @@ const summarySettings = new SummarySettings(
   },
 )
 let window: BrowserWindow | undefined
+const companyConnection = new CompanyConnection(
+  app.getPath('userData'),
+  safeStorage,
+  (action, config) => core.voiceprints(action, config),
+  (url) => shell.openExternal(url),
+  (status) => {
+    if (window && !window.isDestroyed()) window.webContents.send(CHANNELS.companyChanged, status)
+  },
+)
 let quitting = false
 let lifecycle: Promise<boolean> | undefined
 let startingRecording: Promise<Result<RecordingStatus>> | undefined
@@ -166,6 +178,7 @@ function runLifecycle(action: 'exit' | 'retry' | 'suspend'): Promise<boolean> {
   lifecycle = (async () => {
     if (!(await protectSession(action))) return false
     if (action === 'exit') {
+      companyConnection.dispose()
       await core.stop()
       quitting = true
       app.quit()
@@ -254,6 +267,7 @@ if (hasLock)
   void app.whenReady().then(async () => {
     app.dock?.setIcon(appIcon)
     await summarySettings.load()
+    await companyConnection.load()
     // Native Python capture has its own permission check; no Chromium device access is needed.
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
       callback(false),
@@ -272,6 +286,11 @@ if (hasLock)
         return handler(...args)
       })
     }
+    ipcMain.handle(CHANNELS.company, (event, ...args: unknown[]) => {
+      trustedCaller(event)
+      if (args.length !== 1 || !validCompanyRequest(args[0])) throw new Error('请求参数无效。')
+      return companyConnection.execute(args[0])
+    })
     const library = new DesktopLibrary(core, {
       save: async (name, format) => {
         if (!window) throw new Error('窗口已关闭，请重新打开应用。')
@@ -437,7 +456,15 @@ if (hasLock)
     register(CHANNELS.recordingPause, 'id', (id) => core.pauseRecording(id as string))
     register(CHANNELS.recordingResume, 'id', (id) => core.resumeRecording(id as string))
     register(CHANNELS.recordingStop, 'id', (id) => core.stopRecording(id as string))
+    let appliedProcess: number | undefined
     core.on('status', (status: CoreStatus) => {
+      if (status.connection === 'ready' && status.processId !== appliedProcess) {
+        appliedProcess = status.processId
+        void companyConnection.apply()
+      } else if (status.connection !== 'ready') {
+        appliedProcess = undefined
+        companyConnection.coreStopped()
+      }
       if (window && !window.isDestroyed()) window.webContents.send(CHANNELS.statusChanged, status)
     })
     powerMonitor.on('suspend', () => {

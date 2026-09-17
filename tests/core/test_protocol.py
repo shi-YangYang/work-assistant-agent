@@ -15,6 +15,8 @@ class ProtocolTests(unittest.TestCase):
         self.service = CoreService(Path(self.temp.name))
 
     def tearDown(self):
+        self.service.voiceprints.shutdown()
+        self.service.speakers.shutdown()
         self.service.summary.shutdown()
         self.service.transcription.shutdown()
         self.temp.cleanup()

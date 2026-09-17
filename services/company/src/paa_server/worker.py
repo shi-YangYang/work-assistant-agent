@@ -378,11 +378,14 @@ async def main():
             await engine.dispose()
             raise RuntimeError('A company worker is already running')
         timer = asyncio.create_task(scheduler(sessions, settings))
+        from .voiceprints import worker_loop
+        voiceprints = asyncio.create_task(worker_loop(sessions, settings, stop))
         try:
             await run_slots(sessions, settings, stop)
         finally:
             timer.cancel()
-            await asyncio.gather(timer, return_exceptions=True)
+            voiceprints.cancel()
+            await asyncio.gather(timer, voiceprints, return_exceptions=True)
             await engine.dispose()
 
 

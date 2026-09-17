@@ -87,7 +87,9 @@ export function Transcript({
           return
         }
         setStatus(state.value)
-        if (!live && state.value.state === 'completed' && !state.value.candidate) {
+        let speakersChanged = false
+        let nextSpeakerVersion = speakerVersion.current
+        if (!state.value.candidate) {
           const speakers = await window.paa.speakers({ action: 'status', meetingId })
           if (!alive) return
           if (speakers.ok && 'speakers' in speakers.value) {
@@ -95,8 +97,8 @@ export function Transcript({
             setSpeakerState(next)
             const version = `${next.generation}:${next.revision}:${next.state}`
             if (speakerVersion.current !== version) {
-              speakerVersion.current = version
-              publication.current = undefined
+              nextSpeakerVersion = version
+              speakersChanged = true
             }
           }
         } else setSpeakerState(null)
@@ -112,13 +114,12 @@ export function Transcript({
         if (looking) setLocating(true)
         // A citation can reference any page. Consume sequential cursors until found,
         // while ordinary historical reading fetches only an explicitly requested page.
-        if (explicitLoad || looking || live || !more.current) {
+        if (explicitLoad || looking || live || !more.current || speakersChanged) {
+          const refreshThrough = speakersChanged ? cursor.current : -1
+          let nextCursor = speakersChanged ? -1 : cursor.current
+          let updated = speakersChanged ? ([] as TranscriptSegment[]) : loaded.current
           do {
-            const page = await window.paa.listTranscript(
-              meetingId,
-              cursor.current,
-              publication.current,
-            )
+            const page = await window.paa.listTranscript(meetingId, nextCursor, publication.current)
             if (!alive) return
             if (!page.ok) {
               if (page.code === 'transcript_changed') {
@@ -129,22 +130,22 @@ export function Transcript({
               return
             }
             const next = page.value
-            if (next.hasMore && next.nextCursor <= cursor.current)
+            if (next.hasMore && next.nextCursor <= nextCursor)
               throw new Error('文字分页未前进，请重试。')
-            cursor.current = next.nextCursor
+            nextCursor = next.nextCursor
             more.current = next.hasMore
-            const ids = new Set(loaded.current.map((segment) => segment.id))
-            loaded.current = [
-              ...loaded.current,
-              ...next.segments.filter((segment) => !ids.has(segment.id)),
-            ]
-            setSegments(loaded.current)
-            setHasMore(next.hasMore)
+            const ids = new Set(updated.map((segment) => segment.id))
+            updated = [...updated, ...next.segments.filter((segment) => !ids.has(segment.id))]
           } while (
-            target &&
-            !loaded.current.some((segment) => segment.id === target.id) &&
-            more.current
+            more.current &&
+            (nextCursor < refreshThrough ||
+              (target && !updated.some((segment) => segment.id === target.id)))
           )
+          cursor.current = nextCursor
+          loaded.current = updated
+          setSegments(updated)
+          setHasMore(more.current)
+          speakerVersion.current = nextSpeakerVersion
           explicitLoad = false
         }
         setError(
@@ -302,13 +303,14 @@ export function Transcript({
           {error || status?.error}
         </p>
       )}
-      {!live && (
+      {(!live || (speakerState && speakerState.state !== 'not_started')) && (
         <SpeakerPanel
           key={speakerSegment?.id ?? 'toolbar'}
           status={speakerState}
           segment={speakerSegment}
           onCloseSegment={() => setSpeakerSegment(null)}
           connected={connected}
+          live={live}
         />
       )}
       <div
@@ -324,7 +326,7 @@ export function Transcript({
         {segments.length ? (
           segments.map((segment) => (
             <div className="speaker-transcript-row" key={segment.id}>
-              {speakerState?.state === 'completed' && (
+              {speakerState && speakerState.state !== 'not_started' && (
                 <button
                   className="speaker-label"
                   title="调整这段发言的说话人"

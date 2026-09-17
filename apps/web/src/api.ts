@@ -60,7 +60,7 @@ export const cancelledRequest = () => new ApiError(0, 'cancelled', '', 'cancelle
 export const isCancelled = (error: unknown) =>
   error instanceof ApiError && error.category === 'cancelled'
 export const requestBudget = (path: string) =>
-  path === '/uploads'
+  path === '/uploads' || path.startsWith('/settings/voiceprints/')
     ? 120000
     : /^\/settings\/model-services\/(test|models)$/.test(path)
       ? 180000

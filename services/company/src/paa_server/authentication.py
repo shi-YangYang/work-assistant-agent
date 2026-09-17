@@ -36,14 +36,14 @@ async def revoke_member(db, member_id):
     await db.execute(update(DingTalkAuthorization).where(DingTalkAuthorization.member_id == member_id).values(revoked=True, proof_hash=None))
 
 
-async def throttle(db, identity):
+async def throttle(db, identity, *, limit=12):
     key = digest(identity)
     recent = now() - timedelta(minutes=10)
     # Count and insert atomically across concurrent requests without a company lock.
     from sqlalchemy import text
     await db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))'), {'key': key})
     count = await db.scalar(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.identity == key, LoginAttempt.created_at > recent))
-    if count >= 12:
+    if count >= limit:
         problem(429, '尝试次数过多，请 10 分钟后重试')
     db.add(LoginAttempt(identity=key))
     await db.flush()

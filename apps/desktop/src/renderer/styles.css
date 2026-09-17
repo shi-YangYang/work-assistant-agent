@@ -1965,3 +1965,158 @@ mark {
   max-height: 140px;
   overflow: auto;
 }
+
+.company-identity {
+  flex-shrink: 0;
+  margin-top: 12px;
+  width: 100%;
+  text-align: left;
+}
+.company-identity > span {
+  flex: 1;
+  min-width: 0;
+}
+.company-identity strong,
+.company-identity small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.company-identity strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.company-identity small {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.company-settings {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+}
+.company-card-heading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.company-card-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.company-card-heading > svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.company-card-heading > div {
+  flex: 1;
+  min-width: 0;
+}
+.company-card-heading h2 {
+  margin: 0 0 5px;
+  font-size: 16px;
+}
+.company-session-badge {
+  color: var(--muted);
+  background: var(--subtle);
+  font-size: 12px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.company-login-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+.company-login-form > label {
+  font-size: 12px;
+  font-weight: 550;
+}
+.company-address-row {
+  display: flex;
+  gap: 10px;
+}
+.company-address-row input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+}
+.company-address-row input:focus {
+  border-color: var(--muted);
+  outline: none;
+}
+.company-address-row button {
+  flex-shrink: 0;
+}
+.company-account-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+.company-authorizing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.company-account-actions .text-button,
+.company-cache-footer .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.company-voiceprint-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 16px 0 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.company-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.company-status-dot.available {
+  background: var(--positive);
+}
+.company-cache-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.company-confirmation {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 18px 22px;
+}
+.company-confirmation p {
+  font-size: 13px;
+  margin: 0 0 14px;
+}
+.company-confirmation > div {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

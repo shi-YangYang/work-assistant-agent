@@ -1,7 +1,7 @@
 # 当前交接
 
-[工作助手业务操作](../../specs/spec-021-assistant-business-actions/spec.md)已完成并通过[独立验收](../../specs/spec-021-assistant-business-actions/acceptance.md)，尚未 commit／push。
+[桌面公司连接与员工声纹](../../specs/spec-022-company-voiceprints/spec.md)已实现，[软件与真实模型验证通过](../../specs/spec-022-company-voiceprints/acceptance.md)。Mac 锁屏阻止原生交互，解锁后待补默认日常环境的桌面登录、同步、实际录音和离线重启操作；Windows／发行包及完整 Docker 构建未执行。不要重复已通过的定向检查。
 
-开发／测试库已迁移至 `0010_business_actions`，`npm run dev:company` 正在运行。开发库升级前备份在 `artifacts/backups/company-before-business-actions-20260916-220749.dump`。
+开发库迁移前备份为 `artifacts/spec022/company-before-voiceprints.dump`；升级至 `0011_company_voiceprints`。本地 `.env.company` 已配置现有 `.venv` 为声纹提取运行环境，`npm run dev:company` 启动公司端，`npm run dev` 启动桌面。临时账号、声纹及录音已清理；最小实测结果在 `artifacts/spec022/`。
 
-真实模型和界面验证证据在 `artifacts/spec021-real/`。临时成员及其资料已清理，用户原有数据和模型配置保留。手机仅做浏览器视口验证，未运行远端 CI。后续按用户指令提交，不重复已通过且未受改动影响的检查。
+保留已有用户数据、密钥与下载模型。

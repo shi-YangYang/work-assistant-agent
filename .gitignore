@@ -40,3 +40,4 @@ test-results/
 
 # Separate company service environment
 .venv-server/
+.venv-voiceprints/

@@ -1,3 +1,4 @@
+import type { CompanyRequest, CompanyStatus } from './company-contracts'
 import type { SpeakerRequest, SpeakerStatus } from './speaker-contracts'
 import type { LibraryApi } from './library-contracts'
 import type {
@@ -9,6 +10,8 @@ import type {
   SummarySource,
 } from './summary-contracts'
 export const CHANNELS = {
+  company: 'paa:company',
+  companyChanged: 'paa:company-changed',
   speakers: 'paa:speakers',
   library: 'paa:library',
   summarySettings: 'paa:summary-settings',
@@ -88,6 +91,8 @@ export type Result<T> = { ok: true; value: T } | { ok: false; message: string; c
 export type MeetingsResult =
   { ok: true; meetings: Meeting[]; hasMore: boolean } | { ok: false; message: string }
 export interface DesktopApi extends LibraryApi {
+  company(input: CompanyRequest): Promise<CompanyStatus>
+  onCompanyChanged(listener: (status: CompanyStatus) => void): () => void
   speakers(input: SpeakerRequest): Promise<Result<SpeakerStatus>>
   listModelServices(): Promise<Result<ServiceList>>
   getModelService(id: string): Promise<Result<ServiceProfile>>
