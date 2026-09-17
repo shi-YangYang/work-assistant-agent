@@ -8,6 +8,7 @@ import type {
   ModelOperation,
   SummaryView,
   SummarySource,
+  SummaryInputMode,
 } from './summary-contracts'
 export const CHANNELS = {
   company: 'paa:company',
@@ -104,7 +105,7 @@ export interface DesktopApi extends LibraryApi {
   checkModel(draft: ServiceDraft): Promise<Result<{ id: string }>>
   getModelOperation(id: string, offset?: number): Promise<Result<ModelOperation>>
   getSummary(meetingId: string): Promise<Result<SummaryView>>
-  generateSummary(meetingId: string): Promise<Result<SummaryView>>
+  generateSummary(meetingId: string, inputMode?: SummaryInputMode): Promise<Result<SummaryView>>
   getSummarySource(meetingId: string, segmentId: string): Promise<Result<SummarySource>>
   manageTranscriptionModel(
     action: 'download' | 'cancel' | 'configure' | 'remove',

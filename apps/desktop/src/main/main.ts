@@ -21,6 +21,7 @@ import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CoreManager } from './core-manager'
 import { SummarySettings } from './summary-settings'
+import { summaryGenerateInput } from '../shared/summary-contracts'
 import { serveMedia } from './media'
 import {
   ACTIVE_STATES,
@@ -316,9 +317,12 @@ if (hasLock)
     register(CHANNELS.summaryGet, 'id', (id) =>
       core.summaryRequest('summary.get', { meetingId: id }),
     )
-    register(CHANNELS.summaryGenerate, 'id', (id) =>
-      core.summaryRequest('summary.generate', { meetingId: id }),
-    )
+    ipcMain.handle(CHANNELS.summaryGenerate, (event, ...args: unknown[]) => {
+      trustedCaller(event)
+      const input = summaryGenerateInput(args)
+      if (!input) throw new Error('请求参数无效。')
+      return core.summaryRequest('summary.generate', input)
+    })
     ipcMain.handle(CHANNELS.summarySource, (event, ...args: unknown[]) => {
       trustedCaller(event)
       if (

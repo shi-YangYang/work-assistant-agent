@@ -12,10 +12,11 @@ type Entry = {
 
 function processingLabel(transcript: TranscriptionStatus, summary: SummaryView): string {
   const task = summary.task
+  if (task?.state === 'waiting_speakers') return '等待发言人处理'
   if (task?.state === 'running') return '正在生成纪要'
   if (task?.state === 'queued') return '纪要排队中'
   if (task?.state === 'failed' || task?.state === 'interrupted') return '纪要待重试'
-  if (summary.result) return '纪要已就绪'
+  if (summary.result) return summary.result.stale ? '纪要待更新' : '纪要已就绪'
   if (transcript.state === 'completed') return '文字已完成'
   if (transcript.state === 'failed' || transcript.state === 'paused') return '转写待继续'
   if (transcript.state === 'not_started') return '尚未转写'
@@ -83,7 +84,8 @@ export class MeetingProcessingQueue {
           label = processingLabel(transcript.value, summary.value)
           const active =
             ['queued', 'running', 'draining'].includes(transcript.value.state) ||
-            (summary.value.task && ['queued', 'running'].includes(summary.value.task.state))
+            (summary.value.task &&
+              ['waiting_speakers', 'queued', 'running'].includes(summary.value.task.state))
           // Keep idle/terminal results briefly, but still discover automatic summary handoff.
           delay = active ? 5000 : 30_000
         }

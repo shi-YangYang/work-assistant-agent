@@ -91,6 +91,10 @@ it('keeps 100 visible row consumers bounded across cancellation, re-entry and pr
   await vi.advanceTimersByTimeAsync(30_000)
   await settle()
   expect(handoff).toHaveBeenLastCalledWith('纪要排队中')
+  summaryState = 'waiting_speakers'
+  await vi.advanceTimersByTimeAsync(5000)
+  await settle()
+  expect(handoff).toHaveBeenLastCalledWith('等待发言人处理')
   summaryState = 'running'
   await vi.advanceTimersByTimeAsync(5000)
   await settle()

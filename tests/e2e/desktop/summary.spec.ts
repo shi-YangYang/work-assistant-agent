@@ -58,10 +58,15 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
           : null
         const content = source
           ? JSON.stringify({
-              version: 1,
+              version: 2,
               title: '上线安排',
               abstract: '最后决定取消上线。',
-              topics: ['上线风险'],
+              overviewSources: [source.segments.at(-1)?.id],
+              topics: [{ text: '上线风险', sources: [source.segments[0].id] }],
+              speakerSummaries: [],
+              agreements: [],
+              disagreements: [],
+              suggestions: [{ text: '建议复核影响范围', sources: [source.segments.at(-1)?.id] }],
               decisions: [{ text: '取消上线', sources: [source.segments.at(-1)?.id] }],
               actions: [
                 {
@@ -69,6 +74,8 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
                   owner: null,
                   deadline: null,
                   status: null,
+                  dependencies: null,
+                  blocker: null,
                   sources: [source.segments[0].id],
                 },
               ],
@@ -239,14 +246,22 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     await page.getByRole('button', { name: '会议记录', exact: true }).click()
     await page.locator('.meeting-row').first().click()
     const minutes = page.getByLabel('会议纪要', { exact: true })
+    await expect(minutes.getByLabel('生成依据')).toHaveValue('speakers')
     await minutes.getByRole('button', { name: '生成纪要', exact: true }).click()
     await expect(minutes.getByText('纪要已完成', { exact: true })).toBeVisible()
     await expect(minutes).toContainText('负责人：待确认')
+    await expect(minutes).toContainText('依赖：待确认')
+    await expect(minutes.getByLabel('后续建议')).toContainText('AI 建议')
     const summaryCall = calls.find((call) => (call.body?.messages as unknown[])?.length === 2)
     expect(summaryCall?.body?.thinking).toEqual({ enabled: true, budget: 2048 })
     expect(summaryCall?.key).toBe('Bearer fake-only-smoke-key')
     const messages = summaryCall?.body?.messages as { content: string }[]
     expect(JSON.parse(messages[1].content).segments).toHaveLength(61)
+    expect(
+      JSON.parse(messages[1].content).segments.every((segment: Record<string, unknown>) =>
+        Object.hasOwn(segment, 'speaker'),
+      ),
+    ).toBe(true)
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(900, 640))
     await minutes.getByRole('button', { name: '原文 1', exact: true }).first().click()
     await expect(page.getByLabel('纪要引用原文')).toContainText('最后决定取消上线')
@@ -278,6 +293,15 @@ test('multi-service settings, custom reasoning, real HTTP checks, minutes source
     await expect(page.locator('.source-target')).toBeFocused()
     await expect(page.locator('.transcript-line')).toHaveCount(61)
     await expect(page.locator('audio')).toHaveAttribute('data-instance', 'citation-player')
+    const views = page.getByRole('group', { name: '文字记录视图' })
+    await expect(views.getByRole('button', { name: '按发言人' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await views.getByRole('button', { name: '纯文本' }).click()
+    await expect(page.locator('.speaker-label')).toHaveCount(0)
+    await expect(page.locator('.transcript-line')).toHaveCount(61)
+    await expect(page.locator('.source-target')).toContainText('最后决定取消上线')
     await page.getByRole('tab', { name: '纪要', exact: true }).click()
     const saved = await page.evaluate((id) => window.paa.getSummary(id), meetingId)
     fail = true

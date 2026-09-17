@@ -46,6 +46,9 @@ export function Transcript({
   target?: { id: string; request: number } | null
   onModels: () => void
 }): React.JSX.Element {
+  const [viewMode, setViewMode] = useState<'speakers' | 'text'>('speakers')
+  const [copying, setCopying] = useState(false)
+  const [copyMessage, setCopyMessage] = useState('')
   const [rerunModel, setRerunModel] = useState<ModelState | null>(null)
   const [rerunOpen, setRerunOpen] = useState(false)
   const [selectedModel, setSelectedModel] = useState('small')
@@ -184,6 +187,25 @@ export function Transcript({
       }
     } else if (follow.current) viewport.current.scrollTop = viewport.current.scrollHeight
   }, [segments, target, visible])
+  async function copyTranscript(): Promise<void> {
+    setCopying(true)
+    setCopyMessage('')
+    setError('')
+    try {
+      const result = await window.paa.copyTranscript(meetingId, {
+        speakers: viewMode === 'speakers',
+        timestamps: true,
+      })
+      if (!result.ok) throw new Error(result.message)
+      setCopyMessage(
+        viewMode === 'speakers' ? '已复制完整文字（含发言人）。' : '已复制完整文字（纯文本）。',
+      )
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '复制失败，请重试。')
+    } finally {
+      setCopying(false)
+    }
+  }
   async function start(): Promise<void> {
     setBusy(true)
     setError('')
@@ -217,7 +239,8 @@ export function Transcript({
       setSelectedModel(models.value.defaultModel)
       setSelectedLanguage(models.value.language)
       setSummaryBusy(
-        !!summary.value.task && ['queued', 'running'].includes(summary.value.task.state),
+        !!summary.value.task &&
+          ['waiting_speakers', 'queued', 'running'].includes(summary.value.task.state),
       )
       setRerunOpen(true)
     } catch {
@@ -261,6 +284,36 @@ export function Transcript({
               : '正在读取文字'}
         </span>
       </div>
+      <div className="transcript-view-toolbar">
+        <div className="view-switch" role="group" aria-label="文字记录视图">
+          {(['speakers', 'text'] as const).map((mode) => (
+            <button
+              key={mode}
+              aria-pressed={viewMode === mode}
+              onClick={() => {
+                setViewMode(mode)
+                setSpeakerSegment(null)
+                setCopyMessage('')
+              }}
+            >
+              {mode === 'speakers' ? '按发言人' : '纯文本'}
+            </button>
+          ))}
+        </div>
+        <button
+          className="text-button"
+          disabled={copying || !connected || !segments.length}
+          onClick={() => void copyTranscript()}
+          title={
+            viewMode === 'speakers'
+              ? '复制完整文字，包含发言人和时间戳'
+              : '复制完整文字，仅包含文字和时间戳'
+          }
+        >
+          {copying ? '正在复制…' : '复制文字'}
+        </button>
+        {copyMessage && <small role="status">{copyMessage}</small>}
+      </div>
       {status?.published && (
         <p className="transcript-configuration">
           当前文字：
@@ -303,16 +356,17 @@ export function Transcript({
           {error || status?.error}
         </p>
       )}
-      {(!live || (speakerState && speakerState.state !== 'not_started')) && (
-        <SpeakerPanel
-          key={speakerSegment?.id ?? 'toolbar'}
-          status={speakerState}
-          segment={speakerSegment}
-          onCloseSegment={() => setSpeakerSegment(null)}
-          connected={connected}
-          live={live}
-        />
-      )}
+      {viewMode === 'speakers' &&
+        (!live || (speakerState && speakerState.state !== 'not_started')) && (
+          <SpeakerPanel
+            key={speakerSegment?.id ?? 'toolbar'}
+            status={speakerState}
+            segment={speakerSegment}
+            onCloseSegment={() => setSpeakerSegment(null)}
+            connected={connected}
+            live={live}
+          />
+        )}
       <div
         ref={viewport}
         className="transcript-lines"
@@ -326,7 +380,7 @@ export function Transcript({
         {segments.length ? (
           segments.map((segment) => (
             <div className="speaker-transcript-row" key={segment.id}>
-              {speakerState && speakerState.state !== 'not_started' && (
+              {viewMode === 'speakers' && speakerState && speakerState.state !== 'not_started' && (
                 <button
                   className="speaker-label"
                   title="调整这段发言的说话人"

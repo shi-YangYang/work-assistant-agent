@@ -67,6 +67,11 @@ class Voiceprints:
         with self.lock:
             return self.version, self.scope, self.profiles
 
+    def pending(self, meeting_id):
+        # watch() is set before any speaker_jobs row exists, including short recordings.
+        with self.lock:
+            return meeting_id in self.meetings or self.speakers.store.status(meeting_id)['state'] in ('queued', 'running')
+
     def watch(self, meeting_id):
         with self.lock:
             if self.scope and self.profiles:

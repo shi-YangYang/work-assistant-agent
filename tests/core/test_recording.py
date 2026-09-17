@@ -198,7 +198,7 @@ class RecordingTests(unittest.TestCase):
             db.execute('PRAGMA user_version=3')
         restored = Repository(self.root)
         self.assertTrue((self.root / 'meetings.schema3.backup.sqlite3').exists())
-        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
+        with restored.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 9)
         self.assertEqual(restored.get(mid)['status'], 'interrupted')
         self.assertEqual(restored.get(mid)['frames'], before)
 

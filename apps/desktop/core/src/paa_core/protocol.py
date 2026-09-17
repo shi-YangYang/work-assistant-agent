@@ -41,6 +41,7 @@ class CoreService:
                 self.speakers = Speakers(self.repository, self.transcription)
                 self.voiceprints = Voiceprints(self.repository,self.recorder,self.transcription,self.speakers)
                 self.speakers.voiceprints = self.voiceprints
+                self.summary.speaker_pending = self.voiceprints.pending
                 if hasattr(self.transcription, "store"):
                     self.transcription.store.on_completed = self.summary.on_completed
             except (OSError, sqlite3.Error, DomainError):
@@ -63,6 +64,9 @@ class CoreService:
         elif method == 'transcript.list' and set(params) == {'meetingId', 'cursor', 'publication'}:
             if params['publication'] is not None and (not isinstance(params['publication'], str) or len(params['publication']) > 64):
                 raise DomainError('invalid_params', '文字版本无效。')
+        elif method == 'summary.generate' and set(params) == {'meetingId', 'inputMode'}:
+            if params['inputMode'] not in ('speakers', 'text'):
+                raise DomainError('invalid_params', '纪要输入模式无效。')
         elif set(params) != keys:
             raise DomainError('invalid_params', '请求参数无效。')
         if 'meetingId' in params and not valid_id(params['meetingId']):
@@ -115,7 +119,7 @@ class CoreService:
                 self.summary.provider.forget_models(params['profileId'])
                 result = {'forgotten': True}
             elif method == 'summary.generate':
-                result = self.summary.generate(params['meetingId'])
+                result = self.summary.generate(params['meetingId'], input_mode=params.get('inputMode', 'speakers'))
             elif method == 'summary.get':
                 result = self.summary.get(params['meetingId'])
             elif method == 'summary.operation':
@@ -131,12 +135,7 @@ class CoreService:
             elif method == 'summary.source':
                 if not isinstance(params['segmentId'], str) or len(params['segmentId']) > 64:
                     raise DomainError('invalid_params', '原文片段无效。')
-                with self.repository.lock, self.repository.connect() as db:
-                    self.repository.assert_available(db, params['meetingId'])
-                    row = db.execute('SELECT id,startMs,endMs,text FROM transcript_segments WHERE meetingId=? AND id=?', (params['meetingId'], params['segmentId'])).fetchone()
-                if not row:
-                    raise DomainError('source_missing', '未找到原文片段。')
-                result = dict(row)
+                result = self.summary.store.source(params['meetingId'], params['segmentId'])
             else:
                 raise DomainError('method_not_found', 'Unknown method')
             return result, False

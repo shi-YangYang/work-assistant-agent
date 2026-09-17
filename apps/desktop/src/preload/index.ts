@@ -14,6 +14,8 @@ const api: DesktopApi = {
   renameMeeting: (id, title) =>
     ipcRenderer.invoke(CHANNELS.library, 'rename', { meetingId: id, title }),
   deleteMeeting: (id) => ipcRenderer.invoke(CHANNELS.library, 'delete', { meetingId: id }),
+  copyTranscript: (id, options) =>
+    ipcRenderer.invoke(CHANNELS.library, 'copyTranscript', { ...options, meetingId: id }),
   copyMinutes: (id) => ipcRenderer.invoke(CHANNELS.library, 'copy', { meetingId: id }),
   exportMeeting: (id, options) =>
     ipcRenderer.invoke(CHANNELS.library, 'export', { meetingId: id, ...options }),
@@ -28,7 +30,7 @@ const api: DesktopApi = {
   getModelOperation: (id, offset = 0) =>
     ipcRenderer.invoke(CHANNELS.summarySettings, 'operation', { id, offset }),
   getSummary: (id) => ipcRenderer.invoke(CHANNELS.summaryGet, id),
-  generateSummary: (id) => ipcRenderer.invoke(CHANNELS.summaryGenerate, id),
+  generateSummary: (id, inputMode) => ipcRenderer.invoke(CHANNELS.summaryGenerate, id, inputMode),
   getSummarySource: (id, segmentId) => ipcRenderer.invoke(CHANNELS.summarySource, id, segmentId),
   manageTranscriptionModel: (action, id, language) =>
     ipcRenderer.invoke(CHANNELS.modelManage, { action, id, language: language ?? null }),

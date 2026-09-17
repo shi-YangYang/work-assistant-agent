@@ -15,19 +15,26 @@ from datetime import datetime
 from pathlib import Path
 
 from .repository import ACTIVE, DomainError
+from .meeting_summary import IDENTITY_NOTE
+from .summary_store import is_stale
 
 PAGE_SIZE = 10
 
 def summary_fields(content):
     for key in ('title', 'abstract'):
         yield key, content.get(key, '')
-    for key in ('topics', 'risks', 'openQuestions'):
-        for index, value in enumerate(content.get(key, [])):
-            yield f'{key}:{index}', value
-    for index, item in enumerate(content.get('decisions', [])):
-        yield f'decisions:{index}', item['text']
+    for key in ('topics', 'agreements', 'decisions', 'disagreements', 'risks', 'openQuestions', 'suggestions'):
+        for index, item in enumerate(content.get(key, [])):
+            yield f'{key}:{index}', item if isinstance(item, str) else item['text']
+    for index, item in enumerate(content.get('speakerSummaries', [])):
+        points = [point['text'] for point in item['points']]
+        commitments = ['明确承诺：' + point['text'] for point in item['commitments']]
+        yield f'speakerSummaries:{index}', item['name'] + '：' + '；'.join(points + commitments)
     for index, item in enumerate(content.get('actions', [])):
-        yield f'actions:{index}', ' · '.join([item['task'], '负责人：' + (item.get('owner') or '待确认'), '截止：' + (item.get('deadline') or '待确认'), '状态：' + (item.get('status') or '待确认')])
+        fields = [item['task'], '负责人：' + (item.get('owner') or '待确认'), '截止：' + (item.get('deadline') or '待确认'), '状态：' + (item.get('status') or '待确认')]
+        if content.get('version') == 2:
+            fields.extend(['依赖：' + (item.get('dependencies') or '待确认'), '阻碍：' + (item.get('blocker') or '待确认')])
+        yield f'actions:{index}', ' · '.join(fields)
 
 
 def fold(text):
@@ -39,6 +46,20 @@ def preview(text, keyword):
     left = max(0, start - 45)
     right = max(left + 180, start + len(keyword) + 45)
     return ('…' if left else '') + text[left:right] + ('…' if len(text) > right else '')
+
+
+def summary_preview(text, keyword):
+    result = preview(text, keyword)
+    # A truncated search hit must not drop the saved uncertainty attached to its facts.
+    if IDENTITY_NOTE in text:
+        note = text[text.index(IDENTITY_NOTE):]
+        if note not in result:
+            result += note
+    elif '（声纹匹配，待确认）' in text:
+        label = text.split('：', 1)[0]
+        if label not in result:
+            result = label + '：' + result
+    return result
 
 
 def validate_query(value):
@@ -91,7 +112,7 @@ def search(repo, value):
                             if summary:
                                 for locator, text in summary_fields(json.loads(summary['content'])):
                                     if fold(keyword) in fold(text):
-                                        hit = {'source': 'summary', 'text': preview(text, keyword), 'locator': locator, 'generatedAt': summary['generatedAt']}
+                                        hit = {'source': 'summary', 'text': summary_preview(text, keyword), 'locator': locator, 'generatedAt': summary['generatedAt']}
                                         break
                 values.append({'meeting': repo.present(dict(row)), 'hit': hit})
             return {'items': values, 'hasMore': len(rows) > PAGE_SIZE}
@@ -134,20 +155,38 @@ def document_lines(db, meeting_id, options):
         yield ''
         yield heading('会议纪要')
         yield f"生成时间：{summary['generatedAt']}"
-        stale = db.execute('SELECT summaryStale FROM transcript_publications WHERE meetingId=?', (meeting_id,)).fetchone()
-        if stale and stale[0]:
-            yield '文字记录已更新，纪要待更新（此纪要基于旧文字记录）。'
+        if is_stale(db, meeting_id, summary):
+            yield '文字记录或发言人信息已更新，纪要待更新。'
+        yield '生成依据：' + ('含发言人信息' if summary['inputMode'] == 'speakers' else '仅文字')
+        if summary['speakerIncomplete']:
+            yield '发言人信息不完整：可能包含临时标签或待确认的归属。'
         if summary['sourceIncomplete']:
             yield '纪要资料不完整：仅依据保留下来的内容。'
         content = json.loads(summary['content'])
         yield heading(content['title'], 3)
         yield text(content['abstract'])
-        for key, label in (('topics', '讨论要点'), ('decisions', '明确决策'), ('actions', '行动项'), ('risks', '风险'), ('openQuestions', '待确认问题')):
+        source_snapshot = json.loads(summary['inputSnapshot']) if summary['inputSnapshot'] else None
+        source_segments = {item['id']: item for item in source_snapshot['segments']} if source_snapshot else {
+            row['id']: dict(row) for row in db.execute('SELECT id,startMs,endMs,text FROM transcript_segments WHERE meetingId=?', (meeting_id,))}
+        def references(refs):
+            for ref in refs:
+                segment = source_segments.get(ref)
+                if segment:
+                    yield text(f"  原文 [{timestamp(segment['startMs'])} – {timestamp(segment['endMs'])}] {segment['text']}")
+        yield from references(content.get('overviewSources', []))
+        for key, label in (('topics', '议题'), ('speakerSummaries', '发言人摘要'), ('agreements', '共识'),
+                           ('decisions', '明确决策'), ('disagreements', '分歧'), ('actions', '行动项'),
+                           ('risks', '风险'), ('openQuestions', '待确认问题'), ('suggestions', 'AI 建议')):
+            values = [value for locator, value in summary_fields(content) if locator.startswith(key + ':')]
+            if not values:
+                continue
             yield ''
             yield heading(label, 3)
-            values = [value for locator, value in summary_fields(content) if locator.startswith(key + ':')]
-            for value in values or ['未提及']:
+            for item, value in zip(content[key], values):
                 yield ('- ' if md else '• ') + text(value)
+                if isinstance(item, dict):
+                    refs = item.get('sources', []) if key != 'speakerSummaries' else list(dict.fromkeys(ref for point in item['points'] + item['commitments'] for ref in point['sources']))
+                    yield from references(refs)
     if options['scope'] in ('transcript', 'both'):
         yield ''
         yield heading('文字记录')
@@ -155,7 +194,7 @@ def document_lines(db, meeting_id, options):
             yield '文字记录尚未完成：本次导出仅包含快照时已保存的片段。'
         for segment in db.execute('SELECT t.startMs,t.endMs,t.text,s.name FROM transcript_segments t LEFT JOIN speaker_annotations a ON a.meetingId=t.meetingId AND a.segmentId=t.id LEFT JOIN meeting_speakers s ON s.meetingId=a.meetingId AND s.id=a.speakerId WHERE t.meetingId=? ORDER BY t.sequence', (meeting_id,)):
             prefix = f"[{timestamp(segment['startMs'])} – {timestamp(segment['endMs'])}] " if options['timestamps'] else ''
-            yield text(prefix + (segment['name'] + '：' if segment['name'] else '') + segment['text'])
+            yield text(prefix + (segment['name'] + '：' if options.get('speakers', True) and segment['name'] else '') + segment['text'])
 
 
 class MeetingLibrary:
@@ -171,7 +210,7 @@ class MeetingLibrary:
         if kind == 'search':
             params = validate_query(params)
         elif kind == 'export':
-            if set(params) != {'meetingId', 'format', 'scope', 'timestamps'} or params['format'] not in ('md', 'txt') or params['scope'] not in ('summary', 'transcript', 'both') or type(params['timestamps']) is not bool:
+            if set(params) not in ({'meetingId', 'format', 'scope', 'timestamps'}, {'meetingId', 'format', 'scope', 'timestamps', 'speakers'}) or type(params.get('speakers', True)) is not bool or params['format'] not in ('md', 'txt') or params['scope'] not in ('summary', 'transcript', 'both') or type(params['timestamps']) is not bool:
                 raise DomainError('invalid_export', '导出选项无效。')
         elif kind != 'delete' or set(params) != {'meetingId'}:
             raise DomainError('invalid_operation', '操作无效。')
