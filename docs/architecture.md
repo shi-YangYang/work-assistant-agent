@@ -30,7 +30,7 @@ Electron 保留本地会议能力；公司 Web 与后端处理账号、员工消
 - `apps/desktop/src/main` 管理窗口、权限、核心进程、加密服务配置及受限音频协议；`preload` 只公开类型化业务接口，renderer 不具备 Node、任意 IPC、文件或网络代理权限。
 - `apps/desktop/core/src/paa_core` 负责录音、SQLite、模型下载、受管 ASR worker 和纪要任务。录音回调、有界队列、WAV 写盘、推理与网络请求分离，ASR／LLM 延迟不阻塞采集。
 - 播放通过授权的 `paa-audio` Range 读取，引用跳转复用同一播放器。原始录音、模型、SQLite 及系统加密配置保存在原 userData；正式包从资源目录启动随包 Python 核心，无需系统解释器。
-- 转写任务锁定模型／语言，候选完成后原子发布；纪要固定输入与配置，失败保留旧结果，不自动重复付费请求。完整行为与恢复边界见 [Spec 013](../specs/spec-013-local-model-library/spec.md) 和 [Spec 004](../specs/spec-004-meeting-minutes/spec.md)。
+- 转写任务锁定模型／语言，候选完成后原子发布；纪要固定文字、使用到的发言人信息、输入模式与配置，失败保留旧结果。自动纪要有界等待会后说话人处理，识别后续完成不重复付费生成；仅姓名变化不影响纯文本纪要。见[本地转写模型](../specs/spec-013-local-model-library/spec.md)与[发言人视图及会议分析](../specs/spec-023-speaker-aware-minutes/spec.md)。
 - main 加密保存公司凭证和声纹；本地核心分窗识别发言者并在会后校正，保留人工修改。模板长期离线可用，退出账号或清缓存才删除，renderer 不接触令牌或向量。
 
 ## 公司业务与 Harness

@@ -1,8 +1,10 @@
 import type { MeetingHit } from '../shared/library-contracts'
 import { useEffect, useRef, useState } from 'react'
-import type { SummarySource, SummaryView } from '../shared/summary-contracts'
+import type { SummaryInputMode, SummarySource, SummaryView } from '../shared/summary-contracts'
 import { time } from './Transcription'
+import { MinutesAnalysis } from './MinutesAnalysis'
 const labels = {
+  waiting_speakers: '等待发言人处理',
   queued: '等待生成',
   running: '正在生成纪要',
   completed: '纪要已完成',
@@ -30,6 +32,7 @@ export function MeetingMinutes({
   connected: boolean
   visible: boolean
 }): React.JSX.Element {
+  const [inputMode, setInputMode] = useState<SummaryInputMode>('speakers')
   const [view, setView] = useState<SummaryView | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -38,6 +41,7 @@ export function MeetingMinutes({
   const locatedHit = useRef(false)
   const quote = useRef<HTMLDivElement>(null)
   const sourceRequest = useRef(0)
+  const resultVersion = useRef<string | null>(null)
   const sourceTrigger = useRef<HTMLElement | null>(null)
   const [configured, setConfigured] = useState<boolean | null>(null)
   useEffect(() => {
@@ -63,7 +67,9 @@ export function MeetingMinutes({
         if (!alive) return
         if (response.ok) {
           setView(response.value)
-          if (response.value.result?.stale) {
+          const generatedAt = response.value.result?.generatedAt ?? null
+          if (resultVersion.current !== generatedAt) {
+            resultVersion.current = generatedAt
             setSource(null)
             sourceRequest.current++
           }
@@ -102,7 +108,7 @@ export function MeetingMinutes({
     setBusy(true)
     setError('')
     try {
-      const response = await window.paa.generateSummary(meetingId)
+      const response = await window.paa.generateSummary(meetingId, inputMode)
       if (response.ok) setView(response.value)
       else setError(response.message)
     } catch {
@@ -125,12 +131,11 @@ export function MeetingMinutes({
   }
   const refs = (ids: string[]): React.JSX.Element => (
     <span className="source-links">
-      {!view?.result?.stale &&
-        ids.map((id, index) => (
-          <button className="text-button" key={id} onClick={() => void showSource(id)}>
-            原文 {index + 1}
-          </button>
-        ))}
+      {ids.map((id, index) => (
+        <button className="text-button" key={id} onClick={() => void showSource(id)}>
+          原文 {index + 1}
+        </button>
+      ))}
     </span>
   )
   function closeSource(): void {
@@ -139,7 +144,7 @@ export function MeetingMinutes({
     sourceTrigger.current?.focus()
   }
   const content = view?.result?.content
-  const active = view?.task && ['queued', 'running'].includes(view.task.state)
+  const active = view?.task && ['waiting_speakers', 'queued', 'running'].includes(view.task.state)
   return (
     <section className="minutes-card" aria-label="会议纪要">
       <div className="section-heading">
@@ -151,9 +156,33 @@ export function MeetingMinutes({
             disabled={!!active || busy || !connected || configured === false}
             onClick={() => void generate()}
           >
-            {active ? '生成中…' : content ? '重新生成纪要' : '生成纪要'}
+            {view?.task?.state === 'waiting_speakers'
+              ? '等待发言人…'
+              : active
+                ? '生成中…'
+                : content
+                  ? '重新生成纪要'
+                  : '生成纪要'}
           </button>
         </div>
+      </div>
+      <div className="minutes-input-options">
+        <label>
+          生成依据
+          <select
+            value={inputMode}
+            onChange={(event) => setInputMode(event.target.value as SummaryInputMode)}
+            disabled={!!active || busy}
+          >
+            <option value="speakers">含发言人信息</option>
+            <option value="text">仅文字</option>
+          </select>
+        </label>
+        <small>
+          {inputMode === 'speakers'
+            ? '姓名和对应文字将发送给已配置的纪要服务。'
+            : '仅发送文字记录；原话中的姓名会保留。'}
+        </small>
       </div>
       {!content && !active && (
         <div className="minutes-empty">
@@ -190,86 +219,22 @@ export function MeetingMinutes({
             <h3 data-summary-location="title">{content.title}</h3>
             <small>
               {view.result.serviceName} · {view.result.model} ·{' '}
-              {new Date(view.result.generatedAt).toLocaleString()}
+              {new Date(view.result.generatedAt).toLocaleString()} ·{' '}
+              {view.result.inputMode === 'speakers' ? '含发言人信息' : '仅文字'}
             </small>
             {view.result.stale && (
               <p className="audio-warning" role="status">
-                文字记录已更新，纪要待更新。此纪要基于旧文字记录。
+                会议资料已更新，纪要待更新。此纪要保留生成时的内容与引用。
               </p>
+            )}
+            {view.result.speakerIncomplete && (
+              <p className="audio-warning">发言人信息不完整，本纪要依据生成时已有资料整理。</p>
             )}
             {view.result.sourceIncomplete && (
               <p className="audio-warning">录音曾中断，本纪要仅依据保留下来的内容。</p>
             )}
             {view.task?.state !== 'completed' && <p>以下为上一次成功保存的纪要。</p>}
-            <p data-summary-location="abstract" className="minutes-abstract">
-              {content.abstract}
-            </p>
-            <h4>讨论要点</h4>
-            {content.topics.length ? (
-              <ul>
-                {content.topics.map((item, index) => (
-                  <li data-summary-location={`topics:${index}`} key={index}>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>未提及</p>
-            )}
-            <h4>明确决策</h4>
-            {content.decisions.length ? (
-              <ul>
-                {content.decisions.map((item, index) => (
-                  <li data-summary-location={`decisions:${index}`} key={index}>
-                    {item.text}
-                    {refs(item.sources)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>未形成明确决策</p>
-            )}
-            <h4>行动项</h4>
-            {content.actions.length ? (
-              <ul className="minutes-actions">
-                {content.actions.map((item, index) => (
-                  <li data-summary-location={`actions:${index}`} key={index}>
-                    <strong>{item.task}</strong>
-                    <p>
-                      负责人：{item.owner ?? '待确认'} · 截止：{item.deadline ?? '待确认'} · 状态：
-                      {item.status ?? '待确认'}
-                    </p>
-                    {refs(item.sources)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>未明确行动项</p>
-            )}
-            <h4>风险</h4>
-            {content.risks.length ? (
-              <ul>
-                {content.risks.map((item, index) => (
-                  <li data-summary-location={`risks:${index}`} key={index}>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>未提及</p>
-            )}
-            <h4>待确认问题</h4>
-            {content.openQuestions.length ? (
-              <ul>
-                {content.openQuestions.map((item, index) => (
-                  <li data-summary-location={`openQuestions:${index}`} key={index}>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p>未提及</p>
-            )}
+            <MinutesAnalysis content={content} references={refs} />
           </article>
         )}
         {source && (
@@ -302,7 +267,12 @@ export function MeetingMinutes({
             >
               播放此处录音
             </button>
-            <button className="text-button" onClick={() => onTranscript(source.id)}>
+            {view?.result?.stale && <small>当前资料已更新，以下引用保留生成时的原文。</small>}
+            <button
+              className="text-button"
+              disabled={!!view?.result?.stale}
+              onClick={() => onTranscript(source.id)}
+            >
               在完整文字中查看
             </button>
           </div>

@@ -209,3 +209,109 @@ it('uses the real core JSON Lines lifecycle for background search and validation
     await core.stop()
   }
 }, 20_000)
+
+it.each([true, false])(
+  'copies the complete transcript snapshot with speakers=%s across UTF-8 chunks',
+  async (speakers) => {
+    const core = new CoreManager('', '')
+    const content = '中文原文📚\n'.repeat(3000)
+    const bytes = Buffer.from(content)
+    const request = vi.spyOn(core, 'libraryRequest').mockImplementation(async (method, params) => {
+      if (method === 'library.start') return { ok: true, value: { id } } as never
+      if (method === 'library.status')
+        return {
+          ok: true,
+          value: {
+            state: 'completed',
+            value: { bytes: bytes.length, title: '完整会议', date: '2026-09-17' },
+          },
+        } as never
+      if (method === 'library.read') {
+        const offset = params.offset as number
+        const nextOffset = Math.min(offset + 16384, bytes.length)
+        return {
+          ok: true,
+          value: {
+            data: bytes.subarray(offset, nextOffset).toString('base64'),
+            nextOffset,
+            done: nextOffset === bytes.length,
+          },
+        } as never
+      }
+      return { ok: true, value: { released: true } } as never
+    })
+    const copy = vi.fn()
+    const save = vi.fn()
+    const library = new DesktopLibrary(core, { copy, save })
+    expect(
+      await library.execute('copyTranscript', { meetingId: id, speakers, timestamps: true }),
+    ).toEqual({ ok: true, value: { copied: true } })
+    expect(request).toHaveBeenCalledWith('library.start', {
+      kind: 'export',
+      input: { meetingId: id, speakers, timestamps: true, format: 'txt', scope: 'transcript' },
+    })
+    expect(copy).toHaveBeenCalledWith(content)
+    expect(
+      request.mock.calls.filter(([method]) => method === 'library.read').length,
+    ).toBeGreaterThan(1)
+    expect(request.mock.lastCall).toEqual(['library.release', { id }])
+    expect(save).not.toHaveBeenCalled()
+  },
+)
+
+it('rejects invalid transcript options and inconsistent snapshots without touching the clipboard', async () => {
+  const core = new CoreManager('', '')
+  const request = vi.spyOn(core, 'libraryRequest').mockImplementation(
+    async (method) =>
+      ({
+        ok: true,
+        value:
+          method === 'library.start'
+            ? { id }
+            : method === 'library.status'
+              ? { state: 'completed', value: { bytes: 3, title: '会议', date: '2026-09-17' } }
+              : method === 'library.read'
+                ? { data: Buffer.from('abc').toString('base64'), nextOffset: 3, done: false }
+                : { released: true },
+      }) as never,
+  )
+  const copy = vi.fn()
+  const library = new DesktopLibrary(core, { copy, save: async () => null })
+  for (const input of [
+    { meetingId: id, speakers: 'yes', timestamps: true },
+    { meetingId: id, speakers: true, timestamps: 1 },
+    { meetingId: id, timestamps: true },
+    { meetingId: id, speakers: false, timestamps: true, path: '/outside' },
+  ])
+    expect((await library.execute('copyTranscript', input)).ok).toBe(false)
+  expect(request).not.toHaveBeenCalled()
+  expect(
+    (
+      await library.execute('export', {
+        meetingId: id,
+        format: 'txt',
+        scope: 'transcript',
+        timestamps: false,
+        speakers: false,
+      })
+    ).ok,
+  ).toBe(true)
+  expect(request).toHaveBeenCalledWith('library.start', {
+    kind: 'export',
+    input: {
+      meetingId: id,
+      format: 'txt',
+      scope: 'transcript',
+      timestamps: false,
+      speakers: false,
+    },
+  })
+  const failed = await library.execute('copyTranscript', {
+    meetingId: id,
+    speakers: true,
+    timestamps: false,
+  })
+  expect(failed).toEqual({ ok: false, message: '快照内容不完整，请重试。' })
+  expect(copy).not.toHaveBeenCalled()
+  expect(request.mock.lastCall).toEqual(['library.release', { id }])
+})

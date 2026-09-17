@@ -35,6 +35,7 @@ export function MeetingActions({
     format: 'md',
     scope: 'summary',
     timestamps: true,
+    speakers: true,
   })
   const dialog = useRef<HTMLDialogElement>(null)
   const menu = useRef<HTMLDetailsElement>(null)
@@ -69,7 +70,7 @@ export function MeetingActions({
               ? '这场会议正在转写，请完成后再删除。'
               : summary.ok &&
                   summary.value.task &&
-                  ['queued', 'running'].includes(summary.value.task.state)
+                  ['waiting_speakers', 'queued', 'running'].includes(summary.value.task.state)
                 ? '这场会议正在生成纪要，请完成后再删除。'
                 : '',
         })
@@ -277,16 +278,28 @@ export function MeetingActions({
                   </select>
                 </label>
                 {options.scope !== 'summary' && (
-                  <label className="check-label">
-                    <input
-                      type="checkbox"
-                      checked={options.timestamps}
-                      onChange={(event) =>
-                        setOptions({ ...options, timestamps: event.target.checked })
-                      }
-                    />
-                    包含时间戳
-                  </label>
+                  <div className="export-transcript-options">
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={options.timestamps}
+                        onChange={(event) =>
+                          setOptions({ ...options, timestamps: event.target.checked })
+                        }
+                      />
+                      包含时间戳
+                    </label>
+                    <label className="check-label">
+                      <input
+                        type="checkbox"
+                        checked={options.speakers ?? true}
+                        onChange={(event) =>
+                          setOptions({ ...options, speakers: event.target.checked })
+                        }
+                      />
+                      包含发言人
+                    </label>
+                  </div>
                 )}
                 {available.incomplete && (
                   <p className="audio-warning">资料尚不完整，本次仅导出已保存的内容。</p>

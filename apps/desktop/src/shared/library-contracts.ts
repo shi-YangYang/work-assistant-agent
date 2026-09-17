@@ -12,7 +12,9 @@ export type ExportOptions = {
   format: 'md' | 'txt'
   scope: 'summary' | 'transcript' | 'both'
   timestamps: boolean
+  speakers?: boolean
 }
+export type TranscriptCopyOptions = { speakers: boolean; timestamps: boolean }
 export type LibraryOperation<T> = {
   state: 'queued' | 'running' | 'completed' | 'failed'
   value: T | null
@@ -24,6 +26,7 @@ export interface LibraryApi {
   queryMeetings(query: MeetingQuery): Promise<Result<LibraryPage>>
   renameMeeting(id: string, title: string): Promise<Result<Meeting>>
   deleteMeeting(id: string): Promise<Result<{ deleted: boolean }>>
+  copyTranscript(id: string, options: TranscriptCopyOptions): Promise<Result<{ copied: boolean }>>
   copyMinutes(id: string): Promise<Result<{ copied: boolean }>>
   exportMeeting(id: string, options: ExportOptions): Promise<Result<{ canceled: boolean }>>
 }

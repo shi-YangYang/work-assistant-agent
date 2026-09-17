@@ -86,7 +86,7 @@ class TranscriptStore:
         with self.repo.lock, self.repo.connect() as db:
             self.repo.assert_available(db, meeting_id)
             current = self._job(db, meeting_id)
-            if current and current['state'] in JOB_ACTIVE or db.execute("SELECT 1 FROM summary_jobs WHERE meetingId=? AND state IN ('queued','running')", (meeting_id,)).fetchone():
+            if current and current['state'] in JOB_ACTIVE or db.execute("SELECT 1 FROM summary_jobs WHERE meetingId=? AND state IN ('waiting_speakers','queued','running')", (meeting_id,)).fetchone():
                 raise DomainError('meeting_busy', '这场会议的转写或纪要正在处理，请完成后重试。')
             self._discard(db, meeting_id)
             generation = str(uuid.uuid4())

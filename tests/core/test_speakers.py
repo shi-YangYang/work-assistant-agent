@@ -109,7 +109,7 @@ class SpeakerTests(unittest.TestCase):
         upgraded = Repository(self.root)
         self.assertTrue(upgraded.get(mid)['audioAvailable'])
         self.assertTrue((self.root/'meetings.schema6.backup.sqlite3').is_file())
-        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
+        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],9)
 
     def test_cancellation_reaps_child_and_does_not_publish(self):
         cancelled = threading.Event(); seen = []

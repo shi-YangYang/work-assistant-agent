@@ -1,4 +1,5 @@
 import type { JsonValue } from '@paa/model-config'
+import { ID_PATTERN } from './contracts'
 export type { JsonValue } from '@paa/model-config'
 export type ReasoningPreset = { id: string; name: string } & (
   { mode: 'simple'; value: string } | { mode: 'advanced'; parameters: Record<string, JsonValue> }
@@ -48,27 +49,64 @@ export type ModelOperation = {
     message?: string
   } | null
 }
-export type SummaryContent = {
+export type SummaryInputMode = 'speakers' | 'text'
+export type SummaryCitation = { text: string; sources: string[] }
+export type SummaryAction = {
+  task: string
+  owner: string | null
+  deadline: string | null
+  status: string | null
+  sources: string[]
+}
+export type SummaryContentV1 = {
   version: 1
   title: string
   abstract: string
   topics: string[]
   decisions: { text: string; sources: string[] }[]
-  actions: {
-    task: string
-    owner: string | null
-    deadline: string | null
-    status: string | null
-    sources: string[]
-  }[]
+  actions: SummaryAction[]
   risks: string[]
   openQuestions: string[]
+}
+export type SummaryContentV2 = {
+  version: 2
+  title: string
+  abstract: string
+  overviewSources: string[]
+  topics: SummaryCitation[]
+  speakerSummaries: {
+    speakerId: string
+    name: string
+    points: SummaryCitation[]
+    commitments: SummaryCitation[]
+  }[]
+  agreements: SummaryCitation[]
+  decisions: SummaryCitation[]
+  disagreements: SummaryCitation[]
+  actions: (SummaryAction & { dependencies: string | null; blocker: string | null })[]
+  risks: SummaryCitation[]
+  openQuestions: SummaryCitation[]
+  suggestions: SummaryCitation[]
+}
+export type SummaryContent = SummaryContentV1 | SummaryContentV2
+
+export function summaryGenerateInput(
+  args: unknown[],
+): { meetingId: string; inputMode: SummaryInputMode } | null {
+  if (
+    (args.length !== 1 && args.length !== 2) ||
+    typeof args[0] !== 'string' ||
+    !ID_PATTERN.test(args[0]) ||
+    (args[1] !== undefined && args[1] !== 'speakers' && args[1] !== 'text')
+  )
+    return null
+  return { meetingId: args[0], inputMode: args[1] ?? 'speakers' }
 }
 export type SummaryView = {
   task: {
     id: string
     meetingId: string
-    state: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'
+    state: 'waiting_speakers' | 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'
     error: string | null
     errorCode: string | null
   } | null
@@ -79,6 +117,8 @@ export type SummaryView = {
     model: string
     stale?: boolean
     sourceIncomplete: boolean
+    inputMode?: SummaryInputMode
+    speakerIncomplete?: boolean
     parameters: Record<string, JsonValue>
     content: SummaryContent
   } | null

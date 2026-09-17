@@ -45,7 +45,7 @@ class LibraryTests(unittest.TestCase):
     def summary(self, mid):
         content = {'version': 1, 'title': 'AI标题', 'abstract': '项目延期', 'topics': ['讨论CPU'], 'decisions': [{'text': '决定延期', 'sources': ['secret-ref']}], 'actions': [{'task': '跟进', 'owner': '小王', 'deadline': None, 'status': None, 'sources': ['secret-ref']}], 'risks': ['成本%_'], 'openQuestions': ['何时上线']}
         with self.repo.connect() as db:
-            db.execute('INSERT INTO meeting_summaries VALUES (?,?,?,?,?,?,?,?,?,?)', (mid, 'private-task', 'private-hash', '2026-09-12T12:00:00+08:00', 'private-profile', 'service', 'model', '{"private-param":1}', 0, json.dumps(content)))
+            db.execute('INSERT INTO meeting_summaries (meetingId,taskId,inputHash,generatedAt,profileId,serviceName,model,parameters,sourceIncomplete,content) VALUES (?,?,?,?,?,?,?,?,?,?)', (mid, 'private-task', 'private-hash', '2026-09-12T12:00:00+08:00', 'private-profile', 'service', 'model', '{"private-param":1}', 0, json.dumps(content)))
         return content
     def query(self, text='', **changes):
         return search(self.repo, {'text': text, 'from': None, 'to': None, 'offset': 0, **changes})

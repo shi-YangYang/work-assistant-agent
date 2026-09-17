@@ -12,7 +12,7 @@
 | 构建 | electron-vite 5.0.0、Vite 7.3.6、React 插件 5.2.0 |
 | 核心与通信 | Python 3.12、venv／pip、`apps/desktop/core/requirements.lock`；main 管理无 shell 子进程，以带请求 ID 的 UTF-8 JSON Lines／stdio 控制 |
 | 录音 | sounddevice 0.5.6、CFFI 2.1.1、pycparser 3.0；RawInputStream → 有界队列 → 写盘，不在回调调用数据库／ASR |
-| 存储 | SQLite schema 8＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
+| 存储 | SQLite schema 9＋单声道 PCM16 WAV；增量迁移前备份，可恢复删除意图，候选转写完成后原子发布 |
 | ASR | 六款 Whisper 多语言模型，默认 small／中文；可用 GPU 优先。CPU：faster-whisper 1.2.1／CTranslate2 4.8.2、INT8、4 线程／beam 5；Windows NVIDIA：CUDA FP16／beam 5；Apple Silicon：mlx-whisper 0.4.3／MLX 0.32.2、Metal FP16／greedy；受管 spawn worker，全局一次推理 |
 | LLM | httpx 0.28.1、OpenAI 兼容 Chat Completions；单后台网络 worker，可选 SSE，不自动重试付费请求 |
 | 说话人 | Community-1／pyannote.audio 4.0.7，本地 CPU／Apple MPS／可用 CUDA；WeSpeaker 提取及匹配已同步的公司声纹，录音中有界分窗、会后全量校正，保留人工更正；固定权重随核心打包，SHA256 校验，署名与许可随包分发 |
@@ -75,7 +75,7 @@
 ## 数据与安全边界
 
 - 桌面 userData 下保存 `meetings.sqlite3`、`meetings/<UUIDv4>/` 音频、`models/` 和加密 `model-services.json`；路径相对存储，stdio 不传整场音频。录音与推理解耦、音频持续写盘，积压由磁盘和检查点承接。
-- ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；任务锁定模型、语言与推理设备，默认设置不改变历史任务。Apple GPU 使用独立 MLX 权重目录，CPU 与 NVIDIA GPU 共用 CTranslate2 权重；已测 CPU 错误率／内存不作为 GPU 指标。模型清单、候选发布与 CPU 三语言实测见 [Spec 013](../specs/spec-013-local-model-library/spec.md)，设备策略见 [0007](../.ai/decisions/0007-local-transcription-baseline.md)。纪要任务固定完整转写／配置快照，失败保留旧结果；重转写成功标记旧纪要过期，由用户手动更新，凭证不入业务数据库。
+- ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；任务锁定模型、语言与推理设备，默认设置不改变历史任务。Apple GPU 使用独立 MLX 权重目录，CPU 与 NVIDIA GPU 共用 CTranslate2 权重；已测 CPU 错误率／内存不作为 GPU 指标。模型清单、候选发布与 CPU 三语言实测见 [Spec 013](../specs/spec-013-local-model-library/spec.md)，设备策略见 [0007](../.ai/decisions/0007-local-transcription-baseline.md)。纪要任务固定完整文字、所用发言人信息及配置快照，失败保留旧结果；输入变更后由用户手动更新，纯文本模式不因姓名变化失效。新纪要为 version 2，兼容历史 version 1，凭证不入业务数据库。
 - 页面导航不改变桌面 renderer URL／IPC 信任边界；会议页签共享唯一播放器，服务编辑器保留草稿。`paa.appearance.theme` 仅存外观偏好，不存 Key。
 - 桌面公司连接可选，游客模式无需公司 API；地址使用部署者的 Web 根地址。main 用 safeStorage 保存凭证与公司声纹，按服务／公司／账号隔离，模板不进入 renderer；缓存长期离线可用，断网或令牌过期不清除，主动退出／清缓存才删除。声纹匹配只标记发言，不授予权限。
 - 本机桌面验收直接 `npm run dev` 使用默认日常资料。自动故障测试继续使用临时数据，不能让含清理或故障注入的测试操作用户资料；不为 GUI 验收设置隔离 userData。

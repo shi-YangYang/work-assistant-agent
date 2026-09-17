@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   contents: { mainFrame: { url: '' } },
   handlers: new Map<string, (...args: unknown[]) => unknown>(),
   getStatus: vi.fn(() => ({ connection: 'ready' })),
+  summaryRequest: vi.fn(() => ({ ok: true, value: { task: null, result: null } })),
 }))
 
 vi.mock('node:path', async (importOriginal) => {
@@ -77,6 +78,7 @@ vi.mock('electron', async () => {
 vi.mock('../../apps/desktop/src/main/core-manager', () => ({
   CoreManager: class {
     getStatus = state.getStatus
+    summaryRequest = state.summaryRequest
     on = vi.fn()
     start = async () => ({ connection: 'ready' })
   },
@@ -164,4 +166,37 @@ it('rejects other pages, query/fragment changes, other windows and subframes', a
   ])
     expect(() => invoke(event)).toThrow('Request is not allowed')
   expect(state.getStatus).not.toHaveBeenCalled()
+})
+
+it('forwards only bounded summary modes from the trusted renderer and defaults legacy callers to speakers', async () => {
+  await start()
+  const invoke = state.handlers.get(CHANNELS.summaryGenerate)!
+  const event = { sender: state.contents, senderFrame: state.contents.mainFrame }
+  const meetingId = '64450a04-4d7d-4efa-a827-e63ea374f437'
+  for (const args of [
+    [meetingId],
+    [meetingId, undefined],
+    [meetingId, 'speakers'],
+    [meetingId, 'text'],
+  ]) {
+    invoke(event, ...args)
+    expect(state.summaryRequest).toHaveBeenLastCalledWith('summary.generate', {
+      meetingId,
+      inputMode: args[1] ?? 'speakers',
+    })
+  }
+  for (const args of [
+    [],
+    ['../meeting'],
+    [meetingId, null],
+    [meetingId, {}],
+    [meetingId, 'other'],
+    [meetingId, 'text', 'extra'],
+  ]) {
+    expect(() => invoke(event, ...args)).toThrow('请求参数无效。')
+  }
+  expect(state.summaryRequest).toHaveBeenCalledTimes(4)
+  expect(() =>
+    invoke({ sender: {}, senderFrame: state.contents.mainFrame }, meetingId, 'text'),
+  ).toThrow('Request is not allowed')
 })

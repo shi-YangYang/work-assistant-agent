@@ -43,9 +43,13 @@ def seed(repo, count=61):
 
 
 def content(segments):
-    return {'version': 1, 'title': '上线安排', 'abstract': '最终取消上线。', 'topics': ['上线风险'],
+    return {'version': 2, 'title': '上线安排', 'abstract': '最终取消上线。',
+            'overviewSources': [segments[-1]['id']],
+            'topics': [{'text': '上线风险', 'sources': [segments[0]['id']]}],
+            'speakerSummaries': [], 'agreements': [], 'disagreements': [], 'suggestions': [],
             'decisions': [{'text': '取消上线', 'sources': [segments[-1]['id']]}],
-            'actions': [{'task': '核对风险', 'owner': None, 'deadline': None, 'status': None, 'sources': [segments[0]['id']]}],
+            'actions': [{'task': '核对风险', 'owner': None, 'deadline': None, 'status': None,
+                         'dependencies': None, 'blocker': None, 'sources': [segments[0]['id']]}],
             'risks': [], 'openQuestions': []}
 
 
@@ -214,7 +218,7 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM transcript_segments').fetchone()[0], 61)
         self.assertTrue((self.repo.root / 'meetings.schema2.backup.sqlite3').exists())
         upgraded = Repository(self.repo.root)
-        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 8)
+        with upgraded.connect() as db: self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 9)
         self.assertEqual(upgraded.get(mid)['status'], 'completed')
         self.service = MeetingSummary(upgraded, self.provider)
 

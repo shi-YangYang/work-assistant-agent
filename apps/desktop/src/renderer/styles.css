@@ -2120,3 +2120,64 @@ mark {
   justify-content: flex-end;
   gap: 8px;
 }
+
+.transcript-view-toolbar,
+.minutes-input-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.view-switch {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.view-switch button {
+  padding: 4px 10px;
+  min-height: 28px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.view-switch button[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--selection);
+}
+.minutes-input-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.minutes-input-options select {
+  width: 144px;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.minutes-content h5 {
+  margin: 12px 0 4px;
+  font-size: 14px;
+}
+.minutes-detail-label,
+.minutes-ai-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.minutes-ai-label {
+  margin-left: 8px;
+}
+.export-transcript-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}

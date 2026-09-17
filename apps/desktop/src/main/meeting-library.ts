@@ -106,22 +106,32 @@ export class DesktopLibrary {
           : action === 'rename'
             ? 'meetingId,title'
             : action === 'export'
-              ? 'format,meetingId,scope,timestamps'
-              : 'meetingId'
+              ? `format,meetingId,scope,${Object.hasOwn(params, 'speakers') ? 'speakers,' : ''}timestamps`
+              : action === 'copyTranscript'
+                ? 'meetingId,speakers,timestamps'
+                : 'meetingId'
       if (Object.keys(params).sort().join() !== expected) throw new Error('请求参数无效。')
+      if (
+        (Object.hasOwn(params, 'speakers') && typeof params.speakers !== 'boolean') ||
+        (Object.hasOwn(params, 'timestamps') && typeof params.timestamps !== 'boolean')
+      )
+        throw new Error('请求参数无效。')
       if (action === 'rename') return this.core.libraryRequest('meetings.rename', params)
-      if (!['search', 'delete', 'copy', 'export'].includes(String(action)))
+      if (!['search', 'delete', 'copy', 'copyTranscript', 'export'].includes(String(action)))
         throw new Error('请求参数无效。')
       if (action === 'delete') unblock = await mediaAccess.block(params.meetingId as string)
-      if (action === 'export' || action === 'copy') {
+      const copying = action === 'copy' || action === 'copyTranscript'
+      if (action === 'export' || copying) {
         if (this.exporting) throw new Error('已有复制或导出操作，请完成后再试。')
         this.exporting = ownsExport = true
       }
-      const exporting = action === 'export' || action === 'copy'
+      const exporting = action === 'export' || copying
       const options =
         action === 'copy'
           ? { ...params, format: 'txt', scope: 'summary', timestamps: false }
-          : params
+          : action === 'copyTranscript'
+            ? { ...params, format: 'txt', scope: 'transcript' }
+            : params
       operation = value(
         await this.core.libraryRequest<{ id: string }>('library.start', {
           kind: exporting ? 'export' : action,
@@ -139,8 +149,8 @@ export class DesktopLibrary {
         typeof info.date !== 'string'
       )
         throw new Error('导出快照无效。')
-      if (action === 'copy') {
-        if (info.bytes > 1_000_000) throw new Error('纪要过长，无法复制，请使用导出。')
+      if (copying) {
+        if (info.bytes > 1_000_000) throw new Error('内容过长，无法复制，请使用导出。')
         const chunks: Buffer[] = []
         let offset = 0
         while (offset < info.bytes) {
@@ -153,6 +163,8 @@ export class DesktopLibrary {
           const buffer = Buffer.from(chunk.data, 'base64')
           if (
             !buffer.length ||
+            buffer.length > 16384 ||
+            chunk.done !== (chunk.nextOffset === info.bytes) ||
             chunk.nextOffset !== offset + buffer.length ||
             chunk.nextOffset > info.bytes
           )
