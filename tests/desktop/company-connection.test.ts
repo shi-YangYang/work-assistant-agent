@@ -41,7 +41,7 @@ afterEach(async () => {
   vi.useRealTimers()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
-async function fixture() {
+async function fixture(configuredServerUrl = 'https://company.example') {
   const root = await mkdtemp(join(tmpdir(), 'paa-company-'))
   roots.push(root)
   let challenge = ''
@@ -82,8 +82,8 @@ async function fixture() {
     }),
   )
   const browser = vi.fn(async () => undefined)
-  const create = () => {
-    const c = new CompanyConnection(root, secrets, core, browser, undefined, fetcher)
+  const create = (serverUrl = configuredServerUrl) => {
+    const c = new CompanyConnection(root, secrets, core, browser, undefined, fetcher, serverUrl)
     connections.push(c)
     return c
   }
@@ -93,12 +93,108 @@ async function fixture() {
 }
 async function login(connection: CompanyConnection) {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const result = await connection.execute({ action: 'login', serverUrl: 'https://company.example' })
+  const result = await connection.execute({ action: 'login' })
   expect(result.session).toBe('authorizing')
   await vi.advanceTimersByTimeAsync(2000)
   await vi.waitFor(() => expect(connection.status().session).toBe('signed-in'))
 }
 describe('company connection trust and IPC boundary', () => {
+  it('uses the configured address without creating a session or contacting the server', async () => {
+    const { root, connection, fetcher, browser } = await fixture('https://bundled.example/')
+    expect(connection.status()).toMatchObject({
+      serverUrl: 'https://bundled.example',
+      session: 'guest',
+      identity: null,
+      profileCount: 0,
+    })
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(browser).not.toHaveBeenCalled()
+    await expect(readFile(join(root, 'company-connection.enc'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    })
+    expect((await fixture('')).connection.status().serverUrl).toBe('')
+  })
+  it.each(['', 'https://other.example'])(
+    'does not restore another company or contact it when the configured address is %s',
+    async (serverUrl) => {
+      const { root, connection, create, fetcher, core, browser } = await fixture()
+      await login(connection)
+      await connection.execute({ action: 'sync' })
+      const cached = await readFile(join(root, 'company-connection.enc'))
+      connection.dispose()
+      fetcher.mockClear()
+      browser.mockClear()
+      const restarted = create(serverUrl)
+      await restarted.load()
+      await restarted.apply()
+      expect(restarted.status()).toMatchObject({
+        serverUrl,
+        session: 'guest',
+        identity: null,
+        profileCount: 0,
+        error: null,
+      })
+      expect(core).toHaveBeenLastCalledWith('configure', {
+        scope: null,
+        modelId: VOICEPRINT_MODEL,
+        profiles: [],
+      })
+      if (!serverUrl) {
+        for (const action of ['login', 'sync', 'clear', 'logout'] as const) {
+          expect(await restarted.execute({ action })).toMatchObject({
+            session: 'guest',
+            identity: null,
+            profileCount: 0,
+            error: '尚未配置公司服务地址，请联系管理员配置后再登录。',
+          })
+        }
+      }
+      expect(fetcher).not.toHaveBeenCalled()
+      expect(browser).not.toHaveBeenCalled()
+      expect(await readFile(join(root, 'company-connection.enc'))).toEqual(cached)
+      const restored = create()
+      await restored.load()
+      expect(restored.status()).toMatchObject({
+        serverUrl: 'https://company.example',
+        session: 'signed-in',
+        identity: account,
+        profileCount: 1,
+      })
+    },
+  )
+  it.each(['info', 'login/exchange'])(
+    'can retry login in the same instance after the network recovers from a failed %s request',
+    async (stage) => {
+      const { connection, fetcher, browser } = await fixture()
+      const original = fetcher.getMockImplementation()!
+      let offline = true
+      fetcher.mockImplementation((input, init) => {
+        if (offline && String(input).endsWith(`/${stage}`)) {
+          offline = false
+          return Promise.reject(new Error('network offline'))
+        }
+        return original(input, init)
+      })
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+      await connection.execute({ action: 'login' })
+      if (stage === 'login/exchange') await vi.advanceTimersByTimeAsync(2000)
+      expect(connection.status()).toMatchObject({
+        session: 'guest',
+        busy: false,
+        identity: null,
+        error: expect.stringContaining('无法连接'),
+      })
+      await login(connection)
+      const result = await connection.execute({ action: 'sync' })
+      expect(result).toMatchObject({
+        session: 'signed-in',
+        busy: false,
+        error: null,
+        profileCount: 1,
+      })
+      expect(browser).toHaveBeenCalledTimes(stage === 'info' ? 1 : 2)
+    },
+  )
   it('only accepts bounded commands and HTTPS origins or literal loopback development URLs', () => {
     expect(companyOrigin('https://company.example/api/v1/')).toBe('https://company.example')
     expect(companyOrigin('http://127.0.0.1:5174')).toBe('http://127.0.0.1:5174')
@@ -110,12 +206,11 @@ describe('company connection trust and IPC boundary', () => {
       'https://company.example/path',
     ])
       expect(() => companyOrigin(input)).toThrow()
-    expect(validCompanyRequest({ action: 'login', serverUrl: 'https://company.example' })).toBe(
-      true,
-    )
+    expect(validCompanyRequest({ action: 'login' })).toBe(true)
     for (const value of [
       { action: 'sync', token: 'steal' },
       { action: 'configure', profiles: [] },
+      { action: 'login', serverUrl: 'https://attacker.example' },
       { action: 'login', serverUrl: 1 },
       ['logout'],
     ])
@@ -128,16 +223,13 @@ describe('company connection trust and IPC boundary', () => {
     )
     const mismatch = await connection.execute({
       action: 'login',
-      serverUrl: 'https://company.example',
     })
     expect(mismatch.error).toContain('不一致')
     expect(browser).not.toHaveBeenCalled()
     fetcher.mockResolvedValueOnce(
       new Response('', { status: 302, headers: { location: 'https://attacker.example' } }),
     )
-    expect(
-      (await connection.execute({ action: 'login', serverUrl: 'https://company.example' })).error,
-    ).toContain('重定向')
+    expect((await connection.execute({ action: 'login' })).error).toContain('重定向')
     expect(browser).not.toHaveBeenCalled()
   })
   it('rejects a forged browser authorization URL even after valid discovery', async () => {
@@ -152,9 +244,7 @@ describe('company connection trust and IPC boundary', () => {
         authorizationUrl: `https://company.example/desktop/connect?request=${requestId}&token=extra`,
       }),
     )
-    expect(
-      (await connection.execute({ action: 'login', serverUrl: 'https://company.example' })).error,
-    ).toContain('登录网页无效')
+    expect((await connection.execute({ action: 'login' })).error).toContain('登录网页无效')
     expect(browser).not.toHaveBeenCalled()
   })
   it('rejects incompatible, duplicate and malformed templates', () => {
@@ -323,7 +413,7 @@ describe('durable offline company voiceprints', () => {
         : original(input, init),
     )
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    await connection.execute({ action: 'login', serverUrl: 'https://company.example' })
+    await connection.execute({ action: 'login' })
     await vi.advanceTimersByTimeAsync(2000)
     expect(resolve).toBeDefined()
     await connection.execute({ action: 'cancel' })

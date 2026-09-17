@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Building2, ExternalLink, Fingerprint, LogOut, RefreshCw, Trash2 } from 'lucide-react'
 import type { CompanyRequest, CompanyStatus } from '../shared/company-contracts'
 
@@ -44,13 +44,25 @@ export function CompanySettings({
       clearInterval(timer)
     }
   }, [visible, onChange])
-  const [server, setServer] = useState<string | null>(null)
   const [confirmation, setConfirmation] = useState<'logout' | 'clear' | null>(null)
   const [requestError, setRequestError] = useState('')
   const [pending, setPending] = useState(false)
+  const [lastAction, setLastAction] = useState<CompanyRequest['action']>('login')
+  const loginDialog = useRef<HTMLDialogElement>(null)
+  const feedbackAttempt = useRef(false)
   const disabled = pending || status.busy || status.session === 'authorizing'
+  const configured = !!status.serverUrl
   const admin = status.identity?.member.role === 'admin'
+  useEffect(() => {
+    if (!visible) loginDialog.current?.close()
+    else if (feedbackAttempt.current && !pending && status.session !== 'authorizing') {
+      if (requestError || status.error) loginDialog.current?.showModal()
+      feedbackAttempt.current = false
+    }
+  }, [visible, pending, requestError, status.error, status.session])
   async function run(input: CompanyRequest): Promise<void> {
+    feedbackAttempt.current = true
+    setLastAction(input.action)
     setPending(true)
     setRequestError('')
     setConfirmation(null)
@@ -62,125 +74,101 @@ export function CompanySettings({
       setPending(false)
     }
   }
+  const voiceprintState =
+    status.engine?.error ||
+    (status.engine?.state === 'processing'
+      ? '正在识别发言者'
+      : status.engine?.enabled
+        ? '离线可用'
+        : '等待本地识别就绪')
   return (
     <section className="company-settings" aria-label="公司连接">
-      {(status.error || requestError) && (
-        <div className="error-banner" role="alert">
-          {requestError || status.error}
-        </div>
-      )}
       <section className="settings-card company-account">
         <div className="company-card-heading">
-          <Building2 size={22} />
-          <div>
-            <h2>{status.identity?.company.name ?? '连接你的公司'}</h2>
+          <span className="company-card-icon">
+            <Building2 size={20} />
+          </span>
+          <div className="company-card-copy">
+            <div className="company-card-title">
+              <h2>{status.identity?.company.name ?? '公司账号'}</h2>
+              {status.session === 'expired' && (
+                <span className="company-session-badge">登录已过期</span>
+              )}
+            </div>
             <p>
               {status.identity
                 ? `${status.identity.member.name} · ${admin ? '管理员' : '用户'}`
-                : '未登录时，也可以继续使用本地会议。'}
+                : '通过浏览器登录，连接你的公司。'}
             </p>
           </div>
-          <span className="company-session-badge">
-            {status.session === 'authorizing'
-              ? '等待授权'
-              : status.session === 'expired'
-                ? '需要重新登录'
-                : status.identity
-                  ? '已登录'
-                  : '游客'}
-          </span>
-        </div>
-        <form
-          className="company-login-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void run({
-              action: 'login',
-              serverUrl: status.identity ? status.serverUrl : (server ?? status.serverUrl),
-            })
-          }}
-        >
-          <label htmlFor="company-address">公司 Web 地址</label>
-          <div className="company-address-row">
-            <input
-              id="company-address"
-              type="url"
-              placeholder="https://assistant.example.com"
-              value={status.identity ? status.serverUrl : (server ?? status.serverUrl)}
-              onChange={(event) => setServer(event.target.value)}
-              disabled={disabled || !!status.identity}
-              autoComplete="url"
-              required
-            />
-            <button className="primary-button" type="submit" disabled={disabled}>
-              <ExternalLink size={16} />
-              {status.session === 'expired'
-                ? '重新登录'
-                : status.identity
-                  ? '浏览器登录'
-                  : '连接并登录'}
-            </button>
+          <div className="company-card-actions">
+            {(!status.identity || status.session === 'expired') && (
+              <button
+                className="primary-button"
+                onClick={() => void run({ action: 'login' })}
+                disabled={disabled}
+              >
+                <ExternalLink size={16} />
+                {status.session === 'authorizing'
+                  ? '等待授权…'
+                  : pending && lastAction === 'login'
+                    ? '连接中…'
+                    : status.session === 'expired'
+                      ? '重新登录'
+                      : '登录公司账号'}
+              </button>
+            )}
+            {status.identity && (
+              <button
+                className="secondary-button"
+                onClick={() => setConfirmation('logout')}
+                disabled={pending}
+              >
+                <LogOut size={15} />
+                退出账号
+              </button>
+            )}
           </div>
-        </form>
+        </div>
         {status.session === 'authorizing' && (
           <div className="company-authorizing" role="status">
-            <span>请在浏览器中登录并确认连接，完成后会自动返回登录状态。</span>
+            <span>请在浏览器中确认登录。</span>
             <button className="text-button" onClick={() => void run({ action: 'cancel' })}>
               取消登录
-            </button>
-          </div>
-        )}
-        {status.identity && (
-          <div className="company-account-actions">
-            <button
-              className="text-button"
-              onClick={() => setConfirmation('logout')}
-              disabled={pending}
-            >
-              <LogOut size={15} />
-              退出公司账号
             </button>
           </div>
         )}
       </section>
       <section className="settings-card company-voiceprints">
         <div className="company-card-heading">
-          <Fingerprint size={22} />
-          <div>
+          <span className="company-card-icon">
+            <Fingerprint size={20} />
+          </span>
+          <div className="company-card-copy">
             <h2>员工声纹</h2>
-            <p>
+            <p role="status">
+              {!!status.profileCount && (
+                <span
+                  className={`company-status-dot ${status.engine?.enabled ? 'available' : ''}`}
+                />
+              )}
               {status.profileCount
-                ? `${status.profileCount} 位成员 · 已保存在本机`
-                : '同步后即可在本机匹配员工姓名'}
+                ? `${status.profileCount} 位成员 · ${voiceprintState}`
+                : admin
+                  ? '尚未同步员工声纹'
+                  : '登录公司管理员账号后可同步'}
             </p>
           </div>
-          <button
-            className="secondary-button"
-            disabled={disabled || !admin || status.session === 'expired'}
-            onClick={() => void run({ action: 'sync' })}
-          >
-            <RefreshCw size={16} />
-            {status.busy ? '同步中…' : '同步声纹'}
-          </button>
-        </div>
-        <div className="company-voiceprint-status" role="status">
-          <span
-            className={`company-status-dot ${status.profileCount && status.engine?.enabled ? 'available' : ''}`}
-          />
-          <span>
-            {status.profileCount
-              ? status.engine?.error ||
-                (status.engine?.state === 'processing'
-                  ? '正在本地识别发言者'
-                  : status.engine?.enabled
-                    ? '本地识别已就绪，离线也可使用'
-                    : '声纹已保存，等待本地识别就绪')
-              : admin
-                ? '尚未同步声纹，请先在公司 Web 登记成员录音'
-                : status.identity
-                  ? '公司声纹由管理员同步'
-                  : '以公司管理员身份登录后同步'}
-          </span>
+          <div className="company-card-actions">
+            <button
+              className="secondary-button"
+              disabled={disabled || !configured || !admin || status.session === 'expired'}
+              onClick={() => void run({ action: 'sync' })}
+            >
+              <RefreshCw size={16} />
+              {status.busy && lastAction === 'sync' ? '同步中…' : '同步声纹'}
+            </button>
+          </div>
         </div>
         {status.syncedAt && (
           <div className="company-cache-footer">
@@ -196,6 +184,34 @@ export function CompanySettings({
           </div>
         )}
       </section>
+      <dialog className="library-dialog" ref={loginDialog} aria-labelledby="company-login-error">
+        <form method="dialog">
+          <h2 id="company-login-error">
+            {lastAction === 'login'
+              ? '登录未完成'
+              : lastAction === 'sync'
+                ? '同步未完成'
+                : '操作未完成'}
+          </h2>
+          <p>{requestError || status.error}</p>
+          <div className="button-row">
+            <button className="secondary-button">关闭</button>
+            {configured && lastAction === 'login' && (
+              <button
+                type="button"
+                className="primary-button"
+                disabled={disabled}
+                onClick={() => {
+                  loginDialog.current?.close()
+                  void run({ action: 'login' })
+                }}
+              >
+                重试登录
+              </button>
+            )}
+          </div>
+        </form>
+      </dialog>
       {confirmation && (
         <div
           className="company-confirmation"

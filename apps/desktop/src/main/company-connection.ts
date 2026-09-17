@@ -154,10 +154,13 @@ export class CompanyConnection {
     private readonly openBrowser: (url: string) => Promise<void>,
     private readonly changed: (status: CompanyStatus) => void = () => {},
     private readonly fetcher: typeof fetch = fetch,
-  ) {}
+    private readonly configuredServerUrl = '',
+  ) {
+    this.configuredServerUrl = configuredServerUrl ? companyOrigin(configuredServerUrl) : ''
+  }
   status(): CompanyStatus {
     return {
-      serverUrl: this.saved.serverUrl,
+      serverUrl: this.configuredServerUrl,
       session: this.pending
         ? 'authorizing'
         : this.saved.identity
@@ -177,6 +180,10 @@ export class CompanyConnection {
     this.changed(this.status())
   }
   async load(): Promise<void> {
+    if (!this.configuredServerUrl) {
+      this.emit()
+      return
+    }
     const path = join(this.root, 'company-connection.enc')
     try {
       if ((await stat(path)).size > MAX_BYTES * 2) throw new Error('size')
@@ -184,6 +191,7 @@ export class CompanyConnection {
       const { result } = await this.secrets.decryptStringAsync(await readFile(path))
       const value = object(JSON.parse(result))
       if (value.version !== 1 || typeof value.serverUrl !== 'string') throw new Error('state')
+      if (companyOrigin(value.serverUrl) !== this.configuredServerUrl) return
       const account = value.identity === null ? null : identity(value.identity)
       const token = value.token === null ? null : text(value.token, 512)
       const snapshot = value.snapshot === null ? null : voiceprintSnapshot(value.snapshot)
@@ -353,7 +361,7 @@ export class CompanyConnection {
       try {
         return { status: response.status, data: JSON.parse(Buffer.concat(chunks).toString('utf8')) }
       } catch {
-        throw new CompanyError('公司服务返回的数据无效，请确认填写的是公司 Web 地址。')
+        throw new CompanyError('公司服务返回的数据无效，请联系管理员检查服务配置。')
       }
     } catch (error) {
       if (error instanceof CompanyError) throw error
@@ -421,8 +429,8 @@ export class CompanyConnection {
       this.emit()
     }
   }
-  private async login(serverUrl: string): Promise<void> {
-    const server = companyOrigin(serverUrl),
+  private async login(): Promise<void> {
+    const server = this.configuredServerUrl,
       generation = this.invalidate()
     this.error = null
     this.busy = true
@@ -449,9 +457,7 @@ export class CompanyConnection {
         typeof info.webOrigin !== 'string' ||
         companyOrigin(info.webOrigin) !== server
       )
-        throw new CompanyError(
-          '登录网页与公司地址不一致，请填写公司 Web 地址（本机开发为 http://127.0.0.1:5174）。',
-        )
+        throw new CompanyError('登录网页与公司地址不一致，请联系管理员检查服务配置。')
       if (generation !== this.generation) return
       const verifier = randomBytes(32).toString('base64url')
       const challenge = createHash('sha256').update(verifier).digest('base64url')
@@ -540,6 +546,13 @@ export class CompanyConnection {
     }
   }
   async execute(input: CompanyRequest): Promise<CompanyStatus> {
+    if (!this.configuredServerUrl) {
+      if (input.action === 'login') {
+        this.error = '尚未配置公司服务地址，请联系管理员配置后再登录。'
+        this.emit()
+      }
+      return this.status()
+    }
     try {
       if (input.action === 'status') {
         const generation = this.generation
@@ -553,7 +566,7 @@ export class CompanyConnection {
         }
         return this.status()
       }
-      if (input.action === 'login') await this.login(input.serverUrl)
+      if (input.action === 'login') await this.login()
       else if (input.action === 'sync') await this.sync()
       else if (input.action === 'cancel') {
         this.invalidate()

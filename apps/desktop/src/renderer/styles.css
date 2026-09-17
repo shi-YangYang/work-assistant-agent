@@ -1994,101 +1994,93 @@ mark {
 }
 .company-settings {
   display: grid;
-  gap: 18px;
+  gap: 12px;
   width: 100%;
+  container-type: inline-size;
+  container-name: company-settings;
+}
+.company-settings > .settings-card {
+  padding: 18px 20px;
 }
 .company-card-heading p {
-  margin: 0;
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
+  line-height: 1.5;
 }
 .company-card-heading {
-  display: flex;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
 }
-.company-card-heading > svg {
+.company-card-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--selection);
   color: var(--accent);
-  flex-shrink: 0;
 }
-.company-card-heading > div {
-  flex: 1;
+.company-card-copy {
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+.company-card-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .company-card-heading h2 {
-  margin: 0 0 5px;
-  font-size: 16px;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.4;
 }
 .company-session-badge {
   color: var(--muted);
   background: var(--subtle);
   font-size: 12px;
-  padding: 5px 9px;
+  padding: 2px 7px;
   border-radius: 6px;
   white-space: nowrap;
 }
-.company-login-form {
-  display: grid;
-  gap: 8px;
-  margin-top: 24px;
-}
-.company-login-form > label {
-  font-size: 12px;
-  font-weight: 550;
-}
-.company-address-row {
-  display: flex;
-  gap: 10px;
-}
-.company-address-row input {
-  flex: 1;
-  width: 0;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--surface);
-  color: var(--text);
-}
-.company-address-row input:focus {
-  border-color: var(--muted);
-  outline: none;
-}
-.company-address-row button {
-  flex-shrink: 0;
-}
-.company-account-actions {
+.company-card-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.company-card-actions > button {
+  min-width: 132px;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 13px;
+  white-space: nowrap;
 }
 .company-authorizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 14px;
+  margin: 12px 0 0 48px;
   font-size: 13px;
   color: var(--muted);
 }
-.company-account-actions .text-button,
+.company-authorizing .text-button,
 .company-cache-footer .text-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
 }
-.company-voiceprint-status {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 16px 0 2px;
-  font-size: 13px;
-  color: var(--muted);
-}
 .company-status-dot {
-  width: 7px;
-  height: 7px;
+  display: inline-block;
+  vertical-align: middle;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
   border-radius: 50%;
   background: var(--muted);
   flex-shrink: 0;
@@ -2101,8 +2093,10 @@ mark {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 16px;
-  padding-top: 12px;
+  margin: 14px 0 0 48px;
+  padding-top: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
   border-top: 1px solid var(--line);
 }
 .company-confirmation {
@@ -2119,6 +2113,19 @@ mark {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+@container company-settings (max-width: 520px) {
+  .company-card-heading {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+  .company-card-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+  .company-authorizing,
+  .company-cache-footer {
+    margin-left: 0;
+  }
 }
 
 .transcript-view-toolbar,
