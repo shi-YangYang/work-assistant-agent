@@ -181,16 +181,28 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     saved=await create(c['admin']); routing=route(saved);routing['assistant']['streaming']=streaming
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
+    reply='请确认这条进展建议。'
     async def response(request):
         body=json.loads(request.content);calls.append((str(request.url),body))
         assert request.headers['Authorization']=='Bearer '+SECRET
         assert 'enable_thinking' not in body and body['stream']==streaming and body['max_tokens']<=4000
         if len(calls)==1:
-            await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**payload(url='https://new.example/v1'),'apiKey':'new-test-secret','expectedRevision':1})
+            changed=await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**payload(url='https://new.example/v1'),'apiKey':'new-test-secret','expectedRevision':1})
+            assert changed.status_code==200,changed.text
             message={'role':'assistant','content':'','tool_calls':[{'id':'progress-test','type':'function','function':{'name':'propose_progress','arguments':json.dumps({'title':'真实预算路径','summary':'受控响应测试','status':'in_progress','blocker':'','next_step':'','work_id':None})}}]}
             finish='tool_calls'
+        elif len(calls)==2:
+            message={'role':'assistant','content':reply};finish='stop'
         else:
-            message={'role':'assistant','content':'已整理，等待确认。'};finish='stop'
+            # The independent reply review shares the job's frozen service and budget.
+            assert len(calls)==3 and not body.get('tools')
+            review=json.loads(body['messages'][-1]['content'])
+            assert review['task']=='business_reply_review'
+            assert review['segments']==[{'index':0,'text':reply}]
+            assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
+            assert review['persistedOperations']==[]
+            verdict={'segments':[{'index':0,'kind':'information','evidence':[]}]}
+            message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         if streaming:
             delta=dict(message)
             if 'tool_calls' in delta: delta['tool_calls'][0]['index']=0
@@ -205,10 +217,11 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     result=(await c['employee'].get('/api/v1/messages/'+sent['messageId'])).json()
     assert result['job']['state']=='succeeded',result['job']
     assert len(result['suggestions'])==1 and all(url=='https://example.com/v1/chat/completions' for url,_ in calls)
-    assert len(calls)==2
+    assert result['reply']==reply
+    assert len(calls)==3
     async with sessions() as db:
         usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
-        assert len(usages)==2 and all(u.kind=='assistant' for u in usages)
+        assert len(usages)==3 and all(u.kind=='assistant' and u.status=='succeeded' and u.service_id==saved['id'] for u in usages)
         from sqlalchemy import text
         blobs=(await db.execute(text('SELECT blob FROM checkpoint_blobs WHERE thread_id LIKE :prefix'),{'prefix':job.company_id+':%'})).all()
         assert not any(SECRET.encode() in bytes(b[0]) for b in blobs if b[0] is not None)
