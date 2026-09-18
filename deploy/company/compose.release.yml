@@ -1,0 +1,14 @@
+# CD supplies immutable image digests in .release.env; never build on the server.
+services:
+  migrate:
+    build: !reset null
+    image: ${PAA_SERVICE_IMAGE:?Missing service image digest}
+  api:
+    build: !reset null
+    image: ${PAA_SERVICE_IMAGE:?Missing service image digest}
+  worker:
+    build: !reset null
+    image: ${PAA_WORKER_IMAGE:?Missing worker image digest}
+  web:
+    build: !reset null
+    image: ${PAA_WEB_IMAGE:?Missing web image digest}

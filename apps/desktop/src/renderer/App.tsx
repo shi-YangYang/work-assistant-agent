@@ -453,8 +453,10 @@ export function App(): React.JSX.Element {
         >
           <Building2 size={19} />
           <span>
-            <strong>{company.identity?.member.name ?? '连接公司'}</strong>
-            <small>{company.identity?.company.name ?? '当前以游客身份使用'}</small>
+            <strong>
+              {company.identity?.member.name ?? (company.serverUrl ? '登录公司账号' : '游客模式')}
+            </strong>
+            <small>{company.identity?.company.name ?? '公司账号与员工声纹'}</small>
           </span>
           <ChevronRight size={14} />
         </button>
@@ -501,7 +503,7 @@ export function App(): React.JSX.Element {
               </h1>
               {page === 'meetings' && <p>保留讨论，回顾决定与下一步。</p>}
               {page === 'services' && <p>管理生成会议纪要所使用的服务。</p>}
-              {page === 'company' && <p>连接公司后，同步员工声纹，在会议中识别发言者。</p>}
+              {page === 'company' && company.serverUrl && <p>同步员工声纹，在会议中识别发言者。</p>}
               {page === 'current' && (
                 <p>
                   {recording.deviceName || '正在准备麦克风'} ·{' '}

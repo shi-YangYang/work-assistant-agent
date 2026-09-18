@@ -95,7 +95,11 @@ npm run dev
 
 ### 连接公司与离线识别
 
-“公司连接”中填写公司 Web 根地址，点击登录后在系统浏览器确认账号。自托管地址使用有效 HTTPS；本机联调填写 `http://127.0.0.1:5174`，在另一个终端启动 `npm run dev:company`。管理员登录后可同步公司声纹，会议音频仍在本机处理。
+在根目录 `.env` 设置 `PAA_DESKTOP_COMPANY_URL=https://你的公司地址`，模板沿用 `.env.example`；已有 `.env` 时只添加此项。桌面公司地址由开发／构建配置决定，客户端不再提供地址输入框。留空始终使用游客模式，不加载之前的公司登录或声纹缓存；配置地址后，只恢复同一地址的缓存。修改后重启 `npm run dev` 或重新构建；已安装的客户端不会跟随环境文件自动更新。
+
+这一项独立于服务端 `.env.company`，只将公开地址写入桌面主进程产物，不打包环境文件或其他配置。发行前填写员工能访问的 HTTPS 地址，不使用开发机的 `127.0.0.1`。Python 路径等既有运行时选项继续通过 shell 设置。
+
+在“公司连接”点击“登录公司账号”，在系统浏览器确认账号。未配置地址或连接失败会弹出提示；网络恢复后可直接重试登录，无需重启桌面。本机联调将上述环境变量设为 `http://127.0.0.1:5174`，在另一个终端启动 `npm run dev:company`。管理员登录后可同步公司声纹，会议音频仍在本机处理。
 
 声音不足时先显示临时说话人，匹配可靠后更新姓名；陌生人或无法确定的发言保留未知身份，可人工纠正。声纹同步后长期离线可用，重启或登录过期不影响识别；获取更新需要重新验证在线权限。退出公司账号或清除声纹缓存不删除已有会议。
 
@@ -174,6 +178,40 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 部署后从公司网络与手机流量访问 `https://该IP`，确认浏览器无证书警告，再验证钉钉回调和录音。自签证书／本地配置检查不能替代此步骤。以后切换域名时，停止这条 IP 续期任务，将域名解析到同一服务器，更新 `PAA_DOMAIN`、`PAA_WEB_ORIGIN` 及钉钉回调，改用上面的域名 Compose 命令重建服务；保留数据库、附件卷及主密钥，账号和业务数据不需重建，员工在新地址重新登录。
 
 依据：[Let’s Encrypt 的 IP 证书与 Certbot 说明](https://letsencrypt.org/2026/03/11/shorter-certs-certbot)、[Certbot 续期与 hook](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)、[Caddy 强制重载](https://caddyserver.com/docs/command-line#caddy-reload)。
+
+### GitHub 手动发布
+
+合并代码不会自动上线。在 GitHub **Actions → Deploy Company Web → Run workflow** 发起发布，Branch 选 `main`；`commit` 留空发布点击时的 main，也可填写 main 历史中的完整 40 位提交 SHA。`mode` 选择 `domain` 或 `ip`。PR、普通 push 和合并均不会触发这个工作流，已有 CI 继续负责 PR 检查。
+
+GitHub 构建 Linux x86_64 的 Web、API 和 worker 镜像，推送至 GHCR；服务器按镜像 digest 拉取，不在服务器编译，也不重复跑完整 CI。首次启用须先将这套发布文件合并进 main。
+
+**一次性配置 GitHub：**
+
+- 为 main 设置分支保护／Ruleset：通过 PR 合并，要求 `CI required` 通过，审查工作流和部署脚本的修改。手动发布不会替代代码审查。
+- 创建 `production` Environment，部署分支只允许 `main`，Required reviewers 选负责上线的管理员。若由同一人发起并确认发布，保留允许本人审批。这样有仓库写权限的人即使发起发布，也需经过该环境的审批。
+- 在该 Environment 中填写以下 Variables 和 Secrets；生产 SSH 私钥不要放到普通 CI 使用的仓库级 Secrets。
+
+| 类型 | 名称 | 内容 |
+| --- | --- | --- |
+| Variable | `DEPLOY_HOST` | 服务器公网 IPv4 或主机名 |
+| Variable | `DEPLOY_USER` | 专用部署用户，能够运行 Docker、读写部署目录 |
+| Variable | `DEPLOY_PORT` | SSH 端口，默认 `22` |
+| Variable | `DEPLOY_PATH` | 服务器部署根目录，默认 `/srv/work-assistant-agent`；使用字母、数字、连字符、下划线和斜线 |
+| Secret | `DEPLOY_SSH_KEY` | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
+| Secret | `DEPLOY_KNOWN_HOSTS` | 经服务器控制台核对指纹的 SSH known_hosts 记录；非 22 端口使用 `[主机]:端口` 格式 |
+
+**一次性准备服务器：**
+
+1. 使用 Linux x86_64，安装 Docker Engine、Compose 2.24.4 或更新版本，以及 Bash、Python 3、curl、flock 和 GNU coreutils。GitHub 托管 runner 须能连接服务器 SSH，服务器须能拉取 GHCR 镜像。
+2. 创建部署根目录并交给部署用户管理，将生产 `.env.company` 放在该目录，权限设为 `600`。按前文准备主密钥、HTTPS 和钉钉回调；IP 部署先完成证书申请与续期配置。CD 不自动签署证书服务协议或生成新的主密钥。
+3. GHCR 镜像首次发布默认可能为私有。以部署用户执行 `docker login ghcr.io --username 你的GitHub账号`，在密码提示中使用有对应镜像读取权限的 `read:packages` PAT；也可以将这些不含业务配置的镜像设为公开。该登录保存在服务器，CD 不向服务器传输 GitHub 写入令牌。
+4. 首次发布成功后，在服务器创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m paa_server.cli bootstrap-admin`。实际部署路径不同时替换路径。
+
+升级会先拉取镜像、检查配置与主密钥，再停止写入并备份数据库、附件及主密钥，执行迁移，启动服务，检查 HTTPS 页面、API 数据库连接和 worker 进程。备份分别位于部署根目录的 `backups/` 和 `key-backups/`，仍须按下文要求异机保存。
+
+`current/` 指向本次尝试的版本，`previous/` 保留前一版本路径；结果写入版本目录的 `deployment-status`。镜像拉取或配置检查失败不停止旧服务；备份失败会尝试恢复旧服务。迁移或上线检查失败时应用保持停止，数据库与备份保留，Actions 标红，不会假装成功或自动启动可能不兼容的旧代码。排障可运行 `sh /srv/work-assistant-agent/current/deploy/company/compose.sh logs --tail=100 api worker migrate`。涉及 schema 变化时按备份恢复流程处理，不能只切换旧镜像。
+
+已有手工部署接入 CD 时，将 `DEPLOY_PATH` 指向原部署根目录，保留原 `.env.company`、主密钥和 `paa-company` 数据卷。IP 证书续期的 cron 路径改为 `/实际部署根目录/current/deploy/company/ip-certificate.sh`，使重载使用当前发布配置。日常备份也改为运行 current 下的 `backup.sh`。首次发布仍需在真实服务器验收，配置检查不等于已经上线成功。
 
 ### 钉钉登录配置
 

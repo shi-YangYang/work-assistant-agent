@@ -1,0 +1,135 @@
+name: Deploy Company Web
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full main commit SHA (empty uses main at dispatch time)
+        required: false
+        type: string
+      mode:
+        description: Server HTTPS configuration (certificate must be prepared for ip)
+        type: choice
+        options: [domain, ip]
+        default: domain
+
+permissions:
+  contents: read
+
+concurrency:
+  group: company-production-deployment
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      release_id: ${{ steps.version.outputs.release_id }}
+    steps:
+      - name: Require a manual run from main
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          IS_FORK: ${{ github.event.repository.fork }}
+        run: |
+          test "$EVENT" = workflow_dispatch
+          test "$REF" = refs/heads/main
+          test "$IS_FORK" = false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select an immutable main revision
+        id: version
+        env:
+          REQUESTED_COMMIT: ${{ inputs.commit }}
+          DISPATCH_COMMIT: ${{ github.sha }}
+        run: |
+          sha=${REQUESTED_COMMIT:-$DISPATCH_COMMIT}
+          [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo 'Use a full lowercase commit SHA'; exit 1; }
+          git cat-file -e "$sha^{commit}"
+          git merge-base --is-ancestor "$sha" "$DISPATCH_COMMIT"
+          git checkout --detach "$sha"
+          test -f deploy/company/release.sh
+          echo "release_id=$sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_SHA=$sha" >> "$GITHUB_ENV"
+          echo "IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Linux images and record their digests
+        run: |
+          : > .release.env
+          for target in service worker web; do
+            image="$IMAGE_PREFIX-$target"
+            metadata="$RUNNER_TEMP/$target-image.json"
+            docker buildx build --platform linux/amd64 \
+              --file deploy/company/Dockerfile --target "$target" \
+              --tag "$image:sha-$RELEASE_SHA" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$RELEASE_SHA" \
+              --cache-from "type=registry,ref=$image:buildcache" \
+              --cache-to "type=registry,mode=max,ref=$image:buildcache" \
+              --metadata-file "$metadata" --push .
+            digest=$(jq -r '."containerimage.digest"' "$metadata")
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            printf 'PAA_%s_IMAGE=%s@%s\n' "${target^^}" "$image" "$digest" >> .release.env
+          done
+          tar -czf "$RUNNER_TEMP/company-release.tar.gz" deploy/company .release.env
+      - uses: actions/upload-artifact@v4
+        with:
+          name: company-release
+          path: ${{ runner.temp }}/company-release.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: company-release
+          path: ${{ runner.temp }}/release
+      - name: Upload and deploy the selected release
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/srv/work-assistant-agent' }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RELEASE_ID: ${{ needs.build.outputs.release_id }}
+          DEPLOY_MODE: ${{ inputs.mode }}
+        run: |
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] && (( 10#$DEPLOY_PORT > 0 && 10#$DEPLOY_PORT < 65536 ))
+          [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_/-]+$ && "$DEPLOY_PATH" != / ]]
+          [[ "$RELEASE_ID" =~ ^[a-f0-9]{40}-[0-9]+-[0-9]+$ ]]
+          [[ "$DEPLOY_MODE" == domain || "$DEPLOY_MODE" == ip ]]
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          umask 077
+          key="$RUNNER_TEMP/deploy-key"
+          hosts="$RUNNER_TEMP/deploy-known-hosts"
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$hosts"
+          trap 'rm -f "$key" "$hosts"' EXIT
+          options=(-i "$key" -o "UserKnownHostsFile=$hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          directory="$DEPLOY_PATH/releases/$RELEASE_ID"
+          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -p '$directory'"
+          scp "${options[@]}" -P "$DEPLOY_PORT" "$RUNNER_TEMP/release/company-release.tar.gz" "$target:$directory/release.tar.gz"
+          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" \
+            "tar -xzf '$directory/release.tar.gz' -C '$directory' && rm '$directory/release.tar.gz' && bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
+          printf '### Deployment complete\n\nRelease: `%s`\n\nMode: `%s`\n' "$RELEASE_ID" "$DEPLOY_MODE" >> "$GITHUB_STEP_SUMMARY"

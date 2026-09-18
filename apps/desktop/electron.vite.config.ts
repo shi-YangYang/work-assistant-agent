@@ -1,9 +1,26 @@
 import { resolve } from 'node:path'
-import { defineConfig } from 'electron-vite'
+import { defineConfig, loadEnv } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import { companyOrigin } from './src/main/company-connection'
 
-export default defineConfig({
+export function defaultCompanyUrl(
+  mode: string,
+  envDir = resolve(import.meta.dirname, '../..'),
+): string {
+  const value =
+    loadEnv(mode, envDir, 'PAA_DESKTOP_COMPANY_URL').PAA_DESKTOP_COMPANY_URL?.trim() ?? ''
+  if (!value) return ''
+  try {
+    if (value.length > 2048) throw new Error('length')
+    return companyOrigin(value)
+  } catch {
+    throw new Error('PAA_DESKTOP_COMPANY_URL 须为公司 HTTPS 根地址；本机开发可使用 HTTP 回环地址。')
+  }
+}
+
+export default defineConfig(({ mode }) => ({
   main: {
+    define: { __PAA_DESKTOP_COMPANY_URL__: JSON.stringify(defaultCompanyUrl(mode)) },
     build: {
       externalizeDeps: { exclude: ['@paa/model-config', '@paa/ui-web'] },
       rollupOptions: { input: { index: resolve(import.meta.dirname, 'src/main/main.ts') } },
@@ -32,4 +49,4 @@ export default defineConfig({
     server: { host: '127.0.0.1', port: 5173, strictPort: true },
     build: { rollupOptions: { input: resolve(import.meta.dirname, 'src/renderer/index.html') } },
   },
-})
+}))

@@ -32,6 +32,8 @@ import {
   type Result,
 } from '../shared/contracts'
 
+declare const __PAA_DESKTOP_COMPANY_URL__: string
+
 // Preserve the existing data directory and keychain identity; window/bundle titles are separate.
 app.setName('个人工作助手')
 // Tests opt into a separate userData directory before acquiring the single-instance lock.
@@ -73,6 +75,8 @@ const companyConnection = new CompanyConnection(
   (status) => {
     if (window && !window.isDestroyed()) window.webContents.send(CHANNELS.companyChanged, status)
   },
+  undefined,
+  __PAA_DESKTOP_COMPANY_URL__,
 )
 let quitting = false
 let lifecycle: Promise<boolean> | undefined
