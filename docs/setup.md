@@ -183,7 +183,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 合并代码不会自动上线。在 GitHub **Actions → Deploy Company Web → Run workflow** 发起发布，Branch 选 `main`；`commit` 留空发布点击时的 main，也可填写 main 历史中的完整 40 位提交 SHA。`mode` 选择 `domain` 或 `ip`。PR、普通 push 和合并均不会触发这个工作流，已有 CI 继续负责 PR 检查。
 
-GitHub 构建 Linux x86_64 的 Web、API 和 worker 镜像，推送至 GHCR；服务器按镜像 digest 拉取，不在服务器编译，也不重复跑完整 CI。首次启用须先将这套发布文件合并进 main。
+GitHub 只打包指定版本的源码，经 SSH 上传；服务器依次构建 API、worker、Web 镜像，全部成功后再备份、迁移并更新服务。只构建公司 Web 及服务端，不打包 Electron；不用 GHCR、TCR 或镜像仓库账号。首次启用先合并发布文件到 main；指定历史 SHA 时，该版本须包含 `deploy/company/build.sh`。
 
 **一次性配置 GitHub：**
 
@@ -200,14 +200,16 @@ SSH 端口使用 `22`，部署目录使用 `/srv/work-assistant-agent`；需要�
 
 **一次性准备服务器：**
 
-1. 使用 Linux x86_64，安装 Docker Engine、Compose 2.24.4 或更新版本，以及 Bash、Python 3、curl、flock 和 GNU coreutils。GitHub 托管 runner 须能连接服务器 SSH，服务器须能拉取 GHCR 镜像。
+1. 使用 Linux x86_64，安装 Docker Engine、Buildx、Compose 2.24.4 或更新版本，以及 Bash、Python 3、curl、flock 和 GNU coreutils。`docker buildx version` 须正常；Ubuntu 仓库安装的 Docker 可用 `sudo apt-get install docker-buildx` 补齐插件。GitHub 托管 runner 须能连接服务器 SSH，服务器须能获取基础镜像与构建依赖。Docker Hub 使用云厂商提供的加速器；腾讯云服务器可在 `/etc/docker/daemon.json` 的 `registry-mirrors` 配置 `https://mirror.ccs.tencentyun.com`，合并到已有配置后再重启 Docker，不要覆盖其他设置。
 2. 创建部署根目录并交给部署用户管理，将生产 `.env.company` 放在该目录，权限设为 `600`。按前文准备主密钥、HTTPS 和钉钉回调；IP 部署先完成证书申请与续期配置。CD 不自动签署证书服务协议或生成新的主密钥。
-3. GHCR 的 Web、API、worker 镜像及同包内构建缓存保持 Private；新包默认私有，已有包需核对可见性，并授予本仓库 Actions 读取权限。CD 自动将部署任务的只读 `GITHUB_TOKEN` 经 SSH 标准输入用于临时登录，部署成功、失败或收到退出信号后清理临时 Docker 凭据，不覆盖服务器原有配置。无需创建个人 Token、手动 `docker login` 或新增镜像 Secret；Token 随任务结束失效。后续拉取版本仍通过手动发布执行。
+3. 构建默认使用腾讯云 Debian／PyPI 源、npmmirror npm 源和南京大学 PyTorch CPU 源；固定依赖版本，保留 npm 完整性校验与 HTTPS 校验。只安装 CPU 版 PyTorch，不下载 CUDA。源地址集中在 `deploy/company/Dockerfile` 的 `ARG`，可按网络环境调整；不修改开发电脑的软件源或锁文件。
 4. 首次发布成功后，在服务器创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m paa_server.cli bootstrap-admin`。实际部署路径不同时替换路径。
 
-升级会先拉取镜像、检查配置与主密钥，再停止写入并备份数据库、附件及主密钥，执行迁移，启动服务，检查 HTTPS 页面、API 数据库连接和 worker 进程。备份分别位于部署根目录的 `backups/` 和 `key-backups/`，仍须按下文要求异机保存。
+升级先在服务器串行构建镜像、拉取 PostgreSQL 并检查配置与主密钥，再停止写入并备份数据库、附件及主密钥，执行迁移，启动服务，检查 HTTPS 页面、API 数据库连接和 worker 进程。备份分别位于部署根目录的 `backups/` 和 `key-backups/`，仍须按下文要求异机保存。
 
-`current/` 指向本次尝试的版本，`previous/` 保留前一版本路径；结果写入版本目录的 `deployment-status`。镜像拉取或配置检查失败不停止旧服务；备份失败会尝试恢复旧服务。迁移或上线检查失败时应用保持停止，数据库与备份保留，Actions 标红，不会假装成功或自动启动可能不兼容的旧代码。排障可运行 `sh /srv/work-assistant-agent/current/deploy/company/compose.sh logs --tail=100 api worker migrate`。涉及 schema 变化时按备份恢复流程处理，不能只切换旧镜像。
+首次构建需要下载依赖，后续复用服务器 Docker 构建缓存；构建期间会占用 CPU、内存与磁盘。工作流只需原有四项 SSH Secrets，最长 60 分钟；服务器发布进程另有 50 分钟超时，避免无限等待。构建产物按本地 image ID 固定，启动时不再拉取应用镜像；不要清理仍被 `current/`、`previous/` 引用的镜像。
+
+`current/` 指向本次尝试的版本，`previous/` 保留前一版本路径；结果写入版本目录的 `deployment-status`。构建、基础镜像下载或配置检查失败不停止旧服务；备份失败会尝试恢复旧服务。迁移或上线检查失败时应用保持停止，数据库与备份保留，Actions 标红，不会假装成功或自动启动可能不兼容的旧代码。排障可运行 `sh /srv/work-assistant-agent/current/deploy/company/compose.sh logs --tail=100 api worker migrate`。涉及 schema 变化时按备份恢复流程处理，不能只切换旧镜像。
 
 已有手工部署接入 CD 时，将 `DEPLOY_PATH` 指向原部署根目录，保留原 `.env.company`、主密钥和 `paa-company` 数据卷。IP 证书续期的 cron 路径改为 `/实际部署根目录/current/deploy/company/ip-certificate.sh`，使重载使用当前发布配置。日常备份也改为运行 current 下的 `backup.sh`。首次发布仍需在真实服务器验收，配置检查不等于已经上线成功。
 
@@ -234,6 +236,8 @@ SSH 端口使用 `22`，部署目录使用 `/srv/work-assistant-agent`；需要�
 维护者可按反馈中的请求编号查找 API 请求日志，日志使用路由模板、状态和耗时，不包含业务正文。手机优先检查 Safari／Chrome；窄屏模拟不能替代实体手机的软键盘、权限和录音操作验证。
 
 ### 后台处理与汇报安排
+
+生产 Compose 将 worker 及其子进程合计限制为 2 核 CPU、3 GiB 内存，并禁用该容器的 swap；声纹提取、报告生成及附件处理共享此上限。CPU 超额时限速，内存超限可能触发 OOM；这些是运行上限，不是预占资源，也不限制镜像构建过程。
 
 `PAA_WORKER_CONCURRENCY` 默认 `3`，可设 `1～8`；不同员工并行，同一员工串行。当前部署只运行一个 worker，重复启动会退出，避免意外放大请求量。提高并发前应确认模型服务限流与服务器内存；此范围不是容量承诺。
 

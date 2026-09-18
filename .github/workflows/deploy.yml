@@ -21,14 +21,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    permissions:
-      contents: read
-      packages: write
-    outputs:
-      release_id: ${{ steps.version.outputs.release_id }}
+    timeout-minutes: 60
     steps:
       - name: Require a manual run from main
         env:
@@ -44,8 +39,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Select an immutable main revision
-        id: version
+      - name: Package the selected main revision
         env:
           REQUESTED_COMMIT: ${{ inputs.commit }}
           DISPATCH_COMMIT: ${{ github.sha }}
@@ -54,60 +48,11 @@ jobs:
           [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo 'Use a full lowercase commit SHA'; exit 1; }
           git cat-file -e "$sha^{commit}"
           git merge-base --is-ancestor "$sha" "$DISPATCH_COMMIT"
-          # Keep the deployment wrapper from this workflow revision, including for older releases.
-          cp deploy/company/with-registry-auth.sh "$RUNNER_TEMP/with-registry-auth.sh"
-          git checkout --detach "$sha"
-          test -f deploy/company/release.sh
-          echo "release_id=$sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-          echo "RELEASE_SHA=$sha" >> "$GITHUB_ENV"
-          echo "IMAGE_PREFIX=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build Linux images and record their digests
-        run: |
-          : > .release.env
-          for target in service worker web; do
-            image="$IMAGE_PREFIX-$target"
-            metadata="$RUNNER_TEMP/$target-image.json"
-            docker buildx build --platform linux/amd64 \
-              --file deploy/company/Dockerfile --target "$target" \
-              --tag "$image:sha-$RELEASE_SHA" \
-              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-              --label "org.opencontainers.image.revision=$RELEASE_SHA" \
-              --cache-from "type=registry,ref=$image:buildcache" \
-              --cache-to "type=registry,mode=max,ref=$image:buildcache" \
-              --metadata-file "$metadata" --push .
-            digest=$(jq -r '."containerimage.digest"' "$metadata")
-            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
-            printf 'PAA_%s_IMAGE=%s@%s\n' "${target^^}" "$image" "$digest" >> .release.env
-          done
-          tar -czf "$RUNNER_TEMP/company-release.tar.gz" deploy/company .release.env
-      - uses: actions/upload-artifact@v4
-        with:
-          name: company-release
-          path: |
-            ${{ runner.temp }}/company-release.tar.gz
-            ${{ runner.temp }}/with-registry-auth.sh
-          retention-days: 7
-          if-no-files-found: error
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: read
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: company-release
-          path: ${{ runner.temp }}/release
-      - name: Upload and deploy the selected release
+          git cat-file -e "$sha:deploy/company/build.sh" || { echo 'Select a revision that supports server builds'; exit 1; }
+          echo "RELEASE_ID=$sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          # Only tracked source files; no checkout credentials, ignored data or environment files.
+          git archive --format=tar.gz --output="$RUNNER_TEMP/company-source.tar.gz" "$sha"
+      - name: Upload source, build on server and deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
@@ -115,10 +60,7 @@ jobs:
           DEPLOY_PATH: /srv/work-assistant-agent
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          RELEASE_ID: ${{ needs.build.outputs.release_id }}
           DEPLOY_MODE: ${{ inputs.mode }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
@@ -126,8 +68,7 @@ jobs:
           [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_/-]+$ && "$DEPLOY_PATH" != / ]]
           [[ "$RELEASE_ID" =~ ^[a-f0-9]{40}-[0-9]+-[0-9]+$ ]]
           [[ "$DEPLOY_MODE" == domain || "$DEPLOY_MODE" == ip ]]
-          [[ "$REGISTRY_USER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*(\[bot\])?$ ]]
-          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$REGISTRY_TOKEN"
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
           umask 077
           key="$RUNNER_TEMP/deploy-key"
           hosts="$RUNNER_TEMP/deploy-known-hosts"
@@ -137,8 +78,8 @@ jobs:
           options=(-i "$key" -o "UserKnownHostsFile=$hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
           target="$DEPLOY_USER@$DEPLOY_HOST"
           directory="$DEPLOY_PATH/releases/$RELEASE_ID"
-          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -p '$directory'"
-          scp "${options[@]}" -P "$DEPLOY_PORT" "$RUNNER_TEMP/release/company-release.tar.gz" "$RUNNER_TEMP/release/with-registry-auth.sh" "$target:$directory/"
-          printf '%s\n' "$REGISTRY_TOKEN" | ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" \
-            "tar -xzf '$directory/company-release.tar.gz' -C '$directory' && rm '$directory/company-release.tar.gz' && bash '$directory/with-registry-auth.sh' '$REGISTRY_USER' bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
+          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -p '$DEPLOY_PATH/releases' && mkdir '$directory' && chmod 700 '$directory'"
+          scp "${options[@]}" -P "$DEPLOY_PORT" "$RUNNER_TEMP/company-source.tar.gz" "$target:$directory/"
+          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" \
+            "tar -xzf '$directory/company-source.tar.gz' -C '$directory' && rm '$directory/company-source.tar.gz' && timeout --signal=TERM --kill-after=30s 50m bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
           printf '### Deployment complete\n\nRelease: `%s`\n\nMode: `%s`\n' "$RELEASE_ID" "$DEPLOY_MODE" >> "$GITHUB_STEP_SUMMARY"

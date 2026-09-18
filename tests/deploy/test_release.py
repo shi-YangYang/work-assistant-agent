@@ -27,16 +27,12 @@ elif tool == 'sha256sum':
     for name in args:
         print(hashlib.sha256(Path(name).read_bytes()).hexdigest(), name)
 elif tool == 'docker':
-    if args[:2] == ['login', 'ghcr.io']:
-        assert args == ['login', 'ghcr.io', '--username', 'deployment-test', '--password-stdin']
-        assert sys.stdin.read().strip() == 'controlled-registry-token'
-        config = Path(os.environ['DOCKER_CONFIG'])
-        assert config.stat().st_mode & 0o777 == 0o700
-        (config / 'config.json').write_text('controlled-registry-token')
-        Path(os.environ['REGISTRY_CONFIG_MARKER']).write_text(str(config))
-        sys.exit(17 if os.environ.get('FAIL_AT') == 'login' else 0)
-    if os.environ.get('REQUIRE_REGISTRY_AUTH'):
-        assert (Path(os.environ['DOCKER_CONFIG']) / 'config.json').read_text() == 'controlled-registry-token'
+    if args[:1] == ['build']:
+        target = args[args.index('--target') + 1]
+        sys.exit(1 if os.environ.get('FAIL_AT') == 'build-' + target else 0)
+    if args[:2] == ['image', 'inspect']:
+        print('invalid-image' if os.environ.get('FAIL_AT') == 'image-id' else 'sha256:' + 'a' * 64)
+        sys.exit(0)
     if args[:2] == ['volume', 'inspect']:
         sys.exit(0 if os.environ.get('EXISTING_VOLUME') else 1)
     if '--env-file' in args:
@@ -83,10 +79,9 @@ class ReleaseTests(unittest.TestCase):
         )
         (self.root / 'key').write_bytes(b'k' * 32)
         self.manifest = ''.join(
-            f'PAA_{name}_IMAGE=ghcr.io/example/app-{name.lower()}@sha256:{"a" * 64}\n'
+            f'PAA_{name}_IMAGE=sha256:{"a" * 64}\n'
             for name in ('SERVICE', 'WORKER', 'WEB')
         )
-        (self.release / '.release.env').write_text(self.manifest)
         binaries = self.root / 'bin'
         binaries.mkdir()
         for name in ('docker', 'curl', 'uname', 'flock', 'sleep', 'mv', 'readlink', 'sha256sum'):
@@ -100,18 +95,12 @@ class ReleaseTests(unittest.TestCase):
             'DEPLOY_TEST_LOG': str(self.log),
         }
 
-    def run_release(self, failure=None, private=False):
+    def run_release(self, failure=None):
         env = dict(self.env)
         if failure:
             env['FAIL_AT'] = failure
         command = ['bash', str(self.release / 'deploy/company/release.sh'), str(self.root), RELEASE_ID, 'domain']
-        if private:
-            env['REQUIRE_REGISTRY_AUTH'] = '1'
-            command = ['bash', str(REPO / 'deploy/company/with-registry-auth.sh'), 'deployment-test', *command]
-        return subprocess.run(
-            command, input='controlled-registry-token\n' if private else None,
-            env=env, capture_output=True, text=True, timeout=20,
-        )
+        return subprocess.run(command, env=env, capture_output=True, text=True, timeout=20)
 
     def commands(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
@@ -125,14 +114,18 @@ class ReleaseTests(unittest.TestCase):
         (self.root / 'current').symlink_to(previous)
         return previous
 
-    def test_first_release_pulls_digests_and_migrates_before_start(self):
+    def test_first_release_builds_and_pins_images_before_migration(self):
         result = self.run_release()
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
         migrate = next(i for i, c in enumerate(commands) if 'run' in c and c[-1] == 'migrate')
         start = next(i for i, c in enumerate(commands) if 'up' in c and 'worker' in c)
         self.assertLess(migrate, start)
-        self.assertFalse(any('--build' in c for c in commands))
+        builds = [c for c in commands if c[:2] == ['docker', 'build']]
+        self.assertEqual([c[c.index('--target') + 1] for c in builds], ['service', 'worker', 'web'])
+        self.assertTrue(all(commands.index(c) < migrate for c in builds))
+        self.assertEqual([c[-1] for c in commands if 'pull' in c], ['postgres'])
+        self.assertEqual((self.release / '.release.env').read_text(), self.manifest + 'PAA_DEPLOY_MODE=domain\n')
         self.assertEqual((self.root / 'current').resolve(), self.release)
         self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'ready')
 
@@ -151,15 +144,18 @@ class ReleaseTests(unittest.TestCase):
 
     def test_preflight_failures_leave_previous_release_running(self):
         previous = self.previous_release()
-        for failure in ('pull', 'key'):
+        for failure in ('build-service', 'build-worker', 'build-web', 'image-id', 'pull', 'key'):
             with self.subTest(failure=failure):
-                (self.release / '.release.env').write_text(self.manifest)
+                (self.release / '.release.env').unlink(missing_ok=True)
                 (self.release / '.env.company').unlink(missing_ok=True)
                 self.log.unlink(missing_ok=True)
                 result = self.run_release(failure)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual((self.root / 'current').resolve(), previous)
                 self.assertFalse(any('stop' in c or 'migrate' in c for c in self.commands()))
+                if failure.startswith('build-') or failure == 'image-id':
+                    self.assertFalse((self.release / '.release.env').exists())
+                    self.assertFalse((self.release / '.release.env.tmp').exists())
 
     def test_backup_failure_restores_previous_services_and_never_migrates(self):
         previous = self.previous_release()
@@ -184,59 +180,13 @@ class ReleaseTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'failed')
 
-    def test_missing_environment_or_invalid_manifest_never_contacts_docker(self):
+    def test_missing_environment_or_reused_release_never_contacts_docker(self):
         self.env_file.unlink()
         self.assertNotEqual(self.run_release().returncode, 0)
         self.env_file.touch()
-        (self.release / '.release.env').write_text('PAA_SERVICE_IMAGE=unsafe:latest\n')
+        (self.release / '.release.env').write_text(self.manifest)
         self.assertNotEqual(self.run_release().returncode, 0)
         self.assertFalse(any(c[0] == 'docker' for c in self.commands()))
-
-    def test_private_release_uses_temporary_credentials_even_for_older_releases(self):
-        existing_config = self.root / 'docker-config'
-        existing_config.mkdir()
-        (existing_config / 'config.json').write_text('existing-login')
-        marker = self.root / 'registry-config-path'
-        self.env.update(DOCKER_CONFIG=str(existing_config), REGISTRY_CONFIG_MARKER=str(marker))
-        # A selected historical revision may not contain the authentication wrapper.
-        (self.release / 'deploy/company/with-registry-auth.sh').unlink()
-        result = self.run_release(private=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertFalse(Path(marker.read_text()).exists())
-        self.assertEqual((existing_config / 'config.json').read_text(), 'existing-login')
-        self.assertNotIn('controlled-registry-token', result.stdout + result.stderr + self.log.read_text())
-        self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'ready')
-
-    def test_private_release_cleans_credentials_on_login_pull_or_migration_failure(self):
-        marker = self.root / 'registry-config-path'
-        self.env['REGISTRY_CONFIG_MARKER'] = str(marker)
-        for failure in ('login', 'pull', 'migrate'):
-            with self.subTest(failure=failure):
-                (self.release / '.release.env').write_text(self.manifest)
-                (self.release / '.env.company').unlink(missing_ok=True)
-                self.log.unlink(missing_ok=True)
-                result = self.run_release(failure, private=True)
-                self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(Path(marker.read_text()).exists())
-                self.assertNotIn('controlled-registry-token', result.stdout + result.stderr + self.log.read_text())
-                if failure == 'login':
-                    self.assertEqual(result.returncode, 17)
-                    self.assertEqual(len(self.commands()), 1)
-                elif failure == 'pull':
-                    self.assertFalse(any('stop' in c or 'migrate' in c for c in self.commands()))
-
-    def test_private_command_receives_no_token_on_stdin_and_cleans_up_on_termination(self):
-        marker = self.root / 'registry-config-path'
-        result = subprocess.run(
-            ['bash', str(REPO / 'deploy/company/with-registry-auth.sh'), 'deployment-test',
-             'bash', '-c', 'test -z "$(cat)" || exit 18; kill -TERM "$PPID"'],
-            input='controlled-registry-token\n',
-            env={**self.env, 'REGISTRY_CONFIG_MARKER': str(marker)},
-            capture_output=True, text=True, timeout=10,
-        )
-        self.assertEqual(result.returncode, 143, result.stderr)
-        self.assertFalse(Path(marker.read_text()).exists())
-        self.assertNotIn('controlled-registry-token', result.stdout + result.stderr + self.log.read_text())
 
     @unittest.skipUnless(shutil.which('docker'), 'Docker Compose CLI is unavailable')
     def test_real_compose_configuration_uses_only_images_and_supports_ip(self):
@@ -255,7 +205,12 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(config['name'], 'paa-company')
                 for name in ('migrate', 'api', 'worker', 'web'):
                     self.assertNotIn('build', config['services'][name])
-                    self.assertIn('@sha256:', config['services'][name]['image'])
+                    self.assertEqual(config['services'][name]['image'], 'sha256:' + 'a' * 64)
+                    self.assertEqual(config['services'][name]['pull_policy'], 'never')
+                worker = config['services']['worker']
+                self.assertEqual(float(worker['cpus']), 2.0)
+                self.assertEqual(int(worker['mem_limit']), 3 * 1024 ** 3)
+                self.assertEqual(int(worker['memswap_limit']), int(worker['mem_limit']))
                 command = config['services']['web'].get('command')
                 if mode == 'ip':
                     self.assertIn('/etc/caddy/Caddyfile.ip', command)
