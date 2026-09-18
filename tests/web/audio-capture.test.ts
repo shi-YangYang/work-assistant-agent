@@ -205,14 +205,12 @@ it('writes a finite WAV duration and bounded mono PCM for local recording playba
 })
 
 it('reuses a local recording preview without uploading or replacing the original', async () => {
-  const decode = vi
-    .fn()
-    .mockResolvedValue({
-      length: 16000,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      getChannelData: () => new Float32Array(16000),
-    })
+  const decode = vi.fn().mockResolvedValue({
+    length: 16000,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    getChannelData: () => new Float32Array(16000),
+  })
   vi.stubGlobal(
     'OfflineAudioContext',
     class {
