@@ -27,6 +27,16 @@ elif tool == 'sha256sum':
     for name in args:
         print(hashlib.sha256(Path(name).read_bytes()).hexdigest(), name)
 elif tool == 'docker':
+    if args[:2] == ['login', 'ghcr.io']:
+        assert args == ['login', 'ghcr.io', '--username', 'deployment-test', '--password-stdin']
+        assert sys.stdin.read().strip() == 'controlled-registry-token'
+        config = Path(os.environ['DOCKER_CONFIG'])
+        assert config.stat().st_mode & 0o777 == 0o700
+        (config / 'config.json').write_text('controlled-registry-token')
+        Path(os.environ['REGISTRY_CONFIG_MARKER']).write_text(str(config))
+        sys.exit(17 if os.environ.get('FAIL_AT') == 'login' else 0)
+    if os.environ.get('REQUIRE_REGISTRY_AUTH'):
+        assert (Path(os.environ['DOCKER_CONFIG']) / 'config.json').read_text() == 'controlled-registry-token'
     if args[:2] == ['volume', 'inspect']:
         sys.exit(0 if os.environ.get('EXISTING_VOLUME') else 1)
     if '--env-file' in args:
@@ -90,12 +100,16 @@ class ReleaseTests(unittest.TestCase):
             'DEPLOY_TEST_LOG': str(self.log),
         }
 
-    def run_release(self, failure=None):
+    def run_release(self, failure=None, private=False):
         env = dict(self.env)
         if failure:
             env['FAIL_AT'] = failure
+        command = ['bash', str(self.release / 'deploy/company/release.sh'), str(self.root), RELEASE_ID, 'domain']
+        if private:
+            env['REQUIRE_REGISTRY_AUTH'] = '1'
+            command = ['bash', str(REPO / 'deploy/company/with-registry-auth.sh'), 'deployment-test', *command]
         return subprocess.run(
-            ['bash', str(self.release / 'deploy/company/release.sh'), str(self.root), RELEASE_ID, 'domain'],
+            command, input='controlled-registry-token\n' if private else None,
             env=env, capture_output=True, text=True, timeout=20,
         )
 
@@ -177,6 +191,52 @@ class ReleaseTests(unittest.TestCase):
         (self.release / '.release.env').write_text('PAA_SERVICE_IMAGE=unsafe:latest\n')
         self.assertNotEqual(self.run_release().returncode, 0)
         self.assertFalse(any(c[0] == 'docker' for c in self.commands()))
+
+    def test_private_release_uses_temporary_credentials_even_for_older_releases(self):
+        existing_config = self.root / 'docker-config'
+        existing_config.mkdir()
+        (existing_config / 'config.json').write_text('existing-login')
+        marker = self.root / 'registry-config-path'
+        self.env.update(DOCKER_CONFIG=str(existing_config), REGISTRY_CONFIG_MARKER=str(marker))
+        # A selected historical revision may not contain the authentication wrapper.
+        (self.release / 'deploy/company/with-registry-auth.sh').unlink()
+        result = self.run_release(private=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(Path(marker.read_text()).exists())
+        self.assertEqual((existing_config / 'config.json').read_text(), 'existing-login')
+        self.assertNotIn('controlled-registry-token', result.stdout + result.stderr + self.log.read_text())
+        self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'ready')
+
+    def test_private_release_cleans_credentials_on_login_pull_or_migration_failure(self):
+        marker = self.root / 'registry-config-path'
+        self.env['REGISTRY_CONFIG_MARKER'] = str(marker)
+        for failure in ('login', 'pull', 'migrate'):
+            with self.subTest(failure=failure):
+                (self.release / '.release.env').write_text(self.manifest)
+                (self.release / '.env.company').unlink(missing_ok=True)
+                self.log.unlink(missing_ok=True)
+                result = self.run_release(failure, private=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(Path(marker.read_text()).exists())
+                self.assertNotIn('controlled-registry-token', result.stdout + result.stderr + self.log.read_text())
+                if failure == 'login':
+                    self.assertEqual(result.returncode, 17)
+                    self.assertEqual(len(self.commands()), 1)
+                elif failure == 'pull':
+                    self.assertFalse(any('stop' in c or 'migrate' in c for c in self.commands()))
+
+    def test_private_command_receives_no_token_on_stdin_and_cleans_up_on_termination(self):
+        marker = self.root / 'registry-config-path'
+        result = subprocess.run(
+            ['bash', str(REPO / 'deploy/company/with-registry-auth.sh'), 'deployment-test',
+             'bash', '-c', 'test -z "$(cat)" || exit 18; kill -TERM "$PPID"'],
+            input='controlled-registry-token\n',
+            env={**self.env, 'REGISTRY_CONFIG_MARKER': str(marker)},
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertFalse(Path(marker.read_text()).exists())
+        self.assertNotIn('controlled-registry-token', result.stdout + result.stderr + self.log.read_text())
 
     @unittest.skipUnless(shutil.which('docker'), 'Docker Compose CLI is unavailable')
     def test_real_compose_configuration_uses_only_images_and_supports_ip(self):

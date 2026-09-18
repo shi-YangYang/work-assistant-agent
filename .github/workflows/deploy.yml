@@ -54,6 +54,8 @@ jobs:
           [[ "$sha" =~ ^[a-f0-9]{40}$ ]] || { echo 'Use a full lowercase commit SHA'; exit 1; }
           git cat-file -e "$sha^{commit}"
           git merge-base --is-ancestor "$sha" "$DISPATCH_COMMIT"
+          # Keep the deployment wrapper from this workflow revision, including for older releases.
+          cp deploy/company/with-registry-auth.sh "$RUNNER_TEMP/with-registry-auth.sh"
           git checkout --detach "$sha"
           test -f deploy/company/release.sh
           echo "release_id=$sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
@@ -87,7 +89,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: company-release
-          path: ${{ runner.temp }}/company-release.tar.gz
+          path: |
+            ${{ runner.temp }}/company-release.tar.gz
+            ${{ runner.temp }}/with-registry-auth.sh
           retention-days: 7
           if-no-files-found: error
 
@@ -96,6 +100,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment: production
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -111,6 +118,8 @@ jobs:
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           RELEASE_ID: ${{ needs.build.outputs.release_id }}
           DEPLOY_MODE: ${{ inputs.mode }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
@@ -118,7 +127,8 @@ jobs:
           [[ "$DEPLOY_PATH" =~ ^/[a-zA-Z0-9_/-]+$ && "$DEPLOY_PATH" != / ]]
           [[ "$RELEASE_ID" =~ ^[a-f0-9]{40}-[0-9]+-[0-9]+$ ]]
           [[ "$DEPLOY_MODE" == domain || "$DEPLOY_MODE" == ip ]]
-          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS"
+          [[ "$REGISTRY_USER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*(\[bot\])?$ ]]
+          test -n "$SSH_KEY" && test -n "$KNOWN_HOSTS" && test -n "$REGISTRY_TOKEN"
           umask 077
           key="$RUNNER_TEMP/deploy-key"
           hosts="$RUNNER_TEMP/deploy-known-hosts"
@@ -129,7 +139,7 @@ jobs:
           target="$DEPLOY_USER@$DEPLOY_HOST"
           directory="$DEPLOY_PATH/releases/$RELEASE_ID"
           ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -p '$directory'"
-          scp "${options[@]}" -P "$DEPLOY_PORT" "$RUNNER_TEMP/release/company-release.tar.gz" "$target:$directory/release.tar.gz"
-          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" \
-            "tar -xzf '$directory/release.tar.gz' -C '$directory' && rm '$directory/release.tar.gz' && bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
+          scp "${options[@]}" -P "$DEPLOY_PORT" "$RUNNER_TEMP/release/company-release.tar.gz" "$RUNNER_TEMP/release/with-registry-auth.sh" "$target:$directory/"
+          printf '%s\n' "$REGISTRY_TOKEN" | ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" \
+            "tar -xzf '$directory/company-release.tar.gz' -C '$directory' && rm '$directory/company-release.tar.gz' && bash '$directory/with-registry-auth.sh' '$REGISTRY_USER' bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
           printf '### Deployment complete\n\nRelease: `%s`\n\nMode: `%s`\n' "$RELEASE_ID" "$DEPLOY_MODE" >> "$GITHUB_STEP_SUMMARY"
