@@ -187,18 +187,16 @@ GitHub 构建 Linux x86_64 的 Web、API 和 worker 镜像，推送至 GHCR；�
 
 **一次性配置 GitHub：**
 
-- 为 main 设置分支保护／Ruleset：通过 PR 合并，要求 `CI required` 通过，审查工作流和部署脚本的修改。手动发布不会替代代码审查。
-- 创建 `production` Environment，部署分支只允许 `main`，Required reviewers 选负责上线的管理员。若由同一人发起并确认发布，保留允许本人审批。这样有仓库写权限的人即使发起发布，也需经过该环境的审批。
-- 在该 Environment 中填写以下 Variables 和 Secrets；生产 SSH 私钥不要放到普通 CI 使用的仓库级 Secrets。
+在仓库 **Settings → Secrets and variables → Actions → New repository secret** 添加以下 4 项即可；不需要 Variables、Environment 或二次审批。
 
-| 类型 | 名称 | 内容 |
-| --- | --- | --- |
-| Variable | `DEPLOY_HOST` | 服务器公网 IPv4 或主机名 |
-| Variable | `DEPLOY_USER` | 专用部署用户，能够运行 Docker、读写部署目录 |
-| Variable | `DEPLOY_PORT` | SSH 端口，默认 `22` |
-| Variable | `DEPLOY_PATH` | 服务器部署根目录，默认 `/srv/work-assistant-agent`；使用字母、数字、连字符、下划线和斜线 |
-| Secret | `DEPLOY_SSH_KEY` | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
-| Secret | `DEPLOY_KNOWN_HOSTS` | 经服务器控制台核对指纹的 SSH known_hosts 记录；非 22 端口使用 `[主机]:端口` 格式 |
+| Secret | 内容 |
+| --- | --- |
+| `DEPLOY_HOST` | 服务器公网 IPv4 或主机名 |
+| `DEPLOY_USER` | 部署用户，能够运行 Docker、读写部署目录 |
+| `DEPLOY_SSH_KEY` | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
+| `DEPLOY_KNOWN_HOSTS` | 已核对服务器指纹的 SSH known_hosts 记录 |
+
+SSH 端口使用 `22`，部署目录使用 `/srv/work-assistant-agent`；需要其他值时修改工作流中的 `DEPLOY_PORT`／`DEPLOY_PATH`。有仓库写权限的维护者可从 main 手动发布，普通 PR 不会触发部署。
 
 **一次性准备服务器：**
 

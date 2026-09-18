@@ -1215,6 +1215,8 @@ tests/
 
 ## 19. Git 与用户已有修改
 
+所有 commit 信息（标题和正文）均使用中文，清楚说明本次改动。
+
 ### 项目补充约定：固定 dev 开发与 PR 合并
 
 长期在 `dev` 开发；用户要求提交并推送后，Agent 提供 `dev → main` 的 HTTP(S) PR 链接或 PR 创建页链接，由用户决定并执行合并。合并后由用户将最新 `main` 同步回 `dev`，也可另行要求 Agent 操作。取消此前 Agent 自动合并、自动回同步及持续等待 CI 的安排；`dev` 长期保留。用户要求仅本地 commit 或不要触发 CI 时，按该限制交付。具体见 [Git 分支工作规则](.ai/rules/git-branch-workflow.md)。
