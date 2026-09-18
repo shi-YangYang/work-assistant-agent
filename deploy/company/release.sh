@@ -29,6 +29,29 @@ assert url.scheme == "https" and url.hostname and not url.username and not url.p
 '
 previous=''
 if docker volume inspect paa-company_pgdata >/dev/null 2>&1; then
+  # Compose may create all declared volumes during the API preflight. A volume's
+  # existence alone does not mean PostgreSQL has ever initialized a database.
+  postgres_image=$(compose config --images postgres)
+  database_state=$(docker run --rm --network none --read-only \
+    --mount type=volume,src=paa-company_pgdata,dst=/database,readonly \
+    --entrypoint sh "$postgres_image" -c '
+if [ -f /database/PG_VERSION ]; then
+  printf initialized
+elif [ -z "$(ls -A /database)" ]; then
+  printf empty
+else
+  printf unknown
+fi
+')
+  case "$database_state" in
+    initialized) ;;
+    empty) ;;
+    *) echo 'Database volume is not empty but has no PG_VERSION; inspect it before deploying.' >&2; exit 1 ;;
+  esac
+else
+  database_state=empty
+fi
+if [[ "$database_state" == initialized ]]; then
   if [[ -L "$root/current" ]]; then
     previous=$(readlink -f "$root/current")
   elif [[ -f "$root/deploy/company/compose.yml" ]]; then

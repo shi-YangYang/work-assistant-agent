@@ -34,13 +34,23 @@ elif tool == 'docker':
         print('invalid-image' if os.environ.get('FAIL_AT') == 'image-id' else 'sha256:' + 'a' * 64)
         sys.exit(0)
     if args[:2] == ['volume', 'inspect']:
-        sys.exit(0 if os.environ.get('EXISTING_VOLUME') else 1)
+        created = Path(os.environ['DEPLOY_TEST_LOG']).with_suffix('.volume').exists()
+        sys.exit(0 if os.environ.get('EXISTING_VOLUME') or created else 1)
+    if '--mount' in args and 'dst=/database' in args[args.index('--mount') + 1]:
+        if os.environ.get('FAIL_AT') == 'inspect-database': sys.exit(1)
+        print(os.environ.get('DATABASE_STATE', 'empty'))
+        sys.exit(0)
     if '--env-file' in args:
         index = args.index('--env-file') + 1
         env_file = Path(args[index])
         if not env_file.exists():
             sys.exit('Missing environment file')
     failure = os.environ.get('FAIL_AT')
+    if 'config' in args and '--images' in args:
+        print('postgres:17.11-bookworm')
+    if 'run' in args and 'api' in args and 'PAA_MODEL_KEY_FILE' in args[-1]:
+        # Real Compose creates even the unused pgdata volume during this preflight.
+        Path(os.environ['DEPLOY_TEST_LOG']).with_suffix('.volume').touch()
     if failure == 'pull' and 'pull' in args:
         sys.exit(1)
     if failure == 'key' and 'run' in args and 'python' in args and 'api' in args:
@@ -50,6 +60,8 @@ elif tool == 'docker':
     if 'exec' in args and 'postgres' in args:
         if failure == 'backup': sys.exit(1)
         print('database-backup')
+    elif 'ps' in args and '--status' in args:
+        print(os.environ.get('RUNNING_CONTAINERS', 'existing-api existing-worker existing-web'))
     elif 'run' in args and 'cat' in args:
         sys.stdout.write('k' * 32)
     elif 'run' in args and 'tar -C /data/media -cf - .' in args:
@@ -107,6 +119,7 @@ class ReleaseTests(unittest.TestCase):
 
     def previous_release(self):
         self.env['EXISTING_VOLUME'] = '1'
+        self.env['DATABASE_STATE'] = 'initialized'
         previous = self.root / 'releases' / 'old'
         shutil.copytree(REPO / 'deploy/company', previous / 'deploy/company')
         (previous / '.env.company').symlink_to(self.env_file)
@@ -115,6 +128,8 @@ class ReleaseTests(unittest.TestCase):
         return previous
 
     def test_first_release_builds_and_pins_images_before_migration(self):
+        # HTTPS bootstrap can leave a deployment directory before the first DB startup.
+        shutil.copytree(REPO / 'deploy/company', self.root / 'deploy/company')
         result = self.run_release()
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = self.commands()
@@ -125,9 +140,33 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual([c[c.index('--target') + 1] for c in builds], ['service', 'worker', 'web'])
         self.assertTrue(all(commands.index(c) < migrate for c in builds))
         self.assertEqual([c[-1] for c in commands if 'pull' in c], ['postgres'])
+        self.assertFalse(any('pg_dump' in ' '.join(c) or 'stop' in c for c in commands))
         self.assertEqual((self.release / '.release.env').read_text(), self.manifest + 'PAA_DEPLOY_MODE=domain\n')
         self.assertEqual((self.root / 'current').resolve(), self.release)
         self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'ready')
+
+    def test_retry_with_an_empty_database_volume_does_not_back_up(self):
+        self.previous_release()
+        self.env['DATABASE_STATE'] = 'empty'
+        result = self.run_release()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(any('pg_dump' in ' '.join(c) for c in self.commands()))
+        self.assertFalse((self.root / 'previous').exists())
+
+    def test_unrecognized_database_contents_are_not_treated_as_a_new_install(self):
+        previous = self.previous_release()
+        self.env['DATABASE_STATE'] = 'unknown'
+        result = self.run_release()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.root / 'current').resolve(), previous)
+        self.assertFalse(any('stop' in c or 'migrate' in c for c in self.commands()))
+
+    def test_initialized_database_without_a_previous_deployment_is_rejected(self):
+        self.env['EXISTING_VOLUME'] = '1'
+        self.env['DATABASE_STATE'] = 'initialized'
+        result = self.run_release()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(any('stop' in c or 'migrate' in c for c in self.commands()))
 
     def test_upgrade_keeps_writers_stopped_between_backup_and_migration(self):
         previous = self.previous_release()
@@ -144,7 +183,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_preflight_failures_leave_previous_release_running(self):
         previous = self.previous_release()
-        for failure in ('build-service', 'build-worker', 'build-web', 'image-id', 'pull', 'key'):
+        for failure in ('build-service', 'build-worker', 'build-web', 'image-id', 'pull', 'key', 'inspect-database'):
             with self.subTest(failure=failure):
                 (self.release / '.release.env').unlink(missing_ok=True)
                 (self.release / '.env.company').unlink(missing_ok=True)
@@ -159,10 +198,11 @@ class ReleaseTests(unittest.TestCase):
 
     def test_backup_failure_restores_previous_services_and_never_migrates(self):
         previous = self.previous_release()
+        self.env['RUNNING_CONTAINERS'] = 'existing-web'
         result = self.run_release('backup')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual((self.root / 'current').resolve(), previous)
-        self.assertTrue(any('start' in c for c in self.commands()))
+        self.assertEqual([c for c in self.commands() if 'start' in c], [['docker', 'start', 'existing-web']])
         self.assertFalse(any('migrate' in c for c in self.commands()))
 
     def test_migration_failure_keeps_application_stopped_without_rollback(self):

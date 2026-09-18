@@ -16,9 +16,11 @@ mkdir "$target"
 key_target="$PAA_MODEL_KEY_BACKUP_DIR/company-$stamp"
 mkdir "$key_target"
 # A maintenance window stops writers; in-flight uncertain paid jobs retain the durable retry boundary.
+running=$(compose ps --status running -q web api worker)
 compose stop -t 190 web api worker
 resume=1
-trap '[ "$resume" -eq 0 ] || compose start api worker web' EXIT
+# Resume only containers that were running, without re-evaluating migration dependencies.
+trap 'status=$?; if [ "$resume" -eq 1 ] && [ -n "$running" ]; then docker start $running >/dev/null || status=1; fi; exit "$status"' EXIT
 trap 'exit 1' HUP INT TERM
 compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$target/database.dump"
 compose run --rm --no-deps --user root -T --entrypoint sh api -c 'tar -C /data/media -cf - .' > "$target/media.tar"
