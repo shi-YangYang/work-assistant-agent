@@ -39,7 +39,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Package the selected main revision
+      - name: Prepare the selected main revision
         env:
           REQUESTED_COMMIT: ${{ inputs.commit }}
           DISPATCH_COMMIT: ${{ github.sha }}
@@ -51,7 +51,8 @@ jobs:
           git cat-file -e "$sha:deploy/company/build.sh" || { echo 'Select a revision that supports server builds'; exit 1; }
           echo "RELEASE_ID=$sha-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           # Only tracked source files; no checkout credentials, ignored data or environment files.
-          git archive --format=tar.gz --output="$RUNNER_TEMP/company-source.tar.gz" "$sha"
+          mkdir "$RUNNER_TEMP/company-source"
+          git archive "$sha" | tar -xf - -C "$RUNNER_TEMP/company-source"
       - name: Upload source, build on server and deploy
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -78,8 +79,8 @@ jobs:
           options=(-i "$key" -o "UserKnownHostsFile=$hosts" -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
           target="$DEPLOY_USER@$DEPLOY_HOST"
           directory="$DEPLOY_PATH/releases/$RELEASE_ID"
-          ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" "mkdir -p '$DEPLOY_PATH/releases' && mkdir '$directory' && chmod 700 '$directory'"
-          scp "${options[@]}" -P "$DEPLOY_PORT" "$RUNNER_TEMP/company-source.tar.gz" "$target:$directory/"
+          bash deploy/company/upload.sh "$RUNNER_TEMP/company-source" "$target" "$DEPLOY_PATH" "$RELEASE_ID" "${options[@]}" -p "$DEPLOY_PORT"
+          echo 'Building images and deploying on the server'
           ssh "${options[@]}" -p "$DEPLOY_PORT" "$target" \
-            "tar -xzf '$directory/company-source.tar.gz' -C '$directory' && rm '$directory/company-source.tar.gz' && timeout --signal=TERM --kill-after=30s 50m bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
+            "timeout --signal=TERM --kill-after=30s 50m bash '$directory/deploy/company/release.sh' '$DEPLOY_PATH' '$RELEASE_ID' '$DEPLOY_MODE'"
           printf '### Deployment complete\n\nRelease: `%s`\n\nMode: `%s`\n' "$RELEASE_ID" "$DEPLOY_MODE" >> "$GITHUB_STEP_SUMMARY"

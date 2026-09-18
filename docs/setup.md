@@ -183,7 +183,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 合并代码不会自动上线。在 GitHub **Actions → Deploy Company Web → Run workflow** 发起发布，Branch 选 `main`；`commit` 留空发布点击时的 main，也可填写 main 历史中的完整 40 位提交 SHA。`mode` 选择 `domain` 或 `ip`。PR、普通 push 和合并均不会触发这个工作流，已有 CI 继续负责 PR 检查。
 
-GitHub 只打包指定版本的源码，经 SSH 上传；服务器依次构建 API、worker、Web 镜像，全部成功后再备份、迁移并更新服务。只构建公司 Web 及服务端，不打包 Electron；不用 GHCR、TCR 或镜像仓库账号。首次启用先合并发布文件到 main；指定历史 SHA 时，该版本须包含 `deploy/company/build.sh`。
+GitHub 提取指定版本的已跟踪源码，经 SSH 使用 rsync 增量上传，日志显示传输进度和统计。每次建立独立版本目录，按内容校验并复用服务器已完整上传的版本；固定模型不变时无需重复传输，删除的文件不会带入新版。首次没有可复用版本时上传全量；中断的上传不会进入构建。服务器依次构建 API、worker、Web 镜像，全部成功后再备份、迁移并更新服务。只构建公司 Web 及服务端，不打包 Electron；不用 GHCR、TCR 或镜像仓库账号。首次启用先合并发布文件到 main；指定历史 SHA 时，该版本须包含 `deploy/company/build.sh`。
 
 **一次性配置 GitHub：**
 
@@ -200,7 +200,7 @@ SSH 端口使用 `22`，部署目录使用 `/srv/work-assistant-agent`；需要�
 
 **一次性准备服务器：**
 
-1. 使用 Linux x86_64，安装 Docker Engine、Buildx、Compose 2.24.4 或更新版本，以及 Bash、Python 3、curl、flock 和 GNU coreutils。`docker buildx version` 须正常；Ubuntu 仓库安装的 Docker 可用 `sudo apt-get install docker-buildx` 补齐插件。GitHub 托管 runner 须能连接服务器 SSH，服务器须能获取基础镜像与构建依赖。Docker Hub 使用云厂商提供的加速器；腾讯云服务器可在 `/etc/docker/daemon.json` 的 `registry-mirrors` 配置 `https://mirror.ccs.tencentyun.com`，合并到已有配置后再重启 Docker，不要覆盖其他设置。
+1. 使用 Linux x86_64，安装 Docker Engine、Buildx、Compose 2.24.4 或更新版本，以及 Bash、Python 3、rsync、curl、flock 和 GNU coreutils。`docker buildx version` 须正常；Ubuntu 仓库安装的 Docker 可用 `sudo apt-get install docker-buildx` 补齐插件。GitHub 托管 runner 须能连接服务器 SSH，服务器须能获取基础镜像与构建依赖。Docker Hub 使用云厂商提供的加速器；腾讯云服务器可在 `/etc/docker/daemon.json` 的 `registry-mirrors` 配置 `https://mirror.ccs.tencentyun.com`，合并到已有配置后再重启 Docker，不要覆盖其他设置。
 2. 创建部署根目录并交给部署用户管理，将生产 `.env.company` 放在该目录，权限设为 `600`。按前文准备主密钥、HTTPS 和钉钉回调；IP 部署先完成证书申请与续期配置。CD 不自动签署证书服务协议或生成新的主密钥。
 3. 构建默认使用腾讯云 Debian／PyPI 源、npmmirror npm 源和南京大学 PyTorch CPU 源；固定依赖版本，保留 npm 完整性校验与 HTTPS 校验。只安装 CPU 版 PyTorch，不下载 CUDA。源地址集中在 `deploy/company/Dockerfile` 的 `ARG`，可按网络环境调整；不修改开发电脑的软件源或锁文件。
 4. 首次发布成功后，在服务器创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m paa_server.cli bootstrap-admin`。实际部署路径不同时替换路径。
