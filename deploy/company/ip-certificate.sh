@@ -9,9 +9,7 @@ case "${1:-}" in
     # Certbot reports hook errors but may still exit 0. Leave a marker until reload succeeds.
     umask 077
     touch "$reload_marker"
-    docker compose --env-file "$repo_root/.env.company" \
-      -f "$repo_root/deploy/company/compose.yml" \
-      -f "$repo_root/deploy/company/compose.ip.yml" \
+    PAA_DEPLOY_MODE=ip sh "$repo_root/deploy/company/compose.sh" \
       exec -T web caddy reload --config /etc/caddy/Caddyfile.ip --adapter caddyfile --force
     rm "$reload_marker"
     ;;

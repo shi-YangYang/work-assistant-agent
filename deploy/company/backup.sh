@@ -1,13 +1,15 @@
 #!/bin/sh
 # Run from repository root. Destination should be an operator-managed private backup volume.
 set -eu
+case "${1:-}" in ''|--keep-stopped) ;; *) echo 'Usage: backup.sh [--keep-stopped]' >&2; exit 1 ;; esac
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${PAA_BACKUP_DIR:?Set an existing private backup destination}"
 [ -d "$PAA_BACKUP_DIR" ] || { echo 'Backup directory does not exist' >&2; exit 1; }
 : "${PAA_MODEL_KEY_BACKUP_DIR:?Set a separate private master-key backup destination}"
 [ -d "$PAA_MODEL_KEY_BACKUP_DIR" ] || { echo 'Master-key backup directory does not exist' >&2; exit 1; }
 [ "$(cd "$PAA_MODEL_KEY_BACKUP_DIR" && pwd -P)" != "$(cd "$PAA_BACKUP_DIR" && pwd -P)" ] || { echo 'Keep key backups separate from database backups' >&2; exit 1; }
 umask 077
-compose() { docker compose --env-file .env.company -f deploy/company/compose.yml "$@"; }
+compose() { sh "$script_dir/compose.sh" "$@"; }
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 target="$PAA_BACKUP_DIR/company-$stamp"
 mkdir "$target"
@@ -15,7 +17,9 @@ key_target="$PAA_MODEL_KEY_BACKUP_DIR/company-$stamp"
 mkdir "$key_target"
 # A maintenance window stops writers; in-flight uncertain paid jobs retain the durable retry boundary.
 compose stop -t 190 web api worker
-trap 'compose start api worker web' EXIT INT TERM
+resume=1
+trap '[ "$resume" -eq 0 ] || compose start api worker web' EXIT
+trap 'exit 1' HUP INT TERM
 compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$target/database.dump"
 compose run --rm --no-deps --user root -T --entrypoint sh api -c 'tar -C /data/media -cf - .' > "$target/media.tar"
 compose run --rm --no-deps -T --entrypoint cat api /run/paa/model-master.key > "$key_target/model-master.key"
@@ -32,3 +36,4 @@ for backup in backups[:-7]:
     shutil.rmtree(backup)
 PY
 printf 'Backup complete: %s\n' "$target"
+[ "${1:-}" != --keep-stopped ] || resume=0
