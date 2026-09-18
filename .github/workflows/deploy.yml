@@ -99,7 +99,6 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    environment: production
     permissions:
       contents: read
       packages: read
@@ -110,10 +109,10 @@ jobs:
           path: ${{ runner.temp }}/release
       - name: Upload and deploy the selected release
         env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/srv/work-assistant-agent' }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PORT: '22'
+          DEPLOY_PATH: /srv/work-assistant-agent
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           RELEASE_ID: ${{ needs.build.outputs.release_id }}
