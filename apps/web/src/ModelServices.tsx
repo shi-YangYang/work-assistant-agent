@@ -10,7 +10,7 @@ import type {
   ModelSelection,
 } from '@paa/api-contracts'
 import { api, ApiError, dateLabel, useResource, write } from './api'
-import { AutoTextarea, BusyButton, ConflictRecovery, ErrorNotice, Modal } from './ui'
+import { AutoTextarea, BusyButton, ConflictRecovery, ErrorNotice, Modal, PanelSection } from './ui'
 import { useWorkspace } from './workspace'
 import { cleanServiceDraft, newModel, validateCompanyParameters } from './model-service-drafts'
 import type { ServiceDraft } from './model-service-drafts'
@@ -959,7 +959,7 @@ function Routing({
     setError('')
   }
   return (
-    <section className="model-routing">
+    <section className="sectioned-panel model-routing">
       {(['assistant', 'report', 'asr'] as const).map((purpose) => {
         const choice = value[purpose]
         const options = services.flatMap((service) =>
@@ -974,8 +974,18 @@ function Routing({
               )
             : null
         return (
-          <div className="panel routing-row" key={purpose}>
-            <h3>{purposeNames[purpose]}</h3>
+          <PanelSection
+            key={purpose}
+            title={purposeNames[purpose]}
+            status={
+              choice === 'follow'
+                ? '同工作助手'
+                : selected
+                  ? `${selected.service.name} · ${selected.model.model}`
+                  : '未配置'
+            }
+            defaultOpen={purpose === 'assistant'}
+          >
             <div className="routing-fields">
               <label>
                 使用的模型
@@ -1018,90 +1028,85 @@ function Routing({
               {choice === 'follow' && (
                 <p className="muted">使用工作助手当前分配的模型、推理预设和请求方式。</p>
               )}
-              {selected && typeof choice === 'object' && choice && (
+              {selected && typeof choice === 'object' && choice && purpose !== 'asr' && (
                 <>
-                  <p className="wrap-anywhere">{selected.model.model}</p>
-                  {purpose !== 'asr' && (
-                    <>
-                      <label>
-                        推理预设
-                        <select
-                          value={choice.presetId || ''}
-                          onChange={(e) =>
-                            change(purpose, { ...choice, presetId: e.target.value || null })
-                          }
-                        >
-                          <option value="">服务默认</option>
-                          {selected.model.presets.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="check-label">
-                        <input
-                          type="checkbox"
-                          checked={choice.streaming}
-                          onChange={(e) =>
-                            change(purpose, { ...choice, streaming: e.target.checked })
-                          }
-                        />
-                        使用流式接口
-                      </label>
-                    </>
-                  )}
+                  <label>
+                    推理预设
+                    <select
+                      value={choice.presetId || ''}
+                      onChange={(e) =>
+                        change(purpose, { ...choice, presetId: e.target.value || null })
+                      }
+                    >
+                      <option value="">服务默认</option>
+                      {selected.model.presets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={choice.streaming}
+                      onChange={(e) => change(purpose, { ...choice, streaming: e.target.checked })}
+                    />
+                    使用流式接口
+                  </label>
                 </>
               )}
             </div>
-          </div>
+          </PanelSection>
         )
       })}
-      <ErrorNotice>{error}</ErrorNotice>
-      {conflict && (
-        <ConflictRecovery
-          load={() => api<ModelRouting>('/settings/model-routing')}
-          render={(latest) => <p>服务端用途版本 {latest.revision}</p>}
-          keep={(latest) => {
-            setDraft('modelRouting', { ...value, revision: latest.revision })
-            setConflict(false)
-          }}
-          replace={(latest) => {
-            setDraft('modelRouting', latest)
-            setConflict(false)
-          }}
-        />
-      )}
-      <div className="form-actions editor-actions">
-        <BusyButton
-          className="primary"
-          busy={busy}
-          onClick={async () => {
-            setBusy(true)
-            try {
-              await write(
-                '/settings/model-routing',
-                {
-                  assistant: value.assistant,
-                  report: value.report,
-                  asr: value.asr,
-                  expectedRevision: value.revision,
-                },
-                'PUT',
-              )
-              setDraft('modelRouting', undefined)
-              refresh()
-              notify('用途分配已保存')
-            } catch (e) {
-              setError(e as Error)
-              setConflict(e instanceof ApiError && e.status === 409)
-            } finally {
-              setBusy(false)
-            }
-          }}
-        >
-          保存用途分配
-        </BusyButton>
+      <div className="panel-footer">
+        <ErrorNotice>{error}</ErrorNotice>
+        {conflict && (
+          <ConflictRecovery
+            load={() => api<ModelRouting>('/settings/model-routing')}
+            render={(latest) => <p>服务端用途版本 {latest.revision}</p>}
+            keep={(latest) => {
+              setDraft('modelRouting', { ...value, revision: latest.revision })
+              setConflict(false)
+            }}
+            replace={(latest) => {
+              setDraft('modelRouting', latest)
+              setConflict(false)
+            }}
+          />
+        )}
+        <div className="form-actions editor-actions">
+          <BusyButton
+            className="primary"
+            busy={busy}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await write(
+                  '/settings/model-routing',
+                  {
+                    assistant: value.assistant,
+                    report: value.report,
+                    asr: value.asr,
+                    expectedRevision: value.revision,
+                  },
+                  'PUT',
+                )
+                setDraft('modelRouting', undefined)
+                refresh()
+                notify('用途分配已保存')
+              } catch (e) {
+                setError(e as Error)
+                setConflict(e instanceof ApiError && e.status === 409)
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            保存用途分配
+          </BusyButton>
+        </div>
       </div>
     </section>
   )
