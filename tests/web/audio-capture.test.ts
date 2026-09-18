@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { monoWav, recordingPreview } from '../../apps/web/src/audio-preview'
 import {
   AudioCapture,
   appendRecordedFile,
@@ -183,4 +184,44 @@ it('stops at the remaining mixed-attachment budget without discarding recorded c
   recorder.onstop?.()
   expect(events.file).toHaveBeenCalledOnce()
   expect(events.file.mock.calls[0][0].size).toBe(14)
+})
+
+it('writes a finite WAV duration and bounded mono PCM for local recording playback', async () => {
+  const channels = [new Float32Array([-2, -0.5, 0.25, 2]), new Float32Array([-2, 0.5, 0.75, 2])]
+  const wav = monoWav({
+    length: 4,
+    sampleRate: 16000,
+    numberOfChannels: 2,
+    getChannelData: (i) => channels[i],
+  })
+  const buffer = await wav.arrayBuffer()
+  const header = new DataView(buffer)
+  expect(wav.type).toBe('audio/wav')
+  expect(new TextDecoder().decode(buffer.slice(0, 4))).toBe('RIFF')
+  expect(header.getUint32(4, true)).toBe(buffer.byteLength - 8)
+  expect(header.getUint16(22, true)).toBe(1)
+  expect(header.getUint32(40, true) / header.getUint32(28, true)).toBe(4 / 16000)
+  expect([44, 46, 48, 50].map((i) => header.getInt16(i, true))).toEqual([-32768, 0, 16383, 32767])
+})
+
+it('reuses a local recording preview without uploading or replacing the original', async () => {
+  const decode = vi.fn().mockResolvedValue({
+    length: 16000,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    getChannelData: () => new Float32Array(16000),
+  })
+  vi.stubGlobal(
+    'OfflineAudioContext',
+    class {
+      decodeAudioData = decode
+    },
+  )
+  const file = new File(['original recorded bytes'], 'voice.webm', { type: 'audio/webm' })
+  const first = recordingPreview(file)
+  const second = recordingPreview(file)
+  expect(first).toBe(second)
+  expect((await first).size).toBe(32044)
+  expect(decode).toHaveBeenCalledOnce()
+  expect(await file.text()).toBe('original recorded bytes')
 })
