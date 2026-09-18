@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBlocker } from 'react-router'
-import { ArrowLeft, Check, ChevronRight, Cpu, Plus, Search, Trash2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronRight,
+  Cpu,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+  FlaskConical,
+} from 'lucide-react'
 import type {
   CompanyModel,
   CompanyPreset,
@@ -12,7 +23,12 @@ import type {
 import { api, ApiError, dateLabel, useResource, write } from './api'
 import { AutoTextarea, BusyButton, ConflictRecovery, ErrorNotice, Modal, PanelSection } from './ui'
 import { useWorkspace } from './workspace'
-import { cleanServiceDraft, newModel, validateCompanyParameters } from './model-service-drafts'
+import {
+  appendServiceModels,
+  cleanServiceDraft,
+  serviceHasChanges,
+  validateCompanyParameters,
+} from './model-service-drafts'
 import type { ServiceDraft } from './model-service-drafts'
 import {
   changeModelProtocol,
@@ -50,6 +66,12 @@ export function ModelServices() {
     truncated: boolean
   } | null>(null)
   const [query, setQuery] = useState('')
+  const [picker, setPicker] = useState<'catalog' | 'manual' | null>(null)
+  const [pickedModels, setPickedModels] = useState<string[]>([])
+  const [manualModel, setManualModel] = useState('')
+  const [modelOpen, setModelOpen] = useState(false)
+  const [checkOpen, setCheckOpen] = useState(false)
+  const [assignServiceId, setAssignServiceId] = useState('')
   const [check, setCheck] = useState<ModelCheck | null>(null)
   const [testPurpose, setTestPurpose] = useState<Purpose>('assistant')
   const [testOpen, setTestOpen] = useState(false)
@@ -61,11 +83,17 @@ export function ModelServices() {
   const draft: ServiceDraft | undefined = selected
     ? (drafts[selected] ?? services.find((s) => s.id === selected))
     : undefined
-  const currentModel = draft?.models.find((m) => m.id === activeModel) ?? draft?.models[0]
+  const currentModel = draft?.models.find((m) => m.id === activeModel)
   const model =
     currentModel && draft ? resolveModelProtocol(draft.baseUrl, currentModel) : undefined
   const automaticMatch =
     model?.protocolMode === 'auto' && draft ? matchModelProtocol(draft.baseUrl, model.model) : null
+  const savedService = services.find((service) => service.id === draft?.id)
+  const dirty = !!draft && (serviceHasChanges(draft, savedService) || !!keys[draft.id])
+  const connectionReady =
+    !!draft?.name.trim() &&
+    !!draft.baseUrl.trim() &&
+    (!!keys[draft.id] || (draft.hasKey && draft.baseUrl === savedService?.baseUrl))
   const generation = useRef(0)
   const alive = useRef(true)
   const hasKeys = Object.values(keys).some(Boolean)
@@ -143,7 +171,7 @@ export function ModelServices() {
       window.dispatchEvent(new Event('paa-session-expired'))
     }
   }
-  const save = async (target = draft): Promise<boolean> => {
+  const save = async (target = draft, assign = false): Promise<boolean> => {
     if (!target) return false
     setBusy('save')
     setError('')
@@ -181,6 +209,10 @@ export function ModelServices() {
       generation.current++
       resource.refresh()
       workspace.notify('模型服务已保存')
+      if (assign) {
+        setAssignServiceId(saved.id)
+        setTab('routing')
+      }
       return true
     } catch (e) {
       if (alive.current) handleError(e)
@@ -212,8 +244,10 @@ export function ModelServices() {
         value.draftVersion !== version
       )
         return
-      if ('checks' in value) setCheck(value)
-      else setCatalog(value)
+      if ('checks' in value) {
+        setCheck(value)
+        setCheckOpen(true)
+      } else setCatalog(value)
     } catch (e) {
       if (alive.current && requestGeneration === generation.current) handleError(e)
     } finally {
@@ -248,6 +282,53 @@ export function ModelServices() {
       setBusy('')
     }
   }
+  const createService = () => {
+    const fresh: ServiceDraft = {
+      id: crypto.randomUUID(),
+      name: '新服务',
+      baseUrl: '',
+      models: [],
+      revision: 0,
+      hasKey: false,
+    }
+    update(fresh)
+    select(fresh.id)
+    setTab('services')
+  }
+  const addModels = (ids: string[]) => {
+    if (!draft) return
+    try {
+      const next = appendServiceModels(draft, ids)
+      const added = next.models.slice(draft.models.length)
+      if (!added.length) throw new Error('这些模型已经添加，请选择其它模型。')
+      update(next)
+      setPicker(null)
+      const unresolved = added.find(
+        (m) => m.protocolMode === 'auto' && !matchModelProtocol(draft.baseUrl, m.model).protocol,
+      )
+      if (unresolved) {
+        setActiveModel(unresolved.id)
+        setModelOpen(true)
+      }
+      workspace.notify(`已添加 ${added.length} 个模型，保存服务后生效`)
+    } catch (failure) {
+      setError(failure as Error)
+    }
+  }
+  const usesFor = (serviceId: string, modelId?: string) => {
+    const routing = resource.data?.routing
+    return (['assistant', 'report', 'asr'] as const)
+      .filter((purpose) => {
+        const choice = routing?.[purpose] === 'follow' ? routing.assistant : routing?.[purpose]
+        return (
+          choice &&
+          typeof choice === 'object' &&
+          choice.serviceId === serviceId &&
+          (!modelId || choice.modelId === modelId)
+        )
+      })
+      .map((purpose) => purposeNames[purpose])
+  }
   const allServices = [
     ...services,
     ...Object.values(drafts).filter((d) => !d.revision && !services.some((s) => s.id === d.id)),
@@ -258,12 +339,18 @@ export function ModelServices() {
         <div>
           <h2>模型服务管理</h2>
         </div>
+        {!draft && tab === 'services' && (
+          <button className="primary" disabled={!!busy || !resource.data} onClick={createService}>
+            <Plus size={16} /> 添加服务
+          </button>
+        )}
       </div>
       <div className="tabs" role="tablist" aria-label="模型管理页面">
         <button
           role="tab"
           aria-selected={tab === 'services'}
           className={tab === 'services' ? 'active' : ''}
+          disabled={!!busy}
           onClick={() => setTab('services')}
         >
           服务配置
@@ -272,12 +359,16 @@ export function ModelServices() {
           role="tab"
           aria-selected={tab === 'routing'}
           className={tab === 'routing' ? 'active' : ''}
-          onClick={() => setTab('routing')}
+          disabled={!!busy}
+          onClick={() => {
+            setAssignServiceId('')
+            setTab('routing')
+          }}
         >
           用途分配
         </button>
       </div>
-      <ErrorNotice>{resource.error}</ErrorNotice>
+      <ErrorNotice retry={resource.refresh}>{resource.error}</ErrorNotice>
       {resource.data?.routing.source === 'environment' && (
         <div className="notice model-environment">
           <details>
@@ -319,81 +410,109 @@ export function ModelServices() {
         </div>
       )}
       {tab === 'routing' ? (
-        <Routing
-          services={services}
-          initial={resource.data?.routing ?? null}
-          refresh={resource.refresh}
-        />
-      ) : (
-        <div className={`model-workspace ${selected ? 'editing' : ''}`}>
-          <aside className="model-service-list">
-            <div className="model-list-heading">
-              <strong>服务</strong>
-              <button
-                className="icon-button"
-                aria-label="添加模型服务"
-                onClick={() => {
-                  const fresh: ServiceDraft = {
-                    id: crypto.randomUUID(),
-                    name: '新服务',
-                    baseUrl: '',
-                    models: [],
-                    revision: 0,
-                    hasKey: false,
-                  }
-                  update(fresh)
-                  select(fresh.id)
-                }}
-              >
-                <Plus size={17} />
+        <>
+          {assignServiceId && (
+            <div className="model-next-step">
+              <Check size={18} />
+              <span>服务已保存，选择下方各功能使用的模型。</span>
+              <button className="text-button" onClick={() => setTab('services')}>
+                返回服务
               </button>
             </div>
-            {!allServices.length && <p className="muted">添加第一家服务</p>}
-            {allServices.map((service) => (
+          )}
+          {assignServiceId && !services.some((service) => service.id === assignServiceId) ? (
+            <p className="muted">正在更新可选模型…</p>
+          ) : (
+            <Routing
+              services={services}
+              initial={resource.data?.routing ?? null}
+              refresh={resource.refresh}
+            />
+          )}
+        </>
+      ) : !draft ? (
+        <section className="sectioned-panel service-overview" aria-label="模型服务列表">
+          <header className="service-overview-heading">
+            <h3>
+              已添加的服务 <span className="muted">{allServices.length}</span>
+            </h3>
+            <span className="muted">选择服务管理连接与模型</span>
+          </header>
+          {!resource.data && !resource.error && <p className="model-placeholder">正在读取服务…</p>}
+          {resource.data && !allServices.length && (
+            <div className="model-placeholder">
+              <Cpu size={32} />
+              <h3>添加你的第一个模型服务</h3>
+              <p>填写服务地址和密钥，添加模型后分配给各项功能。</p>
+              <button className="primary" onClick={createService}>
+                <Plus size={16} /> 添加服务
+              </button>
+            </div>
+          )}
+          {allServices.map((service) => {
+            const current = drafts[service.id] ?? service
+            const changed =
+              serviceHasChanges(
+                current,
+                services.find((item) => item.id === service.id),
+              ) || !!keys[service.id]
+            const purposes = usesFor(service.id)
+            return (
               <button
+                className="service-overview-row"
                 key={service.id}
-                className={selected === service.id ? 'selected' : ''}
                 onClick={() => select(service.id)}
               >
-                <Cpu size={17} />
-                <span>
-                  {drafts[service.id]?.name || service.name}
-                  <small>{service.revision ? `${service.models.length} 个模型` : '未保存'}</small>
+                <span className="service-symbol">
+                  <Cpu size={21} />
                 </span>
-                <ChevronRight size={14} />
-              </button>
-            ))}
-          </aside>
-          {!draft ? (
-            <div className="model-placeholder">
-              <Cpu size={28} />
-              <h3>选择或添加模型服务</h3>
-            </div>
-          ) : (
-            <section className="model-editor">
-              <button className="model-mobile-back text-button" onClick={() => select(null)}>
-                <ArrowLeft size={16} /> 服务列表
-              </button>
-              <div className="model-editor-heading">
-                <div>
-                  <h3>{draft.name || '新服务'}</h3>
-                  <span className="muted">
-                    {draft.revision ? `已保存版本 ${draft.revision}` : '尚未保存'} ·{' '}
-                    {check ? '查看本次检测' : '未测试当前编辑'}
+                <span className="service-overview-name">
+                  <strong>{current.name || '新服务'}</strong>
+                  <small>{current.baseUrl || '待填写连接信息'}</small>
+                </span>
+                <span className="service-overview-meta">
+                  <span>
+                    {current.models.length} 个模型{changed ? ' · 未保存' : ''}
                   </span>
-                </div>
-                <button
-                  className="icon-button danger"
-                  aria-label={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
-                  title={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
-                  disabled={!!busy}
-                  onClick={() => setRemoveOpen(true)}
-                >
-                  <Trash2 size={17} />
-                </button>
+                  <small>{purposes.length ? purposes.join(' · ') : '未分配用途'}</small>
+                </span>
+                <ChevronRight size={17} />
+              </button>
+            )
+          })}
+        </section>
+      ) : (
+        <div className="service-detail">
+          <div className="service-detail-toolbar">
+            <button className="text-button" disabled={!!busy} onClick={() => select(null)}>
+              <ArrowLeft size={16} /> 全部服务
+            </button>
+            <span className={`service-save-state${dirty ? ' changed' : ''}`}>
+              {dirty ? '有未保存的更改' : '已保存'}
+            </span>
+          </div>
+          <section className="sectioned-panel model-editor" key={draft.id}>
+            <header className="model-editor-heading">
+              <div>
+                <h3>{draft.name || '新服务'}</h3>
+                <span className="muted">{draft.models.length} 个模型</span>
               </div>
-              <fieldset disabled={!!busy}>
-                <legend>连接</legend>
+              <button
+                className="icon-button danger"
+                aria-label={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
+                title={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
+                disabled={!!busy}
+                onClick={() => setRemoveOpen(true)}
+              >
+                <Trash2 size={17} />
+              </button>
+            </header>
+            <PanelSection
+              title="连接信息"
+              status={draft.baseUrl || '待填写'}
+              defaultOpen={!draft.revision}
+            >
+              <fieldset disabled={!!busy} aria-label="连接信息">
                 <div className="field-grid connection-fields">
                   <label>
                     服务商预设
@@ -460,233 +579,96 @@ export function ModelServices() {
                   </label>
                 </div>
               </fieldset>
-              <div className="model-section-heading">
-                <h3>模型</h3>
+            </PanelSection>
+            <PanelSection title="可用模型" status={`${draft.models.length} / 32`} defaultOpen>
+              <div className="model-library-toolbar">
+                <span className="muted">选择模型进行设置或测试</span>
                 <div className="card-actions">
                   <BusyButton
                     busy={busy === 'models'}
-                    disabled={!!busy}
-                    onClick={() => void request('models')}
+                    disabled={!!busy || !connectionReady}
+                    onClick={() => {
+                      setQuery('')
+                      setPickedModels([])
+                      setPicker('catalog')
+                      void request('models')
+                    }}
                   >
-                    <Search size={15} />
-                    获取模型
+                    <Search size={15} /> 获取模型
                   </BusyButton>
                   <button
                     disabled={draft.models.length >= 32 || !!busy}
                     onClick={() => {
-                      const next = newModel('', draft.baseUrl)
-                      update({ ...draft, models: [...draft.models, next] })
-                      setActiveModel(next.id)
+                      setManualModel('')
+                      setError('')
+                      setPicker('manual')
                     }}
                   >
-                    <Plus size={15} />
-                    手动添加
+                    <Plus size={15} /> 手动添加
                   </button>
                 </div>
               </div>
-              {catalog && (
-                <div className="model-catalog">
-                  <label>
-                    搜索可用模型
-                    <input value={query} onChange={(e) => setQuery(e.target.value)} />
-                  </label>
-                  <small className="wrap-anywhere">
-                    目录：{catalog.source}
-                    {catalog.truncated ? '（目录有更多条目，可手动填写）' : ''}
+              {!draft.models.length && (
+                <div className="model-library-empty">
+                  <Cpu size={24} />
+                  <p>还没有添加模型</p>
+                  <small>
+                    {connectionReady
+                      ? '获取服务提供的模型列表，或手动输入模型 ID。'
+                      : '先填写服务地址和密钥，也可以手动添加模型。'}
                   </small>
-                  <div role="list" aria-label="可用模型目录">
-                    {catalog.models
-                      .filter((id) => id.toLowerCase().includes(query.toLowerCase()))
-                      .map((id) => (
-                        <button
-                          key={id}
-                          disabled={
-                            draft.models.length >= 32 || draft.models.some((m) => m.model === id)
-                          }
-                          onClick={() => {
-                            const next = newModel(id, draft.baseUrl)
-                            update({ ...draft, models: [...draft.models, next] })
-                            setActiveModel(next.id)
-                          }}
-                        >
-                          <span>{id}</span>
-                          <Plus size={14} />
-                        </button>
-                      ))}
-                    {!catalog.models.length && <p>目录为空；已选模型保留，你也可以手动添加。</p>}
-                  </div>
                 </div>
               )}
-              {!!draft.models.length && (
-                <label>
-                  当前模型
-                  <select
-                    value={model?.id}
-                    onChange={(e) => {
-                      generation.current++
-                      setActiveModel(e.target.value)
-                      setCheck(null)
-                      setCatalog(null)
-                    }}
-                  >
-                    {draft.models.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.model || '未填写模型 ID'} ·{' '}
-                        {m.protocolMode === 'auto' &&
-                        !matchModelProtocol(draft.baseUrl, m.model).protocol
-                          ? '待配置'
-                          : m.protocol === 'chat'
-                            ? '聊天'
-                            : '语音转写'}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {model && (
-                <fieldset disabled={!!busy} className="model-options">
-                  <legend>模型配置</legend>
-                  <div className="field-grid">
-                    <label>
-                      模型 ID
-                      <input
-                        value={model.model}
-                        maxLength={200}
-                        onChange={(e) => updateModel({ ...model, model: e.target.value })}
-                      />
-                    </label>
-                    <div className="model-protocol-status" role="status">
-                      {automaticMatch && !automaticMatch.protocol
-                        ? model.model
-                          ? automaticMatch.reason
-                          : '填写模型 ID 后自动匹配接口。'
-                        : `${automaticMatch ? '已自动匹配' : '当前接口'}：${protocolNames[model.protocol]}`}
-                    </div>
-                    <details className="model-advanced full-field" key={model.id}>
-                      <summary>高级设置</summary>
-                      <label>
-                        接口协议
-                        <select
-                          value={model.protocolMode === 'auto' ? 'auto' : model.protocol}
-                          onChange={(e) => {
-                            if (e.target.value === 'auto') {
-                              updateModel({ ...model, protocolMode: 'auto' })
-                            } else {
-                              const protocol = e.target.value as CompanyModel['protocol']
-                              updateModel({
-                                ...changeModelProtocol(model, protocol),
-                                protocolMode: 'manual',
-                              })
-                              setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
-                            }
+              <div className="model-library" role="list" aria-label="已添加模型">
+                {draft.models.map((item) => {
+                  const unresolved =
+                    item.protocolMode === 'auto' &&
+                    !matchModelProtocol(draft.baseUrl, item.model).protocol
+                  const purposes = usesFor(draft.id, item.id)
+                  return (
+                    <div className="model-library-row" role="listitem" key={item.id}>
+                      <div className="model-library-info">
+                        <strong>{item.model || '未填写模型 ID'}</strong>
+                        <small className={unresolved ? 'error-text' : ''}>
+                          {unresolved
+                            ? '需要选择接口协议'
+                            : item.protocol === 'chat'
+                              ? '聊天模型'
+                              : '语音转写'}
+                          {purposes.length ? ` · ${purposes.join('、')}` : ''}
+                        </small>
+                      </div>
+                      <div className="card-actions">
+                        <button
+                          disabled={!!busy}
+                          aria-label={`设置 ${item.model}`}
+                          onClick={() => {
+                            setActiveModel(item.id)
+                            setError('')
+                            setModelOpen(true)
                           }}
                         >
-                          <option value="auto">自动匹配</option>
-                          {Object.entries(protocolNames).map(([id, name]) => (
-                            <option key={id} value={id}>
-                              {name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </details>
-                    {automaticMatch && !automaticMatch.protocol ? null : model.protocol ===
-                      'chat' ? (
-                      <>
-                        <label className="check-label">
-                          <input
-                            type="checkbox"
-                            checked={model.streaming}
-                            onChange={(e) => updateModel({ ...model, streaming: e.target.checked })}
-                          />
-                          使用流式接口
-                        </label>
-                        <label>
-                          推理预设
-                          <select
-                            value={model.selectedPresetId || ''}
-                            onChange={(e) =>
-                              updateModel({ ...model, selectedPresetId: e.target.value || null })
-                            }
-                          >
-                            <option value="">服务默认</option>
-                            {model.presets.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <div className="card-actions full-field">
-                          <button
-                            disabled={model.presets.length >= 16}
-                            onClick={() => {
-                              setPreset({
-                                id: crypto.randomUUID(),
-                                name: '',
-                                mode: 'simple',
-                                value: '',
-                                parameters: {},
-                              })
-                              setPresetJson('{}')
-                            }}
-                          >
-                            添加预设
-                          </button>
-                          {model.selectedPresetId && (
-                            <>
-                              <button
-                                onClick={() => {
-                                  const p = model.presets.find(
-                                    (p) => p.id === model.selectedPresetId,
-                                  )!
-                                  setPreset(structuredClone(p))
-                                  setPresetJson(JSON.stringify(p.parameters, null, 2))
-                                }}
-                              >
-                                编辑预设
-                              </button>
-                              <button
-                                onClick={() =>
-                                  updateModel({
-                                    ...model,
-                                    presets: model.presets.filter(
-                                      (p) => p.id !== model.selectedPresetId,
-                                    ),
-                                    selectedPresetId: null,
-                                  })
-                                }
-                              >
-                                删除预设
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <label>
-                        识别语言（可选）
-                        <input
-                          value={model.language}
-                          disabled={model.protocol === 'dashscope-asr'}
-                          placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
-                          maxLength={20}
-                          onChange={(e) => updateModel({ ...model, language: e.target.value })}
-                        />
-                      </label>
-                    )}
-                    <button
-                      className="text-button danger full-field"
-                      onClick={() => {
-                        update({ ...draft, models: draft.models.filter((m) => m.id !== model.id) })
-                        setActiveModel('')
-                      }}
-                    >
-                      移除此模型配置
-                    </button>
-                  </div>
-                </fieldset>
-              )}
+                          <SlidersHorizontal size={15} /> 设置
+                        </button>
+                        <button
+                          disabled={!!busy || !connectionReady || unresolved}
+                          aria-label={`测试 ${item.model}`}
+                          onClick={() => {
+                            setActiveModel(item.id)
+                            setTestPurpose(item.protocol === 'chat' ? 'assistant' : 'asr')
+                            setError('')
+                            setTestOpen(true)
+                          }}
+                        >
+                          <FlaskConical size={15} /> 测试
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </PanelSection>
+            <div className="model-editor-feedback">
               <ErrorNotice>{error}</ErrorNotice>
               {conflict && draft.revision > 0 && (
                 <ConflictRecovery
@@ -705,51 +687,332 @@ export function ModelServices() {
                   }}
                 />
               )}
-              <div className="model-savebar">
+            </div>
+            <footer className="model-savebar">
+              <span className="muted">
+                {dirty
+                  ? '保存后生效'
+                  : draft.models.length
+                    ? '选择各项功能使用的模型'
+                    : '添加模型后可设置用途'}
+              </span>
+              <button disabled={!!busy || !connectionReady} onClick={() => void save()}>
+                保存服务
+              </button>
+              <BusyButton
+                className="primary"
+                busy={busy === 'save'}
+                disabled={!!busy || !connectionReady || !draft.models.length}
+                onClick={() => {
+                  if (dirty) void save(draft, true)
+                  else {
+                    setAssignServiceId('')
+                    setTab('routing')
+                  }
+                }}
+              >
+                {dirty ? '保存并设置用途' : '设置用途'} <ArrowRight size={15} />
+              </BusyButton>
+            </footer>
+          </section>
+        </div>
+      )}
+      {picker && draft && (
+        <Modal
+          title={picker === 'catalog' ? '添加可用模型' : '手动添加模型'}
+          className="model-picker-dialog"
+          onClose={() => {
+            if (!busy) setPicker(null)
+          }}
+        >
+          {picker === 'manual' ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                addModels([manualModel])
+              }}
+            >
+              <label>
+                模型 ID
+                <input
+                  autoFocus
+                  required
+                  maxLength={200}
+                  placeholder="例如 qwen-plus"
+                  value={manualModel}
+                  onChange={(event) => setManualModel(event.target.value)}
+                />
+              </label>
+              <ErrorNotice>{error}</ErrorNotice>
+              <div className="form-actions">
+                <button type="button" onClick={() => setPicker(null)}>
+                  取消
+                </button>
+                <button className="primary" disabled={!manualModel.trim()}>
+                  添加模型
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              {busy === 'models' && <p role="status">正在获取模型列表…</p>}
+              <ErrorNotice>{error}</ErrorNotice>
+              {catalog && (
+                <>
+                  <label className="model-picker-search">
+                    <Search size={16} />
+                    <input
+                      aria-label="搜索可用模型"
+                      placeholder="搜索模型 ID"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                  </label>
+                  <div className="model-picker-list" aria-label="可用模型目录">
+                    {catalog.models
+                      .filter((id) => id.toLowerCase().includes(query.toLowerCase()))
+                      .map((id) => {
+                        const added = draft.models.some((item) => item.model === id)
+                        const checked = pickedModels.includes(id)
+                        return (
+                          <label key={id}>
+                            <input
+                              type="checkbox"
+                              checked={added || checked}
+                              disabled={
+                                added ||
+                                (!checked && pickedModels.length + draft.models.length >= 32)
+                              }
+                              onChange={(event) =>
+                                setPickedModels((previous) =>
+                                  event.target.checked
+                                    ? [...previous, id]
+                                    : previous.filter((value) => value !== id),
+                                )
+                              }
+                            />
+                            <span>{id}</span>
+                            {added && <small>已添加</small>}
+                          </label>
+                        )
+                      })}
+                    {!catalog.models.some((id) =>
+                      id.toLowerCase().includes(query.toLowerCase()),
+                    ) && <p className="muted">没有找到匹配的模型，可手动添加。</p>}
+                  </div>
+                  {catalog.truncated && (
+                    <small className="muted">列表未完全返回，可手动输入其它模型 ID。</small>
+                  )}
+                </>
+              )}
+              <div className="form-actions model-picker-actions">
+                <span className="muted">已选 {pickedModels.length} 个</span>
                 <button
-                  disabled={!model || !!busy}
+                  disabled={!!busy}
                   onClick={() => {
-                    setTestPurpose(model?.protocol === 'chat' ? 'assistant' : 'asr')
-                    setTestOpen(true)
+                    setManualModel(query)
+                    setError('')
+                    setPicker('manual')
                   }}
                 >
-                  测试配置
+                  手动输入
                 </button>
-                <BusyButton
+                <button
                   className="primary"
-                  busy={busy === 'save'}
-                  disabled={!!busy}
-                  onClick={() => void save()}
+                  disabled={!!busy || !pickedModels.length}
+                  onClick={() => addModels(pickedModels)}
                 >
-                  保存服务
-                </BusyButton>
+                  添加所选模型
+                </button>
               </div>
-              {check && (
-                <section className="model-check">
-                  <h3>本次检测</h3>
-                  <p className="wrap-anywhere">
-                    {check.service} · {check.model}
-                  </p>
-                  <small>
-                    {dateLabel(check.time)} · {check.elapsedMs} ms · 草稿基于版本 {check.revision}
-                  </small>
-                  {check.checks.map((item) => (
-                    <p key={item.name} className={item.state === 'failed' ? 'error-text' : ''}>
-                      {item.state === 'passed' ? <Check size={15} /> : null} {item.name}：
-                      {{ passed: '通过', failed: '失败', untested: '未测试' }[item.state]}
-                      {item.message && `，${item.message}`}
-                    </p>
-                  ))}
-                  <small>
-                    {check.usage
-                      ? `用量：${JSON.stringify(check.usage)}`
-                      : '服务未返回用量；费用未知。'}
-                  </small>
-                </section>
-              )}
-            </section>
+            </>
           )}
-        </div>
+        </Modal>
+      )}
+      {modelOpen && model && draft && (
+        <Modal
+          title={`设置 ${model.model || '模型'}`}
+          className="model-settings-dialog"
+          onClose={() => setModelOpen(false)}
+        >
+          <fieldset disabled={!!busy} className="model-options" aria-label="模型配置">
+            <div className="field-grid">
+              <label>
+                模型 ID
+                <input
+                  value={model.model}
+                  maxLength={200}
+                  onChange={(e) => updateModel({ ...model, model: e.target.value })}
+                />
+              </label>
+              <div className="model-protocol-status" role="status">
+                {automaticMatch && !automaticMatch.protocol
+                  ? model.model
+                    ? automaticMatch.reason
+                    : '填写模型 ID 后自动匹配接口。'
+                  : `${automaticMatch ? '已自动匹配' : '当前接口'}：${protocolNames[model.protocol]}`}
+              </div>
+              <details
+                className="model-advanced full-field"
+                key={model.id}
+                open={!!automaticMatch && !automaticMatch.protocol}
+              >
+                <summary>接口与高级设置</summary>
+                <label>
+                  接口协议
+                  <select
+                    value={model.protocolMode === 'auto' ? 'auto' : model.protocol}
+                    onChange={(e) => {
+                      if (e.target.value === 'auto') {
+                        updateModel({ ...model, protocolMode: 'auto' })
+                      } else {
+                        const protocol = e.target.value as CompanyModel['protocol']
+                        updateModel({
+                          ...changeModelProtocol(model, protocol),
+                          protocolMode: 'manual',
+                        })
+                        setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
+                      }
+                    }}
+                  >
+                    <option value="auto">自动匹配</option>
+                    {Object.entries(protocolNames).map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </details>
+              {automaticMatch && !automaticMatch.protocol ? null : model.protocol === 'chat' ? (
+                <>
+                  <label className="check-label">
+                    <input
+                      type="checkbox"
+                      checked={model.streaming}
+                      onChange={(e) => updateModel({ ...model, streaming: e.target.checked })}
+                    />
+                    使用流式接口
+                  </label>
+                  <label>
+                    推理预设
+                    <select
+                      value={model.selectedPresetId || ''}
+                      onChange={(e) =>
+                        updateModel({ ...model, selectedPresetId: e.target.value || null })
+                      }
+                    >
+                      <option value="">服务默认</option>
+                      {model.presets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="card-actions full-field">
+                    <button
+                      disabled={model.presets.length >= 16}
+                      onClick={() => {
+                        setPreset({
+                          id: crypto.randomUUID(),
+                          name: '',
+                          mode: 'simple',
+                          value: '',
+                          parameters: {},
+                        })
+                        setPresetJson('{}')
+                      }}
+                    >
+                      添加预设
+                    </button>
+                    {model.selectedPresetId && (
+                      <>
+                        <button
+                          onClick={() => {
+                            const p = model.presets.find((p) => p.id === model.selectedPresetId)!
+                            setPreset(structuredClone(p))
+                            setPresetJson(JSON.stringify(p.parameters, null, 2))
+                          }}
+                        >
+                          编辑预设
+                        </button>
+                        <button
+                          onClick={() =>
+                            updateModel({
+                              ...model,
+                              presets: model.presets.filter((p) => p.id !== model.selectedPresetId),
+                              selectedPresetId: null,
+                            })
+                          }
+                        >
+                          删除预设
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <label>
+                  识别语言（可选）
+                  <input
+                    value={model.language}
+                    disabled={model.protocol === 'dashscope-asr'}
+                    placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
+                    maxLength={20}
+                    onChange={(e) => updateModel({ ...model, language: e.target.value })}
+                  />
+                </label>
+              )}
+              <button
+                className="text-button danger full-field"
+                onClick={() => {
+                  update({ ...draft, models: draft.models.filter((m) => m.id !== model.id) })
+                  setActiveModel('')
+                  setModelOpen(false)
+                }}
+              >
+                移除此模型配置
+              </button>
+            </div>
+          </fieldset>
+          <ErrorNotice>{error}</ErrorNotice>
+          <div className="form-actions">
+            <span className="muted">完成后记得保存服务</span>
+            <button className="primary" onClick={() => setModelOpen(false)}>
+              完成
+            </button>
+          </div>
+        </Modal>
+      )}
+      {checkOpen && check && (
+        <Modal title="模型测试结果" onClose={() => setCheckOpen(false)}>
+          <section className="model-check">
+            <p className="wrap-anywhere">
+              {check.service} · {check.model}
+            </p>
+            <small>
+              {dateLabel(check.time)} · {check.elapsedMs} ms
+            </small>
+            {check.checks.map((item) => (
+              <p key={item.name} className={item.state === 'failed' ? 'error-text' : ''}>
+                {item.state === 'passed' ? <Check size={15} /> : null} {item.name}：
+                {{ passed: '通过', failed: '失败', untested: '未测试' }[item.state]}
+                {item.message && `，${item.message}`}
+              </p>
+            ))}
+            <small>
+              {check.usage
+                ? Object.entries(check.usage)
+                    .map(([name, count]) => `${name}：${count}`)
+                    .join(' · ')
+                : '服务未返回用量。'}
+            </small>
+          </section>
+          <div className="form-actions">
+            <button onClick={() => setCheckOpen(false)}>关闭</button>
+          </div>
+        </Modal>
       )}
       {removeOpen && draft && (
         <Modal
