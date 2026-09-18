@@ -31,6 +31,28 @@ export function newModel(model = '', baseUrl = ''): CompanyModel {
     language: '',
   })
 }
+export function appendServiceModels(draft: ServiceDraft, ids: string[]): ServiceDraft {
+  const existing = new Set(draft.models.map((model) => model.model))
+  const additions = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].filter(
+    (id) => !existing.has(id),
+  )
+  if (additions.some((id) => id.length > 200)) throw new Error('模型 ID 不能超过 200 个字符。')
+  if (draft.models.length + additions.length > 32)
+    throw new Error('每家服务最多添加 32 个模型，请减少选择。')
+  return {
+    ...draft,
+    models: [...draft.models, ...additions.map((id) => newModel(id, draft.baseUrl))],
+  }
+}
+
+export function serviceHasChanges(draft: ServiceDraft, saved?: CompanyService): boolean {
+  return (
+    !saved ||
+    draft.name !== saved.name ||
+    draft.baseUrl !== saved.baseUrl ||
+    JSON.stringify(draft.models) !== JSON.stringify(saved.models)
+  )
+}
 export function validateCompanyParameters(value: unknown) {
   validateParameters(value)
   const protectedResources = new Set([

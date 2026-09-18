@@ -55,6 +55,12 @@ export function matchModelProtocol(
   const provider = detectServicePreset(baseUrl)
   if (provider === 'custom')
     return { protocol: null, reason: '此服务尚无自动匹配规则，请在高级设置中选择接口协议。' }
+  if (provider === 'aliyun-token-plan' && /^qwen3-asr-flash(?:-|$)/.test(model))
+    return {
+      protocol: null,
+      reason:
+        'Token Plan 的语音识别请使用 qwen-audio-3.0-asr-flash；qwen3-asr-flash 适用于百炼按量服务。',
+    }
   // Explicit synchronous families only: filetrans, realtime, TTS and image
   // generation use different APIs and must never fall through to chat.
   if (/^qwen-audio-3\.0-asr-flash(?:-\d{4}-\d{2}-\d{2})?$/.test(model))
@@ -67,7 +73,10 @@ export function matchModelProtocol(
           reason: '此模型需要 OpenAI 兼容服务地址，请使用以 /compatible-mode/v1 结尾的地址。',
         }
   }
-  if (/(?:filetrans|realtime|tts)/.test(model) || /^(?:wan|happyhorse|qwen-image)/.test(model)) {
+  if (
+    /(?:filetrans|realtime|streaming|tts)/.test(model) ||
+    /^(?:wan|happyhorse|qwen-image)/.test(model)
+  ) {
     return {
       protocol: null,
       reason: '此模型需要尚未支持的接口；如通过兼容网关接入，可在高级设置中手动选择。',

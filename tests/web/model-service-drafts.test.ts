@@ -3,6 +3,8 @@ import {
   cleanServiceDraft,
   newModel,
   validateCompanyParameters,
+  appendServiceModels,
+  serviceHasChanges,
 } from '../../apps/web/src/model-service-drafts'
 import {
   changeModelProtocol,
@@ -14,6 +16,55 @@ import {
 } from '../../apps/web/src/model-service-presets'
 
 describe('company model drafts', () => {
+  it('adds a catalog selection together, preserving existing model settings and rejecting overflow', () => {
+    const draft = {
+      id: 'service',
+      name: '测试服务',
+      baseUrl: servicePresets['aliyun-beijing'].baseUrl,
+      models: [{ ...newModel('qwen-plus'), streaming: false }],
+      revision: 1,
+      hasKey: true,
+    }
+    const result = appendServiceModels(draft, [
+      ' qwen-plus ',
+      'qwen-turbo',
+      'qwen-turbo',
+      '',
+      'qwen3-asr-flash',
+    ])
+    expect(result.models.map((model) => model.model)).toEqual([
+      'qwen-plus',
+      'qwen-turbo',
+      'qwen3-asr-flash',
+    ])
+    expect(result.models[0].streaming).toBe(false)
+    expect(result.models[2].protocol).toBe('qwen-asr')
+    expect(draft.models).toHaveLength(1)
+    expect(() =>
+      appendServiceModels(
+        draft,
+        Array.from({ length: 32 }, (_, i) => `model-${i}`),
+      ),
+    ).toThrow('32')
+    expect(() => appendServiceModels(draft, ['a'.repeat(201)])).toThrow('200')
+  })
+  it('distinguishes unsaved connection and model edits from a saved service', () => {
+    const saved = {
+      id: 'saved',
+      name: '服务',
+      baseUrl: 'https://example.com/v1',
+      models: [newModel('model')],
+      revision: 1,
+      hasKey: true,
+      updatedAt: '2026-01-01',
+    }
+    expect(serviceHasChanges(cleanServiceDraft(saved), saved)).toBe(false)
+    expect(serviceHasChanges({ ...saved, name: '新名称' }, saved)).toBe(true)
+    expect(
+      serviceHasChanges({ ...saved, models: [{ ...saved.models[0], streaming: false }] }, saved),
+    ).toBe(true)
+    expect(serviceHasChanges(saved)).toBe(true)
+  })
   it('retains ordinary edits without retaining write-only credentials', () => {
     const model = newModel('long-model-id')
     const input = {
@@ -68,10 +119,11 @@ describe('service presets and protocol selection', () => {
   })
   it.each([
     ['qwen-audio-3.0-asr-flash', 'dashscope-asr'],
-    ['qwen3-asr-flash-2026-02-10', 'qwen-asr'],
+    ['qwen3-asr-flash-2026-02-10', null],
     ['deepseek-v4.1-flash', 'chat'],
     ['qwen3.8-max', 'chat'],
     ['qwen-audio-3.0-asr-flash-filetrans', null],
+    ['qwen-audio-3.0-asr-flash-streaming', null],
     ['qwen3-asr-flash-realtime', null],
     ['qwen-audio-3.0-tts-plus', null],
     ['wan2.7-image', null],
@@ -83,6 +135,12 @@ describe('service presets and protocol selection', () => {
     else expect(() => requireModelProtocols(tokenPlan, [model])).toThrow()
   })
   it('does not infer the same model on an unknown gateway or unsupported region', () => {
+    expect(matchModelProtocol(tokenPlan, 'qwen3-asr-flash').reason).toContain(
+      'qwen-audio-3.0-asr-flash',
+    )
+    expect(
+      matchModelProtocol(servicePresets['aliyun-beijing'].baseUrl, 'qwen3-asr-flash').protocol,
+    ).toBe('qwen-asr')
     for (const baseUrl of [
       'https://gateway.example/v1',
       'https://dashscope-us.aliyuncs.com/compatible-mode/v1',

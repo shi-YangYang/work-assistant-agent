@@ -7,7 +7,7 @@ import { captureDiagnostics, copyText, diagnosticText } from './diagnostics'
 import { useCursorPage } from './list-state'
 import { Pagination } from './ListControls'
 import { useWorkspace } from './workspace'
-import { AutoTextarea, BusyButton, ErrorNotice, Modal } from './ui'
+import { AutoTextarea, BusyButton, ErrorNotice, Modal, PanelSection } from './ui'
 
 type FeedbackDraft = {
   description: string
@@ -77,128 +77,136 @@ export function SupportPage() {
     <div className="settings-page support-page">
       <h2>问题反馈</h2>
       <p className="muted">描述遇到的问题，由本公司管理员处理。</p>
-      <div className="support-grid">
-        <form
-          className="panel support-compose"
-          aria-label="提交反馈"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void submit()
-          }}
+      <div className="sectioned-panel">
+        <PanelSection title="提交反馈" defaultOpen>
+          <form
+            className="support-compose"
+            aria-label="提交反馈"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void submit()
+            }}
+          >
+            <label>
+              问题描述
+              <AutoTextarea
+                required
+                maxLength={4000}
+                value={draft.description}
+                disabled={busy}
+                readOnly={!!draft.pending}
+                onChange={(event) =>
+                  setDraft('support', { ...draft, description: event.target.value })
+                }
+                placeholder="你做了什么，遇到了什么问题？"
+              />
+            </label>
+            <details className="support-diagnostics">
+              <summary>查看本次诊断摘要</summary>
+              <p className="muted">
+                仅包含以下环境信息，不自动采集聊天、文件或完整网址。请勿在描述中填写密码或密钥。
+              </p>
+              <pre className="diagnostic-summary">{diagnosticText(draft.diagnostics)}</pre>
+            </details>
+            {draft.pending && (
+              <p className="muted">提交结果待确认，请原样重试；本次反馈不会重复创建。</p>
+            )}
+            <ErrorNotice>{error}</ErrorNotice>
+            <div className="form-actions">
+              <button
+                type="button"
+                onClick={() =>
+                  void copyText(text).then(
+                    () => notify('已复制反馈信息'),
+                    (failure: Error) => setError(failure),
+                  )
+                }
+              >
+                复制反馈信息
+              </button>
+              <BusyButton
+                className="primary"
+                busy={busy}
+                disabled={!!retryWait || !draft.description.trim()}
+              >
+                {retryWait
+                  ? `${retryWait} 秒后再试`
+                  : draft.pending
+                    ? '原样重试，确认提交'
+                    : '提交反馈'}
+              </BusyButton>
+            </div>
+          </form>
+        </PanelSection>
+        <PanelSection
+          title="反馈记录"
+          status={
+            list.data?.items.length === 0 ? '暂无反馈' : scope === 'all' ? '公司反馈' : '我的反馈'
+          }
         >
-          <label>
-            问题描述
-            <AutoTextarea
-              required
-              maxLength={4000}
-              value={draft.description}
-              disabled={busy}
-              readOnly={!!draft.pending}
-              onChange={(event) =>
-                setDraft('support', { ...draft, description: event.target.value })
-              }
-              placeholder="你做了什么，遇到了什么问题？"
-            />
-          </label>
-          <details className="support-diagnostics">
-            <summary>查看本次诊断摘要</summary>
-            <p className="muted">
-              仅包含以下环境信息，不自动采集聊天、文件或完整网址。请勿在描述中填写密码或密钥。
-            </p>
-            <pre className="diagnostic-summary">{diagnosticText(draft.diagnostics)}</pre>
-          </details>
-          {draft.pending && (
-            <p className="muted">提交结果待确认，请原样重试；本次反馈不会重复创建。</p>
-          )}
-          <ErrorNotice>{error}</ErrorNotice>
-          <div className="form-actions">
-            <button
-              type="button"
-              onClick={() =>
-                void copyText(text).then(
-                  () => notify('已复制反馈信息'),
-                  (failure: Error) => setError(failure),
-                )
-              }
-            >
-              复制反馈信息
-            </button>
-            <BusyButton
-              className="primary"
-              busy={busy}
-              disabled={!!retryWait || !draft.description.trim()}
-            >
-              {retryWait
-                ? `${retryWait} 秒后再试`
-                : draft.pending
-                  ? '原样重试，确认提交'
-                  : '提交反馈'}
-            </BusyButton>
-          </div>
-        </form>
-        <section className="panel support-history" aria-labelledby="support-history-title">
-          <header className="support-heading">
-            <h3 id="support-history-title">反馈记录</h3>
-            <div className="support-filters">
-              {admin && (
+          <div className="support-history">
+            <header className="support-heading">
+              <div className="support-filters">
+                {admin && (
+                  <label>
+                    查看范围
+                    <select
+                      value={scope}
+                      onChange={(event) => list.filter({ scope: event.target.value })}
+                    >
+                      <option value="mine">我的反馈</option>
+                      <option value="all">公司反馈</option>
+                    </select>
+                  </label>
+                )}
                 <label>
-                  查看范围
+                  处理状态
                   <select
-                    value={scope}
-                    onChange={(event) => list.filter({ scope: event.target.value })}
+                    value={filterState}
+                    onChange={(event) => list.filter({ state: event.target.value })}
                   >
-                    <option value="mine">我的反馈</option>
-                    <option value="all">公司反馈</option>
+                    <option value="">全部</option>
+                    <option value="pending">待处理</option>
+                    <option value="resolved">已处理</option>
                   </select>
                 </label>
-              )}
-              <label>
-                处理状态
-                <select
-                  value={filterState}
-                  onChange={(event) => list.filter({ state: event.target.value })}
-                >
-                  <option value="">全部</option>
-                  <option value="pending">待处理</option>
-                  <option value="resolved">已处理</option>
-                </select>
-              </label>
-            </div>
-          </header>
-          <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-          {!list.data && !list.error && <p className="muted">正在读取反馈…</p>}
-          {list.data && !list.data.items.length && (
-            <div className="support-empty">
-              <Inbox size={30} strokeWidth={1.5} aria-hidden="true" />
-              <p>{filterState ? '暂无符合条件的反馈' : '暂无反馈'}</p>
-            </div>
-          )}
-          <div className="support-list">
-            {list.data?.items.map((item) => (
-              <button className="support-item" key={item.id} onClick={() => open(item)}>
-                <span className="row-between">
-                  <span className={`support-state ${item.state}`}>
-                    {item.state === 'pending' ? '待处理' : '已处理'}
+              </div>
+            </header>
+            <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
+            {!list.data && !list.error && <p className="muted">正在读取反馈…</p>}
+            {list.data && !list.data.items.length && (
+              <div className="support-empty">
+                <Inbox size={30} strokeWidth={1.5} aria-hidden="true" />
+                <p>{filterState ? '暂无符合条件的反馈' : '暂无反馈'}</p>
+              </div>
+            )}
+            <div className="support-list">
+              {list.data?.items.map((item) => (
+                <button className="support-item" key={item.id} onClick={() => open(item)}>
+                  <span className="row-between">
+                    <span className={`support-state ${item.state}`}>
+                      {item.state === 'pending' ? '待处理' : '已处理'}
+                    </span>
+                    <time>{dateLabel(item.createdAt)}</time>
                   </span>
-                  <time>{dateLabel(item.createdAt)}</time>
-                </span>
-                {admin && <small>{item.ownerName}</small>}
-                <span className="preserve">{item.description}</span>
-                {item.handlingNote && (
-                  <span className="muted preserve">处理说明：{item.handlingNote}</span>
-                )}
-              </button>
-            ))}
+                  {admin && <small>{item.ownerName}</small>}
+                  <span className="preserve">{item.description}</span>
+                  {item.handlingNote && (
+                    <span className="muted preserve">处理说明：{item.handlingNote}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {(list.page > 1 || list.data?.nextCursor) && (
+              <Pagination
+                page={list.page}
+                hasNext={!!list.data?.nextCursor}
+                previous={list.previous}
+                next={list.next}
+              />
+            )}
           </div>
-          {(list.page > 1 || list.data?.nextCursor) && (
-            <Pagination
-              page={list.page}
-              hasNext={!!list.data?.nextCursor}
-              previous={list.previous}
-              next={list.next}
-            />
-          )}
-        </section>
+        </PanelSection>
       </div>
       {selected && (
         <Modal title="反馈详情" onClose={() => !busy && setSelected(null)}>

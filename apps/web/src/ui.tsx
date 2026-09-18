@@ -1,10 +1,43 @@
-import { useEffect, useLayoutEffect, useRef, useState, useContext, useMemo } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useContext, useMemo, useId } from 'react'
 import type { KeyboardEventHandler, ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
-import { Clock3, MoreHorizontal, X } from 'lucide-react'
+import { ChevronDown, Clock3, MoreHorizontal, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { ApiError, useRetryWait } from './api'
 import { Workspace } from './workspace'
 import { captureDiagnostics, copyText, diagnosticText } from './diagnostics'
+
+export function PanelSection({
+  title,
+  status,
+  defaultOpen = false,
+  children,
+}: {
+  title: string
+  status?: ReactNode
+  defaultOpen?: boolean
+  children: ReactNode
+}) {
+  const id = useId()
+  return (
+    <details
+      className="panel-section"
+      open={defaultOpen}
+      onInvalidCapture={(event) => {
+        // Reveal invalid fields before native form validation tries to focus them.
+        event.currentTarget.open = true
+      }}
+    >
+      <summary>
+        <h3 id={id}>{title}</h3>
+        {status && <span className="panel-section-status">{status}</span>}
+        <ChevronDown size={18} className="panel-section-chevron" aria-hidden="true" />
+      </summary>
+      <div className="panel-section-body" role="region" aria-labelledby={id}>
+        {children}
+      </div>
+    </details>
+  )
+}
 
 export function ErrorNotice({
   children,

@@ -8,7 +8,7 @@ import type {
 } from '@paa/api-contracts'
 import { api, dateLabel, useResource, write } from './api'
 import { copyText } from './diagnostics'
-import { BusyButton, ErrorNotice, Modal } from './ui'
+import { BusyButton, ErrorNotice, Modal, PanelSection } from './ui'
 import { Workspace, type DraftStore } from './workspace'
 import type { SessionDrafts } from './session-drafts'
 import { dingtalkDraftSummary, dingtalkResult, officialDingTalkUrl } from './dingtalk-flow'
@@ -226,113 +226,119 @@ function LoginConfiguration({
   }
   return (
     <>
-      <form
-        className="panel"
-        onSubmit={(event) => {
-          event.preventDefault()
-          void save(value.enabled)
-        }}
-      >
-        <h3>钉钉企业内部应用</h3>
-        <p className="muted">
-          先保存凭证，再验证授权和启用入口。新用户验证通过后会自动创建员工账号。
-        </p>
-        <label>
-          企业 CorpId
-          <input
-            value={corpId}
-            onChange={(event) => setCorpId(event.target.value)}
-            required
-            maxLength={128}
-            autoComplete="off"
-          />
-        </label>
-        <label>
-          Client ID / AppKey
-          <input
-            value={clientId}
-            onChange={(event) => setClientId(event.target.value)}
-            required
-            maxLength={128}
-            autoComplete="off"
-          />
-        </label>
-        <label>
-          {value.hasSecret
-            ? '替换 Client Secret / AppSecret（留空保留）'
-            : 'Client Secret / AppSecret'}
-          <input
-            type="password"
-            value={secret}
-            onChange={(event) => setSecret(event.target.value)}
-            required={!value.hasSecret}
-            maxLength={512}
-            autoComplete="new-password"
-          />
-        </label>
-        <small>{value.hasSecret ? 'Secret 已加密保存，不会回显。' : '尚未配置 Secret。'}</small>
-        <ErrorNotice>{error}</ErrorNotice>
-        <div className="form-actions">
-          <BusyButton busy={busy} className="primary">
-            保存配置
-          </BusyButton>
-        </div>
-      </form>
-      <section className="panel">
-        <h3>授权与入口</h3>
-        <p>入口：{value.enabled ? '已启用' : '已关闭'}</p>
-        <p>
-          {value.verifiedAt
-            ? `上次真实授权验证成功：${dateLabel(value.verifiedAt)}`
-            : '配置尚未通过钉钉授权验证。'}
-        </p>
-        {dirty && <p className="muted">请先保存修改，再验证或切换入口。</p>}
-        <div className="form-actions">
-          <BusyButton
-            type="button"
-            busy={redirect.busy}
-            disabled={busy || dirty || !value.hasSecret}
-            onClick={() => redirect.launch('/settings/login/dingtalk/probe')}
-          >
-            验证授权
-          </BusyButton>
-          <BusyButton
-            type="button"
-            busy={busy}
-            disabled={dirty || !value.hasSecret}
-            onClick={() => void save(!value.enabled)}
-          >
-            {value.enabled ? '关闭钉钉登录' : '启用钉钉登录'}
-          </BusyButton>
-        </div>
-        {redirect.guard}
-      </section>
-      <section className="panel">
-        <h3>钉钉后台配置</h3>
-        <label>
-          回调地址
-          <input readOnly value={value.callbackUrl} />
-        </label>
-        <button
-          type="button"
-          onClick={() =>
-            void copyText(value.callbackUrl).then(
-              () => setCopied('回调地址已复制'),
-              () => setCopied('请手动选择上方地址复制。'),
-            )
-          }
+      <ErrorNotice>{error}</ErrorNotice>
+      <div className="sectioned-panel">
+        <PanelSection
+          title="钉钉企业内部应用"
+          status={value.hasSecret ? '已配置凭证' : '待配置'}
+          defaultOpen
         >
-          复制回调地址
-        </button>
-        {copied && <p role="status">{copied}</p>}
-        <p className="muted">
-          登记完整回调地址，开通 open_app_api_base、Contact.User.Read 和 qyapi_get_member
-          权限并发布应用。请将通讯录授权范围设为允许登录的员工，并与应用可使用范围保持一致。
-        </p>
-        <p className="muted">
-          每次钉钉登录都会重新核验成员。本地密码和已登录会话的访问回收，需要在成员管理中停用账号。
-        </p>
-      </section>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault()
+              void save(value.enabled)
+            }}
+          >
+            <p className="muted">
+              先保存凭证，再验证授权和启用入口。新用户验证通过后会自动创建员工账号。
+            </p>
+            <div className="credentials-fields">
+              <label>
+                企业 CorpId
+                <input
+                  value={corpId}
+                  onChange={(event) => setCorpId(event.target.value)}
+                  required
+                  maxLength={128}
+                  autoComplete="off"
+                />
+              </label>
+              <label>
+                Client ID / AppKey
+                <input
+                  value={clientId}
+                  onChange={(event) => setClientId(event.target.value)}
+                  required
+                  maxLength={128}
+                  autoComplete="off"
+                />
+              </label>
+              <label className="full-field">
+                {value.hasSecret
+                  ? '替换 Client Secret / AppSecret（留空保留）'
+                  : 'Client Secret / AppSecret'}
+                <input
+                  type="password"
+                  value={secret}
+                  onChange={(event) => setSecret(event.target.value)}
+                  required={!value.hasSecret}
+                  maxLength={512}
+                  autoComplete="new-password"
+                />
+              </label>
+            </div>
+            <small>{value.hasSecret ? 'Secret 已加密保存，不会回显。' : '尚未配置 Secret。'}</small>
+            <div className="form-actions">
+              <BusyButton busy={busy} className="primary">
+                保存配置
+              </BusyButton>
+            </div>
+          </form>
+        </PanelSection>
+        <PanelSection title="授权与入口" status={value.enabled ? '已启用' : '未启用'} defaultOpen>
+          <p>入口：{value.enabled ? '已启用' : '已关闭'}</p>
+          <p>
+            {value.verifiedAt
+              ? `上次真实授权验证成功：${dateLabel(value.verifiedAt)}`
+              : '配置尚未通过钉钉授权验证。'}
+          </p>
+          {dirty && <p className="muted">请先保存修改，再验证或切换入口。</p>}
+          <div className="form-actions">
+            <BusyButton
+              type="button"
+              busy={redirect.busy}
+              disabled={busy || dirty || !value.hasSecret}
+              onClick={() => redirect.launch('/settings/login/dingtalk/probe')}
+            >
+              验证授权
+            </BusyButton>
+            <BusyButton
+              type="button"
+              busy={busy}
+              disabled={dirty || !value.hasSecret}
+              onClick={() => void save(!value.enabled)}
+            >
+              {value.enabled ? '关闭钉钉登录' : '启用钉钉登录'}
+            </BusyButton>
+          </div>
+          {redirect.guard}
+        </PanelSection>
+        <PanelSection title="钉钉后台配置" status="回调地址与权限">
+          <label>
+            回调地址
+            <input readOnly value={value.callbackUrl} />
+          </label>
+          <button
+            type="button"
+            onClick={() =>
+              void copyText(value.callbackUrl).then(
+                () => setCopied('回调地址已复制'),
+                () => setCopied('请手动选择上方地址复制。'),
+              )
+            }
+          >
+            复制回调地址
+          </button>
+          {copied && <p role="status">{copied}</p>}
+          <p className="muted">
+            登记完整回调地址，开通 open_app_api_base、Contact.User.Read 和 qyapi_get_member
+            权限并发布应用。请将通讯录授权范围设为允许登录的员工，并与应用可使用范围保持一致。
+          </p>
+          <p className="muted">
+            每次钉钉登录都会重新核验成员。本地密码和已登录会话的访问回收，需要在成员管理中停用账号。
+          </p>
+        </PanelSection>
+      </div>
       {blocker.state === 'blocked' && (
         <Modal title="放弃未保存的登录配置？" onClose={() => blocker.reset()}>
           <p>更改尚未保存。</p>
@@ -369,218 +375,233 @@ export function DingTalkAccountPage({
     <div className={force ? 'password-reset' : 'settings-page account-page'}>
       {!force && (
         <>
-          <h2>账户</h2>
-          <Link to="/settings/support">问题反馈与处理结果</Link>
-          <div className="account-summary">
-            <span className="avatar">{member?.name.slice(0, 1)}</span>
-            <div>
-              <h3>{member?.name}</h3>
-              <p className="muted">{member?.role === 'admin' ? '管理员' : '用户'}</p>
-            </div>
+          <div className="row-between account-heading">
+            <h2>账户</h2>
+            <Link to="/settings/support">问题反馈与处理结果</Link>
           </div>
         </>
       )}
       <DingTalkResult />
-      <section className="panel">
-        <label>
-          登录账号
-          <input readOnly value={member?.username ?? ''} />
-        </label>
-        <button
-          type="button"
-          onClick={() =>
-            void copyText(member?.username ?? '').then(
-              () => setCopied('登录账号已复制'),
-              () => setCopied('请手动选择登录账号复制。'),
-            )
-          }
+      <ErrorNotice retry={account.refresh}>{error || account.error}</ErrorNotice>
+      <div className="sectioned-panel">
+        <PanelSection
+          title="账号信息"
+          status={member?.role === 'admin' ? '管理员' : '用户'}
+          defaultOpen
         >
-          复制账号
-        </button>
-        {copied && <p role="status">{copied}</p>}
-        <p>本地密码：{hasPassword ? '已设置密码' : '未设置密码'}</p>
-        {account.data && <p>钉钉：{account.data.bound ? '已绑定' : '未绑定'}</p>}
-        <ErrorNotice retry={account.refresh}>{account.error}</ErrorNotice>
-      </section>
-      <form
-        className="panel password-form"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          const data = new FormData(event.currentTarget)
-          if (data.get('new') !== data.get('confirm')) {
-            setError('两次新密码不一致')
-            return
-          }
-          setBusy(true)
-          setError('')
-          try {
-            await write('/auth/password', {
-              currentPassword: viaDingTalk ? '' : data.get('current'),
-              newPassword: data.get('new'),
-              useDingTalk: viaDingTalk,
-            })
-            onLogout()
-          } catch (e) {
-            setError(e as Error)
-            account.refresh()
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        <h3>{hasPassword ? '修改或重置密码' : '设置本地密码'}</h3>
-        {hasPassword && !verified && (
-          <label>
-            当前密码
-            <input
-              name="current"
-              type="password"
-              required={!viaDingTalk}
-              disabled={viaDingTalk}
-              autoComplete="current-password"
-              maxLength={128}
-            />
-          </label>
-        )}
-        {account.data?.bound && account.data.available && (
-          <>
+          {!force && (
+            <div className="account-summary">
+              <span className="avatar">{member?.name.slice(0, 1)}</span>
+              <strong>{member?.name}</strong>
+            </div>
+          )}
+          <div className="account-username">
+            <label>
+              登录账号
+              <input readOnly value={member?.username ?? ''} />
+            </label>
+            <button
+              type="button"
+              onClick={() =>
+                void copyText(member?.username ?? '').then(
+                  () => setCopied('登录账号已复制'),
+                  () => setCopied('请手动选择登录账号复制。'),
+                )
+              }
+            >
+              复制账号
+            </button>
+          </div>
+          {copied && <p role="status">{copied}</p>}
+          <p>本地密码：{hasPassword ? '已设置密码' : '未设置密码'}</p>
+          {account.data && <p>钉钉：{account.data.bound ? '已绑定' : '未绑定'}</p>}
+        </PanelSection>
+        <PanelSection
+          title={hasPassword ? '修改或重置密码' : '设置本地密码'}
+          status={hasPassword ? '已设置密码' : '未设置密码'}
+          defaultOpen={force || !hasPassword || verified}
+        >
+          <form
+            className="password-form"
+            onSubmit={async (event) => {
+              event.preventDefault()
+              const data = new FormData(event.currentTarget)
+              if (data.get('new') !== data.get('confirm')) {
+                setError('两次新密码不一致')
+                return
+              }
+              setBusy(true)
+              setError('')
+              try {
+                await write('/auth/password', {
+                  currentPassword: viaDingTalk ? '' : data.get('current'),
+                  newPassword: data.get('new'),
+                  useDingTalk: viaDingTalk,
+                })
+                onLogout()
+              } catch (e) {
+                setError(e as Error)
+                account.refresh()
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
             {hasPassword && !verified && (
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={useDingTalk}
-                  onChange={(event) => setUseDingTalk(event.target.checked)}
-                />
-                忘记密码，使用钉钉重新验证
-              </label>
-            )}
-            {viaDingTalk && (
-              <p>
-                {verified
-                  ? '已验证本人钉钉身份，请在 5 分钟内设置新密码。'
-                  : '请先重新验证已绑定的本人钉钉身份，再输入新密码。'}
-              </p>
-            )}
-            {viaDingTalk && !verified && (
-              <BusyButton
-                type="button"
-                busy={redirect.busy}
-                onClick={() => redirect.launch('/auth/dingtalk/account/reauth')}
-              >
-                重新验证钉钉身份
-              </BusyButton>
-            )}
-          </>
-        )}
-        {!hasPassword && !account.data?.available && (
-          <p>钉钉登录当前不可用，请联系管理员恢复入口后验证身份，或由管理员重置临时密码。</p>
-        )}
-        <label>
-          新密码
-          <input
-            name="new"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            maxLength={128}
-            disabled={viaDingTalk && !verified}
-          />
-        </label>
-        <label>
-          确认新密码
-          <input
-            name="confirm"
-            type="password"
-            autoComplete="new-password"
-            required
-            minLength={12}
-            maxLength={128}
-            disabled={viaDingTalk && !verified}
-          />
-        </label>
-        <small>至少 12 位。保存后所有已登录设备均需重新登录。</small>
-        <ErrorNotice>{error}</ErrorNotice>
-        <div className="form-actions">
-          <BusyButton busy={busy} className="primary" disabled={viaDingTalk && !verified}>
-            保存密码并重新登录
-          </BusyButton>
-        </div>
-      </form>
-      {!force && account.data && (
-        <section className="panel">
-          <h3>钉钉账号关联</h3>
-          {!account.data.bound ? (
-            <>
-              <p>验证当前本地密码后绑定，保留现有账号和业务数据。</p>
               <label>
-                当前本地密码
+                当前密码
                 <input
+                  name="current"
                   type="password"
+                  required={!viaDingTalk}
+                  disabled={viaDingTalk}
                   autoComplete="current-password"
-                  value={localPassword}
-                  onChange={(event) => setLocalPassword(event.target.value)}
                   maxLength={128}
                 />
               </label>
-              <BusyButton
-                busy={redirect.busy}
-                disabled={!account.data.available || !localPassword}
-                onClick={() =>
-                  redirect.launch('/auth/dingtalk/account/bind', { currentPassword: localPassword })
-                }
-              >
-                验证密码并绑定钉钉
-              </BusyButton>
-              {!account.data.available && <p className="muted">管理员尚未开启钉钉登录。</p>}
-            </>
-          ) : (
-            <>
-              <p>更换钉钉身份时，先验证并解绑，再使用本地密码登录后绑定新身份。</p>
-              {!hasPassword ? (
-                <p>钉钉是当前唯一登录方式。请先设置本地密码后再解绑。</p>
-              ) : (
-                <>
-                  <label>
-                    解绑前验证本地密码
+            )}
+            {account.data?.bound && account.data.available && (
+              <>
+                {hasPassword && !verified && (
+                  <label className="check">
                     <input
-                      type="password"
-                      autoComplete="current-password"
-                      value={localPassword}
-                      onChange={(event) => setLocalPassword(event.target.value)}
-                      maxLength={128}
-                      disabled={verified}
+                      type="checkbox"
+                      checked={useDingTalk}
+                      onChange={(event) => setUseDingTalk(event.target.checked)}
                     />
+                    忘记密码，使用钉钉重新验证
                   </label>
+                )}
+                {viaDingTalk && (
+                  <p>
+                    {verified
+                      ? '已验证本人钉钉身份，请在 5 分钟内设置新密码。'
+                      : '请先重新验证已绑定的本人钉钉身份，再输入新密码。'}
+                  </p>
+                )}
+                {viaDingTalk && !verified && (
                   <BusyButton
-                    busy={busy}
-                    disabled={!localPassword && !verified}
-                    className="danger"
-                    onClick={async () => {
-                      if (!window.confirm('解绑钉钉并退出所有设备？之后请用本地密码登录。')) return
-                      setBusy(true)
-                      setError('')
-                      try {
-                        await write('/auth/dingtalk/account/unbind', {
-                          currentPassword: localPassword,
-                          useDingTalk: verified,
-                        })
-                        onLogout()
-                      } catch (e) {
-                        setError(e as Error)
-                      } finally {
-                        setBusy(false)
-                      }
-                    }}
+                    type="button"
+                    busy={redirect.busy}
+                    onClick={() => redirect.launch('/auth/dingtalk/account/reauth')}
                   >
-                    解绑并重新登录
+                    重新验证钉钉身份
                   </BusyButton>
-                </>
-              )}
-            </>
-          )}
-        </section>
-      )}
+                )}
+              </>
+            )}
+            {!hasPassword && !account.data?.available && (
+              <p>钉钉登录当前不可用，请联系管理员恢复入口后验证身份，或由管理员重置临时密码。</p>
+            )}
+            <label>
+              新密码
+              <input
+                name="new"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={12}
+                maxLength={128}
+                disabled={viaDingTalk && !verified}
+              />
+            </label>
+            <label>
+              确认新密码
+              <input
+                name="confirm"
+                type="password"
+                autoComplete="new-password"
+                required
+                minLength={12}
+                maxLength={128}
+                disabled={viaDingTalk && !verified}
+              />
+            </label>
+            <small>至少 12 位。保存后所有已登录设备均需重新登录。</small>
+            <div className="form-actions">
+              <BusyButton busy={busy} className="primary" disabled={viaDingTalk && !verified}>
+                保存密码并重新登录
+              </BusyButton>
+            </div>
+          </form>
+        </PanelSection>
+        {!force && account.data && (
+          <PanelSection title="钉钉账号关联" status={account.data.bound ? '已绑定' : '未绑定'}>
+            {!account.data.bound ? (
+              <>
+                <p>验证当前本地密码后绑定，保留现有账号和业务数据。</p>
+                <label>
+                  当前本地密码
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    value={localPassword}
+                    onChange={(event) => setLocalPassword(event.target.value)}
+                    maxLength={128}
+                  />
+                </label>
+                <BusyButton
+                  busy={redirect.busy}
+                  disabled={!account.data.available || !localPassword}
+                  onClick={() =>
+                    redirect.launch('/auth/dingtalk/account/bind', {
+                      currentPassword: localPassword,
+                    })
+                  }
+                >
+                  验证密码并绑定钉钉
+                </BusyButton>
+                {!account.data.available && <p className="muted">管理员尚未开启钉钉登录。</p>}
+              </>
+            ) : (
+              <>
+                <p>更换钉钉身份时，先验证并解绑，再使用本地密码登录后绑定新身份。</p>
+                {!hasPassword ? (
+                  <p>钉钉是当前唯一登录方式。请先设置本地密码后再解绑。</p>
+                ) : (
+                  <>
+                    <label>
+                      解绑前验证本地密码
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={localPassword}
+                        onChange={(event) => setLocalPassword(event.target.value)}
+                        maxLength={128}
+                        disabled={verified}
+                      />
+                    </label>
+                    <BusyButton
+                      busy={busy}
+                      disabled={!localPassword && !verified}
+                      className="danger"
+                      onClick={async () => {
+                        if (!window.confirm('解绑钉钉并退出所有设备？之后请用本地密码登录。'))
+                          return
+                        setBusy(true)
+                        setError('')
+                        try {
+                          await write('/auth/dingtalk/account/unbind', {
+                            currentPassword: localPassword,
+                            useDingTalk: verified,
+                          })
+                          onLogout()
+                        } catch (e) {
+                          setError(e as Error)
+                        } finally {
+                          setBusy(false)
+                        }
+                      }}
+                    >
+                      解绑并重新登录
+                    </BusyButton>
+                  </>
+                )}
+              </>
+            )}
+          </PanelSection>
+        )}
+      </div>
       {redirect.guard}
       {!force && (
         <button

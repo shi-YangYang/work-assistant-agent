@@ -389,6 +389,22 @@ async def test_dashscope_asr_preserves_origin_and_decodes_native_response(monkey
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize(('model', 'protocol'), [
+    ('qwen3-asr-flash', 'qwen-asr'),
+    ('qwen-audio-3.0-asr-flash-streaming', 'qwen-asr'),
+    ('qwen-audio-3.0-asr-flash', 'qwen-asr'),
+])
+async def test_token_plan_asr_explains_incompatible_model_before_request(monkeypatch, model, protocol):
+    from paa_server.config import Settings
+    calls = []
+    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: calls.append(settings))
+    with pytest.raises(ProviderError) as error:
+        await transcribe(Settings(), {'baseUrl': 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'model': model, 'protocol': protocol}, SECRET, b'RIFF')
+    assert error.value.code == 'protocol'
+    assert '阿里原生语音转写' in str(error.value) and '使用当前配置重新处理' in str(error.value)
+    assert calls == []
+
+
 @pytest.mark.parametrize('response_body', [{}, [], {'text': ''}, {'output': {'text': ' ' * 10}}, {'text': '字' * 8001}])
 async def test_dashscope_asr_rejects_invalid_text_without_retry(monkeypatch, response_body):
     from paa_server.config import Settings

@@ -3,6 +3,8 @@ import base64
 from datetime import timedelta
 import io
 import json
+import subprocess
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,6 +23,34 @@ from test_management import conversation, message, remove
 from fakes import controlled_model
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_recorded_webm_preview_has_duration_seeks_and_preserves_original(setup, monkeypatch):
+    settings, sessions, users, c = setup
+    # Live WebM, like MediaRecorder output, has no container duration or seek cues.
+    raw = subprocess.run([settings.ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2.4', '-c:a', 'libopus', '-f', 'webm', '-live', '1', 'pipe:1'], capture_output=True, check=True, timeout=15).stdout
+    item = await upload(c['employee'], 'voice.webm', raw, 'audio/webm')
+    assert 2.3 < item['duration'] < 2.5
+    for role in ('peer', 'outsider', 'admin'):
+        assert (await c[role].get(item['previewUrl'])).status_code == 404
+    preview = await c['employee'].get(item['previewUrl'])
+    assert preview.status_code == 200 and preview.headers['content-type'] == 'audio/wav'
+    assert preview.headers['cache-control'] == 'private, no-store'
+    with wave.open(io.BytesIO(preview.content)) as audio:
+        assert audio.getnframes() / audio.getframerate() == pytest.approx(item['duration'])
+    assert (await c['employee'].get(item['url'])).content == raw
+    assert (settings.media_dir / item['id']).read_bytes() == raw
+    async def should_not_decode(*args):
+        raise AssertionError('A cached preview must not decode the audio again')
+    monkeypatch.setattr('paa_server.api.audio_wav', should_not_decode)
+    seek = await c['employee'].get(item['previewUrl'], headers={'Range': 'bytes=1000-1999'})
+    assert seek.status_code == 206 and seek.content == preview.content[1000:2000]
+    conv = await conversation(c['employee'], '语音预览'); await message(c['employee'], conv, '', [item['id']])
+    assert (await c['admin'].get(item['previewUrl'])).status_code == 200
+    assert (await remove(c['employee'], 'conversations', conv)).status_code == 200
+    assert (await c['employee'].get(item['previewUrl'])).status_code == 404
+    await maintenance(sessions, settings)
+    assert not preview_path(settings, item['id'], 'audio').exists()
 
 
 async def test_images_correct_orientation_alpha_detail_and_bound_coverage(tmp_path):
@@ -195,25 +225,31 @@ async def test_preview_auth_original_concurrency_delete_and_orphan_cleanup(setup
     assert not (settings.media_dir / orphan['id']).exists()
 
 
-async def test_preview_rejects_logout_while_conversion_is_in_flight(setup, monkeypatch):
+@pytest.mark.parametrize('kind', ['image', 'audio'])
+async def test_preview_rejects_logout_while_conversion_is_in_flight(setup, monkeypatch, kind):
     settings, sessions, users, clients = setup
-    item = await upload(clients['employee'], 'phone.heic', image_samples()['phone.heic'], 'image/heic')
+    if kind == 'image':
+        item = await upload(clients['employee'], 'phone.heic', image_samples()['phone.heic'], 'image/heic')
+    else:
+        raw = (Path(__file__).parents[2] / 'services/company/src/paa_server/assets/probe-zh.wav').read_bytes()
+        item = await upload(clients['employee'], 'voice.wav', raw, 'audio/wav')
     import paa_server.api as api_module
     started, resume = asyncio.Event(), asyncio.Event()
-    original = api_module.image_process
-    async def delayed(path, mode='validate'):
-        result = await original(path, mode)
+    method = 'image_process' if kind == 'image' else 'audio_wav'
+    original = getattr(api_module, method)
+    async def delayed(*args):
+        result = await original(*args)
         started.set()
         await resume.wait()
         return result
-    monkeypatch.setattr(api_module, 'image_process', delayed)
+    monkeypatch.setattr(api_module, method, delayed)
     request = asyncio.create_task(clients['employee'].get(item['previewUrl']))
     try:
         await asyncio.wait_for(started.wait(), 10)
         assert (await clients['employee'].post('/api/v1/auth/logout')).status_code == 200
         resume.set()
         assert (await request).status_code == 401
-        assert not preview_path(settings, item['id']).exists()
+        assert not preview_path(settings, item['id'], kind).exists()
     finally:
         resume.set()
         if not request.done(): request.cancel()

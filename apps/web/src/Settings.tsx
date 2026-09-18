@@ -3,7 +3,7 @@ import { Pagination, WorkFilters, PeriodFilter } from './ListControls'
 import type { DateRange, TeamDetail, TeamMetrics } from '@paa/api-contracts'
 import { ReportActions } from './RecordManagement'
 import { companyTimezones, timezoneLabel } from './timezones'
-import { TimeField } from './ui'
+import { PanelSection, TimeField } from './ui'
 import { usePagedResource } from './paged-resource'
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router'
@@ -85,14 +85,15 @@ export function RulesPage() {
       <h2>汇报规则</h2>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && !canEdit && (
-        <div className="rule-summary">
-          <p className="muted">公司时区：{timezoneLabel(value.timezone)}</p>
+        <div className="sectioned-panel rule-summary">
+          <div className="panel-intro muted">公司时区：{timezoneLabel(value.timezone)}</div>
           {(['daily', 'weekly'] as const).map((kind) => (
-            <section className="panel schedule-panel" key={kind}>
-              <div className="row-between">
-                <h3>{kind === 'daily' ? '日报' : '周报'}</h3>
-                <span className="status">{value[kind].enabled ? '已启用' : '未启用'}</span>
-              </div>
+            <PanelSection
+              key={kind}
+              title={kind === 'daily' ? '日报' : '周报'}
+              status={value[kind].enabled ? '已启用' : '未启用'}
+              defaultOpen={value[kind].enabled}
+            >
               {value[kind].enabled ? (
                 <dl className="summary-grid">
                   <div className="full-field">
@@ -125,13 +126,13 @@ export function RulesPage() {
               {value.effectivePeriods?.[kind] && (
                 <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
               )}
-            </section>
+            </PanelSection>
           ))}
         </div>
       )}
       {value && canEdit && (
         <form
-          className="rules-form"
+          className="sectioned-panel rules-form"
           onSubmit={async (e) => {
             e.preventDefault()
             setBusy(true)
@@ -156,24 +157,34 @@ export function RulesPage() {
             }
           }}
         >
-          <label className="timezone-field">
-            公司时区
-            <select
-              value={value.timezone}
-              disabled={!canEdit}
-              onChange={(e) => setDraft('rules', { ...value, timezone: e.target.value })}
-            >
-              {[...new Set([...companyTimezones, value.timezone])].map((zone) => (
-                <option key={zone} value={zone}>
-                  {timezoneLabel(zone)}
-                </option>
-              ))}
-            </select>
-          </label>
+          <PanelSection title="时间设置" status={timezoneLabel(value.timezone)} defaultOpen>
+            <label className="timezone-field">
+              公司时区
+              <select
+                value={value.timezone}
+                disabled={!canEdit}
+                onChange={(e) => setDraft('rules', { ...value, timezone: e.target.value })}
+              >
+                {[...new Set([...companyTimezones, value.timezone])].map((zone) => (
+                  <option key={zone} value={zone}>
+                    {timezoneLabel(zone)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </PanelSection>
           {(['daily', 'weekly'] as const).map((kind) => (
-            <fieldset disabled={!canEdit} className="panel schedule-panel" key={kind}>
-              <div className="row-between">
-                <h3>{kind === 'daily' ? '日报' : '周报'}</h3>
+            <PanelSection
+              key={kind}
+              title={kind === 'daily' ? '日报' : '周报'}
+              status={
+                value[kind].enabled
+                  ? `${value[kind].generateTime} 生成 · ${value[kind].deadline} 截止`
+                  : '未启用'
+              }
+              defaultOpen={kind === 'daily'}
+            >
+              <div className="schedule-panel">
                 <label className="check">
                   <input
                     type="checkbox"
@@ -182,109 +193,113 @@ export function RulesPage() {
                   />
                   启用汇报安排
                 </label>
-              </div>
-              <div className="weekdays">
-                {['一', '二', '三', '四', '五', '六', '日'].map((day, index) => (
-                  <label key={day}>
+                <div className="weekdays">
+                  {['一', '二', '三', '四', '五', '六', '日'].map((day, index) => (
+                    <label key={day}>
+                      <input
+                        type={kind === 'weekly' ? 'radio' : 'checkbox'}
+                        name={kind}
+                        checked={value[kind].days.includes(index)}
+                        onChange={(e) =>
+                          update(kind, {
+                            ...value[kind],
+                            days:
+                              kind === 'weekly'
+                                ? [index]
+                                : e.target.checked
+                                  ? [...value[kind].days, index].sort()
+                                  : value[kind].days.filter((d) => d !== index),
+                          })
+                        }
+                      />
+                      <span>周{day}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="two-columns">
+                  <label>
+                    草稿生成时间
+                    <TimeField
+                      required={value[kind].enabled}
+                      value={value[kind].generateTime}
+                      onChange={(time) => update(kind, { ...value[kind], generateTime: time })}
+                    />
+                  </label>
+                  <label>
+                    提交截止时间
+                    <TimeField
+                      required={value[kind].enabled}
+                      value={value[kind].deadline}
+                      onChange={(time) => update(kind, { ...value[kind], deadline: time })}
+                    />
+                  </label>
+                </div>
+                <div className="reminder-settings">
+                  <label className="check">
                     <input
-                      type={kind === 'weekly' ? 'radio' : 'checkbox'}
-                      name={kind}
-                      checked={value[kind].days.includes(index)}
+                      type="checkbox"
+                      checked={value[kind].reminders ?? true}
                       onChange={(e) =>
-                        update(kind, {
-                          ...value[kind],
-                          days:
-                            kind === 'weekly'
-                              ? [index]
-                              : e.target.checked
-                                ? [...value[kind].days, index].sort()
-                                : value[kind].days.filter((d) => d !== index),
-                        })
+                        update(kind, { ...value[kind], reminders: e.target.checked })
                       }
                     />
-                    <span>周{day}</span>
+                    站内提醒
                   </label>
-                ))}
+                  <label>
+                    截止前提醒（分钟）
+                    <input
+                      type="number"
+                      min={0}
+                      max={1440}
+                      disabled={value[kind].reminders === false}
+                      value={value[kind].beforeMinutes ?? 30}
+                      onChange={(e) =>
+                        update(kind, { ...value[kind], beforeMinutes: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                </div>
+                {value.effectivePeriods?.[kind] && (
+                  <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
+                )}
               </div>
-              <div className="two-columns">
-                <label>
-                  草稿生成时间
-                  <TimeField
-                    required={value[kind].enabled}
-                    value={value[kind].generateTime}
-                    onChange={(time) => update(kind, { ...value[kind], generateTime: time })}
-                  />
-                </label>
-                <label>
-                  提交截止时间
-                  <TimeField
-                    required={value[kind].enabled}
-                    value={value[kind].deadline}
-                    onChange={(time) => update(kind, { ...value[kind], deadline: time })}
-                  />
-                </label>
-              </div>
-              <div className="reminder-settings">
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={value[kind].reminders ?? true}
-                    onChange={(e) => update(kind, { ...value[kind], reminders: e.target.checked })}
-                  />
-                  站内提醒
-                </label>
-                <label>
-                  截止前提醒（分钟）
-                  <input
-                    type="number"
-                    min={0}
-                    max={1440}
-                    disabled={value[kind].reminders === false}
-                    value={value[kind].beforeMinutes ?? 30}
-                    onChange={(e) =>
-                      update(kind, { ...value[kind], beforeMinutes: Number(e.target.value) })
-                    }
-                  />
-                </label>
-              </div>
-              {value.effectivePeriods?.[kind] && (
-                <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
-              )}
-            </fieldset>
+            </PanelSection>
           ))}
-          <p className="muted">
-            时间按公司时区计算。修改后不重复生成历史周期，也不会改写已提交报告。
-          </p>
-          {failure && canEdit && (
-            <ConflictRecovery<Rules>
-              load={() => api('/settings/report-rules')}
-              render={(latest) => (
-                <>
-                  <p>公司时区：{timezoneLabel(latest.timezone)}</p>
-                  {(['daily', 'weekly'] as const).map((kind) => (
-                    <p key={kind}>
-                      {kind === 'daily' ? '日报' : '周报'}：
-                      {latest[kind].enabled
-                        ? `${latest[kind].generateTime} 生成，${latest[kind].deadline} 截止`
-                        : '自动生成未启用'}
-                    </p>
-                  ))}
-                </>
-              )}
-              keep={(latest) => {
-                setDraft('rules', { ...value, revision: latest.revision })
-                setFailure('')
-              }}
-              replace={(latest) => {
-                setDraft('rules', latest)
-                setFailure('')
-              }}
-            />
-          )}
-          <div className="form-actions editor-actions">
-            <BusyButton busy={busy} className="primary">
-              保存汇报规则
-            </BusyButton>
+          <div className="panel-footer">
+            <p className="muted">
+              时间按公司时区计算。修改后不重复生成历史周期，也不会改写已提交报告。
+            </p>
+            {failure && canEdit && (
+              <ConflictRecovery<Rules>
+                load={() => api('/settings/report-rules')}
+                render={(latest) => (
+                  <>
+                    <p>公司时区：{timezoneLabel(latest.timezone)}</p>
+                    {(['daily', 'weekly'] as const).map((kind) => (
+                      <p key={kind}>
+                        {kind === 'daily' ? '日报' : '周报'}：
+                        {latest[kind].enabled
+                          ? `${latest[kind].generateTime} 生成，${latest[kind].deadline} 截止`
+                          : '自动生成未启用'}
+                      </p>
+                    ))}
+                  </>
+                )}
+                keep={(latest) => {
+                  setDraft('rules', { ...value, revision: latest.revision })
+                  setFailure('')
+                }}
+                replace={(latest) => {
+                  setDraft('rules', latest)
+                  setFailure('')
+                }}
+              />
+            )}
+            <div className="form-actions editor-actions">
+              <BusyButton busy={busy} className="primary">
+                保存汇报规则
+              </BusyButton>
+            </div>
           </div>
         </form>
       )}
