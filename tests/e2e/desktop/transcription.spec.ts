@@ -82,7 +82,25 @@ test('real local model restores transcript, seeks, and generates historical text
         .poll(async () => (await page.evaluate(() => window.paa.getStatus())).connection)
         .toBe('ready')
       await page.getByRole('button', { name: '本地转写模型', exact: true }).click()
-      await expect(page.getByText('模型已就绪', { exact: true })).toBeVisible({ timeout: 30_000 })
+      await expect
+        .poll(
+          async () => {
+            const result = await page.evaluate(() => window.paa.getTranscriptionModel())
+            if (!result.ok) throw new Error(result.message)
+            const { state, defaultModel, device, backend } = result.value
+            return { state, defaultModel, device, backend }
+          },
+          { timeout: 30_000 },
+        )
+        .toEqual({ state: 'ready', defaultModel: 'small', device: 'cpu', backend: 'ctranslate2' })
+      const small = page.getByRole('article').filter({
+        has: page.getByRole('heading', { name: 'Whisper small', exact: true }),
+      })
+      await expect(small.getByText('已下载', { exact: true })).toBeVisible()
+      await expect(page.getByRole('combobox', { name: '默认转写模型', exact: true })).toHaveValue(
+        'small',
+      )
+      await expect(page.getByRole('combobox', { name: '推理设备', exact: true })).toHaveValue('cpu')
       await page.getByRole('button', { name: '会议记录', exact: true }).click()
       const meetings = await page.evaluate(() => window.paa.listMeetings())
       if (!meetings.ok) throw new Error(meetings.message)
