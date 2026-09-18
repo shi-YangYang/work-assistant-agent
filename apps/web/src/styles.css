@@ -1080,20 +1080,57 @@ svg {
   max-width: 100%;
   height: 42px;
 }
-.attachments.pending > div {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.attachments.pending img {
-  width: 70px;
-  height: 65px;
+.attachments-audio audio {
+  width: 100%;
+  height: 48px;
 }
 .transcript {
-  border-left: 2px solid var(--line);
-  padding-left: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
   margin-top: 12px;
-  color: var(--muted);
+  overflow: hidden;
+}
+.transcript-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px 4px 4px;
+}
+.transcript-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  text-align: left;
+  font-weight: 600;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+}
+.transcript-toggle svg {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.transcript-toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+.transcript .transcript-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.transcript-body {
+  border-top: 1px solid var(--line);
+  padding: 12px 16px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.transcript-body p {
+  margin: 0;
 }
 .text-button {
   border: 0;
@@ -2956,12 +2993,60 @@ dialog::backdrop {
   align-items: flex-start;
   gap: 6px;
 }
-.attachments.pending > .pending-file {
+.pending-attachments {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+.pending-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.pending-file {
   display: flex;
   gap: 10px;
   align-items: center;
   width: 100%;
   min-width: 0;
+}
+.pending-audio-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.pending-audio-file .pending-file-info {
+  grid-column: 1;
+  grid-row: 1;
+}
+.pending-audio-file > button {
+  grid-column: 2;
+  grid-row: 1;
+}
+.pending-audio-player {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+.pending-audio-player audio {
+  display: block;
+  width: 100%;
+  height: 48px;
+}
+.pending-audio-player p {
+  margin: 4px 0;
+}
+.pending-image-file {
+  flex: 1 1 220px;
+  width: auto;
+  max-width: 340px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
 }
 .pending-file-info {
   display: flex;
@@ -2978,16 +3063,14 @@ dialog::backdrop {
 .pending-file > button {
   flex-shrink: 0;
 }
-.attachments.pending .pending-file img {
+.pending-file img {
   width: 52px;
   height: 52px;
-}
-.attachments.pending .pending-file audio {
-  max-width: 150px;
+  object-fit: cover;
 }
 @media (max-width: 600px) {
-  .attachments.pending .pending-file audio {
-    max-width: 100px;
+  .pending-image-file {
+    max-width: none;
   }
   .document-card {
     flex-basis: 100%;

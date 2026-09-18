@@ -4,9 +4,8 @@ import type { Composer } from './audio-capture'
 export function dingtalkResult(search: string) {
   const params = new URLSearchParams(search)
   const status = params.get('dingtalk')
-  if (!status) return null
+  if (!status || status === 'logged-in') return null
   const success: Record<string, string> = {
-    'logged-in': '已使用钉钉登录。',
     bound: '钉钉已绑定，其他设备需要重新登录。',
     verified: '钉钉身份验证成功。密码验证 5 分钟内有效，且只能使用一次。',
   }

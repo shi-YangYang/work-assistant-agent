@@ -15,6 +15,7 @@ import {
   Check,
   Pencil,
   CornerUpLeft,
+  ChevronDown,
 } from 'lucide-react'
 import type {
   Attachment,
@@ -28,6 +29,7 @@ import type {
 import { api, ApiError, dateLabel, useResource, write, isCancelled, useRetryWait } from './api'
 import { usePagedResource } from './paged-resource'
 import { AudioCapture, appendRecordedFile, type CaptureState, type Composer } from './audio-capture'
+import { RecordingPreview } from './RecordingPreview'
 import { progressEditValue, type ProgressEdit } from './progress-edit'
 import { useWorkspace } from './workspace'
 import { ImageGallery, PdfPreview, type PreviewImage } from './AttachmentPreview'
@@ -463,72 +465,91 @@ export function ConversationChat({
             </div>
           )}
           {composer.files.length > 0 && (
-            <div className="attachments pending">
-              {composer.files.map((item) => (
-                <div key={item.id} className="pending-file">
-                  {fileKind(item.file) === 'image' ? (
-                    <button
-                      className="attachment-preview-button"
-                      aria-label={`预览${item.file.name}`}
-                      disabled={locked}
-                      onClick={() =>
-                        setGallery(previewImages.findIndex((image) => image.id === item.id))
-                      }
-                    >
-                      {isHeif(item.file) && !item.attachment ? (
-                        <span>HEIC</span>
-                      ) : (
-                        <img src={item.attachment?.previewUrl ?? item.url} alt={item.file.name} />
-                      )}
-                    </button>
-                  ) : fileKind(item.file) === 'audio' ? (
-                    <audio
-                      controls
-                      src={item.attachment?.previewUrl ?? item.url}
-                      preload="metadata"
-                    />
-                  ) : item.file.name.toLowerCase().endsWith('.pdf') ? (
-                    <button
-                      className="attachment-preview-button"
-                      aria-label={`预览${item.file.name}`}
-                      onClick={() => setPdf(item.file)}
-                    >
-                      <FileText size={24} />
-                    </button>
-                  ) : (
-                    <FileText size={24} />
-                  )}
-                  <div className="pending-file-info">
-                    <strong>{item.file.name}</strong>
-                    <span>
-                      {item.file.name.split('.').pop()?.toUpperCase()} · {fileSize(item.file.size)}{' '}
-                      ·{' '}
-                      {composer.uploading === item.id
-                        ? '正在上传…'
-                        : item.attachment
-                          ? '上传完成'
-                          : item.failed
-                            ? '上传未完成，可重试'
-                            : '待上传'}
-                    </span>
-                  </div>
-                  <button
-                    className="icon-button"
-                    disabled={locked}
-                    aria-label={`移除${item.file.name}`}
-                    onClick={() => {
-                      URL.revokeObjectURL(item.url)
-                      change({
-                        ...composer,
-                        key: '',
-                        files: composer.files.filter((f) => f.id !== item.id),
-                      })
-                    }}
-                  >
-                    <X size={15} />
-                  </button>
-                </div>
-              ))}
+            <div className="pending-attachments">
+              {(['audio', 'image', 'document'] as const).map((kind) => {
+                const files = composer.files.filter((item) => fileKind(item.file) === kind)
+                return (
+                  files.length > 0 && (
+                    <div className={`pending-group pending-${kind}`} key={kind}>
+                      {files.map((item) => (
+                        <div key={item.id} className={`pending-file pending-${kind}-file`}>
+                          {fileKind(item.file) === 'image' ? (
+                            <button
+                              className="attachment-preview-button"
+                              aria-label={`预览${item.file.name}`}
+                              disabled={locked}
+                              onClick={() =>
+                                setGallery(previewImages.findIndex((image) => image.id === item.id))
+                              }
+                            >
+                              {isHeif(item.file) && !item.attachment ? (
+                                <span>HEIC</span>
+                              ) : (
+                                <img
+                                  src={item.attachment?.previewUrl ?? item.url}
+                                  alt={item.file.name}
+                                />
+                              )}
+                            </button>
+                          ) : kind === 'audio' ? (
+                            <div className="pending-audio-player">
+                              {item.recorded ? (
+                                <RecordingPreview file={item.file} />
+                              ) : (
+                                <audio
+                                  controls
+                                  src={item.attachment?.previewUrl ?? item.url}
+                                  preload="metadata"
+                                  aria-label={`试听${item.file.name}`}
+                                />
+                              )}
+                            </div>
+                          ) : item.file.name.toLowerCase().endsWith('.pdf') ? (
+                            <button
+                              className="attachment-preview-button"
+                              aria-label={`预览${item.file.name}`}
+                              onClick={() => setPdf(item.file)}
+                            >
+                              <FileText size={24} />
+                            </button>
+                          ) : (
+                            <FileText size={24} />
+                          )}
+                          <div className="pending-file-info">
+                            <strong>{item.file.name}</strong>
+                            <span>
+                              {item.file.name.split('.').pop()?.toUpperCase()} ·{' '}
+                              {fileSize(item.file.size)} ·{' '}
+                              {composer.uploading === item.id
+                                ? '正在上传…'
+                                : item.attachment
+                                  ? '上传完成'
+                                  : item.failed
+                                    ? '上传未完成，可重试'
+                                    : '待上传'}
+                            </span>
+                          </div>
+                          <button
+                            className="icon-button"
+                            disabled={locked}
+                            aria-label={`移除${item.file.name}`}
+                            onClick={() => {
+                              URL.revokeObjectURL(item.url)
+                              change({
+                                ...composer,
+                                key: '',
+                                files: composer.files.filter((f) => f.id !== item.id),
+                              })
+                            }}
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                )
+              })}
             </div>
           )}
           <textarea
@@ -661,6 +682,7 @@ export function MessageCard({
       warnings: item.image?.warnings,
     }))
   const [transcript, setTranscript] = useState(false)
+  const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const { notify, drafts: storedDrafts, setDraft } = useWorkspace()
@@ -701,40 +723,63 @@ export function MessageCard({
         )}
       </header>
       {message.text && <p className="preserve">{message.text}</p>}
-      <div className="attachments">
-        {message.attachments.map((a) =>
-          a.kind === 'image' ? (
-            <button
-              className="attachment-preview-button"
-              key={a.id}
-              aria-label={`预览${a.name}`}
-              onClick={() => setGallery(images.findIndex((item) => item.id === a.id))}
-            >
-              <img src={a.previewUrl ?? a.url} alt={a.name} loading="lazy" />
-            </button>
-          ) : a.kind === 'document' ? (
-            <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
-          ) : (
-            <audio
-              key={a.id}
-              controls
-              src={a.previewUrl ?? a.url}
-              preload="metadata"
-              aria-label={a.name}
-            />
-          ),
-        )}
+      <div className="attachment-groups">
+        {(['audio', 'image', 'document'] as const).map((kind) => {
+          const items = message.attachments.filter((a) => a.kind === kind)
+          return (
+            items.length > 0 && (
+              <div className={`attachments attachments-${kind}`} key={kind}>
+                {items.map((a) =>
+                  a.kind === 'image' ? (
+                    <button
+                      className="attachment-preview-button"
+                      key={a.id}
+                      aria-label={`预览${a.name}`}
+                      onClick={() => setGallery(images.findIndex((item) => item.id === a.id))}
+                    >
+                      <img src={a.previewUrl ?? a.url} alt={a.name} loading="lazy" />
+                    </button>
+                  ) : a.kind === 'document' ? (
+                    <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
+                  ) : (
+                    <audio
+                      key={a.id}
+                      controls
+                      src={a.previewUrl ?? a.url}
+                      preload="metadata"
+                      aria-label={a.name}
+                    />
+                  ),
+                )}
+              </div>
+            )
+          )
+        })}
       </div>
       {(message.transcript || message.attachments.some((a) => a.kind === 'audio')) && (
-        <div className="transcript">
-          <span className="eyebrow">语音文字</span>
-          <p className="preserve">{message.transcript || '等待识别'}</p>
-          {own && (
-            <button className="text-button" onClick={() => setTranscript(true)}>
-              修正文字
+        <section className="transcript">
+          <div className="transcript-heading">
+            <button
+              className="transcript-toggle"
+              aria-expanded={transcriptOpen}
+              aria-controls={`transcript-${message.id}`}
+              onClick={() => setTranscriptOpen((open) => !open)}
+            >
+              <ChevronDown size={16} aria-hidden="true" />
+              语音文字
+              {!message.transcript && <span className="muted small-text">待识别</span>}
             </button>
-          )}
-        </div>
+            {own && (
+              <button className="text-button transcript-edit" onClick={() => setTranscript(true)}>
+                <Pencil size={14} aria-hidden="true" />
+                修正文字
+              </button>
+            )}
+          </div>
+          <div id={`transcript-${message.id}`} hidden={!transcriptOpen} className="transcript-body">
+            <p className="preserve">{message.transcript || '等待识别'}</p>
+          </div>
+        </section>
       )}
       {message.businessUnavailable && (
         <p className="notice">这条回答的关联资料或权限已变化，请重新提问。</p>
@@ -911,11 +956,11 @@ export function JobNotice({
   const retry = async (useCurrentConfig = false) => {
     if (inFlight.current) return
     inFlight.current = true
+    setConfirmation(null)
     setBusy(true)
     setError('')
     try {
       await write(`/jobs/${job.id}/retry`, useCurrentConfig ? { useCurrentConfig: true } : {})
-      setConfirmation(null)
       refresh()
     } catch (e) {
       setError(e as Error)
@@ -955,9 +1000,7 @@ export function JobNotice({
       {confirmation && (
         <Modal
           title={confirmation === 'current' ? '使用当前配置重新处理' : '重试处理'}
-          onClose={() => {
-            if (!inFlight.current) setConfirmation(null)
-          }}
+          onClose={() => setConfirmation(null)}
         >
           <p>
             {confirmation === 'current'

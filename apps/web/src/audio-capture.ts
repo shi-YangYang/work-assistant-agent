@@ -4,6 +4,7 @@ type PendingFile = {
   id: string
   file: File
   url: string
+  recorded?: boolean
   attachment?: Attachment
   failed?: boolean
 }
@@ -31,7 +32,10 @@ export function appendRecordedFile(previous: Composer | undefined, file: File): 
   return {
     ...current,
     key: crypto.randomUUID(),
-    files: [...current.files, { id: crypto.randomUUID(), file, url: URL.createObjectURL(file) }],
+    files: [
+      ...current.files,
+      { id: crypto.randomUUID(), file, url: URL.createObjectURL(file), recorded: true },
+    ],
   }
 }
 
