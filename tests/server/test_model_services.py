@@ -12,7 +12,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from paa_server.models import Company, Job, ModelRouting, ModelService, ModelServiceRevision, ModelUsage
 from paa_server.model_secrets import SecretUnavailable, decrypt, encrypt, initialize_key
-from paa_server.model_provider import CheckedBackend, ProviderError, SafeTransport, allowed_address, chat, normalize_url, request_options, transcribe
+from paa_server.model_provider import CheckedBackend, ProviderError, SafeTransport, allowed_address, chat, normalize_url, request_options, transcribe, reply_review_config
 from paa_server.model_services import bind_job, resolve_bound
 from paa_server.model_schemas import ServiceInput, parameters
 from paa_server.worker import claim, process_job
@@ -176,16 +176,31 @@ async def test_streamed_tools_are_complete_and_audio_protocols_are_distinct(setu
 
 
 @pytest.mark.parametrize('streaming', [False, True])
-async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call(setup,monkeypatch,streaming):
+@pytest.mark.parametrize('fast_review', [False, True])
+async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call(setup,monkeypatch,streaming,fast_review):
     settings,sessions,users,c=setup
-    saved=await create(c['admin']); routing=route(saved);routing['assistant']['streaming']=streaming
+    service = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1') if fast_review else payload()
+    if fast_review:
+        service['models'][0]['model'] = 'deepseek-v4.1-flash'
+    saved=await create(c['admin'], service); routing=route(saved);routing['assistant']['streaming']=streaming
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
+    from paa_server.feedback import publish
+    phases = []
+    async def track_phase(context, stage, *args, **kwargs):
+        phases.append(stage)
+        return await publish(context, stage, *args, **kwargs)
+    monkeypatch.setattr('paa_server.feedback.publish', track_phase)
+    monkeypatch.setattr('paa_server.worker.publish', track_phase)
     reply='请确认这条进展建议。'
     async def response(request):
         body=json.loads(request.content);calls.append((str(request.url),body))
         assert request.headers['Authorization']=='Bearer '+SECRET
-        assert 'enable_thinking' not in body and body['stream']==streaming and body['max_tokens']<=4000
+        assert body['stream']==streaming and body['max_tokens']<=4000
+        if len(calls) == 3 and fast_review:
+            assert body['enable_thinking'] is False
+        else:
+            assert 'enable_thinking' not in body
         if len(calls)==1:
             changed=await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**payload(url='https://new.example/v1'),'apiKey':'new-test-secret','expectedRevision':1})
             assert changed.status_code==200,changed.text
@@ -200,7 +215,8 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             assert review['task']=='business_reply_review'
             assert review['segments']==[{'index':0,'text':reply}]
             assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
-            assert review['persistedOperations']==[]
+            assert 'persistedOperations' not in review
+            assert body['max_tokens'] == 2000
             verdict={'segments':[{'index':0,'kind':'information','evidence':[]}]}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         if streaming:
@@ -216,15 +232,38 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
         await process_job(job,sessions,settings,saver)
     result=(await c['employee'].get('/api/v1/messages/'+sent['messageId'])).json()
     assert result['job']['state']=='succeeded',result['job']
-    assert len(result['suggestions'])==1 and all(url=='https://example.com/v1/chat/completions' for url,_ in calls)
+    assert len(result['suggestions'])==1 and all(url==service['baseUrl']+'/chat/completions' for url,_ in calls)
     assert result['reply']==reply
     assert len(calls)==3
+    # One initial phase and one per assistant call, no empty per-token writes.
+    assert phases.count('generating') == 3
     async with sessions() as db:
         usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
         assert len(usages)==3 and all(u.kind=='assistant' and u.status=='succeeded' and u.service_id==saved['id'] for u in usages)
         from sqlalchemy import text
         blobs=(await db.execute(text('SELECT blob FROM checkpoint_blobs WHERE thread_id LIKE :prefix'),{'prefix':job.company_id+':%'})).all()
         assert not any(SECRET.encode() in bytes(b[0]) for b in blobs if b[0] is not None)
+
+
+@pytest.mark.parametrize('base,model,toggle', [
+    ('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'deepseek-v4.1-flash', {'enable_thinking': False}),
+    ('https://dashscope.aliyuncs.com/compatible-mode/v1', 'deepseek-v4-pro', {'enable_thinking': False}),
+    ('https://api.deepseek.com/v1', 'deepseek-chat', {'thinking': {'type': 'disabled'}}),
+    ('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'deepseek-r1', None),
+    ('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'unknown-model', None),
+    ('https://custom.example/v1', 'deepseek-v4.1-flash', None),
+    ('https://api.deepseek.com.evil.test/v1', 'deepseek-chat', None),
+])
+async def test_review_profile_preserves_saved_parameters_and_unknown_protocols(base, model, toggle):
+    original = {'baseUrl': base, 'model': model, 'streaming': True, 'parameters': {'enable_thinking': True, 'reasoning_effort': 'high', 'temperature': 0.4}}
+    before = json.loads(json.dumps(original))
+    effective = reply_review_config(original)
+    assert original == before
+    if toggle is None:
+        assert effective == original
+    else:
+        assert effective['parameters'] == {'temperature': 0.4, **toggle}
+        assert effective['streaming'] is True
 
 
 async def test_admin_probe_and_directory_validate_real_capabilities_without_business_writes(setup,monkeypatch):

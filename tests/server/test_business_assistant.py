@@ -424,7 +424,7 @@ async def test_source_deletion_keeps_confirmed_followup_but_revocation_hides_it(
     old_reply = (await clients['admin'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert old_reply['businessUnavailable'] and not old_reply['reply']
     rt, _, _ = await runtime(setup, text='查看我自己的督办事项')
-    items = json.loads(await find_work_items.coroutine(query='', runtime=rt))
+    items = json.loads(await find_work_items.coroutine(query='', runtime=rt))['items']
     assert items[0]['id'] == own_id and items[0]['relatedBusiness'] == [{'unavailable': True}]
     async with sessions() as db:
         await lease(db, rt.context)

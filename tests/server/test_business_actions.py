@@ -125,11 +125,16 @@ async def test_authorization_materials_and_negation_do_not_write(setup):
     assert not allowed and len(context.intent_model.inputs) == before
 
 
-async def test_version_permissions_and_field_patch(setup):
+@pytest.mark.parametrize('read_with_list', [False, True])
+async def test_version_permissions_and_field_patch(setup, read_with_list):
     _, _, _, c = setup
     work = await create(c['employee'], summary='保持说明', blocker='保持阻碍', dueDate='2026-09-30')
     context, _ = await runtime(setup, '把报价方案标为完成')
-    await read_work(context, work['id'])
+    if read_with_list:
+        listing = json.loads(await find_work_items.coroutine('报价方案', SimpleNamespace(context=context)))
+        assert listing['items'][0]['revision'] == 1
+    else:
+        await read_work(context, work['id'])
     args = {'step': 1, 'action': 'update_work', 'target_id': work['id'], 'expected_revision': 1, 'changes': {'status': 'done'}}
     result = await execute(context, **args)
     assert result['state'] == 'succeeded'
@@ -414,7 +419,7 @@ async def test_worker_never_saves_completion_promise_without_execution(setup, an
     result = await run_reply(setup, '帮我创建工作：报价方案，截止本周五。', answer, judge)
     assert result['actions'] == []
     assert answer not in result['reply'] and '未执行' in result['reply']
-    assert judge.inputs[0]['persistedOperations'] == []
+    assert 'persistedOperations' not in judge.inputs[0]
     assert judge.inputs[0]['toolEvidence'] == []
 
 
@@ -429,6 +434,13 @@ async def test_worker_keeps_verified_existing_report_state_and_clarification(set
     proof = judge.inputs[0]['toolEvidence']
     assert proof[0]['tool'] == 'query_reports'
     assert json.loads(proof[0]['result'])['items'][0]['publishedRevision'] == 1
+
+
+async def test_worker_removes_unissued_business_markers_without_team_queries(setup):
+    answer = '请补充你要查看的事项。[[business:work/3e3b3f56-738c-4380-858a-49052fb034c6]]'
+    result = await run_reply(setup, '查看工作', answer, ReplyJudge(['information', 'information']))
+    assert result['reply'] == '请补充你要查看的事项。'
+    assert not result['businessCitations']
 
 
 async def test_worker_mixed_claims_keep_query_facts_and_partial_receipts(setup):
@@ -472,6 +484,26 @@ async def test_reply_review_validates_partition_and_reuses_exact_verified_result
     first = await review_reply(context, '需要讨论哪部分？', model=judge)
     second = await review_reply(context, '需要讨论哪部分？', model=judge)
     assert first == second and first.verified and len(judge.inputs) == 1
+
+
+async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):
+    from paa_server.agent.reply_review import review_reply
+    context, _ = await runtime(setup)
+    saved = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
+    judge = ReplyJudge([], fail=True)
+    reviewed = await review_reply(context, '', model=judge)
+    assert reviewed.verified and not judge.inputs
+    assert receipt_reply(reviewed, [saved]) == '创建工作：已完成。'
+
+
+async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blank_lines():
+    from paa_server.agent.reply_review import reply_segments, check_segments
+    answer = '\n你好！\n\n请确认具体事项。\n  '
+    parts = reply_segments(answer)
+    assert len(parts) == 2 and all(part.strip() for part in parts)
+    verdict = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(2)]})
+    assert check_segments(parts, verdict, []).text == answer.strip()
+    assert reply_segments('\n \t') == []
 
 
 async def test_history_replaces_stale_confirmation_text_with_persisted_state(setup):

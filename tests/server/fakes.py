@@ -56,7 +56,7 @@ class ControlledModel(ReviewedFixtureModel):
         elif isinstance(last, HumanMessage):
             reply = call('find_work_items', {'query': ''})
         elif isinstance(last, ToolMessage) and last.name == 'find_work_items':
-            works = json.loads(last.content)
+            works = json.loads(last.content)['items']
             reply = call('propose_progress', {'title': '受控方案工作', 'summary': '方案初稿已完成' if not works else '已拿到报价，正在核对', 'status': 'in_progress', 'blocker': '等待报价' if not works else '', 'next_step': '核对报价', 'work_id': works[0]['id'] if works else None})
         else:
             reply = AIMessage(content='已整理为进展建议，请确认。')

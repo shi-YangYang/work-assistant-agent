@@ -212,9 +212,70 @@ async def test_work_search_and_message_context_use_confirmed_state_after_reply(s
         db.add(ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=source.id, work_id=work.id, content=work.content, status='confirmed', tool_key='confirmed-reference'))
     runtime = SimpleNamespace(context=context)
     results = json.loads(await find_work_items.coroutine(query='真实联调 海星方案', runtime=runtime))
-    assert [item['id'] for item in results] == [work.id]
+    assert [item['id'] for item in results['items']] == [work.id]
     assert context.read_versions == {work.id: work.revision}
     source = json.loads(await get_message_context.coroutine(message_id=sent['messageId'], runtime=runtime))
     assert source['progress'] == [{'status':'confirmed','workId':work.id}]
     assert source['reply'] == '尚未确认，只是一条建议'
     assert '不可泄露' not in str(results) + str(source)
+
+
+async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setup):
+    import json
+    from types import SimpleNamespace
+    from paa_server.agent.harness import find_work_items
+    from paa_server.models import WorkItem
+    settings, sessions, users, clients = setup
+    actor = users['employee']
+    sent = await send(clients['employee'])
+    job = await claim(sessions, actor.id)
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    stamp = now()
+    def work(owner, index, status='in_progress', **extra):
+        title = '分页目标 ' + str(index)
+        return WorkItem(company_id=actor.company_id, owner_id=owner, title=title, content={'title': title, 'status': status, 'summary': '', 'blocker': '', 'nextStep': ''}, **extra)
+    async with sessions.begin() as db:
+        matches = [work(actor.id, i, updated_at=stamp - timedelta(seconds=i)) for i in range(22)]
+        hidden = [work(actor.id, i, updated_at=stamp + timedelta(seconds=i + 1), access={'team': True, 'actorId': users['admin'].id, 'companyId': actor.company_id, 'role': 'admin'}) for i in range(101)]
+        db.add_all([*matches, *hidden, work(users['peer'].id, 'other'), *[work(actor.id, i, 'done') for i in range(25)], work(actor.id, 'blocked', 'blocked')])
+        await db.flush()
+        expected = {w.id for w in matches}
+    runtime = SimpleNamespace(context=context)
+    identifiers, cursor = [], ''
+    while True:
+        page = json.loads(await find_work_items.coroutine('分页目标', runtime, status='in_progress', cursor=cursor))
+        assert page['scope'] == 'self' and page['filters']['status'] == 'in_progress'
+        assert 0 < len(page['items']) <= 20
+        identifiers.extend(row['id'] for row in page['items'])
+        cursor = page['nextCursor']
+        if not cursor:
+            break
+    assert len(identifiers) == len(expected) and set(identifiers) == expected
+    assert set(context.read_versions) == expected
+    empty = json.loads(await find_work_items.coroutine('不存在的标题', runtime, status='in_progress'))
+    assert empty['items'] == [] and empty['nextCursor'] is None
+
+
+async def test_work_tool_returns_whole_long_records_with_a_continuation(setup):
+    import json
+    from types import SimpleNamespace
+    from paa_server.agent.harness import find_work_items
+    from paa_server import business_access as business
+    from paa_server.models import WorkItem
+    settings, sessions, users, clients = setup
+    actor = users['admin']
+    sent = await send(clients['admin'])
+    job = await claim(sessions, actor.id)
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    async with sessions.begin() as db:
+        rows = [WorkItem(company_id=actor.company_id, owner_id=actor.id, title='长内容 '+str(i), content={'title': '长内容 '+str(i), 'status': 'in_progress', 'summary': '文' * 4000, 'blocker': '阻' * 2000, 'nextStep': '续' * 2000}, access={**business.scope(actor), 'team': True}) for i in range(2)]
+        db.add_all(rows)
+    runtime = SimpleNamespace(context=context)
+    first = json.loads(await find_work_items.coroutine('', runtime))
+    async with sessions() as db:
+        saved = await db.get(Job, job.id)
+        assert {read['id'] for read in saved.access['reads'].values()} == {first['items'][0]['id']}
+    second = json.loads(await find_work_items.coroutine('', runtime, cursor=first['nextCursor']))
+    assert len(first['items']) == len(second['items']) == 1 and second['nextCursor'] is None
+    assert {first['items'][0]['id'], second['items'][0]['id']} == {w.id for w in rows}
+    assert all(page['items'][0]['summary'] == '文' * 4000 and page['items'][0]['nextStep'] == '续' * 2000 for page in (first, second))

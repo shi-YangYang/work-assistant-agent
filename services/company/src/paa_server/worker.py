@@ -227,9 +227,11 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             for draft in drafts:
                 business.inherit(actor, draft, live)
                 await business.require(db, actor, draft.access)
+            # Validate markers even when no team tool ran; models can invent
+            # business markers from ordinary work IDs without a read receipt.
+            message.reply, references = await business.citations(db, actor, live.access, message.reply)
+            message.citations = [*message.citations, *references]
             if live.access.get('team'):
-                message.reply, references = await business.citations(db, actor, live.access, message.reply)
-                message.citations = [*message.citations, *references]
                 message.reply += await business.query_summary(db, live.result.get('businessQueries', []))
             source_ids = set(context.document_versions) | {row['id'] for row in documents}
             if source_ids:
