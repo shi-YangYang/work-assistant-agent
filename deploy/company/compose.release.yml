@@ -1,14 +1,18 @@
-# CD supplies immutable image digests in .release.env; never build on the server.
+# release.sh builds first, then pins local image IDs in .release.env.
 services:
   migrate:
     build: !reset null
-    image: ${PAA_SERVICE_IMAGE:?Missing service image digest}
+    image: ${PAA_SERVICE_IMAGE:?Missing service image ID}
+    pull_policy: never
   api:
     build: !reset null
-    image: ${PAA_SERVICE_IMAGE:?Missing service image digest}
+    image: ${PAA_SERVICE_IMAGE:?Missing service image ID}
+    pull_policy: never
   worker:
     build: !reset null
-    image: ${PAA_WORKER_IMAGE:?Missing worker image digest}
+    image: ${PAA_WORKER_IMAGE:?Missing worker image ID}
+    pull_policy: never
   web:
     build: !reset null
-    image: ${PAA_WEB_IMAGE:?Missing web image digest}
+    image: ${PAA_WEB_IMAGE:?Missing web image ID}
+    pull_policy: never

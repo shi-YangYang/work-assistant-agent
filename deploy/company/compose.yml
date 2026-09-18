@@ -40,6 +40,9 @@ services:
     restart: unless-stopped
   worker:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: worker }
+    cpus: 2.0
+    mem_limit: 3g
+    memswap_limit: 3g
     env_file: ../../.env.company
     environment: *service-env
     command: ['python', '-m', 'paa_server.worker']

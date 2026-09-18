@@ -10,20 +10,15 @@ mode=${3:?Missing deployment mode}
 [[ "$mode" == domain || "$mode" == ip ]] || { echo 'Invalid deployment mode' >&2; exit 1; }
 [[ $(uname -m) == x86_64 ]] || { echo 'This release requires a Linux x86_64 server' >&2; exit 1; }
 release="$root/releases/$release_id"
-[[ -f "$root/.env.company" && -f "$release/.release.env" ]] || { echo 'Missing server environment or image manifest' >&2; exit 1; }
+[[ -f "$root/.env.company" && -f "$release/deploy/company/build.sh" ]] || { echo 'Missing server environment or release source' >&2; exit 1; }
 exec 9>"$root/.deploy.lock"
 flock -n 9 || { echo 'Another deployment is running' >&2; exit 1; }
-for key in PAA_SERVICE_IMAGE PAA_WORKER_IMAGE PAA_WEB_IMAGE; do
-  value=$(sed -n "s/^$key=//p" "$release/.release.env")
-  [[ "$value" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$ ]] || { echo "Invalid $key digest" >&2; exit 1; }
-done
-[[ $(wc -l < "$release/.release.env") -eq 3 ]] || { echo 'Unexpected image manifest fields' >&2; exit 1; }
-printf 'PAA_DEPLOY_MODE=%s\n' "$mode" >> "$release/.release.env"
+# Build and download before touching the running release. The manifest pins local image IDs.
+bash "$release/deploy/company/build.sh" "$release" "$release_id" "$mode"
 ln -s "$root/.env.company" "$release/.env.company"
 compose() { PAA_COMPOSE_ROOT="$release" sh "$release/deploy/company/compose.sh" "$@"; }
 compose config --quiet
-# Pull everything before stopping the running release. Registry credentials stay on the host.
-compose pull
+compose pull postgres
 # Check the server-owned key and origin before touching the running services.
 compose run --rm --no-deps -T --entrypoint python api -c '
 import os

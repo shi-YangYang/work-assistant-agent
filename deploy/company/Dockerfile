@@ -1,9 +1,12 @@
 FROM python:3.12.14-slim-bookworm AS service
+ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com
+ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/services/company/src:/app/packages/voiceprint-engine/src
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg=7:5.1.9-0+deb12u1 && rm -rf /var/lib/apt/lists/*
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends ffmpeg=7:5.1.9-0+deb12u1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY services/company/requirements.lock ./services/company/requirements.lock
-RUN pip install --no-cache-dir -r services/company/requirements.lock
+RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r services/company/requirements.lock
 COPY services/company/src ./services/company/src
 COPY packages/voiceprint-engine ./packages/voiceprint-engine
 RUN useradd --uid 10001 --create-home paa && mkdir -p /data/media && chown -R paa:paa /data
@@ -12,8 +15,12 @@ CMD ["python", "-m", "uvicorn", "paa_server.api:app", "--host", "0.0.0.0", "--po
 
 # The API keeps its lightweight environment; only the worker installs CPU inference.
 FROM service AS worker
+ARG TORCH_INDEX_URL=https://mirrors.nju.edu.cn/pytorch/whl/cpu
 USER root
-RUN python -m venv /opt/voiceprints && /opt/voiceprints/bin/pip install --no-cache-dir torch==2.11.0 torchaudio==2.11.0 --index-url https://download.pytorch.org/whl/cpu && /opt/voiceprints/bin/pip install --no-cache-dir './packages/voiceprint-engine[runtime]'
+RUN python -m venv /opt/voiceprints \
+    && /opt/voiceprints/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" --extra-index-url "$TORCH_INDEX_URL" 'torch==2.11.0+cpu' 'torchaudio==2.11.0+cpu' \
+    && /opt/voiceprints/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" './packages/voiceprint-engine[runtime]' \
+    && /opt/voiceprints/bin/python -c 'import torch; assert torch.version.cuda is None'
 COPY apps/desktop/resources/models/speaker-community-1/embedding /opt/voiceprint-model
 COPY apps/desktop/resources/models/speaker-community-1/LICENSE.txt /opt/voiceprint-model/LICENSE.txt
 COPY apps/desktop/resources/models/speaker-community-1/NOTICE.md /opt/voiceprint-model/NOTICE.md
@@ -23,13 +30,14 @@ USER paa
 CMD ["python", "-m", "paa_server.worker"]
 
 FROM node:24.20.0-bookworm-slim AS web-build
+ARG NPM_REGISTRY=https://registry.npmmirror.com
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/package.json
 COPY packages/api-contracts/package.json ./packages/api-contracts/package.json
 COPY packages/model-config/package.json ./packages/model-config/package.json
 COPY packages/ui-web/package.json ./packages/ui-web/package.json
-RUN npm ci --ignore-scripts --workspace apps/web --include-workspace-root=false
+RUN npm ci --ignore-scripts --workspace apps/web --include-workspace-root=false --registry="$NPM_REGISTRY" --no-audit --no-fund
 COPY apps/web ./apps/web
 COPY packages ./packages
 COPY tsconfig.base.json ./
