@@ -9,6 +9,7 @@ from .service import problem
 
 # Decode work is isolated from the API event loop and process. Originals never change.
 IMAGE_PREVIEW_VERSION = 'image-v1'
+AUDIO_PREVIEW_VERSION = 'audio-v1.wav'
 MAX_MESSAGE_IMAGE_BLOCKS = 8
 MAX_MESSAGE_IMAGE_PIXELS = 16_000_000
 MAX_MESSAGE_IMAGE_BYTES = 6 * 1024 * 1024
@@ -25,14 +26,16 @@ async def image_process(path, mode='validate'):
     return result
 
 
-def preview_path(settings, identifier):
-    return settings.media_dir / f'{identifier}.{IMAGE_PREVIEW_VERSION}'
+def preview_path(settings, identifier, kind='image'):
+    version = AUDIO_PREVIEW_VERSION if kind == 'audio' else IMAGE_PREVIEW_VERSION
+    return settings.media_dir / f'{identifier}.{version}'
 
 
 def remove_media(settings, identifier):
     (settings.media_dir / identifier).unlink(missing_ok=True)
     # Known conversion versions only; no untrusted filename/glob path.
     preview_path(settings, identifier).unlink(missing_ok=True)
+    preview_path(settings, identifier, 'audio').unlink(missing_ok=True)
 
 
 _image_limits = WeakKeyDictionary()

@@ -482,7 +482,11 @@ export function ConversationChat({
                       )}
                     </button>
                   ) : fileKind(item.file) === 'audio' ? (
-                    <audio controls src={item.url} preload="metadata" />
+                    <audio
+                      controls
+                      src={item.attachment?.previewUrl ?? item.url}
+                      preload="metadata"
+                    />
                   ) : item.file.name.toLowerCase().endsWith('.pdf') ? (
                     <button
                       className="attachment-preview-button"
@@ -711,7 +715,13 @@ export function MessageCard({
           ) : a.kind === 'document' ? (
             <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
           ) : (
-            <audio key={a.id} controls src={a.url} preload="metadata" aria-label={a.name} />
+            <audio
+              key={a.id}
+              controls
+              src={a.previewUrl ?? a.url}
+              preload="metadata"
+              aria-label={a.name}
+            />
           ),
         )}
       </div>
@@ -896,6 +906,28 @@ export function JobNotice({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
+  const [confirmation, setConfirmation] = useState<'original' | 'current' | null>(null)
+  const inFlight = useRef(false)
+  const retry = async (useCurrentConfig = false) => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setBusy(true)
+    setError('')
+    try {
+      await write(`/jobs/${job.id}/retry`, useCurrentConfig ? { useCurrentConfig: true } : {})
+      setConfirmation(null)
+      refresh()
+    } catch (e) {
+      setError(e as Error)
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
+  }
+  const confirmRetry = (mode: 'original' | 'current') => {
+    setError('')
+    setConfirmation(mode)
+  }
   if (job.state === 'succeeded' || job.state === 'cancelled') return null
   if (job.state === 'awaiting_input')
     return <p className="muted small-text">可继续发送消息补充信息。</p>
@@ -906,55 +938,52 @@ export function JobNotice({
       </p>
     )
   return (
-    <div className="notice error">
-      <span>{job.error}</span>
-      <ErrorNotice>{error}</ErrorNotice>
-      <BusyButton
-        busy={busy}
-        onClick={async () => {
-          if (
-            job.state === 'awaiting_retry' &&
-            !window.confirm('服务可能已处理过这次请求，重试可能重复计费。继续重试？')
-          )
-            return
-          setBusy(true)
-          try {
-            await write(`/jobs/${job.id}/retry`, {})
-            refresh()
-          } catch (e) {
-            setError(e as Error)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        重试处理
-      </BusyButton>
-      <BusyButton
-        busy={busy}
-        onClick={async () => {
-          if (
-            !window.confirm(
-              '使用管理员当前分配的模型重新处理？这是一次新的处理尝试，可能再次计费；已确认内容保留。',
-            )
-          )
-            return
-          setBusy(true)
-          try {
-            await write(`/jobs/${job.id}/retry`, { useCurrentConfig: true })
-            refresh()
-          } catch (e) {
-            setError(e as Error)
-          } finally {
-            setBusy(false)
-          }
-        }}
-      >
-        使用当前配置重新处理
-      </BusyButton>
-    </div>
+    <>
+      <div className="notice error">
+        <span>{job.error}</span>
+        {!confirmation && <ErrorNotice>{error}</ErrorNotice>}
+        <BusyButton
+          busy={busy}
+          onClick={() => (job.state === 'awaiting_retry' ? confirmRetry('original') : void retry())}
+        >
+          重试处理
+        </BusyButton>
+        <BusyButton busy={busy} onClick={() => confirmRetry('current')}>
+          使用当前配置重新处理
+        </BusyButton>
+      </div>
+      {confirmation && (
+        <Modal
+          title={confirmation === 'current' ? '使用当前配置重新处理' : '重试处理'}
+          onClose={() => {
+            if (!inFlight.current) setConfirmation(null)
+          }}
+        >
+          <p>
+            {confirmation === 'current'
+              ? '将使用管理员最新分配的模型重新处理，已确认的内容会保留。'
+              : '将使用这条消息原来的模型配置重新处理。'}
+          </p>
+          <p className="muted small-text">模型服务可能已处理过上次请求，重试可能再次产生用量。</p>
+          <ErrorNotice>{error}</ErrorNotice>
+          <div className="form-actions">
+            <button disabled={busy} onClick={() => setConfirmation(null)}>
+              取消
+            </button>
+            <BusyButton
+              busy={busy}
+              className="primary"
+              onClick={() => void retry(confirmation === 'current')}
+            >
+              确认重试
+            </BusyButton>
+          </div>
+        </Modal>
+      )}
+    </>
   )
 }
+
 export function ProgressFields({
   value,
   change,

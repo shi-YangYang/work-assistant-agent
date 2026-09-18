@@ -119,10 +119,11 @@ describe('service presets and protocol selection', () => {
   })
   it.each([
     ['qwen-audio-3.0-asr-flash', 'dashscope-asr'],
-    ['qwen3-asr-flash-2026-02-10', 'qwen-asr'],
+    ['qwen3-asr-flash-2026-02-10', null],
     ['deepseek-v4.1-flash', 'chat'],
     ['qwen3.8-max', 'chat'],
     ['qwen-audio-3.0-asr-flash-filetrans', null],
+    ['qwen-audio-3.0-asr-flash-streaming', null],
     ['qwen3-asr-flash-realtime', null],
     ['qwen-audio-3.0-tts-plus', null],
     ['wan2.7-image', null],
@@ -134,6 +135,12 @@ describe('service presets and protocol selection', () => {
     else expect(() => requireModelProtocols(tokenPlan, [model])).toThrow()
   })
   it('does not infer the same model on an unknown gateway or unsupported region', () => {
+    expect(matchModelProtocol(tokenPlan, 'qwen3-asr-flash').reason).toContain(
+      'qwen-audio-3.0-asr-flash',
+    )
+    expect(
+      matchModelProtocol(servicePresets['aliyun-beijing'].baseUrl, 'qwen3-asr-flash').protocol,
+    ).toBe('qwen-asr')
     for (const baseUrl of [
       'https://gateway.example/v1',
       'https://dashscope-us.aliyuncs.com/compatible-mode/v1',

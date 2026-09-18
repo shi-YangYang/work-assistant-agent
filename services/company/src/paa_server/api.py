@@ -386,15 +386,26 @@ def create_app(settings=None):
         return FileResponse(path, media_type=item.mime, filename=item.name if item.kind == 'document' else None, content_disposition_type='attachment' if item.kind == 'document' else 'inline', headers={'Content-Security-Policy': "sandbox; default-src 'none'"} if item.kind == 'document' else {'Content-Disposition': 'inline'})
 
     @app.get('/api/v1/uploads/{identifier}/preview')
-    async def image_preview(identifier: str, request: Request, actor=AUTH, db=DB):
+    async def media_preview(identifier: str, request: Request, actor=AUTH, db=DB):
         import base64
         import os
         initial_company, initial_role = actor.company_id, actor.role
         item = await visible_attachment(db, identifier, actor)
-        if item.kind != 'image':
-            problem(415, '此附件不是图片')
-        path = preview_path(settings, item.id)
-        result = await image_process(settings.media_dir / item.id, 'preview') if not path.is_file() else None
+        if item.kind not in ('image', 'audio'):
+            problem(415, '此附件不支持媒体预览')
+        source = settings.media_dir / item.id
+        if not source.is_file():
+            problem(404, '附件文件暂不可用')
+        path = preview_path(settings, item.id, item.kind)
+        data = None
+        if not path.is_file():
+            if item.kind == 'audio':
+                # Browser recordings may lack WebM duration/cues. A WAV preview
+                # has a finite duration and supports seeking; keep the original.
+                data, _ = await audio_wav(source, settings)
+            else:
+                result = await image_process(source, 'preview')
+                data = base64.b64decode(result['preview']['data'])
         # Conversion runs without a company lock. Authorize again and serialize
         # publication with deletion/permission changes only after it finishes.
         await business.company_lock(db, initial_company)
@@ -407,18 +418,20 @@ def create_app(settings=None):
         item = await visible_attachment(db, identifier, current, lock=True)
         if not (settings.media_dir / item.id).is_file():
             problem(404, '附件文件暂不可用')
-        if result is not None and not path.is_file():
+        if data is not None and not path.is_file():
             staged = path.with_name(path.name + '.' + str(uuid4()) + '.tmp')
             try:
                 with staged.open('xb') as output:
                     os.chmod(staged, 0o600)
-                    output.write(base64.b64decode(result['preview']['data']))
+                    output.write(data)
                 os.replace(staged, path)
             finally:
                 staged.unlink(missing_ok=True)
-        with path.open('rb') as source:
-            mime = 'image/png' if source.read(8) == b'\x89PNG\r\n\x1a\n' else 'image/jpeg'
+        with path.open('rb') as preview:
+            mime = 'audio/wav' if item.kind == 'audio' else 'image/png' if preview.read(8) == b'\x89PNG\r\n\x1a\n' else 'image/jpeg'
         # No browser cache survives a role/ownership change; this URL always authorizes.
+        if item.kind == 'audio':
+            return FileResponse(path, media_type=mime, headers={'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline'})
         from fastapi.responses import Response
         return Response(path.read_bytes(), media_type=mime, headers={'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline'})
 

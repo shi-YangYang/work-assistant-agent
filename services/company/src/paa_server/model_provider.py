@@ -283,6 +283,12 @@ async def transcribe(settings, config, key, wav, *, on_event=None):
     if len(wav) > 6 * 1024 * 1024:
         raise ProviderError('limit', '规范化语音超过上传限制，请缩短语音')
     base = normalize_url(config['baseUrl'], settings)
+    if urlsplit(base).hostname == 'token-plan.cn-beijing.maas.aliyuncs.com':
+        model = config['model']
+        if re.fullmatch(r'qwen3-asr-flash(?:-.*)?', model) or model == 'qwen-audio-3.0-asr-flash-streaming':
+            raise ProviderError('protocol', 'Token Plan 的语音识别请配置 qwen-audio-3.0-asr-flash，并选择阿里原生语音转写接口；修改后点击“使用当前配置重新处理”')
+        if re.fullmatch(r'qwen-audio-3\.0-asr-flash(?:-\d{4}-\d{2}-\d{2})?', model) and config['protocol'] != 'dashscope-asr':
+            raise ProviderError('protocol', '此 Token Plan 语音模型需要阿里原生语音转写接口；修改后点击“使用当前配置重新处理”')
     if on_event:
         await on_event('started')
     async with client(settings) as http:
