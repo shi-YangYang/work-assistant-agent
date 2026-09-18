@@ -204,7 +204,7 @@ GitHub 构建 Linux x86_64 的 Web、API 和 worker 镜像，推送至 GHCR；�
 
 1. 使用 Linux x86_64，安装 Docker Engine、Compose 2.24.4 或更新版本，以及 Bash、Python 3、curl、flock 和 GNU coreutils。GitHub 托管 runner 须能连接服务器 SSH，服务器须能拉取 GHCR 镜像。
 2. 创建部署根目录并交给部署用户管理，将生产 `.env.company` 放在该目录，权限设为 `600`。按前文准备主密钥、HTTPS 和钉钉回调；IP 部署先完成证书申请与续期配置。CD 不自动签署证书服务协议或生成新的主密钥。
-3. GHCR 镜像首次发布默认可能为私有。以部署用户执行 `docker login ghcr.io --username 你的GitHub账号`，在密码提示中使用有对应镜像读取权限的 `read:packages` PAT；也可以将这些不含业务配置的镜像设为公开。该登录保存在服务器，CD 不向服务器传输 GitHub 写入令牌。
+3. GHCR 的 Web、API、worker 镜像及同包内构建缓存保持 Private；新包默认私有，已有包需核对可见性，并授予本仓库 Actions 读取权限。CD 自动将部署任务的只读 `GITHUB_TOKEN` 经 SSH 标准输入用于临时登录，部署成功、失败或收到退出信号后清理临时 Docker 凭据，不覆盖服务器原有配置。无需创建个人 Token、手动 `docker login` 或新增镜像 Secret；Token 随任务结束失效。后续拉取版本仍通过手动发布执行。
 4. 首次发布成功后，在服务器创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m paa_server.cli bootstrap-admin`。实际部署路径不同时替换路径。
 
 升级会先拉取镜像、检查配置与主密钥，再停止写入并备份数据库、附件及主密钥，执行迁移，启动服务，检查 HTTPS 页面、API 数据库连接和 worker 进程。备份分别位于部署根目录的 `backups/` 和 `key-backups/`，仍须按下文要求异机保存。
