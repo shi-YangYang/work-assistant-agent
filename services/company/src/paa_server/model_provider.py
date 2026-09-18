@@ -174,6 +174,29 @@ async def catalog(settings, base_url, key):
     raise ProviderError('limit', '模型目录超过分页上限，请手动填写模型 ID')
 
 
+def reply_review_config(config):
+    """Use a non-thinking review only where the provider protocol is known.
+
+    Keep the frozen user configuration intact. Unknown gateways/models retain
+    their parameters; OpenAI compatibility alone does not imply thinking support.
+    """
+    host = urlsplit(config['baseUrl']).hostname or ''
+    model = config['model'].lower()
+    aliyun = host in ('dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com', 'dashscope-us.aliyuncs.com', 'cn-hongkong.dashscope.aliyuncs.com', 'token-plan.cn-beijing.maas.aliyuncs.com') or bool(re.fullmatch(r'[a-zA-Z0-9-]+\.(cn-beijing|ap-northeast-1|eu-central-1|us-east-1)\.maas\.aliyuncs\.com', host))
+    hybrid_deepseek = bool(re.fullmatch(r'deepseek-v(?:3\.[12](?:-exp)?|4(?:\.1)?-(?:pro|flash)(?:-\d{4})?)', model))
+    toggle = None
+    # https://help.aliyun.com/zh/model-studio/deep-thinking
+    if aliyun and hybrid_deepseek:
+        toggle = {'enable_thinking': False}
+    # https://api-docs.deepseek.com/guides/thinking_mode/
+    elif host == 'api.deepseek.com' and (model == 'deepseek-chat' or hybrid_deepseek):
+        toggle = {'thinking': {'type': 'disabled'}}
+    if toggle is None:
+        return config
+    options = {key: value for key, value in config.get('parameters', {}).items() if key not in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')}
+    return {**config, 'parameters': {**options, **toggle}}
+
+
 async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None):
     body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming'], 'max_tokens': max_tokens}
     if tools:
