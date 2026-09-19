@@ -1,5 +1,30 @@
 import { timezoneLabel } from './timezones'
 import type { DateRange } from '@paa/api-contracts'
+import type { ReactNode } from 'react'
+import { Search } from 'lucide-react'
+
+export function RecordEmpty({
+  icon,
+  title,
+  children,
+  action,
+}: {
+  icon: ReactNode
+  title: string
+  children: ReactNode
+  action?: ReactNode
+}) {
+  return (
+    <div className="record-empty">
+      <span className="record-empty-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <h3>{title}</h3>
+      <p>{children}</p>
+      {action && <div className="record-empty-actions">{action}</div>}
+    </div>
+  )
+}
 
 export function Pagination({
   page,
@@ -34,13 +59,17 @@ export function WorkFilters({
   change: (values: Record<string, string>) => void
 }) {
   return (
-    <div className="filters">
-      <input
-        aria-label="搜索工作"
-        placeholder="搜索标题、摘要、阻碍或下一步"
-        value={query}
-        onChange={(e) => change({ q: e.target.value })}
-      />
+    <div className="filters work-filters">
+      <div className="work-search">
+        <Search size={17} aria-hidden="true" />
+        <input
+          type="search"
+          aria-label="搜索工作"
+          placeholder="搜索标题、摘要、阻碍或下一步"
+          value={query}
+          onChange={(e) => change({ q: e.target.value })}
+        />
+      </div>
       <select
         aria-label="工作状态"
         value={status}
@@ -51,6 +80,11 @@ export function WorkFilters({
         <option value="blocked">有阻碍</option>
         <option value="done">已完成</option>
       </select>
+      {(query || status) && (
+        <button className="text-button" onClick={() => change({ q: '', status: '' })}>
+          清除筛选
+        </button>
+      )}
     </div>
   )
 }

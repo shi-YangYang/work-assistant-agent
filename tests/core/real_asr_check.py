@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.protocol import CoreService
 from paa_core.model_manager import MODEL_ID, REVISION, verify_files
-from paa_core.asr_worker import DEFAULT_CONFIG, ASRWorker, WhisperProvider
+from paa_core.asr_worker import ASRWorker, WhisperProvider
 from paa_core.transcription import Transcription
 
 SPEECH_URL = 'https://raw.githubusercontent.com/wenet-e2e/wenet/d17059667d6afe0680d19b3a4948ab825ef25105/test/resources/aishell-BAC009S0724W0121.wav'
@@ -45,11 +45,21 @@ def wait(predicate, timeout=90):
 def main():
     root=Path('artifacts/spec003/real-asr').resolve()
     root.mkdir(parents=True,exist_ok=True)
+    # This shared CI fixture is the pinned small CPU baseline, including on
+    # Apple hosts where the product correctly prefers a separate MLX GPU model.
+    # Persist before startup so the following desktop/package checks agree.
+    (root/'transcription-settings.json').write_text(json.dumps({'modelId':'small','language':'zh','device':'cpu'}),encoding='utf8')
     service=CoreService(root, transcription_factory=transcription_factory)
     assert service.transcription, service.storage_error
     model=service.transcription.model
     started=time.monotonic()
     try:
+        model_id,revision,config=model.selected()
+        assert (model_id,revision)==(MODEL_ID,REVISION)
+        assert config['device']=='cpu' and config['backend']=='cpu' and config['computeType']=='int8'
+        # A cache restored from the GPU-first test may contain only MLX files;
+        # its startup scan must release the preparation slot before downloading.
+        wait(lambda:model.thread is None)
         if model.status()['state']=='missing':model.download()
         def ready():
             state=model.status()
@@ -57,7 +67,7 @@ def main():
             return state['state']=='ready'
         wait(ready,900)
         load_seconds=time.monotonic()-started
-        verify_files(model.path)
+        verify_files(model.resolve(model_id,revision),files=model.files('small','ctranslate2'))
         sample=root/'public-speech.wav'
         if not sample.exists():
             with urllib.request.urlopen(SPEECH_URL,timeout=30) as response:
@@ -113,7 +123,7 @@ def main():
             audio.setparams((1,2,rate,0,'NONE','not compressed'));audio.writeframes(speech*4)
         service.repository.update(resume_id,status='completed',sampleRate=rate,frames=frames*4,bytes=frames*8,durationMs=round(frames*4000/rate),audioPath=f'meetings/{resume_id}/audio.wav')
         result={'resumeId':resume_id,'cer':cer,'historyId':history_id,'platform':platform.platform(),'python':platform.python_version(),'modelId':MODEL_ID,'revision':REVISION,
-                'config':DEFAULT_CONFIG,'modelPrepareSeconds':load_seconds,'inferenceSeconds':elapsed,
+                'config':config,'modelPrepareSeconds':load_seconds,'inferenceSeconds':elapsed,
                 'audioSeconds':frames/rate,'source':SPEECH_URL,'sha256':SPEECH_SHA256,'reference':REFERENCE,
                 'text':text,'segments':segments,'meetingId':mid,'dataRoot':str(root)}
         Path('artifacts/spec003/real-asr.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf8')

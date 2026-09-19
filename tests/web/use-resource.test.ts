@@ -123,3 +123,46 @@ it('resets the retry deadline when the resource path or verified identity change
   await vi.advanceTimersByTimeAsync(120000)
   expect(fetch).toHaveBeenCalledTimes(4)
 })
+
+it.each([403, 404])(
+  'does not carry a conversation error (%s) into a different or empty page',
+  async (status) => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ error: { message: '该记录无权查看' } }), { status }),
+        )
+        .mockImplementation(success),
+    )
+    render('/conversations/old-account', 0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(render('/conversations/old-account', 0).error).toBeInstanceOf(Error)
+    expect(render('/conversations/current-account', 0).error).toBe('')
+    expect(render(null, 0)).toMatchObject({ data: null, error: '' })
+  },
+)
+
+it('hides both previous-session data and errors before a new account read completes', async () => {
+  const fetch = vi.fn().mockImplementation(success)
+  vi.stubGlobal('fetch', fetch)
+  render('/conversations', 0)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(render('/conversations', 0).data).toEqual({ value: 'fresh' })
+  fetch.mockResolvedValue(
+    new Response(JSON.stringify({ error: { message: '该记录无权查看' } }), { status: 403 }),
+  )
+  render('/conversations/old-account', 0)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(render('/conversations/old-account', 0).error).toBeInstanceOf(Error)
+  setCsrf('new-account')
+  expect(render('/conversations/old-account', 0)).toMatchObject({ data: null, error: '' })
+
+  fetch.mockImplementation(success)
+  render('/conversations', 0)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(render('/conversations', 0).data).toEqual({ value: 'fresh' })
+  setCsrf('another-account')
+  expect(render('/conversations', 0)).toMatchObject({ data: null, error: '' })
+})

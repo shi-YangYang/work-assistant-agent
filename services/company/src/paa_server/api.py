@@ -209,6 +209,8 @@ def create_app(settings=None):
     desktop_auth = register_desktop_routes(app, AUTH, DB, settings, sessions)
     from .voiceprints import register_routes as register_voiceprint_routes
     register_voiceprint_routes(app, ADMIN, desktop_auth, DB, settings)
+    from .team_workspace import register_routes as register_team_workspace
+    register_team_workspace(app, ADMIN, DB)
 
     async def visible_member(db, actor, member_id, *, employee_only=False):
         target = await db.scalar(select(Member).where(Member.id == member_id, Member.company_id == actor.company_id))
@@ -231,7 +233,8 @@ def create_app(settings=None):
             problem(404, '报告尚未提交或无权查看')
         job = await db.scalar(select(Job).where(Job.target_id == report.id, Job.kind == 'report').order_by(Job.created_at.desc()).limit(1)) if own else None
         public = revisions[0] if revisions else None
-        return {'id': report.id, 'ownerId': report.owner_id, 'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'timezone': report.timezone, 'content': report.content if own else public.content, 'candidate': report.candidate if own else None, 'sourceIds': report.source_ids if own else public.source_ids, 'revision': report.revision if own else public.revision, 'publishedRevision': report.published_revision, 'managementRevision': report.revision, 'updatedAt': (report.updated_at if own else public.created_at).isoformat(), 'job': job_dto(job) if job else None, 'revisions': [{'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'submittedAt': r.created_at.isoformat()} for r in revisions]}
+        owner = await db.get(Member, report.owner_id)
+        return {'id': report.id, 'ownerId': report.owner_id, 'ownerName': owner.name if owner else '', 'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'timezone': report.timezone, 'content': report.content if own else public.content, 'candidate': report.candidate if own else None, 'sourceIds': report.source_ids if own else public.source_ids, 'revision': report.revision if own else public.revision, 'publishedRevision': report.published_revision, 'managementRevision': report.revision, 'updatedAt': (report.updated_at if own else public.created_at).isoformat(), 'job': job_dto(job) if job else None, 'revisions': [{'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'submittedAt': r.created_at.isoformat()} for r in revisions]}
 
     @app.get('/api/v1/health')
     async def health(db=DB):

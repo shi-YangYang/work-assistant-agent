@@ -1,7 +1,8 @@
 import { DesktopConnect, useDesktopReturn } from './DesktopConnect'
 import { VoiceprintsPage } from './Voiceprints'
 import { AudioLines } from 'lucide-react'
-import { ReportNotifications, ReportObligations } from './ReportObligations'
+import { ReportNotifications } from './ReportObligations'
+import { TeamWorkspace, TeamLegacyRedirect } from './TeamWorkspace'
 import { ModelUsagePage } from './ModelUsage'
 import {
   useCallback,
@@ -51,15 +52,7 @@ import { SourcePage } from './Assistant'
 import { Assistant } from './Conversations'
 import { Breadcrumbs } from './Breadcrumbs'
 import { WorkPage, WorkDetail, ReportsPage, ReportDetail } from './Records'
-import {
-  AccountPage,
-  AppearancePage,
-  MembersPage,
-  RulesPage,
-  TeamPage,
-  TeamMetricPage,
-  TeamMemberPage,
-} from './Settings'
+import { AccountPage, AppearancePage, MembersPage, RulesPage } from './Settings'
 
 const pages = [
   {
@@ -144,8 +137,9 @@ export function App() {
   const [identity, setIdentity] = useState<Identity | null>(null)
   const [loading, setLoading] = useState(true)
   const location = useLocation()
+  const navigate = useNavigate()
   useDesktopReturn(identity)
-  const verified = useRef(false)
+  const verified = useRef<string | null>(null)
   const [loadError, setLoadError] = useState<Error | string>('')
   useEffect(() => {
     const controller = new AbortController()
@@ -154,7 +148,7 @@ export function App() {
         if (controller.signal.aborted) return
         setCsrf(value.csrf)
         vault.resume(value)
-        verified.current = true
+        verified.current = identityScope(value)
         setIdentity(value)
       })
       .catch((e) => {
@@ -178,11 +172,12 @@ export function App() {
     }
   }, [vault])
   const logout = () => {
-    verified.current = false
+    verified.current = null
     vault.clear()
     setCsrf('')
     setLoadError('')
     setIdentity(null)
+    if (location.pathname !== '/desktop/connect') void navigate('/', { replace: true })
   }
   if (loading)
     return (
@@ -195,10 +190,13 @@ export function App() {
       <Login
         vault={vault}
         initialError={loadError}
-        onLogin={(value) => {
+        onLogin={async (value) => {
+          const changedAccount = verified.current && verified.current !== identityScope(value)
           setCsrf(value.csrf)
           vault.resume(value)
-          verified.current = true
+          if (changedAccount && location.pathname !== '/desktop/connect')
+            await navigate('/', { replace: true })
+          verified.current = identityScope(value)
           setLoadError('')
           setIdentity(value)
         }}
@@ -224,7 +222,7 @@ function Login({
   initialError,
 }: {
   vault: SessionDrafts
-  onLogin: (value: Identity) => void
+  onLogin: (value: Identity) => void | Promise<void>
   initialError: Error | string
 }) {
   const [error, setError] = useState(initialError)
@@ -246,7 +244,7 @@ function Login({
             const data = new FormData(e.currentTarget)
             setBusy(true)
             try {
-              onLogin(
+              await onLogin(
                 await write<Identity>('/auth/login', {
                   username: data.get('username'),
                   password: data.get('password'),
@@ -630,10 +628,10 @@ function Shell({
             <Route path="/reports/:id" element={<ReportDetail />} />
             {identity.member.role === 'admin' && (
               <>
-                <Route path="/team" element={<TeamPage />} />
-                <Route path="/team/details" element={<TeamMetricPage />} />
-                <Route path="/team/reports" element={<ReportObligations team />} />
-                <Route path="/team/:id" element={<TeamMemberPage />} />
+                <Route path="/team" element={<TeamWorkspace />} />
+                <Route path="/team/details" element={<TeamLegacyRedirect />} />
+                <Route path="/team/reports" element={<TeamLegacyRedirect />} />
+                <Route path="/team/:id" element={<TeamLegacyRedirect />} />
                 <Route path="/members" element={<MembersPage />} />
               </>
             )}

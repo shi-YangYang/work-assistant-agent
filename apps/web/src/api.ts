@@ -249,8 +249,13 @@ export const write = <T>(path: string, body: unknown, method = 'POST', key?: str
     headers: key ? { 'Idempotency-Key': key } : undefined,
   })
 export function useResource<T>(path: string | null, interval = 0) {
-  const [loaded, setLoaded] = useState<{ path: string; data: T } | null>(null)
-  const [error, setError] = useState<Error | string>('')
+  const sessionEpoch = epoch
+  const [loaded, setLoaded] = useState<{ path: string; epoch: number; data: T } | null>(null)
+  const [failure, setFailure] = useState<{
+    path: string
+    epoch: number
+    error: Error | string
+  } | null>(null)
   const [revision, setRevision] = useState(0)
   const retry = useRef({ path, epoch, at: 0 })
   const refresh = useCallback(() => setRevision((n) => n + 1), [])
@@ -282,12 +287,12 @@ export function useResource<T>(path: string | null, interval = 0) {
         const result = await api<T>(path, { signal: controller.signal })
         if (!controller.signal.aborted) {
           waiting.at = 0
-          setLoaded({ path, data: result })
-          setError('')
+          setLoaded({ path, epoch: sessionEpoch, data: result })
+          setFailure(null)
         }
       } catch (e) {
         if (!controller.signal.aborted && !isCancelled(e)) {
-          setError(e instanceof Error ? e : '连接失败')
+          setFailure({ path, epoch: sessionEpoch, error: e instanceof Error ? e : '连接失败' })
           if (e instanceof ApiError && e.status === 429) {
             waiting.at = e.retryAt || Date.now() + 5000
             nextDelay = Math.max(interval, waiting.at - Date.now())
@@ -320,8 +325,12 @@ export function useResource<T>(path: string | null, interval = 0) {
       window.removeEventListener('online', recover)
       document.removeEventListener('visibilitychange', recover)
     }
-  }, [path, interval, revision])
-  return { data: loaded?.path === path ? loaded.data : null, error, refresh }
+  }, [path, interval, revision, sessionEpoch])
+  return {
+    data: loaded?.path === path && loaded.epoch === sessionEpoch ? loaded.data : null,
+    error: failure?.path === path && failure.epoch === sessionEpoch ? failure.error : '',
+    refresh,
+  }
 }
 export const dateLabel = (value: string) =>
   new Date(value).toLocaleString('zh-CN', {
