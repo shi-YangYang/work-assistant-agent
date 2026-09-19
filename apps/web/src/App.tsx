@@ -1,7 +1,8 @@
 import { DesktopConnect, useDesktopReturn } from './DesktopConnect'
 import { VoiceprintsPage } from './Voiceprints'
 import { AudioLines } from 'lucide-react'
-import { ReportNotifications, ReportObligations } from './ReportObligations'
+import { ReportNotifications } from './ReportObligations'
+import { TeamWorkspace, TeamLegacyRedirect } from './TeamWorkspace'
 import { ModelUsagePage } from './ModelUsage'
 import {
   useCallback,
@@ -51,15 +52,7 @@ import { SourcePage } from './Assistant'
 import { Assistant } from './Conversations'
 import { Breadcrumbs } from './Breadcrumbs'
 import { WorkPage, WorkDetail, ReportsPage, ReportDetail } from './Records'
-import {
-  AccountPage,
-  AppearancePage,
-  MembersPage,
-  RulesPage,
-  TeamPage,
-  TeamMetricPage,
-  TeamMemberPage,
-} from './Settings'
+import { AccountPage, AppearancePage, MembersPage, RulesPage } from './Settings'
 
 const pages = [
   {
@@ -635,10 +628,10 @@ function Shell({
             <Route path="/reports/:id" element={<ReportDetail />} />
             {identity.member.role === 'admin' && (
               <>
-                <Route path="/team" element={<TeamPage />} />
-                <Route path="/team/details" element={<TeamMetricPage />} />
-                <Route path="/team/reports" element={<ReportObligations team />} />
-                <Route path="/team/:id" element={<TeamMemberPage />} />
+                <Route path="/team" element={<TeamWorkspace />} />
+                <Route path="/team/details" element={<TeamLegacyRedirect />} />
+                <Route path="/team/reports" element={<TeamLegacyRedirect />} />
+                <Route path="/team/:id" element={<TeamLegacyRedirect />} />
                 <Route path="/members" element={<MembersPage />} />
               </>
             )}

@@ -1,13 +1,21 @@
 import { ReportObligations } from './ReportObligations'
 import { useCursorPage } from './list-state'
-import { Pagination, WorkFilters } from './ListControls'
+import { Pagination, RecordEmpty, WorkFilters } from './ListControls'
 import { BusinessSources } from './BusinessSources'
 import { DeleteRecord, ReportActions } from './RecordManagement'
 import { timezoneLabel } from './timezones'
 import { usePagedResource } from './paged-resource'
 import { useState } from 'react'
 import { Link, Navigate, useNavigate, useLocation, useParams, useSearchParams } from 'react-router'
-import { ChevronRight, RefreshCw, FileText, Plus } from 'lucide-react'
+import {
+  CalendarDays,
+  ChevronRight,
+  ClipboardList,
+  RefreshCw,
+  FileText,
+  Plus,
+  Sparkles,
+} from 'lucide-react'
 import type { Progress, Report, ReportContent, Rules, Work } from '@paa/api-contracts'
 import { api, dateLabel, todayIn, useResource, write } from './api'
 import { useWorkspace } from './workspace'
@@ -16,7 +24,6 @@ import {
   ConflictRecovery,
   Actions,
   BusyButton,
-  Empty,
   ErrorNotice,
   Modal,
   Status,
@@ -51,13 +58,11 @@ export function WorkList({
             </div>
             <p className="record-summary">{work.summary}</p>
             {work.dueDate && <small className="record-note">截止 {work.dueDate}</small>}
-            <small className="record-note">
-              {work.blocker
-                ? `阻碍：${work.blocker}`
-                : work.nextStep
-                  ? `下一步：${work.nextStep}`
-                  : '暂无补充'}
-            </small>
+            {(work.blocker || work.nextStep) && (
+              <small className={`record-note ${work.blocker ? 'work-blocker' : ''}`}>
+                {work.blocker ? `阻碍：${work.blocker}` : `下一步：${work.nextStep}`}
+              </small>
+            )}
           </Link>
           <time className="record-updated">{dateLabel(work.updatedAt)}</time>
           {own ? (
@@ -107,11 +112,16 @@ export function WorkPage() {
   const status = search.get('status') ?? ''
   const list = useCursorPage<Work>(`/work-items?${new URLSearchParams({ q: query, status })}`)
   return (
-    <div className="page">
+    <div className="page records-page work-page">
       <div className="page-heading">
         <h2>我的工作</h2>
         <div className="card-actions">
-          <button aria-label="刷新工作" onClick={list.refresh}>
+          <button
+            className="icon-button"
+            aria-label="刷新工作"
+            title="刷新工作"
+            onClick={list.refresh}
+          >
             <RefreshCw size={16} />
           </button>
           <button className="primary" onClick={() => setCreating(true)}>
@@ -129,25 +139,56 @@ export function WorkPage() {
           }}
         />
       )}
-      <WorkFilters query={query} status={status} change={list.filter} />
-      <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-      {!list.data && !list.error && <p className="muted">正在读取工作…</p>}
-      {list.data &&
-        (list.data.items.length ? (
-          <WorkList items={list.data.items} own refresh={list.refresh} />
-        ) : (
-          <Empty title={query || status ? '没有符合条件的工作' : '还没有工作'}>
-            {query || status ? '试试其他关键词或状态。' : '新建一项工作，或让工作助手帮你创建。'}
-          </Empty>
-        ))}
-      {list.data && (
-        <Pagination
-          page={list.page}
-          hasNext={!!list.data.nextCursor}
-          previous={list.previous}
-          next={list.next}
-        />
-      )}
+      <div className="records-surface">
+        <div className="records-toolbar">
+          <WorkFilters query={query} status={status} change={list.filter} />
+        </div>
+        <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
+        <div className="records-results" aria-label="工作列表">
+          {!list.data && !list.error && (
+            <p className="records-loading" role="status">
+              正在读取工作…
+            </p>
+          )}
+          {list.data &&
+            (list.data.items.length ? (
+              <WorkList items={list.data.items} own refresh={list.refresh} />
+            ) : (
+              <RecordEmpty
+                icon={<ClipboardList size={27} />}
+                title={query || status ? '没有符合条件的工作' : '还没有工作'}
+                action={
+                  query || status ? (
+                    <button onClick={() => list.filter({ q: '', status: '' })}>重置筛选</button>
+                  ) : (
+                    <>
+                      <button className="primary" onClick={() => setCreating(true)}>
+                        <Plus size={16} />
+                        创建第一项工作
+                      </button>
+                      <Link to="/assistant">
+                        前往工作助手
+                        <ChevronRight size={15} />
+                      </Link>
+                    </>
+                  )
+                }
+              >
+                {query || status
+                  ? '换个关键词，或清除筛选条件。'
+                  : '记录一项工作，随时跟进进展与下一步。'}
+              </RecordEmpty>
+            ))}
+        </div>
+        {list.data && (list.page > 1 || list.data.nextCursor) && (
+          <Pagination
+            page={list.page}
+            hasNext={!!list.data.nextCursor}
+            previous={list.previous}
+            next={list.next}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -290,12 +331,19 @@ function WorkEditor({
     </Modal>
   )
 }
-export function WorkDetail() {
+export function WorkDetail({
+  recordId,
+  recordSearch,
+}: { recordId?: string; recordSearch?: string } = {}) {
   const navigate = useNavigate()
   const [deleting, setDeleting] = useState(false)
   const location = useLocation()
-  const { id } = useParams()
-  const { data, error, refresh } = useResource<Work>(`/work-items/${id}${location.search}`, 5000)
+  const params = useParams()
+  const id = recordId ?? params.id
+  const { data, error, refresh } = useResource<Work>(
+    `/work-items/${id}${recordSearch ?? location.search}`,
+    5000,
+  )
   const { identity } = useWorkspace()
   const [editing, setEditing] = useState(false)
   return (
@@ -306,7 +354,14 @@ export function WorkDetail() {
           <div className="page-heading">
             <div>
               <Status value={data.status} />
-              {data.historical && <small>历史修订 · 第 {data.revision} 版</small>}
+              {data.historical && (
+                <small>
+                  历史修订 · 第 {data.revision} 版{' '}
+                  <Link to={`/work/${data.id}`} state={detailState(location)}>
+                    查看最新工作
+                  </Link>
+                </small>
+              )}
               <h2>{data.title}</h2>
             </div>
             {data.ownerId === identity.member.id && !data.historical && (
@@ -346,34 +401,36 @@ export function WorkDetail() {
               }}
             />
           )}
-          <h3>进展记录与来源</h3>
-          <div className="timeline">
-            {data.history?.map((h) => (
-              <article key={h.id}>
-                <small>
-                  第 {h.revision} 版 · {dateLabel(h.createdAt)}
-                </small>
-                <p>{h.content.summary}</p>
-                {h.sourceIds.length ? (
-                  h.sourceIds.map((source) =>
-                    h.deletedSourceIds?.includes(source) ? (
-                      <span className="muted" key={source}>
-                        原始消息已删除
-                      </span>
-                    ) : (
-                      <Link key={source} to={`/messages/${source}`} state={detailState(location)}>
-                        查看原始上报
-                      </Link>
-                    ),
-                  )
-                ) : (
+          <details className="record-evidence">
+            <summary>进展记录与来源</summary>
+            <div className="timeline">
+              {data.history?.map((h) => (
+                <article key={h.id}>
                   <small>
-                    {h.revision === 1 && data.origin === 'manual' ? '手动创建' : '手动更新'}
+                    第 {h.revision} 版 · {dateLabel(h.createdAt)}
                   </small>
-                )}
-              </article>
-            ))}
-          </div>
+                  <p>{h.content.summary}</p>
+                  {h.sourceIds.length ? (
+                    h.sourceIds.map((source) =>
+                      h.deletedSourceIds?.includes(source) ? (
+                        <span className="muted" key={source}>
+                          原始消息已删除
+                        </span>
+                      ) : (
+                        <Link key={source} to={`/messages/${source}`} state={detailState(location)}>
+                          查看原始上报
+                        </Link>
+                      ),
+                    )
+                  ) : (
+                    <small>
+                      {h.revision === 1 && data.origin === 'manual' ? '手动创建' : '手动更新'}
+                    </small>
+                  )}
+                </article>
+              ))}
+            </div>
+          </details>
           {editing && (
             <WorkEditor
               work={data}
@@ -424,48 +481,73 @@ export function ReportsPage() {
   const { notify } = useWorkspace()
   const selectedDate = params.get('date') || todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
   return (
-    <div className="page">
+    <div className="page records-page reports-page">
       <div className="page-heading">
         <div>
           <h2>我的报告</h2>
         </div>
-        <button onClick={() => setShowRules(true)}>汇报安排</button>
-      </div>
-      <div className="tabs report-view-tabs">
-        <button className={todo ? 'active' : ''} onClick={() => setParams({ kind, view: 'todo' })}>
-          汇报待办
-        </button>
-        <button className={!todo ? 'active' : ''} onClick={() => setParams({ kind, view: 'all' })}>
-          全部报告
+        <button onClick={() => setShowRules(true)}>
+          <CalendarDays size={16} />
+          汇报安排
         </button>
       </div>
-      <div className="toolbar report-toolbar">
-        <div className="tabs">
-          <button
-            className={kind === 'daily' ? 'active' : ''}
-            onClick={() =>
-              setParams({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
-            }
-          >
-            日报
-          </button>
-          <button
-            className={kind === 'weekly' ? 'active' : ''}
-            onClick={() =>
-              setParams({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
-            }
-          >
-            周报
-          </button>
+      <div className="records-surface">
+        <div className="records-navigation">
+          <div className="tabs report-view-tabs">
+            <button
+              aria-pressed={todo}
+              className={todo ? 'active' : ''}
+              onClick={() => setParams({ kind, view: 'todo' })}
+            >
+              汇报待办
+            </button>
+            <button
+              aria-pressed={!todo}
+              className={!todo ? 'active' : ''}
+              onClick={() => setParams({ kind, view: 'all' })}
+            >
+              全部报告
+            </button>
+          </div>
+          <div className="report-kind-switch" role="group" aria-label="报告类型">
+            <button
+              className={kind === 'daily' ? 'active' : ''}
+              aria-pressed={kind === 'daily'}
+              onClick={() =>
+                setParams({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
+              }
+            >
+              日报
+            </button>
+            <button
+              className={kind === 'weekly' ? 'active' : ''}
+              aria-pressed={kind === 'weekly'}
+              onClick={() =>
+                setParams({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
+              }
+            >
+              周报
+            </button>
+          </div>
         </div>
         {!todo && (
-          <div className="inline report-generate">
-            <input
-              type="date"
-              aria-label="报告日期"
-              value={selectedDate}
-              onChange={(e) => setParams({ kind, date: e.target.value, view: 'all' })}
-            />
+          <div className="records-toolbar report-generate">
+            <label className="record-date-field">
+              <span>报告日期</span>
+              <input
+                type="date"
+                aria-label="报告日期"
+                value={selectedDate}
+                onClick={(event) => {
+                  try {
+                    event.currentTarget.showPicker?.()
+                  } catch {
+                    /* Native picker unavailable. */
+                  }
+                }}
+                onChange={(e) => setParams({ kind, date: e.target.value, view: 'all' })}
+              />
+            </label>
             <BusyButton
               busy={busy}
               className="primary"
@@ -487,56 +569,84 @@ export function ReportsPage() {
                 }
               }}
             >
+              <Sparkles size={16} />
               生成{kind === 'daily' ? '日报' : '周报'}
             </BusyButton>
           </div>
         )}
-      </div>
-      <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
-      {todo ? (
-        <ReportObligations />
-      ) : data?.items.length ? (
-        <div className="record-list">
-          {data.items.map((report) => (
-            <div className="record-row report-row" key={report.id}>
-              <Link
-                to={`/reports/${report.id}`}
-                state={detailState(location)}
-                className="record-main report-entry-link"
+        <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
+        {todo ? (
+          <ReportObligations />
+        ) : (
+          <div className="records-results" aria-label="报告列表">
+            {data?.items.length ? (
+              <div className="record-list">
+                {data.items.map((report) => (
+                  <div className="record-row report-row" key={report.id}>
+                    <Link
+                      to={`/reports/${report.id}`}
+                      state={detailState(location)}
+                      className="record-main report-entry-link"
+                    >
+                      <span className="record-type-icon" aria-hidden="true">
+                        <FileText size={21} />
+                      </span>
+                      <div className="record-main">
+                        <h3>
+                          {report.kind === 'weekly' ? '周报' : '日报'} ·{' '}
+                          <span className="record-period">{report.period}</span>
+                          {report.kind === 'weekly' && (
+                            <>
+                              {' '}
+                              — <span className="record-period">{report.periodEnd}</span>
+                            </>
+                          )}
+                        </h3>
+                        <p>
+                          <span
+                            className={`status ${report.publishedRevision ? 'submitted' : 'draft'}`}
+                          >
+                            {report.publishedRevision
+                              ? `已提交第 ${report.publishedRevision} 版${report.revision !== report.publishedRevision ? ' · 有未提交更正' : ''}`
+                              : '草稿'}
+                          </span>
+                        </p>
+                        <small>
+                          {report.job?.state === 'running' || report.job?.state === 'queued'
+                            ? '正在整理'
+                            : ''}
+                          {report.job?.error ? '生成未完成' : ''}
+                        </small>
+                      </div>
+                      <time className="record-updated">{dateLabel(report.updatedAt)}</time>
+                      <ChevronRight size={18} />
+                    </Link>
+                    <ReportActions report={report} onDeleted={refresh} />
+                  </div>
+                ))}
+                {data.nextCursor && (
+                  <button className="records-load-more" disabled={loading} onClick={loadMore}>
+                    加载更早报告
+                  </button>
+                )}
+              </div>
+            ) : data ? (
+              <RecordEmpty
+                icon={<FileText size={27} />}
+                title={`还没有${kind === 'daily' ? '日报' : '周报'}`}
               >
-                <FileText size={21} />
-                <div className="record-main">
-                  <h3>
-                    {report.period}
-                    {report.kind === 'weekly' ? ` — ${report.periodEnd}` : ''}
-                  </h3>
-                  <p>
-                    {report.publishedRevision
-                      ? `已提交第 ${report.publishedRevision} 版${report.revision !== report.publishedRevision ? ' · 有未提交更正' : ''}`
-                      : '草稿'}
-                  </p>
-                  <small>
-                    {report.job?.state === 'running' || report.job?.state === 'queued'
-                      ? ' · 正在整理'
-                      : ''}
-                    {report.job?.error ? ' · 生成未完成' : ''}
-                  </small>
-                </div>
-                <time className="record-updated">{dateLabel(report.updatedAt)}</time>
-                <ChevronRight size={18} />
-              </Link>
-              <ReportActions report={report} onDeleted={refresh} />
-            </div>
-          ))}
-          {data.nextCursor && (
-            <button disabled={loading} onClick={loadMore}>
-              加载更早报告
-            </button>
-          )}
-        </div>
-      ) : (
-        <Empty title="还没有报告">选择日期生成草稿，也可以在空草稿中手动填写工作。</Empty>
-      )}
+                选择上方日期生成草稿，整理后即可提交。
+              </RecordEmpty>
+            ) : (
+              !error && (
+                <p className="records-loading" role="status">
+                  正在读取报告…
+                </p>
+              )
+            )}
+          </div>
+        )}
+      </div>
       {showRules && (
         <Modal title="我的汇报安排" onClose={() => setShowRules(false)}>
           {rules.data ? (
@@ -573,12 +683,20 @@ export function ReportsPage() {
     </div>
   )
 }
-export function ReportDetail() {
+export function ReportDetail({
+  recordId,
+  recordSearch,
+  onRecordDeleted,
+}: { recordId?: string; recordSearch?: string; onRecordDeleted?: () => void } = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const [deleting, setDeleting] = useState(false)
-  const { id } = useParams()
-  const { data, error, refresh } = useResource<Report>(`/reports/${id}${location.search}`, 2000)
+  const params = useParams()
+  const id = recordId ?? params.id
+  const { data, error, refresh } = useResource<Report>(
+    `/reports/${id}${recordSearch ?? location.search}`,
+    2000,
+  )
   const { identity, drafts, setDraft, notify } = useWorkspace()
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('edit') === '1')
   const [submit, setSubmit] = useState(false)
@@ -621,11 +739,16 @@ export function ReportDetail() {
               <span className="eyebrow">
                 {data.kind === 'daily' ? '日报' : '周报'} · {timezoneLabel(data.timezone)}
               </span>
+              {data.ownerName && <p className="report-owner">{data.ownerName}</p>}
               <h2>
                 {data.period}
                 {data.kind === 'weekly' ? ` — ${data.periodEnd}` : ''}
               </h2>
-              <p>{data.publishedRevision ? `已提交第 ${data.publishedRevision} 版` : '草稿'}</p>
+              <p>
+                {data.publishedRevision
+                  ? `已提交第 ${data.historical ? data.revision : data.publishedRevision} 版`
+                  : '草稿'}
+              </p>
             </div>
             {(identity.member.role === 'admin' || (own && !data.publishedRevision)) && (
               <Actions label="管理报告">
@@ -655,6 +778,10 @@ export function ReportDetail() {
               revision={data.managementRevision ?? data.revision}
               onClose={() => setDeleting(false)}
               onDeleted={() => {
+                if (onRecordDeleted) {
+                  onRecordDeleted()
+                  return
+                }
                 const back = detailReturn(location.pathname, location.state)
                 navigate(back.path, { state: back.state, replace: true })
               }}
@@ -804,14 +931,17 @@ function ReportSources({ report }: { report: Report }) {
   }>(`/reports/${report.id}/sources?revision=${report.revision}`)
   if (error) return <ErrorNotice retry={refresh}>{error}</ErrorNotice>
   return data?.items.length ? (
-    <section>
-      <h3>工作依据</h3>
+    <details className="record-evidence">
+      <summary>工作依据</summary>
       {data.items.map((item) => (
         <div className="source-row" key={item.id}>
           {item.workDeleted ? (
             <span>{item.title} · 工作已删除</span>
           ) : (
-            <Link to={`/work/${item.workId}`} state={detailState(location)}>
+            <Link
+              to={`/work/${item.workId}?revision=${item.revision}`}
+              state={detailState(location)}
+            >
               {item.title} · 第 {item.revision} 版
             </Link>
           )}
@@ -828,6 +958,6 @@ function ReportSources({ report }: { report: Report }) {
           )}
         </div>
       ))}
-    </section>
+    </details>
   ) : null
 }

@@ -173,6 +173,7 @@ export interface ReportContent {
   next: string
 }
 export interface Report {
+  ownerName?: string
   historical?: boolean
   id: string
   ownerId: string
@@ -449,4 +450,31 @@ export interface DingTalkAccount {
   hasPassword: boolean
   available: boolean
   passwordVerified: boolean
+}
+
+export interface TeamWorkRow {
+  id: string
+  member: Member
+  work: Work
+}
+export interface TeamReportRow {
+  id: string
+  member: Member
+  kind: 'daily' | 'weekly'
+  period: string
+  periodEnd: string
+  state: 'pending' | 'overdue' | 'submitted' | 'cancelled'
+  scheduled: boolean
+  deadlineAt: string | null
+  timezone: string
+  reportId: string | null
+  revision: number | null
+  submittedAt: string | null
+  summary: string
+}
+export interface TeamWorkspacePage<T> extends Page<T> {
+  total: number
+  counts: Record<string, number>
+  range: DateRange
+  members: Member[]
 }
