@@ -1,7 +1,8 @@
 import { timezoneLabel } from './timezones'
 import type { DateRange } from '@paa/api-contracts'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Search } from 'lucide-react'
+import { SearchInput } from './SearchInput'
 
 export function RecordEmpty({
   icon,
@@ -58,16 +59,17 @@ export function WorkFilters({
   status: string
   change: (values: Record<string, string>) => void
 }) {
+  const [resetKey, resetSearch] = useState(0)
   return (
     <div className="filters work-filters">
       <div className="work-search">
         <Search size={17} aria-hidden="true" />
-        <input
-          type="search"
+        <SearchInput
           aria-label="搜索工作"
           placeholder="搜索标题、摘要、阻碍或下一步"
           value={query}
-          onChange={(e) => change({ q: e.target.value })}
+          onSearch={(q) => change({ q })}
+          resetKey={resetKey}
         />
       </div>
       <select
@@ -81,7 +83,13 @@ export function WorkFilters({
         <option value="done">已完成</option>
       </select>
       {(query || status) && (
-        <button className="text-button" onClick={() => change({ q: '', status: '' })}>
+        <button
+          className="text-button"
+          onClick={() => {
+            resetSearch((value) => value + 1)
+            change({ q: '', status: '' })
+          }}
+        >
           清除筛选
         </button>
       )}

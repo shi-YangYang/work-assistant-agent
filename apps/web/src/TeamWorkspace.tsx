@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useParams, useSearchParams } from 'react-router'
 import {
   ArrowLeft,
@@ -15,11 +15,13 @@ import { Pagination, PeriodFilter, RecordEmpty } from './ListControls'
 import { ErrorNotice, Modal, Status } from './ui'
 import { WorkDetail, ReportDetail } from './Records'
 import { obligationLabel } from './ReportObligations'
+import { SearchInput } from './SearchInput'
 
 type Row = TeamWorkRow | TeamReportRow
 const isWork = (row: Row): row is TeamWorkRow => 'work' in row
 
 export function TeamWorkspace() {
+  const [searchReset, resetSearch] = useState(0)
   const [params, setParams] = useSearchParams()
   const location = useLocation()
   const view = params.get('view') === 'reports' ? 'reports' : 'work'
@@ -33,6 +35,7 @@ export function TeamWorkspace() {
   }
   const list = useResource<TeamWorkspacePage<Row>>(`/team/workspace/${view}?${query}`, 30000)
   const update = (values: Record<string, string>, reset = true) => {
+    if (values.q === '') resetSearch((value) => value + 1)
     const next = new URLSearchParams(params)
     if (reset) {
       next.delete('workOffset')
@@ -138,12 +141,12 @@ export function TeamWorkspace() {
         <div className="team-toolbar">
           <div className="work-search">
             <Search size={17} aria-hidden="true" />
-            <input
-              type="search"
+            <SearchInput
               aria-label="搜索团队内容"
               placeholder="搜索员工或内容"
               value={params.get('q') || ''}
-              onChange={(e) => update({ q: e.target.value })}
+              onSearch={(q) => update({ q })}
+              resetKey={searchReset}
             />
           </div>
           <select
