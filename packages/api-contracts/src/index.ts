@@ -6,6 +6,7 @@ export interface Member {
   username: string
   role: Role
   active: boolean
+  deleted?: boolean
   mustChangePassword: boolean
   hasPassword: boolean
 }

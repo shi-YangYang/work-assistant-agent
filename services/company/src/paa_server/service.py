@@ -149,7 +149,7 @@ async def confirm_drafts(db, actor, items, ignore=False):
 
 
 def member_dto(member):
-    return {'id': member.id, 'name': member.name, 'username': member.username, 'role': member.role, 'active': member.active, 'mustChangePassword': member.must_change_password, 'hasPassword': bool(member.password_hash)}
+    return {'id': member.id, 'name': member.name, 'username': member.username, 'role': member.role, 'active': member.active, 'deleted': member.deleted, 'mustChangePassword': member.must_change_password, 'hasPassword': bool(member.password_hash)}
 
 
 def work_dto(work):

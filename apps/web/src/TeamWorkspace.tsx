@@ -223,7 +223,9 @@ export function TeamWorkspace() {
                     <span className="avatar">{row.member.name.slice(0, 1)}</span>
                     <span>
                       {row.member.name}
-                      {!row.member.active && <small>已停用</small>}
+                      {!row.member.active && (
+                        <small>{row.member.deleted ? '账号已删除' : '已停用'}</small>
+                      )}
                     </span>
                   </button>
                   {isWork(row) ? (

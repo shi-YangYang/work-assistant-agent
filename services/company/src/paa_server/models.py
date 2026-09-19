@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from uuid import uuid4
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -39,7 +39,9 @@ class Member(Record, Base):
     role: Mapped[str] = mapped_column(String(12), default='employee')
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
+    __table_args__ = (CheckConstraint('NOT deleted OR NOT active', name='ck_company_member_deleted_inactive'),)
 
 
 class Session(Record, Base):

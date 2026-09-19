@@ -248,7 +248,11 @@ export const write = <T>(path: string, body: unknown, method = 'POST', key?: str
     body: JSON.stringify(body),
     headers: key ? { 'Idempotency-Key': key } : undefined,
   })
-export function useResource<T>(path: string | null, interval = 0) {
+export function useResource<T>(
+  path: string | null,
+  interval = 0,
+  shouldPoll?: (data: T) => boolean,
+) {
   const sessionEpoch = epoch
   const [loaded, setLoaded] = useState<{ path: string; epoch: number; data: T } | null>(null)
   const [failure, setFailure] = useState<{
@@ -268,6 +272,7 @@ export function useResource<T>(path: string | null, interval = 0) {
     let timer: ReturnType<typeof setTimeout>
     let loading = false
     let unavailable = false
+    let polling = !!interval
     const load = async () => {
       if (loading || controller.signal.aborted || unavailable) return
       if (waiting.epoch !== epoch) {
@@ -289,6 +294,7 @@ export function useResource<T>(path: string | null, interval = 0) {
           waiting.at = 0
           setLoaded({ path, epoch: sessionEpoch, data: result })
           setFailure(null)
+          polling = !!interval && (!shouldPoll || shouldPoll(result))
         }
       } catch (e) {
         if (!controller.signal.aborted && !isCancelled(e)) {
@@ -310,7 +316,7 @@ export function useResource<T>(path: string | null, interval = 0) {
       } finally {
         loading = false
       }
-      if (interval && !controller.signal.aborted && !unavailable)
+      if (polling && !controller.signal.aborted && !unavailable)
         timer = setTimeout(load, document.hidden ? Math.max(nextDelay, 30000) : nextDelay)
     }
     const recover = () => {
@@ -325,7 +331,7 @@ export function useResource<T>(path: string | null, interval = 0) {
       window.removeEventListener('online', recover)
       document.removeEventListener('visibilitychange', recover)
     }
-  }, [path, interval, revision, sessionEpoch])
+  }, [path, interval, shouldPoll, revision, sessionEpoch])
   return {
     data: loaded?.path === path && loaded.epoch === sessionEpoch ? loaded.data : null,
     error: failure?.path === path && failure.epoch === sessionEpoch ? failure.error : '',

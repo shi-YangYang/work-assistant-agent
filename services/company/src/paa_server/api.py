@@ -296,7 +296,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/members')
     async def members(actor=ADMIN, db=DB):
-        return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee').order_by(Member.created_at))).all()]}
+        return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee', Member.deleted.is_(False)).order_by(Member.created_at))).all()]}
 
     @app.post('/api/v1/members', status_code=201)
     async def add_member(body: MemberCreate, actor=ADMIN, db=DB):
@@ -314,6 +314,8 @@ def create_app(settings=None):
     async def change_member(identifier: str, body: MemberPatch, actor=ADMIN, db=DB):
         await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
         item = await visible_member(db, actor, identifier, employee_only=True)
+        if item.deleted:
+            problem(404, '账号已删除')
         item.active = body.active
         await reporting.eligibility_changed(db, item)
         if not item.active:
@@ -323,9 +325,30 @@ def create_app(settings=None):
     @app.post('/api/v1/members/{identifier}/reset-password')
     async def reset_password(identifier: str, body: ResetPassword, actor=ADMIN, db=DB):
         item = await visible_member(db, actor, identifier, employee_only=True)
+        if item.deleted:
+            problem(404, '账号已删除')
         item.password_hash = await run_in_threadpool(passwords.hash, body.password)
         item.must_change_password = True
         await revoke_member(db, item.id)
+        return {'ok': True}
+
+    @app.delete('/api/v1/members/{identifier}')
+    async def delete_member(identifier: str, actor=ADMIN, db=DB):
+        await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
+        item = await visible_member(db, actor, identifier)
+        if item.role != 'employee':
+            problem(404, '成员不存在或无权查看')
+        # Preserve the owner ID for history, but release both login identities.
+        # The colon is outside the allowed username alphabet, so this reserved
+        # tombstone cannot conflict with an account created through the API.
+        if not item.deleted:
+            item.active, item.deleted, item.password_hash = False, True, None
+            item.username = 'deleted:' + item.id
+            await reporting.eligibility_changed(db, item)
+            await revoke_member(db, item.id)
+            from .models import DingTalkIdentity, Voiceprint
+            await db.execute(delete(DingTalkIdentity).where(DingTalkIdentity.member_id == item.id, DingTalkIdentity.company_id == actor.company_id))
+            await db.execute(update(Voiceprint).where(Voiceprint.member_id == item.id, Voiceprint.state.in_(('queued', 'processing'))).values(state='failed', error='账号已删除，登记已停止', lease_until=None, revision=Voiceprint.revision + 1, updated_at=now()))
         return {'ok': True}
 
     @app.post('/api/v1/uploads', status_code=201)

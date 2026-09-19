@@ -28,7 +28,7 @@
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
 | 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
-| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0011_company_voiceprints`，业务数据、私有附件、公司身份、可恢复业务操作及声纹模板 |
+| 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0012_member_deletion`，业务数据、私有附件、公司身份、可恢复业务操作及声纹模板 |
 | 登录 | 账号密码与可选钉钉企业内部应用 OAuth；本地成员、角色、8 小时会话与 CSRF；桌面经系统浏览器确认及一次性 PKCE 授权，受限令牌依附原 Web 会话；自动开户仅限已核验的公司员工 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、独立语义意图校验、版本化来源与持久操作回执，提交／删除需确认 |
 | 模型 | 受控 ChatOpenAI／httpx 适配聊天；文件转写与 Qwen-ASR 为独立协议；cryptography 50.0.1 AES-GCM 加密公司 Key |

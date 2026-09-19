@@ -30,6 +30,7 @@ import {
 } from './ui'
 import { JobNotice, ProgressFields } from './Assistant'
 import { detailReturn, detailState } from './navigation'
+import { reportNeedsPolling } from './job-feedback'
 
 export function WorkList({
   items,
@@ -696,6 +697,7 @@ export function ReportDetail({
   const { data, error, refresh } = useResource<Report>(
     `/reports/${id}${recordSearch ?? location.search}`,
     2000,
+    reportNeedsPolling,
   )
   const { identity, drafts, setDraft, notify } = useWorkspace()
   const [editing, setEditing] = useState(new URLSearchParams(location.search).get('edit') === '1')

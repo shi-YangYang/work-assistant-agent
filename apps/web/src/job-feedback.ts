@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Job, JobFeedback } from '@paa/api-contracts'
+import type { Job, JobFeedback, Report } from '@paa/api-contracts'
 import { api, ApiError, expireSession, isCancelled } from './api'
 
 export const terminalJob = (state: string) => !['queued', 'running'].includes(state)
+export const reportNeedsPolling = (report: Pick<Report, 'historical' | 'job'>) =>
+  !report.historical && !!report.job && !terminalJob(report.job.state)
 export function acceptFeedback(
   current: JobFeedback | null,
   incoming: JobFeedback,
