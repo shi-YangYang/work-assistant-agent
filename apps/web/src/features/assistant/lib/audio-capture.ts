@@ -23,6 +23,7 @@ export type Composer = {
       newConversation?: boolean
       text: string
       attachmentIds: string[]
+      voiceCommandAttachmentId?: string
       replyTo: string | null
     }
   }

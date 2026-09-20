@@ -211,7 +211,7 @@ async def test_work_search_and_message_context_use_confirmed_state_after_reply(s
         await db.flush()
         db.add(ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=source.id, work_id=work.id, content=work.content, status='confirmed', tool_key='confirmed-reference'))
     runtime = SimpleNamespace(context=context)
-    results = json.loads(await find_work_items.coroutine(query='真实联调 海星方案', runtime=runtime))
+    results = json.loads(await find_work_items.coroutine(query='海星方案', runtime=runtime))
     assert [item['id'] for item in results['items']] == [work.id]
     assert context.read_versions == {work.id: work.revision}
     source = json.loads(await get_message_context.coroutine(message_id=sent['messageId'], runtime=runtime))

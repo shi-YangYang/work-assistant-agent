@@ -36,6 +36,7 @@ class ReviewedReply:
     text: str = ''
     execution_claims: bool = False
     verified: bool = False
+    error_code: str = ''
 
 
 def reply_segments(answer):
@@ -80,7 +81,10 @@ def check_segments(parts, raw, evidence):
         if item.kind in ('information', 'query_fact'):
             keep.append(parts[item.index])
         execution |= item.kind == 'execution'
-    return ReviewedReply(''.join(keep).strip(), execution, True)
+    text = ''.join(keep)
+    # Removing execution rows must not leave an empty Markdown table shell.
+    text = re.sub(r'(?m)^[ \t]*\|[^\n]*\|[ \t]*\n[ \t]*\|(?:[ \t]*:?-{3,}:?[ \t]*\|)+[ \t]*(?:\n|\Z)(?![ \t]*\|)', '', text)
+    return ReviewedReply(text.strip(), execution, True)
 
 
 async def review_reply(context, answer, *, model=None):
@@ -91,6 +95,7 @@ async def review_reply(context, answer, *, model=None):
     Execution prose is discarded regardless of the judge's opinion of success;
     worker renders operation states again from fresh, authorized database rows.
     """
+    from .conversation_context import request_text
     parts = reply_segments(answer)
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
@@ -102,7 +107,7 @@ async def review_reply(context, answer, *, model=None):
         evidence = context.reply_evidence
         # Operation outcomes are rendered from fresh receipts by the worker;
         # they are never evidence for retaining the model's execution prose.
-        payload = {'task': REVIEW_TASK, 'version': 2, 'currentUserText': message.text, 'requestClock': getattr(context, 'request_clock', ''), 'segments': [{'index': index, 'text': part} for index, part in enumerate(parts)], 'toolEvidence': evidence}
+        payload = {'task': REVIEW_TASK, 'version': 2, 'currentUserText': request_text(message, job), 'requestClock': getattr(context, 'request_clock', ''), 'segments': [{'index': index, 'text': part} for index, part in enumerate(parts)], 'toolEvidence': evidence}
         fingerprint = digest(payload)
         cached = job.result.get('replyReview', {})
         if cached.get('digest') == fingerprint:
@@ -135,6 +140,6 @@ information：问候、材料分析、澄清问题、能力解释、条件或建
         raise
     except Exception as error:
         # Network/budget/schema failure concerns explanatory prose only. It must
-        # not undo saved actions, advertise a failed write or trigger paid retry.
+        # not undo saved actions; the user may retry only this review stage.
         log.info('job=%s reply_review_failure=%s', context.job_id, type(error).__name__)
-        return ReviewedReply()
+        return ReviewedReply(error_code=type(error).__name__)

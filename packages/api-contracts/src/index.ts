@@ -81,6 +81,7 @@ export interface BusinessAction {
   objectRevision?: number
   title?: string
   details?: Partial<Progress>
+  changedFields?: (keyof Progress)[]
   message?: string
   canConfirm?: boolean
   preview?: { title: string; content?: ReportContent; revision: number }
@@ -129,7 +130,15 @@ export interface Draft {
   status: 'pending' | 'confirmed' | 'ignored'
   revision: number
 }
+export interface OperationFeedback {
+  step: number
+  action: string
+  label: string
+  state: 'failed' | 'conflict' | 'clarification' | 'waiting'
+  message: string
+}
 export interface Job {
+  operationFeedback?: OperationFeedback[]
   stage?: string
   attempt?: number
   fence?: number

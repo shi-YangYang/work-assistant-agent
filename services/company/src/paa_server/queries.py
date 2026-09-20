@@ -51,11 +51,16 @@ def period_range(company, period='this_week', start=None, end=None, instant=None
     return datetime.combine(start, time.min, zone), datetime.combine(end + timedelta(days=1), time.min, zone), {'period': period, 'start': start.isoformat(), 'end': end.isoformat(), 'timezone': zone.key}
 
 
+def work_search(query):
+    term = query.strip()
+    return or_(WorkItem.title.icontains(term, autoescape=True), *(WorkItem.content[key].astext.icontains(term, autoescape=True) for key in ('summary', 'blocker', 'nextStep')))
+
+
 async def work_page(db, actor, owner_id, q='', status='', cursor=None, limit=20):
     status_filter(status)
     query = select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id == owner_id, WorkItem.deleted.is_(False))
     if q.strip():
-        query = query.where(or_(WorkItem.title.icontains(q.strip(), autoescape=True), *(WorkItem.content[key].astext.icontains(q.strip(), autoescape=True) for key in ('summary', 'blocker', 'nextStep'))))
+        query = query.where(work_search(q))
     if status:
         query = query.where(WorkItem.content['status'].astext == status)
     visible = []

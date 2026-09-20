@@ -12,7 +12,7 @@ from . import business_access as business
 from .models import Conversation, Job, Member, Message, Session, now
 from .service import problem
 
-STAGES = frozenset({'queued', 'preparing', 'parsing', 'transcribing', 'searching', 'generating', 'complete'})
+STAGES = frozenset({'queued', 'preparing', 'parsing', 'transcribing', 'searching', 'generating', 'reviewing', 'complete'})
 TERMINAL = frozenset({'succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled'})
 
 

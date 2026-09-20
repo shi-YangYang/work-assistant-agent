@@ -80,6 +80,13 @@ export function messageSubmission(
         if (!file.attachment) throw new Error('附件尚未上传完成')
         return file.attachment.id
       }),
+      ...(composer.files.some((file) => file.recorded && file.attachment?.kind === 'audio')
+        ? {
+            voiceCommandAttachmentId: composer.files.find(
+              (file) => file.recorded && file.attachment?.kind === 'audio',
+            )!.attachment!.id,
+          }
+        : {}),
       replyTo: composer.replyTo ?? null,
     },
   }

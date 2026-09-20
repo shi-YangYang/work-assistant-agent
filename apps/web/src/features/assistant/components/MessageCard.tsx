@@ -144,6 +144,21 @@ export function MessageCard({
           refresh={onChange}
         />
       )}
+      {own &&
+        !message.businessUnavailable &&
+        message.job?.operationFeedback?.map((item) => (
+          <div className="notice" role="status" key={item.step}>
+            <strong>
+              {item.label} ·{' '}
+              {item.state === 'clarification'
+                ? '需要补充'
+                : item.state === 'waiting'
+                  ? '等待前置操作'
+                  : '未执行'}
+            </strong>
+            <p>{item.message}</p>
+          </div>
+        ))}
       {live.error && (
         <p className="muted small-text" role="status">
           {live.error}

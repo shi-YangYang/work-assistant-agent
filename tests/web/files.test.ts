@@ -93,3 +93,25 @@ it('clipboard only accepts real image files, preserving normal text and never fe
   expect(isHeif(file('phone.HEIC'))).toBe(true)
   expect(fileKind(file('voice.mp3'))).toBe('audio')
 })
+
+it('marks directly recorded voice as an instruction and keeps uploaded audio as material', () => {
+  const entry: Composer['files'][number] = {
+    id: 'local',
+    file: file('voice.webm', 100, 'audio/webm'),
+    url: 'blob:voice',
+    attachment: {
+      id: 'audio',
+      kind: 'audio',
+      name: 'voice.webm',
+      duration: 1,
+      mime: 'audio/webm',
+      size: 100,
+      url: '/api/v1/media/audio',
+    },
+  }
+  const composer: Composer = { text: '', key: 'voice', files: [entry] }
+  expect(messageSubmission(composer).body).not.toHaveProperty('voiceCommandAttachmentId')
+  const recorded = messageSubmission({ ...composer, files: [{ ...entry, recorded: true }] })
+  expect(recorded.body.voiceCommandAttachmentId).toBe('audio')
+  expect(messageSubmission({ ...composer, pending: recorded })).toBe(recorded)
+})

@@ -66,6 +66,7 @@ export function sendMessage(
     newConversation?: boolean
     text: string
     attachmentIds: string[]
+    voiceCommandAttachmentId?: string
     replyTo: string | null
   },
   key: string,

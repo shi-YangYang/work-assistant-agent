@@ -17,6 +17,8 @@ export function JobNotice({
   const [error, setError] = useState<Error | string>('')
   const [confirmation, setConfirmation] = useState<'original' | 'current' | null>(null)
   const inFlight = useRef(false)
+  const reviewOnly = job.phase === 'reply_review'
+  const retryLabel = reviewOnly ? '重试答复核对' : '重试处理'
   const retry = async (useCurrentConfig = false) => {
     if (inFlight.current) return
     inFlight.current = true
@@ -55,7 +57,7 @@ export function JobNotice({
           busy={busy}
           onClick={() => (job.state === 'awaiting_retry' ? confirmRetry('original') : void retry())}
         >
-          重试处理
+          {retryLabel}
         </BusyButton>
         <BusyButton busy={busy} onClick={() => confirmRetry('current')}>
           使用当前配置重新处理
@@ -63,7 +65,7 @@ export function JobNotice({
       </div>
       {confirmation && (
         <Modal
-          title={confirmation === 'current' ? '使用当前配置重新处理' : '重试处理'}
+          title={confirmation === 'current' ? '使用当前配置重新处理' : retryLabel}
           onClose={() => setConfirmation(null)}
         >
           <p>
@@ -71,6 +73,7 @@ export function JobNotice({
               ? '将使用管理员最新分配的模型重新处理，已确认的内容会保留。'
               : '将使用这条消息原来的模型配置重新处理。'}
           </p>
+          {reviewOnly && <p>仅重新核对已有答复，已保存的业务操作不会重复执行。</p>}
           <p className="muted small-text">模型服务可能已处理过上次请求，重试可能再次产生用量。</p>
           <ErrorNotice>{error}</ErrorNotice>
           <div className="form-actions">

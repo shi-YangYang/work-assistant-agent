@@ -48,6 +48,7 @@ export const stageNames: Record<string, string> = {
   transcribing: '正在识别语音…',
   searching: '正在查询资料…',
   generating: '正在生成回复…',
+  reviewing: '正在核对答复…',
   complete: '已完成',
 }
 

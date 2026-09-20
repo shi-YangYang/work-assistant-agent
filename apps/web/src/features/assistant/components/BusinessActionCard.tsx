@@ -1,4 +1,4 @@
-import type { BusinessAction, ReportContent } from '@paa/api-contracts'
+import type { BusinessAction, Progress, ReportContent } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
@@ -13,6 +13,32 @@ const reportLabels: Record<keyof ReportContent, string> = {
   ongoing: '进行中的工作',
   blockers: '问题与阻碍',
   next: '下一步计划',
+}
+
+const workLabels: Partial<Record<keyof Progress, string>> = {
+  summary: '摘要',
+  blocker: '阻碍',
+  nextStep: '下一步',
+  dueDate: '截止日期',
+}
+
+export function WorkActionDetails({ action }: { action: BusinessAction }) {
+  return (
+    <div className="business-action-preview">
+      {Object.entries(workLabels)
+        .filter(
+          ([key]) =>
+            action.details?.[key as keyof Progress] ||
+            action.changedFields?.includes(key as keyof Progress),
+        )
+        .map(([key, label]) => (
+          <section key={key}>
+            <strong>{label}</strong>
+            <p className="preserve">{action.details?.[key as keyof Progress] || '已清空'}</p>
+          </section>
+        ))}
+    </div>
+  )
 }
 
 export const actionStateLabel = (action: BusinessAction) => {
@@ -77,8 +103,7 @@ export function BusinessActionCard({
         <h4>{current.title ?? current.preview?.title}</h4>
       )}
       {current.details?.status && <Status value={current.details.status} />}
-      {current.details?.dueDate && <p className="muted">截止日期：{current.details.dueDate}</p>}
-      {current.details?.summary && <p className="preserve">{current.details.summary}</p>}
+      {current.details && <WorkActionDetails action={current} />}
       {current.message && <p className="muted">{current.message}</p>}
       {current.preview?.content && (
         <div className="business-action-preview">
@@ -101,6 +126,9 @@ export function BusinessActionCard({
         </p>
       )}
       <ErrorNotice>{error}</ErrorNotice>
+      {current.objectRevision && (
+        <p className="muted small-text">本次操作结果：第 {current.objectRevision} 版</p>
+      )}
       <div className="card-actions">
         {current.objectId && (
           <Link
@@ -108,8 +136,7 @@ export function BusinessActionCard({
             to={`/${current.objectType === 'work' ? 'work' : 'reports'}/${current.objectId}`}
             state={detailState(location)}
           >
-            查看{current.objectType === 'work' ? '工作' : '报告'}
-            {current.objectRevision ? ` · 第 ${current.objectRevision} 版结果` : ''}
+            查看当前{current.objectType === 'work' ? '工作' : '报告'}
           </Link>
         )}
         {current.canConfirm && (

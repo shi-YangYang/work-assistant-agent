@@ -481,6 +481,8 @@ def create_app(settings=None):
     @app.post('/api/v1/messages', status_code=202)
     async def send_message(body: SendMessage, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
         payload = body.model_dump()
+        if body.voiceCommandAttachmentId is None:
+            payload.pop('voiceCommandAttachmentId')
         if not body.newConversation:
             # Keep retries of older clients compatible with their stored digest.
             payload.pop('newConversation')
@@ -497,6 +499,8 @@ def create_app(settings=None):
         attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
         if any(a.message_id for a in attached) or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
             problem(422, '附件已使用或组合不受支持；附件合计最多 4 个、20 MiB，其中最多一段语音')
+        if body.voiceCommandAttachmentId is not None and not any(a.id == body.voiceCommandAttachmentId and a.kind == 'audio' for a in attached):
+            problem(422, '语音指令必须使用本次发送的语音附件')
         if body.replyTo:
             reply = await active_message(db, body.replyTo, actor)
             await business.require(db, actor, reply.access)
@@ -513,7 +517,7 @@ def create_app(settings=None):
             a.message_id = item.id
             if a.kind == 'document':
                 a.extraction_status = 'pending'
-        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business.scope(actor), result={'attachmentOrder': body.attachmentIds})
+        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business.scope(actor), result={'attachmentOrder': body.attachmentIds, **({'voiceCommandAttachmentId': body.voiceCommandAttachmentId} if body.voiceCommandAttachmentId else {})})
         db.add(job)
         await db.flush()
         return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})

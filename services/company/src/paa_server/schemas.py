@@ -47,6 +47,7 @@ class SendMessage(Input):
     newConversation: bool = False
     text: str = Field(default='', max_length=8000)
     attachmentIds: list[str] = Field(default_factory=list, max_length=4)
+    voiceCommandAttachmentId: str | None = None
     replyTo: str | None = None
 
     @model_validator(mode='after')

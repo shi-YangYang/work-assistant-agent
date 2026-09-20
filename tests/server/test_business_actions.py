@@ -465,7 +465,9 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
         await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     judge = ReplyJudge(['query_fact'], fail=not forged_evidence, forged_evidence=forged_evidence)
     result = await run_reply(setup, '创建报价方案', 'I created it and submitted your report.', judge, before=saved)
-    assert result['job']['state'] == 'succeeded'
+    assert result['job']['state'] == 'awaiting_retry'
+    assert result['job']['phase'] == 'reply_review'
+    assert result['job']['stage'] == 'reviewing'
     assert result['actions'][0]['state'] == 'succeeded'
     assert '创建工作：已完成' in result['reply'] and '核对' in result['reply']
     assert 'submitted' not in result['reply']
@@ -523,3 +525,12 @@ async def test_history_replaces_stale_confirmation_text_with_persisted_state(set
     history = await conversation_history(followup, job, '我还有哪些待办？')
     text = '\n'.join(str(m.content) for m in history)
     assert 'cancelled' in text and '尚未点击' not in text
+
+
+async def test_review_removes_empty_table_shell_without_damaging_retained_table():
+    from paa_server.agent.reply_review import check_segments
+    parts = ['| 字段 | 更新后 |\n', '|---|---|\n', '| 标题 | 已改为测试 |\n', '还有哪些要讨论？']
+    verdict = json.dumps({'segments': [{'index': i, 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
+    assert check_segments(parts, verdict, []).text == '还有哪些要讨论？'
+    keep = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(4)]})
+    assert check_segments(parts, keep, []).text == ''.join(parts)
