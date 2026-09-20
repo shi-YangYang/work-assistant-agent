@@ -1,0 +1,165 @@
+.toolbar {
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.inline,
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.inline > input,
+.inline > select {
+  width: 160px;
+  max-width: 100%;
+}
+.inline > input[type='date'] {
+  width: 180px;
+}
+.filters {
+  margin: 0 0 16px;
+  flex-wrap: wrap;
+}
+.filters > input {
+  flex: 1 1 240px;
+}
+.filters > select {
+  flex: 0 1 160px;
+}
+.filters input,
+.filters select {
+  border-color: var(--line);
+}
+.filters > input {
+  max-width: 420px;
+}
+.filters > select {
+  max-width: 180px;
+}
+.filters.team-filters {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+.team-date-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+  flex: 0 1 376px;
+  min-width: 320px;
+}
+.team-date-range label {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  gap: 4px;
+}
+.team-date-range input {
+  color: var(--text);
+  font-size: 14px;
+}
+.team-date-range > span {
+  padding-bottom: 8px;
+  color: var(--muted);
+}
+.team-filters > button {
+  align-self: end;
+}
+.record-list {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: visible;
+  margin-top: 0;
+}
+.record-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  transition: background 120ms;
+  position: relative;
+  min-width: 0;
+}
+.record-row:last-child {
+  border-bottom: 0;
+}
+.record-row:first-child {
+  border-radius: 9px 9px 0 0;
+}
+.record-row:last-child {
+  border-radius: 0 0 9px 9px;
+}
+.record-row:hover {
+  background: var(--subtle);
+  text-decoration: none;
+}
+.record-main {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  display: block;
+}
+.record-main:hover {
+  text-decoration: none;
+}
+.record-main p {
+  margin: 4px 0;
+}
+.record-main small {
+  display: block;
+}
+.record-main h3 {
+  font-size: 15px;
+}
+.record-main .row-between {
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 12px;
+}
+.record-summary,
+.record-note {
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.record-summary {
+  -webkit-line-clamp: 2;
+}
+.record-note {
+  -webkit-line-clamp: 1;
+}
+.record-updated {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.work-row {
+  align-items: flex-start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.work-row > .record-updated {
+  padding-top: 2px;
+}
+.work-row > .action-menu {
+  align-self: flex-start;
+  margin-top: -4px;
+}
+.report-row .record-main > small:empty {
+  display: none;
+}
+.member-report-toolbar > select {
+  width: 160px;
+}
+.report-toolbar {
+  align-items: center;
+  gap: 16px;
+}
+.report-generate {
+  flex-wrap: wrap;
+}

@@ -1,8 +1,9 @@
 import { createServer as createHttpServer, request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { resolve } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer, type ViteDevServer } from 'vite'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import webConfig from '../../apps/web/vite.config'
 
 describe('local Web origin', () => {
   let web: ViteDevServer
@@ -22,7 +23,12 @@ describe('local Web origin', () => {
         port: 0,
         hmr: false,
         watch: null,
-        proxy: { '^/api/': { target: `http://127.0.0.1:${apiPort}`, changeOrigin: false } },
+        proxy: Object.fromEntries(
+          Object.keys(webConfig.server!.proxy!).map((prefix) => [
+            prefix,
+            { target: `http://127.0.0.1:${apiPort}`, changeOrigin: false },
+          ]),
+        ),
       },
       optimizeDeps: { noDiscovery: true, include: [] },
     })
@@ -90,6 +96,13 @@ describe('local Web origin', () => {
     const response = await get('//other.invalid/assistant')
     expect(response.status).toBe(307)
     expect(new URL(response.location!).origin).toBe(`http://127.0.0.1:${port}`)
+  })
+
+  it('serves the frontend API modules through Vite instead of proxying them to Python', async () => {
+    const response = await get('/api/client.ts', '127.0.0.1')
+    expect(response.status).toBe(200)
+    expect(response.body).toContain('cancelledRequest')
+    expect(response.body).toContain('/api/v1')
   })
 
   it('does not redirect writes or replace an untrusted Origin in the API proxy', async () => {

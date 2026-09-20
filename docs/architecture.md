@@ -42,6 +42,42 @@ Electron 保留本地会议能力；公司 Web 与后端处理账号、员工消
 - 工作检索在服务端授权后分页，看板与明细共用期间和人员范围。worker 将受控聊天反馈写入 PostgreSQL 有界快照，API 经权限复核后通过 SSE 交付；正式结果仍来自业务记录。管理员用量按模型请求记录真实返回值，缺失数据保留未知，见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
 - 公司 Key 在服务端加密保存，API 与 worker 使用同一独立私有主密钥；数据库、附件和主密钥分开备份、配对恢复。部署挂载、迁移与备份命令见[使用指南](setup.md)。
 
+## Web 前端组织
+
+`apps/web/src` 按业务组织，路由页面保持轻量：
+
+```text
+app/          身份初始化、Provider、路由与应用布局
+pages/        路由参数和跨业务页面组合
+features/     assistant、work、reports、team、members 等业务
+api/          唯一请求客户端、会话代次和错误处理
+components/   不主动查询业务数据的公共 UI
+hooks/        跨业务复用的 React 逻辑
+lib/          上下文和非 React 资源控制器
+utils/        无请求副作用的通用纯函数
+styles/       全局与公共控件样式
+```
+
+业务自己的组件、Hook、API 和工具放在对应 `features/<业务>/` 内，按需建目录；不为每个小函数建立文件，也不把领域逻辑统一堆入根 `hooks`／`utils`。服务端 DTO 复用 `packages/api-contracts`，组件 props 与内部状态就近定义。
+
+依赖由 `app → pages → features → 基础层` 向下组织。跨业务页面在 pages 组合；确需复用业务能力时，直接导入职责明确的具体组件或 API，保持单向依赖。基础层不得导入 app、pages 或 features；纯工具不依赖 React、网络或工作空间。使用 Web 局部 `@web/` 别名，不建立汇总整个应用的 barrel 文件。
+
+新增页面先选业务归属，再定义其请求与状态所有者。页面和展示组件不直接拼请求路径；传输层统一处理身份、CSRF、超时、取消和错误。用户身份、跨页面草稿、服务端资源、URL 筛选与局部弹窗状态分别管理，避免重复持有同一可变状态。拆 Hook 是为了复用或隔离一个完整流程，不是把整页搬进返回几十个字段的函数。
+
+业务 TSX 超过约 350 个非空行时检查是否混合了列表、编辑、弹窗和异步流程；行数是审查提示，不能通过压缩代码或无意义拆碎达标。样式按全局、共享和业务划分，由入口保持确定加载顺序，路由切换不得改变层叠结果。
+
+读“发送一条消息”时，依次看：
+
+1. `app/AppRoutes.tsx`：找到工作助手的路由入口。
+2. `features/assistant/components/Conversations.tsx`：选择与恢复会话。
+3. `features/assistant/components/ConversationChat.tsx`：协调聊天内容、编辑器和发送流程；输入展示在 `MessageComposer.tsx`，录音生命周期在 `hooks/useRecording.ts`。
+4. `features/assistant/hooks/useMessageSubmission.ts`：检查发送条件、依次上传附件、提交消息并处理发送结果；业务请求在 `features/assistant/api/requests.ts`，传输规则在 `api/client.ts`。
+5. `features/assistant/components/ChatHistory.tsx`、`MessageCard.tsx`：查看消息、处理反馈与业务结果如何展示。
+
+以上路径均相对 `apps/web/src`。跨页面草稿由 `lib/session-drafts.ts` 管理账号代次，聊天模块的 `lib/composer-drafts.ts` 提供附件清理策略；公共层不需要知道聊天附件的具体结构。
+
+`npm run test:web` 包含架构依赖检查；单独检查可运行 `npm run test:web -- tests/web/architecture.test.ts`。它约束向上依赖、纯工具依赖、绕过业务 API 的请求和运行时循环，新增模块继续遵循这些边界。
+
 ## 共享代码与工程边界
 
 `packages/api-contracts` 提供公司 HTTP 的 TypeScript 类型；`model-config` 提供两端使用的纯校验；`ui-web` 提供浏览器 CSS；`voiceprint-engine` 统一公司登记与桌面匹配的模型、预处理和模板规范。共享包不导入应用或服务端，桌面协议留在桌面。CSS 不是原生 Android／iOS UI，移动框架及原生适配尚待立项。

@@ -1,0 +1,184 @@
+/* Conversation navigation floats over the chat instead of taking a column. */
+.assistant-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.conversation-picker {
+  position: relative;
+  flex-shrink: 0;
+}
+.conversation-picker > .icon-button[aria-expanded='true'] {
+  color: var(--accent);
+  background: var(--selection);
+}
+.conversation-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms;
+}
+.conversation-picker > .icon-button:hover + .conversation-tooltip,
+.conversation-picker > .icon-button:focus-visible + .conversation-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+.conversation-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(480px, calc(100dvh - 210px));
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.conversation-popover > :not(.conversation-list) {
+  flex-shrink: 0;
+}
+.conversation-popover-heading,
+.conversation-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.conversation-popover-heading h2 {
+  flex: 1;
+  font-size: 14px;
+  margin: 0;
+}
+.conversation-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0;
+}
+.conversation-search svg {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+.conversation-search input {
+  min-width: 0;
+  padding-left: 30px;
+}
+.conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.conversation-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  border-radius: 7px;
+}
+.conversation-row:hover {
+  background: var(--subtle);
+}
+.conversation-row.active {
+  background: var(--selection);
+  color: var(--accent);
+}
+.conversation-row > a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 8px;
+  color: inherit;
+  text-decoration: none;
+}
+.conversation-row > a svg {
+  flex-shrink: 0;
+}
+.conversation-row > a span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.conversation-row-actions {
+  display: flex;
+  flex-shrink: 0;
+  padding-right: 2px;
+}
+.conversation-row-actions .icon-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 6px;
+  color: var(--muted);
+}
+.conversation-row-actions .icon-button:hover {
+  color: var(--accent);
+}
+.conversation-row-actions .danger:hover {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.conversation-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+.conversation-heading {
+  min-height: 57px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.conversation-heading h2 {
+  flex: 1;
+  font-size: 15px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-main > .assistant-page {
+  flex: 1;
+  min-height: 0;
+}
+.composer textarea {
+  height: 128px;
+  min-height: 128px;
+  max-height: 128px;
+  overflow-y: auto;
+  resize: none;
+}
+.composer textarea:focus,
+.composer textarea:focus-visible {
+  outline: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+.composer-wrap {
+  max-height: 65%;
+}

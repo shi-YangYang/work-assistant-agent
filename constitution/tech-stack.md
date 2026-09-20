@@ -45,7 +45,7 @@
 | --- | --- |
 | Electron main／preload、React、桌面契约 | `apps/desktop/src/{main,preload,renderer,shared}/` |
 | 本地 Python 核心、依赖锁与构建元数据 | `apps/desktop/core/`；包为 `src/paa_core/` |
-| 公司 Web | `apps/web/` |
+| 公司 Web | `apps/web/`；`src/app` 装配、`pages` 路由组合、`features` 业务，公共 API／组件／Hook 分层，见[前端结构](../docs/architecture.md#web-前端组织) |
 | 公司 API、任务与 harness | `services/company/src/paa_server/` |
 | 公司 HTTP 类型、纯模型参数校验、浏览器 CSS | `packages/api-contracts/`、`packages/model-config/`、`packages/ui-web/` |
 | 桌面／公司共用声纹提取与匹配 | `packages/voiceprint-engine/`，轻量协议与可选模型运行依赖分离 |

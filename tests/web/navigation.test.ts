@@ -5,7 +5,7 @@ import {
   detailReturn,
   detailState,
   pageName,
-} from '../../apps/web/src/navigation'
+} from '../../apps/web/src/utils/navigation'
 
 it('preserves the team filters and selected member tab through nested report, work and source pages', () => {
   const team = { pathname: '/team', search: '?q=员工&status=blocked&start=2026-09-01', state: null }

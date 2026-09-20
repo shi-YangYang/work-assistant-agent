@@ -1,11 +1,8 @@
 import type { KeyboardEvent } from 'react'
 import { expect, it, vi } from 'vitest'
-import { ApiError } from '../../apps/web/src/api'
-import {
-  resumeConversation,
-  submitOnEnter,
-  exampleText,
-} from '../../apps/web/src/assistant-session'
+import { ApiError } from '../../apps/web/src/api/client'
+import { resumeConversation } from '../../apps/web/src/features/assistant/api/restore-conversation'
+import { exampleText, submitOnEnter } from '../../apps/web/src/features/assistant/utils/session'
 
 it('restores a remembered conversation even outside the first list page, using reads only', async () => {
   const paths: string[] = []

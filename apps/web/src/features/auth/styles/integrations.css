@@ -1,0 +1,16 @@
+.dingtalk-login > button {
+  width: 100%;
+}
+.login-methods input[readonly],
+.account-page input[readonly] {
+  overflow: auto;
+}
+.login-methods .panel-section-body > p,
+.account-page .panel-section-body > p {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.login-methods .form-actions,
+.account-page .form-actions {
+  flex-wrap: wrap;
+}

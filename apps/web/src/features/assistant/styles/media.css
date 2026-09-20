@@ -1,0 +1,192 @@
+/* Media previews share a full, bounded reading area on desktop and touch screens. */
+.media-dialog {
+  width: min(1180px, calc(100vw - 32px));
+  height: min(880px, calc(100dvh - 32px));
+  --dialog-padding: 16px;
+}
+.media-dialog .dialog-content {
+  height: 100%;
+  max-height: 100%;
+}
+.media-dialog .dialog-body {
+  flex: 1;
+  display: flex;
+  padding: 0 12px 12px;
+  overflow: hidden;
+}
+.media-dialog .dialog-content h2 {
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.media-preview {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+.preview-toolbar,
+.preview-toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.preview-toolbar button,
+.preview-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 8px;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.preview-toolbar span,
+.pdf-page-label {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.image-viewport,
+.pdf-viewport {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.image-viewport {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+.image-viewport:active {
+  cursor: grabbing;
+}
+.image-viewport img {
+  max-width: none;
+  max-height: none;
+  flex-shrink: 0;
+  object-fit: contain;
+  background: white;
+  user-select: none;
+}
+.preview-placeholder {
+  text-align: center;
+  padding: 20px;
+  cursor: default;
+}
+.preview-placeholder p {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+.pdf-viewport {
+  overflow: auto;
+  padding: 12px;
+}
+.pdf-viewport canvas {
+  display: block;
+  margin: 0 auto;
+  max-width: none;
+  background: white;
+}
+.preview-loading {
+  position: sticky;
+  top: 0;
+  text-align: center;
+  color: var(--muted);
+}
+.pdf-page-label {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.pdf-page-label input {
+  width: 60px;
+  min-height: 40px;
+  padding: 6px;
+  text-align: center;
+}
+.attachment-preview-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.pending-file .attachment-preview-button {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.pending-file .attachment-preview-button span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.assistant-page.file-dragging .composer {
+  outline: 2px dashed var(--accent);
+  outline-offset: -3px;
+  background: var(--surface);
+}
+.file-drop-hint {
+  position: absolute;
+  inset: 12px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  background: var(--surface);
+  border-radius: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  pointer-events: none;
+}
+@media (max-width: 600px) {
+  .media-dialog {
+    width: calc(100vw - 12px);
+    max-width: calc(100vw - 12px);
+    height: calc(100dvh - 12px);
+    max-height: calc(100dvh - 12px);
+    --dialog-padding: 12px;
+  }
+  .preview-toolbar {
+    gap: 6px;
+  }
+  .preview-toolbar > div {
+    gap: 4px;
+  }
+  .preview-toolbar button,
+  .preview-download {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .preview-toolbar span {
+    font-size: 12px;
+  }
+}
+.image-viewport > .preview-loading {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 1;
+}

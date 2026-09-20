@@ -1,5 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { captureDiagnostics, diagnosticPage, diagnosticText } from '../../apps/web/src/diagnostics'
+import {
+  captureDiagnostics,
+  diagnosticPage,
+  diagnosticText,
+} from '../../apps/web/src/lib/diagnostics'
 afterEach(() => vi.unstubAllGlobals())
 it('uses only route templates and coarse browser data; never includes URL query, body or raw user agent', () => {
   vi.stubGlobal('window', {

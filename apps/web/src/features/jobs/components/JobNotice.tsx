@@ -1,0 +1,92 @@
+import type { WorkMessage } from '@paa/api-contracts'
+import { stageNames } from '@web/api/job-feedback'
+import { BusyButton } from '@web/components/BusyButton'
+import { ErrorNotice } from '@web/components/ErrorNotice'
+import { Modal } from '@web/components/Modal'
+import { retryJob } from '@web/features/jobs/api/requests'
+import { useRef, useState } from 'react'
+
+export function JobNotice({
+  job,
+  refresh,
+}: {
+  job: NonNullable<WorkMessage['job']>
+  refresh: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<Error | string>('')
+  const [confirmation, setConfirmation] = useState<'original' | 'current' | null>(null)
+  const inFlight = useRef(false)
+  const retry = async (useCurrentConfig = false) => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setConfirmation(null)
+    setBusy(true)
+    setError('')
+    try {
+      await retryJob(job, useCurrentConfig ? { useCurrentConfig: true } : {})
+      refresh()
+    } catch (e) {
+      setError(e as Error)
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
+  }
+  const confirmRetry = (mode: 'original' | 'current') => {
+    setError('')
+    setConfirmation(mode)
+  }
+  if (job.state === 'succeeded' || job.state === 'cancelled') return null
+  if (job.state === 'awaiting_input')
+    return <p className="muted small-text">可继续发送消息补充信息。</p>
+  if (job.state === 'queued' || job.state === 'running')
+    return (
+      <p className="processing" role="status">
+        {job.state === 'queued' ? stageNames.queued : stageNames[job.stage || ''] || '正在处理…'}
+      </p>
+    )
+  return (
+    <>
+      <div className="notice error">
+        <span>{job.error}</span>
+        {!confirmation && <ErrorNotice>{error}</ErrorNotice>}
+        <BusyButton
+          busy={busy}
+          onClick={() => (job.state === 'awaiting_retry' ? confirmRetry('original') : void retry())}
+        >
+          重试处理
+        </BusyButton>
+        <BusyButton busy={busy} onClick={() => confirmRetry('current')}>
+          使用当前配置重新处理
+        </BusyButton>
+      </div>
+      {confirmation && (
+        <Modal
+          title={confirmation === 'current' ? '使用当前配置重新处理' : '重试处理'}
+          onClose={() => setConfirmation(null)}
+        >
+          <p>
+            {confirmation === 'current'
+              ? '将使用管理员最新分配的模型重新处理，已确认的内容会保留。'
+              : '将使用这条消息原来的模型配置重新处理。'}
+          </p>
+          <p className="muted small-text">模型服务可能已处理过上次请求，重试可能再次产生用量。</p>
+          <ErrorNotice>{error}</ErrorNotice>
+          <div className="form-actions">
+            <button disabled={busy} onClick={() => setConfirmation(null)}>
+              取消
+            </button>
+            <BusyButton
+              busy={busy}
+              className="primary"
+              onClick={() => void retry(confirmation === 'current')}
+            >
+              确认重试
+            </BusyButton>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
+}

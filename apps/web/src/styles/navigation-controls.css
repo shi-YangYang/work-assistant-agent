@@ -1,0 +1,112 @@
+.time-field {
+  display: flex;
+  position: relative;
+}
+.time-field > input {
+  width: 100%;
+  padding-right: 40px;
+}
+.time-field > .icon-button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.time-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.time-picker label {
+  min-width: 90px;
+}
+.report-entry-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.breadcrumbs > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.breadcrumbs > span:not(:last-of-type) {
+  flex-shrink: 2;
+}
+.breadcrumbs a,
+.breadcrumbs strong {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breadcrumbs a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.breadcrumbs a:hover {
+  color: var(--text);
+}
+.breadcrumbs svg {
+  flex-shrink: 0;
+}
+.breadcrumb-overflow {
+  display: none;
+  order: 1;
+}
+.breadcrumb-path {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (max-width: 1100px) {
+  .conversation-heading {
+    padding: 10px 16px;
+  }
+}
+@media (max-width: 760px) {
+  .conversation-row-actions .icon-button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .conversation-heading {
+    padding: 8px 12px;
+  }
+  .composer textarea {
+    height: 96px;
+    min-height: 96px;
+    max-height: 96px;
+  }
+  .breadcrumbs .breadcrumb-middle {
+    display: none;
+  }
+  .breadcrumb-overflow {
+    display: inline-flex;
+  }
+  .breadcrumbs > span:last-of-type {
+    order: 2;
+  }
+  .report-entry-link {
+    flex-wrap: wrap;
+  }
+}
+@media (max-height: 650px) {
+  .composer textarea {
+    height: 96px;
+    min-height: 96px;
+    max-height: 96px;
+  }
+}

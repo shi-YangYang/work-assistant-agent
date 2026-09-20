@@ -1,12 +1,12 @@
-import { describe, expect, it } from 'vitest'
 import type { Job, JobFeedback } from '@paa/api-contracts'
-import { filterParams, pageParams } from '../../apps/web/src/list-state'
+import { describe, expect, it } from 'vitest'
 import {
   acceptFeedback,
-  visibleFeedback,
   reportNeedsPolling,
-} from '../../apps/web/src/job-feedback'
-import { detailReturn, detailState } from '../../apps/web/src/navigation'
+  visibleFeedback,
+} from '../../apps/web/src/api/job-feedback'
+import { filterParams, pageParams } from '../../apps/web/src/utils/list-state'
+import { detailReturn, detailState } from '../../apps/web/src/utils/navigation'
 
 const feedback: JobFeedback = {
   jobId: 'job',

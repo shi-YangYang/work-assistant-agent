@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, setCsrf, write, todayIn, requestBudget } from '../../apps/web/src/api'
+import { api, ApiError, requestBudget, setCsrf, write } from '../../apps/web/src/api/client'
+import { todayIn } from '../../apps/web/src/utils/date'
 const requestId = '11111111-2222-3333-4444-555555555555'
 const response = (body: unknown, status = 200, headers?: HeadersInit) =>
   new Response(JSON.stringify(body), { status, headers })

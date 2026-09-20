@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { setCsrf, useResource } from '../../apps/web/src/api'
+import { setCsrf } from '../../apps/web/src/api/client'
+import { useResource } from '../../apps/web/src/hooks/useResource'
 
 // Keep hook state across explicit refresh/path renders while exercising the
 // real effect, fetch boundary, AbortController and browser events without a DOM.

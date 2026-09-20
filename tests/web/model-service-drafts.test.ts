@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  appendServiceModels,
   cleanServiceDraft,
   newModel,
-  validateCompanyParameters,
-  appendServiceModels,
   serviceHasChanges,
-} from '../../apps/web/src/model-service-drafts'
+  validateCompanyParameters,
+} from '../../apps/web/src/features/model-services/utils/service-drafts'
 import {
   changeModelProtocol,
   detectServicePreset,
@@ -13,7 +13,7 @@ import {
   requireModelProtocols,
   resolveModelProtocol,
   servicePresets,
-} from '../../apps/web/src/model-service-presets'
+} from '../../apps/web/src/features/model-services/utils/service-presets'
 
 describe('company model drafts', () => {
   it('adds a catalog selection together, preserving existing model settings and rejecting overflow', () => {

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { subscribeJobFeedback } from '../../apps/web/src/job-feedback'
-import { setCsrf } from '../../apps/web/src/api'
+import { setCsrf } from '../../apps/web/src/api/client'
+import { subscribeJobFeedback } from '../../apps/web/src/api/job-feedback'
 class Source extends EventTarget {
   static current: Source
   onerror: (() => void) | null = null
