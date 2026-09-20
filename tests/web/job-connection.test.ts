@@ -110,3 +110,56 @@ it('keeps online and visibility recovery behind Retry-After, then resumes one po
     dispose()
   }
 })
+
+it('delivers committed cards while running and refreshes when access is revoked', async () => {
+  const surface = Object.assign(new EventTarget(), {
+    location: { pathname: '/assistant' },
+    innerWidth: 1000,
+    innerHeight: 800,
+  })
+  vi.stubGlobal('window', surface)
+  vi.stubGlobal('document', Object.assign(new EventTarget(), { hidden: false }))
+  vi.stubGlobal('navigator', { onLine: true, userAgent: '' })
+  vi.stubGlobal('EventSource', Source)
+  const receive = vi.fn(),
+    refresh = vi.fn()
+  const dispose = subscribeJobFeedback('job', 'running', 1, 1, receive, vi.fn(), refresh)!
+  try {
+    const live = {
+      jobId: 'job',
+      attempt: 1,
+      fence: 1,
+      seq: 2,
+      state: 'running',
+      actions: [{ id: 'saved', state: 'succeeded' }],
+    }
+    Source.current.dispatchEvent(new MessageEvent('snapshot', { data: JSON.stringify(live) }))
+    expect(receive).toHaveBeenLastCalledWith(live)
+    expect(refresh).not.toHaveBeenCalled()
+    Source.current.dispatchEvent(new MessageEvent('unavailable', { data: '{"status":403}' }))
+    expect(receive).toHaveBeenLastCalledWith(null)
+    expect(refresh).toHaveBeenCalledTimes(1)
+  } finally {
+    dispose()
+  }
+})
+
+it('accepts fresh card invalidation even when the worker phase has not advanced', async () => {
+  const { acceptFeedback } = await import('../../apps/web/src/api/job-feedback')
+  const current = {
+    jobId: 'job',
+    attempt: 1,
+    fence: 1,
+    seq: 2,
+    state: 'running' as const,
+    stage: 'generating',
+    text: '',
+    error: '',
+    updatedAt: '2026-09-20T01:00:00Z',
+    actions: [],
+  }
+  const changed = { ...current, actions: [{ id: 'saved', state: 'unavailable' }] }
+  // The provider's next token is independent of target version/permission changes.
+  expect(acceptFeedback(current, changed as typeof current, 'job')).toBe(changed)
+  expect(acceptFeedback(current, { ...current, seq: 1 }, 'job')).toBe(current)
+})

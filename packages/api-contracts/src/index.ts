@@ -331,6 +331,7 @@ export interface JobFeedback {
   text: string
   error: string
   updatedAt: string
+  actions?: BusinessAction[]
 }
 export interface UsageRecord {
   id: string

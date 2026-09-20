@@ -12,7 +12,7 @@ from . import business_access as business
 from .models import Conversation, Job, Member, Message, Session, now
 from .service import problem
 
-STAGES = frozenset({'queued', 'preparing', 'parsing', 'transcribing', 'searching', 'generating', 'reviewing', 'complete'})
+STAGES = frozenset({'queued', 'preparing', 'parsing', 'transcribing', 'searching', 'generating', 'operating', 'reviewing', 'complete'})
 TERMINAL = frozenset({'succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled'})
 
 
@@ -73,7 +73,9 @@ async def snapshot(sessions, token_hash, job_id):
             problem(403, '账号权限已变化，请重新提问', 'business_access_changed')
         feedback = job.feedback or {}
         text = feedback.get('text','') if not job.access.get('team') and job.state not in ('succeeded','awaiting_input','cancelled') and job.updated_at >= now() - timedelta(days=1) else ''
-        return {'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat()}
+        from .business_actions import message_actions
+        actions = await message_actions(db, actor, message)
+        return {'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
 async def events(sessions, token_hash, job_id):
@@ -85,7 +87,9 @@ async def events(sessions, token_hash, job_id):
             detail = error.detail if isinstance(error.detail,dict) else {'message':'订阅已结束'}
             yield 'event: unavailable\ndata: ' + json.dumps({'status':error.status_code, **detail},ensure_ascii=False) + '\n\n'
             return
-        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'])
+        # A target can become unavailable or a report can finish independently
+        # of the assistant's next phase. Do not keep a stale card on screen.
+        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'],json.dumps(value['actions'], sort_keys=True))
         if stamp != previous:
             yield 'event: snapshot\nid: ' + ':'.join(map(str, stamp[:3])) + '\ndata: ' + json.dumps(value,ensure_ascii=False) + '\n\n'
             previous = stamp

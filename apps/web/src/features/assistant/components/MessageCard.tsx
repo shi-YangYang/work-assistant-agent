@@ -189,7 +189,8 @@ export function MessageCard({
         </div>
       )}
       {own &&
-        message.actions?.map((action) => (
+        !message.businessUnavailable &&
+        (live.feedback?.actions ?? message.actions)?.map((action) => (
           <BusinessActionCard key={action.id} action={action} refresh={onChange} />
         ))}
       {own

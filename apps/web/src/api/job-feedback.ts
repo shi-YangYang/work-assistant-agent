@@ -17,7 +17,7 @@ export function acceptFeedback(
       if (incoming[field] < current[field]) return current
       if (incoming[field] > current[field]) return incoming
     }
-    if (incoming.updatedAt <= current.updatedAt) return current
+    if (incoming.updatedAt < current.updatedAt) return current
   }
   return incoming
 }
@@ -48,6 +48,7 @@ export const stageNames: Record<string, string> = {
   transcribing: '正在识别语音…',
   searching: '正在查询资料…',
   generating: '正在生成回复…',
+  operating: '操作结果已更新，正在继续处理…',
   reviewing: '正在核对答复…',
   complete: '已完成',
 }
@@ -89,6 +90,7 @@ export function subscribeJobFeedback(
     receiveValue(null)
     setError(message)
     if (status === 401) expireSession()
+    else if (status === 403 || status === 404) refresh()
   }
   const poll = async () => {
     if (closed || polling || completed || document.hidden) return

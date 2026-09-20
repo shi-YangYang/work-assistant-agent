@@ -50,7 +50,7 @@ attachments／完整附件清单列出已上传材料，documents／文档目录
 
 
 ADMIN_POLICY = POLICY.replace('仅处理当前员工上报的工作', '处理管理员本人工作和已授权员工业务问答').replace('普通陈述/讨论才用 propose_progress 提出建议。', '普通陈述可以提出建议；明确本人督办用 execute_business_action 并关联真实来源。').replace('只有员工可以确认、纠正与发布', '只有当前用户可以确认本人的工作；禁止改写员工业务') + """
-管理员可以用 find_team_members 匹配本公司员工，query_team_business 查询已确认工作和已提交报告，用 read_team_source 查看其关联原始文字或已提取文件。
+管理员查询某位员工业务时，优先 query_team_business(employee_name=用户给出的姓名) 一次解析姓名并返回业务；有多个同名结果会要求澄清，不需要先 find_team_members。只查询员工目录时用 find_team_members。用 read_team_source 查看关联原始文字或已提取文件。
 query_team_business 中 contentTruncated=false 的工作正文可直接用于判断和关联督办；只有需要被截断的字段、原始材料或用户要求追溯依据时才 read_team_source，不为获取同一 token 再读一遍。
 员工姓名不明确或同名时先澄清。当前状态用 current；近期用 recent（最近7天）；本周 this_week、上周 last_week，具体日期 custom。期间变化必须用期间查询，不能拿现在的状态充当历史。报告展示其完整原周期。
 回答说明查询时间、员工范围和日期范围，区分已确认状态、员工原话、推断和缺少信息。未上报不代表没工作或绩效差。只覆盖一页时如实说明，用 total/statusCounts 表达授权集合统计；不可把20条说成全部。
@@ -128,6 +128,7 @@ class RunContext:
     feedback_at: float = 0
     intent_model: Any = None
     reply_evidence: list[dict] = field(default_factory=list)
+    receipt_candidates: set[str] = field(default_factory=set)
 
 
 async def lease(db, context):
@@ -261,6 +262,11 @@ class ToolBoundary(AgentMiddleware):
         context = request.runtime.context
         async with context.sessions() as db:
             await lease(db, context)
+        from .completion import receipt_completion
+        if await receipt_completion(context, request.messages):
+            # Independent intent approval plus the committed receipt suffice
+            # for operation-only requests; no success prose needs generating.
+            return ModelResponse(result=[AIMessage(id=f'receipt-completion:{context.job_id}', content='')])
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
         names = {t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name')) for t in request.tools}
         # Profiles tune model visibility; this middleware is the security boundary.
@@ -599,17 +605,31 @@ async def find_team_members(query: str, runtime: ToolRuntime[RunContext]) -> str
 
 
 @tool
-async def query_team_business(runtime: ToolRuntime[RunContext], kind: Literal['work', 'report'] = 'work', employee_ids: list[str] | None = None, query: str = '', status: Literal['', 'in_progress', 'blocked', 'done'] = '', period: Literal['current', 'recent', 'this_week', 'last_week', 'custom'] = 'current', start: str = '', end: str = '', cursor: str = '') -> str:
+async def query_team_business(runtime: ToolRuntime[RunContext], kind: Literal['work', 'report'] = 'work', employee_ids: list[str] | None = None, query: str = '', status: Literal['', 'in_progress', 'blocked', 'done'] = '', period: Literal['current', 'recent', 'this_week', 'last_week', 'custom'] = 'current', start: str = '', end: str = '', cursor: str = '', employee_name: str = '') -> str:
     """Query employee confirmed work or submitted report versions. current reads
     current status; other periods read changes inside company-local dates. recent
     means the last 7 days. Custom dates are YYYY-MM-DD. Empty employee_ids means
     all employees. At most 20 details/page; total/statusCounts describe the full
     matching authorized set. Pass returned nextCursor with unchanged filters.
+    For one employee named by the user, pass employee_name directly instead of
+    find_team_members then querying again. Unique matches resolve and query in
+    one call; absent/ambiguous names return candidates without reading work.
+    Never combine employee_name with employee_ids. Returned employee.id can be
+    reused for pagination; use find_team_members for directory questions.
     """
     async with runtime.context.sessions.begin() as db:
         job, actor = await lease(db, runtime.context)
         try:
+            if employee_name.strip():
+                if employee_ids:
+                    return json.dumps({'error': '姓名与员工 ID 不能同时指定，请选择一种查询方式。'}, ensure_ascii=False)
+                members = await business.find_members(db, actor, job, employee_name.strip())
+                if members['total'] != 1:
+                    return json.dumps({'state': 'clarification' if members['total'] else 'not_found', 'members': members, 'message': '请明确具体员工。' if members['total'] else '未找到该员工。'}, ensure_ascii=False)
+                employee_ids = [members['items'][0]['id']]
             result = await business.query_business(db, actor, job, kind=kind, employee_ids=employee_ids, query=query, status=status, period=period, start=start, end=end, cursor=cursor)
+            if employee_name.strip():
+                result['employee'] = members['items'][0]
             return json.dumps(result, ensure_ascii=False)
         except HTTPException as error:
             return json.dumps({'error': error.detail}, ensure_ascii=False)

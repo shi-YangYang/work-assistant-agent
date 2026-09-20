@@ -65,7 +65,10 @@ export function BusinessActionCard({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const [saved, setSaved] = useState<BusinessAction | null>(null)
-  const current = saved && saved.revision > action.revision ? saved : action
+  const current =
+    saved && saved.revision > action.revision && !['unavailable', 'conflict'].includes(action.state)
+      ? saved
+      : action
   const Icon =
     current.state === 'succeeded'
       ? CheckCircle2
