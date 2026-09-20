@@ -223,7 +223,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             context.request_clock = pending.get('requestClock', '')
         else:
             await publish(context, 'generating', force=True)
-            answer = await invoke_harness(context, checkpointer, blocks, model)
+            repair_options = {'repair_missing_action': True} if live.result.get('completionRepairAttempted') else {}
+            answer = await invoke_harness(context, checkpointer, blocks, model, **repair_options)
             async with sessions.begin() as db:
                 live, _ = await lease(db, context)
                 live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
@@ -234,6 +235,28 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
 
         from .agent.reply_review import review_reply
         review = await review_reply(context, answer, model=reply_model or model)
+        # Repair an omitted tool call once, within the original budget. Never
+        # replay partial writes, failed operations, or pending confirmation cards.
+        repair = False
+        if review.verified and review.needs_action:
+            from .business_actions import message_actions
+            async with sessions.begin() as db:
+                live, actor = await lease(db, context)
+                message = await owned(db, Message, job.target_id, actor)
+                actions = await message_actions(db, actor, message)
+                draft = await db.scalar(select(ProgressDraft.id).where(ProgressDraft.message_id == message.id).limit(1))
+                repair = not actions and not draft and not live.result.get('operationFeedback') and not live.result.get('completionRepairAttempted')
+                if repair:
+                    live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True}
+        if repair:
+            await publish(context, 'generating', force=True)
+            answer = await invoke_harness(context, checkpointer, blocks, model, repair_missing_action=True)
+            async with sessions.begin() as db:
+                live, _ = await lease(db, context)
+                live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
+                live.phase = 'reply_review'
+                update_feedback(live, 'reviewing', '')
+            review = await review_reply(context, answer, model=reply_model or model)
         async with sessions.begin() as db:
             live, actor = await lease(db, context)
             message = await owned(db, Message, job.target_id, actor, lock=True)
@@ -283,7 +306,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
     except LostLease:
         log.info('job=%s lost lease', job.id)
     except Exception as error:
-        if isinstance(error, (ValueError, BudgetExceeded)):
+        from .business_actions import IntentCheckFailed
+        if isinstance(error, (ValueError, BudgetExceeded, IntentCheckFailed)):
             reason = str(error)[:300]
         elif isinstance(error, HTTPException):
             reason = error.detail.get('message', '媒体处理失败') if isinstance(error.detail, dict) else '媒体处理失败'

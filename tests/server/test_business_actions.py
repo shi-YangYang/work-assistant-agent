@@ -24,6 +24,8 @@ class Judge:
         self.allowed, self.inputs = allowed, []
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
+        if payload.get('task') == 'report_fact_review':
+            return AIMessage(content='{"valid":true}')
         self.inputs.append(payload)
         return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': payload['currentUserText'], 'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。'}))
 
@@ -191,6 +193,9 @@ async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     context, sent = await runtime(setup, '生成今天日报')
     result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat())
     assert result['state'] == 'running'
+    intent = context.intent_model.inputs[0]
+    assert intent['proposedOperation']['effect'] == 'enqueue_report'
+    assert intent['verifiedReads']['ownWorkRead'] == []
     # Chat has not waited for the same-member report slot; queued report is claimable after it ends.
     report_id = result['objectId']
     assert await claim(sessions, users['employee'].id) is None
@@ -346,7 +351,7 @@ async def test_query_then_create_has_verified_reads_without_fake_write_predecess
     reads = supplied['verifiedReads']
     assert reads['ownWorkSearchCompleted']
     assert reads['teamQueries'][0]['total'] == 1
-    assert reads['selectedTeamSources'] == [{'token': token, 'objectType': 'work', 'objectId': work.id, 'revision': 1, 'ownerId': users['employee'].id, 'employeeName': users['employee'].name, 'title': '采购报价'}]
+    assert reads['selectedTeamSources'] == [{'token': token, 'objectType': 'work', 'objectId': work.id, 'revision': 1, 'ownerId': users['employee'].id, 'employeeName': users['employee'].name, 'title': '采购报价', 'content': work.content, 'contentTruncated': False}]
     assert source.text not in json.dumps(supplied)
     assert 'PRIVATE-ASSISTANT-REPLY' not in json.dumps(supplied)
     # A read receipt still cannot stand in for an unfinished mutation.
@@ -418,7 +423,7 @@ async def test_worker_never_saves_completion_promise_without_execution(setup, an
     judge = ReplyJudge(['execution'])
     result = await run_reply(setup, '帮我创建工作：报价方案，截止本周五。', answer, judge)
     assert result['actions'] == []
-    assert answer not in result['reply'] and '未执行' in result['reply']
+    assert answer not in result['reply'] and '未执行' in result['reply'], result['job']
     assert 'persistedOperations' not in judge.inputs[0]
     assert judge.inputs[0]['toolEvidence'] == []
 
@@ -465,11 +470,17 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
         await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     judge = ReplyJudge(['query_fact'], fail=not forged_evidence, forged_evidence=forged_evidence)
     result = await run_reply(setup, '创建报价方案', 'I created it and submitted your report.', judge, before=saved)
-    assert result['job']['state'] == 'awaiting_retry'
-    assert result['job']['phase'] == 'reply_review'
-    assert result['job']['stage'] == 'reviewing'
+    if forged_evidence:
+        # Reject the unsupported block, not the already completed operation.
+        assert result['job']['state'] == 'succeeded'
+        assert result['reply'] == '创建工作：已完成。'
+    else:
+        assert result['job']['state'] == 'awaiting_retry'
+        assert result['job']['phase'] == 'reply_review'
+        assert result['job']['stage'] == 'reviewing'
+        assert '核对' in result['reply']
     assert result['actions'][0]['state'] == 'succeeded'
-    assert '创建工作：已完成' in result['reply'] and '核对' in result['reply']
+    assert '创建工作：已完成' in result['reply']
     assert 'submitted' not in result['reply']
 
 
@@ -477,10 +488,8 @@ async def test_reply_review_validates_partition_and_reuses_exact_verified_result
     from paa_server.agent.reply_review import check_segments, review_reply
     with pytest.raises(ValueError):
         check_segments(['a', 'b'], '{"segments":[{"index":0,"kind":"information"}]}', [])
-    with pytest.raises(ValueError):
-        check_segments(['a'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[]}]}', [])
-    with pytest.raises(ValueError):
-        check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}])
+    assert check_segments(['a'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[]}]}', []).text == ''
+    assert check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}]).text == ''
     context, _ = await runtime(setup, '只是讨论，不执行。')
     judge = ReplyJudge(['information'])
     first = await review_reply(context, '需要讨论哪部分？', model=judge)

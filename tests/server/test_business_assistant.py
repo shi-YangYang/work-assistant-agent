@@ -127,6 +127,29 @@ async def test_employee_tool_forgery_and_source_link_restriction(setup):
     assert denied['error']['code'] == 'not_found'
 
 
+async def test_team_content_truncation_compares_only_public_fields_and_retains_real_clipping(setup):
+    _, sessions, users, _ = setup
+    short, short_rev, _ = await facts(sessions, users['employee'], title='短内容')
+    long, long_rev, _ = await facts(sessions, users['employee'], title='长内容')
+    async with sessions.begin() as db:
+        for identifier in [short.id, long.id]:
+            row = await db.get(WorkItem, identifier)
+            row.content = {**row.content, 'dueDate': None}
+        row = await db.get(WorkRevision, short_rev.id)
+        row.content = {**row.content, 'dueDate': None}
+        row = await db.get(WorkRevision, long_rev.id)
+        row.content = {**row.content, 'dueDate': None, 'summary': '需要完整阅读的事实。' * 500}
+    rt, _, _ = await runtime(setup)
+    listing = json.loads(await query_team_business.coroutine(runtime=rt))
+    items = {item['objectId']: item for item in listing['items']}
+    assert items[short.id]['contentTruncated'] is False
+    assert items[long.id]['contentTruncated'] is True
+    assert len(items[long.id]['content']['summary']) == 180
+    source = json.loads(await read_team_source.coroutine(token=items[long.id]['token'], runtime=rt))
+    assert source['content']['summary'] == ('需要完整阅读的事实。' * 500)[:2000]
+    assert 'dueDate' not in items[short.id]['content']
+
+
 async def test_submitted_report_versions_periods_and_pagination(setup):
     _, sessions, users, _ = setup
     actor = users['employee']

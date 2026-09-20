@@ -34,7 +34,6 @@ class Settings:
     model_key_file: Path = field(default_factory=lambda: Path(os.getenv('PAA_MODEL_KEY_FILE', str(ROOT / 'data/company/model-master.key'))).resolve())
     model_allowed_origins: tuple[str, ...] = field(default_factory=lambda: tuple(x.strip().rstrip('/') for x in os.getenv('PAA_MODEL_ALLOWED_ORIGINS', '').split(',') if x.strip()))
     ffmpeg: str = field(default_factory=lambda: os.getenv('PAA_FFMPEG', 'ffmpeg'))
-    daily_calls: int = field(default_factory=lambda: int(os.getenv('PAA_DAILY_MODEL_CALLS', '200')))
 
     voiceprint_python: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_PYTHON', str(ROOT / '.venv-voiceprints' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')))))
     voiceprint_model: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_MODEL', str(ROOT / 'apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin'))).resolve())

@@ -305,7 +305,7 @@ async def query_business(db, actor, job, *, kind='work', employee_ids=None, quer
             clipped[key] = value[:min(120 if key != 'summary' else 180, remaining)]
             remaining -= len(clipped[key])
         dto['content'] = clipped
-        dto['contentTruncated'] = clipped != row.content
+        dto['contentTruncated'] = clipped != bounded_content(row.content, None)
         dto['citation'] = f'[[business:{token}]]'
         items.append(dto)
     # Aggregate results also depend on the records not shown in the first page.
@@ -317,7 +317,7 @@ async def query_business(db, actor, job, *, kind='work', employee_ids=None, quer
         remember(job, actor, receipt(kind, row))
     query_scope = {**window, 'kind': kind, 'employeeIds': employee_ids or 'all_employees', 'total': total, 'returned': len(items), 'offset': offset, 'query': query, 'status': status}
     job.result = {**job.result, 'businessQueries': [*job.result.get('businessQueries', []), query_scope][-16:]}
-    return {'items': items, 'total': total, 'statusCounts': counts, 'hasMore': offset + len(items) < total, 'nextCursor': next_cursor(job, fingerprint, offset + len(items)) if offset + len(items) < total else None, 'scope': {**window, 'employeeIds': employee_ids or 'all_employees', 'includedInactiveEmployees': True, 'offset': offset, 'returned': len(items)}, 'coverage': '仅已确认工作／已提交报告；正文可能裁剪，详细判断请读取来源。'}
+    return {'items': items, 'total': total, 'statusCounts': counts, 'hasMore': offset + len(items) < total, 'nextCursor': next_cursor(job, fingerprint, offset + len(items)) if offset + len(items) < total else None, 'scope': {**window, 'employeeIds': employee_ids or 'all_employees', 'includedInactiveEmployees': True, 'offset': offset, 'returned': len(items)}, 'coverage': '仅已确认工作／已提交报告；contentTruncated 表示正文是否裁剪，已给出的完整字段可直接用于回答或关联。需要缺失正文或原始材料时再读取来源。'}
 
 
 def canonical_token(value):

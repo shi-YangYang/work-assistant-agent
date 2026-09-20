@@ -19,15 +19,28 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
 
     step is a stable ordinal (1..8) of operations in THIS user message. Keep the
     same ordinal AND parameters on retries; inspect get_business_actions first.
+    A returned succeeded receipt completes that step. Do not rewrite it or query
+    it again just to verify success. Check all proposed changes BEFORE saving.
     Changes contain ONLY requested fields: work title/summary/status/blocker/
     nextStep/dueDate (YYYY-MM-DD or null); report completed/ongoing/blockers/next.
     For create_work title is required and other fields optional. Creating and
     editing save immediately. For update/delete read latest object first; pass its
     actual ID and revision. Never guess IDs. Same-name ambiguity requires asking.
     Submit/delete ALWAYS return a confirmation card, never direct execution.
+    When explicitly delegated to choose ONE candidate and show it for confirmation,
+    select a read object within that scope and prepare its card; do not require
+    the user to name it again. No deletion/submission happens without a UI click.
     generate_report enqueues the existing report model without waiting; date is a
     company-local YYYY-MM-DD. submit_after only when explicitly asked to generate
     AND submit: the final report still requires review and a confirmation click.
+    "Generate, let me review before submitting" means submit_after=true too.
+    When kind/date are known, enqueue directly: the report worker reads confirmed
+    sources itself. Do not query work/obligations just to start generation.
+    Report rewriting preserves factual progress: source next steps are PLANS,
+    not completed milestones, and titles alone do not prove achievements.
+    Administrator "directly create a follow-up" uses create_work here, not
+    propose_followup. source_tokens must contain the exact returned token field,
+    never citation strings such as [[business:...]].
     requires_step names an earlier WRITE step that must have succeeded. Queries
     do not have step numbers or business-action receipts. If a prior write fails,
     stop dependent operations and explain partial success.
@@ -62,6 +75,8 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
     Administrators must query_team_business for employee submitted reports, then
     pass a returned report_id here to resolve its deletion management revision;
     no drafts or private report candidates are returned to administrators.
+    A single own report includes immutable sourceFacts for rewriting. Reuse those;
+    query work only for missing facts or an explicit request for current progress.
     """
     context = runtime.context
     async with context.sessions.begin() as db:
@@ -89,6 +104,8 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
                     content, source_ids = public.content, public.source_ids
                 context.read_versions[report.id] = report.revision
                 items.append({'id': report.id, 'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'revision': report.revision, 'publishedRevision': report.published_revision, 'content': content, 'sourceIds': source_ids, 'candidateAvailable': bool(report.candidate) if actor.id == report.owner_id else False})
+                if actor.id == report.owner_id and (report_id or len(reports) == 1):
+                    items[-1]['sourceFacts'] = await actions.report_fact_basis(db, actor, report)
             return json.dumps({'items': items, 'nextCursor': reports[9].period if len(reports) > 10 else None}, ensure_ascii=False)
         except (HTTPException, ValueError):
             return '报告不存在、日期无效或无权查看，请重新查询。'

@@ -22,14 +22,18 @@ CONTENT = {'completed': '方案初稿已完成', 'ongoing': '等待确认', 'blo
 
 
 class ReportModel:
-    def __init__(self, content=None, callback=None, finish='stop'):
+    def __init__(self, content=None, callback=None, finish='stop', verdict='{"valid":true}'):
         self.content = json.dumps(CONTENT, ensure_ascii=False) if content is None else content
         self.calls = 0
         self.callback = callback
         self.finish = finish
         self.inputs = []
+        self.verdict, self.reviews = verdict, []
 
     async def ainvoke(self, messages):
+        if json.loads(messages[-1].content).get('task') == 'report_fact_review':
+            self.reviews.append(messages)
+            return AIMessage(content=self.verdict)
         self.calls += 1
         self.inputs.append(messages)
         if self.callback:
@@ -93,6 +97,25 @@ async def test_invalid_report_keeps_original_without_success(setup, content, fin
         live = await db.get(Job,job.id)
         assert live.state == 'failed' and not live.result.get('reportSaved') and live.error
     assert model.calls == 1
+
+
+@pytest.mark.parametrize('verdict', ['{"valid":false}', '{"valid":"true"}', '{}', 'invalid'])
+async def test_report_fact_failure_keeps_original_and_never_regenerates_implicitly(setup, verdict):
+    settings, sessions, users, _ = setup
+    report, job, _ = await prepared(setup)
+    async with sessions.begin() as db:
+        saved = await db.get(Report, report.id); saved.content = {**CONTENT, 'completed': '原报告'}
+    model = ReportModel(json.dumps({**CONTENT, 'completed': '整项方案已经完成'}), verdict=verdict)
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
+    async with sessions() as db:
+        saved = await db.get(Report, report.id)
+        live = await db.get(Job, job.id)
+        assert saved.content['completed'] == '原报告' and saved.candidate is None and not saved.published_revision
+        assert live.state == 'failed' and not live.result.get('reportSaved')
+    assert model.calls == 1 and len(model.reviews) == 1
+    checked = json.loads(model.reviews[0][-1].content)
+    assert checked['confirmed'][0]['content']['summary'] == '初稿完成'
+    assert checked['report']['completed'] == '整项方案已经完成'
 
 
 @pytest.mark.parametrize('change', ['delete_report', 'delete_work', 'inactive', 'role'])
@@ -284,11 +307,16 @@ async def test_unsent_reservation_requeues_but_old_fence_cannot_publish(setup):
         with pytest.raises(LostLease):await lease(db,context)
 
 
-async def test_structured_report_actual_request_usage_and_report_probe(setup,monkeypatch):
+@pytest.mark.parametrize('reasoning_check', [False, True])
+async def test_structured_report_actual_request_usage_and_report_probe(setup,monkeypatch,reasoning_check):
     import httpx
     from test_model_services import create,payload,route
     settings,sessions,users,c=setup
-    saved=await create(c['admin'])
+    config=payload()
+    if reasoning_check:
+        config['baseUrl']='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
+        config['models'][0]['model']='deepseek-v4.1-flash'
+    saved=await create(c['admin'], config)
     routing=route(saved);routing['assistant']['streaming']=False
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     report,job,_=await prepared(setup)
@@ -297,18 +325,25 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
         data=json.loads(request.content);requests.append(data)
         assert not data.get('tools') and not data.get('tool_choice')
         content='测试成功' if '只回复：测试成功' in str(data['messages']) else json.dumps(CONTENT,ensure_ascii=False)
+        if 'report_fact_review' in str(data['messages']):
+            content='{"valid":true}'
+            assert data['max_tokens'] == 2000
+            if reasoning_check:
+                assert data['enable_thinking'] is True and data['reasoning_effort']=='low'
+            else:
+                assert 'enable_thinking' not in data
         return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':content},'finish_reason':'stop'}],'usage':{'prompt_tokens':123,'completion_tokens':45,'total_tokens':168}})
     monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(respond)))
     await process_job(await claim(sessions,users['employee'].id),sessions,settings,None)
     async with sessions() as db:
         assert (await db.get(Job,job.id)).state=='succeeded'
-        usage=await db.scalar(select(ModelUsage).where(ModelUsage.job_id==job.id))
-        assert usage.status=='succeeded' and usage.kind=='report' and usage.actual_input_tokens==123 and usage.actual_output_tokens==45
-    assert len(requests)==1
+        usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
+        assert len(usages)==2 and all(usage.status=='succeeded' and usage.kind=='report' and usage.actual_input_tokens==123 and usage.actual_output_tokens==45 for usage in usages)
+    assert len(requests)==2
     result=await c['admin'].post('/api/v1/settings/model-services/test',json={**payload(),'models':[{**model,'streaming':False} for model in payload()['models']],'draftVersion':'report-json','modelId':'chat','purpose':'report'})
     assert result.status_code==200
     assert [check['state'] for check in result.json()['checks']]==['passed','passed'],result.text
-    assert result.json()['checks'][-1]['name']=='报告结构' and len(requests)==3
+    assert result.json()['checks'][-1]['name']=='报告结构' and len(requests)==4
 
 
 async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(setup):

@@ -256,10 +256,6 @@ async def resolve_bound(db, settings, company_id, binding, purpose):
 
 async def reserve_probe(sessions, settings, actor, choice=None):
     async with sessions.begin() as db:
-        await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
-        count = await db.scalar(select(func.count()).select_from(ModelUsage).where(ModelUsage.company_id == actor.company_id, ModelUsage.created_at >= now().replace(hour=0, minute=0, second=0, microsecond=0)))
-        if count >= settings.daily_calls:
-            raise ProviderError('quota', '今天的模型调用额度已用完')
         from .usage import usage_fields
         usage = ModelUsage(company_id=actor.company_id, owner_id=actor.id, job_id=None, kind='admin_test', **usage_fields(choice))
         db.add(usage)

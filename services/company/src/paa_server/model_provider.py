@@ -174,8 +174,8 @@ async def catalog(settings, base_url, key):
     raise ProviderError('limit', '模型目录超过分页上限，请手动填写模型 ID')
 
 
-def reply_review_config(config):
-    """Use a non-thinking review only where the provider protocol is known.
+def reply_review_config(config, *, reasoning=False):
+    """Use bounded verification only where the provider protocol is known.
 
     Keep the frozen user configuration intact. Unknown gateways/models retain
     their parameters; OpenAI compatibility alone does not imply thinking support.
@@ -186,7 +186,13 @@ def reply_review_config(config):
     hybrid_deepseek = bool(re.fullmatch(r'deepseek-v(?:3\.[12](?:-exp)?|4(?:\.1)?-(?:pro|flash)(?:-\d{4})?)', model))
     toggle = None
     # https://help.aliyun.com/zh/model-studio/deep-thinking
-    if aliyun and hybrid_deepseek:
+    if reasoning and aliyun and model in ('deepseek-v4.1-flash', 'deepseek-v4-flash-0731', 'deepseek-v4-pro-0813'):
+        # Planning and report fact comparisons retain bounded reasoning.
+        # Simple authorization/presentation checks use the faster mode below.
+        toggle = {'enable_thinking': True, 'reasoning_effort': 'low'}
+    elif reasoning:
+        return config
+    elif aliyun and hybrid_deepseek:
         toggle = {'enable_thinking': False}
     # https://api-docs.deepseek.com/guides/thinking_mode/
     elif host == 'api.deepseek.com' and (model == 'deepseek-chat' or hybrid_deepseek):
@@ -195,6 +201,18 @@ def reply_review_config(config):
         return config
     options = {key: value for key, value in config.get('parameters', {}).items() if key not in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')}
     return {**config, 'parameters': {**options, **toggle}}
+
+
+def business_model_config(config, choice):
+    """Default known hybrid models to bounded tool execution, respecting presets.
+
+    Explicit reasoning settings and unknown providers keep their own behavior.
+    Only the assistant planner uses this default; report generation is unchanged.
+    """
+    if choice.get('presetId') or any(key in config.get('parameters', {}) for key in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')):
+        return config
+    candidate = reply_review_config(config, reasoning=True)
+    return candidate if candidate.get('parameters', {}).get('reasoning_effort') == 'low' else config
 
 
 async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None):

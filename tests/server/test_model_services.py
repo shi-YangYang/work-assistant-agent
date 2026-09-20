@@ -197,8 +197,11 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
         body=json.loads(request.content);calls.append((str(request.url),body))
         assert request.headers['Authorization']=='Bearer '+SECRET
         assert body['stream']==streaming and body['max_tokens']<=4000
-        if len(calls) == 3 and fast_review:
-            assert body['enable_thinking'] is False
+        if fast_review:
+            if len(calls) == 3:
+                assert body['enable_thinking'] is False and 'reasoning_effort' not in body
+            else:
+                assert body['enable_thinking'] is True and body['reasoning_effort'] == 'low'
         else:
             assert 'enable_thinking' not in body
         if len(calls)==1:
@@ -616,7 +619,7 @@ async def test_report_current_config_attempt_preserves_saved_draft_as_new_candid
         assert report.content['completed']=='原报告' and report.candidate['content']['completed']=='新候选' and report.published_revision==0
 
 
-async def test_company_probe_concurrency_and_quota_are_bounded(setup,monkeypatch):
+async def test_company_probe_concurrency_is_bounded_without_daily_quota(setup,monkeypatch):
     from paa_server.model_services import reserve_probe
     settings,sessions,users,c=setup
     entered,release=asyncio.Event(),asyncio.Event()
@@ -633,6 +636,10 @@ async def test_company_probe_concurrency_and_quota_are_bounded(setup,monkeypatch
     finally:
         release.set()
         assert (await pending).status_code==200
-    limited=replace(settings,daily_calls=1)
-    await reserve_probe(sessions,limited,users['admin'])
-    with pytest.raises(ProviderError,match='额度'):await reserve_probe(sessions,limited,users['admin'])
+    async with sessions.begin() as db:
+        db.add_all([ModelUsage(company_id=users['admin'].company_id,owner_id=users['admin'].id,job_id=None,kind='admin_test') for _ in range(201)])
+    first=await reserve_probe(sessions,settings,users['admin'])
+    second=await reserve_probe(sessions,settings,users['admin'])
+    assert first != second
+    async with sessions() as db:
+        assert (await db.get(ModelUsage,second)).kind == 'admin_test'

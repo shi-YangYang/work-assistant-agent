@@ -12,7 +12,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import select
 
 from paa_server.agent.harness import BudgetExceeded, RunContext, LostLease, lease, reserve_call
-from paa_server.models import Attachment, Job, Message, WorkItem, now
+from paa_server.models import Attachment, Job, Message, ModelUsage, WorkItem, now
 from paa_server.worker import asr, claim, process_job
 from fakes import controlled_model
 from test_company import send
@@ -70,13 +70,18 @@ async def test_voice_is_decoded_original_retained_and_corrected_asr_is_versioned
     assert (await c['peer'].get(attachment['url'])).status_code==404
 
 
-async def test_daily_and_per_run_model_limits_before_external_calls(setup):
+async def test_daily_usage_does_not_block_calls_but_per_run_budget_remains(setup):
     settings,sessions,users,c=setup
     result=await send(c['employee'])
     job=await claim(sessions,users['employee'].id)
-    context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,replace(settings,daily_calls=1))
-    await reserve_call(context,'agent',100)
-    with pytest.raises(BudgetExceeded): await reserve_call(context,'agent',100)
+    async with sessions.begin() as db:
+        db.add_all([ModelUsage(company_id=job.company_id,owner_id=job.owner_id,job_id=None,kind='admin_test') for _ in range(201)])
+    context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings)
+    first=await reserve_call(context,'assistant',100)
+    second=await reserve_call(context,'assistant',100)
+    assert first != second and context.calls == 2
+    async with sessions() as db:
+        assert (await db.get(ModelUsage,second)).job_id == job.id
     context.calls=8
     with pytest.raises(BudgetExceeded): await reserve_call(context,'agent')
 
