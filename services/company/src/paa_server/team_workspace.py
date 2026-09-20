@@ -2,13 +2,14 @@
 from datetime import date
 
 from fastapi import Query
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, literal, or_, select
 
 from . import business_access as business
 from .models import Company, Member, Report, ReportObligation, ReportRevision, WorkItem, WorkRevision, now
-from .queries import blocked, period_range, revision_work, status_filter
-from .report_schedule import obligation_dto
-from .service import member_dto, problem, work_dto
+from .queries import period_range, status_filter
+from .service import member_dto, problem
+
+PAGE_SIZE = 20
 
 
 async def employees(db, actor, scope, member):
@@ -21,8 +22,24 @@ async def employees(db, actor, scope, member):
     return people, {p.id: p for p in people if not member or p.id == member}
 
 
-def page(rows, offset):
-    return {'items': rows[offset:offset + 20], 'total': len(rows), 'nextCursor': str(offset + 20) if len(rows) > offset + 20 else None}
+async def retained_filter(db, actor, query, access):
+    # Ordinary employee records need no reference lookups. For team-derived
+    # content, keep the existing policy and validate each distinct envelope once,
+    # before either pagination or counts. Never authorize only the visible page.
+    ordinary = or_(access['team'].is_(None), access.contains({'team': False}), access.contains({'team': None}))
+    envelopes = (await db.scalars(query.with_only_columns(access).order_by(None).where(~ordinary).distinct())).all()
+    allowed = [envelope for envelope in envelopes if await business.valid(db, actor, envelope, retained=True)]
+    return or_(ordinary, access.in_(allowed)) if allowed else ordinary
+
+
+def search_text(name, content, keys):
+    return func.concat_ws(' ', name, *(content[key].astext for key in keys))
+
+
+async def page(db, rows, counts, selected, order, offset):
+    totals = (await db.execute(select(*(func.count().filter(predicate).label(key) for key, predicate in counts.items()), func.count().filter(selected).label('total')).select_from(rows))).one()._mapping
+    items = (await db.execute(select(rows).where(selected).order_by(*order).offset(offset).limit(PAGE_SIZE))).mappings().all()
+    return items, {'total': totals['total'], 'nextCursor': str(offset + PAGE_SIZE) if totals['total'] > offset + PAGE_SIZE else None, 'counts': {key: totals[key] for key in counts}}
 
 
 async def work_view(db, actor, *, scope='current', period='this_week', start=None, end=None, q='', status='', members='active', member='', offset=0):
@@ -32,31 +49,36 @@ async def work_view(db, actor, *, scope='current', period='this_week', start=Non
     people, owners = await employees(db, actor, members, member)
     company = await db.get(Company, actor.company_id)
     lower, upper, date_range = period_range(company, period, start, end)
-    query = select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id.in_(owners), WorkItem.deleted.is_(False))
-    rows = []
-    for work in (await db.scalars(query)).all():
-        if not await business.valid(db, actor, work.access, retained=True):
-            continue
-        dto = work_dto(work)
+    base = select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id.in_(owners), WorkItem.deleted.is_(False))
+    base = base.where(await retained_filter(db, actor, base, WorkItem.access))
+    current = base.subquery()
+    content, revision, updated, links = current.c.content, current.c.revision, current.c.updated_at, current.c.business_links
+    source = current
+    if scope == 'updated':
+        candidates = select(WorkRevision).join(current, current.c.id == WorkRevision.work_id).where(WorkRevision.company_id == actor.company_id, WorkRevision.created_at < upper)
+        candidates = candidates.where(await retained_filter(db, actor, candidates, WorkRevision.access))
+        # Select the latest accessible revision before the cutoff first. Applying
+        # search/status/the lower bound earlier would resurrect obsolete matches.
+        latest = candidates.distinct(WorkRevision.work_id).order_by(WorkRevision.work_id, WorkRevision.created_at.desc(), WorkRevision.revision.desc()).subquery()
+        source = current.join(latest, latest.c.work_id == current.c.id)
+        content, revision, updated, links = latest.c.content, latest.c.revision, latest.c.created_at, latest.c.business_links
+    query = select(current.c.id, current.c.owner_id, current.c.origin, content.label('content'), revision.label('revision'), updated.label('updated_at'), (func.jsonb_array_length(links) > 0).label('has_links')).select_from(source).join(Member, Member.id == current.c.owner_id)
+    if scope == 'updated':
+        query = query.where(updated >= lower)
+    if q.strip():
+        query = query.where(search_text(Member.name, content, ('title', 'summary', 'blocker', 'nextStep')).icontains(q.strip(), autoescape=True))
+    rows = query.subquery()
+    state = rows.c.content['status'].astext
+    blocked = and_(state != 'done', or_(state == 'blocked', func.length(func.regexp_replace(func.coalesce(rows.c.content['blocker'].astext, ''), r'\s', '', 'g')) > 0))
+    predicates = {'all': literal(True), 'in_progress': state != 'done', 'blocked': blocked, 'done': state == 'done'}
+    items, result = await page(db, rows, predicates, predicates[status or 'all'], [rows.c.updated_at.desc(), rows.c.id.desc()], offset)
+    entries = []
+    for item in items:
+        dto = {'id': item['id'], 'ownerId': item['owner_id'], 'dueDate': None, 'origin': item['origin'], **item['content'], 'revision': item['revision'], 'updatedAt': item['updated_at'].isoformat(), 'hasBusinessLinks': item['has_links']}
         if scope == 'updated':
-            revisions = (await db.scalars(select(WorkRevision).where(WorkRevision.work_id == work.id, WorkRevision.company_id == actor.company_id, WorkRevision.created_at < upper).order_by(WorkRevision.created_at.desc(), WorkRevision.revision.desc()))).all()
-            revision = None
-            for candidate in revisions:
-                if await business.valid(db, actor, candidate.access, retained=True):
-                    revision = candidate
-                    break
-            if not revision or revision.created_at < lower:
-                continue
-            dto = revision_work(work, revision)
-        person = owners[work.owner_id]
-        if q.strip().casefold() not in ' '.join([person.name, *(str(dto.get(key, '')) for key in ('title', 'summary', 'blocker', 'nextStep'))]).casefold():
-            continue
-        rows.append({'id': work.id, 'member': member_dto(person), 'work': dto})
-    counts = {'all': len(rows), 'in_progress': sum(r['work']['status'] != 'done' for r in rows), 'blocked': sum(blocked(r['work']) for r in rows), 'done': sum(r['work']['status'] == 'done' for r in rows)}
-    if status:
-        rows = [r for r in rows if (blocked(r['work']) if status == 'blocked' else r['work']['status'] != 'done' if status == 'in_progress' else r['work']['status'] == 'done')]
-    rows.sort(key=lambda r: (r['work']['updatedAt'], r['id']), reverse=True)
-    return {**page(rows, offset), 'counts': counts, 'range': date_range, 'members': [member_dto(p) for p in people]}
+            dto['historical'] = True
+        entries.append({'id': item['id'], 'member': member_dto(owners[item['owner_id']]), 'work': dto})
+    return {**result, 'items': entries, 'range': date_range, 'members': [member_dto(p) for p in people]}
 
 
 async def report_view(db, actor, *, kind='daily', period='this_week', start=None, end=None, q='', status='', members='active', member='', offset=0):
@@ -66,34 +88,27 @@ async def report_view(db, actor, *, kind='daily', period='this_week', start=None
     company = await db.get(Company, actor.company_id)
     _, _, date_range = period_range(company, period, start, end)
     first, last = date_range['start'], date_range['end']
-    instant = now()
-    # Periods overlap the selected dates; submission time does not change the
-    # period a report belongs to. Include published reports without a schedule.
-    reports = (await db.scalars(select(Report).where(Report.company_id == actor.company_id, Report.owner_id.in_(owners), Report.kind == kind, Report.deleted.is_(False), Report.published_revision > 0, Report.period <= last, Report.period_end >= first))).all()
-    published = {}
-    for report in reports:
-        revision = await db.scalar(select(ReportRevision).where(ReportRevision.report_id == report.id, ReportRevision.company_id == actor.company_id, ReportRevision.revision == report.published_revision))
-        if revision:
-            published[(report.owner_id, report.period)] = (report, revision)
-    obligations = (await db.scalars(select(ReportObligation).where(ReportObligation.company_id == actor.company_id, ReportObligation.owner_id.in_(owners), ReportObligation.kind == kind, ReportObligation.period <= last, ReportObligation.period_end >= first))).all()
-    entries = {(r.owner_id, r.period): (r, published.pop((r.owner_id, r.period), None)) for r in obligations}
-    entries.update({key: (None, value) for key, value in published.items()})
-    rows = []
-    for (owner, _), (obligation, submitted) in entries.items():
-        person = owners[owner]
-        report, revision = submitted or (None, None)
-        state = 'submitted' if report else obligation_dto(obligation, instant)['state']
-        summary = ' · '.join(text.strip() for text in (revision.content.get(key, '') for key in ('completed', 'ongoing', 'blockers', 'next')) if isinstance(text, str) and text.strip())[:300] if revision else ''
-        if q.strip().casefold() not in (person.name + ' ' + summary).casefold():
-            continue
-        rows.append({'id': obligation.id if obligation else report.id, 'member': member_dto(person), 'kind': kind, 'period': obligation.period if obligation else report.period, 'periodEnd': obligation.period_end if obligation else report.period_end, 'state': state, 'scheduled': bool(obligation and obligation.state != 'cancelled'), 'deadlineAt': obligation.deadline_at.isoformat() if obligation else None, 'timezone': obligation.timezone if obligation else report.timezone, 'reportId': report.id if report else None, 'revision': revision.revision if revision else None, 'submittedAt': revision.created_at.isoformat() if revision else None, 'summary': summary})
-    counts = {'all': sum(r['state'] != 'cancelled' for r in rows), 'cancelled': sum(r['state'] == 'cancelled' for r in rows), 'expected': sum(r['scheduled'] for r in rows), 'submitted': sum(r['state'] == 'submitted' for r in rows), 'pending': sum(r['state'] in ('pending', 'overdue') for r in rows), 'overdue': sum(r['state'] == 'overdue' for r in rows)}
-    if status:
-        rows = [r for r in rows if (r['scheduled'] if status == 'expected' else r['state'] in ('pending', 'overdue') if status == 'pending' else r['state'] == status)]
-    if not status:
-        rows = [r for r in rows if r['state'] != 'cancelled']
-    rows.sort(key=lambda r: (r['period'], r['member']['name'], r['id']), reverse=True)
-    return {**page(rows, offset), 'counts': counts, 'range': date_range, 'members': [member_dto(p) for p in people]}
+    # Join only the published revision, never the mutable draft. Period overlap
+    # determines inclusion even when the employee submitted a report later.
+    published = select(Report.id, Report.owner_id, Report.period, Report.period_end, Report.timezone, ReportRevision.revision, ReportRevision.content, ReportRevision.created_at).join(ReportRevision, and_(ReportRevision.report_id == Report.id, ReportRevision.company_id == actor.company_id, ReportRevision.revision == Report.published_revision)).where(Report.company_id == actor.company_id, Report.owner_id.in_(owners), Report.kind == kind, Report.deleted.is_(False), Report.published_revision > 0, Report.period <= last, Report.period_end >= first).subquery()
+    obligations = select(ReportObligation).where(ReportObligation.company_id == actor.company_id, ReportObligation.owner_id.in_(owners), ReportObligation.kind == kind, ReportObligation.period <= last, ReportObligation.period_end >= first).subquery()
+    p, o = published.c, obligations.c
+    owner = func.coalesce(o.owner_id, p.owner_id)
+    state = case((p.id.is_not(None), 'submitted'), (and_(o.state == 'pending', o.deadline_at <= now()), 'overdue'), else_=o.state)
+    scheduled = and_(o.id.is_not(None), o.state != 'cancelled')
+    query = select(func.coalesce(o.id, p.id).label('id'), owner.label('owner_id'), Member.name.label('name'), func.coalesce(o.period, p.period).label('period'), func.coalesce(o.period_end, p.period_end).label('period_end'), state.label('state'), scheduled.label('scheduled'), o.deadline_at, func.coalesce(o.timezone, p.timezone).label('timezone'), p.id.label('report_id'), p.revision, p.created_at.label('submitted_at'), p.content).select_from(obligations.join(published, and_(o.owner_id == p.owner_id, o.period == p.period), full=True)).join(Member, Member.id == owner)
+    if q.strip():
+        query = query.where(search_text(Member.name, p.content, ('completed', 'ongoing', 'blockers', 'next')).icontains(q.strip(), autoescape=True))
+    rows = query.subquery()
+    r = rows.c
+    predicates = {'all': r.state != 'cancelled', 'cancelled': r.state == 'cancelled', 'expected': r.scheduled, 'submitted': r.state == 'submitted', 'pending': r.state.in_(('pending', 'overdue')), 'overdue': r.state == 'overdue'}
+    items, result = await page(db, rows, predicates, predicates[status or 'all'], [r.period.desc(), r.name.desc(), r.id.desc()], offset)
+    entries = []
+    for item in items:
+        content = item['content'] or {}
+        summary = ' · '.join(text.strip() for text in (content.get(key, '') for key in ('completed', 'ongoing', 'blockers', 'next')) if isinstance(text, str) and text.strip())[:300]
+        entries.append({'id': item['id'], 'member': member_dto(owners[item['owner_id']]), 'kind': kind, 'period': item['period'], 'periodEnd': item['period_end'], 'state': item['state'], 'scheduled': item['scheduled'], 'deadlineAt': item['deadline_at'].isoformat() if item['deadline_at'] else None, 'timezone': item['timezone'], 'reportId': item['report_id'], 'revision': item['revision'], 'submittedAt': item['submitted_at'].isoformat() if item['submitted_at'] else None, 'summary': summary})
+    return {**result, 'items': entries, 'range': date_range, 'members': [member_dto(p) for p in people]}
 
 
 def register_routes(app, ADMIN, DB):

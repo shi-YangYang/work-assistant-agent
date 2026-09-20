@@ -48,7 +48,7 @@ def dto(item, member):
 
 def register_routes(app, ADMIN, DESKTOP, DB, settings):
     async def member(db, actor, identifier):
-        found = await db.scalar(select(Member).where(Member.id == identifier, Member.company_id == actor.company_id))
+        found = await db.scalar(select(Member).where(Member.id == identifier, Member.company_id == actor.company_id, Member.deleted.is_(False)))
         if not found:
             problem(404, '成员不存在或已停用')
         return found
@@ -60,7 +60,7 @@ def register_routes(app, ADMIN, DESKTOP, DB, settings):
 
     @app.get('/api/v1/settings/voiceprints')
     async def listing(actor=ADMIN, db=DB):
-        members = (await db.scalars(select(Member).where(Member.company_id == actor.company_id).order_by(Member.name).limit(501))).all()
+        members = (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.deleted.is_(False)).order_by(Member.name).limit(501))).all()
         stored = {v.member_id: v for v in (await db.scalars(select(Voiceprint).where(Voiceprint.company_id == actor.company_id))).all()}
         return {'modelId': MODEL_ID, 'items': [dto(stored.get(m.id), m) for m in members], 'limit': 500}
 

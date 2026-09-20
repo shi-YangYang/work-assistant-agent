@@ -1,0 +1,145 @@
+.document-card {
+  min-width: 0;
+  flex: 1 1 290px;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.document-heading {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.document-heading svg {
+  flex-shrink: 0;
+}
+.document-heading strong,
+.pending-file-info strong,
+.document-citations button {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.document-card p {
+  margin: 8px 0;
+}
+.document-card .card-actions {
+  flex-wrap: wrap;
+}
+.document-card a {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.document-warning {
+  color: var(--muted);
+  font-size: 13px;
+}
+.document-preview {
+  min-width: 0;
+}
+.document-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.document-preview section {
+  margin: 16px 0;
+}
+.document-citations {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.pending-attachments {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+.pending-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.pending-file {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+.pending-audio-file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.pending-audio-file .pending-file-info {
+  grid-column: 1;
+  grid-row: 1;
+}
+.pending-audio-file > button {
+  grid-column: 2;
+  grid-row: 1;
+}
+.pending-audio-player {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+}
+.pending-audio-player audio {
+  display: block;
+  width: 100%;
+  height: 48px;
+}
+.pending-audio-player p {
+  margin: 4px 0;
+}
+.pending-image-file {
+  flex: 1 1 220px;
+  width: auto;
+  max-width: 340px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+.pending-file-info {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.pending-file-info span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.pending-file > svg,
+.pending-file > button {
+  flex-shrink: 0;
+}
+.pending-file img {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+}
+@media (max-width: 600px) {
+  .pending-image-file {
+    max-width: none;
+  }
+  .document-card {
+    flex-basis: 100%;
+  }
+}
+.document-citations button {
+  white-space: normal;
+  text-align: left;
+}

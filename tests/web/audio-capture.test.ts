@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { monoWav, recordingPreview } from '../../apps/web/src/audio-preview'
+import type { Composer } from '../../apps/web/src/features/assistant/lib/audio-capture'
 import {
-  AudioCapture,
   appendRecordedFile,
-  type Composer,
+  AudioCapture,
   microphoneError,
-} from '../../apps/web/src/audio-capture'
+} from '../../apps/web/src/features/assistant/lib/audio-capture'
+import { monoWav, recordingPreview } from '../../apps/web/src/features/assistant/lib/audio-preview'
 
 class ControlledRecorder {
   static instances: ControlledRecorder[] = []

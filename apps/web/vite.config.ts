@@ -6,6 +6,7 @@ import { resolve } from 'node:path'
 const pdfRoot = resolve(createRequire(import.meta.url).resolve('pdfjs-dist/package.json'), '..')
 const pdfResources = ['cmaps', 'standard_fonts', 'wasm', 'iccs']
 export default defineConfig({
+  resolve: { alias: { '@web': resolve(import.meta.dirname, 'src') } },
   root: resolve(import.meta.dirname, 'src'),
   publicDir: resolve(import.meta.dirname, '../../packages/ui-web/public'),
   plugins: [
@@ -66,7 +67,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5174,
     strictPort: true,
-    proxy: { '^/api/': { target: 'http://127.0.0.1:8000', changeOrigin: false } },
+    proxy: { '^/api/v1(?:/|$)': { target: 'http://127.0.0.1:8000', changeOrigin: false } },
   },
   build: { outDir: resolve(import.meta.dirname, 'out'), emptyOutDir: true },
 })

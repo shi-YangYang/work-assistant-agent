@@ -1,12 +1,13 @@
-import { describe, expect, it } from 'vitest'
 import type { Identity } from '@paa/api-contracts'
-import { SessionDrafts } from '../../apps/web/src/session-drafts'
+import { describe, expect, it } from 'vitest'
+import { composerDraftLifecycle } from '../../apps/web/src/features/assistant/lib/composer-drafts'
+import { SessionDrafts } from '../../apps/web/src/lib/session-drafts'
 const identity = (company = 'company', id = 'member', role = 'employee') =>
   ({ company: { id: company }, member: { id, role, mustChangePassword: false } }) as Identity
 const composer = { text: '未发送文字', files: [], key: 'original', sending: true }
 describe('verified same-page chat recovery', () => {
   it('keeps only chat input through expiration and blocks late upload/recording/settings callbacks', () => {
-    const vault = new SessionDrafts()
+    const vault = new SessionDrafts(composerDraftLifecycle)
     vault.resume(identity())
     const write = vault.writer()
     write('composer:new', composer)
@@ -26,7 +27,7 @@ describe('verified same-page chat recovery', () => {
     identity('company', 'other'),
     identity('company', 'member', 'admin'),
   ])('discards all drafts for a changed company/member/role', (next) => {
-    const vault = new SessionDrafts()
+    const vault = new SessionDrafts(composerDraftLifecycle)
     vault.resume(identity())
     const old = vault.writer()
     old('composer:new', composer)
@@ -36,7 +37,7 @@ describe('verified same-page chat recovery', () => {
     expect(vault.getSnapshot()).toEqual({})
   })
   it('explicit logout and lost access clear input while new authorized writers remain usable', () => {
-    const vault = new SessionDrafts()
+    const vault = new SessionDrafts(composerDraftLifecycle)
     vault.resume(identity())
     const old = vault.writer()
     old('composer:new', composer)

@@ -23,6 +23,7 @@ from .desktop_auth import NATIVE_WRITES
 from .authentication import COOKIE, passwords, issue_session, limit_authenticated_request, revoke_member, verify_password
 from . import business_access as business
 from . import report_schedule as reporting
+from .report_queries import report_dto, report_dtos
 from . import business_actions as actions
 from . import business_writes as writes
 from .documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
@@ -226,16 +227,6 @@ def create_app(settings=None):
         statuses = {d.id: d.status for d in (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == item.id))).all()}
         return {'id': item.id, 'ownerId': item.owner_id, 'conversationId': item.conversation_id, 'text': item.text if allowed else '', 'reply': item.reply if allowed else '', 'businessUnavailable': not allowed, 'citations': [c for c in item.citations if c.get('kind') != 'business'] if allowed else [], 'businessCitations': [c for c in item.citations if c.get('kind') == 'business'] if allowed else [], 'replyTo': item.reply_to, 'transcript': item.transcript if allowed else '', 'transcriptRevision': item.transcript_revision, 'createdAt': item.created_at.isoformat(), 'attachments': [attachment_dto(a) for a in attachments] if allowed else [], 'job': job_dto(job) if job else None, 'drafts': [{**draft_dto(d), 'businessLinks': await business_link_dtos(db, actor, d.business_links)} for d in private if allowed and await business.valid(db, actor, d.access)], 'suggestions': [{**s, 'status': statuses.get(s['id'], 'pending')} for s in item.suggestions] if allowed else [], 'actions': await actions.message_actions(db, actor, item)}
 
-    async def report_dto(db, report, actor):
-        revisions = list((await db.scalars(select(ReportRevision).where(ReportRevision.report_id == report.id).order_by(ReportRevision.revision.desc()))).all())
-        own = actor.id == report.owner_id
-        if not own and not revisions:
-            problem(404, '报告尚未提交或无权查看')
-        job = await db.scalar(select(Job).where(Job.target_id == report.id, Job.kind == 'report').order_by(Job.created_at.desc()).limit(1)) if own else None
-        public = revisions[0] if revisions else None
-        owner = await db.get(Member, report.owner_id)
-        return {'id': report.id, 'ownerId': report.owner_id, 'ownerName': owner.name if owner else '', 'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'timezone': report.timezone, 'content': report.content if own else public.content, 'candidate': report.candidate if own else None, 'sourceIds': report.source_ids if own else public.source_ids, 'revision': report.revision if own else public.revision, 'publishedRevision': report.published_revision, 'managementRevision': report.revision, 'updatedAt': (report.updated_at if own else public.created_at).isoformat(), 'job': job_dto(job) if job else None, 'revisions': [{'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'submittedAt': r.created_at.isoformat()} for r in revisions]}
-
     @app.get('/api/v1/health')
     async def health(db=DB):
         await db.scalar(select(Company.id).limit(1))
@@ -296,7 +287,7 @@ def create_app(settings=None):
 
     @app.get('/api/v1/members')
     async def members(actor=ADMIN, db=DB):
-        return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee').order_by(Member.created_at))).all()]}
+        return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee', Member.deleted.is_(False)).order_by(Member.created_at))).all()]}
 
     @app.post('/api/v1/members', status_code=201)
     async def add_member(body: MemberCreate, actor=ADMIN, db=DB):
@@ -314,6 +305,8 @@ def create_app(settings=None):
     async def change_member(identifier: str, body: MemberPatch, actor=ADMIN, db=DB):
         await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
         item = await visible_member(db, actor, identifier, employee_only=True)
+        if item.deleted:
+            problem(404, '账号已删除')
         item.active = body.active
         await reporting.eligibility_changed(db, item)
         if not item.active:
@@ -323,9 +316,30 @@ def create_app(settings=None):
     @app.post('/api/v1/members/{identifier}/reset-password')
     async def reset_password(identifier: str, body: ResetPassword, actor=ADMIN, db=DB):
         item = await visible_member(db, actor, identifier, employee_only=True)
+        if item.deleted:
+            problem(404, '账号已删除')
         item.password_hash = await run_in_threadpool(passwords.hash, body.password)
         item.must_change_password = True
         await revoke_member(db, item.id)
+        return {'ok': True}
+
+    @app.delete('/api/v1/members/{identifier}')
+    async def delete_member(identifier: str, actor=ADMIN, db=DB):
+        await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
+        item = await visible_member(db, actor, identifier)
+        if item.role != 'employee':
+            problem(404, '成员不存在或无权查看')
+        # Preserve the owner ID for history, but release both login identities.
+        # The colon is outside the allowed username alphabet, so this reserved
+        # tombstone cannot conflict with an account created through the API.
+        if not item.deleted:
+            item.active, item.deleted, item.password_hash = False, True, None
+            item.username = 'deleted:' + item.id
+            await reporting.eligibility_changed(db, item)
+            await revoke_member(db, item.id)
+            from .models import DingTalkIdentity, Voiceprint
+            await db.execute(delete(DingTalkIdentity).where(DingTalkIdentity.member_id == item.id, DingTalkIdentity.company_id == actor.company_id))
+            await db.execute(update(Voiceprint).where(Voiceprint.member_id == item.id, Voiceprint.state.in_(('queued', 'processing'))).values(state='failed', error='账号已删除，登记已停止', lease_until=None, revision=Voiceprint.revision + 1, updated_at=now()))
         return {'ok': True}
 
     @app.post('/api/v1/uploads', status_code=201)
@@ -749,7 +763,7 @@ def create_app(settings=None):
         if cursor:
             query = query.where(Report.period < cursor)
         rows = (await db.scalars(query.order_by(Report.period.desc()).limit(51))).all()
-        return {'items': [await report_dto(db, r, actor) for r in rows[:50]], 'nextCursor': rows[49].period if len(rows) > 50 else None}
+        return {'items': await report_dtos(db, rows[:50], actor), 'nextCursor': rows[49].period if len(rows) > 50 else None}
 
     @app.get('/api/v1/reports/{identifier}')
     async def get_report(identifier: str, revision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
@@ -863,7 +877,7 @@ def create_app(settings=None):
         if cursor:
             query = query.where(Report.period < cursor)
         rows = (await db.scalars(query.order_by(Report.period.desc()).limit(51))).all()
-        return {'items': [await report_dto(db, r, actor) for r in rows[:50]], 'nextCursor': rows[49].period if len(rows) > 50 else None}
+        return {'items': await report_dtos(db, rows[:50], actor), 'nextCursor': rows[49].period if len(rows) > 50 else None}
 
     async def deleted_sources(db, ids):
         available = set((await db.scalars(select(Message.id).where(Message.id.in_(ids), Message.deleted.is_(False)))).all())

@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
 import type { Job, JobFeedback } from '@paa/api-contracts'
-import { filterParams, pageParams } from '../../apps/web/src/list-state'
-import { acceptFeedback, visibleFeedback } from '../../apps/web/src/job-feedback'
-import { detailReturn, detailState } from '../../apps/web/src/navigation'
+import { describe, expect, it } from 'vitest'
+import {
+  acceptFeedback,
+  reportNeedsPolling,
+  visibleFeedback,
+} from '../../apps/web/src/api/job-feedback'
+import { filterParams, pageParams } from '../../apps/web/src/utils/list-state'
+import { detailReturn, detailState } from '../../apps/web/src/utils/navigation'
 
 const feedback: JobFeedback = {
   jobId: 'job',
@@ -26,6 +30,21 @@ const job: Job = {
   error: '',
   updatedAt: feedback.updatedAt,
 }
+
+it('polls only active report jobs, never history snapshots or terminal results', () => {
+  for (const state of ['queued', 'running'] as const)
+    expect(reportNeedsPolling({ job: { ...job, kind: 'report', state } })).toBe(true)
+  for (const state of [
+    'succeeded',
+    'awaiting_input',
+    'awaiting_retry',
+    'failed',
+    'cancelled',
+  ] as const)
+    expect(reportNeedsPolling({ job: { ...job, kind: 'report', state } })).toBe(false)
+  expect(reportNeedsPolling({ job: null })).toBe(false)
+  expect(reportNeedsPolling({ historical: true, job: { ...job, kind: 'report' } })).toBe(false)
+})
 
 describe('work pagination and return context', () => {
   it('retains filters and all previous cursors through detail return and resets on a new filter', () => {

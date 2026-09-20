@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import type { Composer } from '../../apps/web/src/audio-capture'
+import type { Composer } from '../../apps/web/src/features/assistant/lib/audio-capture'
 import {
+  clipboardImages,
   currentCitation,
+  droppedFiles,
   fileKind,
   fileSelectionError,
-  updateSendingDraft,
-  messageSubmission,
-  clipboardImages,
-  droppedFiles,
   isHeif,
-} from '../../apps/web/src/files'
+  messageSubmission,
+  updateSendingDraft,
+} from '../../apps/web/src/features/assistant/utils/files'
 const file = (name: string, size = 100, type = '') => ({ name, size, type }) as File
 
 describe('document composer', () => {

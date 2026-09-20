@@ -1,15 +1,16 @@
+import type { Member } from '@paa/api-contracts'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
-import type { Member } from '@paa/api-contracts'
-import { DingTalkAccountPage } from '../../apps/web/src/DingTalk'
+import { composerDraftLifecycle } from '../../apps/web/src/features/assistant/lib/composer-drafts'
 import {
   dingtalkDraftSummary,
   dingtalkResult,
   officialDingTalkUrl,
-} from '../../apps/web/src/dingtalk-flow'
-import { SessionDrafts } from '../../apps/web/src/session-drafts'
+} from '../../apps/web/src/features/auth/utils/dingtalk-flow'
+import { DingTalkAccountPage } from '../../apps/web/src/features/settings/components/AccountPage'
+import { SessionDrafts } from '../../apps/web/src/lib/session-drafts'
 
 it('only accepts the fixed official authorization page before leaving the app', () => {
   expect(officialDingTalkUrl('https://login.dingtalk.com/oauth2/auth?state=controlled')).toBe(
@@ -42,7 +43,7 @@ it('uses fixed callback messages and never echoes provider errors or arbitrary r
 })
 
 it('exposes pending text and attachment count for the external-login guard after session expiry without modifying drafts', () => {
-  const vault = new SessionDrafts()
+  const vault = new SessionDrafts(composerDraftLifecycle)
   vault.writer()('composer:new', {
     text: '未发送的工作内容',
     files: [{ url: 'blob:controlled' }],

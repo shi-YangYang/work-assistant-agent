@@ -1,0 +1,48 @@
+.business-action-card {
+  padding: 16px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  min-width: 0;
+}
+.business-action-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.business-action-heading > span {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+.business-action-card h4 {
+  margin: 12px 0 8px;
+  overflow-wrap: anywhere;
+}
+.business-action-card p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.business-action-card .card-actions {
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.business-action-succeeded .business-action-heading > svg {
+  color: var(--accent);
+}
+.business-action-preview {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 12px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.business-action-preview section + section {
+  margin-top: 16px;
+}
+.business-action-preview strong {
+  font-size: 13px;
+  color: var(--muted);
+}

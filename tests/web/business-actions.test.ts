@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest'
 import type { BusinessAction } from '@paa/api-contracts'
-import { actionStateLabel } from '../../apps/web/src/BusinessActions'
+import { expect, it } from 'vitest'
+import { actionStateLabel } from '../../apps/web/src/features/assistant/components/BusinessActionCard'
 
 const base: BusinessAction = {
   id: 'action',

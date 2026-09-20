@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest'
 import type { ReportObligation } from '@paa/api-contracts'
+import { describe, expect, it } from 'vitest'
 import {
+  obligationLabel,
   obligationTarget,
   reportDeadline,
-  obligationLabel,
-} from '../../apps/web/src/ReportObligations'
+} from '../../apps/web/src/features/reports/utils/obligations'
 
 const obligation: ReportObligation = {
   id: 'obligation',

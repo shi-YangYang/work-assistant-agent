@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { setCsrf, useResource } from '../../apps/web/src/api'
+import { setCsrf } from '../../apps/web/src/api/client'
+import { useResource } from '../../apps/web/src/hooks/useResource'
 
 // Keep hook state across explicit refresh/path renders while exercising the
 // real effect, fetch boundary, AbortController and browser events without a DOM.
@@ -32,10 +33,14 @@ vi.mock('react', () => ({
   },
 }))
 
-const render = (path: string | null, interval = 1000) => {
+const render = (
+  path: string | null,
+  interval = 1000,
+  shouldPoll?: (data: { value: string }) => boolean,
+) => {
   hooks.cleanup?.()
   hooks.cursor = 0
-  const resource = useResource<{ value: string }>(path, interval)
+  const resource = useResource<{ value: string }>(path, interval, shouldPoll)
   hooks.cleanup = hooks.setup?.() || undefined
   return resource
 }
@@ -165,4 +170,31 @@ it('hides both previous-session data and errors before a new account read comple
   expect(render('/conversations', 0).data).toEqual({ value: 'fresh' })
   setCsrf('another-account')
   expect(render('/conversations', 0)).toMatchObject({ data: null, error: '' })
+})
+
+it('stops after completion and resumes on explicit refresh or browser recovery', async () => {
+  const result = (value: string) => Promise.resolve(new Response(JSON.stringify({ value })))
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(() => result('running'))
+    .mockImplementation(() => result('succeeded'))
+  vi.stubGlobal('fetch', fetch)
+  const polling = ({ value }: { value: string }) => value === 'running'
+  let resource = render('/reports/report', 2000, polling)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(fetch).toHaveBeenCalledTimes(2)
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(fetch).toHaveBeenCalledTimes(2)
+  fetch.mockImplementationOnce(() => result('running'))
+  resource.refresh()
+  resource = render('/reports/report', 2000, polling)
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(fetch).toHaveBeenCalledTimes(4)
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(fetch).toHaveBeenCalledTimes(4)
+  document.dispatchEvent(new Event('visibilitychange'))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(fetch).toHaveBeenCalledTimes(5)
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(fetch).toHaveBeenCalledTimes(5)
 })

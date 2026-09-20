@@ -1,7 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
 import type { Page } from '@paa/api-contracts'
-import { ApiError } from '../../apps/web/src/api'
-import { PagedResource } from '../../apps/web/src/paged-resource'
+import { describe, expect, it, vi } from 'vitest'
+import { ApiError } from '../../apps/web/src/api/client'
+import { PagedResource } from '../../apps/web/src/lib/paged-resource'
 
 type Row = { id: string; createdAt: string; period: string; text: string }
 const row = (id: number): Row => ({

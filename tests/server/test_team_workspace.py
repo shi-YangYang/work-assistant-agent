@@ -93,3 +93,67 @@ async def test_workspace_search_and_pagination_cover_all_rows(setup):
         assert len({r['id'] for r in first['items'] + second['items']}) == 23
     search = (await clients['admin'].get('/api/v1/team/workspace/work', params={'q': '方案 0'})).json()
     assert search['total'] == 1
+
+
+async def test_report_search_uses_full_published_body_and_literal_patterns(setup):
+    from sqlalchemy import select
+    _, sessions, users, clients = setup
+    async with sessions.begin() as db:
+        row = await report(db, users['employee'], '2026-09-12')
+        revision = await db.scalar(select(ReportRevision).where(ReportRevision.report_id == row.id))
+        revision.content = {'completed': '方案进展。' * 100, 'ongoing': '尾部关键字 Q4_完成率100%', 'blockers': '', 'next': ''}
+    for term in ('尾部关键字', 'q4_完成率100%', '100%'):
+        response = await clients['admin'].get('/api/v1/team/workspace/reports', params={**RANGE, 'q': term})
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data['total'] == data['counts']['submitted'] == 1
+        assert data['items'][0]['reportId'] == row.id
+        assert len(data['items'][0]['summary']) == 300 and '尾部关键字' not in data['items'][0]['summary']
+    for term in ('Q4X完成率', '不能泄露的后续草稿'):
+        data = (await clients['admin'].get('/api/v1/team/workspace/reports', params={**RANGE, 'q': term})).json()
+        assert data['total'] == data['counts']['all'] == 0
+
+
+async def test_history_filters_latest_accessible_revision_before_search(setup):
+    from paa_server.models import WorkRevision
+    _, sessions, users, clients = setup
+    async with sessions.begin() as db:
+        employee = users['employee']
+        row = await work(db, employee, content('旧关键字', 'blocked'), DAY)
+        for revision, title, access in [(2, '新版本', {}), (3, '不可见版本', {'team': True, 'actorId': users['peer'].id})]:
+            db.add(WorkRevision(company_id=row.company_id, owner_id=row.owner_id, work_id=row.id, revision=revision, content=content(title), source_ids=[], created_at=DAY + timedelta(minutes=revision), access=access))
+        for title, reads in [('丢失来源', {'x': {'type': 'own_work', 'id': 'missing'}}), ('跨公司来源', {'x': {'type': 'member', 'id': users['outsider'].id, 'ownerId': users['outsider'].id}})]:
+            await work(db, employee, content(title), DAY, access={'team': True, 'actorId': users['admin'].id, 'companyId': employee.company_id, 'reads': reads})
+    client = clients['admin']
+    history = (await client.get('/api/v1/team/workspace/work', params={**RANGE, 'scope': 'updated'})).json()
+    assert history['total'] == 1 and history['items'][0]['work']['revision'] == 2
+    assert history['items'][0]['work']['title'] == '新版本'
+    hidden = (await client.get('/api/v1/team/workspace/work', params={**RANGE, 'scope': 'updated', 'q': '旧关键字'})).json()
+    assert hidden['total'] == hidden['counts']['all'] == 0
+
+
+async def test_workspace_query_count_does_not_grow_with_page_size(setup):
+    from sqlalchemy import event
+    from paa_server.team_workspace import work_view, report_view
+    _, sessions, users, _ = setup
+    async with sessions.begin() as db:
+        for index in range(65):
+            await work(db, users['employee'], content(f'事项 {index}'), DAY + timedelta(minutes=index))
+            await report(db, users['employee'], (DAY + timedelta(days=index)).date().isoformat())
+    async with sessions() as db:
+        engine = db.bind.sync_engine
+    for view, params, maximum in [(work_view, {}, 5), (work_view, {'scope': 'updated'}, 6), (report_view, {}, 4)]:
+        statements = []
+        def capture(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith('SELECT'):
+                statements.append(statement)
+        event.listen(engine, 'before_cursor_execute', capture)
+        try:
+            async with sessions() as db:
+                data = await view(db, users['admin'], period='custom', start=DAY.date(), end=(DAY + timedelta(days=70)).date(), **params)
+            assert data['total'] == 65 and len(data['items']) == 20
+            assert len(statements) <= maximum, '\n'.join(statements)
+            assert 'LIMIT' in statements[-1] and 'OFFSET' in statements[-1]
+            print(f'{view.__name__} {params}: {len(statements)} queries for 65 records, 20 returned')
+        finally:
+            event.remove(engine, 'before_cursor_execute', capture)
