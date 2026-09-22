@@ -27,6 +27,7 @@ export function TeamFilters({
           aria-label="搜索团队内容"
           placeholder="搜索员工或内容"
           value={params.get('q') || ''}
+          maxLength={200}
           onSearch={(q) => update({ q })}
           resetKey={searchReset}
         />

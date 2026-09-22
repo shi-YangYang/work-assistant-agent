@@ -59,7 +59,7 @@ export function MembersPage() {
             </div>
             <Actions>
               <button role="menuitem" onClick={() => setReset(member)}>
-                重置临时密码
+                重置密码
               </button>
               <button role="menuitem" onClick={() => void change(member)}>
                 {member.active ? '停用账号' : '启用账号'}
@@ -94,7 +94,7 @@ export function MembersPage() {
             setCreate(false)
             setReset(null)
             refresh()
-            notify('已保存，请将账号与临时密码交给成员；首次登录需修改')
+            notify(reset ? '密码已重置，该成员需使用新密码重新登录' : '成员已创建')
           }}
         />
       )}

@@ -1,4 +1,4 @@
-import type { Member } from '@paa/api-contracts'
+import { inputRules, type Member } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -10,6 +10,9 @@ import { useEffect, useRef, useState } from 'react'
 
 type Field = 'name' | 'username' | 'password'
 type FieldErrors = Partial<Record<Field, string>>
+
+const constraints = inputRules.member
+const usernamePattern = new RegExp(constraints.username.pattern)
 
 export function MemberForm({
   member,
@@ -29,11 +32,10 @@ export function MemberForm({
   const submitting = useRef(false)
   const mounted = useRef(true)
   const fields: Field[] = member ? ['password'] : ['name', 'username', 'password']
-  const passwordLength = member ? 12 : 4
   const rules = {
-    name: '姓名需为 1–80 个字符',
-    username: '账号需为 3–80 位，仅支持字母、数字和 . _ @ -',
-    password: `临时密码需为 ${passwordLength}–128 位`,
+    name: `姓名需为 ${constraints.name.min}–${constraints.name.max} 个字符`,
+    username: `账号需为 ${constraints.username.min}–${constraints.username.max} 位，仅支持字母、数字和 . _ @ -`,
+    password: `密码需为 ${constraints.password.min}–${constraints.password.max} 位`,
   }
   useEffect(() => {
     mounted.current = true
@@ -43,12 +45,11 @@ export function MemberForm({
   }, [])
 
   function validate(field: Field, value: string) {
-    if (!value)
-      return `请输入${field === 'name' ? '姓名' : field === 'username' ? '账号' : '临时密码'}`
+    if (!value || (field === 'name' && !value.trim()))
+      return `请输入${field === 'name' ? '姓名' : field === 'username' ? '账号' : '密码'}`
     const length = [...value].length
-    if (field === 'name') return length <= 80 ? '' : rules.name
-    if (field === 'username') return /^[a-zA-Z0-9._@-]{3,80}$/.test(value) ? '' : rules.username
-    return length >= passwordLength && length <= 128 ? '' : rules.password
+    if (field === 'username') return usernamePattern.test(value) ? '' : rules.username
+    return length >= constraints[field].min && length <= constraints[field].max ? '' : rules[field]
   }
 
   function input(field: Field) {
@@ -100,7 +101,7 @@ export function MemberForm({
     setBusy(true)
     try {
       if (member) await resetMemberPassword(member, { password: values.password })
-      else await createMember({ ...values, role: 'employee' })
+      else await createMember({ ...values, name: values.name.trim(), role: 'employee' })
       if (mounted.current) onSaved()
     } catch (error) {
       if (!mounted.current) return
@@ -133,7 +134,7 @@ export function MemberForm({
             <FormField
               {...input('username')}
               label="账号"
-              hint="3–80 位，仅支持字母、数字和 . _ @ -"
+              hint={`${constraints.username.min}–${constraints.username.max} 位，仅支持字母、数字和 . _ @ -`}
               autoComplete="off"
               autoCapitalize="none"
               spellCheck={false}
@@ -142,10 +143,10 @@ export function MemberForm({
         )}
         <FormField
           {...input('password')}
-          label="临时密码"
+          label="密码"
           type="password"
           autoComplete="new-password"
-          hint={`${passwordLength}–128 位。请通过公司认可的方式交给本人。`}
+          hint={`${constraints.password.min}–${constraints.password.max} 位。请通过公司认可的方式交给本人。`}
         />
         <ErrorNotice>{failure}</ErrorNotice>
         <div className="form-actions">

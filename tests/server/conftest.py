@@ -39,7 +39,7 @@ async def setup(tmp_path):
             company = Company(name='受控测试公司 ' + uuid4().hex[:8], environment_models=name == 'primary')
             db.add(company); await db.flush(); company_ids.append(company.id)
             for role in (('admin', 'employee', 'peer') if name == 'primary' else ('outsider',)):
-                member = Member(company_id=company.id, username='test_' + uuid4().hex[:14], name='受控测试 ' + role, role='admin' if role == 'admin' else 'employee', password_hash=hashed, must_change_password=False)
+                member = Member(company_id=company.id, username='test_' + uuid4().hex[:14], name='受控测试 ' + role, role='admin' if role == 'admin' else 'employee', password_hash=hashed)
                 db.add(member); await db.flush(); users[role] = member
     app = create_app(settings)
     lifespan = app.router.lifespan_context(app)

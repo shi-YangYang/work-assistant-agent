@@ -7,6 +7,10 @@ export const reportLabels: Record<keyof ReportContent, string> = {
   next: '下一步计划',
 }
 
+export function reportHasContent(content: ReportContent) {
+  return Object.values(content).some((text) => text.trim())
+}
+
 export function ReportBody({ content }: { content: ReportContent }) {
   return (
     <div className="report-body">

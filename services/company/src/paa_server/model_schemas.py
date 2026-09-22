@@ -34,7 +34,7 @@ def parameters(value):
                 raise ValueError('推理参数数值无效')
         elif item is not None and not isinstance(item, bool):
             raise ValueError('推理参数不是合法 JSON')
-    if not isinstance(value, dict) or len(json.dumps(value, ensure_ascii=False).encode()) > 4096:
+    if not isinstance(value, dict) or len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode()) > 4096:
         raise ValueError('推理参数必须是 4 KiB 以内的 JSON 对象')
     walk(value)
     return value
@@ -92,8 +92,8 @@ class ServiceInput(Input):
         self.name = self.name.strip()
         if not self.name or (self.apiKey and not self.apiKey.strip()):
             raise ValueError('请输入有效名称或密钥')
-        if any(ord(c) < 32 or ord(c) == 127 for c in self.apiKey):
-            raise ValueError('密钥含无效字符')
+        if any(ord(c) < 32 or ord(c) > 126 for c in self.apiKey):
+            raise ValueError('API 密钥只能包含可打印 ASCII 字符')
         if len({m.id for m in self.models}) != len(self.models) or len({(m.model, m.protocol) for m in self.models}) != len(self.models):
             raise ValueError('模型配置重复')
         if len(json.dumps(self.model_dump(), ensure_ascii=False).encode()) > 49152:

@@ -101,6 +101,7 @@ export function ConversationPicker({
               aria-label="搜索会话"
               placeholder="搜索会话"
               value={search}
+              maxLength={120}
               onChange={(e) => {
                 setSearch(e.target.value)
                 setOlder([])

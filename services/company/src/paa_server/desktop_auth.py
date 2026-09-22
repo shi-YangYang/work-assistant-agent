@@ -50,7 +50,7 @@ def register_routes(app, AUTH, DB, settings, sessions):
         await company_lock(db, record.company_id)
         record = await db.scalar(select(DesktopSession).where(DesktopSession.id == record.id, DesktopSession.expires_at > now()).execution_options(populate_existing=True))
         actor = await db.get(Member, record.member_id) if record else None
-        if actor is None or not actor.active or actor.must_change_password or actor.company_id != record.company_id:
+        if actor is None or not actor.active or actor.company_id != record.company_id:
             problem(401, '公司登录已失效，请重新登录', 'desktop_login_required')
         request.state.desktop_session = record
         return actor
@@ -114,7 +114,7 @@ def register_routes(app, AUTH, DB, settings, sessions):
             return JSONResponse({'state': 'pending'}, status_code=202)
         session = await db.get(Session, item.session_id)
         actor = await db.get(Member, item.member_id)
-        if not session or session.expires_at <= now() or not actor or not actor.active or actor.must_change_password or actor.company_id != item.company_id:
+        if not session or session.expires_at <= now() or not actor or not actor.active or actor.company_id != item.company_id:
             problem(410, '账号授权已失效，请重新登录', 'invalid_grant')
         token, expires = secrets.token_urlsafe(48), session.expires_at
         db.add(DesktopSession(company_id=actor.company_id, member_id=actor.id, session_id=session.id, token_hash=digest(token), expires_at=expires))

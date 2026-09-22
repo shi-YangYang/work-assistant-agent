@@ -126,11 +126,6 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.password-reset .password-form {
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
 .weekdays label {
   margin: 0;
   position: relative;

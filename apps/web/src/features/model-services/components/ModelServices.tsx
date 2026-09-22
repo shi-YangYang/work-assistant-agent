@@ -23,6 +23,8 @@ import type { ServiceDraft } from '@web/features/model-services/utils/service-dr
 import {
   appendServiceModels,
   cleanServiceDraft,
+  modelApiKeyError,
+  validateServiceModels,
 } from '@web/features/model-services/utils/service-drafts'
 import {
   matchModelProtocol,
@@ -125,6 +127,9 @@ export function ModelServices() {
     setBusy('save')
     setError('')
     try {
+      const keyError = modelApiKeyError(keys[target.id] || '')
+      if (keyError) throw new Error(keyError)
+      validateServiceModels(target.models)
       const payload =
         target === draft
           ? capture()

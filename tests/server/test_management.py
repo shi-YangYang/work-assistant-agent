@@ -262,7 +262,7 @@ async def test_member_creation_accepts_four_character_password_without_relaxing_
     assert detail['fieldErrors'] == {
         'username': '账号需为 3–80 位，仅支持字母、数字和 . _ @ -',
         'name': '姓名需为 1–80 个字符',
-        'password': '临时密码需为 4–128 位',
+        'password': '密码需为 4–128 位',
     }
     assert (await admin.post('/api/v1/members', json=payload, headers={'X-CSRF-Token': 'wrong'})).status_code == 403
     for role in ('employee', 'outsider'):
@@ -272,30 +272,62 @@ async def test_member_creation_accepts_four_character_password_without_relaxing_
     created = await admin.post('/api/v1/members', json=payload)
     assert created.status_code == 201, created.text
     assert created.json()['role'] == 'employee'
+    assert 'mustChangePassword' not in created.json()
     duplicate = await admin.post('/api/v1/members', json=payload)
     assert duplicate.status_code == 409
     assert duplicate.json()['error']['fieldErrors'] == {'username': '账号名称已被使用'}
     reset_path = '/api/v1/members/' + created.json()['id'] + '/reset-password'
-    reset = await admin.post(reset_path, json={'password': '5678'})
+    reset = await admin.post(reset_path, json={'password': '567'})
     assert reset.status_code == 422
-    assert reset.json()['error']['fieldErrors'] == {'password': '临时密码需为 12–128 位'}
+    assert reset.json()['error']['fieldErrors'] == {'password': '密码需为 4–128 位'}
     async with browser(app_for(clients)) as client:
         login = await client.post('/api/v1/auth/login', json={key: payload[key] for key in ('username', 'password')})
         assert login.status_code == 200, login.text
-        assert login.json()['member']['mustChangePassword']
+        assert 'mustChangePassword' not in login.json()['member']
         client.headers['X-CSRF-Token'] = login.json()['csrf']
-        assert (await client.get('/api/v1/work-items')).status_code == 403
-        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1111', 'newPassword': '5678'})).status_code == 422
-        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1111', 'newPassword': 'changed-controlled-password'})).status_code == 200
-        login = await client.post('/api/v1/auth/login', json={'username': payload['username'], 'password': 'changed-controlled-password'})
-        assert login.status_code == 200 and not login.json()['member']['mustChangePassword']
         assert (await client.get('/api/v1/work-items')).status_code == 200
+        short = await client.post('/api/v1/auth/password', json={'currentPassword': '1111', 'newPassword': '567'})
+        assert short.status_code == 422 and 'newPassword' in short.json()['error']['fieldErrors']
+        wrong = await client.post('/api/v1/auth/password', json={'currentPassword': 'wrong', 'newPassword': '5678'})
+        assert wrong.status_code == 400
+        assert wrong.json()['error']['fieldErrors'] == {'currentPassword': '当前密码不正确'}
+        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1111', 'newPassword': '5678'})).status_code == 200
+        assert (await client.get('/api/v1/auth/me')).status_code == 401
+        login = await client.post('/api/v1/auth/login', json={'username': payload['username'], 'password': '5678'})
+        assert login.status_code == 200 and 'mustChangePassword' not in login.json()['member']
+        assert (await client.get('/api/v1/work-items')).status_code == 200
+        assert (await admin.post(reset_path, json={'password': '4321'})).status_code == 200
+        assert (await client.get('/api/v1/auth/me')).status_code == 401
+        login = await client.post('/api/v1/auth/login', json={'username': payload['username'], 'password': '4321'})
+        assert login.status_code == 200 and 'mustChangePassword' not in login.json()['member']
+        assert (await client.get('/api/v1/work-items')).status_code == 200
+        assert (await client.post('/api/v1/auth/login', json={'username': payload['username'], 'password': '5678'})).status_code == 401
 
 
-async def test_initial_admin_keeps_twelve_character_password_requirement():
+async def test_initial_admin_uses_same_password_requirement():
     from pydantic import ValidationError
     from paa_server.schemas import AdminBootstrap
-    for password in ('1234', '12345678901'):
+    for password in ('123', 'x' * 129):
         with pytest.raises(ValidationError):
             AdminBootstrap(username='admin', name='管理员', password=password)
-    assert AdminBootstrap(username='admin', name='管理员', password='123456789012').role == 'admin'
+    assert AdminBootstrap(username='admin', name='管理员', password='1234').role == 'admin'
+
+
+async def test_password_login_allows_business_and_feedback_without_change_step(setup):
+    from test_dingtalk import app_for, browser
+    _, sessions, users, clients = setup
+    async with browser(app_for(clients)) as client:
+        login = await client.post('/api/v1/auth/login', json={'username': users['employee'].username, 'password': 'controlled-test-password'})
+        assert login.status_code == 200 and 'mustChangePassword' not in login.json()['member']
+        client.headers['X-CSRF-Token'] = login.json()['csrf']
+        assert 'mustChangePassword' not in (await client.get('/api/v1/auth/me')).json()['member']
+        assert (await client.get('/api/v1/work-items')).status_code == 200
+        conv = await conversation(client)
+        sent = await message(client, conv)
+        assert (await client.get('/api/v1/jobs/' + sent['jobId'] + '/feedback')).status_code == 200
+        async with sessions.begin() as db:
+            job = await db.get(Job, sent['jobId'])
+            job.state = 'awaiting_input'
+        stream = await client.get('/api/v1/jobs/' + sent['jobId'] + '/events')
+        assert stream.status_code == 200 and 'event: snapshot' in stream.text and 'unavailable' not in stream.text
+        assert (await client.get('/api/v1/members')).status_code == 403

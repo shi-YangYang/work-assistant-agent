@@ -1,3 +1,5 @@
+export { default as inputRules } from '../input-rules.json'
+
 export type Role = 'admin' | 'employee'
 export type Theme = 'system' | 'light' | 'dark'
 export interface Member {
@@ -7,7 +9,6 @@ export interface Member {
   role: Role
   active: boolean
   deleted?: boolean
-  mustChangePassword: boolean
   hasPassword: boolean
 }
 export interface Identity {

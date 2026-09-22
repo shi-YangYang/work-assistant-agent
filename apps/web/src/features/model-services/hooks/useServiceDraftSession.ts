@@ -3,8 +3,10 @@ import type { Listing } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import {
   cleanServiceDraft,
+  modelApiKeyError,
+  sameServiceAddress,
   serviceHasChanges,
-  validateCompanyParameters,
+  validateServiceModels,
 } from '@web/features/model-services/utils/service-drafts'
 import type { ServicePreset } from '@web/features/model-services/utils/service-presets'
 import {
@@ -31,7 +33,7 @@ export function useServiceDraftSession() {
   const connectionReady =
     !!draft?.name.trim() &&
     !!draft.baseUrl.trim() &&
-    (!!keys[draft.id] || (draft.hasKey && draft.baseUrl === savedService?.baseUrl))
+    (!!keys[draft.id] || (draft.hasKey && sameServiceAddress(draft.baseUrl, savedService?.baseUrl)))
   const generationRef = useRef(0)
   const alive = useRef(true)
   const hasKeys = Object.values(keys).some(Boolean)
@@ -71,16 +73,15 @@ export function useServiceDraftSession() {
   }
   const changeAddress = (baseUrl: string, providerPreset: ServicePreset, name = draft?.name) => {
     if (!draft) return
-    if (baseUrl !== draft.baseUrl) setKeys((previous) => ({ ...previous, [draft.id]: '' }))
+    if (!sameServiceAddress(baseUrl, draft.baseUrl))
+      setKeys((previous) => ({ ...previous, [draft.id]: '' }))
     update({ ...draft, name: name || draft.name, baseUrl, providerPreset })
   }
   const capture = (requireProtocols = true) => {
     if (!draft) throw new Error('请选择服务')
-    for (const m of draft.models)
-      for (const p of m.presets)
-        validateCompanyParameters(
-          p.mode === 'simple' ? { reasoning_effort: p.value } : p.parameters,
-        )
+    const keyError = modelApiKeyError(keys[draft.id] || '')
+    if (keyError) throw new Error(keyError)
+    validateServiceModels(draft.models)
     return {
       name: draft.name,
       baseUrl: draft.baseUrl,

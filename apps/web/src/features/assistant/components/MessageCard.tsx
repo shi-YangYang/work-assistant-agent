@@ -266,7 +266,6 @@ export function MessageCard({
         setBusy={setBusy}
         message={message}
         onChange={onChange}
-        setError={setError}
         busy={busy}
       />
     </article>

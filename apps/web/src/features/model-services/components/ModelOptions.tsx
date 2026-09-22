@@ -1,9 +1,11 @@
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import type { Purpose } from '@web/features/model-services/types'
 import { protocolNames } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
+import { modelFieldErrors } from '@web/features/model-services/utils/service-drafts'
 import { changeModelProtocol } from '@web/features/model-services/utils/service-presets'
 import type * as React from 'react'
 
@@ -39,6 +41,7 @@ export function ModelOptions({
   setActiveModel: React.Dispatch<React.SetStateAction<string>>
   error: string | Error
 }) {
+  const fields = model ? modelFieldErrors(model) : { model: '', language: '' }
   return (
     <>
       {modelOpen && model && draft && (
@@ -49,14 +52,14 @@ export function ModelOptions({
         >
           <fieldset disabled={!!busy} className="model-options" aria-label="模型配置">
             <div className="field-grid">
-              <label>
-                模型 ID
-                <input
-                  value={model.model}
-                  maxLength={200}
-                  onChange={(e) => updateModel({ ...model, model: e.target.value })}
-                />
-              </label>
+              <FormField
+                label="模型 ID"
+                value={model.model}
+                maxLength={200}
+                required
+                error={fields.model}
+                onChange={(e) => updateModel({ ...model, model: e.target.value })}
+              />
               <div className="model-protocol-status" role="status">
                 {automaticMatch && !automaticMatch.protocol
                   ? model.model
@@ -165,16 +168,15 @@ export function ModelOptions({
                   </div>
                 </>
               ) : (
-                <label>
-                  识别语言（可选）
-                  <input
-                    value={model.language}
-                    disabled={model.protocol === 'dashscope-asr'}
-                    placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
-                    maxLength={20}
-                    onChange={(e) => updateModel({ ...model, language: e.target.value })}
-                  />
-                </label>
+                <FormField
+                  label="识别语言（可选）"
+                  value={model.language}
+                  disabled={model.protocol === 'dashscope-asr'}
+                  placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
+                  maxLength={20}
+                  error={fields.language}
+                  onChange={(e) => updateModel({ ...model, language: e.target.value })}
+                />
               )}
               <button
                 className="text-button danger full-field"
@@ -191,7 +193,11 @@ export function ModelOptions({
           <ErrorNotice>{error}</ErrorNotice>
           <div className="form-actions">
             <span className="muted">完成后记得保存服务</span>
-            <button className="primary" onClick={() => setModelOpen(false)}>
+            <button
+              className="primary"
+              disabled={!!fields.model || !!fields.language}
+              onClick={() => setModelOpen(false)}
+            >
               完成
             </button>
           </div>

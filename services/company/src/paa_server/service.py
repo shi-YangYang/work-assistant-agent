@@ -59,8 +59,13 @@ def idem_save(db, actor, action, key, digest, response):
 
 
 def period(kind, value: date):
-    start = value if kind == 'daily' else value - timedelta(days=value.weekday())
-    return start, start if kind == 'daily' else start + timedelta(days=6)
+    try:
+        start = value if kind == 'daily' else value - timedelta(days=value.weekday())
+        end = start if kind == 'daily' else start + timedelta(days=6)
+        end + timedelta(days=1)
+    except OverflowError:
+        problem(422, '报告日期超出可生成范围，请选择更早的日期')
+    return start, end
 
 
 def period_bounds(report):
@@ -149,7 +154,7 @@ async def confirm_drafts(db, actor, items, ignore=False):
 
 
 def member_dto(member):
-    return {'id': member.id, 'name': member.name, 'username': member.username, 'role': member.role, 'active': member.active, 'deleted': member.deleted, 'mustChangePassword': member.must_change_password, 'hasPassword': bool(member.password_hash)}
+    return {'id': member.id, 'name': member.name, 'username': member.username, 'role': member.role, 'active': member.active, 'deleted': member.deleted, 'hasPassword': bool(member.password_hash)}
 
 
 def work_dto(work):

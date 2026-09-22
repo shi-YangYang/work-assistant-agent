@@ -1,4 +1,5 @@
 import type { Rules, Schedule } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ConflictRecovery } from '@web/components/ConflictRecovery'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -10,9 +11,10 @@ import {
   saveReportRules,
 } from '@web/features/settings/api/requests'
 import { useResource } from '@web/hooks/useResource'
+import { reportRuleErrors, revealRuleErrors } from '@web/features/settings/utils/rule-validation'
 import { useWorkspace } from '@web/lib/workspace'
 import { companyTimezones, timezoneLabel } from '@web/utils/timezones'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 export function RulesPage() {
   const { data, error, refresh } = useResource<Rules>(reportRulesPath())
@@ -20,6 +22,12 @@ export function RulesPage() {
   const value = (drafts.rules as Rules | undefined) ?? data
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
+  const [attempted, setAttempted] = useState(0)
+  const form = useRef<HTMLFormElement>(null)
+  const fieldErrors = attempted && value ? reportRuleErrors(value) : {}
+  useLayoutEffect(() => {
+    if (attempted && form.current) revealRuleErrors(form.current)
+  }, [attempted])
   const canEdit = identity.member.role === 'admin'
   const update = (kind: 'daily' | 'weekly', schedule: Schedule) => {
     if (value) setDraft('rules', { ...value, [kind]: schedule })
@@ -76,9 +84,14 @@ export function RulesPage() {
       )}
       {value && canEdit && (
         <form
+          ref={form}
+          noValidate
           className="sectioned-panel rules-form"
           onSubmit={async (e) => {
             e.preventDefault()
+            setAttempted((previous) => previous + 1)
+            setFailure('')
+            if (Object.keys(reportRuleErrors(value)).length) return
             setBusy(true)
             try {
               await saveReportRules({
@@ -140,6 +153,10 @@ export function RulesPage() {
                         type={kind === 'weekly' ? 'radio' : 'checkbox'}
                         name={kind}
                         checked={value[kind].days.includes(index)}
+                        aria-invalid={fieldErrors[`${kind}.days`] ? true : undefined}
+                        aria-describedby={
+                          fieldErrors[`${kind}.days`] ? `${kind}-days-error` : undefined
+                        }
                         onChange={(e) =>
                           update(kind, {
                             ...value[kind],
@@ -156,11 +173,17 @@ export function RulesPage() {
                     </label>
                   ))}
                 </div>
+                {fieldErrors[`${kind}.days`] && (
+                  <small className="form-field-error" id={`${kind}-days-error`} role="alert">
+                    {fieldErrors[`${kind}.days`]}
+                  </small>
+                )}
                 <div className="two-columns">
                   <label>
                     草稿生成时间
                     <TimeField
                       required={value[kind].enabled}
+                      error={fieldErrors[`${kind}.generateTime`]}
                       value={value[kind].generateTime}
                       onChange={(time) => update(kind, { ...value[kind], generateTime: time })}
                     />
@@ -169,6 +192,7 @@ export function RulesPage() {
                     提交截止时间
                     <TimeField
                       required={value[kind].enabled}
+                      error={fieldErrors[`${kind}.deadline`]}
                       value={value[kind].deadline}
                       onChange={(time) => update(kind, { ...value[kind], deadline: time })}
                     />
@@ -185,18 +209,28 @@ export function RulesPage() {
                     />
                     站内提醒
                   </label>
-                  <label>
+                  <label className="form-field">
                     截止前提醒（分钟）
                     <input
                       type="number"
                       min={0}
                       max={1440}
+                      step={1}
+                      aria-invalid={fieldErrors[`${kind}.beforeMinutes`] ? true : undefined}
+                      aria-describedby={
+                        fieldErrors[`${kind}.beforeMinutes`] ? `${kind}-minutes-error` : undefined
+                      }
                       disabled={value[kind].reminders === false}
                       value={value[kind].beforeMinutes ?? 30}
                       onChange={(e) =>
                         update(kind, { ...value[kind], beforeMinutes: Number(e.target.value) })
                       }
                     />
+                    {fieldErrors[`${kind}.beforeMinutes`] && (
+                      <small className="form-field-error" id={`${kind}-minutes-error`} role="alert">
+                        {fieldErrors[`${kind}.beforeMinutes`]}
+                      </small>
+                    )}
                   </label>
                 </div>
                 {value.effectivePeriods?.[kind] && (
@@ -209,7 +243,7 @@ export function RulesPage() {
             <p className="muted">
               时间按公司时区计算。修改后不重复生成历史周期，也不会改写已提交报告。
             </p>
-            {failure && canEdit && (
+            {failure instanceof ApiError && failure.status === 409 && canEdit && (
               <ConflictRecovery<Rules>
                 load={() => readReportRules()}
                 render={(latest) => (

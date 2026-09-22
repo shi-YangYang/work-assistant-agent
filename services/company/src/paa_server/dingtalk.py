@@ -6,7 +6,7 @@ from datetime import timedelta
 import secrets
 from urllib.parse import urlencode, urlsplit
 
-from fastapi import Depends, Request, Response
+from fastapi import Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import Field
 from sqlalchemy import delete, or_, select, update
@@ -19,6 +19,7 @@ from .dingtalk_provider import DingTalkError, DingTalkProvider
 from .model_secrets import SecretUnavailable, decrypt, encrypt
 from .models import Company, DingTalkAuthorization, DingTalkConfig, DingTalkIdentity, Member, Session, now
 from .schemas import Input
+from .input_rules import PASSWORD_RULES
 from .service import problem
 
 BROWSER_COOKIE = 'paa_dingtalk_browser'
@@ -36,7 +37,7 @@ class Configuration(Input):
 
 
 class AccountVerification(Input):
-    currentPassword: str = Field(default='', max_length=128)
+    currentPassword: str = Field(default='', max_length=PASSWORD_RULES['max'])
     useDingTalk: bool = False
 
 
@@ -175,7 +176,7 @@ def register_routes(app, AUTH, ADMIN, DB, settings, sessions):
     @app.post('/api/v1/auth/dingtalk/account/bind')
     async def bind(body: AccountVerification, request: Request, response: Response, limited=ACCOUNT_RATE, actor=AUTH, db=DB):
         if not await verify_password(body.currentPassword, actor.password_hash):
-            problem(400, '请验证当前本地密码后绑定钉钉')
+            raise HTTPException(400, detail={'code': 'invalid_current_password', 'message': '当前密码不正确', 'fieldErrors': {'currentPassword': '当前密码不正确'}})
         if await db.scalar(select(DingTalkIdentity.id).where(DingTalkIdentity.member_id == actor.id)):
             problem(409, '此账号已绑定钉钉；更换前请先验证并解绑')
         return await start(db, request, response, await configuration(db, actor.company_id), 'bind', actor)
@@ -192,7 +193,9 @@ def register_routes(app, AUTH, ADMIN, DB, settings, sessions):
             problem(409, '请先设置本地密码，再解绑钉钉')
         valid = await proof(db, request, actor, consume=True) if body.useDingTalk else await verify_password(body.currentPassword, actor.password_hash)
         if not valid:
-            problem(400, '请重新验证当前密码或本人钉钉身份')
+            if body.useDingTalk:
+                problem(400, '钉钉验证已过期，请重新验证')
+            raise HTTPException(400, detail={'code': 'invalid_current_password', 'message': '当前密码不正确', 'fieldErrors': {'currentPassword': '当前密码不正确'}})
         await db.execute(delete(DingTalkIdentity).where(DingTalkIdentity.company_id == actor.company_id, DingTalkIdentity.member_id == actor.id))
         await revoke_member(db, actor.id)
         response.delete_cookie(COOKIE, path='/')
@@ -280,7 +283,7 @@ def register_routes(app, AUTH, ADMIN, DB, settings, sessions):
                     for _ in range(5):
                         try:
                             async with db.begin_nested():
-                                actor = Member(company_id=company_id, username='dd_' + secrets.token_hex(10), name=verified.name, role='employee', password_hash=None, must_change_password=False)
+                                actor = Member(company_id=company_id, username='dd_' + secrets.token_hex(10), name=verified.name, role='employee', password_hash=None)
                                 db.add(actor)
                                 await db.flush()
                             break

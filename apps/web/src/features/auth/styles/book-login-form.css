@@ -76,13 +76,27 @@
   border-bottom-color: #973e33;
   box-shadow: 0 1px 0 #973e33;
 }
-.book-login .book-form__password input {
+.book-login .book-form__field input[aria-invalid='true'] {
+  border: 1px solid var(--danger);
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.book-login .book-form__field input[aria-invalid='true']:focus {
+  box-shadow: 0 0 0 1px var(--danger);
+}
+.book-login .book-form__field > .form-field-error {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.book-login .book-form__password input,
+.book-login .book-form__password input[aria-invalid='true'] {
   padding-right: 47px;
 }
 .book-login .book-form__visibility {
   position: absolute;
   right: 0;
-  bottom: 1px;
+  top: 18px;
   width: 43px;
   height: 42px;
   min-height: 0;

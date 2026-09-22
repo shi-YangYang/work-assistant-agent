@@ -1,4 +1,5 @@
 import type { Report, ReportContent } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { reportNeedsPolling } from '@web/api/job-feedback'
 import { Actions } from '@web/components/Actions'
 import { AutoTextarea } from '@web/components/AutoTextarea'
@@ -15,7 +16,11 @@ import {
   submitReport,
   updateReport,
 } from '@web/features/reports/api/requests'
-import { ReportBody, reportLabels } from '@web/features/reports/components/ReportBody'
+import {
+  ReportBody,
+  reportHasContent,
+  reportLabels,
+} from '@web/features/reports/components/ReportBody'
 import { ReportSources } from '@web/features/reports/components/ReportSources'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
@@ -53,6 +58,7 @@ export function ReportDetail({
     data?.ownerId === identity.member.id && identity.member.role === 'employee' && !data.historical
   async function save() {
     if (!data || !value) return
+    setFailure('')
     setBusy(true)
     try {
       await updateReport(id, { content: value, expectedRevision: saved?.revision ?? data.revision })
@@ -102,7 +108,15 @@ export function ReportDetail({
                 <button
                   className="primary"
                   disabled={editing || !!saved || data.revision === data.publishedRevision}
-                  onClick={() => setSubmit(true)}
+                  onClick={() => {
+                    if (!reportHasContent(data.content)) {
+                      setFailure('请先填写报告内容')
+                      setEditing(true)
+                      return
+                    }
+                    setFailure('')
+                    setSubmit(true)
+                  }}
                 >
                   提交报告
                 </button>
@@ -157,6 +171,11 @@ export function ReportDetail({
                   <AutoTextarea
                     rows={2}
                     maxLength={8000}
+                    aria-invalid={
+                      failure instanceof ApiError && failure.fieldErrors[`content.${field}`]
+                        ? true
+                        : undefined
+                    }
                     value={value[field as keyof ReportContent]}
                     onChange={(e) =>
                       setDraft(key, {
@@ -165,9 +184,14 @@ export function ReportDetail({
                       })
                     }
                   />
+                  {failure instanceof ApiError && failure.fieldErrors[`content.${field}`] && (
+                    <small className="form-field-error" role="alert">
+                      {failure.fieldErrors[`content.${field}`]}
+                    </small>
+                  )}
                 </label>
               ))}
-              {failure && (
+              {failure instanceof ApiError && failure.status === 409 && (
                 <ConflictRecovery<Report>
                   load={() => readReport(id)}
                   render={(latest) => <ReportBody content={latest.content} />}
@@ -213,12 +237,18 @@ export function ReportDetail({
           {submit && (
             <Modal title="提交报告" onClose={() => setSubmit(false)}>
               <p>确认提交这份报告？</p>
+              <ErrorNotice>{failure}</ErrorNotice>
               <div className="form-actions">
                 <button onClick={() => setSubmit(false)}>继续检查</button>
                 <BusyButton
                   busy={busy}
                   className="primary"
                   onClick={async () => {
+                    if (!reportHasContent(data.content)) {
+                      setFailure('请先填写报告内容')
+                      return
+                    }
+                    setFailure('')
                     setBusy(true)
                     try {
                       await submitReport(

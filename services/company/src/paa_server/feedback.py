@@ -53,12 +53,12 @@ async def snapshot(sessions, token_hash, job_id):
     async with sessions.begin() as db:
         session = await db.scalar(select(Session).where(Session.token_hash == token_hash, Session.expires_at > now()))
         actor = await db.get(Member, session.member_id) if session else None
-        if not actor or not actor.active or actor.must_change_password:
+        if not actor or not actor.active:
             problem(401, '登录已过期，请重新登录', 'login_required')
         await business.company_lock(db, actor.company_id)
         await db.refresh(actor)
         session = await db.scalar(select(Session).where(Session.token_hash == token_hash, Session.member_id == actor.id, Session.expires_at > now()))
-        if not actor.active or not session or actor.must_change_password:
+        if not actor.active or not session:
             problem(401, '登录已过期，请重新登录', 'login_required')
         job = await db.scalar(select(Job).where(Job.id == job_id, Job.company_id == actor.company_id, Job.owner_id == actor.id, Job.kind == 'message'))
         message = await db.get(Message, job.target_id) if job else None

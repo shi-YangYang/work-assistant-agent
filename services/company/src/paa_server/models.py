@@ -40,7 +40,6 @@ class Member(Record, Base):
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
-    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True)
     __table_args__ = (CheckConstraint('NOT deleted OR NOT active', name='ck_company_member_deleted_inactive'),)
 
 

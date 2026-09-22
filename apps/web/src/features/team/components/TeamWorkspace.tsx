@@ -31,6 +31,7 @@ export function TeamWorkspace({
   const offset = Math.max(0, Number(params.get(`${view}Offset`)) || 0)
   const query = new URLSearchParams({ scope, kind, status, offset: String(offset) })
   for (const key of ['q', 'member', 'members', 'period', 'start', 'end']) {
+    if (view === 'work' && scope === 'current' && ['period', 'start', 'end'].includes(key)) continue
     if (params.get(key)) query.set(key, params.get(key)!)
   }
   const list = useResource<TeamWorkspacePage<Row>>(teamWorkspacePath(view, query), 30000)

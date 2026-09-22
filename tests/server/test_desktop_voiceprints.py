@@ -80,7 +80,7 @@ async def test_desktop_pkce_atomic_exchange_and_cookie_isolation(setup):
     assert (await client.get('/api/v1/desktop/me', headers=headers)).status_code == 401
 
 
-@pytest.mark.parametrize('change', ['revoke', 'disable', 'password_required', 'demote', 'web_logout'])
+@pytest.mark.parametrize('change', ['revoke', 'disable', 'demote', 'web_logout'])
 async def test_desktop_revocation_and_current_roles(setup, change):
     _, sessions, users, c = setup
     headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
@@ -88,12 +88,19 @@ async def test_desktop_revocation_and_current_roles(setup, change):
         actor = await db.get(Member, users['admin'].id)
         if change == 'revoke': await revoke_member(db, actor.id)
         if change == 'disable': actor.active = False
-        if change == 'password_required': actor.must_change_password = True
         if change == 'demote': actor.role = 'employee'
     if change == 'web_logout':
         assert (await c['admin'].post('/api/v1/auth/logout')).status_code == 200
     result = await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)
     assert result.status_code == (403 if change == 'demote' else 401)
+
+
+async def test_desktop_authorization_needs_no_password_change_step(setup):
+    _, _, users, c = setup
+    headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
+    result = await c['admin'].get('/api/v1/desktop/me', headers=headers)
+    assert result.status_code == 200 and result.json()['member']['id'] == users['admin'].id
+    assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)).status_code == 200
 
 
 async def test_grant_expiry_denial_and_origin_boundaries(setup):

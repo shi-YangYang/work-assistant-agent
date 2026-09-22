@@ -1,6 +1,8 @@
 import type { Conversation, Page } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import {
   conversationPath,
@@ -59,6 +61,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
   const [editing, setEditing] = useState<Conversation | null>(null)
+  const [titleError, setTitleError] = useState('')
   const [deleting, setDeleting] = useState<Conversation | null>(null)
   const [impact, setImpact] = useState<{ retainedSources: number } | null>(null)
   const [older, setOlder] = useState<Conversation[]>([])
@@ -167,7 +170,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             items={items}
             conversationId={conversationId}
             stopBeforeAction={stopBeforeAction}
-            setEditing={setEditing}
+            setEditing={(next) => {
+              setTitleError('')
+              setFailure('')
+              setEditing(next)
+            }}
             setImpact={setImpact}
             setDeleting={setDeleting}
             setFailure={setFailure}
@@ -209,6 +216,12 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             onSubmit={async (e) => {
               e.preventDefault()
               const title = String(new FormData(e.currentTarget).get('title') ?? '').trim()
+              if (!title) {
+                setTitleError('请输入会话名称')
+                return
+              }
+              setTitleError('')
+              setFailure('')
               setBusy(true)
               try {
                 const saved = await renameConversation(editing, {
@@ -219,16 +232,23 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
                 setEditing(null)
                 updated()
               } catch (e) {
+                if (e instanceof ApiError) setTitleError(e.fieldErrors.title || '')
                 setFailure(e as Error)
               } finally {
                 setBusy(false)
               }
             }}
           >
-            <label>
-              会话名称
-              <input name="title" required maxLength={120} defaultValue={editing.title} autoFocus />
-            </label>
+            <FormField
+              label="会话名称"
+              name="title"
+              required
+              maxLength={120}
+              defaultValue={editing.title}
+              autoFocus
+              error={titleError}
+              onChange={() => setTitleError('')}
+            />
             <ErrorNotice>{failure}</ErrorNotice>
             <div className="form-actions">
               <button type="button" onClick={() => setEditing(null)}>

@@ -48,7 +48,11 @@ def period_range(company, period='this_week', start=None, end=None, instant=None
         end = (start.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     else:
         problem(422, '日期范围无效')
-    return datetime.combine(start, time.min, zone), datetime.combine(end + timedelta(days=1), time.min, zone), {'period': period, 'start': start.isoformat(), 'end': end.isoformat(), 'timezone': zone.key}
+    try:
+        upper = datetime.combine(end + timedelta(days=1), time.min, zone)
+    except (OverflowError, ValueError):
+        problem(422, '结束日期超出可查询范围，请选择 9999-12-30 或之前的日期')
+    return datetime.combine(start, time.min, zone), upper, {'period': period, 'start': start.isoformat(), 'end': end.isoformat(), 'timezone': zone.key}
 
 
 def work_search(query):

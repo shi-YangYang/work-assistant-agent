@@ -1,5 +1,7 @@
 import { PanelSection } from '@web/components/PanelSection'
+import { FormField } from '@web/components/FormField'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
+import { modelApiKeyError } from '@web/features/model-services/utils/service-drafts'
 import type { ServicePreset } from '@web/features/model-services/utils/service-presets'
 import {
   detectServicePreset,
@@ -67,20 +69,19 @@ export function ServiceConnectionFields({
               onChange={(e) => changeAddress(e.target.value, detectServicePreset(e.target.value))}
             />
           </label>
-          <label className="full-field">
-            API 密钥{' '}
-            <span className="muted">
-              {draft.hasKey ? '已设置；地址不变时留空保留' : '尚未设置'}
-            </span>
-            <input
+          <div className="full-field">
+            <FormField
+              label="API 密钥"
+              hint={draft.hasKey ? '已设置；地址不变时留空保留' : '尚未设置'}
               type="password"
               autoComplete="new-password"
               value={keyValue}
               maxLength={4096}
+              error={modelApiKeyError(keyValue)}
               placeholder={draft.hasKey ? '输入新密钥以替换' : '输入密钥'}
               onChange={(e) => onKeyChange(e.target.value)}
             />
-          </label>
+          </div>
         </div>
       </fieldset>
     </PanelSection>

@@ -1,9 +1,14 @@
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { AutoTextarea } from '@web/components/AutoTextarea'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
-import { validateCompanyParameters } from '@web/features/model-services/utils/service-drafts'
+import {
+  presetFieldErrors,
+  validateCompanyParameters,
+} from '@web/features/model-services/utils/service-drafts'
 import type * as React from 'react'
+import { useState } from 'react'
 
 export function ReasoningPresetEditor({
   preset,
@@ -24,13 +29,23 @@ export function ReasoningPresetEditor({
   setPresetJson: React.Dispatch<React.SetStateAction<string>>
   error: string | Error
 }) {
+  const [attempted, setAttempted] = useState(false)
+  const fields = attempted && preset ? presetFieldErrors(preset) : { name: '', value: '' }
+  const close = () => {
+    setAttempted(false)
+    setPreset(null)
+  }
   return (
     <>
       {preset && model && (
-        <Modal title="推理预设" onClose={() => setPreset(null)}>
+        <Modal title="推理预设" onClose={close}>
           <form
+            noValidate
             onSubmit={(e) => {
               e.preventDefault()
+              setAttempted(true)
+              const invalid = presetFieldErrors(preset)
+              if (invalid.name || invalid.value) return
               try {
                 const value =
                   preset.mode === 'advanced'
@@ -42,21 +57,20 @@ export function ReasoningPresetEditor({
                   presets: [...model.presets.filter((p) => p.id !== preset.id), next],
                   selectedPresetId: preset.id,
                 })
-                setPreset(null)
+                close()
               } catch (e) {
                 setError(e as Error)
               }
             }}
           >
-            <label>
-              预设名称
-              <input
-                value={preset.name}
-                required
-                maxLength={80}
-                onChange={(e) => setPreset({ ...preset, name: e.target.value })}
-              />
-            </label>
+            <FormField
+              label="预设名称"
+              value={preset.name}
+              required
+              maxLength={80}
+              error={fields.name}
+              onChange={(e) => setPreset({ ...preset, name: e.target.value })}
+            />
             <label>
               设置方式
               <select
@@ -70,16 +84,15 @@ export function ReasoningPresetEditor({
               </select>
             </label>
             {preset.mode === 'simple' ? (
-              <label>
-                推理强度
-                <input
-                  value={preset.value}
-                  required
-                  maxLength={512}
-                  placeholder="例如 high"
-                  onChange={(e) => setPreset({ ...preset, value: e.target.value })}
-                />
-              </label>
+              <FormField
+                label="推理强度"
+                value={preset.value}
+                required
+                maxLength={512}
+                error={fields.value}
+                placeholder="例如 high"
+                onChange={(e) => setPreset({ ...preset, value: e.target.value })}
+              />
             ) : (
               <details open>
                 <summary>高级参数</summary>
@@ -95,7 +108,7 @@ export function ReasoningPresetEditor({
             )}
             <ErrorNotice>{error}</ErrorNotice>
             <div className="form-actions">
-              <button type="button" onClick={() => setPreset(null)}>
+              <button type="button" onClick={close}>
                 取消
               </button>
               <button className="primary" type="submit">

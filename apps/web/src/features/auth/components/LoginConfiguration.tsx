@@ -1,10 +1,12 @@
 import type { DingTalkConfiguration } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import { PanelSection } from '@web/components/PanelSection'
 import { saveDingTalkConfiguration } from '@web/features/auth/api/requests'
 import { useDingTalkRedirect } from '@web/features/auth/hooks/useDingTalkRedirect'
+import { loginConfigurationErrors } from '@web/features/auth/utils/login-configuration'
 import { copyText } from '@web/lib/diagnostics'
 import { dateLabel } from '@web/utils/date'
 import { useState } from 'react'
@@ -23,10 +25,21 @@ export function LoginConfiguration({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const [copied, setCopied] = useState('')
+  const [attempted, setAttempted] = useState(false)
+  const fieldErrors = attempted
+    ? loginConfigurationErrors({ corpId, clientId, secret }, value.hasSecret)
+    : { corpId: '', clientId: '', secret: '' }
   const redirect = useDingTalkRedirect()
   const dirty = corpId !== value.corpId || clientId !== value.clientId || !!secret
   const blocker = useBlocker(dirty)
   const save = async (enabled: boolean) => {
+    setAttempted(true)
+    if (
+      Object.values(loginConfigurationErrors({ corpId, clientId, secret }, value.hasSecret)).some(
+        Boolean,
+      )
+    )
+      return
     setBusy(true)
     setError('')
     try {
@@ -61,6 +74,7 @@ export function LoginConfiguration({
           defaultOpen
         >
           <form
+            noValidate
             onSubmit={(event) => {
               event.preventDefault()
               void save(value.enabled)
@@ -70,39 +84,40 @@ export function LoginConfiguration({
               先保存凭证，再验证授权和启用入口。新用户验证通过后会自动创建员工账号。
             </p>
             <div className="credentials-fields">
-              <label>
-                企业 CorpId
-                <input
-                  value={corpId}
-                  onChange={(event) => setCorpId(event.target.value)}
-                  required
-                  maxLength={128}
-                  autoComplete="off"
-                />
-              </label>
-              <label>
-                Client ID / AppKey
-                <input
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                  required
-                  maxLength={128}
-                  autoComplete="off"
-                />
-              </label>
-              <label className="full-field">
-                {value.hasSecret
-                  ? '替换 Client Secret / AppSecret（留空保留）'
-                  : 'Client Secret / AppSecret'}
-                <input
+              <FormField
+                label="企业 CorpId"
+                value={corpId}
+                onChange={(event) => setCorpId(event.target.value)}
+                required
+                maxLength={128}
+                error={fieldErrors.corpId}
+                autoComplete="off"
+              />
+              <FormField
+                label="Client ID / AppKey"
+                value={clientId}
+                onChange={(event) => setClientId(event.target.value)}
+                required
+                maxLength={128}
+                error={fieldErrors.clientId}
+                autoComplete="off"
+              />
+              <div className="full-field">
+                <FormField
+                  label={
+                    value.hasSecret
+                      ? '替换 Client Secret / AppSecret（留空保留）'
+                      : 'Client Secret / AppSecret'
+                  }
                   type="password"
                   value={secret}
                   onChange={(event) => setSecret(event.target.value)}
                   required={!value.hasSecret}
                   maxLength={512}
+                  error={fieldErrors.secret}
                   autoComplete="new-password"
                 />
-              </label>
+              </div>
             </div>
             <small>{value.hasSecret ? 'Secret 已加密保存，不会回显。' : '尚未配置 Secret。'}</small>
             <div className="form-actions">

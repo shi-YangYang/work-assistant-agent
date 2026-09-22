@@ -136,7 +136,7 @@ async def test_new_employee_reuses_identity_concurrently_and_keeps_local_passwor
         assert all(result.headers['referrer-policy'] == 'no-referrer' for result in results)
         a, b = await logged_in(first), await logged_in(second)
         assert a['member']['id'] == b['member']['id']
-        assert a['member']['role'] == 'employee' and not a['member']['mustChangePassword'] and not a['member']['hasPassword']
+        assert a['member']['role'] == 'employee' and 'mustChangePassword' not in a['member'] and not a['member']['hasPassword']
         assert a['member']['username'].startswith('dd_')
         assert (await first.post('/api/v1/auth/login', json={'username': a['member']['username'], 'password': 'controlled-test-password'})).status_code == 401
         async with sessions() as db:
@@ -255,9 +255,11 @@ async def test_password_proof_same_identity_one_time_and_session_revocation(setu
         async with sessions() as db:
             member = await db.get(Member, identity['member']['id'])
             assert member.password_hash and member.password_hash != 'new-controlled-password'
-        # A later DingTalk login preserves the password.
+        # A later DingTalk login preserves the password without a forced-change step.
         await complete(other, await begin(other))
-        assert (await logged_in(other))['member']['hasPassword']
+        member = (await logged_in(other))['member']
+        assert member['hasPassword'] and 'mustChangePassword' not in member
+        assert (await other.get('/api/v1/work-items')).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -270,11 +272,8 @@ async def test_company_resolution_never_picks_first_and_account_csrf_required(se
         assert (await client.post('/api/v1/auth/dingtalk/start', headers={'Origin': 'https://evil.test'})).status_code == 403
     client = clients['employee']
     assert (await client.post('/api/v1/auth/dingtalk/account/reauth', headers={'X-CSRF-Token': ''})).status_code == 403
-    async with sessions.begin() as db:
-        member = await db.get(Member, users['employee'].id)
-        member.must_change_password = True
     assert (await client.get('/api/v1/auth/dingtalk/account')).status_code == 200
-    assert (await client.get('/api/v1/work-items')).status_code == 403
+    assert (await client.get('/api/v1/work-items')).status_code == 200
     await app.state.sessions.kw['bind'].dispose()
 
 

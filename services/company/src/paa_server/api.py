@@ -36,6 +36,7 @@ from .model_provider import ProviderError
 from .model_secrets import SecretUnavailable
 from .schemas import ConversationCreate, ConversationEdit, Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit, Progress
 from .schemas import member_validation_errors
+from .validation import validation_detail
 from .service import active_message, conversation_dto, default_conversation, confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
 
 request_log = logging.getLogger('uvicorn.error.paa_requests')
@@ -153,7 +154,7 @@ def create_app(settings=None):
     async def validation_error(request, error):
         request.state.exception_type = type(error).__name__
         errors = error.errors()
-        detail = {'code': 'validation_error', 'message': '请检查输入内容、日期和长度限制', 'requestId': request.state.request_id, 'fields': ['.'.join(map(str, e['loc'])) for e in errors]}
+        detail = {**validation_detail(errors), 'requestId': request.state.request_id}
         reset = request.url.path.startswith('/api/v1/members/') and request.url.path.endswith('/reset-password')
         if request.url.path == '/api/v1/members' or reset:
             fields = member_validation_errors(errors, reset=reset)
@@ -193,8 +194,6 @@ def create_app(settings=None):
             problem(401, '登录已过期，请重新登录', 'login_required')
         if request.method not in ('GET', 'HEAD') and not secrets.compare_digest(request.headers.get('x-csrf-token', ''), session.csrf):
             problem(403, '请求校验失败，请刷新后重试', 'csrf_rejected')
-        if actor.must_change_password and request.url.path not in ('/api/v1/auth/me', '/api/v1/auth/password', '/api/v1/auth/logout', '/api/v1/auth/dingtalk/account', '/api/v1/auth/dingtalk/account/reauth'):
-            problem(403, '请先修改临时密码', 'password_change_required')
         request.state.session = session
         return actor
 
@@ -285,10 +284,11 @@ def create_app(settings=None):
         from .dingtalk import proof, clear_auth_cookies
         valid = await proof(db, request, actor, consume=True) if body.useDingTalk else await verify_password(body.currentPassword, actor.password_hash)
         if not valid:
-            problem(400, '当前密码不正确或钉钉验证已过期，请重新验证')
+            if body.useDingTalk:
+                problem(400, '钉钉验证已过期，请重新验证')
+            raise HTTPException(400, detail={'code': 'invalid_current_password', 'message': '当前密码不正确', 'fieldErrors': {'currentPassword': '当前密码不正确'}})
         clear_auth_cookies(response)
         actor.password_hash = await run_in_threadpool(passwords.hash, body.newPassword)
-        actor.must_change_password = False
         await revoke_member(db, actor.id)
         response.delete_cookie(COOKIE, path='/')
         return {'ok': True}
@@ -327,7 +327,6 @@ def create_app(settings=None):
         if item.deleted:
             problem(404, '账号已删除')
         item.password_hash = await run_in_threadpool(passwords.hash, body.password)
-        item.must_change_password = True
         await revoke_member(db, item.id)
         return {'ok': True}
 

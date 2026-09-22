@@ -147,7 +147,7 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
     owners = []
     async with sessions.begin() as db:
         for index in range(30):
-            member = Member(company_id=company, username='parallel_' + uuid4().hex, name='并行员工', password_hash='unused', must_change_password=False)
+            member = Member(company_id=company, username='parallel_' + uuid4().hex, name='并行员工', password_hash='unused')
             db.add(member); await db.flush(); owners.append(member.id)
             db.add(Job(company_id=company, owner_id=member.id, kind='message', target_id=str(uuid4())))
         # The first owner has a second queued request; it cannot overlap itself.

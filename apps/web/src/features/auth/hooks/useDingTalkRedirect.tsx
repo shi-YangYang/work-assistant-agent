@@ -8,7 +8,7 @@ import type { DraftStore } from '@web/lib/workspace'
 import { Workspace } from '@web/lib/workspace'
 import { useContext, useState } from 'react'
 
-export function useDingTalkRedirect(drafts?: DraftStore) {
+export function useDingTalkRedirect(drafts?: DraftStore, onError?: (error: unknown) => boolean) {
   const workspace = useContext(Workspace)
   const [pending, setPending] = useState<{ action: DingTalkAction; body: unknown } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -22,7 +22,8 @@ export function useDingTalkRedirect(drafts?: DraftStore) {
       const result = await startDingTalkRedirect(action, body)
       window.location.assign(officialDingTalkUrl(result.url))
     } catch (e) {
-      setError(e as Error)
+      if (onError?.(e)) setPending(null)
+      else setError(e as Error)
     } finally {
       setBusy(false)
     }

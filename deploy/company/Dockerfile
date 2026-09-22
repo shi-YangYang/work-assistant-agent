@@ -8,6 +8,7 @@ WORKDIR /app
 COPY services/company/requirements.lock ./services/company/requirements.lock
 RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r services/company/requirements.lock
 COPY services/company/src ./services/company/src
+COPY packages/api-contracts/input-rules.json ./packages/api-contracts/input-rules.json
 COPY packages/voiceprint-engine ./packages/voiceprint-engine
 RUN useradd --uid 10001 --create-home paa && mkdir -p /data/media && chown -R paa:paa /data
 USER paa

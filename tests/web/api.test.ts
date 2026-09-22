@@ -65,7 +65,7 @@ describe('company HTTP boundary', () => {
               message: '请检查标记的输入项',
               fields: ['body.password', 'body.username', null, '<html>'],
               fieldErrors: {
-                password: '临时密码需为 4–128 位',
+                password: '密码需为 4–128 位',
                 username: 'https://private-provider.example/secret',
                 '<script>': '不应展示',
               },
@@ -80,7 +80,7 @@ describe('company HTTP boundary', () => {
     expect(error).toMatchObject({
       fields: ['body.password', 'body.username'],
       fieldErrors: {
-        password: '临时密码需为 4–128 位',
+        password: '密码需为 4–128 位',
         username: '输入不符合要求，请检查后重试。',
       },
     })

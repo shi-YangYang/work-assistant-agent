@@ -124,19 +124,50 @@ it('validates on submit and blur, focuses the first error and clears corrected e
   expect(saved).toHaveBeenCalledOnce()
 })
 
-it('checks untouched fields on blur and preserves the stricter reset password rule', async () => {
+it('checks untouched fields on blur and uses the same password range for reset', async () => {
   change('username', 'x')
   expect(render().field('username').error).toBeUndefined()
   render().field('username').onBlur!({} as never)
   expect(render().field('username').error).toContain('3–80')
+  change('password', '111', member)
+  await render(member).submit()
+  expect(render(member).field('password').error).toContain('4–128')
+  expect(resetMemberPassword).not.toHaveBeenCalled()
   change('password', '1111', member)
   await render(member).submit()
-  expect(render(member).field('password').error).toContain('12–128')
-  expect(resetMemberPassword).not.toHaveBeenCalled()
-  change('password', '123456789012', member)
-  await render(member).submit()
-  expect(resetMemberPassword).toHaveBeenCalledWith(member, { password: '123456789012' })
+  expect(resetMemberPassword).toHaveBeenCalledWith(member, { password: '1111' })
 })
+
+it('rejects whitespace-only names and normalizes surrounding name whitespace', async () => {
+  fill()
+  change('name', '   ')
+  await render().submit()
+  expect(render().field('name').error).toBe('请输入姓名')
+  expect(createMember).not.toHaveBeenCalled()
+  change('name', '  员工  ')
+  await render().submit()
+  expect(createMember).toHaveBeenCalledWith({
+    name: '员工',
+    username: '111',
+    password: '1111',
+    role: 'employee',
+  })
+})
+
+it.each([null, member])(
+  'accepts 128 Unicode characters and rejects 129 for member %s',
+  async (reset) => {
+    if (!reset) fill()
+    change('password', '🔑'.repeat(129), reset)
+    await render(reset).submit()
+    expect(render(reset).field('password').error).toContain('4–128')
+    expect(createMember).not.toHaveBeenCalled()
+    expect(resetMemberPassword).not.toHaveBeenCalled()
+    change('password', '🔑'.repeat(128), reset)
+    await render(reset).submit()
+    expect(saved).toHaveBeenCalledOnce()
+  },
+)
 
 it('keeps API field errors in the dialog until edited and falls back for legacy validation paths', async () => {
   fill()

@@ -20,6 +20,7 @@ export function WorkFilters({
           aria-label="搜索工作"
           placeholder="搜索标题、摘要、阻碍或下一步"
           value={query}
+          maxLength={200}
           onSearch={(q) => change({ q })}
           resetKey={resetKey}
         />

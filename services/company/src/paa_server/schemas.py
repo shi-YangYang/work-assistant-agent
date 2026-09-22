@@ -1,7 +1,8 @@
 from datetime import date, time
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from .input_rules import MEMBER_RULES, PASSWORD_RULES
 
 
 class Input(BaseModel):
@@ -9,26 +10,33 @@ class Input(BaseModel):
 
 
 class Login(Input):
-    username: str = Field(min_length=1, max_length=80)
-    password: str = Field(min_length=1, max_length=128)
+    username: str = Field(min_length=1, max_length=MEMBER_RULES['username']['max'])
+    password: str = Field(min_length=1, max_length=PASSWORD_RULES['max'])
 
 
 class Password(Input):
-    currentPassword: str = Field(default='', max_length=128)
+    currentPassword: str = Field(default='', max_length=PASSWORD_RULES['max'])
     useDingTalk: bool = False
-    newPassword: str = Field(min_length=12, max_length=128)
+    newPassword: str = Field(min_length=PASSWORD_RULES['min'], max_length=PASSWORD_RULES['max'])
 
 
 class MemberCreate(Input):
-    username: str = Field(pattern=r'^[a-zA-Z0-9._@-]{3,80}$')
-    name: str = Field(min_length=1, max_length=80)
+    username: str = Field(pattern=MEMBER_RULES['username']['pattern'])
+    name: str = Field(min_length=MEMBER_RULES['name']['min'], max_length=MEMBER_RULES['name']['max'])
     role: Literal['admin', 'employee'] = 'employee'
-    password: str = Field(min_length=4, max_length=128)
+    password: str = Field(min_length=PASSWORD_RULES['min'], max_length=PASSWORD_RULES['max'])
+
+    @field_validator('name')
+    @classmethod
+    def nonblank_name(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('请输入姓名')
+        return value
 
 
 class AdminBootstrap(MemberCreate):
     role: Literal['admin'] = 'admin'
-    password: str = Field(min_length=12, max_length=128)
 
 
 class MemberPatch(Input):
@@ -36,14 +44,14 @@ class MemberPatch(Input):
 
 
 class ResetPassword(Input):
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=PASSWORD_RULES['min'], max_length=PASSWORD_RULES['max'])
 
 
 def member_validation_errors(errors, *, reset=False):
     messages = {
-        'name': '姓名需为 1–80 个字符',
-        'username': '账号需为 3–80 位，仅支持字母、数字和 . _ @ -',
-        'password': f'临时密码需为 {12 if reset else 4}–128 位',
+        'name': f"姓名需为 {MEMBER_RULES['name']['min']}–{MEMBER_RULES['name']['max']} 个字符",
+        'username': f"账号需为 {MEMBER_RULES['username']['min']}–{MEMBER_RULES['username']['max']} 位，仅支持字母、数字和 . _ @ -",
+        'password': f"密码需为 {PASSWORD_RULES['min']}–{PASSWORD_RULES['max']} 位",
     }
     return {
         error['loc'][1]: messages[error['loc'][1]]
@@ -55,6 +63,14 @@ def member_validation_errors(errors, *, reset=False):
 
 class ConversationCreate(Input):
     title: str = Field(default='新会话', min_length=1, max_length=120)
+
+    @field_validator('title')
+    @classmethod
+    def nonblank_title(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('请输入会话名称')
+        return value
 
 
 class ConversationEdit(ConversationCreate):
@@ -93,6 +109,14 @@ class Progress(Input):
     status: Literal['in_progress', 'blocked', 'done'] = 'in_progress'
     blocker: str = Field(default='', max_length=2000)
     nextStep: str = Field(default='', max_length=2000)
+
+    @field_validator('title')
+    @classmethod
+    def nonblank_title(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError('请输入工作标题')
+        return value
 
 
 class DraftEdit(Progress):

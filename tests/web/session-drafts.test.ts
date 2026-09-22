@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { composerDraftLifecycle } from '../../apps/web/src/features/assistant/lib/composer-drafts'
 import { SessionDrafts } from '../../apps/web/src/lib/session-drafts'
 const identity = (company = 'company', id = 'member', role = 'employee') =>
-  ({ company: { id: company }, member: { id, role, mustChangePassword: false } }) as Identity
+  ({ company: { id: company }, member: { id, role } }) as Identity
 const composer = { text: '未发送文字', files: [], key: 'original', sending: true }
 describe('verified same-page chat recovery', () => {
   it('keeps only chat input through expiration and blocks late upload/recording/settings callbacks', () => {
