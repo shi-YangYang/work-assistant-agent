@@ -143,11 +143,11 @@ export function MembersPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={12}
+                minLength={reset ? 12 : 4}
                 maxLength={128}
               />
             </label>
-            <small>至少 12 位。请通过公司认可的方式交给本人。</small>
+            <small>至少 {reset ? 12 : 4} 位。请通过公司认可的方式交给本人。</small>
             <ErrorNotice>{failure}</ErrorNotice>
             <div className="form-actions">
               <button

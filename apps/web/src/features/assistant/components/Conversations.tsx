@@ -67,8 +67,26 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [renamed, setRenamed] = useState<Record<string, Conversation>>({})
   const list = useResource<Page<Conversation>>(conversationsPath(search))
   const current = useResource<Conversation>(conversationPath(conversationId))
+  const [chatSession, setChatSession] = useState({
+    routeId: conversationId,
+    createdId: undefined as string | undefined,
+    key: 0,
+  })
+  if (chatSession.routeId !== conversationId) {
+    // First-send navigation keeps the composer; switching conversations still resets local UI.
+    const adoptingCreated = !!conversationId && chatSession.createdId === conversationId
+    setChatSession({
+      routeId: conversationId,
+      createdId: adoptingCreated ? chatSession.createdId : undefined,
+      key: adoptingCreated ? chatSession.key : chatSession.key + 1,
+    })
+  }
+  const createdHere =
+    !!chatSession.createdId &&
+    (!conversationId || conversationId === chatSession.createdId) &&
+    !current.error
   useEffect(() => {
-    if (conversationId || explicitNew || newDraft) return
+    if (conversationId || explicitNew || newDraft || createdHere) return
     let active = true
     const controller = new AbortController()
     void restoreConversation(lastConversationId, controller.signal)
@@ -93,6 +111,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     conversationId,
     explicitNew,
     newDraft,
+    createdHere,
     lastConversationId,
     rememberConversation,
     navigate,
@@ -156,7 +175,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           />
         </header>
         <ErrorNotice>{failure || (conversationId ? current.error : '')}</ErrorNotice>
-        {!conversationId && !explicitNew && !newDraft && (
+        {!conversationId && !explicitNew && !newDraft && !createdHere && (
           <>
             <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
               {resumeError}
@@ -167,13 +186,18 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           </>
         )}
         {(current.data ||
+          createdHere ||
           (!conversationId &&
             (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))) && (
           <ConversationChat
-            key={conversationId ?? 'new'}
+            key={chatSession.key}
             conversationId={conversationId}
             onSent={(id) => {
-              if (!conversationId) navigate(`/assistant/${id}`, { replace: true })
+              if (!conversationId) {
+                setChatSession((previous) => ({ ...previous, createdId: id }))
+                navigate(`/assistant/${id}`, { replace: true })
+              }
+              rememberConversation(id)
               updated()
             }}
           />

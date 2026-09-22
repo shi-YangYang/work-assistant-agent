@@ -23,6 +23,11 @@ class MemberCreate(Input):
     username: str = Field(pattern=r'^[a-zA-Z0-9._@-]{3,80}$')
     name: str = Field(min_length=1, max_length=80)
     role: Literal['admin', 'employee'] = 'employee'
+    password: str = Field(min_length=4, max_length=128)
+
+
+class AdminBootstrap(MemberCreate):
+    role: Literal['admin'] = 'admin'
     password: str = Field(min_length=12, max_length=128)
 
 

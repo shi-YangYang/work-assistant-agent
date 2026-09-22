@@ -35,7 +35,7 @@ export function useMessageSubmission({
   retryWait: number
   refresh: () => void
 }) {
-  const { setDraft, notify, rememberConversation } = useWorkspace()
+  const { setDraft } = useWorkspace()
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
@@ -98,8 +98,6 @@ export function useMessageSubmission({
       )
       if (active.current) {
         refresh()
-        notify('已发送')
-        rememberConversation(sent.conversationId)
         onSent(sent.conversationId)
       }
     } catch (e) {

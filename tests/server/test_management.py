@@ -248,3 +248,41 @@ async def test_admin_personal_reports_and_member_admin_mutations_are_rejected(se
     assert (await admin.post('/api/v1/reports/generate',json={'kind':'daily','date':'2026-09-13'},headers=keyed())).status_code == 403
     assert (await admin.post('/api/v1/members',json={'username':'new_' + uuid4().hex,'name':'不能建管理员','role':'admin','password':'controlled-password'})).status_code == 403
     assert (await admin.post('/api/v1/members/' + users['admin'].id + '/reset-password',json={'password':'controlled-password'})).status_code == 404
+
+
+async def test_member_creation_accepts_four_character_password_without_relaxing_access(setup):
+    from test_dingtalk import app_for, browser
+    _, _, _, clients = setup
+    admin = clients['admin']
+    payload = {'username': 'short_' + uuid4().hex, 'name': '短临时密码员工', 'password': '1234'}
+    assert (await admin.post('/api/v1/members', json={**payload, 'password': '123'})).status_code == 422
+    assert (await admin.post('/api/v1/members', json=payload, headers={'X-CSRF-Token': 'wrong'})).status_code == 403
+    for role in ('employee', 'outsider'):
+        assert (await clients[role].post('/api/v1/members', json=payload)).status_code == 403
+    assert (await admin.post('/api/v1/members', json={**payload, 'role': 'admin'})).status_code == 403
+
+    created = await admin.post('/api/v1/members', json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()['role'] == 'employee'
+    reset_path = '/api/v1/members/' + created.json()['id'] + '/reset-password'
+    assert (await admin.post(reset_path, json={'password': '5678'})).status_code == 422
+    async with browser(app_for(clients)) as client:
+        login = await client.post('/api/v1/auth/login', json={key: payload[key] for key in ('username', 'password')})
+        assert login.status_code == 200, login.text
+        assert login.json()['member']['mustChangePassword']
+        client.headers['X-CSRF-Token'] = login.json()['csrf']
+        assert (await client.get('/api/v1/work-items')).status_code == 403
+        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1234', 'newPassword': '5678'})).status_code == 422
+        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1234', 'newPassword': 'changed-controlled-password'})).status_code == 200
+        login = await client.post('/api/v1/auth/login', json={'username': payload['username'], 'password': 'changed-controlled-password'})
+        assert login.status_code == 200 and not login.json()['member']['mustChangePassword']
+        assert (await client.get('/api/v1/work-items')).status_code == 200
+
+
+async def test_initial_admin_keeps_twelve_character_password_requirement():
+    from pydantic import ValidationError
+    from paa_server.schemas import AdminBootstrap
+    for password in ('1234', '12345678901'):
+        with pytest.raises(ValidationError):
+            AdminBootstrap(username='admin', name='管理员', password=password)
+    assert AdminBootstrap(username='admin', name='管理员', password='123456789012').role == 'admin'

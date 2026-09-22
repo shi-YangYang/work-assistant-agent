@@ -24,8 +24,8 @@ async def bootstrap():
     password = getpass.getpass('管理员密码（至少 12 位）：')
     if password != getpass.getpass('再次输入密码：'):
         raise SystemExit('两次密码不一致')
-    from .schemas import MemberCreate
-    data = MemberCreate(username=username, name=name, password=password, role='admin')
+    from .schemas import AdminBootstrap
+    data = AdminBootstrap(username=username, name=name, password=password)
     engine, sessions = database(Settings())
     async with sessions.begin() as db:
         if await db.scalar(select(Company.id).limit(1)):

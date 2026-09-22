@@ -63,8 +63,7 @@ export function MessageComposer({
           rows={1}
           maxLength={8000}
           value={composer.text}
-          disabled={busy || previewUploading}
-          readOnly={pending}
+          readOnly={busy || previewUploading || pending}
           onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
           onPaste={(event) => {
             const images = clipboardImages(event.clipboardData)
@@ -74,7 +73,7 @@ export function MessageComposer({
           }}
           onKeyDown={(event) => submitOnEnter(event, () => void send())}
         />
-        {pending && (
+        {pending && !busy && (
           <p className="notice" role="status">
             原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
           </p>
