@@ -254,8 +254,16 @@ async def test_member_creation_accepts_four_character_password_without_relaxing_
     from test_dingtalk import app_for, browser
     _, _, _, clients = setup
     admin = clients['admin']
-    payload = {'username': 'short_' + uuid4().hex, 'name': '短临时密码员工', 'password': '1234'}
-    assert (await admin.post('/api/v1/members', json={**payload, 'password': '123'})).status_code == 422
+    payload = {'username': '111', 'name': '1', 'password': '1111'}
+    invalid = await admin.post('/api/v1/members', json={'username': '1', 'name': '', 'password': '111'})
+    assert invalid.status_code == 422
+    detail = invalid.json()['error']
+    assert detail['fields'] == ['body.username', 'body.name', 'body.password']
+    assert detail['fieldErrors'] == {
+        'username': '账号需为 3–80 位，仅支持字母、数字和 . _ @ -',
+        'name': '姓名需为 1–80 个字符',
+        'password': '临时密码需为 4–128 位',
+    }
     assert (await admin.post('/api/v1/members', json=payload, headers={'X-CSRF-Token': 'wrong'})).status_code == 403
     for role in ('employee', 'outsider'):
         assert (await clients[role].post('/api/v1/members', json=payload)).status_code == 403
@@ -264,16 +272,21 @@ async def test_member_creation_accepts_four_character_password_without_relaxing_
     created = await admin.post('/api/v1/members', json=payload)
     assert created.status_code == 201, created.text
     assert created.json()['role'] == 'employee'
+    duplicate = await admin.post('/api/v1/members', json=payload)
+    assert duplicate.status_code == 409
+    assert duplicate.json()['error']['fieldErrors'] == {'username': '账号名称已被使用'}
     reset_path = '/api/v1/members/' + created.json()['id'] + '/reset-password'
-    assert (await admin.post(reset_path, json={'password': '5678'})).status_code == 422
+    reset = await admin.post(reset_path, json={'password': '5678'})
+    assert reset.status_code == 422
+    assert reset.json()['error']['fieldErrors'] == {'password': '临时密码需为 12–128 位'}
     async with browser(app_for(clients)) as client:
         login = await client.post('/api/v1/auth/login', json={key: payload[key] for key in ('username', 'password')})
         assert login.status_code == 200, login.text
         assert login.json()['member']['mustChangePassword']
         client.headers['X-CSRF-Token'] = login.json()['csrf']
         assert (await client.get('/api/v1/work-items')).status_code == 403
-        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1234', 'newPassword': '5678'})).status_code == 422
-        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1234', 'newPassword': 'changed-controlled-password'})).status_code == 200
+        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1111', 'newPassword': '5678'})).status_code == 422
+        assert (await client.post('/api/v1/auth/password', json={'currentPassword': '1111', 'newPassword': 'changed-controlled-password'})).status_code == 200
         login = await client.post('/api/v1/auth/login', json={'username': payload['username'], 'password': 'changed-controlled-password'})
         assert login.status_code == 200 and not login.json()['member']['mustChangePassword']
         assert (await client.get('/api/v1/work-items')).status_code == 200

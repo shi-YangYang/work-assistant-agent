@@ -42,7 +42,21 @@ function stop(code) {
 }
 process.on('SIGINT', () => stop(0))
 process.on('SIGTERM', () => stop(0))
-if (action === 'all' || action === 'api') launch(python, ['-m', 'paa_server.api'])
+if (action === 'all' || action === 'api')
+  launch(python, [
+    '-m',
+    'uvicorn',
+    'paa_server.api:app',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '8000',
+    '--reload',
+    '--reload-dir',
+    join(root, 'services/company/src'),
+    '--reload-dir',
+    join(root, 'packages/voiceprint-engine/src'),
+  ])
 if (action === 'all' || action === 'worker') launch(python, ['-m', 'paa_server.worker'])
 if (action === 'all')
   launch(process.execPath, [

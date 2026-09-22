@@ -39,6 +39,20 @@ class ResetPassword(Input):
     password: str = Field(min_length=12, max_length=128)
 
 
+def member_validation_errors(errors, *, reset=False):
+    messages = {
+        'name': '姓名需为 1–80 个字符',
+        'username': '账号需为 3–80 位，仅支持字母、数字和 . _ @ -',
+        'password': f'临时密码需为 {12 if reset else 4}–128 位',
+    }
+    return {
+        error['loc'][1]: messages[error['loc'][1]]
+        for error in errors
+        if len(error['loc']) == 2 and error['loc'][0] == 'body'
+        and error['loc'][1] in messages
+    }
+
+
 class ConversationCreate(Input):
     title: str = Field(default='新会话', min_length=1, max_length=120)
 

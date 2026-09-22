@@ -28,6 +28,8 @@ export function expireSession() {
 export class ApiError extends Error {
   public diagnostics: SupportDiagnostics
   public retryAt: number
+  public fields: string[] = []
+  public fieldErrors: Record<string, string> = {}
   constructor(
     public status: number,
     public code: string,
@@ -189,6 +191,27 @@ export async function api<T>(
         retryAfter,
         diagnostics,
       )
+      if (Array.isArray(detail.fields))
+        error.fields = detail.fields
+          .filter(
+            (field): field is string =>
+              typeof field === 'string' && /^[a-zA-Z0-9_.]{1,120}$/.test(field),
+          )
+          .slice(0, 50)
+      if (
+        detail.fieldErrors &&
+        typeof detail.fieldErrors === 'object' &&
+        !Array.isArray(detail.fieldErrors)
+      )
+        error.fieldErrors = Object.fromEntries(
+          Object.entries(detail.fieldErrors)
+            .filter(([field]) => /^[a-zA-Z][a-zA-Z0-9_.]{0,119}$/.test(field))
+            .slice(0, 50)
+            .map(([field, message]) => [
+              field,
+              businessMessage(message, '输入不符合要求，请检查后重试。'),
+            ]),
+        )
       if (response.status === 401 && path !== '/auth/login') expireSession()
       if (
         response.status === 403 &&

@@ -35,6 +35,7 @@ from .model_schemas import RetryJob
 from .model_provider import ProviderError
 from .model_secrets import SecretUnavailable
 from .schemas import ConversationCreate, ConversationEdit, Confirm, DraftEdit, GenerateReport, Login, MemberCreate, MemberPatch, Password, ReportEdit, ResetPassword, Revision, Rules, SendMessage, TranscriptEdit, WorkEdit, Progress
+from .schemas import member_validation_errors
 from .service import active_message, conversation_dto, default_conversation, confirm_drafts, draft_dto, ensure_report, idem_begin, idem_save, job_dto, member_dto, owned, problem, version, work_dto
 
 request_log = logging.getLogger('uvicorn.error.paa_requests')
@@ -151,7 +152,14 @@ def create_app(settings=None):
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
         request.state.exception_type = type(error).__name__
-        return JSONResponse({'error': {'code': 'validation_error', 'message': '请检查输入内容、日期和长度限制', 'requestId': request.state.request_id, 'fields': ['.'.join(map(str, e['loc'])) for e in error.errors()]}}, status_code=422)
+        errors = error.errors()
+        detail = {'code': 'validation_error', 'message': '请检查输入内容、日期和长度限制', 'requestId': request.state.request_id, 'fields': ['.'.join(map(str, e['loc'])) for e in errors]}
+        reset = request.url.path.startswith('/api/v1/members/') and request.url.path.endswith('/reset-password')
+        if request.url.path == '/api/v1/members' or reset:
+            fields = member_validation_errors(errors, reset=reset)
+            if fields:
+                detail.update(message='请检查标记的输入项', fieldErrors=fields)
+        return JSONResponse({'error': detail}, status_code=422)
 
     async def db_dep():
         async with sessions() as db:
@@ -294,7 +302,7 @@ def create_app(settings=None):
         if body.role != 'employee':
             problem(403, '成员管理仅可添加员工')
         if await db.scalar(select(Member.id).where(Member.username == body.username.lower())):
-            problem(409, '账号名称已被使用')
+            raise HTTPException(409, detail={'code': 'username_taken', 'message': '账号名称已被使用', 'fieldErrors': {'username': '账号名称已被使用'}})
         item = Member(company_id=actor.company_id, username=body.username.lower(), name=body.name, role=body.role, password_hash=await run_in_threadpool(passwords.hash, body.password))
         db.add(item)
         await db.flush()

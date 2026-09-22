@@ -54,6 +54,59 @@ describe('company HTTP boundary', () => {
       diagnostics: { page: '/assistant/:conversationId', requestId },
     } satisfies Partial<ApiError>)
   })
+  it('preserves field validation errors without exposing unsafe response details', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response(
+          {
+            error: {
+              code: 'validation_error',
+              message: '请检查标记的输入项',
+              fields: ['body.password', 'body.username', null, '<html>'],
+              fieldErrors: {
+                password: '临时密码需为 4–128 位',
+                username: 'https://private-provider.example/secret',
+                '<script>': '不应展示',
+              },
+              input: { password: 'never-copy-this-value' },
+            },
+          },
+          422,
+        ),
+      ),
+    )
+    const error = await write('/members', {}).catch((failure: ApiError) => failure)
+    expect(error).toMatchObject({
+      fields: ['body.password', 'body.username'],
+      fieldErrors: {
+        password: '临时密码需为 4–128 位',
+        username: '输入不符合要求，请检查后重试。',
+      },
+    })
+    expect(JSON.stringify(error)).not.toMatch(/never-copy|private-provider|script/)
+  })
+  it('keeps older field-only validation replies usable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response(
+          {
+            error: {
+              code: 'validation_error',
+              message: '请检查输入内容、日期和长度限制',
+              fields: ['body.password'],
+            },
+          },
+          422,
+        ),
+      ),
+    )
+    await expect(write('/members', {})).rejects.toMatchObject({
+      fields: ['body.password'],
+      fieldErrors: {},
+    })
+  })
   it.each([
     ['<html>private upstream body</html>', 200, 'invalid_response'],
     ['', 200, 'invalid_response'],

@@ -1,15 +1,9 @@
 import type { Member, Page } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
-import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
-import { Modal } from '@web/components/Modal'
-import {
-  createMember,
-  membersPath,
-  resetMemberPassword,
-  updateMember,
-} from '@web/features/members/api/requests'
+import { membersPath, updateMember } from '@web/features/members/api/requests'
 import { DeleteMember } from '@web/features/members/components/DeleteMember'
+import { MemberForm } from '@web/features/members/components/MemberForm'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { UserPlus } from 'lucide-react'
@@ -20,7 +14,6 @@ export function MembersPage() {
   const [create, setCreate] = useState(false)
   const [reset, setReset] = useState<Member | null>(null)
   const [deleting, setDeleting] = useState<Member | null>(null)
-  const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
   const { notify } = useWorkspace()
   async function change(member: Member) {
@@ -41,7 +34,13 @@ export function MembersPage() {
         <div>
           <h2>成员管理</h2>
         </div>
-        <button className="primary" onClick={() => setCreate(true)}>
+        <button
+          className="primary"
+          onClick={() => {
+            setFailure('')
+            setCreate(true)
+          }}
+        >
           <UserPlus size={16} />
           添加成员
         </button>
@@ -84,87 +83,20 @@ export function MembersPage() {
         />
       )}
       {(create || reset) && (
-        <Modal
-          title={reset ? `重置 ${reset.name} 的密码` : '添加成员'}
+        <MemberForm
+          key={reset?.id ?? 'create'}
+          member={reset}
           onClose={() => {
             setCreate(false)
             setReset(null)
           }}
-        >
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              const form = new FormData(e.currentTarget)
-              setBusy(true)
-              try {
-                if (reset)
-                  await resetMemberPassword(reset, {
-                    password: form.get('password'),
-                  })
-                else
-                  await createMember({
-                    name: form.get('name'),
-                    username: form.get('username'),
-                    role: 'employee',
-                    password: form.get('password'),
-                  })
-                setCreate(false)
-                setReset(null)
-                refresh()
-                notify('已保存，请将账号与临时密码交给成员；首次登录需修改')
-              } catch (e) {
-                setFailure(e as Error)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {!reset && (
-              <>
-                <label>
-                  姓名
-                  <input name="name" required maxLength={80} />
-                </label>
-                <label>
-                  账号
-                  <input
-                    name="username"
-                    required
-                    pattern="[a-zA-Z0-9._@-]{3,80}"
-                    autoComplete="off"
-                  />
-                </label>
-              </>
-            )}
-            <label>
-              临时密码
-              <input
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={reset ? 12 : 4}
-                maxLength={128}
-              />
-            </label>
-            <small>至少 {reset ? 12 : 4} 位。请通过公司认可的方式交给本人。</small>
-            <ErrorNotice>{failure}</ErrorNotice>
-            <div className="form-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setCreate(false)
-                  setReset(null)
-                }}
-              >
-                取消
-              </button>
-              <BusyButton busy={busy} className="primary">
-                保存
-              </BusyButton>
-            </div>
-          </form>
-        </Modal>
+          onSaved={() => {
+            setCreate(false)
+            setReset(null)
+            refresh()
+            notify('已保存，请将账号与临时密码交给成员；首次登录需修改')
+          }}
+        />
       )}
     </div>
   )
