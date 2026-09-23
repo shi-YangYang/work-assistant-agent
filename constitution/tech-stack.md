@@ -39,6 +39,10 @@
 
 公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 独立维护主题与选择控件 CSS，分别放在 `apps/web/src/styles/`、`apps/desktop/src/renderer/styles/`；品牌图片继续共用 `packages/ui-web/`。Web 组件使用就近的 CSS Modules，同业务共享组合样式显式导入；全局基础白名单与依赖边界见[样式边界](../docs/architecture.md#web-样式边界)。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
 
+## UI 设计基准
+
+各端后续界面改造遵循 [UI 设计基准及归档原型](../docs/design/README.md)，先 Web、再 Electron 与手机端；翻书登录页保留。统一视觉语言，各端继续独立维护样式，不把演示原型直接作为生产组件库。现有页面尚未全面迁移。
+
 ## 目录约定
 
 | 内容 | 位置 |
