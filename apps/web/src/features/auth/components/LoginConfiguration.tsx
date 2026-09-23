@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import loginConfigurationStyles from '../styles/login-settings.module.css'
 import type { DingTalkConfiguration } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -67,8 +71,9 @@ export function LoginConfiguration({
   return (
     <>
       <ErrorNotice>{error}</ErrorNotice>
-      <div className="sectioned-panel">
+      <div className={layoutStyles['sectioned-panel']}>
         <PanelSection
+          bodyClassName={loginConfigurationStyles['settings-section-body']}
           title="钉钉企业内部应用"
           status={value.hasSecret ? '已配置凭证' : '待配置'}
           defaultOpen
@@ -80,10 +85,10 @@ export function LoginConfiguration({
               void save(value.enabled)
             }}
           >
-            <p className="muted">
+            <p className={utilitiesStyles['muted']}>
               先保存凭证，再验证授权和启用入口。新用户验证通过后会自动创建员工账号。
             </p>
-            <div className="credentials-fields">
+            <div className={loginConfigurationStyles['credentials-fields']}>
               <FormField
                 label="企业 CorpId"
                 value={corpId}
@@ -102,7 +107,7 @@ export function LoginConfiguration({
                 error={fieldErrors.clientId}
                 autoComplete="off"
               />
-              <div className="full-field">
+              <div className={layoutStyles['full-field']}>
                 <FormField
                   label={
                     value.hasSecret
@@ -120,22 +125,31 @@ export function LoginConfiguration({
               </div>
             </div>
             <small>{value.hasSecret ? 'Secret 已加密保存，不会回显。' : '尚未配置 Secret。'}</small>
-            <div className="form-actions">
-              <BusyButton busy={busy} className="primary">
+            <div
+              className={`${layoutStyles['form-actions']} ${loginConfigurationStyles['slot-form-actions']}`}
+            >
+              <BusyButton busy={busy} className={controlsStyles['primary']}>
                 保存配置
               </BusyButton>
             </div>
           </form>
         </PanelSection>
-        <PanelSection title="授权与入口" status={value.enabled ? '已启用' : '未启用'} defaultOpen>
+        <PanelSection
+          bodyClassName={loginConfigurationStyles['settings-section-body']}
+          title="授权与入口"
+          status={value.enabled ? '已启用' : '未启用'}
+          defaultOpen
+        >
           <p>入口：{value.enabled ? '已启用' : '已关闭'}</p>
           <p>
             {value.verifiedAt
               ? `上次真实授权验证成功：${dateLabel(value.verifiedAt)}`
               : '配置尚未通过钉钉授权验证。'}
           </p>
-          {dirty && <p className="muted">请先保存修改，再验证或切换入口。</p>}
-          <div className="form-actions">
+          {dirty && <p className={utilitiesStyles['muted']}>请先保存修改，再验证或切换入口。</p>}
+          <div
+            className={`${layoutStyles['form-actions']} ${loginConfigurationStyles['slot-form-actions']}`}
+          >
             <BusyButton
               type="button"
               busy={redirect.busy}
@@ -155,7 +169,11 @@ export function LoginConfiguration({
           </div>
           {redirect.guard}
         </PanelSection>
-        <PanelSection title="钉钉后台配置" status="回调地址与权限">
+        <PanelSection
+          bodyClassName={loginConfigurationStyles['settings-section-body']}
+          title="钉钉后台配置"
+          status="回调地址与权限"
+        >
           <label>
             回调地址
             <input readOnly value={value.callbackUrl} />
@@ -172,11 +190,11 @@ export function LoginConfiguration({
             复制回调地址
           </button>
           {copied && <p role="status">{copied}</p>}
-          <p className="muted">
+          <p className={utilitiesStyles['muted']}>
             登记完整回调地址，开通 open_app_api_base、Contact.User.Read 和 qyapi_get_member
             权限并发布应用。请将通讯录授权范围设为允许登录的员工，并与应用可使用范围保持一致。
           </p>
-          <p className="muted">
+          <p className={utilitiesStyles['muted']}>
             每次钉钉登录都会重新核验成员。本地密码和已登录会话的访问回收，需要在成员管理中停用账号。
           </p>
         </PanelSection>
@@ -184,7 +202,9 @@ export function LoginConfiguration({
       {blocker.state === 'blocked' && (
         <Modal title="放弃未保存的登录配置？" onClose={() => blocker.reset()}>
           <p>更改尚未保存。</p>
-          <div className="form-actions">
+          <div
+            className={`${layoutStyles['form-actions']} ${loginConfigurationStyles['slot-form-actions']}`}
+          >
             <button onClick={() => blocker.reset()}>继续编辑</button>
             <button onClick={() => blocker.proceed()}>放弃更改</button>
           </div>

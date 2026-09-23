@@ -1,3 +1,6 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { PanelSection } from '@web/components/PanelSection'
@@ -23,10 +26,14 @@ export function ServiceModelLibrary({
   onTest: (model: CompanyModel) => void
 }) {
   return (
-    <PanelSection title="可用模型" status={`${draft.models.length} / 32`} defaultOpen>
-      <div className="model-library-toolbar">
-        <span className="muted">选择模型进行设置或测试</span>
-        <div className="card-actions">
+    <PanelSection compactStatus title="可用模型" status={`${draft.models.length} / 32`} defaultOpen>
+      <div className={modelServicesStyles['model-library-toolbar']}>
+        <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+          选择模型进行设置或测试
+        </span>
+        <div
+          className={`${layoutStyles['card-actions']} ${modelServicesStyles['slot-card-actions']}`}
+        >
           <BusyButton
             busy={busy === 'models'}
             disabled={!!busy || !connectionReady}
@@ -40,7 +47,7 @@ export function ServiceModelLibrary({
         </div>
       </div>
       {!draft.models.length && (
-        <div className="model-library-empty">
+        <div className={modelServicesStyles['model-library-empty']}>
           <Cpu size={24} />
           <p>还没有添加模型</p>
           <small>
@@ -50,16 +57,22 @@ export function ServiceModelLibrary({
           </small>
         </div>
       )}
-      <div className="model-library" role="list" aria-label="已添加模型">
+      <div className={modelServicesStyles['model-library']} role="list" aria-label="已添加模型">
         {draft.models.map((item) => {
           const unresolved =
             item.protocolMode === 'auto' && !matchModelProtocol(draft.baseUrl, item.model).protocol
           const purposes = usesFor(draft.id, item.id)
           return (
-            <div className="model-library-row" role="listitem" key={item.id}>
-              <div className="model-library-info">
+            <div className={modelServicesStyles['model-library-row']} role="listitem" key={item.id}>
+              <div className={modelServicesStyles['model-library-info']}>
                 <strong>{item.model || '未填写模型 ID'}</strong>
-                <small className={unresolved ? 'error-text' : ''}>
+                <small
+                  className={
+                    unresolved
+                      ? utilitiesStyles['error-text'] + ' ' + modelServicesStyles['slot-error-text']
+                      : ''
+                  }
+                >
                   {unresolved
                     ? '需要选择接口协议'
                     : item.protocol === 'chat'
@@ -68,7 +81,9 @@ export function ServiceModelLibrary({
                   {purposes.length ? ` · ${purposes.join('、')}` : ''}
                 </small>
               </div>
-              <div className="card-actions">
+              <div
+                className={`${layoutStyles['card-actions']} ${modelServicesStyles['slot-card-actions']}`}
+              >
                 <button
                   disabled={!!busy}
                   aria-label={`设置 ${item.model}`}

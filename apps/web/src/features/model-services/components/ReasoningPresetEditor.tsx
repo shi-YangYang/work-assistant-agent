@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { AutoTextarea } from '@web/components/AutoTextarea'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -107,11 +109,11 @@ export function ReasoningPresetEditor({
               </details>
             )}
             <ErrorNotice>{error}</ErrorNotice>
-            <div className="form-actions">
+            <div className={layoutStyles['form-actions']}>
               <button type="button" onClick={close}>
                 取消
               </button>
-              <button className="primary" type="submit">
+              <button className={controlsStyles['primary']} type="submit">
                 保存预设到草稿
               </button>
             </div>

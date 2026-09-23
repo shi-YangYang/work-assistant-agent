@@ -1,3 +1,4 @@
+import styles from './ConnectionNotice.module.css'
 import { useEffect, useState } from 'react'
 
 export function ConnectionNotice() {
@@ -17,7 +18,7 @@ export function ConnectionNotice() {
     }
   }, [])
   return message ? (
-    <div className="connection-notice" role="status">
+    <div className={styles['connection-notice']} role="status">
       {message}
     </div>
   ) : null

@@ -1,0 +1,912 @@
+.book-login {
+  --stage: #171c1b;
+  --ivory: #ede7d7;
+  --muted: #9caaa1;
+  --paper: #f4f0e6;
+  --ink: #292824;
+  --rust: #a84b39;
+  --spread: 820px;
+  --book-height: 530px;
+  --duration: 1650ms;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: var(--ivory);
+  background: var(--stage);
+  font-synthesis: none;
+}
+.book-login {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 51% 45%, #303933 0%, #222a26 29%, #171c1b 65%);
+}
+.book-login .masthead {
+  height: 100px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 56px;
+  z-index: 10;
+  flex-shrink: 0;
+}
+.book-login .wordmark {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-decoration: none;
+  font-family: 'Songti SC', SimSun, serif;
+  font-size: 23px;
+  letter-spacing: 3px;
+}
+.book-login .wordmark-line {
+  height: 15px;
+  width: 1px;
+  background: #7b847850;
+}
+.book-login .wordmark-en {
+  font:
+    10px Georgia,
+    serif;
+  letter-spacing: 3px;
+  color: #bdc4b7;
+}
+.book-login .quiet-button {
+  border: 0;
+  background: none;
+  color: #c4c7ba;
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 12px 0;
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+.book-login .quiet-button:hover {
+  color: #fff5dc;
+}
+.book-login .quiet-button span {
+  font-size: 21px;
+  line-height: 1;
+}
+.book-login .book-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.book-login .top-note {
+  height: 33px;
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: #aeb3a5;
+  z-index: 2;
+}
+.book-login .chapter-dot {
+  width: 4px;
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: #b07654;
+}
+.book-login .scene {
+  position: relative;
+  width: 100%;
+  height: 600px;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1800px;
+  isolation: isolate;
+}
+.book-login .book {
+  position: relative;
+  width: var(--spread);
+  height: var(--book-height);
+  max-height: calc(100% - 24px);
+  transform-style: preserve-3d;
+  transform: translateX(-25%) translateY(24px) rotateX(26deg) rotateY(-15deg) rotateZ(-12deg)
+    scale(0.84);
+  transition: transform var(--duration) cubic-bezier(0.22, 0.65, 0.19, 1);
+  will-change: transform;
+}
+.book-login .book-shadow {
+  position: absolute;
+  width: 410px;
+  max-width: calc(100vw - 46px);
+  height: 170px;
+  left: 50%;
+  top: 66%;
+  border-radius: 50%;
+  background: #0009;
+  filter: blur(35px);
+  transform: translateX(-42%) rotate(-12deg);
+  transition:
+    width var(--duration),
+    transform var(--duration),
+    top var(--duration),
+    opacity var(--duration);
+  pointer-events: none;
+  opacity: 0.7;
+}
+.book-login .back-board {
+  position: absolute;
+  left: 50%;
+  top: -4px;
+  width: calc(50% + 6px);
+  height: calc(100% + 8px);
+  background: #30362e;
+  border-radius: 3px 9px 9px 3px;
+  transform: translateZ(-17px);
+  box-shadow:
+    1px 3px 2px #080e0b,
+    0 16px 18px #0005;
+}
+.book-login .page-stack {
+  position: absolute;
+  left: 50%;
+  width: 50%;
+  height: 100%;
+  background: var(--paper);
+  border-radius: 0 8px 8px 0;
+  transform: translateZ(-6px);
+  box-shadow:
+    1px 1px #c8c1b2,
+    2px 3px #bdb8a9,
+    3px 4px #e2ddce,
+    4px 6px #bdb8a9,
+    5px 7px #e2ddce,
+    6px 9px #bdb8a9,
+    7px 10px #cfc8b7;
+}
+.book-login .right-page {
+  position: absolute;
+  left: 50%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, #d5cfbf 0, #ebe6da 2%, #f4f0e6 10%, #f6f2e9 72%, #e5dfd1 100%);
+  border-radius: 0 7px 7px 0;
+  transform: translateZ(0);
+  color: var(--ink);
+  padding: 47px 44px 36px;
+}
+.book-login .page-running-head {
+  position: absolute;
+  top: 21px;
+  left: 43px;
+  right: 35px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: #999486;
+  letter-spacing: 1.6px;
+}
+.book-login .page-number {
+  position: absolute;
+  bottom: 18px;
+  right: 34px;
+  font:
+    10px Georgia,
+    serif;
+  color: #8a8577;
+}
+.book-login .login-host {
+  opacity: 0;
+  transition: opacity 450ms ease;
+  height: 100%;
+}
+.book-login .cover {
+  position: absolute;
+  left: 50%;
+  width: 50%;
+  height: 100%;
+  transform-origin: 0 50%;
+  transform-style: preserve-3d;
+  transform: translateZ(18px) rotateY(-2deg);
+  transition: transform var(--duration) cubic-bezier(0.22, 0.65, 0.19, 1);
+  will-change: transform;
+}
+.book-login .cover-front,
+.book-login .cover-back {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 2px 7px 7px 2px;
+}
+.book-login .cover-front {
+  color: #dfd6bb;
+  border: none;
+  text-align: left;
+  background: linear-gradient(
+    90deg,
+    #131c18 0,
+    #242d26 3%,
+    #354032 4%,
+    #202a22 7%,
+    #283329 42%,
+    #222d24 98%,
+    #131c18 100%
+  );
+  box-shadow:
+    inset 0 1px 2px #bfccb338,
+    inset -1px 0 2px #0009,
+    4px 5px 6px #0005;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 48px 43px 28px;
+  transform: translateZ(1px);
+  overflow: hidden;
+}
+.book-login .cover-front::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.11;
+  background-image:
+    repeating-linear-gradient(0deg, #eee2 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, #050 0 1px, transparent 1px 3px);
+  mix-blend-mode: screen;
+}
+.book-login .cover-border {
+  position: absolute;
+  inset: 19px 18px 19px 25px;
+  border: 1px solid #b5b69b33;
+  pointer-events: none;
+}
+.book-login .cover-edition {
+  font-size: 8px;
+  letter-spacing: 3px;
+  opacity: 0.7;
+}
+.book-login .cover-title {
+  font:
+    57px/0.99 Georgia,
+    'Times New Roman',
+    serif;
+  letter-spacing: -2.5px;
+  margin-top: 65px;
+  text-shadow: 0 1px #040b0799;
+}
+.book-login .cover-title em {
+  font-weight: normal;
+  font-size: 1.3em;
+  line-height: 1.12;
+  letter-spacing: -3px;
+  color: #e7dec5;
+}
+.book-login .cover-rule {
+  height: 1px;
+  width: 35px;
+  background: #c2b797;
+  margin-top: 25px;
+  opacity: 0.6;
+}
+.book-login .cover-subtitle {
+  font-family: 'Songti SC', SimSun, serif;
+  font-size: 12px;
+  letter-spacing: 2px;
+  margin-top: 21px;
+  opacity: 0.8;
+}
+.book-login .cover-bottom {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10px;
+  letter-spacing: 3px;
+}
+.book-login .cover-bottom span:last-child {
+  font:
+    8px Georgia,
+    serif;
+  letter-spacing: 1px;
+  opacity: 0.65;
+}
+.book-login .cover-back {
+  transform: rotateY(180deg);
+  background: linear-gradient(90deg, #e7e1d3 0, #efeade 4%, #f0ebdf 83%, #e1dacb 95%, #bcb3a0 100%);
+  color: #424137;
+  padding: 36px 47px 32px;
+  border-radius: 6px 0 0 6px;
+  box-shadow:
+    -2px 4px #b7b19f,
+    -4px 7px #ded7c7,
+    -6px 10px #202b23;
+  display: flex;
+  flex-direction: column;
+}
+.book-login .inside-eyebrow {
+  font-size: 8px;
+  letter-spacing: 2.5px;
+  color: #938c7b;
+}
+.book-login .welcome-copy {
+  margin-top: 53px;
+}
+.book-login .welcome-pretitle {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #827761;
+}
+.book-login .welcome-title {
+  font:
+    37px/1.42 'Songti SC',
+    'STSong',
+    SimSun,
+    serif;
+  font-weight: normal;
+  margin: 22px 0 22px;
+  letter-spacing: 3px;
+}
+.book-login .welcome-title em {
+  font-style: normal;
+  color: #9a523d;
+}
+.book-login .welcome-copy p {
+  font-size: 12px;
+  line-height: 2.15;
+  color: #827a6a;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+.book-login .inside-signoff {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.book-login .inside-signoff > span:first-child {
+  font:
+    10px/1.6 Georgia,
+    serif;
+  font-style: italic;
+  color: #8b806e;
+}
+.book-login .signature {
+  font:
+    28px Georgia,
+    serif;
+  font-style: italic;
+  color: #5b5d4c;
+}
+.book-login .ribbon {
+  position: absolute;
+  left: calc(100% - 55px);
+  top: -3px;
+  width: 23px;
+  height: 77px;
+  transform: translateZ(22px);
+  background: linear-gradient(90deg, #85462f, #b56c4b 25%, #a45c3e 70%, #75402f);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 87%, 0 100%);
+  transition: opacity 500ms;
+  pointer-events: none;
+}
+.book-login .below-book {
+  height: 90px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  z-index: 5;
+}
+.book-login .open-button {
+  background: transparent;
+  border: 1px solid #83917d70;
+  color: #e2dfcf;
+  border-radius: 30px;
+  padding: 14px 27px;
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  font-size: 12px;
+  letter-spacing: 1px;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
+}
+.book-login .open-button:hover {
+  background: #a1ac9010;
+  border-color: #b7b99d;
+}
+.book-login .book-icon {
+  font:
+    20px Georgia,
+    serif;
+  line-height: 12px;
+}
+.book-login .open-arrow {
+  font-size: 18px;
+  line-height: 12px;
+  color: #b8b59b;
+}
+.book-login .cover-hint {
+  color: #818f81;
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin: 13px 0 0;
+}
+.book-login .open-hint {
+  color: #9aa28f;
+  font-family: 'Songti SC', SimSun, serif;
+  font-size: 12px;
+  letter-spacing: 2px;
+  margin: 20px 0 0;
+}
+.book-login .site-footer {
+  height: 66px;
+  margin: 0 56px;
+  border-top: 1px solid #88988026;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  font-size: 8px;
+  letter-spacing: 1.8px;
+  color: #778475;
+  flex-shrink: 0;
+}
+.book-login .stage-indicator {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  font-size: 9px;
+  letter-spacing: 1px;
+}
+.book-login .stage-indicator i {
+  width: 40px;
+  height: 1px;
+  background: #5a645340;
+}
+.book-login .stage-indicator [data-active='true'] {
+  color: #d5cfb4;
+}
+.book-login .project-label {
+  font-size: 8px;
+}
+.book-login[data-open='true'] .book {
+  transform: translateX(0) rotateX(0) rotateY(0) rotateZ(0);
+}
+.book-login[data-open='true'] .cover {
+  transform: translateZ(2px) rotateY(-180deg);
+}
+.book-login[data-open='true'] .book-shadow {
+  width: 790px;
+  top: 70%;
+  transform: translateX(-50%);
+  opacity: 0.5;
+}
+.book-login[data-open='true'] .ribbon {
+  opacity: 0;
+}
+.book-login[data-ready='true'] .login-host {
+  opacity: 1;
+}
+.book-login[data-instant='true'] .book,
+.book-login[data-instant='true'] .cover,
+.book-login[data-instant='true'] .book-shadow {
+  transition: none;
+}
+.book-login[data-state='closed'] .cover:hover {
+  transform: translateZ(18px) rotateY(-9deg);
+}
+@media (min-width: 1100px) and (min-height: 940px) {
+  .book-login {
+    --spread: 880px;
+    --book-height: 570px;
+  }
+  .book-login .scene {
+    height: 670px;
+  }
+  .book-login .cover-title {
+    font-size: 64px;
+  }
+  .book-login .welcome-copy {
+    margin-top: 73px;
+  }
+  .book-login .right-page {
+    padding-top: 60px;
+  }
+  .book-login .cover-title {
+    margin-top: 78px;
+  }
+}
+@media (max-width: 1000px) {
+  .book-login {
+    --spread: 740px;
+    --book-height: 510px;
+  }
+  .book-login .scene {
+    height: 565px;
+  }
+  .book-login .cover-front {
+    padding: 43px 38px 28px;
+  }
+  .book-login .cover-title {
+    font-size: 52px;
+  }
+  .book-login .right-page {
+    padding: 46px 32px 34px;
+  }
+  .book-login .cover-back {
+    padding: 34px 37px 31px;
+  }
+  .book-login .welcome-copy {
+    margin-top: 43px;
+  }
+  .book-login .welcome-title {
+    font-size: 34px;
+  }
+  .book-login .masthead {
+    padding: 0 35px;
+    height: 83px;
+  }
+  .book-login .site-footer {
+    margin: 0 35px;
+  }
+}
+@media (min-width: 641px) and (max-height: 850px) {
+  .book-login {
+    --book-height: 480px;
+    --spread: 748px;
+  }
+  .book-login .masthead {
+    height: 74px;
+  }
+  .book-login .top-note {
+    height: 24px;
+  }
+  .book-login .scene {
+    height: 510px;
+  }
+  .book-login .cover-title {
+    margin-top: 48px;
+    font-size: 54px;
+  }
+  .book-login .cover-front {
+    padding-top: 37px;
+  }
+  .book-login .cover-subtitle,
+  .book-login .cover-rule {
+    margin-top: 17px;
+  }
+  .book-login .right-page {
+    padding-top: 40px;
+    padding-bottom: 24px;
+  }
+  .book-login .page-running-head {
+    top: 16px;
+  }
+  .book-login .cover-back {
+    padding-top: 31px;
+  }
+  .book-login .welcome-copy {
+    margin-top: 30px;
+  }
+  .book-login .welcome-title {
+    font-size: 33px;
+    margin-top: 19px;
+    margin-bottom: 16px;
+  }
+  .book-login .inside-signoff {
+    gap: 7px;
+  }
+  .book-login .below-book {
+    height: 80px;
+  }
+  .book-login .site-footer {
+    height: 32px;
+  }
+}
+@media (max-width: 800px) and (min-width: 641px) {
+  .book-login {
+    --spread: calc(100vw - 72px);
+    --book-height: 490px;
+  }
+  .book-login .cover-title {
+    font-size: 46px;
+  }
+  .book-login .cover-front {
+    padding-left: 29px;
+  }
+  .book-login .cover-back {
+    padding-left: 29px;
+    padding-right: 24px;
+  }
+  .book-login .right-page {
+    padding-left: 27px;
+    padding-right: 25px;
+  }
+  .book-login .welcome-copy p {
+    font-size: 11px;
+  }
+  .book-login .welcome-title {
+    font-size: 30px;
+  }
+}
+@media (max-width: 640px) {
+  .book-login {
+    --spread: calc((100vw - 46px) * 2);
+    --book-height: 535px;
+  }
+  .book-login .masthead {
+    height: 80px;
+    padding: 0 24px;
+  }
+  .book-login .wordmark {
+    font-size: 20px;
+    gap: 11px;
+  }
+  .book-login .wordmark-en {
+    font-size: 8px;
+    letter-spacing: 2px;
+  }
+  .book-login .quiet-button {
+    font-size: 11px;
+    gap: 7px;
+  }
+  .book-login .top-note {
+    font-size: 8px;
+    letter-spacing: 2px;
+    height: 25px;
+  }
+  .book-login .scene {
+    height: 595px;
+  }
+  .book-login .book {
+    flex-shrink: 0;
+    transform: translateX(-22%) translateY(8px) rotateX(13deg) rotateY(-10deg) rotateZ(-7deg)
+      scale(0.84);
+  }
+  .book-login[data-open='true'] .book {
+    transform: translateX(-25%) rotateX(0) rotateY(0) rotateZ(0);
+  }
+  .book-login .cover-front {
+    padding: 45px 35px 29px;
+  }
+  .book-login .cover-title {
+    font-size: 55px;
+    margin-top: 65px;
+  }
+  .book-login .cover-back {
+    padding-left: 30px;
+  }
+  .book-login .right-page {
+    padding: 52px 28px 33px;
+  }
+  .book-login .page-running-head {
+    left: 28px;
+    right: 28px;
+  }
+  .book-login .page-number {
+    right: 26px;
+  }
+  .book-login .cover-border {
+    inset: 18px 15px 18px 22px;
+  }
+  .book-login .cover-subtitle {
+    font-size: 11px;
+  }
+  .book-login .book-shadow {
+    width: 300px;
+    top: 69%;
+  }
+  .book-login[data-open='true'] .book-shadow {
+    width: 340px;
+    transform: translateX(-50%);
+  }
+  .book-login .below-book {
+    height: 83px;
+  }
+  .book-login .site-footer {
+    height: 58px;
+    margin: 0 24px;
+    justify-content: space-between;
+    font-size: 6px;
+    letter-spacing: 0.7px;
+  }
+  .book-login .project-label {
+    display: none;
+  }
+  .book-login .stage-indicator {
+    gap: 9px;
+    font-size: 8px;
+  }
+  .book-login .stage-indicator i {
+    width: 20px;
+  }
+  .book-login .open-hint {
+    font-size: 11px;
+  }
+  .book-login[data-open='true'] .top-note {
+    height: 20px;
+  }
+}
+@media (max-width: 359px) {
+  .book-login .cover-title {
+    font-size: 47px;
+  }
+  .book-login .cover-front {
+    padding-left: 28px;
+  }
+  .book-login .right-page {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+  .book-login .wordmark-en {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .book-login {
+    --duration: 1ms;
+  }
+  .book-login .login-host,
+  .book-login .ribbon {
+    transition: none;
+  }
+  .book-login[data-state='closed'] .cover:hover {
+    transform: translateZ(18px);
+  }
+}
+.book-login {
+  height: 100dvh;
+  min-height: 0;
+  overflow: clip;
+  line-height: normal;
+  color-scheme: light;
+  --accent: #973e33;
+  --danger: #973e33;
+  --line: #d4cebf;
+  --text: #292824;
+  --surface: #f4f0e6;
+  --subtle: #eae3d6;
+  --control: #c8c4b9;
+}
+.book-login [hidden] {
+  display: none !important;
+}
+.book-login .login-host {
+  scrollbar-width: none;
+}
+.book-login .login-host::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.book-login .scene {
+  flex-shrink: 1;
+}
+.book-login .wordmark,
+.book-login .quiet-button,
+.book-login .open-button,
+.book-login .cover-front {
+  min-height: 0;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: normal;
+  line-height: normal;
+}
+.book-login .wordmark {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  padding: 0;
+  text-decoration: none;
+}
+.book-login .quiet-button {
+  border-radius: 0;
+}
+.book-login .quiet-button:hover {
+  background: none;
+}
+.book-login .cover-front {
+  justify-content: initial;
+  gap: 0;
+}
+.book-login .cover-front:hover {
+  border: 0;
+}
+.book-login .wordmark:focus-visible,
+.book-login .quiet-button:focus-visible,
+.book-login .open-button:focus-visible,
+.book-login .cover-front:focus-visible {
+  outline: 2px solid #c58265;
+  outline-offset: 6px;
+}
+.book-login .welcome-title {
+  font-weight: 400;
+}
+.book-login .login-host {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  margin: -4px;
+  height: calc(100% + 8px);
+}
+.book-login[data-instant='true'] .login-host,
+.book-login[data-instant='true'] .ribbon {
+  transition: none;
+}
+@media (max-width: 640px) {
+  .book-login .wordmark {
+    font-size: 18px;
+    letter-spacing: 1px;
+  }
+  .book-login .wordmark-en,
+  .book-login .wordmark-line {
+    display: none;
+  }
+}
+@media (max-height: 740px) {
+  .book-login .masthead {
+    height: 56px;
+  }
+  .book-login .site-footer {
+    height: 32px;
+  }
+  .book-login .top-note {
+    height: 20px;
+  }
+  .book-login .below-book {
+    height: 64px;
+  }
+  .book-login .cover-hint {
+    margin-top: 8px;
+  }
+}
+@media (max-height: 620px) {
+  .book-login .top-note,
+  .book-login .cover-hint,
+  .book-login .open-hint {
+    display: none;
+  }
+  .book-login .below-book {
+    height: 56px;
+  }
+  .book-login .cover-front {
+    padding: 30px 28px 22px;
+  }
+  .book-login .cover-title {
+    margin-top: 18px;
+    font-size: 40px;
+  }
+  .book-login .cover-rule,
+  .book-login .cover-subtitle {
+    margin-top: 12px;
+  }
+  .book-login .welcome-copy {
+    margin-top: 18px;
+  }
+  .book-login .welcome-title {
+    font-size: 26px;
+    margin: 14px 0;
+  }
+  .book-login .inside-signoff > span:first-child {
+    display: none;
+  }
+  .book-login .right-page {
+    padding-top: 36px;
+    padding-bottom: 24px;
+  }
+  .book-login .page-running-head {
+    top: 14px;
+  }
+  .book-login .page-number {
+    bottom: 10px;
+  }
+}

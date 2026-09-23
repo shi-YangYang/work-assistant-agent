@@ -1,3 +1,4 @@
+import styles from './AppRoutes.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { LoginMethods } from '@web/features/auth/components/LoginMethods'
 import { SupportPage } from '@web/features/feedback/components/SupportPage'
@@ -65,8 +66,8 @@ export function AppRoutes({
       <Route
         path="/settings/*"
         element={
-          <div className="settings-layout">
-            <nav className="settings-nav" aria-label="设置页面">
+          <div className={styles['settings-layout']} data-scroll-container>
+            <nav className={styles['settings-nav']} aria-label="设置页面">
               {allowedSettings.map((p) => (
                 <NavLink
                   key={p.path}

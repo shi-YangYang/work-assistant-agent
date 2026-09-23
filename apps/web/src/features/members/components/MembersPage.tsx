@@ -1,3 +1,6 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
 import type { Member, Page } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -29,13 +32,13 @@ export function MembersPage() {
     }
   }
   return (
-    <div className="page">
-      <div className="page-heading">
+    <div className={layoutStyles['page']} data-scroll-container>
+      <div className={`${layoutStyles['page-heading']}`}>
         <div>
           <h2>成员管理</h2>
         </div>
         <button
-          className="primary"
+          className={controlsStyles['primary']}
           onClick={() => {
             setFailure('')
             setCreate(true)
@@ -46,11 +49,11 @@ export function MembersPage() {
         </button>
       </div>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
-      <div className="record-list">
+      <div className={recordLayoutStyles['record-list']}>
         {data?.items.map((member) => (
-          <div className="record-row" key={member.id}>
-            <span className="avatar">{member.name.slice(0, 1)}</span>
-            <div className="record-main">
+          <div className={recordLayoutStyles['record-row']} key={member.id}>
+            <span className={layoutStyles['avatar']}>{member.name.slice(0, 1)}</span>
+            <div className={recordLayoutStyles['record-main']}>
               <h3>{member.name}</h3>
               <p>
                 {member.username} · {member.role === 'admin' ? '管理员' : '用户'} ·{' '}
@@ -64,7 +67,11 @@ export function MembersPage() {
               <button role="menuitem" onClick={() => void change(member)}>
                 {member.active ? '停用账号' : '启用账号'}
               </button>
-              <button role="menuitem" className="danger" onClick={() => setDeleting(member)}>
+              <button
+                role="menuitem"
+                className={controlsStyles['danger']}
+                onClick={() => setDeleting(member)}
+              >
                 删除账号
               </button>
             </Actions>

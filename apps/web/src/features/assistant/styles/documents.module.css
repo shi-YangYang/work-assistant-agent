@@ -1,0 +1,66 @@
+.document-card {
+  min-width: 0;
+  flex: 1 1 290px;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.document-heading {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.document-heading svg {
+  flex-shrink: 0;
+}
+.document-heading strong,
+.document-citations button {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.document-card p {
+  margin: 8px 0;
+}
+.document-card .slot-card-actions {
+  flex-wrap: wrap;
+}
+.document-card a {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.document-warning {
+  color: var(--muted);
+  font-size: 13px;
+}
+.document-preview {
+  min-width: 0;
+}
+.document-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.document-preview section {
+  margin: 16px 0;
+}
+.document-citations {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+@media (max-width: 600px) {
+  .document-card {
+    flex-basis: 100%;
+  }
+}
+.document-citations button {
+  white-space: normal;
+  text-align: left;
+}

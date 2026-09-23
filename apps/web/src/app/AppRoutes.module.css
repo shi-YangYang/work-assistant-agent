@@ -1,0 +1,41 @@
+.settings-layout {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: auto;
+}
+.settings-nav {
+  display: none;
+}
+@media (max-width: 760px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+  .settings-nav {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+    flex-direction: row;
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 4px 12px;
+    overflow-x: auto;
+  }
+  .settings-nav a {
+    padding: 10px 12px;
+    min-height: 44px;
+    flex-shrink: 0;
+    border-radius: 6px;
+    color: var(--muted);
+    text-decoration: none;
+  }
+  .settings-nav a:is(:hover, [aria-current='page']) {
+    color: var(--accent);
+    background: var(--selection);
+  }
+  .settings-nav a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

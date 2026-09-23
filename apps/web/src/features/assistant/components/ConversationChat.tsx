@@ -1,3 +1,6 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './ConversationChat.module.css'
 import type { BusinessAction, WorkMessage } from '@paa/api-contracts'
 import { Modal } from '@web/components/Modal'
 import {
@@ -98,7 +101,7 @@ export function ConversationChat({
   }
   useEffect(() => {
     const scroll = scroller.current
-    const content = scroll?.querySelector('.chat-content')
+    const content = scroll?.querySelector('[data-chat-content]')
     if (!scroll || !content) return
     const observer = new ResizeObserver(() => {
       if (atBottomRef.current) scroll.scrollTop = scroll.scrollHeight
@@ -173,7 +176,7 @@ export function ConversationChat({
   const nextCursor = data?.nextCursor
   return (
     <div
-      className={`assistant-page${dragging ? ' file-dragging' : ''}`}
+      className={styles['assistant-page']}
       onDragEnter={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
@@ -205,12 +208,12 @@ export function ConversationChat({
         <ImageGallery images={previewImages} initial={gallery} onClose={() => setGallery(null)} />
       )}
       {pdf && <PdfPreview name={pdf.name} file={pdf} onClose={() => setPdf(null)} />}
-      {dragging && <div className="file-drop-hint">松开以添加附件</div>}
+      {dragging && <div className={styles['file-drop-hint']}>松开以添加附件</div>}
       {limitError && (
         <Modal title="无法添加附件" onClose={() => setLimitError('')}>
           <p>{limitError}</p>
-          <div className="form-actions">
-            <button className="primary" onClick={() => setLimitError('')}>
+          <div className={layoutStyles['form-actions']}>
+            <button className={controlsStyles['primary']} onClick={() => setLimitError('')}>
               知道了
             </button>
           </div>
@@ -218,7 +221,7 @@ export function ConversationChat({
       )}
       {newReply && (
         <button
-          className="new-reply"
+          className={styles['new-reply']}
           onClick={() => {
             if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
             atBottomRef.current = true
@@ -249,6 +252,7 @@ export function ConversationChat({
         actionReceipts={actionReceipts}
       />
       <MessageComposer
+        dragging={dragging}
         send={send}
         addFiles={addFiles}
         composer={composer}

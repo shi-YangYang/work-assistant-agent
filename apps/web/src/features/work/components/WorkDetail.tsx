@@ -1,3 +1,8 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import recordDetailStyles from '../../../components/RecordDetail.module.css'
+import styles from './WorkDetail.module.css'
 import type { Work } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -15,9 +20,10 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 export function WorkDetail({
+  compact = false,
   recordId,
   recordSearch,
-}: { recordId?: string; recordSearch?: string } = {}) {
+}: { compact?: boolean; recordId?: string; recordSearch?: string } = {}) {
   const navigate = useNavigate()
   const [deleting, setDeleting] = useState(false)
   const location = useLocation()
@@ -29,11 +35,15 @@ export function WorkDetail({
   const { identity } = useWorkspace()
   const [editing, setEditing] = useState(false)
   return (
-    <div className="page narrow">
+    <div
+      className={`${layoutStyles['page']} ${layoutStyles['narrow']} ${recordDetailStyles['detail']}`}
+      data-compact={compact}
+      data-scroll-container
+    >
       <ErrorNotice retry={refresh}>{error}</ErrorNotice>
       {data && (
         <>
-          <div className="page-heading">
+          <div className={`${layoutStyles['page-heading']} ${recordDetailStyles['heading']}`}>
             <div>
               <Status value={data.status} />
               {data.historical && (
@@ -51,16 +61,20 @@ export function WorkDetail({
                 <button role="menuitem" onClick={() => setEditing(true)}>
                   编辑工作
                 </button>
-                <button role="menuitem" className="danger" onClick={() => setDeleting(true)}>
+                <button
+                  role="menuitem"
+                  className={controlsStyles['danger']}
+                  onClick={() => setDeleting(true)}
+                >
                   删除工作
                 </button>
               </Actions>
             )}
           </div>
-          <div className="panel">
+          <div className={`${layoutStyles['panel']} ${recordDetailStyles['panel']}`}>
             {data.dueDate && <p>截止日期：{data.dueDate}</p>}
-            <p className="preserve">{data.summary}</p>
-            {data.blocker && <p className="blocker">阻碍：{data.blocker}</p>}
+            <p className={utilitiesStyles['preserve']}>{data.summary}</p>
+            {data.blocker && <p className={utilitiesStyles['error-text']}>阻碍：{data.blocker}</p>}
             {data.nextStep && <p>下一步：{data.nextStep}</p>}
             <small>
               更新于 {dateLabel(data.updatedAt)} · 第 {data.revision} 版
@@ -80,9 +94,9 @@ export function WorkDetail({
               }}
             />
           )}
-          <details className="record-evidence">
+          <details className={recordDetailStyles['record-evidence']}>
             <summary>进展记录与来源</summary>
-            <div className="timeline">
+            <div className={styles['timeline']}>
               {data.history?.map((h) => (
                 <article key={h.id}>
                   <small>
@@ -92,7 +106,7 @@ export function WorkDetail({
                   {h.sourceIds.length ? (
                     h.sourceIds.map((source) =>
                       h.deletedSourceIds?.includes(source) ? (
-                        <span className="muted" key={source}>
+                        <span className={utilitiesStyles['muted']} key={source}>
                           原始消息已删除
                         </span>
                       ) : (

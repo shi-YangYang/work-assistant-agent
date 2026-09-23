@@ -1,3 +1,5 @@
+import utilitiesStyles from '../styles/utilities.module.css'
+import noticeStyles from './Notice.module.css'
 import { ApiError } from '@web/api/client'
 import { useRetryWait } from '@web/hooks/useRetryWait'
 import { captureDiagnostics, copyText, diagnosticText } from '@web/lib/diagnostics'
@@ -9,8 +11,12 @@ import { Link } from 'react-router'
 export function ErrorNotice({
   children,
   retry,
+  className = '',
+  actionsClassName = '',
 }: {
   children: ReactNode | Error
+  className?: string
+  actionsClassName?: string
   retry?: () => void
 }) {
   const supportLink = useContext(SupportLink)
@@ -25,13 +31,16 @@ export function ErrorNotice({
   if (!children || failure?.category === 'cancelled') return null
   const canRetry = retry && (!failure || failure.retryable)
   return (
-    <div className="notice error" role="alert">
+    <div
+      className={`${noticeStyles['notice']} ${utilitiesStyles['error'] + ' ' + noticeStyles['slot-error']} ${className}`}
+      role="alert"
+    >
       <span>{children instanceof Error ? children.message : children}</span>
       {diagnostics && failure?.requestId && (
-        <small className="request-id">请求编号：{failure.requestId}</small>
+        <small className={noticeStyles['request-id']}>请求编号：{failure.requestId}</small>
       )}
       {(canRetry || diagnostics) && (
-        <div className="notice-actions">
+        <div className={`${noticeStyles['notice-actions']} ${actionsClassName}`}>
           {canRetry && (
             <button type="button" disabled={wait > 0} onClick={retry}>
               {wait ? `${wait} 秒后重试` : '重试'}

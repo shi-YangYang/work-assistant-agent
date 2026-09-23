@@ -1,0 +1,47 @@
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+button.primary:hover {
+  filter: brightness(0.95);
+}
+button.danger {
+  color: var(--danger);
+}
+.icon-button {
+  border: 1px solid transparent;
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 7px;
+  border-radius: 6px;
+  line-height: 1;
+}
+.icon-button:hover {
+  background: var(--selection);
+  border-color: transparent;
+  color: var(--accent);
+}
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 3px 0;
+}
+@media (max-width: 760px) {
+  .icon-button {
+    min-height: 44px;
+  }
+  .icon-button {
+    width: 44px;
+    height: 44px;
+    padding: 10px;
+  }
+  .icon-button,
+  .text-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

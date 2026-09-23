@@ -1,6 +1,3 @@
-@import '@paa/ui-web/theme.css';
-@import '@paa/ui-web/select.css';
-@import '@paa/ui-web/brand.css';
 * {
   box-sizing: border-box;
 }
@@ -92,18 +89,6 @@ button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
-button.primary {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: transparent;
-}
-button.primary:hover {
-  filter: brightness(0.95);
-}
-button.danger,
-.error {
-  color: var(--danger);
-}
 a {
   color: var(--accent);
   text-decoration: none;
@@ -134,10 +119,6 @@ input[type='radio'] {
 textarea {
   resize: vertical;
 }
-.auto-textarea {
-  resize: none;
-  max-height: 280px;
-}
 button,
 a,
 label,
@@ -146,22 +127,6 @@ h2 {
 }
 button {
   max-width: 100%;
-}
-.full-field {
-  grid-column: 1 / -1;
-}
-.field-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  margin-top: 16px;
-}
-.field-grid > label,
-.field-grid > .card-actions {
-  margin: 0;
-}
-.field-grid > .text-button {
-  justify-self: start;
 }
 :focus-visible {
   outline: 2px solid var(--accent);
@@ -203,12 +168,10 @@ p {
   overflow-wrap: anywhere;
 }
 small,
-.muted,
 time {
   color: var(--muted);
 }
 small,
-.small-text,
 time {
   font-size: 12px;
 }
@@ -223,7 +186,55 @@ fieldset {
   border: 0;
   min-width: 0;
 }
-.preserve {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+svg {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+@media (max-width: 760px) {
+  body {
+    font-size: 14px;
+  }
+  h2 {
+    font-size: 21px;
+  }
+  input:not([type='checkbox'], [type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  button,
+  input:not([type='checkbox'], [type='radio']),
+  select {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+@media (max-width: 760px) {
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
+  white-space: nowrap;
 }

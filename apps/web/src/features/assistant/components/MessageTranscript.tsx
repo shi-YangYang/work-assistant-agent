@@ -1,3 +1,6 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './MessageTranscript.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
 import { ChevronDown, Pencil } from 'lucide-react'
 import type * as React from 'react'
@@ -16,27 +19,38 @@ export function MessageTranscript({
   setTranscript: React.Dispatch<React.SetStateAction<boolean>>
 }) {
   return (
-    <section className="transcript">
-      <div className="transcript-heading">
+    <section className={styles['transcript']}>
+      <div className={styles['transcript-heading']}>
         <button
-          className="transcript-toggle"
+          className={styles['transcript-toggle']}
           aria-expanded={transcriptOpen}
           aria-controls={`transcript-${message.id}`}
           onClick={() => setTranscriptOpen((open) => !open)}
         >
           <ChevronDown size={16} aria-hidden="true" />
           语音文字
-          {!message.transcript && <span className="muted small-text">待识别</span>}
+          {!message.transcript && (
+            <span className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
+              待识别
+            </span>
+          )}
         </button>
         {own && (
-          <button className="text-button transcript-edit" onClick={() => setTranscript(true)}>
+          <button
+            className={`${controlsStyles['text-button']} ${styles['transcript-edit']}`}
+            onClick={() => setTranscript(true)}
+          >
             <Pencil size={14} aria-hidden="true" />
             修正文字
           </button>
         )}
       </div>
-      <div id={`transcript-${message.id}`} hidden={!transcriptOpen} className="transcript-body">
-        <p className="preserve">{message.transcript || '等待识别'}</p>
+      <div
+        id={`transcript-${message.id}`}
+        hidden={!transcriptOpen}
+        className={styles['transcript-body']}
+      >
+        <p className={utilitiesStyles['preserve']}>{message.transcript || '等待识别'}</p>
       </div>
     </section>
   )

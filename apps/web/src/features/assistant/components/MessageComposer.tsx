@@ -1,3 +1,6 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import noticeStyles from '../../../components/Notice.module.css'
+import styles from './MessageComposer.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
@@ -8,6 +11,7 @@ import type * as React from 'react'
 import { useRef } from 'react'
 
 export function MessageComposer({
+  dragging = false,
   send,
   addFiles,
   composer,
@@ -22,6 +26,7 @@ export function MessageComposer({
   retryWait,
   children,
 }: {
+  dragging?: boolean
   send: () => Promise<void>
   addFiles: (files: File[]) => Promise<void>
   composer: Composer
@@ -39,14 +44,14 @@ export function MessageComposer({
   const input = useRef<HTMLInputElement>(null)
   const capturing = recording.state !== 'idle'
   return (
-    <div className="composer-wrap">
-      <div className="composer">
+    <div className={styles['composer-wrap']}>
+      <div className={styles['composer']} data-dragging={dragging}>
         {composer.replyTo && (
-          <div className="replying">
+          <div className={styles['replying']}>
             <CornerUpLeft size={14} />
             正在补充此前消息
             <button
-              className="icon-button"
+              className={controlsStyles['icon-button']}
               aria-label="取消补充关联"
               disabled={locked}
               onClick={() => change({ ...composer, replyTo: undefined, key: '' })}
@@ -74,12 +79,12 @@ export function MessageComposer({
           onKeyDown={(event) => submitOnEnter(event, () => void send())}
         />
         {pending && !busy && (
-          <p className="notice" role="status">
+          <p className={noticeStyles['notice']} role="status">
             原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
           </p>
         )}
         <ErrorNotice>{sendError}</ErrorNotice>
-        <div className="composer-actions">
+        <div className={styles['composer-actions']}>
           <div>
             <input
               ref={input}
@@ -93,7 +98,7 @@ export function MessageComposer({
               }}
             />
             <button
-              className="icon-button"
+              className={controlsStyles['icon-button']}
               aria-label="添加图片"
               title="添加图片"
               disabled={locked || capturing}
@@ -103,7 +108,7 @@ export function MessageComposer({
             </button>
             {capturing ? (
               <button
-                className="recording"
+                className={styles['recording']}
                 disabled={recording.state === 'stopping'}
                 onClick={() => recording.stop()}
               >
@@ -116,7 +121,7 @@ export function MessageComposer({
               </button>
             ) : (
               <button
-                className="icon-button"
+                className={controlsStyles['icon-button']}
                 title="录制语音"
                 aria-label="录制语音"
                 disabled={locked}
@@ -125,7 +130,7 @@ export function MessageComposer({
                 <Mic size={20} />
               </button>
             )}
-            <label className="file-label">
+            <label className={styles['file-label']}>
               文件
               <input
                 type="file"
@@ -142,7 +147,7 @@ export function MessageComposer({
           </div>
           <BusyButton
             busy={busy}
-            className="primary"
+            className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
             disabled={
               !!retryWait ||
               previewUploading ||

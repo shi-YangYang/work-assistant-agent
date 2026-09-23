@@ -1,3 +1,9 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
+import statusStyles from '../../../components/Status.module.css'
+import styles from './ReportsOverview.module.css'
 import type { Report, Rules } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -33,8 +39,11 @@ export function ReportsPage() {
   const { notify } = useWorkspace()
   const selectedDate = params.get('date') || todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
   return (
-    <div className="page records-page reports-page">
-      <div className="page-heading">
+    <div
+      className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
+      data-scroll-container
+    >
+      <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
         <div>
           <h2>我的报告</h2>
         </div>
@@ -43,27 +52,33 @@ export function ReportsPage() {
           汇报安排
         </button>
       </div>
-      <div className="records-surface">
-        <div className="records-navigation">
-          <div className="tabs report-view-tabs">
+      <div className={recordLayoutStyles['records-surface']}>
+        <div className={recordLayoutStyles['records-navigation']}>
+          <div
+            className={`${layoutStyles['tabs']} ${recordLayoutStyles['slot-tabs']} ${styles['report-view-tabs']}`}
+          >
             <button
               aria-pressed={todo}
-              className={todo ? 'active' : ''}
+              data-active={todo}
               onClick={() => setParams({ kind, view: 'todo' })}
             >
               汇报待办
             </button>
             <button
               aria-pressed={!todo}
-              className={!todo ? 'active' : ''}
+              data-active={!todo}
               onClick={() => setParams({ kind, view: 'all' })}
             >
               全部报告
             </button>
           </div>
-          <div className="report-kind-switch" role="group" aria-label="报告类型">
+          <div
+            className={recordLayoutStyles['report-kind-switch']}
+            role="group"
+            aria-label="报告类型"
+          >
             <button
-              className={kind === 'daily' ? 'active' : ''}
+              data-active={kind === 'daily'}
               aria-pressed={kind === 'daily'}
               onClick={() =>
                 setParams({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
@@ -72,7 +87,7 @@ export function ReportsPage() {
               日报
             </button>
             <button
-              className={kind === 'weekly' ? 'active' : ''}
+              data-active={kind === 'weekly'}
               aria-pressed={kind === 'weekly'}
               onClick={() =>
                 setParams({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
@@ -83,8 +98,10 @@ export function ReportsPage() {
           </div>
         </div>
         {!todo && (
-          <div className="records-toolbar report-generate">
-            <label className="record-date-field">
+          <div
+            className={`${recordLayoutStyles['records-toolbar']} ${recordLayoutStyles['report-generate']}`}
+          >
+            <label className={recordLayoutStyles['record-date-field']}>
               <span>报告日期</span>
               <input
                 type="date"
@@ -102,7 +119,7 @@ export function ReportsPage() {
             </label>
             <BusyButton
               busy={busy}
-              className="primary"
+              className={controlsStyles['primary']}
               onClick={async () => {
                 setBusy(true)
                 try {
@@ -121,37 +138,48 @@ export function ReportsPage() {
             </BusyButton>
           </div>
         )}
-        <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
+        <ErrorNotice className={recordLayoutStyles['record-notice']} retry={refresh}>
+          {failure || error}
+        </ErrorNotice>
         {todo ? (
           <ReportObligations />
         ) : (
-          <div className="records-results" aria-label="报告列表">
+          <div className={recordLayoutStyles['records-results']} aria-label="报告列表">
             {data?.items.length ? (
-              <div className="record-list">
+              <div className={recordLayoutStyles['record-list']}>
                 {data.items.map((report) => (
-                  <div className="record-row report-row" key={report.id}>
+                  <div
+                    className={`${recordLayoutStyles['record-row']} ${recordLayoutStyles['report-row']}`}
+                    key={report.id}
+                  >
                     <Link
                       to={`/reports/${report.id}`}
                       state={detailState(location)}
-                      className="record-main report-entry-link"
+                      className={`${recordLayoutStyles['record-main']} ${recordLayoutStyles['report-entry-link']}`}
                     >
-                      <span className="record-type-icon" aria-hidden="true">
+                      <span className={recordLayoutStyles['record-type-icon']} aria-hidden="true">
                         <FileText size={21} />
                       </span>
-                      <div className="record-main">
+                      <div className={recordLayoutStyles['record-main']}>
                         <h3>
                           {report.kind === 'weekly' ? '周报' : '日报'} ·{' '}
-                          <span className="record-period">{report.period}</span>
+                          <span className={recordLayoutStyles['record-period']}>
+                            {report.period}
+                          </span>
                           {report.kind === 'weekly' && (
                             <>
                               {' '}
-                              — <span className="record-period">{report.periodEnd}</span>
+                              —{' '}
+                              <span className={recordLayoutStyles['record-period']}>
+                                {report.periodEnd}
+                              </span>
                             </>
                           )}
                         </h3>
                         <p>
                           <span
-                            className={`status ${report.publishedRevision ? 'submitted' : 'draft'}`}
+                            className={statusStyles['status']}
+                            data-status={report.publishedRevision ? 'submitted' : 'draft'}
                           >
                             {report.publishedRevision
                               ? `已提交第 ${report.publishedRevision} 版${report.revision !== report.publishedRevision ? ' · 有未提交更正' : ''}`
@@ -165,14 +193,20 @@ export function ReportsPage() {
                           {report.job?.error ? '生成未完成' : ''}
                         </small>
                       </div>
-                      <time className="record-updated">{dateLabel(report.updatedAt)}</time>
+                      <time className={recordLayoutStyles['record-updated']}>
+                        {dateLabel(report.updatedAt)}
+                      </time>
                       <ChevronRight size={18} />
                     </Link>
                     <ReportActions report={report} onDeleted={refresh} />
                   </div>
                 ))}
                 {data.nextCursor && (
-                  <button className="records-load-more" disabled={loading} onClick={loadMore}>
+                  <button
+                    className={recordLayoutStyles['records-load-more']}
+                    disabled={loading}
+                    onClick={loadMore}
+                  >
                     加载更早报告
                   </button>
                 )}
@@ -186,7 +220,7 @@ export function ReportsPage() {
               </RecordEmpty>
             ) : (
               !error && (
-                <p className="records-loading" role="status">
+                <p className={recordLayoutStyles['records-loading']} role="status">
                   正在读取报告…
                 </p>
               )
@@ -200,7 +234,7 @@ export function ReportsPage() {
             <>
               <p>公司时区：{timezoneLabel(rules.data.timezone)}</p>
               {(['daily', 'weekly'] as const).map((k) => (
-                <div className="panel" key={k}>
+                <div className={layoutStyles['panel']} key={k}>
                   <h3>{k === 'daily' ? '日报' : '周报'}</h3>
                   <p>
                     {rules.data![k].enabled
@@ -208,12 +242,12 @@ export function ReportsPage() {
                       : '尚未启用自动生成，可手动准备报告'}
                   </p>
                   {rules.data!.effectivePeriods?.[k] && (
-                    <p className="muted">
+                    <p className={utilitiesStyles['muted']}>
                       当前设置从 {rules.data!.effectivePeriods[k]} 起的周期生效
                     </p>
                   )}
                   {rules.data![k].enabled && (
-                    <p className="muted">
+                    <p className={utilitiesStyles['muted']}>
                       {rules.data![k].reminders === false
                         ? '站内提醒已关闭'
                         : `草稿就绪、截止前 ${rules.data![k].beforeMinutes ?? 30} 分钟及逾期后提醒`}

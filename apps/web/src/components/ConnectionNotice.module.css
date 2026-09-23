@@ -1,0 +1,6 @@
+.connection-notice {
+  padding: 8px 16px;
+  background: var(--selection);
+  color: var(--muted);
+  font-size: 13px;
+}

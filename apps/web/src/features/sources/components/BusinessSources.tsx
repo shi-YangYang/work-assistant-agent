@@ -1,3 +1,8 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import noticeStyles from '../../../components/Notice.module.css'
+import styles from './BusinessSources.module.css'
 import type { BusinessCitation, BusinessSource } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Markdown } from '@web/components/Markdown'
@@ -19,17 +24,17 @@ export function BusinessSources({
   const [token, setToken] = useState<string | null>(null)
   if (!sources.length) return null
   return (
-    <div className="business-sources">
-      <span className="eyebrow">业务依据</span>
-      <div className="business-source-list">
+    <div className={styles['business-sources']}>
+      <span className={layoutStyles['eyebrow']}>业务依据</span>
+      <div className={styles['business-source-list']}>
         {sources.map((source, index) =>
           source.unavailable ? (
-            <span className="muted" key={index}>
+            <span className={utilitiesStyles['muted']} key={index}>
               来源已失效
             </span>
           ) : (
             <button
-              className="business-source"
+              className={styles['business-source']}
               key={source.token}
               onClick={() => setToken(source.token!)}
             >
@@ -77,32 +82,32 @@ function SourceView({ path, onClose }: { path: string; onClose: () => void }) {
     <Modal title="业务来源" onClose={onClose}>
       <ErrorNotice retry={refresh}>{error}</ErrorNotice>
       {data && (
-        <div className="business-source-detail">
+        <div className={styles['business-source-detail']}>
           <header>
             <h3>{data.title}</h3>
-            <p className="muted">
+            <p className={utilitiesStyles['muted']}>
               {data.employeeName} · 第 {data.revision} 版 · {dateLabel(data.at!)}
               {data.employeeActive === false ? ' · 已停用员工' : ''}
             </p>
           </header>
           {data.currentRevision && data.currentRevision !== data.revision && (
-            <p className="notice">
+            <p className={noticeStyles['notice']}>
               这是回答使用的历史版本，当前已更新至第 {data.currentRevision} 版。
             </p>
           )}
           {data.period && (
-            <p className="muted">
+            <p className={utilitiesStyles['muted']}>
               报告周期：{data.period} 至 {data.periodEnd}
             </p>
           )}
-          {data.location && <p className="muted">{data.location}</p>}
+          {data.location && <p className={utilitiesStyles['muted']}>{data.location}</p>}
           <dl>
             {Object.entries(data.content)
               .filter(([, value]) => value)
               .map(([key, value]) => (
                 <div key={key}>
                   <dt>{names[key] ?? key}</dt>
-                  <dd className="preserve">
+                  <dd className={utilitiesStyles['preserve']}>
                     {key === 'status' ? (statuses[value] ?? value) : value}
                   </dd>
                 </div>
@@ -110,7 +115,7 @@ function SourceView({ path, onClose }: { path: string; onClose: () => void }) {
           </dl>
           {data.objectType && ['work', 'report'].includes(data.objectType) && (
             <Link
-              className="text-button"
+              className={`${controlsStyles['text-button']}`}
               to={`/${data.objectType === 'work' ? 'work' : 'reports'}/${data.objectId}`}
               state={detailState(location)}
               onClick={onClose}
@@ -143,7 +148,7 @@ export function BusinessReply({
           const source = sources[index - 1]
           return source?.token && !source.unavailable ? (
             <button
-              className="business-inline-citation"
+              className={styles['business-inline-citation']}
               aria-label={`查看来源 ${index}`}
               onClick={() => setToken(source.token!)}
             >

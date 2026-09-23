@@ -1,8 +1,18 @@
+import controlsStyles from '../styles/controls.module.css'
+import styles from './Actions.module.css'
 import { MoreHorizontal } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-export function Actions({ children, label = '更多操作' }: { children: ReactNode; label?: string }) {
+export function Actions({
+  children,
+  label = '更多操作',
+  className = '',
+}: {
+  children: ReactNode
+  label?: string
+  className?: string
+}) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -13,11 +23,9 @@ export function Actions({ children, label = '更多操作' }: { children: ReactN
       if (!popup.current) return
       const viewport = window.visualViewport
       const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight
-      popup.current.classList.remove('above')
-      popup.current.classList.toggle(
-        'above',
-        popup.current.getBoundingClientRect().bottom > bottom - 16,
-      )
+      popup.current.dataset.side = 'bottom'
+      if (popup.current.getBoundingClientRect().bottom > bottom - 16)
+        popup.current.dataset.side = 'top'
     }
     position()
     window.visualViewport?.addEventListener('resize', position)
@@ -34,7 +42,7 @@ export function Actions({ children, label = '更多操作' }: { children: ReactN
   return (
     <div
       ref={root}
-      className="action-menu"
+      className={`${styles['action-menu']} ${className}`}
       onPointerLeave={(e) => {
         if (e.pointerType === 'mouse' && !root.current?.querySelector(':focus-visible'))
           setOpen(false)
@@ -48,7 +56,7 @@ export function Actions({ children, label = '更多操作' }: { children: ReactN
     >
       <button
         ref={trigger}
-        className="icon-button"
+        className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
         aria-label={label}
         aria-expanded={open}
         aria-haspopup="menu"
@@ -59,14 +67,14 @@ export function Actions({ children, label = '更多操作' }: { children: ReactN
       {open && (
         <div
           ref={popup}
-          className="popover"
+          className={styles['popover']}
           role="menu"
           onClick={() => {
             setOpen(false)
             trigger.current?.focus()
           }}
         >
-          <div className="popover-items">{children}</div>
+          <div className={styles['popover-items']}>{children}</div>
         </div>
       )}
     </div>

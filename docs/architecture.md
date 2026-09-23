@@ -55,7 +55,7 @@ components/   不主动查询业务数据的公共 UI
 hooks/        跨业务复用的 React 逻辑
 lib/          上下文和非 React 资源控制器
 utils/        无请求副作用的通用纯函数
-styles/       全局与公共控件样式
+styles/       本端基础 CSS 与显式复用的布局／控件 Module
 ```
 
 业务自己的组件、Hook、API 和工具放在对应 `features/<业务>/` 内，按需建目录；不为每个小函数建立文件，也不把领域逻辑统一堆入根 `hooks`／`utils`。服务端 DTO 复用 `packages/api-contracts`，组件 props 与内部状态就近定义。
@@ -64,7 +64,18 @@ styles/       全局与公共控件样式
 
 新增页面先选业务归属，再定义其请求与状态所有者。页面和展示组件不直接拼请求路径；传输层统一处理身份、CSRF、超时、取消和错误。用户身份、跨页面草稿、服务端资源、URL 筛选与局部弹窗状态分别管理，避免重复持有同一可变状态。拆 Hook 是为了复用或隔离一个完整流程，不是把整页搬进返回几十个字段的函数。
 
-业务 TSX 超过约 350 个非空行时检查是否混合了列表、编辑、弹窗和异步流程；行数是审查提示，不能通过压缩代码或无意义拆碎达标。样式按全局、共享和业务划分，由入口保持确定加载顺序，路由切换不得改变层叠结果。
+业务 TSX 超过约 350 个非空行时检查是否混合了列表、编辑、弹窗和异步流程；行数是审查提示，不能通过压缩代码或无意义拆碎达标。样式按端独立维护，Web 使用 CSS Modules；路由切换不得改变层叠结果。
+
+### Web 样式边界
+
+组件专用样式就近放在 `组件名.module.css`，由组件 `import styles` 显式使用，断点与状态规则一起维护。同一业务内共用的登录表单、模型服务、附件等组合样式放在对应 `features/*/styles/*.module.css`。无专用样式的组件直接使用公共样式，不强制建立空文件。
+
+- `styles/index.css` 只导入本端 `theme.css`、`select.css`、`brand.css`、`base.css`：主题变量、原生选择器、品牌轮廓、reset、基础标签与表单、滚动条、焦点及减少动态效果。全局类白名单只有 `brand-mark`、`sr-only`，以及手机键盘状态 `keyboard-open`；不在这里写页面布局。
+- `styles/{layout,controls,utilities}.module.css` 是显式的公共布局与视觉工具；`components/RecordLayout.module.css`、`RecordDetail.module.css` 维护工作／报告共用的记录呈现。业务之间不导入对方私有 CSS。
+- 公共组件的内层结构由组件自己维护。调用者通过实际需要的 `className`、`bodyClassName`、`compact` 等插槽／变体定制；状态色通过限定用途的 CSS 变量继承。同一元素需要公共外观与局部定制时，显式组合两个 Module 的类名；局部 CSS 仅引用自己定义的槽类。模块之间不使用 `@value`／跨文件 `composes` 导入选择器，避免重复输出 CSS 和层叠依赖。基础 CSS 在 `main.tsx` 首先加载，公共 Module 先于调用者的局部 Module 导入。
+- 交互状态使用 `data-*` 或 ARIA 属性，滚动容器与聊天内容观察使用稳定的 `data-scroll-container`、`data-chat-content`。不要从 JS 拼接 CSS Module 生成的类名；`:global(.keyboard-open)` 只用于现有手机键盘避让。
+
+Web 与 Desktop 各自拥有主题、选择器和品牌 CSS，Desktop 位于 `apps/desktop/src/renderer/styles/`；两端不互相引用或自动同步 CSS。品牌图片继续由 `packages/ui-web` 共享。初始外观一致不意味着后续样式必须联动。
 
 读“发送一条消息”时，依次看：
 
@@ -76,11 +87,11 @@ styles/       全局与公共控件样式
 
 以上路径均相对 `apps/web/src`。跨页面草稿由 `lib/session-drafts.ts` 管理账号代次，聊天模块的 `lib/composer-drafts.ts` 提供附件清理策略；公共层不需要知道聊天附件的具体结构。
 
-`npm run test:web` 包含架构依赖检查；单独检查可运行 `npm run test:web -- tests/web/architecture.test.ts`。它约束向上依赖、纯工具依赖、绕过业务 API 的请求和运行时循环，新增模块继续遵循这些边界。
+`npm run test:web` 包含架构依赖检查；单独检查可运行 `npm run test:web -- tests/web/architecture.test.ts`。它约束向上依赖、纯工具依赖、绕过业务 API 的请求和运行时循环，同时检查 CSS 归属、基础入口与跨端引用，新增模块继续遵循这些边界。
 
 ## 共享代码与工程边界
 
-`packages/api-contracts` 提供公司 HTTP 的 TypeScript 类型；`model-config` 提供两端使用的纯校验；`ui-web` 提供浏览器 CSS；`voiceprint-engine` 统一公司登记与桌面匹配的模型、预处理和模板规范。共享包不导入应用或服务端，桌面协议留在桌面。CSS 不是原生 Android／iOS UI，移动框架及原生适配尚待立项。
+`packages/api-contracts` 提供公司 HTTP 的 TypeScript 类型；`model-config` 提供两端使用的纯校验；`ui-web` 提供品牌图片与 favicon；`voiceprint-engine` 统一公司登记与桌面匹配的模型、预处理和模板规范。共享包不导入应用或服务端，桌面协议留在桌面。CSS 不是原生 Android／iOS UI，移动框架及原生适配尚待立项。
 
 JS 应用由 npm workspaces 管理，各自声明依赖与构建配置；Python 核心与后端保留不同锁文件和虚拟环境。测试仍集中在 `tests`，按对象分区；CI 触发与检查范围见 [工作流](../.github/workflows/ci.yml)，具体通过与未验范围在 [各 Spec 验收](../specs/README.md)。
 

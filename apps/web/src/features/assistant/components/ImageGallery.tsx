@@ -1,3 +1,5 @@
+import mediaPreviewStyles from '../styles/media-preview.module.css'
+import documentsStyles from '../styles/documents.module.css'
 import { isCancelled } from '@web/api/client'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -67,7 +69,7 @@ export function ImageGallery({
   return (
     <Modal
       title={item?.name ?? '图片预览'}
-      className="media-dialog"
+      variant="media"
       onClose={onClose}
       onKeyDown={(event) => {
         if (event.key === 'ArrowLeft') {
@@ -80,8 +82,8 @@ export function ImageGallery({
         }
       }}
     >
-      <div className="media-preview">
-        <div className="preview-toolbar">
+      <div className={mediaPreviewStyles['media-preview']}>
+        <div className={mediaPreviewStyles['preview-toolbar']}>
           <div>
             <button
               aria-label="上一张"
@@ -122,7 +124,7 @@ export function ImageGallery({
             </button>
             {item && (
               <a
-                className="preview-download"
+                className={mediaPreviewStyles['preview-download']}
                 href={item.original}
                 download={item.name}
                 aria-label="下载原图片"
@@ -146,12 +148,12 @@ export function ImageGallery({
           {error}
         </ErrorNotice>
         {item?.warnings?.map((warning) => (
-          <p className="document-warning" key={warning}>
+          <p className={documentsStyles['document-warning']} key={warning}>
             {warning}
           </p>
         ))}
         <div
-          className="image-viewport"
+          className={mediaPreviewStyles['image-viewport']}
           ref={view}
           onPointerDown={(event) => {
             if (!src) return
@@ -173,7 +175,7 @@ export function ImageGallery({
           }}
         >
           {src && !natural.width && !error && (
-            <p className="preview-loading" role="status">
+            <p className={mediaPreviewStyles['preview-loading']} role="status">
               正在载入图片…
             </p>
           )}
@@ -197,7 +199,7 @@ export function ImageGallery({
               onError={() => setError('图片预览不可用，请重试或下载原文件。')}
             />
           ) : (
-            <div className="preview-placeholder">
+            <div className={mediaPreviewStyles['preview-placeholder']}>
               <p>HEIC／HEIF 图片需要转换后预览</p>
               <button
                 disabled={converting}

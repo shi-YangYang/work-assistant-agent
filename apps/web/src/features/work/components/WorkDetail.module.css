@@ -1,0 +1,11 @@
+.timeline article {
+  border-left: 2px solid var(--line);
+  padding: 0 0 24px 16px;
+}
+.timeline p {
+  margin: 8px 0;
+}
+.timeline a {
+  font-size: 12px;
+  display: block;
+}

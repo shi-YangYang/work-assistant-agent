@@ -37,7 +37,7 @@
 | 文档 | pypdf、python-docx、python-pptx、openpyxl 与标准库；受管子进程提取原生文字／可见表格，不做 OCR；原件在私有卷，分段及定位在 PostgreSQL；Web 用本地 PDF.js 预览原页 |
 | 部署 | Linux Docker Compose＋Caddy、API、单 worker 进程、PostgreSQL；支持域名自动 HTTPS 或公网 IPv4 外部证书＋Certbot 续期；任务有界并发，默认 3、可配 1～8，同一成员串行；聊天／ASR 模型外置，声纹提取在 worker，服务器容量待实测 |
 
-公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 共用 `packages/ui-web/` 的主题与选择控件 CSS，按各自设备能力组织导航；不能只共用颜色而偏离实际桌面视觉。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
+公司 API 独立于桌面 stdio；Web 不依赖 `window.paa`。各端同仓库、独立构建／部署，不自动同步 Electron 资料。Web 与 Electron 独立维护主题与选择控件 CSS，分别放在 `apps/web/src/styles/`、`apps/desktop/src/renderer/styles/`；品牌图片继续共用 `packages/ui-web/`。Web 组件使用就近的 CSS Modules，同业务共享组合样式显式导入；全局基础白名单与依赖边界见[样式边界](../docs/architecture.md#web-样式边界)。技术理由与协议边界见 [0011](../.ai/decisions/0011-company-agent-direction.md)、[0012](../.ai/decisions/0012-company-model-services.md) 及其 Plan。
 
 ## 目录约定
 
@@ -47,7 +47,7 @@
 | 本地 Python 核心、依赖锁与构建元数据 | `apps/desktop/core/`；包为 `src/paa_core/` |
 | 公司 Web | `apps/web/`；`src/app` 装配、`pages` 路由组合、`features` 业务，公共 API／组件／Hook 分层，见[前端结构](../docs/architecture.md#web-前端组织) |
 | 公司 API、任务与 harness | `services/company/src/paa_server/` |
-| 公司 HTTP 类型、纯模型参数校验、浏览器 CSS | `packages/api-contracts/`、`packages/model-config/`、`packages/ui-web/` |
+| 公司 HTTP 类型、纯模型参数校验、品牌资源 | `packages/api-contracts/`、`packages/model-config/`、`packages/ui-web/` |
 | 桌面／公司共用声纹提取与匹配 | `packages/voiceprint-engine/`，轻量协议与可选模型运行依赖分离 |
 | 测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
 | 工程脚本、公司部署 | `scripts/{desktop,company,benchmarks,lib}/`、`deploy/company/` |

@@ -1,3 +1,7 @@
+import controlsStyles from '../styles/controls.module.css'
+import layoutStyles from '../styles/layout.module.css'
+import formFieldStyles from './FormField.module.css'
+import styles from './TimeField.module.css'
 import { Modal } from '@web/components/Modal'
 import { Clock3 } from 'lucide-react'
 import { useId, useState } from 'react'
@@ -21,8 +25,8 @@ export function TimeField({
     setOpen(true)
   }
   return (
-    <span className="form-field" style={{ margin: 0 }}>
-      <span className="time-field">
+    <span className={formFieldStyles['form-field']} style={{ margin: 0 }}>
+      <span className={styles['time-field']}>
         <input
           value={value}
           required={required}
@@ -40,18 +44,23 @@ export function TimeField({
             }
           }}
         />
-        <button type="button" className="icon-button" aria-label="选择时间" onClick={show}>
+        <button
+          type="button"
+          className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
+          aria-label="选择时间"
+          onClick={show}
+        >
           <Clock3 size={17} />
         </button>
       </span>
       {error && (
-        <small className="form-field-error" id={errorId} role="alert">
+        <small className={formFieldStyles['form-field-error']} id={errorId} role="alert">
           {error}
         </small>
       )}
       {open && (
         <Modal title="选择时间" onClose={() => setOpen(false)}>
-          <div className="time-picker">
+          <div className={styles['time-picker']}>
             <label>
               时
               <select
@@ -76,7 +85,7 @@ export function TimeField({
               </select>
             </label>
           </div>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button
               type="button"
               onClick={() => {
@@ -88,7 +97,7 @@ export function TimeField({
             </button>
             <button
               type="button"
-              className="primary"
+              className={controlsStyles['primary']}
               onClick={() => {
                 onChange(choice)
                 setOpen(false)

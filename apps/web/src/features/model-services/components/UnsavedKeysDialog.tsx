@@ -1,3 +1,4 @@
+import layoutStyles from '../../../styles/layout.module.css'
 import type { CompanyService } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -30,7 +31,7 @@ export function UnsavedKeysDialog({
       {blocker.state === 'blocked' && (
         <Modal title="密钥尚未保存" onClose={() => blocker.reset()}>
           <p>离开会丢弃尚未保存的密钥，普通编辑草稿仍保留。</p>
-          <div className="card-actions">
+          <div className={layoutStyles['card-actions']}>
             <BusyButton
               busy={busy === 'save'}
               onClick={async () => {

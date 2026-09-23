@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import { PanelSection } from '@web/components/PanelSection'
 import { FormField } from '@web/components/FormField'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
@@ -24,9 +26,16 @@ export function ServiceConnectionFields({
   update: (next: ServiceDraft) => void
 }) {
   return (
-    <PanelSection title="连接信息" status={draft.baseUrl || '待填写'} defaultOpen={!draft.revision}>
+    <PanelSection
+      compactStatus
+      title="连接信息"
+      status={draft.baseUrl || '待填写'}
+      defaultOpen={!draft.revision}
+    >
       <fieldset disabled={!!busy} aria-label="连接信息">
-        <div className="field-grid connection-fields">
+        <div
+          className={`${layoutStyles['field-grid']} ${modelServicesStyles['slot-field-grid']} ${modelServicesStyles['connection-fields']}`}
+        >
           <label>
             服务商预设
             <select
@@ -59,7 +68,7 @@ export function ServiceConnectionFields({
               onChange={(e) => update({ ...draft, name: e.target.value })}
             />
           </label>
-          <label className="full-field">
+          <label className={layoutStyles['full-field']}>
             Base URL
             <input
               value={draft.baseUrl}
@@ -69,7 +78,7 @@ export function ServiceConnectionFields({
               onChange={(e) => changeAddress(e.target.value, detectServicePreset(e.target.value))}
             />
           </label>
-          <div className="full-field">
+          <div className={layoutStyles['full-field']}>
             <FormField
               label="API 密钥"
               hint={draft.hasKey ? '已设置；地址不变时留空保留' : '尚未设置'}

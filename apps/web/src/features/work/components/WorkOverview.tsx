@@ -1,3 +1,6 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
 import type { Work } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Pagination } from '@web/components/Pagination'
@@ -18,19 +21,24 @@ export function WorkPage() {
   const status = search.get('status') ?? ''
   const list = useCursorPage<Work>(workListPath(query, status))
   return (
-    <div className="page records-page work-page">
-      <div className="page-heading">
+    <div
+      className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
+      data-scroll-container
+    >
+      <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
         <h2>我的工作</h2>
-        <div className="card-actions">
+        <div
+          className={`${layoutStyles['card-actions']} ${recordLayoutStyles['slot-card-actions']}`}
+        >
           <button
-            className="icon-button"
+            className={controlsStyles['icon-button']}
             aria-label="刷新工作"
             title="刷新工作"
             onClick={list.refresh}
           >
             <RefreshCw size={16} />
           </button>
-          <button className="primary" onClick={() => setCreating(true)}>
+          <button className={controlsStyles['primary']} onClick={() => setCreating(true)}>
             <Plus size={16} />
             新建工作
           </button>
@@ -45,14 +53,16 @@ export function WorkPage() {
           }}
         />
       )}
-      <div className="records-surface">
-        <div className="records-toolbar">
-          <WorkFilters query={query} status={status} change={list.filter} />
+      <div className={recordLayoutStyles['records-surface']}>
+        <div className={recordLayoutStyles['records-toolbar']}>
+          <WorkFilters compact query={query} status={status} change={list.filter} />
         </div>
-        <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-        <div className="records-results" aria-label="工作列表">
+        <ErrorNotice className={recordLayoutStyles['record-notice']} retry={list.refresh}>
+          {list.error}
+        </ErrorNotice>
+        <div className={recordLayoutStyles['records-results']} aria-label="工作列表">
           {!list.data && !list.error && (
-            <p className="records-loading" role="status">
+            <p className={recordLayoutStyles['records-loading']} role="status">
               正在读取工作…
             </p>
           )}
@@ -68,7 +78,10 @@ export function WorkPage() {
                     <button onClick={() => list.filter({ q: '', status: '' })}>重置筛选</button>
                   ) : (
                     <>
-                      <button className="primary" onClick={() => setCreating(true)}>
+                      <button
+                        className={controlsStyles['primary']}
+                        onClick={() => setCreating(true)}
+                      >
                         <Plus size={16} />
                         创建第一项工作
                       </button>
@@ -88,6 +101,7 @@ export function WorkPage() {
         </div>
         {list.data && (list.page > 1 || list.data.nextCursor) && (
           <Pagination
+            className={recordLayoutStyles['record-pagination']}
             page={list.page}
             hasNext={!!list.data.nextCursor}
             previous={list.previous}

@@ -1,3 +1,6 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -85,11 +88,11 @@ export function TeamWorkspace({
           ['cancelled', '已撤销', 'cancelled'],
         ]
   return (
-    <div className="page team-workspace">
-      <div className="page-heading records-heading">
+    <div className={layoutStyles['page']} data-scroll-container>
+      <div className={layoutStyles['page-heading']}>
         <h2>团队看板</h2>
         <button
-          className="icon-button"
+          className={controlsStyles['icon-button']}
           aria-label="刷新团队看板"
           title="刷新"
           onClick={list.refresh}
@@ -97,11 +100,14 @@ export function TeamWorkspace({
           <RefreshCw size={18} />
         </button>
       </div>
-      <section className="records-panel team-panel">
-        <div className="team-view-heading">
-          <div className="tabs" aria-label="看板视图">
+      <section className={teamStyles['team-panel']}>
+        <div className={teamStyles['team-view-heading']}>
+          <div
+            className={`${layoutStyles['tabs']} ${teamStyles['slot-tabs']}`}
+            aria-label="看板视图"
+          >
             <button
-              className={view === 'work' ? 'active' : ''}
+              data-active={view === 'work'}
               aria-pressed={view === 'work'}
               onClick={() => update({ view: 'work' }, false)}
             >
@@ -109,7 +115,7 @@ export function TeamWorkspace({
               工作进展
             </button>
             <button
-              className={view === 'reports' ? 'active' : ''}
+              data-active={view === 'reports'}
               aria-pressed={view === 'reports'}
               onClick={() => update({ view: 'reports' }, false)}
             >
@@ -117,7 +123,10 @@ export function TeamWorkspace({
               日报周报
             </button>
           </div>
-          <div className="segmented-control" aria-label={view === 'work' ? '工作范围' : '报告类型'}>
+          <div
+            className={teamStyles['segmented-control']}
+            aria-label={view === 'work' ? '工作范围' : '报告类型'}
+          >
             {(view === 'work'
               ? [
                   ['current', '当前工作'],
@@ -130,7 +139,7 @@ export function TeamWorkspace({
             ).map(([value, label]) => (
               <button
                 key={value}
-                className={(view === 'work' ? scope : kind) === value ? 'active' : ''}
+                data-active={(view === 'work' ? scope : kind) === value}
                 aria-pressed={(view === 'work' ? scope : kind) === value}
                 onClick={() => update({ [view === 'work' ? 'scope' : 'kind']: value })}
               >
@@ -147,12 +156,15 @@ export function TeamWorkspace({
           view={view}
           scope={scope}
         />
-        <div className="team-counts" aria-label={view === 'work' ? '工作状态筛选' : '汇报状态筛选'}>
+        <div
+          className={teamStyles['team-counts']}
+          aria-label={view === 'work' ? '工作状态筛选' : '汇报状态筛选'}
+        >
           {metrics.map(([value, label, key]) => (
             <button
               key={key}
               aria-pressed={status === value}
-              className={status === value ? 'selected' : ''}
+              data-selected={status === value}
               onClick={() => update({ [`${view}Status`]: value })}
             >
               <span>{label}</span>
@@ -181,18 +193,14 @@ export function TeamWorkspace({
         )}
       </section>
       {selected && (
-        <Modal
-          className="team-detail-drawer"
-          title={view === 'work' ? '工作详情' : '报告详情'}
-          onClose={close}
-        >
-          <div className="team-reader-nav">
+        <Modal variant="drawer" title={view === 'work' ? '工作详情' : '报告详情'} onClose={close}>
+          <div className={teamStyles['team-reader-nav']}>
             <span>
               {index >= 0
                 ? `${readable[index].member.name} · 本页 ${index + 1} / ${readable.length}`
                 : '详情'}
             </span>
-            <div className="inline">
+            <div className={layoutStyles['inline']}>
               <button
                 aria-label="上一条记录"
                 disabled={index <= 0}

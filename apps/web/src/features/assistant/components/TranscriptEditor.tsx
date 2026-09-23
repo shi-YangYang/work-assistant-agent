@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { AutoTextarea } from '@web/components/AutoTextarea'
@@ -63,11 +65,11 @@ export function TranscriptEditor({
               onChange={() => setError('')}
             />
             <ErrorNotice>{fieldError || error}</ErrorNotice>
-            <div className="form-actions">
+            <div className={layoutStyles['form-actions']}>
               <button type="button" onClick={close}>
                 取消
               </button>
-              <BusyButton busy={busy} className="primary">
+              <BusyButton busy={busy} className={controlsStyles['primary']}>
                 保存修正
               </BusyButton>
             </div>

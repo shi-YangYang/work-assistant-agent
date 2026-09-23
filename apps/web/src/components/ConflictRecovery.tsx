@@ -1,3 +1,5 @@
+import layoutStyles from '../styles/layout.module.css'
+import utilitiesStyles from '../styles/utilities.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { ReactNode } from 'react'
@@ -18,7 +20,7 @@ export function ConflictRecovery<T>({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   return (
-    <section className="conflict-recovery">
+    <section>
       <BusyButton
         type="button"
         busy={busy}
@@ -38,13 +40,13 @@ export function ConflictRecovery<T>({
       </BusyButton>
       {error && <ErrorNotice>{error}</ErrorNotice>}
       {latest && (
-        <div className="panel">
+        <div className={layoutStyles['panel']}>
           <h3>服务端最新内容</h3>
           {render(latest)}
-          <p className="muted">
+          <p className={utilitiesStyles['muted']}>
             核对后选择如何继续。保留当前输入时，之后保存会替换这里显示的内容；已有提交历史仍保留。
           </p>
-          <div className="card-actions">
+          <div className={layoutStyles['card-actions']}>
             <button
               type="button"
               onClick={() => {

@@ -1,3 +1,8 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import authLayoutStyles from '../../../components/AuthLayout.module.css'
+import styles from './DesktopConnect.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -43,10 +48,10 @@ export function DesktopConnect({
     }
   }
   return (
-    <main className="login login-page">
+    <main className={`${authLayoutStyles['login']} ${authLayoutStyles['login-page']}`}>
       <LoginBackground />
-      <section className="login-card desktop-connect-card">
-        <span className="desktop-connect-mark">
+      <section className={`${authLayoutStyles['login-card']} ${styles['desktop-connect-card']}`}>
+        <span className={styles['desktop-connect-mark']}>
           {result ? <CheckCircle2 size={30} /> : <Monitor size={30} />}
         </span>
         <h1>连接桌面会议助手</h1>
@@ -63,30 +68,36 @@ export function DesktopConnect({
                   将以 <strong>{identity.member.name}</strong> 的身份连接{' '}
                   <strong>{resource.data.companyName}</strong>。
                 </p>
-                <p className="muted">
+                <p className={utilitiesStyles['muted']}>
                   {identity.member.role === 'admin'
                     ? '桌面可同步公司声纹并在本机识别发言者。会议录音不会自动上传。'
                     : '当前账号可以登录桌面。公司声纹仅向管理员开放。'}
                 </p>
-                <p className="muted">仅当你刚刚在自己的桌面应用中发起连接时确认。</p>
+                <p className={utilitiesStyles['muted']}>
+                  仅当你刚刚在自己的桌面应用中发起连接时确认。
+                </p>
               </>
             )}
             <ErrorNotice retry={resource.refresh}>
               {!valid ? '授权链接无效，请回到桌面重新连接。' : error || resource.error}
             </ErrorNotice>
             {resource.data && resource.data.state === 'pending' && (
-              <div className="form-actions">
+              <div className={`${layoutStyles['form-actions']} ${styles['slot-form-actions']}`}>
                 <button disabled={busy} onClick={() => void approve(false)}>
                   取消
                 </button>
-                <BusyButton className="primary" busy={busy} onClick={() => void approve(true)}>
+                <BusyButton
+                  className={controlsStyles['primary']}
+                  busy={busy}
+                  onClick={() => void approve(true)}
+                >
                   确认连接
                 </BusyButton>
               </div>
             )}
             {resource.data?.state === 'approved' && <p>已授权，请返回桌面完成连接。</p>}
             <button
-              className="text-button"
+              className={`${controlsStyles['text-button']}`}
               disabled={busy}
               onClick={async () => {
                 try {

@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { FormField } from '@web/components/FormField'
@@ -47,11 +51,14 @@ export function ModelOptions({
       {modelOpen && model && draft && (
         <Modal
           title={`设置 ${model.model || '模型'}`}
-          className="model-settings-dialog"
+          className={modelServicesStyles['model-settings-dialog']}
+          bodyClassName={modelServicesStyles['model-settings-body']}
           onClose={() => setModelOpen(false)}
         >
-          <fieldset disabled={!!busy} className="model-options" aria-label="模型配置">
-            <div className="field-grid">
+          <fieldset disabled={!!busy} aria-label="模型配置">
+            <div
+              className={`${layoutStyles['field-grid']} ${modelServicesStyles['slot-field-grid']}`}
+            >
               <FormField
                 label="模型 ID"
                 value={model.model}
@@ -60,7 +67,7 @@ export function ModelOptions({
                 error={fields.model}
                 onChange={(e) => updateModel({ ...model, model: e.target.value })}
               />
-              <div className="model-protocol-status" role="status">
+              <div className={modelServicesStyles['model-protocol-status']} role="status">
                 {automaticMatch && !automaticMatch.protocol
                   ? model.model
                     ? automaticMatch.reason
@@ -68,7 +75,7 @@ export function ModelOptions({
                   : `${automaticMatch ? '已自动匹配' : '当前接口'}：${protocolNames[model.protocol]}`}
               </div>
               <details
-                className="model-advanced full-field"
+                className={`${modelServicesStyles['model-advanced']} ${layoutStyles['full-field']}`}
                 key={model.id}
                 open={!!automaticMatch && !automaticMatch.protocol}
               >
@@ -101,7 +108,9 @@ export function ModelOptions({
               </details>
               {automaticMatch && !automaticMatch.protocol ? null : model.protocol === 'chat' ? (
                 <>
-                  <label className="check-label">
+                  <label
+                    className={`${layoutStyles['check-label']} ${modelServicesStyles['slot-check-label']}`}
+                  >
                     <input
                       type="checkbox"
                       checked={model.streaming}
@@ -125,7 +134,9 @@ export function ModelOptions({
                       ))}
                     </select>
                   </label>
-                  <div className="card-actions full-field">
+                  <div
+                    className={`${layoutStyles['card-actions']} ${modelServicesStyles['slot-card-actions']} ${layoutStyles['full-field']}`}
+                  >
                     <button
                       disabled={model.presets.length >= 16}
                       onClick={() => {
@@ -179,7 +190,7 @@ export function ModelOptions({
                 />
               )}
               <button
-                className="text-button danger full-field"
+                className={`${controlsStyles['text-button']} ${layoutStyles['slot-text-button']} ${modelServicesStyles['slot-text-button']} ${controlsStyles['danger']} ${layoutStyles['full-field']}`}
                 onClick={() => {
                   update({ ...draft, models: draft.models.filter((m) => m.id !== model.id) })
                   setActiveModel('')
@@ -191,10 +202,14 @@ export function ModelOptions({
             </div>
           </fieldset>
           <ErrorNotice>{error}</ErrorNotice>
-          <div className="form-actions">
-            <span className="muted">完成后记得保存服务</span>
+          <div
+            className={`${layoutStyles['form-actions']} ${modelServicesStyles['slot-form-actions']}`}
+          >
+            <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+              完成后记得保存服务
+            </span>
             <button
-              className="primary"
+              className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
               disabled={!!fields.model || !!fields.language}
               onClick={() => setModelOpen(false)}
             >

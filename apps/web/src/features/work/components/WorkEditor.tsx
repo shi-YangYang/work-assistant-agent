@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { Progress, Work } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -90,11 +92,11 @@ export function WorkEditor({
             }}
           />
         )}
-        <div className="form-actions">
+        <div className={layoutStyles['form-actions']}>
           <button type="button" onClick={onClose}>
             稍后继续
           </button>
-          <BusyButton busy={busy} className="primary">
+          <BusyButton busy={busy} className={controlsStyles['primary']}>
             保存更正
           </BusyButton>
         </div>

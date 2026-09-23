@@ -1,3 +1,4 @@
+import styles from './FormField.module.css'
 import type { InputHTMLAttributes } from 'react'
 import { useId } from 'react'
 
@@ -23,7 +24,7 @@ export function FormField({
     .filter(Boolean)
     .join(' ')
   return (
-    <div className="form-field">
+    <div className={styles['form-field']}>
       <label htmlFor={inputId}>
         {label}
         {input.required && <span aria-hidden="true"> *</span>}
@@ -35,7 +36,7 @@ export function FormField({
         aria-describedby={description || undefined}
       />
       {error && (
-        <small className="form-field-error" id={`${inputId}-error`} role="alert">
+        <small className={styles['form-field-error']} id={`${inputId}-error`} role="alert">
           {error}
         </small>
       )}

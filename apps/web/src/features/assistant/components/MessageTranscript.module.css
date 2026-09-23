@@ -1,0 +1,48 @@
+.transcript {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-top: 12px;
+  overflow: hidden;
+}
+.transcript-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px 4px 4px;
+}
+.transcript-toggle {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  text-align: left;
+  font-weight: 600;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+}
+.transcript-toggle svg {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.transcript-toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+.transcript .transcript-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.transcript-body {
+  border-top: 1px solid var(--line);
+  padding: 12px 16px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.transcript-body p {
+  margin: 0;
+}

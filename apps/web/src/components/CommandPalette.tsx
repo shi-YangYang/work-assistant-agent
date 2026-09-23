@@ -1,3 +1,6 @@
+import controlsStyles from '../styles/controls.module.css'
+import modalStyles from './Modal.module.css'
+import styles from './CommandPalette.module.css'
 import type { LucideIcon } from 'lucide-react'
 import { ArrowUpRight, Search, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
@@ -53,7 +56,7 @@ export function CommandPalette({
   return (
     <dialog
       ref={dialog}
-      className="command-dialog"
+      className={`${modalStyles['dialog']} ${styles['command-dialog']}`}
       aria-label="查找页面与操作"
       onCancel={(event) => {
         event.preventDefault()
@@ -63,7 +66,7 @@ export function CommandPalette({
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      <div className="command-search">
+      <div className={styles['command-search']}>
         <Search size={20} aria-hidden="true" />
         <input
           ref={input}
@@ -94,18 +97,22 @@ export function CommandPalette({
             }
           }}
         />
-        <button className="icon-button" aria-label="关闭命令面板" onClick={onClose}>
+        <button
+          className={controlsStyles['icon-button']}
+          aria-label="关闭命令面板"
+          onClick={onClose}
+        >
           <X size={18} />
         </button>
       </div>
-      <div className="command-results" role="listbox" id={listId} aria-label="页面与操作">
+      <div className={styles['command-results']} role="listbox" id={listId} aria-label="页面与操作">
         {filtered.map((command, index) => (
           <div key={command.id}>
             {(index === 0 || command.group !== filtered[index - 1].group) && (
-              <p className="command-group">{command.group}</p>
+              <p className={styles['command-group']}>{command.group}</p>
             )}
             <button
-              className="command-result"
+              className={styles['command-result']}
               id={`${listId}-${index}`}
               role="option"
               aria-selected={index === activeIndex}
@@ -113,30 +120,30 @@ export function CommandPalette({
               onMouseMove={() => setSelected(index)}
               onClick={() => execute(command)}
             >
-              <span className="command-icon">
+              <span className={styles['command-icon']}>
                 <command.icon size={19} />
               </span>
-              <span className="command-copy">
+              <span className={styles['command-copy']}>
                 <strong>{command.label}</strong>
                 <small>{command.detail}</small>
               </span>
               {command.current ? (
-                <span className="command-current">当前</span>
+                <span className={styles['command-current']}>当前</span>
               ) : (
-                <ArrowUpRight className="command-arrow" size={16} />
+                <ArrowUpRight className={styles['command-arrow']} size={16} />
               )}
             </button>
           </div>
         ))}
         {!filtered.length && (
-          <div className="command-empty">
+          <div className={styles['command-empty']}>
             <Search size={24} />
             <strong>没有匹配的页面或操作</strong>
             <span>试试“会话”“工作”或“模型”</span>
           </div>
         )}
       </div>
-      <footer className="command-footer">
+      <footer className={styles['command-footer']}>
         <span>
           <kbd>↑</kbd>
           <kbd>↓</kbd> 选择

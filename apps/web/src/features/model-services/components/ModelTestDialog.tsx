@@ -1,3 +1,6 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { CompanyModel } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { Modal } from '@web/components/Modal'
@@ -34,10 +37,10 @@ export function ModelTestDialog({
             if (!busy) setTestOpen(false)
           }}
         >
-          <p className="wrap-anywhere">
+          <p className={utilitiesStyles['wrap-anywhere']}>
             接收服务：{draft.name}（{draft.baseUrl}）
           </p>
-          <p className="wrap-anywhere">模型：{model?.model || '未填写'}</p>
+          <p className={utilitiesStyles['wrap-anywhere']}>模型：{model?.model || '未填写'}</p>
           <label>
             检测用途
             <select
@@ -61,12 +64,12 @@ export function ModelTestDialog({
                 : '文字与工具测试样本'}
             ，可能产生服务费用，不使用员工资料。
           </p>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button disabled={!!busy} onClick={() => setTestOpen(false)}>
               取消
             </button>
             <BusyButton
-              className="primary"
+              className={controlsStyles['primary']}
               busy={busy === 'test'}
               disabled={!!busy}
               onClick={() => void request('test')}

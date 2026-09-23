@@ -1,3 +1,4 @@
+import styles from './ChatHistory.module.css'
 import type { BusinessAction, Identity, Page, WorkMessage } from '@paa/api-contracts'
 import { Empty } from '@web/components/Empty'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -52,7 +53,7 @@ export function ChatHistory({
 }) {
   return (
     <div
-      className="chat-scroll"
+      className={styles['chat-scroll']}
       ref={scroller}
       onScroll={() => {
         const node = scroller.current
@@ -62,16 +63,16 @@ export function ChatHistory({
         }
       }}
     >
-      <div className="chat-content">
+      <div className={styles['chat-content']} data-chat-content>
         <ErrorNotice retry={refresh}>{error}</ErrorNotice>
         {nextCursor && (
-          <button className="load-more" disabled={loading} onClick={loadMore}>
+          <button className={styles['load-more']} disabled={loading} onClick={loadMore}>
             加载更早消息
           </button>
         )}
         {!messages.length && !error && (!conversationId || !!data) && (
           <Empty title={identity.member.role === 'admin' ? '从团队进展开始' : '从今天的工作开始'}>
-            <span className="assistant-examples">
+            <span className={styles['assistant-examples']}>
               {(identity.member.role === 'admin'
                 ? ['团队当前有哪些阻碍？', '本周员工有哪些工作进展？', '查看最近提交的周报']
                 : ['帮我创建工作：', '生成今天的日报', '查看我还没交的报告']

@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyService, ModelRouting, ModelSelection } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -30,7 +34,9 @@ export function Routing({
     setError('')
   }
   return (
-    <section className="sectioned-panel model-routing">
+    <section
+      className={`${layoutStyles['sectioned-panel']} ${modelServicesStyles['model-routing']}`}
+    >
       {(['assistant', 'report', 'asr'] as const).map((purpose) => {
         const choice = value[purpose]
         const options = services.flatMap((service) =>
@@ -57,7 +63,7 @@ export function Routing({
             }
             defaultOpen={purpose === 'assistant'}
           >
-            <div className="routing-fields">
+            <div className={modelServicesStyles['routing-fields']}>
               <label>
                 使用的模型
                 <select
@@ -97,7 +103,9 @@ export function Routing({
                 </select>
               </label>
               {choice === 'follow' && (
-                <p className="muted">使用工作助手当前分配的模型、推理预设和请求方式。</p>
+                <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+                  使用工作助手当前分配的模型、推理预设和请求方式。
+                </p>
               )}
               {selected && typeof choice === 'object' && choice && purpose !== 'asr' && (
                 <>
@@ -117,7 +125,9 @@ export function Routing({
                       ))}
                     </select>
                   </label>
-                  <label className="check-label">
+                  <label
+                    className={`${layoutStyles['check-label']} ${modelServicesStyles['slot-check-label']}`}
+                  >
                     <input
                       type="checkbox"
                       checked={choice.streaming}
@@ -131,7 +141,7 @@ export function Routing({
           </PanelSection>
         )
       })}
-      <div className="panel-footer">
+      <div className={layoutStyles['panel-footer']}>
         <ErrorNotice>{error}</ErrorNotice>
         {conflict && (
           <ConflictRecovery
@@ -147,9 +157,11 @@ export function Routing({
             }}
           />
         )}
-        <div className="form-actions editor-actions">
+        <div
+          className={`${layoutStyles['form-actions']} ${modelServicesStyles['slot-form-actions']} ${layoutStyles['editor-actions']}`}
+        >
           <BusyButton
-            className="primary"
+            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
             busy={busy}
             onClick={async () => {
               setBusy(true)

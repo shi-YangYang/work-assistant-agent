@@ -1,0 +1,20 @@
+.empty {
+  text-align: center;
+  color: var(--muted);
+  max-width: 470px;
+  margin: 48px auto;
+  padding: 0 15px;
+}
+.empty h2 {
+  color: var(--text);
+  font-size: 20px;
+  margin-bottom: 9px;
+}
+.empty p {
+  line-height: 1.9;
+}
+@media (max-width: 760px) {
+  .empty {
+    margin: 32px auto;
+  }
+}

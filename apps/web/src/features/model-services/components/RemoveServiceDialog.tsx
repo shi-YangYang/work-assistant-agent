@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -34,12 +36,12 @@ export function RemoveServiceDialog({
               : '丢弃后，这份服务草稿和其中尚未保存的密钥将被清除。'}
           </p>
           <ErrorNotice>{error}</ErrorNotice>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button disabled={!!busy} onClick={() => setRemoveOpen(false)}>
               继续编辑
             </button>
             <BusyButton
-              className="danger"
+              className={controlsStyles['danger']}
               busy={busy === 'delete'}
               disabled={!!busy}
               onClick={() => void remove()}

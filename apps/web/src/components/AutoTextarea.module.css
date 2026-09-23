@@ -1,0 +1,4 @@
+.auto-textarea {
+  resize: none;
+  max-height: 280px;
+}

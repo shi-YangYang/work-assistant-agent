@@ -1,3 +1,9 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import noticeStyles from '../../../components/Notice.module.css'
+import styles from './MessageCard.module.css'
+import attachmentsStyles from '../styles/attachments.module.css'
 import type { Draft, WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
@@ -70,30 +76,33 @@ export function MessageCard({
   }
   const pending = message.drafts.filter((d) => d.status === 'pending')
   return (
-    <article className="message">
+    <article className={styles['message']}>
       {gallery !== null && !message.businessUnavailable && images[gallery] && (
         <ImageGallery images={images} initial={gallery} onClose={() => setGallery(null)} />
       )}
       <header>
-        <span className="eyebrow">工作消息</span>
+        <span className={layoutStyles['eyebrow']}>工作消息</span>
         <time>{dateLabel(message.createdAt)}</time>
         {onReply && (
-          <button className="text-button" onClick={onReply}>
+          <button
+            className={`${controlsStyles['text-button']} ${styles['slot-text-button']}`}
+            onClick={onReply}
+          >
             补充
           </button>
         )}
       </header>
-      {message.text && <p className="preserve">{message.text}</p>}
-      <div className="attachment-groups">
+      {message.text && <p className={utilitiesStyles['preserve']}>{message.text}</p>}
+      <div>
         {(['audio', 'image', 'document'] as const).map((kind) => {
           const items = message.attachments.filter((a) => a.kind === kind)
           return (
             items.length > 0 && (
-              <div className={`attachments attachments-${kind}`} key={kind}>
+              <div className={attachmentsStyles['attachments']} data-kind={kind} key={kind}>
                 {items.map((a) =>
                   a.kind === 'image' ? (
                     <button
-                      className="attachment-preview-button"
+                      className={attachmentsStyles['attachment-preview-button']}
                       key={a.id}
                       aria-label={`预览${a.name}`}
                       onClick={() => setGallery(images.findIndex((item) => item.id === a.id))}
@@ -127,7 +136,7 @@ export function MessageCard({
         />
       )}
       {message.businessUnavailable && (
-        <p className="notice">这条回答的关联资料或权限已变化，请重新提问。</p>
+        <p className={noticeStyles['notice']}>这条回答的关联资料或权限已变化，请重新提问。</p>
       )}
       {message.job && (
         <JobNotice
@@ -147,7 +156,7 @@ export function MessageCard({
       {own &&
         !message.businessUnavailable &&
         message.job?.operationFeedback?.map((item) => (
-          <div className="notice" role="status" key={item.step}>
+          <div className={noticeStyles['notice']} role="status" key={item.step}>
             <strong>
               {item.label} ·{' '}
               {item.state === 'clarification'
@@ -160,22 +169,22 @@ export function MessageCard({
           </div>
         ))}
       {live.error && (
-        <p className="muted small-text" role="status">
+        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`} role="status">
           {live.error}
         </p>
       )}
       {!message.reply && !message.businessUnavailable && live.feedback?.text && (
-        <div className="assistant-reply provisional-reply">
+        <div className={`${styles['assistant-reply']} ${styles['provisional-reply']}`}>
           <small>
             {['queued', 'running'].includes(live.feedback.state)
               ? '生成中，内容尚未完成'
               : '回复未完成'}
           </small>
-          <p className="preserve">{live.feedback.text}</p>
+          <p className={utilitiesStyles['preserve']}>{live.feedback.text}</p>
         </div>
       )}
       {message.reply && (
-        <div className="assistant-reply">
+        <div className={styles['assistant-reply']}>
           <h3>
             <Sparkles size={16} />
             工作助手
@@ -195,22 +204,26 @@ export function MessageCard({
         ))}
       {own
         ? message.drafts.map((d) => (
-            <div className="progress-card" key={d.id}>
-              <div className="row-between">
+            <div className={styles['progress-card']} key={d.id}>
+              <div className={`${layoutStyles['row-between']} ${styles['slot-row-between']}`}>
                 <h3>{d.content.title}</h3>
                 <Status value={d.status} />
               </div>
               <p>{d.content.summary}</p>
-              {d.content.blocker && <p className="blocker">阻碍：{d.content.blocker}</p>}
-              {d.content.nextStep && <p className="muted">下一步：{d.content.nextStep}</p>}
+              {d.content.blocker && (
+                <p className={utilitiesStyles['error-text']}>阻碍：{d.content.blocker}</p>
+              )}
+              {d.content.nextStep && (
+                <p className={utilitiesStyles['muted']}>下一步：{d.content.nextStep}</p>
+              )}
               <BusinessSources
                 sources={d.businessLinks ?? []}
                 endpoint={messageSourcesPath(message.id)}
               />
               {d.status === 'pending' && (
-                <div className="card-actions">
+                <div className={layoutStyles['card-actions']}>
                   <button
-                    className="primary small"
+                    className={controlsStyles['primary']}
                     disabled={busy}
                     onClick={() => void act([d], 'confirm')}
                   >
@@ -222,7 +235,7 @@ export function MessageCard({
                     编辑
                   </button>
                   <button
-                    className="text-button"
+                    className={`${controlsStyles['text-button']} ${styles['slot-text-button']}`}
                     disabled={busy}
                     onClick={() => void act([d], 'ignore')}
                   >
@@ -236,8 +249,8 @@ export function MessageCard({
             </div>
           ))
         : message.suggestions.map((s) => (
-            <div className="progress-card" key={s.id}>
-              <div className="row-between">
+            <div className={styles['progress-card']} key={s.id}>
+              <div className={`${layoutStyles['row-between']} ${styles['slot-row-between']}`}>
                 <h3>{s.content.title}</h3>
                 <Status value={s.status} />
               </div>

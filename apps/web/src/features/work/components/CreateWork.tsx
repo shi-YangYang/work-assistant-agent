@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { Progress } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -60,11 +62,11 @@ export function CreateWork({ onClose, onSaved }: { onClose: () => void; onSaved:
           />
         </fieldset>
         <ErrorNotice>{error}</ErrorNotice>
-        <div className="form-actions">
+        <div className={layoutStyles['form-actions']}>
           <button type="button" disabled={busy} onClick={onClose}>
             稍后继续
           </button>
-          <BusyButton busy={busy} className="primary">
+          <BusyButton busy={busy} className={controlsStyles['primary']}>
             创建工作
           </BusyButton>
         </div>

@@ -3,12 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "exports": {
-    "./theme.css": "./src/theme.css",
-    "./select.css": "./src/select.css",
-    "./brand.css": "./src/brand.css",
-    "./app-icon.png": "./assets/app-icon.png"
-  },
-  "sideEffects": [
-    "**/*.css"
-  ]
+    "./app-icon.png": "./assets/app-icon.png",
+    "./mark.png": "./assets/mark.png"
+  }
 }

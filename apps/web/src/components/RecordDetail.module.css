@@ -1,0 +1,39 @@
+.record-evidence {
+  border-top: 1px solid var(--line);
+  padding: 16px 0;
+}
+
+.record-evidence > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.record-evidence[open] > summary {
+  margin-bottom: 16px;
+}
+
+.detail[data-compact='true'] {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 20px 0 0;
+}
+.detail[data-compact='true'] .heading {
+  margin-bottom: 16px;
+}
+.detail[data-compact='true'] .heading h2 {
+  font-size: 22px;
+}
+.detail[data-compact='true'] .panel {
+  padding: 16px 0;
+  border: 0;
+  border-radius: 0;
+}
+.detail[data-compact='true'] .panel {
+  margin-bottom: 12px;
+}
+.detail[data-compact='true'] > section {
+  margin-top: 16px;
+}

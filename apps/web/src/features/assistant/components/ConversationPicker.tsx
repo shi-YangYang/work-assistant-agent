@@ -1,3 +1,6 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import styles from './ConversationPicker.module.css'
 import type { Conversation, Page } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import {
@@ -51,7 +54,7 @@ export function ConversationPicker({
   return (
     <div
       ref={picker}
-      className="conversation-picker"
+      className={styles['conversation-picker']}
       onBlur={(event) => {
         if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node))
           setExpanded(false)
@@ -66,7 +69,7 @@ export function ConversationPicker({
     >
       <button
         ref={pickerButton}
-        className="icon-button"
+        className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
         aria-label="会话列表"
         aria-haspopup="dialog"
         aria-expanded={expanded}
@@ -77,24 +80,32 @@ export function ConversationPicker({
         <List size={20} />
       </button>
       {!expanded && (
-        <span className="conversation-tooltip" role="tooltip" id="conversation-picker-tip">
+        <span
+          className={styles['conversation-tooltip']}
+          role="tooltip"
+          id="conversation-picker-tip"
+        >
           会话列表
         </span>
       )}
       {expanded && (
         <div
-          className="conversation-popover"
+          className={styles['conversation-popover']}
           id="conversation-picker"
           role="dialog"
           aria-label="会话列表"
         >
-          <div className="conversation-popover-heading">
+          <div className={styles['conversation-popover-heading']}>
             <h2>会话</h2>
-            <button className="icon-button" aria-label="收起会话列表" onClick={closePicker}>
+            <button
+              className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
+              aria-label="收起会话列表"
+              onClick={closePicker}
+            >
               <X size={18} />
             </button>
           </div>
-          <label className="conversation-search">
+          <label className={styles['conversation-search']}>
             <Search size={15} />
             <input
               autoFocus
@@ -110,19 +121,20 @@ export function ConversationPicker({
             />
           </label>
           <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-          <div className="conversation-list">
+          <div className={styles['conversation-list']}>
             {items.map((item) => (
               <div
                 key={item.id}
-                className={`conversation-row ${item.id === conversationId ? 'active' : ''}`}
+                className={styles['conversation-row']}
+                data-active={item.id === conversationId}
               >
                 <Link to={`/assistant/${item.id}`} title={item.title} onClick={closePicker}>
                   <MessageSquare size={16} />
                   <span>{item.title}</span>
                 </Link>
-                <div className="conversation-row-actions">
+                <div className={styles['conversation-row-actions']}>
                   <button
-                    className="icon-button"
+                    className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
                     aria-label={`重命名会话：${item.title}`}
                     title="重命名"
                     onClick={() => {
@@ -135,7 +147,7 @@ export function ConversationPicker({
                     <Pencil size={15} />
                   </button>
                   <button
-                    className="icon-button danger"
+                    className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']} ${controlsStyles['danger']} ${styles['slot-danger']}`}
                     aria-label={`删除会话：${item.title}`}
                     title="删除会话"
                     onClick={async () => {
@@ -173,7 +185,7 @@ export function ConversationPicker({
             </button>
           )}
           {!items.length && list.data && (
-            <p className="muted">{search ? '没有匹配的会话' : '还没有会话'}</p>
+            <p className={utilitiesStyles['muted']}>{search ? '没有匹配的会话' : '还没有会话'}</p>
           )}
         </div>
       )}

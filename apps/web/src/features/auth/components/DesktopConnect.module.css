@@ -1,0 +1,19 @@
+.desktop-connect-card {
+  text-align: center;
+}
+.desktop-connect-card h1 {
+  margin: 16px 0;
+}
+.desktop-connect-mark {
+  display: grid;
+  place-items: center;
+  margin: auto;
+  width: 62px;
+  height: 62px;
+  color: var(--accent);
+  background: var(--canvas);
+  border-radius: 18px;
+}
+.desktop-connect-card .slot-form-actions {
+  justify-content: center;
+}

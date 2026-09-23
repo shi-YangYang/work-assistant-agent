@@ -1,3 +1,4 @@
+import layoutStyles from '../styles/layout.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { messagePath } from '@web/features/assistant/api/requests'
@@ -14,8 +15,8 @@ export function SourcePage() {
   const location = useLocation()
   const context = detailReturn(location.pathname, location.state)
   return (
-    <div className="page narrow">
-      <div className="page-heading">
+    <div className={`${layoutStyles['page']} ${layoutStyles['narrow']}`} data-scroll-container>
+      <div className={layoutStyles['page-heading']}>
         <div>
           <h2>原始上报</h2>
           <p>来源：{context.label}</p>

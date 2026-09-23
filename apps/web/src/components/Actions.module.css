@@ -1,0 +1,63 @@
+.action-menu {
+  position: relative;
+  align-self: center;
+}
+.action-menu > .slot-icon-button {
+  color: var(--muted);
+}
+.popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 190px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: 9px;
+  padding: 5px;
+  z-index: 30;
+}
+.popover-items {
+  max-height: min(320px, calc(100dvh - 120px));
+  overflow-y: auto;
+}
+.popover:before {
+  content: '';
+  height: 7px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -7px;
+}
+.popover button {
+  display: flex;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  border: 0;
+  white-space: normal;
+}
+@media (max-width: 760px) {
+  .popover {
+    min-width: 185px;
+  }
+}
+.popover[data-side='top'] {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+.popover[data-side='top']:before {
+  top: auto;
+  bottom: -7px;
+}
+@media (max-width: 760px) {
+  .popover button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .popover-items {
+    max-height: calc(var(--app-height, 100dvh) - 100px);
+  }
+}

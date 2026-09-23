@@ -1,3 +1,4 @@
+import loginStyles from '../styles/login-form.module.css'
 import dingtalkIcon from '@web/assets/dingtalk.svg'
 import { BusyButton } from '@web/components/BusyButton'
 import { readLoginProviders } from '@web/features/auth/api/requests'
@@ -17,7 +18,12 @@ export function DingTalkLogin({
 }) {
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
   const [enabled, setEnabled] = useState(false)
-  const redirect = useDingTalkRedirect(drafts)
+  const redirect = useDingTalkRedirect(
+    drafts,
+    undefined,
+    loginStyles['login-notice'],
+    loginStyles['login-notice-actions'],
+  )
   useEffect(() => onBusyChange(redirect.busy), [redirect.busy, onBusyChange])
   useEffect(() => {
     const controller = new AbortController()
@@ -42,8 +48,8 @@ export function DingTalkLogin({
   }, [drafts])
   if (!enabled) return null
   return (
-    <div className="dingtalk-login">
-      <div className="login-divider">或</div>
+    <div className={loginStyles['dingtalk-login']}>
+      <div className={loginStyles['login-divider']}>或</div>
       <BusyButton
         type="button"
         busy={redirect.busy}

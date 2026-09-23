@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import { inputRules, type Member } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -149,11 +151,11 @@ export function MemberForm({
           hint={`${constraints.password.min}–${constraints.password.max} 位。请通过公司认可的方式交给本人。`}
         />
         <ErrorNotice>{failure}</ErrorNotice>
-        <div className="form-actions">
+        <div className={layoutStyles['form-actions']}>
           <button type="button" disabled={busy} onClick={close}>
             取消
           </button>
-          <BusyButton type="submit" busy={busy} className="primary">
+          <BusyButton type="submit" busy={busy} className={controlsStyles['primary']}>
             保存
           </BusyButton>
         </div>

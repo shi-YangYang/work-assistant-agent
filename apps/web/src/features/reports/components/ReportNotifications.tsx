@@ -1,3 +1,6 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import styles from './ReportNotifications.module.css'
 import type { NotificationPage } from '@paa/api-contracts'
 import { Empty } from '@web/components/Empty'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -26,7 +29,7 @@ export function ReportNotifications() {
   return (
     <>
       <button
-        className="icon-button notification-launch"
+        className={`${controlsStyles['icon-button']} ${styles['notification-launch']}`}
         aria-label={`汇报通知${list.data?.unread ? `，${list.data.unread} 条未读` : ''}`}
         title="汇报通知"
         onClick={() => {
@@ -36,7 +39,7 @@ export function ReportNotifications() {
       >
         <Bell size={19} />
         {!!list.data?.unread && (
-          <span className="notification-count">
+          <span className={styles['notification-count']}>
             {list.data.unread > 99 ? '99+' : list.data.unread}
           </span>
         )}
@@ -45,11 +48,11 @@ export function ReportNotifications() {
         <Modal title="汇报通知" onClose={() => setOpen(false)}>
           <ErrorNotice retry={list.refresh}>{failure || list.error}</ErrorNotice>
           {list.data?.items.length ? (
-            <div className="notification-list">
+            <div className={styles['notification-list']}>
               {list.data.items.map((item) => (
-                <div className={`notification-item ${item.read ? '' : 'unread'}`} key={item.id}>
+                <div className={styles['notification-item']} data-unread={!item.read} key={item.id}>
                   <button
-                    className="notification-content"
+                    className={styles['notification-content']}
                     onClick={async () => {
                       if (
                         drafts.recording &&
@@ -78,7 +81,7 @@ export function ReportNotifications() {
                   </button>
                   {!item.read && (
                     <button
-                      className="text-button"
+                      className={`${controlsStyles['text-button']}`}
                       onClick={async () => {
                         try {
                           await markNotificationRead(item, {})
@@ -98,7 +101,7 @@ export function ReportNotifications() {
             list.data && <Empty title="暂无汇报通知" />
           )}
           {(cursor !== '0' || list.data?.nextCursor) && (
-            <div className="form-actions">
+            <div className={layoutStyles['form-actions']}>
               <button
                 disabled={cursor === '0'}
                 onClick={() => setCursor(String(Math.max(0, Number(cursor) - 20)))}

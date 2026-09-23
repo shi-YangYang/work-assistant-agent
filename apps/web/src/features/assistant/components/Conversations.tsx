@@ -1,3 +1,7 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './Conversations.module.css'
 import type { Conversation, Page } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -148,9 +152,9 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     setFailure('')
   }
   return (
-    <div className="assistant-workspace">
-      <section className="conversation-main">
-        <header className="conversation-heading">
+    <div className={styles['assistant-workspace']}>
+      <section className={styles['conversation-main']}>
+        <header className={styles['conversation-heading']}>
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
           <button onClick={create}>
             <Plus size={16} />
@@ -188,7 +192,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
               {resumeError}
             </ErrorNotice>
             {(!resumed || lastConversationId) && !resumeError && (
-              <p className="muted">正在打开上次会话…</p>
+              <p className={utilitiesStyles['muted']}>正在打开上次会话…</p>
             )}
           </>
         )}
@@ -250,11 +254,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
               onChange={() => setTitleError('')}
             />
             <ErrorNotice>{failure}</ErrorNotice>
-            <div className="form-actions">
+            <div className={layoutStyles['form-actions']}>
               <button type="button" onClick={() => setEditing(null)}>
                 取消
               </button>
-              <BusyButton busy={busy} className="primary">
+              <BusyButton busy={busy} className={controlsStyles['primary']}>
                 保存
               </BusyButton>
             </div>
@@ -268,13 +272,13 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             <p>其中 {impact.retainedSources} 条消息已作为工作或报告来源，将保留在业务记录中。</p>
           )}
           <ErrorNotice>{failure}</ErrorNotice>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button disabled={busy} onClick={() => setDeleting(null)}>
               取消
             </button>
             <BusyButton
               busy={busy}
-              className="danger"
+              className={controlsStyles['danger']}
               onClick={async () => {
                 setBusy(true)
                 try {

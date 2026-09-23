@@ -175,3 +175,60 @@ it('rejects reverse dependencies, direct UI requests and runtime cycles while al
     ),
   ).toEqual([])
 })
+
+it('keeps CSS local to Web components and each application owns its global foundations', () => {
+  const root = resolve(import.meta.dirname, '../../apps/web/src')
+  const key = (path: string) => relative(root, path).replaceAll('\\', '/')
+  const errors: string[] = []
+  const globals = new Set(['index.css', 'theme.css', 'select.css', 'brand.css', 'base.css'])
+  function inspect(directory: string) {
+    for (const item of readdirSync(directory, { withFileTypes: true })) {
+      const path = resolve(directory, item.name)
+      if (item.isDirectory()) {
+        inspect(path)
+        continue
+      }
+      if (!/\.(css|tsx?)$/.test(path)) continue
+      const source = readFileSync(path, 'utf8')
+      const name = key(path)
+      if (path.endsWith('.css') && !path.endsWith('.module.css')) {
+        if (dirname(path) !== resolve(root, 'styles') || !globals.has(item.name))
+          errors.push(`${name} is unowned global CSS`)
+      }
+      if (path.endsWith('.module.css') && /(?:@value|composes:)[^;]+from\s*['"]/.test(source))
+        errors.push(`${name} imports another Module's selectors`)
+      const imports = [...source.matchAll(/(?:from\s*|import\s*|@import\s*)['"]([^'"]+\.css)['"]/g)]
+      for (const match of imports) {
+        const specifier = match[1]
+        if (specifier.startsWith('@paa/') || specifier.includes('desktop'))
+          errors.push(`${name} imports cross-application CSS: ${specifier}`)
+        const target = specifier.startsWith('@web/')
+          ? resolve(root, specifier.slice(5))
+          : resolve(dirname(path), specifier)
+        // Reading imports also catches missing CSS entry points before browser startup.
+        readFileSync(target, 'utf8')
+        if (!specifier.endsWith('.module.css')) {
+          if (name !== 'main.tsx' && name !== 'styles/index.css')
+            errors.push(`${name} bypasses the global CSS entry`)
+          if (
+            dirname(target) !== resolve(root, 'styles') ||
+            !globals.has(target.split(/[\\/]/).at(-1)!)
+          )
+            errors.push(`${name} aggregates business CSS`)
+        }
+        const fromFeature = name.match(/^features\/([^/]+)\//)?.[1]
+        const toFeature = key(target).match(/^features\/([^/]+)\//)?.[1]
+        if (toFeature && fromFeature !== toFeature)
+          errors.push(`${name} imports private feature CSS: ${key(target)}`)
+      }
+    }
+  }
+  inspect(root)
+  const desktopEntry = readFileSync(resolve(root, '../../desktop/src/renderer/styles.css'), 'utf8')
+  expect(desktopEntry).not.toMatch(/@paa\/ui-web\/.*\.css|apps\/web/)
+  const exports = JSON.parse(
+    readFileSync(resolve(root, '../../../packages/ui-web/package.json'), 'utf8'),
+  ).exports
+  expect(Object.keys(exports).some((name) => name.endsWith('.css'))).toBe(false)
+  expect(errors).toEqual([])
+})

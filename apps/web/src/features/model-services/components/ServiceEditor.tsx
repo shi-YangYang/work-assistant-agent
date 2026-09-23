@@ -1,3 +1,7 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ConflictRecovery } from '@web/components/ConflictRecovery'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -39,23 +43,32 @@ export function ServiceEditor({
   children: React.ReactNode
 }) {
   return (
-    <div className="service-detail">
-      <div className="service-detail-toolbar">
-        <button className="text-button" disabled={!!busy} onClick={() => select(null)}>
+    <div className={modelServicesStyles['service-detail']}>
+      <div className={modelServicesStyles['service-detail-toolbar']}>
+        <button
+          className={`${controlsStyles['text-button']} ${modelServicesStyles['slot-text-button']}`}
+          disabled={!!busy}
+          onClick={() => select(null)}
+        >
           <ArrowLeft size={16} /> 全部服务
         </button>
-        <span className={`service-save-state${dirty ? ' changed' : ''}`}>
+        <span className={modelServicesStyles['service-save-state']} data-changed={dirty}>
           {dirty ? '有未保存的更改' : '已保存'}
         </span>
       </div>
-      <section className="sectioned-panel model-editor" key={draft.id}>
-        <header className="model-editor-heading">
+      <section
+        className={`${layoutStyles['sectioned-panel']} ${modelServicesStyles['model-editor']}`}
+        key={draft.id}
+      >
+        <header className={modelServicesStyles['model-editor-heading']}>
           <div>
             <h3>{draft.name || '新服务'}</h3>
-            <span className="muted">{draft.models.length} 个模型</span>
+            <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+              {draft.models.length} 个模型
+            </span>
           </div>
           <button
-            className="icon-button danger"
+            className={`${controlsStyles['icon-button']} ${controlsStyles['danger']}`}
             aria-label={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
             title={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
             disabled={!!busy}
@@ -65,7 +78,7 @@ export function ServiceEditor({
           </button>
         </header>
         {children}
-        <div className="model-editor-feedback">
+        <div className={modelServicesStyles['model-editor-feedback']}>
           <ErrorNotice>{error}</ErrorNotice>
           {conflict && draft.revision > 0 && (
             <ConflictRecovery
@@ -85,8 +98,8 @@ export function ServiceEditor({
             />
           )}
         </div>
-        <footer className="model-savebar">
-          <span className="muted">
+        <footer className={modelServicesStyles['model-savebar']}>
+          <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
             {dirty
               ? '保存后生效'
               : draft.models.length
@@ -97,7 +110,7 @@ export function ServiceEditor({
             保存服务
           </button>
           <BusyButton
-            className="primary"
+            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
             busy={busy === 'save'}
             disabled={!!busy || !connectionReady || !draft.models.length}
             onClick={() => {

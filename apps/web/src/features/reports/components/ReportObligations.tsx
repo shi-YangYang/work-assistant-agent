@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
+import statusStyles from '../../../components/Status.module.css'
+import styles from './ReportObligations.module.css'
 import type { ObligationPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { Empty } from '@web/components/Empty'
@@ -37,14 +41,21 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
     setParams(next)
   }
   return (
-    <section className={team ? 'page' : 'report-obligations'} aria-label="汇报待办">
+    <section
+      className={team ? layoutStyles['page'] : styles['report-obligations']}
+      data-scroll-container={team || undefined}
+      data-embedded={!team}
+      aria-label="汇报待办"
+    >
       {team && (
-        <div className="page-heading">
+        <div className={`${layoutStyles['page-heading']}`}>
           <h2>汇报情况</h2>
           <button onClick={list.refresh}>刷新</button>
         </div>
       )}
-      <div className={`toolbar obligation-filters ${team ? '' : 'records-toolbar'}`}>
+      <div
+        className={`${layoutStyles['toolbar']} ${styles['obligation-filters']} ${team ? '' : recordLayoutStyles['records-toolbar']}`}
+      >
         {team && (
           <select
             aria-label="报告类型"
@@ -66,7 +77,9 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
           <option value="submitted">已提交</option>
           <option value="cancelled">已撤销</option>
         </select>
-        <label className="record-date-field">
+        <label
+          className={`${recordLayoutStyles['record-date-field']} ${styles['slot-record-date-field']}`}
+        >
           <span>汇报周期</span>
           <input
             type="date"
@@ -87,7 +100,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
         )}
       </div>
       {team && list.data && (
-        <div className="metrics obligation-metrics">
+        <div className={`${layoutStyles['metrics']} ${styles['obligation-metrics']}`}>
           <div>
             <span>应提交</span>
             <strong>{list.data.counts.expected}</strong>
@@ -105,35 +118,50 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
           </div>
         </div>
       )}
-      <ErrorNotice retry={list.refresh}>{failure || list.error}</ErrorNotice>
-      <div className={team ? '' : 'records-results'}>
+      <ErrorNotice className={styles['obligation-notice']} retry={list.refresh}>
+        {failure || list.error}
+      </ErrorNotice>
+      <div className={team ? '' : recordLayoutStyles['records-results']}>
         {!list.data && !list.error && (
-          <p className="records-loading" role="status">
+          <p className={recordLayoutStyles['records-loading']} role="status">
             正在读取汇报待办…
           </p>
         )}
         {list.data?.items.length ? (
-          <div className="record-list">
+          <div className={recordLayoutStyles['record-list']}>
             {list.data.items.map((item) => (
-              <div className="record-row obligation-row" key={item.id}>
-                <span className="record-type-icon" aria-hidden="true">
+              <div
+                className={`${recordLayoutStyles['record-row']} ${styles['obligation-row']}`}
+                key={item.id}
+              >
+                <span className={recordLayoutStyles['record-type-icon']} aria-hidden="true">
                   <ClipboardCheck size={20} />
                 </span>
-                <div className="record-main">
+                <div
+                  className={`${recordLayoutStyles['record-main']} ${styles['slot-record-main']}`}
+                >
                   <h3>
                     {team && `${item.name} · `}
                     {!team && (kind === 'weekly' ? '周报 · ' : '日报 · ')}
-                    <span className="record-period">{item.period}</span>
+                    <span className={recordLayoutStyles['record-period']}>{item.period}</span>
                     {kind === 'weekly' && (
                       <>
                         {' '}
-                        — <span className="record-period">{item.periodEnd}</span>
+                        —{' '}
+                        <span className={recordLayoutStyles['record-period']}>
+                          {item.periodEnd}
+                        </span>
                       </>
                     )}
                   </h3>
                   <p>
                     截止 {reportDeadline(item)}{' '}
-                    <span className={`status ${item.state}`}>{obligationLabel(item.state)}</span>
+                    <span
+                      className={`${statusStyles['status']} ${styles['obligation-status']}`}
+                      data-status={item.state}
+                    >
+                      {obligationLabel(item.state)}
+                    </span>
                   </p>
                   {item.submittedAt && (
                     <small>提交于 {new Date(item.submittedAt).toLocaleString('zh-CN')}</small>
@@ -154,7 +182,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
                 </div>
                 {item.reportId ? (
                   <Link
-                    className="button"
+                    className={styles['obligation-link']}
                     to={`/reports/${item.reportId}`}
                     state={detailState(location)}
                   >
@@ -212,7 +240,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
         )}
       </div>
       {(params.get('cursor') || list.data?.nextCursor) && (
-        <div className="form-actions">
+        <div className={`${layoutStyles['form-actions']} ${styles['slot-form-actions']}`}>
           <button
             disabled={!params.get('cursor')}
             onClick={() =>

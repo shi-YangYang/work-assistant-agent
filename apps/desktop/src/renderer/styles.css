@@ -1,6 +1,6 @@
-@import '@paa/ui-web/select.css';
-@import '@paa/ui-web/theme.css';
-@import '@paa/ui-web/brand.css';
+@import './styles/select.css';
+@import './styles/theme.css';
+@import './styles/brand.css';
 * {
   box-sizing: border-box;
 }

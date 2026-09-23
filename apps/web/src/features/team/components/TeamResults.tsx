@@ -1,3 +1,8 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
+import statusStyles from '../../../components/Status.module.css'
+import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
 import { RecordEmpty } from '@web/components/RecordEmpty'
 import { Status } from '@web/components/Status'
@@ -26,14 +31,14 @@ export function TeamResults({
   open: (row: Row, replace?: boolean) => void
 }) {
   return (
-    <div className="team-results">
+    <div className={teamStyles['team-results']}>
       {!data && !list.error && (
-        <p className="records-loading" role="status">
+        <p className={recordLayoutStyles['records-loading']} role="status">
           正在读取团队记录…
         </p>
       )}
       {data && (
-        <div className="team-result-caption">
+        <div className={teamStyles['team-result-caption']}>
           <span>
             {view === 'work'
               ? scope === 'current'
@@ -44,7 +49,7 @@ export function TeamResults({
           </span>
           {(params.get('q') || params.get('member') || status) && (
             <button
-              className="text-button"
+              className={`${controlsStyles['text-button']} ${teamStyles['slot-text-button']}`}
               onClick={() => update({ q: '', member: '', [`${view}Status`]: '' })}
             >
               清除筛选
@@ -53,15 +58,17 @@ export function TeamResults({
         </div>
       )}
       {data?.items.length ? (
-        <div className="team-records">
+        <div>
           {data.items.map((row) => (
-            <div className="team-record" key={row.id}>
+            <div className={teamStyles['team-record']} key={row.id}>
               <button
-                className="team-member"
+                className={teamStyles['team-member']}
                 title={`只看${row.member.name}`}
                 onClick={() => update({ member: row.member.id })}
               >
-                <span className="avatar">{row.member.name.slice(0, 1)}</span>
+                <span className={`${layoutStyles['avatar']} ${teamStyles['slot-avatar']}`}>
+                  {row.member.name.slice(0, 1)}
+                </span>
                 <span>
                   {row.member.name}
                   {!row.member.active && (
@@ -70,41 +77,43 @@ export function TeamResults({
                 </span>
               </button>
               {isWork(row) ? (
-                <button className="team-record-content" onClick={() => open(row)}>
-                  <div className="team-record-title">
+                <button className={teamStyles['team-record-content']} onClick={() => open(row)}>
+                  <div className={teamStyles['team-record-title']}>
                     <h3>{row.work.title}</h3>
                     <Status value={row.work.status} />
                   </div>
                   <p>{row.work.summary || '暂无工作说明'}</p>
                   {row.work.blocker && row.work.status !== 'done' && (
-                    <small className="team-blocker">阻碍：{row.work.blocker}</small>
+                    <small className={teamStyles['team-blocker']}>阻碍：{row.work.blocker}</small>
                   )}
-                  <div className="team-record-meta">
+                  <div className={teamStyles['team-record-meta']}>
                     <span>
                       {scope === 'updated' ? '更新于' : '最近更新'} {dateLabel(row.work.updatedAt)}
                     </span>
                     {row.work.dueDate && <span>截止 {row.work.dueDate}</span>}
-                    <span className="team-read">
+                    <span className={teamStyles['team-read']}>
                       查看工作
                       <ChevronRight size={15} />
                     </span>
                   </div>
                 </button>
               ) : (
-                <div className="team-report-content">
-                  <div className="team-record-title">
+                <div className={teamStyles['team-report-content']}>
+                  <div className={teamStyles['team-record-title']}>
                     <h3>
                       {row.period}
                       {row.kind === 'weekly' ? ` — ${row.periodEnd}` : ''}
                       <small>{row.kind === 'daily' ? '日报' : '周报'}</small>
                     </h3>
-                    <span className={`status ${row.state}`}>{obligationLabel(row.state)}</span>
+                    <span className={statusStyles['status']} data-status={row.state}>
+                      {obligationLabel(row.state)}
+                    </span>
                   </div>
                   <p>
                     {row.summary ||
                       (row.state === 'cancelled' ? '该周期的汇报安排已撤销' : '尚未提交报告')}
                   </p>
-                  <div className="team-record-meta">
+                  <div className={teamStyles['team-record-meta']}>
                     <span>
                       {row.submittedAt
                         ? `提交于 ${dateLabel(row.submittedAt)}`
@@ -114,7 +123,10 @@ export function TeamResults({
                     </span>
                     {!row.scheduled && row.reportId && <span>自主提交</span>}
                     {row.reportId && (
-                      <button className="text-button team-read" onClick={() => open(row)}>
+                      <button
+                        className={`${controlsStyles['text-button']} ${teamStyles['slot-text-button']} ${teamStyles['team-read']}`}
+                        onClick={() => open(row)}
+                      >
                         查看报告
                         <ChevronRight size={15} />
                       </button>
@@ -128,6 +140,7 @@ export function TeamResults({
       ) : (
         data && (
           <RecordEmpty
+            className={teamStyles['team-empty']}
             icon={view === 'work' ? <BriefcaseBusiness size={27} /> : <ClipboardCheck size={27} />}
             title={view === 'work' ? '暂无符合条件的工作' : '暂无符合条件的汇报'}
           >

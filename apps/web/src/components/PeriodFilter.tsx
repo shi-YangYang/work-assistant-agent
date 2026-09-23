@@ -1,3 +1,5 @@
+import styles from './PeriodFilter.module.css'
+import formFieldStyles from './FormField.module.css'
 import type { DateRange } from '@paa/api-contracts'
 import { todayIn } from '@web/utils/date'
 import { customRangeError } from '@web/utils/date-range'
@@ -8,7 +10,11 @@ export function PeriodFilter({
   params,
   range,
   change,
+  className = '',
+  captionClassName = '',
 }: {
+  className?: string
+  captionClassName?: string
   params: URLSearchParams
   range?: DateRange
   change: (values: Record<string, string>) => void
@@ -28,7 +34,7 @@ export function PeriodFilter({
   }
   return (
     <>
-      <div className="period-filter">
+      <div className={`${styles['period-filter']} ${className}`}>
         <select
           aria-label="日期范围"
           value={period}
@@ -48,7 +54,7 @@ export function PeriodFilter({
           <option value="custom">自定义</option>
         </select>
         {period === 'custom' && (
-          <div className="team-date-range">
+          <div className={styles['team-date-range']}>
             <label>
               开始日期
               <input
@@ -92,12 +98,12 @@ export function PeriodFilter({
         )}
       </div>
       {error && (
-        <small className="form-field-error" id={errorId} role="alert">
+        <small className={formFieldStyles['form-field-error']} id={errorId} role="alert">
           {error}，筛选尚未更新。
         </small>
       )}
       {range && (
-        <p className="period-caption">
+        <p className={`${styles['period-caption']} ${captionClassName}`}>
           {range.start} — {range.end} · {timezoneLabel(range.timezone)}
         </p>
       )}

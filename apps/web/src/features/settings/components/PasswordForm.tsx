@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import { inputRules, type DingTalkAccount } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -145,12 +147,12 @@ export function PasswordForm({
   }
 
   return (
-    <form className="password-form" ref={form} noValidate aria-busy={busy} onSubmit={submit}>
+    <form ref={form} noValidate aria-busy={busy} onSubmit={submit}>
       {hasPassword && !verified && <FormField {...input('currentPassword')} />}
       {account?.bound && account.available && (
         <>
           {hasPassword && !verified && (
-            <label className="check">
+            <label className={layoutStyles['check']}>
               <input
                 type="checkbox"
                 checked={useDingTalk}
@@ -185,8 +187,13 @@ export function PasswordForm({
       <FormField {...input('confirmPassword')} />
       <small>保存后所有已登录设备均需重新登录。</small>
       <ErrorNotice>{failure}</ErrorNotice>
-      <div className="form-actions">
-        <BusyButton type="submit" busy={busy} className="primary" disabled={blocked}>
+      <div className={layoutStyles['form-actions']}>
+        <BusyButton
+          type="submit"
+          busy={busy}
+          className={controlsStyles['primary']}
+          disabled={blocked}
+        >
           保存密码并重新登录
         </BusyButton>
       </div>

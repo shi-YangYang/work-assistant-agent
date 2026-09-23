@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -241,22 +245,32 @@ export function ModelServices() {
       .map((purpose) => purposeNames[purpose])
   }
   return (
-    <div className="settings-page model-management">
-      <div className="page-heading">
+    <div className={`${layoutStyles['settings-page']} ${modelServicesStyles['model-management']}`}>
+      <div
+        className={`${layoutStyles['page-heading']} ${modelServicesStyles['slot-page-heading']}`}
+      >
         <div>
           <h2>模型服务管理</h2>
         </div>
         {!draft && tab === 'services' && (
-          <button className="primary" disabled={!!busy || !resource.data} onClick={createService}>
+          <button
+            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
+            disabled={!!busy || !resource.data}
+            onClick={createService}
+          >
             <Plus size={16} /> 添加服务
           </button>
         )}
       </div>
-      <div className="tabs" role="tablist" aria-label="模型管理页面">
+      <div
+        className={`${layoutStyles['tabs']} ${modelServicesStyles['slot-tabs']}`}
+        role="tablist"
+        aria-label="模型管理页面"
+      >
         <button
           role="tab"
           aria-selected={tab === 'services'}
-          className={tab === 'services' ? 'active' : ''}
+          data-active={tab === 'services'}
           disabled={!!busy}
           onClick={() => setTab('services')}
         >
@@ -265,7 +279,7 @@ export function ModelServices() {
         <button
           role="tab"
           aria-selected={tab === 'routing'}
-          className={tab === 'routing' ? 'active' : ''}
+          data-active={tab === 'routing'}
           disabled={!!busy}
           onClick={() => {
             setAssignServiceId('')
@@ -286,16 +300,21 @@ export function ModelServices() {
       {tab === 'routing' ? (
         <>
           {assignServiceId && (
-            <div className="model-next-step">
+            <div className={modelServicesStyles['model-next-step']}>
               <Check size={18} />
               <span>服务已保存，选择下方各功能使用的模型。</span>
-              <button className="text-button" onClick={() => setTab('services')}>
+              <button
+                className={`${controlsStyles['text-button']} ${modelServicesStyles['slot-text-button']}`}
+                onClick={() => setTab('services')}
+              >
                 返回服务
               </button>
             </div>
           )}
           {assignServiceId && !services.some((service) => service.id === assignServiceId) ? (
-            <p className="muted">正在更新可选模型…</p>
+            <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+              正在更新可选模型…
+            </p>
           ) : (
             <Routing
               services={services}

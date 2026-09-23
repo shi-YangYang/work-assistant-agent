@@ -1,0 +1,31 @@
+.chat-scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  scroll-behavior: smooth;
+}
+.chat-content {
+  padding: 24px 24px 8px;
+}
+.load-more {
+  display: flex;
+  margin: 0 auto 20px;
+}
+@media (max-width: 760px) {
+  .chat-content {
+    padding: 16px 16px 4px;
+  }
+}
+.assistant-examples {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+@media (max-width: 760px) {
+  .assistant-examples button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

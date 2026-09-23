@@ -1,3 +1,4 @@
+import styles from './Shell.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { AppRoutes } from '@web/app/AppRoutes'
 import { pages, settingsPages } from '@web/app/navigation-items'
@@ -66,7 +67,7 @@ export function Shell({
   const scrollPositions = useRef(new Map<string, number>())
   useLayoutEffect(() => {
     const key = location.pathname + location.search
-    const node = document.querySelector<HTMLElement>('.page, .settings-layout')
+    const node = document.querySelector<HTMLElement>('[data-scroll-container]')
     if (node) node.scrollTop = scrollPositions.current.get(key) ?? 0
     const positions = scrollPositions.current
     return () => {
@@ -172,7 +173,7 @@ export function Shell({
         }}
       >
         <div
-          className={`company-shell ${expandedNav ? 'nav-expanded' : ''}`}
+          className={`${styles['company-shell']} ${expandedNav ? styles['nav-expanded'] : ''}`}
           onClickCapture={(event) => {
             if (
               drafts.recording &&
@@ -186,7 +187,7 @@ export function Shell({
         >
           {expandedNav && (
             <button
-              className="nav-backdrop"
+              className={styles['nav-backdrop']}
               aria-label="收起导航"
               onClick={() => setExpandedNav(false)}
             />
@@ -202,7 +203,7 @@ export function Shell({
             accountName={accountName}
             logout={logout}
           />
-          <section className="main">
+          <section className={styles['main']}>
             <Topbar setCommands={setCommands} />
             <ConnectionNotice />
             {!['/settings/account', '/settings/login'].includes(location.pathname) && (
@@ -214,7 +215,7 @@ export function Shell({
               setExpandedNav={setExpandedNav}
               onLogout={onLogout}
             />
-            <nav className="mobile-nav">
+            <nav className={styles['mobile-nav']}>
               {allowed
                 .filter((p) => p.path !== '/members')
                 .map((p) => (
@@ -233,7 +234,7 @@ export function Shell({
           </section>
         </div>
         {toast && (
-          <div className="toast" role="status">
+          <div className={styles['toast']} role="status">
             {toast}
           </div>
         )}

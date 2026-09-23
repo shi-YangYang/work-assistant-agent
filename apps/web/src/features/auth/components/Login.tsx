@@ -1,3 +1,5 @@
+import formFieldStyles from '../../../components/FormField.module.css'
+import loginStyles from '../styles/login-form.module.css'
 import { inputRules, type Identity } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -74,7 +76,11 @@ export function Login({
 
   function fieldError(field: Field) {
     return errors[field] ? (
-      <small className="form-field-error" id={`login-${field}-error`} role="alert">
+      <small
+        className={`${formFieldStyles['form-field-error']} ${loginStyles['login-field-error']}`}
+        id={`login-${field}-error`}
+        role="alert"
+      >
         {errors[field]}
       </small>
     ) : null
@@ -130,21 +136,21 @@ export function Login({
         setShowPassword(false)
       }}
     >
-      <section className="book-form" aria-labelledby="login-title">
-        <header className="book-form__header">
-          <p className="book-form__eyebrow">WELCOME BACK</p>
+      <section className={loginStyles['book-form']} aria-labelledby="login-title">
+        <header className={loginStyles['book-form__header']}>
+          <p className={loginStyles['book-form__eyebrow']}>WELCOME BACK</p>
           <h1 id="login-title">登录工作助手</h1>
-          <p className="book-form__caption">你的工作，从这里继续。</p>
+          <p className={loginStyles['book-form__caption']}>你的工作，从这里继续。</p>
         </header>
-        <DingTalkResult />
+        <DingTalkResult className={loginStyles['login-notice']} />
         <form
-          className="book-form__form"
+          className={loginStyles['book-form__form']}
           ref={formRef}
           noValidate
           aria-busy={busy}
           onSubmit={submit}
         >
-          <div className="book-form__field">
+          <div className={loginStyles['book-form__field']}>
             <label htmlFor="login-username">账号</label>
             <input
               {...input('username')}
@@ -155,7 +161,9 @@ export function Login({
             />
             {fieldError('username')}
           </div>
-          <div className="book-form__field book-form__password">
+          <div
+            className={`${loginStyles['book-form__field']} ${loginStyles['book-form__password']}`}
+          >
             <label htmlFor="login-password">密码</label>
             <input
               {...input('password')}
@@ -165,7 +173,7 @@ export function Login({
             />
             <button
               type="button"
-              className="book-form__visibility"
+              className={loginStyles['book-form__visibility']}
               aria-label={showPassword ? '隐藏密码' : '显示密码'}
               aria-pressed={showPassword}
               onClick={() => setShowPassword((value) => !value)}
@@ -174,14 +182,23 @@ export function Login({
             </button>
             {fieldError('password')}
           </div>
-          <ErrorNotice>{error}</ErrorNotice>
-          <BusyButton busy={busy} disabled={dingtalkBusy} className="book-form__submit">
+          <ErrorNotice
+            className={loginStyles['login-notice']}
+            actionsClassName={loginStyles['login-notice-actions']}
+          >
+            {error}
+          </ErrorNotice>
+          <BusyButton
+            busy={busy}
+            disabled={dingtalkBusy}
+            className={loginStyles['book-form__submit']}
+          >
             <span>登录</span>
             <span aria-hidden="true">↗</span>
           </BusyButton>
         </form>
         <DingTalkLogin vault={vault} disabled={busy} onBusyChange={setDingtalkBusy} />
-        <small className="book-form__help">尚无账号？请联系公司管理员</small>
+        <small className={loginStyles['book-form__help']}>尚无账号？请联系公司管理员</small>
       </section>
     </LoginBook>
   )

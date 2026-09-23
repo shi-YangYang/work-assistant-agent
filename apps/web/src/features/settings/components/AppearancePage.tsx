@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import styles from './AppearancePage.module.css'
 import type { Theme } from '@paa/api-contracts'
 import { useEffect, useState } from 'react'
 
@@ -23,17 +25,17 @@ export function AppearancePage() {
     return () => media.removeEventListener('change', change)
   }, [value])
   return (
-    <div className="settings-page">
+    <div className={layoutStyles['settings-page']}>
       <h2>外观</h2>
-      <div className="theme-options">
+      <div className={styles['theme-options']}>
         {(['light', 'dark', 'system'] as const).map((theme) => (
           <button
             key={theme}
-            className={theme === value ? 'selected' : ''}
+            data-selected={theme === value}
             onClick={() => setValue(theme)}
             aria-pressed={theme === value}
           >
-            <div className={`theme-preview ${theme}`}>
+            <div className={styles['theme-preview']} data-theme-preview={theme}>
               <i />
               <span />
             </div>

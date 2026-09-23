@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './AccountPage.module.css'
 import { inputRules, type DingTalkAccount, type Member } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
@@ -75,24 +79,25 @@ export function DingTalkAccountPage({
     },
   }
   return (
-    <div className="settings-page account-page">
-      <div className="row-between account-heading">
+    <div className={`${layoutStyles['settings-page']} ${styles['account-page']}`}>
+      <div className={`${layoutStyles['row-between']} ${styles['account-heading']}`}>
         <h2>账户</h2>
         <Link to="/settings/support">问题反馈与处理结果</Link>
       </div>
       <DingTalkResult />
       <ErrorNotice retry={account.refresh}>{error || account.error}</ErrorNotice>
-      <div className="sectioned-panel">
+      <div className={layoutStyles['sectioned-panel']}>
         <PanelSection
+          bodyClassName={styles['settings-section-body']}
           title="账号信息"
           status={member?.role === 'admin' ? '管理员' : '用户'}
           defaultOpen
         >
-          <div className="account-summary">
-            <span className="avatar">{member?.name.slice(0, 1)}</span>
+          <div className={styles['account-summary']}>
+            <span className={layoutStyles['avatar']}>{member?.name.slice(0, 1)}</span>
             <strong>{member?.name}</strong>
           </div>
-          <div className="account-username">
+          <div className={styles['account-username']}>
             <label>
               登录账号
               <input readOnly value={member?.username ?? ''} />
@@ -114,6 +119,7 @@ export function DingTalkAccountPage({
           {account.data && <p>钉钉：{account.data.bound ? '已绑定' : '未绑定'}</p>}
         </PanelSection>
         <PanelSection
+          bodyClassName={styles['settings-section-body']}
           title={hasPassword ? '修改密码' : '设置本地密码'}
           status={hasPassword ? '已设置密码' : '未设置密码'}
           defaultOpen={!hasPassword || verified}
@@ -127,7 +133,11 @@ export function DingTalkAccountPage({
           />
         </PanelSection>
         {account.data && (
-          <PanelSection title="钉钉账号关联" status={account.data.bound ? '已绑定' : '未绑定'}>
+          <PanelSection
+            bodyClassName={styles['settings-section-body']}
+            title="钉钉账号关联"
+            status={account.data.bound ? '已绑定' : '未绑定'}
+          >
             {!account.data.bound ? (
               <>
                 <p>验证当前本地密码后绑定，保留现有账号和业务数据。</p>
@@ -143,7 +153,9 @@ export function DingTalkAccountPage({
                 >
                   验证密码并绑定钉钉
                 </BusyButton>
-                {!account.data.available && <p className="muted">管理员尚未开启钉钉登录。</p>}
+                {!account.data.available && (
+                  <p className={utilitiesStyles['muted']}>管理员尚未开启钉钉登录。</p>
+                )}
               </>
             ) : (
               <>
@@ -162,7 +174,7 @@ export function DingTalkAccountPage({
                     <BusyButton
                       busy={busy}
                       disabled={!localPassword && !verified}
-                      className="danger"
+                      className={controlsStyles['danger']}
                       onClick={async () => {
                         if (!verified && !validateLocalPassword()) return
                         if (!window.confirm('解绑钉钉并退出所有设备？之后请用本地密码登录。'))
@@ -193,7 +205,7 @@ export function DingTalkAccountPage({
       </div>
       {redirect.guard}
       <button
-        className="danger"
+        className={controlsStyles['danger']}
         onClick={async () => {
           try {
             await logout({})

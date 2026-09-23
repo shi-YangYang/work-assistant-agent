@@ -1,3 +1,4 @@
+import authLayoutStyles from '../components/AuthLayout.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { isCancelled, setCsrf } from '@web/api/client'
 import { Shell } from '@web/app/Shell'
@@ -59,7 +60,7 @@ export function App() {
   }
   if (loading)
     return (
-      <div className="login">
+      <div className={authLayoutStyles['login']}>
         <p>正在连接…</p>
       </div>
     )

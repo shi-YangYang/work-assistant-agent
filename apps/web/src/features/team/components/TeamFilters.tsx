@@ -1,3 +1,5 @@
+import searchInputStyles from '../../../components/SearchInput.module.css'
+import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
 import { PeriodFilter } from '@web/components/PeriodFilter'
 import { SearchInput } from '@web/components/SearchInput'
@@ -20,8 +22,8 @@ export function TeamFilters({
   scope: 'updated' | 'current'
 }) {
   return (
-    <div className="team-toolbar">
-      <div className="work-search">
+    <div className={teamStyles['team-toolbar']}>
+      <div className={`${searchInputStyles['work-search']} ${teamStyles['slot-work-search']}`}>
         <Search size={17} aria-hidden="true" />
         <SearchInput
           aria-label="搜索团队内容"
@@ -54,7 +56,13 @@ export function TeamFilters({
         <option value="all">全部员工</option>
       </select>
       {(view === 'reports' || scope === 'updated') && (
-        <PeriodFilter params={params} range={data?.range} change={update} />
+        <PeriodFilter
+          className={teamStyles['team-period-filter']}
+          captionClassName={teamStyles['team-period-caption']}
+          params={params}
+          range={data?.range}
+          change={update}
+        />
       )}
     </div>
   )

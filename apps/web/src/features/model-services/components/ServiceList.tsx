@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyService } from '@paa/api-contracts'
 import type { Listing } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
@@ -24,20 +28,30 @@ export function ServiceList({
   select: (id: string | null) => void
 }) {
   return (
-    <section className="sectioned-panel service-overview" aria-label="模型服务列表">
-      <header className="service-overview-heading">
+    <section className={layoutStyles['sectioned-panel']} aria-label="模型服务列表">
+      <header className={modelServicesStyles['service-overview-heading']}>
         <h3>
-          已添加的服务 <span className="muted">{allServices.length}</span>
+          已添加的服务{' '}
+          <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+            {allServices.length}
+          </span>
         </h3>
-        <span className="muted">选择服务管理连接与模型</span>
+        <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+          选择服务管理连接与模型
+        </span>
       </header>
-      {!resource.data && !resource.error && <p className="model-placeholder">正在读取服务…</p>}
+      {!resource.data && !resource.error && (
+        <p className={modelServicesStyles['model-placeholder']}>正在读取服务…</p>
+      )}
       {resource.data && !allServices.length && (
-        <div className="model-placeholder">
+        <div className={modelServicesStyles['model-placeholder']}>
           <Cpu size={32} />
           <h3>添加你的第一个模型服务</h3>
           <p>填写服务地址和密钥，添加模型后分配给各项功能。</p>
-          <button className="primary" onClick={createService}>
+          <button
+            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
+            onClick={createService}
+          >
             <Plus size={16} /> 添加服务
           </button>
         </div>
@@ -52,18 +66,18 @@ export function ServiceList({
         const purposes = usesFor(service.id)
         return (
           <button
-            className="service-overview-row"
+            className={modelServicesStyles['service-overview-row']}
             key={service.id}
             onClick={() => select(service.id)}
           >
-            <span className="service-symbol">
+            <span className={modelServicesStyles['service-symbol']}>
               <Cpu size={21} />
             </span>
-            <span className="service-overview-name">
+            <span className={modelServicesStyles['service-overview-name']}>
               <strong>{current.name || '新服务'}</strong>
               <small>{current.baseUrl || '待填写连接信息'}</small>
             </span>
-            <span className="service-overview-meta">
+            <span className={modelServicesStyles['service-overview-meta']}>
               <span>
                 {current.models.length} 个模型{changed ? ' · 未保存' : ''}
               </span>

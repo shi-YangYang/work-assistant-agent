@@ -1,3 +1,4 @@
+import formFieldStyles from '../../../components/FormField.module.css'
 import type { Progress } from '@paa/api-contracts'
 import { AutoTextarea } from '@web/components/AutoTextarea'
 import { FormField } from '@web/components/FormField'
@@ -31,7 +32,7 @@ export function ProgressFields({
           onChange={(e) => change({ ...value, summary: e.target.value })}
         />
         {errors.summary && (
-          <small className="form-field-error" role="alert">
+          <small className={formFieldStyles['form-field-error']} role="alert">
             {errors.summary}
           </small>
         )}
@@ -48,7 +49,7 @@ export function ProgressFields({
           <option value="done">整个事项已完成</option>
         </select>
         {errors.status && (
-          <small className="form-field-error" role="alert">
+          <small className={formFieldStyles['form-field-error']} role="alert">
             {errors.status}
           </small>
         )}
@@ -64,7 +65,7 @@ export function ProgressFields({
           onChange={(event) => change({ ...value, dueDate: event.target.value || null })}
         />
         {errors.dueDate && (
-          <small className="form-field-error" role="alert">
+          <small className={formFieldStyles['form-field-error']} role="alert">
             {errors.dueDate}
           </small>
         )}
@@ -79,7 +80,7 @@ export function ProgressFields({
           onChange={(e) => change({ ...value, blocker: e.target.value })}
         />
         {errors.blocker && (
-          <small className="form-field-error" role="alert">
+          <small className={formFieldStyles['form-field-error']} role="alert">
             {errors.blocker}
           </small>
         )}
@@ -94,7 +95,7 @@ export function ProgressFields({
           onChange={(e) => change({ ...value, nextStep: e.target.value })}
         />
         {errors.nextStep && (
-          <small className="form-field-error" role="alert">
+          <small className={formFieldStyles['form-field-error']} role="alert">
             {errors.nextStep}
           </small>
         )}

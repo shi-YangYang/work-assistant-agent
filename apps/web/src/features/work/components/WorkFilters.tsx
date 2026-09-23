@@ -1,20 +1,26 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import searchInputStyles from '../../../components/SearchInput.module.css'
+import styles from './WorkFilters.module.css'
 import { SearchInput } from '@web/components/SearchInput'
 import { Search } from 'lucide-react'
 import { useState } from 'react'
 
 export function WorkFilters({
+  compact = false,
   query,
   status,
   change,
 }: {
+  compact?: boolean
   query: string
   status: string
   change: (values: Record<string, string>) => void
 }) {
   const [resetKey, resetSearch] = useState(0)
   return (
-    <div className="filters work-filters">
-      <div className="work-search">
+    <div className={`${layoutStyles['filters']} ${styles['work-filters']}`} data-toolbar={compact}>
+      <div className={searchInputStyles['work-search']}>
         <Search size={17} aria-hidden="true" />
         <SearchInput
           aria-label="搜索工作"
@@ -37,7 +43,7 @@ export function WorkFilters({
       </select>
       {(query || status) && (
         <button
-          className="text-button"
+          className={`${controlsStyles['text-button']}`}
           onClick={() => {
             resetSearch((value) => value + 1)
             change({ q: '', status: '' })

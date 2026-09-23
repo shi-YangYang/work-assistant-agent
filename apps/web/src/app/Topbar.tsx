@@ -1,3 +1,5 @@
+import controlsStyles from '../styles/controls.module.css'
+import styles from './Topbar.module.css'
 import { Breadcrumbs } from '@web/app/Breadcrumbs'
 import { ReportNotifications } from '@web/features/reports/components/ReportNotifications'
 import { Search, Settings } from 'lucide-react'
@@ -10,21 +12,25 @@ export function Topbar({
   setCommands: React.Dispatch<React.SetStateAction<boolean>>
 }) {
   return (
-    <header className="topbar">
-      <div className="topbar-title">
+    <header className={styles['topbar']}>
+      <div className={styles['topbar-title']}>
         <Breadcrumbs />
       </div>
-      <div className="topbar-actions">
+      <div className={styles['topbar-actions']}>
         <ReportNotifications />
-        <div className="mobile-tools">
+        <div className={styles['mobile-tools']}>
           <button
-            className="icon-button"
+            className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
             aria-label="查找页面与操作"
             onClick={() => setCommands(true)}
           >
             <Search size={19} />
           </button>
-          <Link className="icon-button" aria-label="设置" to="/settings/account">
+          <Link
+            className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
+            aria-label="设置"
+            to="/settings/account"
+          >
             <Settings size={19} />
           </Link>
         </div>

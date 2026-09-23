@@ -1,3 +1,9 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import recordDetailStyles from '../../../components/RecordDetail.module.css'
+import noticeStyles from '../../../components/Notice.module.css'
+import formFieldStyles from '../../../components/FormField.module.css'
+import styles from './ReportDetail.module.css'
 import type { Report, ReportContent } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { reportNeedsPolling } from '@web/api/job-feedback'
@@ -33,9 +39,15 @@ import { Navigate, useLocation, useNavigate } from 'react-router'
 
 export function ReportDetail({
   recordId,
+  compact = false,
   recordSearch,
   onRecordDeleted,
-}: { recordId?: string; recordSearch?: string; onRecordDeleted?: () => void } = {}) {
+}: {
+  compact?: boolean
+  recordId?: string
+  recordSearch?: string
+  onRecordDeleted?: () => void
+} = {}) {
   const navigate = useNavigate()
   const location = useLocation()
   const [deleting, setDeleting] = useState(false)
@@ -75,16 +87,20 @@ export function ReportDetail({
   if (data?.ownerId === identity.member.id && identity.member.role === 'admin')
     return <Navigate to="/team" replace />
   return (
-    <div className="page narrow">
+    <div
+      className={`${layoutStyles['page']} ${layoutStyles['narrow']} ${recordDetailStyles['detail']}`}
+      data-compact={compact}
+      data-scroll-container
+    >
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {data && (
         <>
-          <div className="page-heading">
+          <div className={`${layoutStyles['page-heading']} ${recordDetailStyles['heading']}`}>
             <div>
-              <span className="eyebrow">
+              <span className={layoutStyles['eyebrow']}>
                 {data.kind === 'daily' ? '日报' : '周报'} · {timezoneLabel(data.timezone)}
               </span>
-              {data.ownerName && <p className="report-owner">{data.ownerName}</p>}
+              {data.ownerName && <p className={styles['report-owner']}>{data.ownerName}</p>}
               <h2>
                 {data.period}
                 {data.kind === 'weekly' ? ` — ${data.periodEnd}` : ''}
@@ -97,16 +113,20 @@ export function ReportDetail({
             </div>
             {(identity.member.role === 'admin' || (own && !data.publishedRevision)) && (
               <Actions label="管理报告">
-                <button role="menuitem" className="danger" onClick={() => setDeleting(true)}>
+                <button
+                  role="menuitem"
+                  className={controlsStyles['danger']}
+                  onClick={() => setDeleting(true)}
+                >
                   删除报告
                 </button>
               </Actions>
             )}
             {own && !editing && (
-              <div className="inline">
+              <div className={layoutStyles['inline']}>
                 <button onClick={() => setEditing(!editing)}>编辑草稿</button>
                 <button
-                  className="primary"
+                  className={controlsStyles['primary']}
                   disabled={editing || !!saved || data.revision === data.publishedRevision}
                   onClick={() => {
                     if (!reportHasContent(data.content)) {
@@ -142,7 +162,7 @@ export function ReportDetail({
           )}
           {data.job && <JobNotice job={data.job} refresh={refresh} />}
           {data.candidate && own && (
-            <div className="notice">
+            <div className={noticeStyles['notice']}>
               <span>新的生成结果已保留，现有草稿未被覆盖。</span>
               <button
                 onClick={() => {
@@ -159,7 +179,7 @@ export function ReportDetail({
           )}
           {editing && value ? (
             <form
-              className="panel report-editor"
+              className={`${layoutStyles['panel']} ${recordDetailStyles['panel']}`}
               onSubmit={(e) => {
                 e.preventDefault()
                 void save()
@@ -185,7 +205,7 @@ export function ReportDetail({
                     }
                   />
                   {failure instanceof ApiError && failure.fieldErrors[`content.${field}`] && (
-                    <small className="form-field-error" role="alert">
+                    <small className={formFieldStyles['form-field-error']} role="alert">
                       {failure.fieldErrors[`content.${field}`]}
                     </small>
                   )}
@@ -194,7 +214,7 @@ export function ReportDetail({
               {failure instanceof ApiError && failure.status === 409 && (
                 <ConflictRecovery<Report>
                   load={() => readReport(id)}
-                  render={(latest) => <ReportBody content={latest.content} />}
+                  render={(latest) => <ReportBody compact={compact} content={latest.content} />}
                   keep={(latest) => {
                     setDraft(key, { content: value, revision: latest.revision })
                     setFailure('')
@@ -205,18 +225,18 @@ export function ReportDetail({
                   }}
                 />
               )}
-              <div className="form-actions editor-actions">
+              <div className={`${layoutStyles['form-actions']} ${layoutStyles['editor-actions']}`}>
                 <button type="button" onClick={() => setEditing(false)}>
                   稍后继续
                 </button>
-                <BusyButton busy={busy} className="primary">
+                <BusyButton busy={busy} className={controlsStyles['primary']}>
                   保存草稿
                 </BusyButton>
               </div>
             </form>
           ) : (
-            <div className="panel">
-              <ReportBody content={data.content} />
+            <div className={`${layoutStyles['panel']} ${recordDetailStyles['panel']}`}>
+              <ReportBody compact={compact} content={data.content} />
             </div>
           )}
           <small>
@@ -227,7 +247,11 @@ export function ReportDetail({
             <section>
               <h3>提交历史</h3>
               {data.revisions.map((r, index) => (
-                <button className="history-row" key={r.revision} onClick={() => setHistory(index)}>
+                <button
+                  className={styles['history-row']}
+                  key={r.revision}
+                  onClick={() => setHistory(index)}
+                >
                   第 {r.revision} 版 · {dateLabel(r.submittedAt)}
                   <ChevronRight size={16} />
                 </button>
@@ -238,11 +262,11 @@ export function ReportDetail({
             <Modal title="提交报告" onClose={() => setSubmit(false)}>
               <p>确认提交这份报告？</p>
               <ErrorNotice>{failure}</ErrorNotice>
-              <div className="form-actions">
+              <div className={layoutStyles['form-actions']}>
                 <button onClick={() => setSubmit(false)}>继续检查</button>
                 <BusyButton
                   busy={busy}
-                  className="primary"
+                  className={controlsStyles['primary']}
                   onClick={async () => {
                     if (!reportHasContent(data.content)) {
                       setFailure('请先填写报告内容')
@@ -276,7 +300,7 @@ export function ReportDetail({
               title={`已提交 · 第 ${data.revisions[history].revision} 版`}
               onClose={() => setHistory(null)}
             >
-              <ReportBody content={data.revisions[history].content} />
+              <ReportBody compact={compact} content={data.revisions[history].content} />
             </Modal>
           )}
         </>

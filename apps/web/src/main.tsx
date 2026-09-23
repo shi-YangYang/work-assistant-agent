@@ -1,8 +1,8 @@
+import './styles/index.css'
 import { App } from '@web/app/App'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
-import './styles/index.css'
 
 const theme = localStorage.getItem('paa.company.theme') || 'system'
 

@@ -1,3 +1,4 @@
+import layoutStyles from '../../../styles/layout.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -8,7 +9,12 @@ import type { DraftStore } from '@web/lib/workspace'
 import { Workspace } from '@web/lib/workspace'
 import { useContext, useState } from 'react'
 
-export function useDingTalkRedirect(drafts?: DraftStore, onError?: (error: unknown) => boolean) {
+export function useDingTalkRedirect(
+  drafts?: DraftStore,
+  onError?: (error: unknown) => boolean,
+  noticeClassName?: string,
+  noticeActionsClassName?: string,
+) {
   const workspace = useContext(Workspace)
   const [pending, setPending] = useState<{ action: DingTalkAction; body: unknown } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -34,7 +40,11 @@ export function useDingTalkRedirect(drafts?: DraftStore, onError?: (error: unkno
   }
   const guard = (
     <>
-      {!pending && <ErrorNotice>{error}</ErrorNotice>}
+      {!pending && (
+        <ErrorNotice className={noticeClassName} actionsClassName={noticeActionsClassName}>
+          {error}
+        </ErrorNotice>
+      )}
       {pending && (
         <Modal title="前往钉钉前保留草稿" onClose={() => setPending(null)}>
           <p>
@@ -45,10 +55,14 @@ export function useDingTalkRedirect(drafts?: DraftStore, onError?: (error: unkno
             <textarea aria-label="待保留的聊天文字" readOnly value={summary.text} rows={5} />
           )}
           {copied && <p role="status">{copied}</p>}
-          <ErrorNotice retry={busy ? undefined : () => void proceed(pending.action, pending.body)}>
+          <ErrorNotice
+            className={noticeClassName}
+            actionsClassName={noticeActionsClassName}
+            retry={busy ? undefined : () => void proceed(pending.action, pending.body)}
+          >
             {error}
           </ErrorNotice>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button type="button" onClick={() => setPending(null)}>
               取消并返回
             </button>
