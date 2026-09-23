@@ -1,5 +1,5 @@
 import styles from './Status.module.css'
-export const statusLabel = (status: string) =>
+const statusLabel = (status: string) =>
   ({
     in_progress: '进行中',
     blocked: '有阻碍',

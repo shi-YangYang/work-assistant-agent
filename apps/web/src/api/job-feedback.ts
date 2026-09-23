@@ -1,7 +1,7 @@
 import type { Job, JobFeedback, Report } from '@paa/api-contracts'
 import { api, ApiError, expireSession, isCancelled } from '@web/api/client'
 
-export const terminalJob = (state: string) => !['queued', 'running'].includes(state)
+const terminalJob = (state: string) => !['queued', 'running'].includes(state)
 
 export const reportNeedsPolling = (report: Pick<Report, 'historical' | 'job'>) =>
   !report.historical && !!report.job && !terminalJob(report.job.state)

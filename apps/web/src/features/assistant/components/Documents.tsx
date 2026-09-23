@@ -110,7 +110,7 @@ export function DocumentCard({
   )
 }
 
-export function DocumentPreview({
+function DocumentPreview({
   attachmentId,
   revision,
   name,
