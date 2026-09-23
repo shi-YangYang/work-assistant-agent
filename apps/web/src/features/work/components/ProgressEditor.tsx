@@ -8,16 +8,13 @@ import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
 import {
   availableWorkPath,
+  progressFieldErrors,
   readProgressSource,
   updateProgressDraft,
 } from '@web/features/work/api/requests'
 import { ProgressFields } from '@web/features/work/components/ProgressFields'
 import type { ProgressEdit } from '@web/features/work/utils/progress-edit'
-import {
-  progressEditValue,
-  progressFieldErrors,
-  progressTitleError,
-} from '@web/features/work/utils/progress-edit'
+import { progressEditValue, progressTitleError } from '@web/features/work/utils/progress-edit'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'

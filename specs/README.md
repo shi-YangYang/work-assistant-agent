@@ -26,7 +26,7 @@
 | [022](spec-022-company-voiceprints/spec.md) | 桌面公司登录与游客模式、员工声纹管理同步及本地姓名识别 | ACCEPTANCE | [软件与公开语音实测 PASS](spec-022-company-voiceprints/acceptance.md)；原生桌面交互待解锁，Windows 未实测 |
 | [023](spec-023-speaker-aware-minutes/spec.md) | 文字双视图、含说话人的纪要输入与会议分析扩展 | IMPLEMENTED | [验证记录](spec-023-speaker-aware-minutes/acceptance.md)：两种模式真实生成通过，末轮小修由协调 Agent 复核 |
 | [024](spec-024-web-frontend-architecture/spec.md) | Web 前端按业务模块重构、组件与 Hook 拆分、请求和样式分层 | IMPLEMENTED | [PASS](spec-024-web-frontend-architecture/acceptance.md)，含全量 Web 检查与本地页面回归 |
-| [025](spec-025-web-css-modules/spec.md) | Web CSS Modules、组件样式就近维护与两端样式解耦 | ACCEPTANCE | [FAIL：迁移审查通过，既有测试失败与桌面交互待处理](spec-025-web-css-modules/acceptance.md) |
+| [025](spec-025-web-css-modules/spec.md) | Web CSS Modules、组件样式就近维护与两端样式解耦 | ACCEPTANCE | [Web 测试已全绿，桌面两项交互待验](spec-025-web-css-modules/acceptance.md) |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

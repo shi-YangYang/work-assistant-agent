@@ -18,6 +18,14 @@ export function acceptFeedback(
       if (incoming[field] > current[field]) return incoming
     }
     if (incoming.updatedAt < current.updatedAt) return current
+    // Cards can change independently of the worker's feedback version. Match the
+    // server's snapshot identity so retries deduplicate without hiding card updates.
+    if (
+      incoming.updatedAt === current.updatedAt &&
+      incoming.state === current.state &&
+      JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? [])
+    )
+      return current
   }
   return incoming
 }

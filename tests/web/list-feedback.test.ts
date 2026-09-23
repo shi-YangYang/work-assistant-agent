@@ -1,4 +1,4 @@
-import type { Job, JobFeedback } from '@paa/api-contracts'
+import type { BusinessAction, Job, JobFeedback } from '@paa/api-contracts'
 import { describe, expect, it } from 'vitest'
 import {
   acceptFeedback,
@@ -72,6 +72,41 @@ describe('resumable chat presentation', () => {
     expect(
       acceptFeedback(feedback, { ...feedback, seq: 4, text: '完整临时正文' }, 'job')?.text,
     ).toBe('完整临时正文')
+  })
+  it('ignores replayed snapshots but accepts independently updated action cards', () => {
+    const action: BusinessAction = {
+      id: 'action',
+      messageId: 'message',
+      action: 'generate_report',
+      label: '生成报告',
+      state: 'running',
+      revision: 1,
+      createdAt: feedback.updatedAt,
+    }
+    const current = { ...feedback, actions: [action] }
+    const replayed = { ...current, text: '重复正文', actions: [{ ...action }] }
+    expect(acceptFeedback(current, replayed, 'job')).toBe(current)
+
+    const changed = { ...current, actions: [{ ...action, state: 'unavailable' as const }] }
+    expect(acceptFeedback(current, changed, 'job')).toBe(changed)
+    expect(acceptFeedback(current, { ...changed, seq: current.seq - 1 }, 'job')).toBe(current)
+    expect(acceptFeedback(current, { ...changed, updatedAt: '2026-09-15T09:59:59Z' }, 'job')).toBe(
+      current,
+    )
+
+    const cleared = { ...current, actions: [] }
+    expect(acceptFeedback(current, cleared, 'job')).toBe(cleared)
+    expect(acceptFeedback(feedback, { ...feedback, actions: [] }, 'job')).toBe(feedback)
+  })
+  it('accepts a newer job timestamp or changed terminal state without a new text sequence', () => {
+    const newer = {
+      ...feedback,
+      updatedAt: '2026-09-15T10:00:01Z',
+      state: 'awaiting_retry' as const,
+    }
+    expect(acceptFeedback(feedback, newer, 'job')).toBe(newer)
+    const completed = { ...feedback, state: 'succeeded' as const, text: '' }
+    expect(acceptFeedback(feedback, completed, 'job')).toBe(completed)
   })
   it('lets the authoritative completed message win even if the terminal SSE packet never arrives', () => {
     expect(visibleFeedback({ ...job, state: 'awaiting_input' }, feedback)).toBeNull()
