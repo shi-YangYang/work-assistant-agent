@@ -1,14 +1,14 @@
 .breadcrumbs {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 13px;
   min-width: 0;
   overflow: hidden;
 }
 .breadcrumbs > span {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 13px;
   min-width: 0;
 }
 .breadcrumbs > span:not(:last-of-type) {
@@ -16,7 +16,7 @@
 }
 .breadcrumbs a,
 .breadcrumbs strong {
-  font-size: 13px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

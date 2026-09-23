@@ -3,10 +3,10 @@
   white-space: nowrap;
   flex-shrink: 0;
   align-items: center;
-  padding: 2px 9px;
-  font-size: 12px;
+  padding: 4px 9px;
+  font-size: 11px;
   border-radius: 30px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   background: var(--subtle);
   color: var(--muted);
 }
@@ -17,13 +17,13 @@
   border-color: transparent;
 }
 .status[data-status='blocked'] {
-  color: var(--danger);
-  background: var(--danger-bg);
+  color: var(--warning);
+  background: var(--warning-bg);
   border-color: transparent;
 }
 .status[data-status='pending'] {
-  color: var(--status-pending-color, var(--danger));
-  background: var(--status-pending-background, var(--danger-bg));
+  color: var(--status-pending-color, var(--warning));
+  background: var(--status-pending-background, var(--warning-bg));
   border-color: transparent;
 }
 .status[data-status='overdue'] {

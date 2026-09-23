@@ -1,9 +1,9 @@
 .business-action-card {
   padding: 16px;
   margin-top: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
+  border: 0;
+  border-radius: 16px;
+  background: var(--subtle);
   min-width: 0;
 }
 .business-action-heading {
@@ -11,13 +11,20 @@
   align-items: center;
   gap: 8px;
 }
+.business-action-heading > strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
 .business-action-heading > span {
   margin-left: auto;
   color: var(--muted);
   font-size: 12px;
 }
 .business-action-card h4 {
-  margin: 12px 0 8px;
+  margin: 18px 0 8px;
+  font-size: 14px;
+  font-weight: 550;
   overflow-wrap: anywhere;
 }
 .business-action-card p {
@@ -29,15 +36,16 @@
   margin-top: 12px;
 }
 [data-status='succeeded'] .business-action-heading > svg {
-  color: var(--accent);
+  color: var(--positive);
 }
 .business-action-preview {
   max-height: 360px;
   overflow-y: auto;
   padding: 12px;
   margin-top: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
 }
 .business-action-preview section + section {
   margin-top: 16px;
@@ -45,4 +53,38 @@
 .business-action-preview strong {
   font-size: 13px;
   color: var(--muted);
+}
+
+.business-action-card[data-status='pending'] .business-action-heading > svg,
+.business-action-card[data-status='pending'] .business-action-heading > span {
+  color: var(--warning);
+}
+.business-action-heading {
+  flex-wrap: wrap;
+}
+.business-action-heading > span {
+  padding: 3px 8px;
+  border-radius: 99px;
+  background: var(--subtle);
+}
+.business-action-card[data-status='pending'] .business-action-heading > span {
+  background: var(--warning-bg);
+}
+.business-action-card[data-status='succeeded'] .business-action-heading > span {
+  color: var(--positive);
+  background: var(--positive-bg);
+}
+.business-action-card .slot-card-actions {
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.business-action-card .slot-card-actions a {
+  margin-left: 0;
+  margin-right: auto;
+}
+@media (max-width: 760px) {
+  .business-action-card {
+    padding: 14px;
+  }
 }

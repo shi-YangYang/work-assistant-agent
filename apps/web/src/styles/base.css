@@ -43,6 +43,7 @@ body,
 body {
   background: var(--canvas);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
   font:
     14px/1.6 -apple-system,
     BlinkMacSystemFont,
@@ -73,21 +74,26 @@ button {
   gap: 7px;
   border: 1px solid var(--control);
   background: var(--surface);
-  border-radius: 6px;
+  border-radius: 10px;
   min-height: 38px;
   padding: 7px 12px;
   font-weight: 500;
   line-height: 1.5;
+  transition:
+    background-color 160ms,
+    border-color 160ms,
+    color 160ms,
+    box-shadow 160ms;
   cursor: pointer;
   white-space: nowrap;
 }
-button:hover {
-  background: var(--subtle);
+button:hover:where(:not(:disabled)) {
+  background: var(--hover);
   border-color: var(--control);
 }
 button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  opacity: var(--button-disabled-opacity, 0.5);
+  cursor: var(--button-disabled-cursor, not-allowed);
 }
 a {
   color: var(--accent);
@@ -103,7 +109,7 @@ textarea {
   min-width: 0;
   border: 1px solid var(--control);
   background: var(--surface);
-  border-radius: 6px;
+  border-radius: 10px;
   min-height: 38px;
   padding: 7px 10px;
 }
@@ -129,13 +135,15 @@ button {
   max-width: 100%;
 }
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
 }
 input:not([type='checkbox'], [type='radio']):focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline-offset: 0;
+  outline: none;
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 1px var(--secondary);
 }
 select:not([size])::picker(select) {
   width: max-content;
@@ -154,7 +162,7 @@ p {
 }
 h1,
 h2 {
-  font-size: 25px;
+  font-size: 26px;
   font-weight: 650;
   letter-spacing: -0.6px;
   line-height: 1.4;

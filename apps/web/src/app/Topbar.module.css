@@ -1,10 +1,11 @@
 .topbar {
-  height: 54px;
-  min-height: 54px;
+  height: 63px;
+  min-height: 63px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
   border-bottom: 1px solid var(--line);
-  padding: 0 24px;
+  background: var(--stage);
+  padding: 0 32px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -19,9 +20,6 @@
   color: var(--text);
   font-weight: 500;
 }
-.mobile-tools {
-  display: none;
-}
 @media (max-width: 760px) {
   .topbar {
     height: 56px;
@@ -32,25 +30,8 @@
     gap: 6px;
     min-width: 0;
   }
-  .mobile-tools {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-  .mobile-tools .slot-icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 44px;
-    width: 44px;
-    height: 44px;
-    color: var(--text);
-    padding: 0;
-    text-decoration: none;
-  }
-  .mobile-tools .slot-icon-button > svg {
-    display: block;
+  .desktop-search {
+    display: none;
   }
 }
 .topbar-actions {
@@ -63,5 +44,14 @@
   .topbar {
     padding-top: env(safe-area-inset-top);
     height: calc(56px + env(safe-area-inset-top));
+  }
+}
+
+.nav-toggle {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .nav-toggle {
+    display: inline-flex;
   }
 }

@@ -1,7 +1,5 @@
 .business-sources {
-  display: grid;
-  gap: 0.5rem;
-  margin-top: 0.85rem;
+  margin-top: 16px;
   min-width: 0;
 }
 .business-source-list {
@@ -16,6 +14,10 @@
   text-align: left;
   max-width: 100%;
   min-width: 0;
+  white-space: normal;
+  font-size: 12px;
+  border-color: var(--line);
+  background: var(--subtle);
 }
 .business-source > svg {
   flex-shrink: 0;
@@ -68,4 +70,30 @@
 .business-inline-citation:hover {
   text-decoration: underline;
   background: none;
+}
+
+.business-sources > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.business-sources > summary::-webkit-details-marker {
+  display: none;
+}
+.business-sources > summary svg:last-child {
+  transition: transform 180ms;
+}
+.business-sources[open] > summary svg:last-child {
+  transform: rotate(180deg);
+}
+.business-sources[open] .business-source-list {
+  margin-top: 10px;
 }

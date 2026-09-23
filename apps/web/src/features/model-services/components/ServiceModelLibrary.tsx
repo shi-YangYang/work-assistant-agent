@@ -3,7 +3,6 @@ import layoutStyles from '../../../styles/layout.module.css'
 import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
-import { PanelSection } from '@web/components/PanelSection'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import { matchModelProtocol } from '@web/features/model-services/utils/service-presets'
 import { Cpu, FlaskConical, Plus, Search, SlidersHorizontal } from 'lucide-react'
@@ -26,11 +25,12 @@ export function ServiceModelLibrary({
   onTest: (model: CompanyModel) => void
 }) {
   return (
-    <PanelSection compactStatus title="可用模型" status={`${draft.models.length} / 32`} defaultOpen>
+    <section className={modelServicesStyles['model-library-section']} aria-label="可用模型">
       <div className={modelServicesStyles['model-library-toolbar']}>
-        <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
-          选择模型进行设置或测试
-        </span>
+        <h3>
+          可用模型{' '}
+          <span className={modelServicesStyles['model-count']}>{draft.models.length} / 32</span>
+        </h3>
         <div
           className={`${layoutStyles['card-actions']} ${modelServicesStyles['slot-card-actions']}`}
         >
@@ -103,6 +103,6 @@ export function ServiceModelLibrary({
           )
         })}
       </div>
-    </PanelSection>
+    </section>
   )
 }

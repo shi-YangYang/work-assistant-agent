@@ -76,7 +76,7 @@
   font-size: 12px;
 }
 .voiceprint-status[data-ready='true'] {
-  color: var(--accent);
+  color: var(--positive);
 }
 .voiceprint-error {
   margin: 2px 0;

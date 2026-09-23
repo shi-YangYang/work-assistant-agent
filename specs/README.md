@@ -27,6 +27,7 @@
 | [023](spec-023-speaker-aware-minutes/spec.md) | 文字双视图、含说话人的纪要输入与会议分析扩展 | IMPLEMENTED | [验证记录](spec-023-speaker-aware-minutes/acceptance.md)：两种模式真实生成通过，末轮小修由协调 Agent 复核 |
 | [024](spec-024-web-frontend-architecture/spec.md) | Web 前端按业务模块重构、组件与 Hook 拆分、请求和样式分层 | IMPLEMENTED | [PASS](spec-024-web-frontend-architecture/acceptance.md)，含全量 Web 检查与本地页面回归 |
 | [025](spec-025-web-css-modules/spec.md) | Web CSS Modules、组件样式就近维护与两端样式解耦 | ACCEPTANCE | [Web 测试已全绿，桌面两项交互待验](spec-025-web-css-modules/acceptance.md) |
+| [026](spec-026-web-design-refresh/spec.md) | Web 中性黑白灰设计落地、助手交互与全站响应式统一 | IMPLEMENTED | [PASS](spec-026-web-design-refresh/acceptance.md)，含原型对照返工、全 Web 检查与独立视觉及交互验收 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

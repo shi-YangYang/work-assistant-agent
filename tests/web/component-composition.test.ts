@@ -142,6 +142,7 @@ it('service editor saves the exact draft before assignment and does not save an 
 
 it('message composer renders pending submission, attachment slot and recording controls without owning session state', () => {
   const props = {
+    containerRef: { current: null },
     send: vi.fn(),
     addFiles: vi.fn(),
     composer: {

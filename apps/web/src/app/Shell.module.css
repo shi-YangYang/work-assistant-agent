@@ -1,9 +1,13 @@
 .company-shell {
   display: flex;
-  height: 100dvh;
-}
-.nav-backdrop {
-  display: none;
+  height: var(--app-height, 100dvh);
+  background: var(--canvas);
+  line-height: 1.55;
+  --primary-radius: 999px;
+  --button-disabled-opacity: 0.4;
+  --button-disabled-cursor: default;
+  --primary-hover-opacity: 1;
+  --primary-hover-filter: brightness(1.07);
 }
 .main {
   flex: 1;
@@ -11,9 +15,10 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--canvas);
+  overflow: hidden;
+  background: var(--stage);
 }
-.mobile-nav {
+.nav-backdrop {
   display: none;
 }
 .toast {
@@ -21,20 +26,17 @@
   bottom: 25px;
   left: 50%;
   transform: translateX(-50%);
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  border: 1px solid var(--control);
+  border-radius: 12px;
   background: var(--text);
-  color: var(--surface);
+  color: var(--stage);
   padding: 11px 20px;
   box-shadow: var(--shadow);
   z-index: 100;
   max-width: calc(100vw - 35px);
   text-align: center;
 }
-@media (min-width: 761px) and (max-width: 1023px) {
-  .nav-expanded {
-    padding-left: 72px;
-  }
+@media (max-width: 1023px) {
   .nav-expanded .nav-backdrop {
     display: block;
     position: fixed;
@@ -44,52 +46,19 @@
     border: 0;
     border-radius: 0;
     z-index: 50;
-    background: #0a142540;
+    background: #00000040;
   }
-}
-@media (max-width: 760px) {
-  .nav-backdrop {
-    display: none;
-  }
-  .mobile-nav {
-    display: flex;
-    justify-content: space-around;
-    min-height: 64px;
-    padding-bottom: env(safe-area-inset-bottom);
-    border-top: 1px solid var(--line);
-    background: var(--surface);
-  }
-  .mobile-nav a {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    color: var(--muted);
-    font-size: 11px;
-    padding: 8px 2px;
-  }
-  .mobile-nav a[aria-current='page'] {
-    color: var(--accent);
-    background: var(--selection);
-  }
-  .toast {
-    bottom: 80px;
-  }
-}
-.company-shell {
-  height: var(--app-height, 100dvh);
 }
 @media (max-width: 760px) {
   .company-shell {
     position: relative;
     top: var(--viewport-top, 0px);
   }
-  :global(.keyboard-open) .mobile-nav {
-    display: none;
-  }
   .main {
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+  }
+  .toast {
+    bottom: max(20px, env(safe-area-inset-bottom));
   }
 }

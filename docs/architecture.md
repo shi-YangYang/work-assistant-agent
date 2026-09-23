@@ -70,12 +70,12 @@ styles/       本端基础 CSS 与显式复用的布局／控件 Module
 
 组件专用样式就近放在 `组件名.module.css`，由组件 `import styles` 显式使用，断点与状态规则一起维护。同一业务内共用的登录表单、模型服务、附件等组合样式放在对应 `features/*/styles/*.module.css`。无专用样式的组件直接使用公共样式，不强制建立空文件。
 
-- `styles/index.css` 只导入本端 `theme.css`、`select.css`、`brand.css`、`base.css`：主题变量、原生选择器、品牌轮廓、reset、基础标签与表单、滚动条、焦点及减少动态效果。全局类白名单只有 `brand-mark`、`sr-only`，以及手机键盘状态 `keyboard-open`；不在这里写页面布局。
+- `styles/index.css` 只导入本端 `theme.css`、`select.css`、`base.css`：主题变量、原生选择器、reset、基础标签与表单、滚动条、焦点及减少动态效果。全局类白名单只有 `sr-only`，以及手机键盘状态 `keyboard-open`；品牌样式由侧栏 Module 维护，不在全局入口写页面布局。
 - `styles/{layout,controls,utilities}.module.css` 是显式的公共布局与视觉工具；`components/RecordLayout.module.css`、`RecordDetail.module.css` 维护工作／报告共用的记录呈现。业务之间不导入对方私有 CSS。
 - 公共组件的内层结构由组件自己维护。调用者通过实际需要的 `className`、`bodyClassName`、`compact` 等插槽／变体定制；状态色通过限定用途的 CSS 变量继承。同一元素需要公共外观与局部定制时，显式组合两个 Module 的类名；局部 CSS 仅引用自己定义的槽类。模块之间不使用 `@value`／跨文件 `composes` 导入选择器，避免重复输出 CSS 和层叠依赖。基础 CSS 在 `main.tsx` 首先加载，公共 Module 先于调用者的局部 Module 导入。
 - 交互状态使用 `data-*` 或 ARIA 属性，滚动容器与聊天内容观察使用稳定的 `data-scroll-container`、`data-chat-content`。不要从 JS 拼接 CSS Module 生成的类名；`:global(.keyboard-open)` 只用于现有手机键盘避让。
 
-Web 与 Desktop 各自拥有主题、选择器和品牌 CSS，Desktop 位于 `apps/desktop/src/renderer/styles/`；两端不互相引用或自动同步 CSS。品牌图片继续由 `packages/ui-web` 共享。初始外观一致不意味着后续样式必须联动。
+Web 与 Desktop 各自拥有主题、选择器和品牌样式，Web 品牌样式位于 `app/Sidebar.module.css`，Desktop 位于 `apps/desktop/src/renderer/styles/`；两端不互相引用或自动同步 CSS。品牌图片统一由 `packages/ui-web/brand/` 提供。初始外观一致不意味着后续样式必须联动。
 
 读“发送一条消息”时，依次看：
 

@@ -50,11 +50,35 @@
   margin: 16px 0;
 }
 .document-citations {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
+  margin-top: 12px;
 }
+.document-citations > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.document-citations > summary::-webkit-details-marker {
+  display: none;
+}
+.document-citations > summary svg:last-child {
+  transition: transform 180ms;
+}
+.document-citations[open] > summary svg:last-child {
+  transform: rotate(180deg);
+}
+.document-citations > button {
+  display: flex;
+  margin-top: 6px;
+}
+
 @media (max-width: 600px) {
   .document-card {
     flex-basis: 100%;

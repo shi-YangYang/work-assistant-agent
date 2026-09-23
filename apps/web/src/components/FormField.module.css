@@ -3,7 +3,7 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  margin: 16px 0;
+  margin: var(--form-field-margin, 16px 0);
 }
 .form-field > label {
   display: block;
@@ -20,5 +20,6 @@
   border-color: var(--danger);
 }
 .form-field input[aria-invalid='true']:focus-visible {
-  outline-color: var(--danger);
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
 }

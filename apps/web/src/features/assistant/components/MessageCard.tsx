@@ -75,194 +75,214 @@ export function MessageCard({
     }
   }
   const pending = message.drafts.filter((d) => d.status === 'pending')
+  const hasAssistant = !!(
+    message.reply ||
+    message.job ||
+    message.businessUnavailable ||
+    message.drafts.length ||
+    message.suggestions.length
+  )
   return (
     <article className={styles['message']}>
       {gallery !== null && !message.businessUnavailable && images[gallery] && (
         <ImageGallery images={images} initial={gallery} onClose={() => setGallery(null)} />
       )}
-      <header>
-        <span className={layoutStyles['eyebrow']}>工作消息</span>
-        <time>{dateLabel(message.createdAt)}</time>
-        {onReply && (
-          <button
-            className={`${controlsStyles['text-button']} ${styles['slot-text-button']}`}
-            onClick={onReply}
-          >
-            补充
-          </button>
+      <div className={styles['user-turn']}>
+        <header>
+          <span className={layoutStyles['eyebrow']}>{own ? '你' : '工作消息'}</span>
+          <time>{dateLabel(message.createdAt)}</time>
+          {onReply && (
+            <button
+              className={`${controlsStyles['text-button']} ${styles['slot-text-button']}`}
+              onClick={onReply}
+            >
+              补充
+            </button>
+          )}
+        </header>
+        {message.text && (
+          <p className={`${utilitiesStyles['preserve']} ${styles['user-bubble']}`}>
+            {message.text}
+          </p>
         )}
-      </header>
-      {message.text && <p className={utilitiesStyles['preserve']}>{message.text}</p>}
-      <div>
-        {(['audio', 'image', 'document'] as const).map((kind) => {
-          const items = message.attachments.filter((a) => a.kind === kind)
-          return (
-            items.length > 0 && (
-              <div className={attachmentsStyles['attachments']} data-kind={kind} key={kind}>
-                {items.map((a) =>
-                  a.kind === 'image' ? (
-                    <button
-                      className={attachmentsStyles['attachment-preview-button']}
-                      key={a.id}
-                      aria-label={`预览${a.name}`}
-                      onClick={() => setGallery(images.findIndex((item) => item.id === a.id))}
-                    >
-                      <img src={a.previewUrl ?? a.url} alt={a.name} loading="lazy" />
-                    </button>
-                  ) : a.kind === 'document' ? (
-                    <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
-                  ) : (
-                    <audio
-                      key={a.id}
-                      controls
-                      src={a.previewUrl ?? a.url}
-                      preload="metadata"
-                      aria-label={a.name}
-                    />
-                  ),
-                )}
-              </div>
+        <div>
+          {(['audio', 'image', 'document'] as const).map((kind) => {
+            const items = message.attachments.filter((a) => a.kind === kind)
+            return (
+              items.length > 0 && (
+                <div className={attachmentsStyles['attachments']} data-kind={kind} key={kind}>
+                  {items.map((a) =>
+                    a.kind === 'image' ? (
+                      <button
+                        className={attachmentsStyles['attachment-preview-button']}
+                        key={a.id}
+                        aria-label={`预览${a.name}`}
+                        onClick={() => setGallery(images.findIndex((item) => item.id === a.id))}
+                      >
+                        <img src={a.previewUrl ?? a.url} alt={a.name} loading="lazy" />
+                      </button>
+                    ) : a.kind === 'document' ? (
+                      <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
+                    ) : (
+                      <audio
+                        key={a.id}
+                        controls
+                        src={a.previewUrl ?? a.url}
+                        preload="metadata"
+                        aria-label={a.name}
+                      />
+                    ),
+                  )}
+                </div>
+              )
             )
-          )
-        })}
-      </div>
-      {(message.transcript || message.attachments.some((a) => a.kind === 'audio')) && (
-        <MessageTranscript
-          transcriptOpen={transcriptOpen}
-          message={message}
-          setTranscriptOpen={setTranscriptOpen}
-          own={own}
-          setTranscript={setTranscript}
-        />
-      )}
-      {message.businessUnavailable && (
-        <p className={noticeStyles['notice']}>这条回答的关联资料或权限已变化，请重新提问。</p>
-      )}
-      {message.job && (
-        <JobNotice
-          job={{
-            ...message.job,
-            ...(live.feedback
-              ? {
-                  state: live.feedback.state,
-                  stage: live.feedback.stage,
-                  error: live.feedback.error,
-                }
-              : {}),
-          }}
-          refresh={onChange}
-        />
-      )}
-      {own &&
-        !message.businessUnavailable &&
-        message.job?.operationFeedback?.map((item) => (
-          <div className={noticeStyles['notice']} role="status" key={item.step}>
-            <strong>
-              {item.label} ·{' '}
-              {item.state === 'clarification'
-                ? '需要补充'
-                : item.state === 'waiting'
-                  ? '等待前置操作'
-                  : '未执行'}
-            </strong>
-            <p>{item.message}</p>
-          </div>
-        ))}
-      {live.error && (
-        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`} role="status">
-          {live.error}
-        </p>
-      )}
-      {!message.reply && !message.businessUnavailable && live.feedback?.text && (
-        <div className={`${styles['assistant-reply']} ${styles['provisional-reply']}`}>
-          <small>
-            {['queued', 'running'].includes(live.feedback.state)
-              ? '生成中，内容尚未完成'
-              : '回复未完成'}
-          </small>
-          <p className={utilitiesStyles['preserve']}>{live.feedback.text}</p>
+          })}
         </div>
-      )}
-      {message.reply && (
-        <div className={styles['assistant-reply']}>
-          <h3>
+        {(message.transcript || message.attachments.some((a) => a.kind === 'audio')) && (
+          <MessageTranscript
+            transcriptOpen={transcriptOpen}
+            message={message}
+            setTranscriptOpen={setTranscriptOpen}
+            own={own}
+            setTranscript={setTranscript}
+          />
+        )}
+      </div>
+      {hasAssistant && (
+        <div className={styles['assistant-turn']}>
+          <h3 className={styles['assistant-identity']}>
             <Sparkles size={16} />
             工作助手
           </h3>
-          <BusinessReply
-            text={message.reply}
-            sources={message.businessCitations ?? []}
-            endpoint={messageSourcesPath(message.id)}
-          />
-          <DocumentCitations citations={message.citations ?? []} />
-        </div>
-      )}
-      {own &&
-        !message.businessUnavailable &&
-        (live.feedback?.actions ?? message.actions)?.map((action) => (
-          <BusinessActionCard key={action.id} action={action} refresh={onChange} />
-        ))}
-      {own
-        ? message.drafts.map((d) => (
-            <div className={styles['progress-card']} key={d.id}>
-              <div className={`${layoutStyles['row-between']} ${styles['slot-row-between']}`}>
-                <h3>{d.content.title}</h3>
-                <Status value={d.status} />
+          {message.businessUnavailable && (
+            <p className={noticeStyles['notice']}>这条回答的关联资料或权限已变化，请重新提问。</p>
+          )}
+          {message.job && (
+            <JobNotice
+              job={{
+                ...message.job,
+                ...(live.feedback
+                  ? {
+                      state: live.feedback.state,
+                      stage: live.feedback.stage,
+                      error: live.feedback.error,
+                    }
+                  : {}),
+              }}
+              refresh={onChange}
+            />
+          )}
+          {own &&
+            !message.businessUnavailable &&
+            message.job?.operationFeedback?.map((item) => (
+              <div className={noticeStyles['notice']} role="status" key={item.step}>
+                <strong>
+                  {item.label} ·{' '}
+                  {item.state === 'clarification'
+                    ? '需要补充'
+                    : item.state === 'waiting'
+                      ? '等待前置操作'
+                      : '未执行'}
+                </strong>
+                <p>{item.message}</p>
               </div>
-              <p>{d.content.summary}</p>
-              {d.content.blocker && (
-                <p className={utilitiesStyles['error-text']}>阻碍：{d.content.blocker}</p>
-              )}
-              {d.content.nextStep && (
-                <p className={utilitiesStyles['muted']}>下一步：{d.content.nextStep}</p>
-              )}
-              <BusinessSources
-                sources={d.businessLinks ?? []}
+            ))}
+          {live.error && (
+            <p
+              className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}
+              role="status"
+            >
+              {live.error}
+            </p>
+          )}
+          {!message.reply && !message.businessUnavailable && live.feedback?.text && (
+            <div className={`${styles['assistant-reply']} ${styles['provisional-reply']}`}>
+              <small>
+                {['queued', 'running'].includes(live.feedback.state)
+                  ? '生成中，内容尚未完成'
+                  : '回复未完成'}
+              </small>
+              <p className={utilitiesStyles['preserve']}>{live.feedback.text}</p>
+            </div>
+          )}
+          {message.reply && (
+            <div className={styles['assistant-reply']}>
+              <BusinessReply
+                text={message.reply}
+                sources={message.businessCitations ?? []}
                 endpoint={messageSourcesPath(message.id)}
               />
-              {d.status === 'pending' && (
-                <div className={layoutStyles['card-actions']}>
-                  <button
-                    className={controlsStyles['primary']}
-                    disabled={busy}
-                    onClick={() => void act([d], 'confirm')}
-                  >
-                    <Check size={15} />
-                    {d.businessLinks?.length ? '确认我的督办' : '确认进展'}
-                  </button>
-                  <button disabled={busy} onClick={() => setEditing(d)}>
-                    <Pencil size={14} />
-                    编辑
-                  </button>
-                  <button
-                    className={`${controlsStyles['text-button']} ${styles['slot-text-button']}`}
-                    disabled={busy}
-                    onClick={() => void act([d], 'ignore')}
-                  >
-                    忽略
-                  </button>
-                  <Link to={`/messages/${message.id}`} state={detailState(location)}>
-                    查看来源
-                  </Link>
+              <DocumentCitations citations={message.citations ?? []} />
+            </div>
+          )}
+          {own &&
+            !message.businessUnavailable &&
+            (live.feedback?.actions ?? message.actions)?.map((action) => (
+              <BusinessActionCard key={action.id} action={action} refresh={onChange} />
+            ))}
+          {own
+            ? message.drafts.map((d) => (
+                <div className={styles['progress-card']} key={d.id}>
+                  <div className={`${layoutStyles['row-between']} ${styles['slot-row-between']}`}>
+                    <h3>{d.content.title}</h3>
+                    <Status value={d.status} />
+                  </div>
+                  <p>{d.content.summary}</p>
+                  {d.content.blocker && (
+                    <p className={utilitiesStyles['error-text']}>阻碍：{d.content.blocker}</p>
+                  )}
+                  {d.content.nextStep && (
+                    <p className={utilitiesStyles['muted']}>下一步：{d.content.nextStep}</p>
+                  )}
+                  <BusinessSources
+                    sources={d.businessLinks ?? []}
+                    endpoint={messageSourcesPath(message.id)}
+                  />
+                  {d.status === 'pending' && (
+                    <div className={layoutStyles['card-actions']}>
+                      <button
+                        className={controlsStyles['primary']}
+                        disabled={busy}
+                        onClick={() => void act([d], 'confirm')}
+                      >
+                        <Check size={15} />
+                        {d.businessLinks?.length ? '确认我的督办' : '确认进展'}
+                      </button>
+                      <button disabled={busy} onClick={() => setEditing(d)}>
+                        <Pencil size={14} />
+                        编辑
+                      </button>
+                      <button
+                        className={`${controlsStyles['text-button']} ${styles['slot-text-button']}`}
+                        disabled={busy}
+                        onClick={() => void act([d], 'ignore')}
+                      >
+                        忽略
+                      </button>
+                      <Link to={`/messages/${message.id}`} state={detailState(location)}>
+                        查看来源
+                      </Link>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          ))
-        : message.suggestions.map((s) => (
-            <div className={styles['progress-card']} key={s.id}>
-              <div className={`${layoutStyles['row-between']} ${styles['slot-row-between']}`}>
-                <h3>{s.content.title}</h3>
-                <Status value={s.status} />
-              </div>
-              <p>{s.content.summary}</p>
-            </div>
-          ))}
-      {pending.length > 1 && (
-        <button disabled={busy} onClick={() => void act(pending, 'confirm')}>
-          确认本轮 {pending.length} 项进展
-        </button>
+              ))
+            : message.suggestions.map((s) => (
+                <div className={styles['progress-card']} key={s.id}>
+                  <div className={`${layoutStyles['row-between']} ${styles['slot-row-between']}`}>
+                    <h3>{s.content.title}</h3>
+                    <Status value={s.status} />
+                  </div>
+                  <p>{s.content.summary}</p>
+                </div>
+              ))}
+          {pending.length > 1 && (
+            <button disabled={busy} onClick={() => void act(pending, 'confirm')}>
+              确认本轮 {pending.length} 项进展
+            </button>
+          )}
+          <ErrorNotice>{error}</ErrorNotice>
+        </div>
       )}
-      <ErrorNotice>{error}</ErrorNotice>
       {editing && !message.businessUnavailable && (
         <ProgressEditor
           draft={editing}

@@ -37,8 +37,6 @@ function render(path: string, role: 'admin' | 'employee') {
       { initialEntries: [path] },
       createElement(AppRoutes, {
         identity,
-        allowedSettings: [],
-        setExpandedNav: vi.fn(),
         onLogout: vi.fn(),
       }),
     ),

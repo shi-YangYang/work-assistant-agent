@@ -9,6 +9,9 @@ import { serviceHasChanges } from '@web/features/model-services/utils/service-dr
 import { ChevronRight, Cpu, Plus } from 'lucide-react'
 
 export function ServiceList({
+  compact = false,
+  disabled = false,
+  selectedId,
   allServices,
   resource,
   createService,
@@ -18,6 +21,9 @@ export function ServiceList({
   usesFor,
   select,
 }: {
+  compact?: boolean
+  disabled?: boolean
+  selectedId?: string
   allServices: (CompanyService | ServiceDraft)[]
   resource: { data: Listing | null; error: string | Error; refresh: () => void }
   createService: () => void
@@ -28,7 +34,10 @@ export function ServiceList({
   select: (id: string | null) => void
 }) {
   return (
-    <section className={layoutStyles['sectioned-panel']} aria-label="模型服务列表">
+    <section
+      className={`${layoutStyles['sectioned-panel']} ${compact ? modelServicesStyles['service-sidebar'] : ''}`}
+      aria-label="模型服务列表"
+    >
       <header className={modelServicesStyles['service-overview-heading']}>
         <h3>
           已添加的服务{' '}
@@ -43,18 +52,22 @@ export function ServiceList({
       {!resource.data && !resource.error && (
         <p className={modelServicesStyles['model-placeholder']}>正在读取服务…</p>
       )}
-      {resource.data && !allServices.length && (
+      {resource.data && !allServices.length && !compact && (
         <div className={modelServicesStyles['model-placeholder']}>
           <Cpu size={32} />
           <h3>添加你的第一个模型服务</h3>
           <p>填写服务地址和密钥，添加模型后分配给各项功能。</p>
           <button
             className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
+            disabled={disabled}
             onClick={createService}
           >
             <Plus size={16} /> 添加服务
           </button>
         </div>
+      )}
+      {resource.data && !allServices.length && compact && (
+        <p className={modelServicesStyles['service-empty']}>还没有模型服务</p>
       )}
       {allServices.map((service) => {
         const current = drafts[service.id] ?? service
@@ -68,21 +81,30 @@ export function ServiceList({
           <button
             className={modelServicesStyles['service-overview-row']}
             key={service.id}
+            data-selected={selectedId === service.id}
+            aria-pressed={selectedId === service.id}
+            disabled={disabled}
             onClick={() => select(service.id)}
           >
             <span className={modelServicesStyles['service-symbol']}>
               <Cpu size={21} />
             </span>
             <span className={modelServicesStyles['service-overview-name']}>
-              <strong>{current.name || '新服务'}</strong>
-              <small>{current.baseUrl || '待填写连接信息'}</small>
+              <strong title={current.baseUrl}>{current.name || '新服务'}</strong>
+              <small>
+                {compact
+                  ? `${current.models.length} 个模型${changed ? ' · 未保存' : ''}`
+                  : current.baseUrl || '待填写连接信息'}
+              </small>
             </span>
-            <span className={modelServicesStyles['service-overview-meta']}>
-              <span>
-                {current.models.length} 个模型{changed ? ' · 未保存' : ''}
+            {!compact && (
+              <span className={modelServicesStyles['service-overview-meta']}>
+                <span>
+                  {current.models.length} 个模型{changed ? ' · 未保存' : ''}
+                </span>
+                <small>{purposes.length ? purposes.join(' · ') : '未分配用途'}</small>
               </span>
-              <small>{purposes.length ? purposes.join(' · ') : '未分配用途'}</small>
-            </span>
+            )}
             <ChevronRight size={17} />
           </button>
         )

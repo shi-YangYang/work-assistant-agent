@@ -1,12 +1,11 @@
 import styles from './ChatHistory.module.css'
 import type { BusinessAction, Identity, Page, WorkMessage } from '@paa/api-contracts'
-import { Empty } from '@web/components/Empty'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { MessageCard } from '@web/features/assistant/components/MessageCard'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
-import { exampleText } from '@web/features/assistant/utils/session'
 import type * as React from 'react'
+import { Sparkles } from 'lucide-react'
 
 export function ChatHistory({
   scroller,
@@ -20,10 +19,8 @@ export function ChatHistory({
   messages,
   conversationId,
   data,
-  identity,
   locked,
   composer,
-  notify,
   change,
   textInput,
   actionReceipts,
@@ -42,7 +39,6 @@ export function ChatHistory({
   identity: Identity
   locked: boolean
   composer: Composer
-  notify: (value: string) => void
   change: (next: Composer) => void
   textInput: React.RefObject<HTMLTextAreaElement | null>
   actionReceipts: {
@@ -54,6 +50,7 @@ export function ChatHistory({
   return (
     <div
       className={styles['chat-scroll']}
+      data-empty={!messages.length && !error && (!conversationId || !!data)}
       ref={scroller}
       onScroll={() => {
         const node = scroller.current
@@ -71,28 +68,21 @@ export function ChatHistory({
           </button>
         )}
         {!messages.length && !error && (!conversationId || !!data) && (
-          <Empty title={identity.member.role === 'admin' ? '从团队进展开始' : '从今天的工作开始'}>
-            <span className={styles['assistant-examples']}>
-              {(identity.member.role === 'admin'
-                ? ['团队当前有哪些阻碍？', '本周员工有哪些工作进展？', '查看最近提交的周报']
-                : ['帮我创建工作：', '生成今天的日报', '查看我还没交的报告']
-              ).map((text) => (
-                <button
-                  key={text}
-                  disabled={locked}
-                  onClick={() => {
-                    const next = exampleText(composer.text, text)
-                    if (next === composer.text)
-                      notify('输入框已有内容，请继续编辑；示例没有覆盖它。')
-                    else change({ ...composer, text: next, key: '' })
-                    textInput.current?.focus()
-                  }}
-                >
-                  {text}
-                </button>
-              ))}
+          <div className={styles['assistant-welcome']}>
+            <div className={styles['welcome-orbit']} aria-hidden="true">
+              <span />
+              <span />
+              <div>
+                <Sparkles size={30} />
+              </div>
+            </div>
+            <span className={styles['welcome-eyebrow']}>
+              <span />
+              你的工作伙伴
             </span>
-          </Empty>
+            <h2>今天，想推进什么？</h2>
+            <p>从一个想法、一份材料，或手头的工作开始。</p>
+          </div>
         )}
         {actionReceipts.data?.items
           .filter((action) => !messages.some((message) => message.id === action.messageId))

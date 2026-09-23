@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="packages/ui-web/assets/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
+  <img src="packages/ui-web/brand/desktop/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
 </p>
 
 <h1 align="center">work-assistant-agent</h1>

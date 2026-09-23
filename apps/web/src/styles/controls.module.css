@@ -2,9 +2,11 @@ button.primary {
   background: var(--accent);
   color: var(--accent-ink);
   border-color: transparent;
+  border-radius: var(--primary-radius, 10px);
 }
-button.primary:hover {
-  filter: brightness(0.95);
+button.primary:hover:where(:not(:disabled)) {
+  opacity: var(--primary-hover-opacity, 0.88);
+  filter: var(--primary-hover-filter, none);
 }
 button.danger {
   color: var(--danger);
@@ -16,11 +18,11 @@ button.danger {
   height: 36px;
   min-height: 36px;
   padding: 7px;
-  border-radius: 6px;
+  border-radius: 9px;
   line-height: 1;
 }
-.icon-button:hover {
-  background: var(--selection);
+.icon-button:hover:where(:not(:disabled)) {
+  background: var(--hover);
   border-color: transparent;
   color: var(--accent);
 }
@@ -28,7 +30,8 @@ button.danger {
   border: 0;
   background: transparent;
   color: var(--accent);
-  padding: 3px 0;
+  padding: 4px 8px;
+  border-radius: 8px;
 }
 @media (max-width: 760px) {
   .icon-button {

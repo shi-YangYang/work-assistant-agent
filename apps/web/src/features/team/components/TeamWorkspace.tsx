@@ -90,7 +90,10 @@ export function TeamWorkspace({
   return (
     <div className={layoutStyles['page']} data-scroll-container>
       <div className={layoutStyles['page-heading']}>
-        <h2>团队看板</h2>
+        <div>
+          <h2>团队看板</h2>
+          <p>看见团队的每一步，让需要关注的事更清晰。</p>
+        </div>
         <button
           className={controlsStyles['icon-button']}
           aria-label="刷新团队看板"
@@ -99,6 +102,23 @@ export function TeamWorkspace({
         >
           <RefreshCw size={18} />
         </button>
+      </div>
+      <div
+        className={teamStyles['team-counts']}
+        data-view={view}
+        aria-label={view === 'work' ? '工作状态筛选' : '汇报状态筛选'}
+      >
+        {metrics.map(([value, label, key]) => (
+          <button
+            key={key}
+            aria-pressed={status === value}
+            data-selected={status === value}
+            onClick={() => update({ [`${view}Status`]: value })}
+          >
+            <span>{label}</span>
+            <strong>{data?.counts[key] ?? '—'}</strong>
+          </button>
+        ))}
       </div>
       <section className={teamStyles['team-panel']}>
         <div className={teamStyles['team-view-heading']}>
@@ -156,22 +176,6 @@ export function TeamWorkspace({
           view={view}
           scope={scope}
         />
-        <div
-          className={teamStyles['team-counts']}
-          aria-label={view === 'work' ? '工作状态筛选' : '汇报状态筛选'}
-        >
-          {metrics.map(([value, label, key]) => (
-            <button
-              key={key}
-              aria-pressed={status === value}
-              data-selected={status === value}
-              onClick={() => update({ [`${view}Status`]: value })}
-            >
-              <span>{label}</span>
-              <strong>{data?.counts[key] ?? '—'}</strong>
-            </button>
-          ))}
-        </div>
         <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
         <TeamResults
           data={data}

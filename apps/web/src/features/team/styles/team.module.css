@@ -1,16 +1,16 @@
 .team-panel {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  overflow: hidden;
+  border: 1px solid var(--control);
+  border-radius: 16px;
+  overflow: visible;
 }
 .team-view-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--line);
+  padding: 12px 20px;
+  border-bottom: 0;
   flex-wrap: wrap;
 }
 .team-view-heading .slot-tabs {
@@ -22,14 +22,14 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 10px;
+  padding: 7px 13px;
 }
 .team-view-heading .segmented-control {
   display: flex;
   gap: 3px;
   padding: 3px;
   background: var(--subtle);
-  border-radius: 8px;
+  border-radius: 10px;
   margin: 10px 0;
 }
 .team-view-heading .segmented-control button {
@@ -40,9 +40,9 @@
   font-size: 13px;
 }
 .team-view-heading .segmented-control button[data-active='true'] {
-  background: var(--surface);
+  background: var(--active-segment);
   color: var(--accent);
-  box-shadow: 0 1px 4px #00000010;
+  box-shadow: var(--raised);
 }
 .team-toolbar {
   display: flex;
@@ -66,30 +66,48 @@
   font-size: 12px;
 }
 .team-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 20px 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding: 24px 0;
+  margin: 0 0 20px;
+  border-radius: 18px;
+  background: var(--subtle);
+}
+.team-counts[data-view='reports'] {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 .team-counts button {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid transparent;
-  background: var(--subtle);
-  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 0 25px;
+  border-radius: 0;
   color: var(--muted);
   font-size: 13px;
 }
 .team-counts button strong {
-  font-size: 16px;
+  font-size: 36px;
+  font-weight: 550;
+  letter-spacing: -1.5px;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
-.team-counts button[data-selected='true'] {
-  background: var(--selection);
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+.team-counts button + button {
+  border-left: 1px solid var(--control);
+}
+.team-counts button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.team-counts button[data-selected='true'] > span {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 5px;
 }
 .team-counts button[data-selected='true'] strong {
   color: inherit;
@@ -113,7 +131,7 @@
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr);
   gap: 20px;
-  padding: 18px 20px;
+  padding: 16px 20px;
   border-top: 1px solid var(--line);
   align-items: start;
 }
@@ -168,7 +186,8 @@ button.team-record-content {
 }
 .team-record-title h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 550;
   overflow-wrap: anywhere;
 }
 .team-record-title h3 small {
@@ -237,7 +256,7 @@ button.team-record-content {
 }
 @media (max-width: 700px) {
   .team-view-heading {
-    padding: 0 12px;
+    padding: 10px 12px;
     gap: 0;
   }
   .team-toolbar {
@@ -256,12 +275,23 @@ button.team-record-content {
     flex-basis: 100%;
   }
   .team-counts {
-    padding: 0 12px 12px;
-    gap: 6px;
+    padding: 19px 0;
+    gap: 0;
   }
   .team-counts button {
-    gap: 8px;
-    padding: 6px 9px;
+    gap: 5px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+  .team-counts button strong {
+    font-size: 26px;
+  }
+  .team-counts[data-view='reports'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 18px;
+  }
+  .team-counts[data-view='reports'] button:nth-child(4) {
+    border-left: 0;
   }
   .team-record {
     grid-template-columns: minmax(0, 1fr);
@@ -284,7 +314,7 @@ button.team-record-content {
   border-color: var(--line);
   padding: 6px 34px 6px 10px;
   background: var(--surface)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%237b8799' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23737373' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
     no-repeat right 10px center / 16px;
 }
 @supports (appearance: base-select) {

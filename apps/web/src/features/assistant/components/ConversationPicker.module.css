@@ -11,10 +11,13 @@
   top: calc(100% + 8px);
   right: 0;
   z-index: 40;
-  padding: 5px 9px;
-  border-radius: 6px;
-  background: var(--text);
-  color: var(--surface);
+  padding: 7px 10px;
+  border: 1px solid var(--control);
+  border-radius: 9px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  color: var(--text);
   box-shadow: var(--shadow);
   font-size: 12px;
   white-space: nowrap;
@@ -36,9 +39,11 @@
   width: min(360px, calc(100vw - 32px));
   max-height: min(480px, calc(100dvh - 210px));
   padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
+  border: 1px solid var(--control);
+  border-radius: 14px;
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
@@ -125,10 +130,10 @@
   padding: 6px;
   color: var(--muted);
 }
-.conversation-row-actions .slot-icon-button:hover {
+.conversation-row-actions .slot-icon-button:hover:where(:not(:disabled)) {
   color: var(--accent);
 }
-.conversation-row-actions .slot-danger:hover {
+.conversation-row-actions .slot-danger:hover:where(:not(:disabled)) {
   color: var(--danger);
   background: var(--danger-bg);
 }

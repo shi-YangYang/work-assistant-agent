@@ -1,4 +1,3 @@
-import layoutStyles from '../../../styles/layout.module.css'
 import utilitiesStyles from '../../../styles/utilities.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
@@ -10,7 +9,7 @@ import { Modal } from '@web/components/Modal'
 import { useResource } from '@web/hooks/useResource'
 import { dateLabel } from '@web/utils/date'
 import { detailState } from '@web/utils/navigation'
-import { FileText, Link2 } from 'lucide-react'
+import { ChevronDown, FileText, Link2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router'
 
@@ -24,8 +23,12 @@ export function BusinessSources({
   const [token, setToken] = useState<string | null>(null)
   if (!sources.length) return null
   return (
-    <div className={styles['business-sources']}>
-      <span className={layoutStyles['eyebrow']}>业务依据</span>
+    <details className={styles['business-sources']}>
+      <summary>
+        <FileText size={14} />
+        <span>业务依据 · {sources.length}</span>
+        <ChevronDown size={14} />
+      </summary>
       <div className={styles['business-source-list']}>
         {sources.map((source, index) =>
           source.unavailable ? (
@@ -53,7 +56,7 @@ export function BusinessSources({
         )}
       </div>
       {token && <SourceView path={`${endpoint}/${token}`} onClose={() => setToken(null)} />}
-    </div>
+    </details>
   )
 }
 

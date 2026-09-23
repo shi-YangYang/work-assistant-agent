@@ -26,7 +26,10 @@ export function WorkPage() {
       data-scroll-container
     >
       <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
-        <h2>我的工作</h2>
+        <div>
+          <h2>我的工作</h2>
+          <p>理清优先级，一件一件向前推进。</p>
+        </div>
         <div
           className={`${layoutStyles['card-actions']} ${recordLayoutStyles['slot-card-actions']}`}
         >

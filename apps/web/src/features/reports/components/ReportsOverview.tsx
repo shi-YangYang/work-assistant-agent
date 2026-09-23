@@ -46,6 +46,7 @@ export function ReportsPage() {
       <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
         <div>
           <h2>我的报告</h2>
+          <p>把日常的推进，整理成清晰的工作记录。</p>
         </div>
         <button onClick={() => setShowRules(true)}>
           <CalendarDays size={16} />

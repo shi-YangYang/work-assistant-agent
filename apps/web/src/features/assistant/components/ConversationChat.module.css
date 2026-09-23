@@ -27,3 +27,8 @@
   font-weight: 600;
   pointer-events: none;
 }
+
+.assistant-page[data-empty='true'] {
+  overflow-y: auto;
+  padding-bottom: 0;
+}

@@ -33,7 +33,7 @@ export default defineConfig(({ mode }) => ({
   },
   renderer: {
     root: resolve(import.meta.dirname, 'src/renderer'),
-    publicDir: resolve(import.meta.dirname, '../../packages/ui-web/public'),
+    publicDir: resolve(import.meta.dirname, '../../packages/ui-web/brand/web'),
     plugins: [
       react(),
       {

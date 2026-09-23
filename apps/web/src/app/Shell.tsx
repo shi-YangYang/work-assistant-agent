@@ -4,6 +4,7 @@ import { AppRoutes } from '@web/app/AppRoutes'
 import { pages, settingsPages } from '@web/app/navigation-items'
 import { Sidebar } from '@web/app/Sidebar'
 import { Topbar } from '@web/app/Topbar'
+import { useNavigationDrawer } from '@web/app/useNavigationDrawer'
 import type { WebCommand } from '@web/components/CommandPalette'
 import { CommandPalette } from '@web/components/CommandPalette'
 import { ConnectionNotice } from '@web/components/ConnectionNotice'
@@ -23,7 +24,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 
 export function Shell({
   identity,
@@ -61,8 +62,10 @@ export function Shell({
     },
     [conversationStorageKey],
   )
-  const [expandedNav, setExpandedNav] = useState(false)
   const location = useLocation()
+  const { expandedNav, setExpandedNav, sidebarRef, mainRef, triggerRef } = useNavigationDrawer(
+    location.key,
+  )
   const navigate = useNavigate()
   const scrollPositions = useRef(new Map<string, number>())
   useLayoutEffect(() => {
@@ -189,10 +192,12 @@ export function Shell({
             <button
               className={styles['nav-backdrop']}
               aria-label="收起导航"
+              tabIndex={-1}
               onClick={() => setExpandedNav(false)}
             />
           )}
           <Sidebar
+            sidebarRef={sidebarRef}
             setExpandedNav={setExpandedNav}
             expandedNav={expandedNav}
             identity={identity}
@@ -203,34 +208,18 @@ export function Shell({
             accountName={accountName}
             logout={logout}
           />
-          <section className={styles['main']}>
-            <Topbar setCommands={setCommands} />
+          <section ref={mainRef} className={styles['main']}>
+            <Topbar
+              navTriggerRef={triggerRef}
+              setCommands={setCommands}
+              expandedNav={expandedNav}
+              setExpandedNav={setExpandedNav}
+            />
             <ConnectionNotice />
             {!['/settings/account', '/settings/login'].includes(location.pathname) && (
               <DingTalkResult />
             )}
-            <AppRoutes
-              identity={identity}
-              allowedSettings={allowedSettings}
-              setExpandedNav={setExpandedNav}
-              onLogout={onLogout}
-            />
-            <nav className={styles['mobile-nav']}>
-              {allowed
-                .filter((p) => p.path !== '/members')
-                .map((p) => (
-                  <NavLink
-                    key={p.path}
-                    to={p.path}
-                    title={p.title}
-                    aria-label={p.title}
-                    onClick={() => setExpandedNav(false)}
-                  >
-                    <p.icon size={19} />
-                    <span>{p.title}</span>
-                  </NavLink>
-                ))}
-            </nav>
+            <AppRoutes identity={identity} onLogout={onLogout} />
           </section>
         </div>
         {toast && (

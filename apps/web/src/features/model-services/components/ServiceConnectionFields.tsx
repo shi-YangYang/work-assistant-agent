@@ -26,12 +26,7 @@ export function ServiceConnectionFields({
   update: (next: ServiceDraft) => void
 }) {
   return (
-    <PanelSection
-      compactStatus
-      title="连接信息"
-      status={draft.baseUrl || '待填写'}
-      defaultOpen={!draft.revision}
-    >
+    <PanelSection compactStatus title="连接信息" status={draft.baseUrl || '待填写'} defaultOpen>
       <fieldset disabled={!!busy} aria-label="连接信息">
         <div
           className={`${layoutStyles['field-grid']} ${modelServicesStyles['slot-field-grid']} ${modelServicesStyles['connection-fields']}`}

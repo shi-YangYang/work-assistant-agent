@@ -1,5 +1,4 @@
 /* Web-only foundations, imported before components in main.tsx. */
 @import './theme.css';
 @import './select.css';
-@import './brand.css';
 @import './base.css';

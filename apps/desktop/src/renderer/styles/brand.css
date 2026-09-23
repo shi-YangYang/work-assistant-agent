@@ -4,6 +4,6 @@
   width: 32px;
   height: 32px;
   background: var(--accent);
-  -webkit-mask: url('@paa/ui-web/mark.png') center / 140% auto no-repeat;
-  mask: url('@paa/ui-web/mark.png') center / 140% auto no-repeat;
+  -webkit-mask: url('@paa/ui-web/logo.svg') center / contain no-repeat;
+  mask: url('@paa/ui-web/logo.svg') center / contain no-repeat;
 }

@@ -8,6 +8,7 @@ import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
 import { retryJob } from '@web/features/jobs/api/requests'
+import { LoaderCircle } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 export function JobNotice({
@@ -53,6 +54,7 @@ export function JobNotice({
   if (job.state === 'queued' || job.state === 'running')
     return (
       <p className={noticeStyles['processing']} role="status">
+        <LoaderCircle size={14} aria-hidden="true" />
         {job.state === 'queued' ? stageNames.queued : stageNames[job.stage || ''] || '正在处理…'}
       </p>
     )

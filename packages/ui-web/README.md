@@ -1,9 +1,20 @@
 # 品牌资源
 
-本包只提供两端共用的品牌图片与 favicon，主题、选择控件和品牌呈现 CSS 由各端独立维护。品牌采用用户于 2026-09-15 确认的「相扣的 W」，表示 Work、协作与持续推进；项目及两端侧栏名称见 [README](../../README.md)。
+品牌资源统一放在 `brand/`，沿用「相扣的 W」轮廓，使用中性黑色。
 
-- 各端的 `styles/brand.css` 使用本包导出的 `mark.png` 透明轮廓，颜色取主题 `--accent`，适配浅色／深色界面。标志旁有名称时使用 `aria-hidden`。
-- `assets/app-icon.png` 是同一轮廓的蓝底白标，用于 Electron 窗口／Dock。`public/` 提供 Web favicon 和触屏图标，由两端 Vite 复制；Electron 的 ICNS／ICO 在 `apps/desktop/resources/icons/`。
-- PNG 标志由内置 imagegen 基于用户确认的概念稿生成，图像提示为：提取相扣 W，保持轮廓、比例和负形通道；纯靛蓝、真正透明背景、无文字／光效／阴影。图标按相同透明轮廓和蓝底白标排版生成各平台尺寸；不是矢量文件。
+```text
+brand/
+├── logo.svg                 # 唯一标志源文件：黑色、透明底
+├── web/
+│   ├── favicon-16.png
+│   ├── favicon-32.png
+│   └── apple-touch-icon.png
+└── desktop/
+    ├── app-icon.png          # 窗口／Dock 与 README：浅底黑标
+    ├── app.icns              # macOS 安装图标
+    └── app.ico               # Windows 安装图标
+```
 
-更新品牌时同步界面、浏览器及桌面分发资源，检查透明边缘与小尺寸效果。保留已有应用名／appId／用户数据位置；本包不导出 CSS。
+界面从 `@paa/ui-web/logo.svg` 获取轮廓，浅色显示黑色，深色通过各端自己的 CSS 显示浅色。Web 的尺寸与样式在 `Sidebar.module.css`，Electron 在 `styles/brand.css`；本包不导出 CSS。标志旁有名称时使用 `aria-hidden`。
+
+更新标志只改 `logo.svg`，再导出 `web/` 和 `desktop/` 所需尺寸，不另存应用私有副本。窗口图标保留浅色底，避免黑标在深色桌面上消失。资源更新不改变应用名、appId 或用户数据位置。

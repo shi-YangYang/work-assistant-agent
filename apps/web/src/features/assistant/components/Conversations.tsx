@@ -20,7 +20,7 @@ import { ConversationPicker } from '@web/features/assistant/components/Conversat
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
-import { Plus } from 'lucide-react'
+import { MessageSquare, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 
@@ -155,10 +155,16 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     <div className={styles['assistant-workspace']}>
       <section className={styles['conversation-main']}>
         <header className={styles['conversation-heading']}>
+          <MessageSquare size={17} />
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
-          <button onClick={create}>
-            <Plus size={16} />
-            新会话
+          {!current.data && <span className={styles['conversation-caption']}>随时为你准备</span>}
+          <button
+            className={`${controlsStyles['icon-button']} ${styles['new-conversation']}`}
+            aria-label="新会话"
+            title="新会话"
+            onClick={create}
+          >
+            <SquarePen size={18} />
           </button>
           <ConversationPicker
             picker={picker}

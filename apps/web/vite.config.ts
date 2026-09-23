@@ -8,7 +8,7 @@ const pdfResources = ['cmaps', 'standard_fonts', 'wasm', 'iccs']
 export default defineConfig({
   resolve: { alias: { '@web': resolve(import.meta.dirname, 'src') } },
   root: resolve(import.meta.dirname, 'src'),
-  publicDir: resolve(import.meta.dirname, '../../packages/ui-web/public'),
+  publicDir: resolve(import.meta.dirname, '../../packages/ui-web/brand/web'),
   plugins: [
     react(),
     {

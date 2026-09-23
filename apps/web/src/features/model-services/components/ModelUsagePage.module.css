@@ -21,7 +21,7 @@
   overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 14px;
 }
 .usage-table {
   width: 100%;
@@ -31,6 +31,7 @@
 }
 .usage-table th {
   font-weight: 500;
+  background: var(--subtle);
   color: var(--muted);
   text-align: left;
 }

@@ -1,17 +1,11 @@
 import './styles/index.css'
 import { App } from '@web/app/App'
+import { initializeTheme } from '@web/lib/theme'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router'
 
-const theme = localStorage.getItem('paa.company.theme') || 'system'
-
-document.documentElement.dataset.theme =
-  theme === 'system'
-    ? matchMedia('(prefers-color-scheme: dark)').matches
-      ? 'dark'
-      : 'light'
-    : theme
+initializeTheme()
 
 const router = createBrowserRouter([{ path: '*', element: <App /> }])
 
@@ -20,8 +14,3 @@ createRoot(document.getElementById('root')!).render(
     <RouterProvider router={router} />
   </React.StrictMode>,
 )
-
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
-  if ((localStorage.getItem('paa.company.theme') || 'system') === 'system')
-    document.documentElement.dataset.theme = event.matches ? 'dark' : 'light'
-})

@@ -10,7 +10,7 @@ import { documentExtractionPath, retryDocument } from '@web/features/assistant/a
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
 import { currentCitation, fileSize } from '@web/features/assistant/utils/files'
 import { useResource } from '@web/hooks/useResource'
-import { Download, FileText } from 'lucide-react'
+import { ChevronDown, Download, FileText } from 'lucide-react'
 import { useState } from 'react'
 
 const statuses: Record<string, string> = {
@@ -173,8 +173,14 @@ function DocumentPreview({
 
 export function DocumentCitations({ citations }: { citations: DocumentCitation[] }) {
   const [selected, setSelected] = useState<DocumentCitation | null>(null)
+  if (!citations.length) return null
   return (
-    <div className={documentsStyles['document-citations']}>
+    <details className={documentsStyles['document-citations']}>
+      <summary>
+        <FileText size={14} />
+        <span>引用文件 · {citations.length}</span>
+        <ChevronDown size={14} />
+      </summary>
       {citations.map((citation, index) => (
         <button
           className={`${controlsStyles['text-button']}`}
@@ -194,6 +200,6 @@ export function DocumentCitations({ citations }: { citations: DocumentCitation[]
           onClose={() => setSelected(null)}
         />
       )}
-    </div>
+    </details>
   )
 }

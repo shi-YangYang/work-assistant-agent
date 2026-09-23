@@ -8,7 +8,7 @@ import { ErrorNotice } from '@web/components/ErrorNotice'
 import { readModelService } from '@web/features/model-services/api/requests'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import { cleanServiceDraft } from '@web/features/model-services/utils/service-drafts'
-import { ArrowLeft, ArrowRight, Trash2 } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Cpu, Trash2 } from 'lucide-react'
 import type * as React from 'react'
 
 export function ServiceEditor({
@@ -44,29 +44,32 @@ export function ServiceEditor({
 }) {
   return (
     <div className={modelServicesStyles['service-detail']}>
-      <div className={modelServicesStyles['service-detail-toolbar']}>
-        <button
-          className={`${controlsStyles['text-button']} ${modelServicesStyles['slot-text-button']}`}
-          disabled={!!busy}
-          onClick={() => select(null)}
-        >
-          <ArrowLeft size={16} /> 全部服务
-        </button>
-        <span className={modelServicesStyles['service-save-state']} data-changed={dirty}>
-          {dirty ? '有未保存的更改' : '已保存'}
-        </span>
-      </div>
       <section
         className={`${layoutStyles['sectioned-panel']} ${modelServicesStyles['model-editor']}`}
         key={draft.id}
       >
         <header className={modelServicesStyles['model-editor-heading']}>
-          <div>
+          <span className={modelServicesStyles['editor-service-symbol']} aria-hidden="true">
+            <Cpu size={24} />
+          </span>
+          <div className={modelServicesStyles['editor-service-name']}>
             <h3>{draft.name || '新服务'}</h3>
             <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
               {draft.models.length} 个模型
             </span>
           </div>
+          <span className={modelServicesStyles['service-save-state']} data-changed={dirty}>
+            {dirty ? '有未保存的更改' : '已保存'}
+          </span>
+          <button
+            className={controlsStyles['icon-button']}
+            aria-label="全部服务"
+            title="全部服务"
+            disabled={!!busy}
+            onClick={() => select(null)}
+          >
+            <ArrowLeft size={16} />
+          </button>
           <button
             className={`${controlsStyles['icon-button']} ${controlsStyles['danger']}`}
             aria-label={draft.revision ? '删除当前模型服务' : '丢弃草稿'}

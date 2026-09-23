@@ -8,6 +8,8 @@ import {
   orphanActionsPath,
   uploadAttachment,
 } from '@web/features/assistant/api/requests'
+import { AssistantSuggestions } from '@web/features/assistant/components/AssistantSuggestions'
+import { exampleText } from '@web/features/assistant/utils/session'
 import { ChatHistory } from '@web/features/assistant/components/ChatHistory'
 import { ComposerAttachments } from '@web/features/assistant/components/ComposerAttachments'
 import type { PreviewImage } from '@web/features/assistant/components/ImageGallery'
@@ -28,7 +30,7 @@ import { usePagedResource } from '@web/hooks/usePagedResource'
 import { useResource } from '@web/hooks/useResource'
 import { useRetryWait } from '@web/hooks/useRetryWait'
 import { useWorkspace } from '@web/lib/workspace'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 export function ConversationChat({
   conversationId,
@@ -84,6 +86,23 @@ export function ConversationChat({
   const locked = busy || pending || previewUploading
   const textInput = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  const pageElement = useRef<HTMLDivElement>(null)
+  const composerElement = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const page = pageElement.current
+    const element = composerElement.current
+    if (!page || !element) return
+    const update = () => {
+      page.style.setProperty('--composer-height', `${element.getBoundingClientRect().height}px`)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => {
+      observer.disconnect()
+      page.style.removeProperty('--composer-height')
+    }
+  }, [])
   const atBottomRef = useRef(true)
   const [newReply, setNewReply] = useState(false)
   const composerRef = useRef(composer)
@@ -174,9 +193,12 @@ export function ConversationChat({
     }))
   const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const nextCursor = data?.nextCursor
+  const empty = !messages.length && !error && (!conversationId || !!data)
   return (
     <div
+      ref={pageElement}
       className={styles['assistant-page']}
+      data-empty={empty}
       onDragEnter={(event) => {
         if (!event.dataTransfer.types.includes('Files')) return
         event.preventDefault()
@@ -246,12 +268,13 @@ export function ConversationChat({
         identity={identity}
         locked={locked}
         composer={composer}
-        notify={notify}
         change={change}
         textInput={textInput}
         actionReceipts={actionReceipts}
       />
       <MessageComposer
+        containerRef={composerElement}
+        empty={empty}
         dragging={dragging}
         send={send}
         addFiles={addFiles}
@@ -280,6 +303,18 @@ export function ConversationChat({
           change={change}
         />
       </MessageComposer>
+      {empty && (
+        <AssistantSuggestions
+          admin={identity.member.role === 'admin'}
+          disabled={locked}
+          onChoose={(text) => {
+            const next = exampleText(composer.text, text)
+            if (next === composer.text) notify('输入框已有内容，请继续编辑；示例没有覆盖它。')
+            else change({ ...composer, text: next, key: '' })
+            textInput.current?.focus()
+          }}
+        />
+      )}
     </div>
   )
 }

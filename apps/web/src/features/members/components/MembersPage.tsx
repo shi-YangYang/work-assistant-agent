@@ -3,13 +3,14 @@ import controlsStyles from '../../../styles/controls.module.css'
 import recordLayoutStyles from '../../../components/RecordLayout.module.css'
 import type { Member, Page } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
+import { RecordEmpty } from '@web/components/RecordEmpty'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { membersPath, updateMember } from '@web/features/members/api/requests'
 import { DeleteMember } from '@web/features/members/components/DeleteMember'
 import { MemberForm } from '@web/features/members/components/MemberForm'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
-import { UserPlus } from 'lucide-react'
+import { UserPlus, Users } from 'lucide-react'
 import { useState } from 'react'
 
 export function MembersPage() {
@@ -50,6 +51,25 @@ export function MembersPage() {
       </div>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       <div className={recordLayoutStyles['record-list']}>
+        {!data && !error && (
+          <p className={recordLayoutStyles['records-loading']} role="status">
+            正在读取成员…
+          </p>
+        )}
+        {data && !data.items.length && (
+          <RecordEmpty
+            icon={<Users size={26} />}
+            title="还没有成员"
+            action={
+              <button className={controlsStyles['primary']} onClick={() => setCreate(true)}>
+                <UserPlus size={16} />
+                添加成员
+              </button>
+            }
+          >
+            添加公司成员，一起记录与跟进工作。
+          </RecordEmpty>
+        )}
         {data?.items.map((member) => (
           <div className={recordLayoutStyles['record-row']} key={member.id}>
             <span className={layoutStyles['avatar']}>{member.name.slice(0, 1)}</span>

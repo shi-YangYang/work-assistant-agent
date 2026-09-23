@@ -1,47 +1,82 @@
 .message {
-  padding: 16px;
-  margin-bottom: 16px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--surface);
+  min-width: 0;
+  margin-bottom: 36px;
 }
-.message header {
+.user-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 26px;
+}
+.user-turn > header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 12px;
 }
-.message header > .slot-text-button {
-  margin-left: auto;
-  padding: 5px 12px;
-  min-height: 32px;
-  border-radius: 6px;
+.user-turn > header .slot-text-button {
+  min-height: 28px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
 }
-.message header > .slot-text-button:hover {
-  background: var(--selection);
+.user-turn > header .slot-text-button:hover {
+  background: var(--hover);
+  color: var(--text);
 }
-.assistant-reply {
-  padding-top: 16px;
+.user-bubble {
+  max-width: min(85%, 680px);
+  padding: 13px 18px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 15px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
 }
-.assistant-reply h3 {
+.user-turn > div {
+  width: min(100%, 680px);
+}
+.assistant-turn {
+  min-width: 0;
+}
+.assistant-identity {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  color: var(--accent);
+  margin-bottom: 12px;
+  color: var(--secondary);
+  font-size: 13px;
+  font-weight: 550;
+}
+.assistant-identity > svg {
+  color: var(--muted);
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  background: var(--subtle);
+  border-radius: 50%;
+}
+.assistant-reply {
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--text);
 }
 .progress-card {
   border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
   background: var(--subtle);
-  border-radius: 6px;
-  padding: 12px 16px;
-  margin-top: 12px;
+  border-radius: 14px;
+  padding: 18px;
+  margin-top: 16px;
 }
 .progress-card p {
-  margin-top: 4px;
+  margin-top: 7px;
+  color: var(--secondary);
 }
 .progress-card h3 {
   font-size: 15px;
@@ -49,23 +84,23 @@
 .progress-card .slot-row-between {
   align-items: start;
 }
-@media (max-width: 760px) {
-  .message {
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-  .progress-card {
-    padding: 12px;
-  }
-}
-.provisional-reply {
-  opacity: 0.85;
-}
 .provisional-reply > small {
   color: var(--muted);
+  display: block;
+  margin-bottom: 8px;
 }
 @media (max-width: 760px) {
-  .message header > .slot-text-button {
+  .message {
+    margin-bottom: 28px;
+  }
+  .user-bubble {
+    max-width: 92%;
+    padding: 11px 14px;
+  }
+  .progress-card {
+    padding: 14px;
+  }
+  .user-turn > header .slot-text-button {
     min-height: 44px;
   }
 }

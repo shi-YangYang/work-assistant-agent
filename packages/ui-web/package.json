@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "exports": {
-    "./app-icon.png": "./assets/app-icon.png",
-    "./mark.png": "./assets/mark.png"
+    "./app-icon.png": "./brand/desktop/app-icon.png",
+    "./logo.svg": "./brand/logo.svg"
   }
 }

@@ -25,7 +25,7 @@
   "npmRebuild": false,
   "artifactName": "Personal-Agent-Assistant-${version}-${os}-${arch}.${ext}",
   "mac": {
-    "icon": "apps/desktop/resources/icons/app.icns",
+    "icon": "packages/ui-web/brand/desktop/app.icns",
     "target": [
       {
         "target": "dmg",
@@ -39,7 +39,7 @@
     }
   },
   "win": {
-    "icon": "apps/desktop/resources/icons/app.ico",
+    "icon": "packages/ui-web/brand/desktop/app.ico",
     "target": [
       {
         "target": "nsis",

@@ -8,7 +8,7 @@ import { DeleteRecord } from '@web/features/records/components/DeleteRecord'
 import { WorkEditor } from '@web/features/work/components/WorkEditor'
 import { dateLabel } from '@web/utils/date'
 import { detailState } from '@web/utils/navigation'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, CircleCheck, CircleDashed, CircleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router'
 
@@ -26,11 +26,30 @@ export function WorkList({
   const location = useLocation()
   return (
     <div className={recordLayoutStyles['record-list']}>
+      <div className={recordLayoutStyles['record-list-heading']} aria-hidden="true">
+        <span>工作事项</span>
+        <span>状态</span>
+        <span>最近更新</span>
+        <span />
+      </div>
       {items.map((work) => (
         <div
           className={`${recordLayoutStyles['record-row']} ${recordLayoutStyles['work-row']}`}
           key={work.id}
         >
+          <span
+            className={recordLayoutStyles['work-state-icon']}
+            data-status={work.status}
+            aria-hidden="true"
+          >
+            {work.status === 'done' ? (
+              <CircleCheck size={18} />
+            ) : work.status === 'blocked' ? (
+              <CircleAlert size={18} />
+            ) : (
+              <CircleDashed size={18} />
+            )}
+          </span>
           <Link
             className={recordLayoutStyles['record-main']}
             to={`/work/${work.id}${work.historical ? `?revision=${work.revision}` : ''}`}
@@ -40,7 +59,6 @@ export function WorkList({
               className={`${layoutStyles['row-between']} ${recordLayoutStyles['slot-row-between']}`}
             >
               <h3>{work.title}</h3>
-              <Status value={work.status} />
             </div>
             <p className={recordLayoutStyles['record-summary']}>{work.summary}</p>
             {work.dueDate && (
@@ -54,6 +72,9 @@ export function WorkList({
               </small>
             )}
           </Link>
+          <span className={recordLayoutStyles['work-status']}>
+            <Status value={work.status} />
+          </span>
           <time className={recordLayoutStyles['record-updated']}>{dateLabel(work.updatedAt)}</time>
           {own ? (
             <Actions className={recordLayoutStyles['record-actions']}>

@@ -3,20 +3,14 @@ import layoutStyles from '../styles/layout.module.css'
 import styles from './Sidebar.module.css'
 import type { Identity } from '@paa/api-contracts'
 import type { LucideIcon } from 'lucide-react'
-import {
-  ChevronRight,
-  Command,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-} from 'lucide-react'
+import { ChevronRight, Search, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react'
 import type * as React from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { Location } from 'react-router'
 import { Link, NavLink } from 'react-router'
 
 export function Sidebar({
+  sidebarRef,
   setExpandedNav,
   expandedNav,
   identity,
@@ -27,7 +21,8 @@ export function Sidebar({
   accountName,
   logout,
 }: {
-  setExpandedNav: React.Dispatch<React.SetStateAction<boolean>>
+  sidebarRef: React.RefObject<HTMLElement | null>
+  setExpandedNav: (expanded: boolean) => void
   expandedNav: boolean
   identity: Identity
   setCommands: React.Dispatch<React.SetStateAction<boolean>>
@@ -52,10 +47,6 @@ export function Sidebar({
       const panel = settingsPanel.current
       const trigger = settingsTrigger.current
       if (!panel || !trigger) return
-      if (window.innerWidth <= 760) {
-        panel.hidePopover()
-        return
-      }
       const rect = trigger.getBoundingClientRect()
       panel.style.left = `${Math.min(rect.right + 10, window.innerWidth - panel.offsetWidth - 12)}px`
       panel.style.top = `${Math.max(12, Math.min(rect.bottom - panel.offsetHeight, window.innerHeight - panel.offsetHeight - 12))}px`
@@ -70,11 +61,13 @@ export function Sidebar({
   }, [settingsOpen])
   return (
     <aside
+      ref={sidebarRef}
+      id="sidebar-navigation"
       className={styles['sidebar']}
       data-expanded={expandedNav}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') setExpandedNav(false)
-      }}
+      role={expandedNav ? 'dialog' : undefined}
+      aria-modal={expandedNav || undefined}
+      aria-label={expandedNav ? '导航' : undefined}
     >
       <button
         className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']} ${styles['sidebar-toggle']}`}
@@ -88,8 +81,10 @@ export function Sidebar({
         to={identity.member.role === 'admin' ? '/team' : '/assistant'}
         className={styles['brand']}
       >
-        <span className={'brand-mark'} aria-hidden="true" />
-        <span className={styles['nav-label']}>公司工作助手</span>
+        <span className={styles['brand-mark']} aria-hidden="true" />
+        <span className={styles['nav-label']}>
+          公司工作助手<small>团队的每一步，都在这里</small>
+        </span>
       </Link>
       <button
         className={styles['search-launch']}
@@ -97,9 +92,10 @@ export function Sidebar({
         aria-label="查找页面与操作"
         onClick={() => setCommands(true)}
       >
-        <Command size={16} /> <span className={styles['nav-label']}>查找页面与操作</span>
+        <Search size={17} /> <span className={styles['nav-label']}>查找页面与操作</span>
         <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
       </button>
+      <div className={`${styles['navigation-label']} ${styles['nav-label']}`}>日常工作</div>
       <nav aria-label="工作空间">
         {allowed.map((p) => (
           <NavLink
@@ -170,7 +166,7 @@ export function Sidebar({
           </span>
           <span className={styles['nav-label']}>
             {accountName}
-            {identity.member.role !== 'admin' && <small>用户</small>}
+            <small>{identity.member.role === 'admin' ? '公司管理' : '个人工作空间'}</small>
           </span>
           <button
             className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}

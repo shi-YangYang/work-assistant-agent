@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { Avatar, Button, Icon, Modal, Tool } from './components'
 import { Assistant, WorkPage, TeamPage, ModelsPage, ReportsPage } from './pages'
 import { initialWork, nav, type Work } from './data'
-import mark from '../../../../packages/ui-web/assets/mark.png'
+import mark from '../../../../packages/ui-web/brand/logo.svg'
 
 export default function App() {
   const [page, setPage] = useState('assistant')

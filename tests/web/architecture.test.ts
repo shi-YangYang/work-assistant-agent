@@ -180,7 +180,7 @@ it('keeps CSS local to Web components and each application owns its global found
   const root = resolve(import.meta.dirname, '../../apps/web/src')
   const key = (path: string) => relative(root, path).replaceAll('\\', '/')
   const errors: string[] = []
-  const globals = new Set(['index.css', 'theme.css', 'select.css', 'brand.css', 'base.css'])
+  const globals = new Set(['index.css', 'theme.css', 'select.css', 'base.css'])
   function inspect(directory: string) {
     for (const item of readdirSync(directory, { withFileTypes: true })) {
       const path = resolve(directory, item.name)
