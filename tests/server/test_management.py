@@ -4,16 +4,16 @@ import pytest
 from PIL import Image
 from datetime import timedelta
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.checkpoints import GuardedSaver
-from paa_server.agent.history import conversation_history
-from paa_server.agent.tools.reports import draft_report
-from paa_server.db.base import now
-from paa_server.modules.messages.models import Message
-from paa_server.modules.reports.models import Report, ReportRevision
-from paa_server.modules.reports.sources import report_inputs
-from paa_server.modules.work.models import WorkRevision
-from paa_server.tasks.context import LostLease, RunContext
-from paa_server.tasks.models import Job
+from app.agent.checkpoints import GuardedSaver
+from app.agent.history import conversation_history
+from app.agent.tools.reports import draft_report
+from app.db.base import now
+from app.modules.messages.models import Message
+from app.modules.reports.models import Report, ReportRevision
+from app.modules.reports.sources import report_inputs
+from app.modules.work.models import WorkRevision
+from app.tasks.context import LostLease, RunContext
+from app.tasks.models import Job
 from pathlib import Path
 from sqlalchemy import select, text
 from test_company import keyed, run_target
@@ -310,7 +310,7 @@ async def test_member_creation_accepts_four_character_password_without_relaxing_
 
 async def test_initial_admin_uses_same_password_requirement():
     from pydantic import ValidationError
-    from paa_server.modules.members.schemas import AdminBootstrap
+    from app.modules.members.schemas import AdminBootstrap
     for password in ('123', 'x' * 129):
         with pytest.raises(ValidationError):
             AdminBootstrap(username='admin', name='管理员', password=password)

@@ -1,14 +1,14 @@
 import pytest
 from datetime import date
 from fastapi import HTTPException
-from paa_server.core.input_rules import MEMBER_RULES, PASSWORD_RULES
-from paa_server.core.periods import period_range
-from paa_server.http.validation import validation_detail
-from paa_server.modules.auth.schemas import Password
-from paa_server.modules.conversations.schemas import ConversationEdit
-from paa_server.modules.members.schemas import AdminBootstrap, MemberCreate, ResetPassword
-from paa_server.modules.reports.periods import period
-from paa_server.modules.work.schemas import DraftEdit, Progress
+from app.core.input_rules import MEMBER_RULES, PASSWORD_RULES
+from app.core.periods import period_range
+from app.http.validation import validation_detail
+from app.modules.auth.schemas import Password
+from app.modules.conversations.schemas import ConversationEdit
+from app.modules.members.schemas import AdminBootstrap, MemberCreate, ResetPassword
+from app.modules.reports.periods import period
+from app.modules.work.schemas import DraftEdit, Progress
 from pydantic import ValidationError
 from types import SimpleNamespace
 

@@ -18,33 +18,37 @@ afterEach(() => {
 
 it('does not use examples or company server configuration as desktop defaults', () => {
   const root = directory()
-  writeFileSync(join(root, '.env.example'), 'PAA_DESKTOP_COMPANY_URL=https://example.invalid')
   writeFileSync(
-    join(root, '.env.company'),
+    join(root, '.env.electron.example'),
+    'PAA_DESKTOP_COMPANY_URL=https://example.invalid',
+  )
+  writeFileSync(
+    join(root, '.env.web'),
     'PAA_WEB_ORIGIN=https://server.invalid\nPAA_DESKTOP_COMPANY_URL=https://wrong.invalid',
   )
-  expect(defaultCompanyUrl('production', root)).toBe('')
+  expect(defaultCompanyUrl(root)).toBe('')
 })
 
-it('reads the root dotenv file, normalizes the URL and permits an empty value', () => {
+it('reads the desktop dotenv file, normalizes the URL and permits an empty value', () => {
   const root = directory()
   writeFileSync(
-    join(root, '.env'),
+    join(root, '.env.electron'),
     'PAA_DESKTOP_COMPANY_URL="https://desktop.example/"\nDATABASE_PASSWORD=private-test-marker',
   )
-  expect(defaultCompanyUrl('production', root)).toBe('https://desktop.example')
-  writeFileSync(join(root, '.env'), 'PAA_DESKTOP_COMPANY_URL=')
-  expect(defaultCompanyUrl('production', root)).toBe('')
+  expect(defaultCompanyUrl(root)).toBe('https://desktop.example')
+  writeFileSync(join(root, '.env.electron'), 'PAA_DESKTOP_COMPANY_URL=')
+  expect(defaultCompanyUrl(root)).toBe('')
 })
 
-it('honors mode-specific configuration and explicit build environment overrides', () => {
+it('ignores Vite mode files and honors explicit environment overrides', () => {
   const root = directory()
-  writeFileSync(join(root, '.env'), 'PAA_DESKTOP_COMPANY_URL=http://127.0.0.1:5174')
+  writeFileSync(join(root, '.env.electron'), 'PAA_DESKTOP_COMPANY_URL=http://127.0.0.1:5174')
   writeFileSync(join(root, '.env.production'), 'PAA_DESKTOP_COMPANY_URL=https://release.example')
-  expect(defaultCompanyUrl('development', root)).toBe('http://127.0.0.1:5174')
-  expect(defaultCompanyUrl('production', root)).toBe('https://release.example')
+  expect(defaultCompanyUrl(root)).toBe('http://127.0.0.1:5174')
   vi.stubEnv('PAA_DESKTOP_COMPANY_URL', 'https://override.example')
-  expect(defaultCompanyUrl('production', root)).toBe('https://override.example')
+  expect(defaultCompanyUrl(root)).toBe('https://override.example')
+  vi.stubEnv('PAA_DESKTOP_COMPANY_URL', '')
+  expect(defaultCompanyUrl(root)).toBe('')
 })
 
 it.each([
@@ -55,8 +59,8 @@ it.each([
   'https://example.com/path',
 ])('rejects invalid defaults without echoing their contents: %s', (url) => {
   const root = directory()
-  writeFileSync(join(root, '.env'), `PAA_DESKTOP_COMPANY_URL=${url}`)
-  expect(() => defaultCompanyUrl('production', root)).toThrow(/^PAA_DESKTOP_COMPANY_URL 须为/)
+  writeFileSync(join(root, '.env.electron'), `PAA_DESKTOP_COMPANY_URL=${url}`)
+  expect(() => defaultCompanyUrl(root)).toThrow(/^PAA_DESKTOP_COMPANY_URL 须为/)
 })
 
 it('injects only the public address into main, never the environment or renderer', async () => {

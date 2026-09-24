@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/server/src'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/server'))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/voiceprint-engine/src'))
 
 import httpx
@@ -9,12 +9,12 @@ import os
 import pytest_asyncio
 from dataclasses import replace
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.api import create_app
-from paa_server.core.config import Settings
-from paa_server.db.base import Base
-from paa_server.db.session import database
-from paa_server.modules.members.models import Company, Member
-from paa_server.security.secrets import initialize_key
+from app.main import create_app
+from app.core.config import Settings
+from app.db.base import Base
+from app.db.session import database
+from app.modules.members.models import Company, Member
+from app.security.secrets import initialize_key
 from pwdlib import PasswordHash
 from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
@@ -67,7 +67,7 @@ async def setup(tmp_path):
         for thread in threads:
             await saver.adelete_thread(thread)
     async with sessions.begin() as db:
-        from paa_server.modules.auth.models import Session
+        from app.modules.auth.models import Session
         await db.execute(delete(Session).where(Session.member_id.in_(select(Member.id).where(Member.company_id.in_(company_ids)))))
         for table in reversed(Base.metadata.sorted_tables):
             if 'company_id' in table.c:

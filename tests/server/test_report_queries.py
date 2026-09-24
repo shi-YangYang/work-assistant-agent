@@ -1,7 +1,7 @@
 import pytest
 from datetime import timedelta
-from paa_server.modules.reports.models import ReportRevision
-from paa_server.tasks.models import Job
+from app.modules.reports.models import ReportRevision
+from app.tasks.models import Job
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 from test_team_workspace import DAY, report

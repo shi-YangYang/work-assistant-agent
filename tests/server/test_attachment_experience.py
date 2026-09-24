@@ -2,8 +2,8 @@ import asyncio
 import base64
 import io
 import json
-import paa_server.modules.attachments.router as api_module
-import paa_server.tasks.handlers as worker
+import app.modules.attachments.router as api_module
+import app.tasks.handlers as worker
 import pytest
 import subprocess
 import wave
@@ -13,15 +13,15 @@ from datetime import timedelta
 from fakes import controlled_model
 from fastapi import HTTPException
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.harness import invoke_harness as worker_invoke_harness
-from paa_server.db.base import now
-from paa_server.integrations.media import audio_mime, audio_wav, image_process, image_process as api_module_image_process, preview_path
-from paa_server.integrations.parsing.process import parse_process
-from paa_server.modules.attachments.models import Attachment
-from paa_server.modules.messages.models import Message
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.maintenance import maintenance
-from paa_server.tasks.models import Job
+from app.agent.harness import invoke_harness as worker_invoke_harness
+from app.db.base import now
+from app.integrations.media import audio_mime, audio_wav, image_process, image_process as api_module_image_process, preview_path
+from app.integrations.parsing.process import parse_process
+from app.modules.attachments.models import Attachment
+from app.modules.messages.models import Message
+from app.tasks.handlers import process_job
+from app.tasks.maintenance import maintenance
+from app.tasks.models import Job
 from pathlib import Path
 from test_company import keyed
 from test_documents import upload
@@ -48,7 +48,7 @@ async def test_recorded_webm_preview_has_duration_seeks_and_preserves_original(s
     assert (settings.media_dir / item['id']).read_bytes() == raw
     async def should_not_decode(*args):
         raise AssertionError('A cached preview must not decode the audio again')
-    monkeypatch.setattr('paa_server.modules.attachments.router.audio_wav', should_not_decode)
+    monkeypatch.setattr('app.modules.attachments.router.audio_wav', should_not_decode)
     seek = await c['employee'].get(item['previewUrl'], headers={'Range': 'bytes=1000-1999'})
     assert seek.status_code == 206 and seek.content == preview.content[1000:2000]
     conv = await conversation(c['employee'], '语音预览'); await message(c['employee'], conv, '', [item['id']])
@@ -133,7 +133,7 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     sent = await c['employee'].post('/api/v1/messages', json=body, headers=headers)
     assert sent.status_code == 202, sent.text
     assert (await c['employee'].post('/api/v1/messages', json=body, headers=headers)).json() == sent.json()
-    from paa_server.agent.tools.messages import get_message_context
+    from app.agent.tools.messages import get_message_context
     received = []
     original_harness = worker_invoke_harness
     async def inspect_input(context, saver, blocks, model):
@@ -235,7 +235,7 @@ async def test_preview_rejects_logout_while_conversion_is_in_flight(setup, monke
     if kind == 'image':
         item = await upload(clients['employee'], 'phone.heic', image_samples()['phone.heic'], 'image/heic')
     else:
-        raw = (Path(__file__).parents[2] / 'apps/server/src/paa_server/assets/probe-zh.wav').read_bytes()
+        raw = (Path(__file__).parents[2] / 'apps/server/app/assets/probe-zh.wav').read_bytes()
         item = await upload(clients['employee'], 'voice.wav', raw, 'audio/wav')
     started, resume = asyncio.Event(), asyncio.Event()
     method = 'image_process' if kind == 'image' else 'audio_wav'

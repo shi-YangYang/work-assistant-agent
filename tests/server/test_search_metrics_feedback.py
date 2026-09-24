@@ -6,20 +6,20 @@ import json
 import pytest
 from datetime import date, datetime, timedelta, timezone
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.core.periods import period_range
-from paa_server.db.base import now
-from paa_server.modules.auth.models import Session
-from paa_server.modules.members.models import Company, Member
-from paa_server.modules.messages.models import Message
-from paa_server.modules.model_services.models import ModelUsage
-from paa_server.modules.model_services.usage import RequestRecord, usage_fields
-from paa_server.modules.reports.models import Report, ReportRevision
-from paa_server.modules.work.models import WorkItem, WorkRevision
-from paa_server.security.access import scope as business_scope
-from paa_server.tasks.feedback import events, update_feedback
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.models import Job
-from paa_server.tasks.queue import claim
+from app.core.periods import period_range
+from app.db.base import now
+from app.modules.auth.models import Session
+from app.modules.members.models import Company, Member
+from app.modules.messages.models import Message
+from app.modules.model_services.models import ModelUsage
+from app.modules.model_services.usage import RequestRecord, usage_fields
+from app.modules.reports.models import Report, ReportRevision
+from app.modules.work.models import WorkItem, WorkRevision
+from app.security.access import scope as business_scope
+from app.tasks.feedback import events, update_feedback
+from app.tasks.handlers import process_job
+from app.tasks.models import Job
+from app.tasks.queue import claim
 from sqlalchemy import delete
 from test_company import send
 from test_model_services import create, route
@@ -168,7 +168,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
             wire = 'data: ' + json.dumps(event) + '\n\ndata: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\ndata: [DONE]\n\n'
             return httpx.Response(200, text=wire, headers={'content-type': 'text/event-stream'})
         return httpx.Response(200,stream=GatedStream(seen,release,interrupted=interrupted,tools=tools and len(calls)==1))
-    monkeypatch.setattr('paa_server.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         task=asyncio.create_task(process_job(job,sessions,settings,saver))
         try:
@@ -228,8 +228,8 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
 
 async def test_feedback_live_authorization_and_stale_writer(setup):
     settings,sessions,users,c=setup
-    from paa_server.tasks.context import RunContext, LostLease
-    from paa_server.tasks.feedback import publish
+    from app.tasks.context import RunContext, LostLease
+    from app.tasks.feedback import publish
     sent=await send(c['admin'],'查询')
     job=await claim(sessions,users['admin'].id)
     context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings)
@@ -264,7 +264,7 @@ async def test_usage_actual_unknown_failure_legacy_and_snapshots(setup):
             db.add(row);await db.flush();records.append(row.id)
     success=RequestRecord(sessions,records[0]);await success.event('started');await success.event('usage',{'prompt_tokens':0});await success.finish()
     failed=RequestRecord(sessions,records[1]);await failed.event('started')
-    from paa_server.integrations.models.transport import ProviderError
+    from app.integrations.models.transport import ProviderError
     await failed.finish(ProviderError('authentication','鉴权失败',401))
     uncertain=RequestRecord(sessions,records[2]);await uncertain.event('started');await uncertain.finish(asyncio.TimeoutError())
     result=(await c['admin'].get('/api/v1/settings/model-usage')).json()
@@ -283,9 +283,9 @@ async def test_usage_actual_unknown_failure_legacy_and_snapshots(setup):
 async def test_usage_address_rejection_not_sent_but_http_redirect_is_failed(setup, monkeypatch, protocol):
     from dataclasses import replace
     from httpcore._backends.auto import AutoBackend
-    from paa_server.integrations.models.transport import ProviderError
-    from paa_server.integrations.models.chat import chat
-    from paa_server.integrations.models.asr import transcribe
+    from app.integrations.models.transport import ProviderError
+    from app.integrations.models.chat import chat
+    from app.integrations.models.asr import transcribe
 
     settings, sessions, users, c = setup
     settings = replace(settings, model_allowed_origins=())
@@ -323,7 +323,7 @@ async def test_usage_address_rejection_not_sent_but_http_redirect_is_failed(setu
         requests.append(request)
         return httpx.Response(307, headers={'Location':'https://example.com/v1'})
 
-    monkeypatch.setattr('paa_server.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(redirect)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(redirect)))
     with pytest.raises(ProviderError, match='重定向') as remote:
         await invoke()
     assert remote.value.code == 'address' and remote.value.status == 307 and len(requests) == 1
@@ -336,8 +336,8 @@ async def test_usage_address_rejection_not_sent_but_http_redirect_is_failed(setu
 
 
 async def test_document_stage_follows_actual_parse_and_feedback_expires(setup):
-    from paa_server.tasks.context import RunContext
-    from paa_server.tasks.documents import prepare_document
+    from app.tasks.context import RunContext
+    from app.tasks.documents import prepare_document
     settings,sessions,users,c=setup
     uploaded=await c['employee'].post('/api/v1/uploads',files={'file':('note.txt',b'Plain document','text/plain')})
     assert uploaded.status_code==201,uploaded.text

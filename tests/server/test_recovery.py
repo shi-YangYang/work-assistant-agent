@@ -5,17 +5,17 @@ from fakes import ReviewedFixtureModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.history import conversation_history
-from paa_server.agent.middleware import ToolBoundary
-from paa_server.db.base import now
-from paa_server.modules.messages.models import Message
-from paa_server.modules.reports.models import Report
-from paa_server.modules.work.models import ProgressDraft
-from paa_server.security.access import scope as business_scope
-from paa_server.tasks.context import RunContext
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.models import Job
-from paa_server.tasks.queue import claim
+from app.agent.history import conversation_history
+from app.agent.middleware import ToolBoundary
+from app.db.base import now
+from app.modules.messages.models import Message
+from app.modules.reports.models import Report
+from app.modules.work.models import ProgressDraft
+from app.security.access import scope as business_scope
+from app.tasks.context import RunContext
+from app.tasks.handlers import process_job
+from app.tasks.models import Job
+from app.tasks.queue import claim
 from pydantic import Field
 from sqlalchemy import select
 from test_company import send
@@ -176,7 +176,7 @@ class ReferenceRecoveryModel(ReviewedFixtureModel):
 
 @pytest.mark.parametrize(('other_owner', 'new_reference'), [('peer', 'null'), ('outsider', None)])
 async def test_model_recovers_invalid_references_without_exposing_other_work(setup, other_owner, new_reference):
-    from paa_server.modules.work.models import WorkItem
+    from app.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     target = users[other_owner]
     async with sessions.begin() as db:
@@ -203,9 +203,9 @@ async def test_model_recovers_invalid_references_without_exposing_other_work(set
 async def test_work_search_and_message_context_use_confirmed_state_after_reply(setup):
     import json
     from types import SimpleNamespace
-    from paa_server.agent.tools.work import find_work_items
-    from paa_server.agent.tools.messages import get_message_context
-    from paa_server.modules.work.models import WorkItem
+    from app.agent.tools.work import find_work_items
+    from app.agent.tools.messages import get_message_context
+    from app.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     actor = users['employee']
     sent = await send(clients['employee'])
@@ -232,8 +232,8 @@ async def test_work_search_and_message_context_use_confirmed_state_after_reply(s
 async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setup):
     import json
     from types import SimpleNamespace
-    from paa_server.agent.tools.work import find_work_items
-    from paa_server.modules.work.models import WorkItem
+    from app.agent.tools.work import find_work_items
+    from app.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     actor = users['employee']
     sent = await send(clients['employee'])
@@ -268,8 +268,8 @@ async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setu
 async def test_work_tool_returns_whole_long_records_with_a_continuation(setup):
     import json
     from types import SimpleNamespace
-    from paa_server.agent.tools.work import find_work_items
-    from paa_server.modules.work.models import WorkItem
+    from app.agent.tools.work import find_work_items
+    from app.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     actor = users['admin']
     sent = await send(clients['admin'])

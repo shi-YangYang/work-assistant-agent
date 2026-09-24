@@ -4,21 +4,21 @@ import pytest
 from datetime import timedelta
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
-from paa_server.agent.history import conversation_history
-from paa_server.agent.intent import authorize_intent
-from paa_server.agent.operations import execute
-from paa_server.agent.tools.actions import query_report_obligations, query_reports
-from paa_server.agent.tools.team import query_team_business
-from paa_server.agent.tools.work import find_work_items, get_work_item
-from paa_server.db.base import now
-from paa_server.modules.messages.models import Message
-from paa_server.modules.operations.receipts import receipt_reply
-from paa_server.modules.reports.models import Report, ReportRevision
-from paa_server.modules.work.models import WorkItem
-from paa_server.security.access import receipt as business_receipt, remember as business_remember
-from paa_server.tasks.context import RunContext
-from paa_server.tasks.models import Job
-from paa_server.tasks.queue import claim
+from app.agent.history import conversation_history
+from app.agent.intent import authorize_intent
+from app.agent.operations import execute
+from app.agent.tools.actions import query_report_obligations, query_reports
+from app.agent.tools.team import query_team_business
+from app.agent.tools.work import find_work_items, get_work_item
+from app.db.base import now
+from app.modules.messages.models import Message
+from app.modules.operations.receipts import receipt_reply
+from app.modules.reports.models import Report, ReportRevision
+from app.modules.work.models import WorkItem
+from app.security.access import receipt as business_receipt, remember as business_remember
+from app.tasks.context import RunContext
+from app.tasks.models import Job
+from app.tasks.queue import claim
 from sqlalchemy import func, select
 from test_business_assistant import facts
 from test_company import keyed, send
@@ -211,7 +211,7 @@ async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     await finish(context)
     report_job = await claim(sessions, users['employee'].id)
     assert report_job.kind == 'report'
-    from paa_server.agent.tools.reports import draft_report
+    from app.agent.tools.reports import draft_report
     report_context = RunContext(report_job.owner_id, report_job.company_id, report_job.id, report_job.fence, sessions, settings)
     await draft_report.coroutine(completed='完成报价', ongoing='', blockers='', next='', runtime=SimpleNamespace(context=report_context))
     await finish(report_context)
@@ -290,7 +290,7 @@ async def test_generate_and_submit_waits_for_real_report_then_exact_preview(setu
     assert result['state'] == 'running' and not result.get('canConfirm')
     await finish(context)
     job = await claim(sessions, users['employee'].id)
-    from paa_server.agent.tools.reports import draft_report
+    from app.agent.tools.reports import draft_report
     report_context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
     await draft_report.coroutine('完成方案', '', '', '核对合同', SimpleNamespace(context=report_context))
     await finish(report_context)
@@ -378,7 +378,7 @@ async def test_query_then_create_has_verified_reads_without_fake_write_predecess
 
 @pytest.mark.parametrize('state', ['pending', 'running', 'failed', 'succeeded'])
 async def test_final_completion_sentences_are_replaced_with_actual_receipts(state):
-    from paa_server.agent.reply_review import ReviewedReply
+    from app.agent.reply_review import ReviewedReply
     card = {'label': '提交报告', 'action': 'submit_report', 'state': state}
     review = ReviewedReply('还有两项待办。', execution_claims=True, verified=True)
     answer = receipt_reply(review, [card])
@@ -393,7 +393,7 @@ class ReplyJudge:
         payload = json.loads(messages[-1].content)
         self.inputs.append(payload)
         if self.fail:
-            from paa_server.tasks.context import BudgetExceeded
+            from app.tasks.context import BudgetExceeded
             raise BudgetExceeded('existing call budget exhausted')
         assert len(payload['segments']) == len(self.kinds)
         proof = [payload['toolEvidence'][0]['id']] if payload['toolEvidence'] else []
@@ -405,7 +405,7 @@ async def run_reply(setup, text, answer, judge, *, read_report=False, before=Non
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langchain_openai import ChatOpenAI
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from paa_server.tasks.handlers import process_job
+    from app.tasks.handlers import process_job
     class ReplyModel(ChatOpenAI):
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
             response = AIMessage(content=answer)
@@ -494,7 +494,7 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
 
 
 async def test_reply_review_validates_partition_and_reuses_exact_verified_result(setup):
-    from paa_server.agent.reply_review import check_segments, review_reply
+    from app.agent.reply_review import check_segments, review_reply
     with pytest.raises(ValueError):
         check_segments(['a', 'b'], '{"segments":[{"index":0,"kind":"information"}]}', [])
     assert check_segments(['a'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[]}]}', []).text == ''
@@ -507,7 +507,7 @@ async def test_reply_review_validates_partition_and_reuses_exact_verified_result
 
 
 async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):
-    from paa_server.agent.reply_review import review_reply
+    from app.agent.reply_review import review_reply
     context, _ = await runtime(setup)
     saved = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     judge = ReplyJudge([], fail=True)
@@ -517,7 +517,7 @@ async def test_empty_reply_uses_persisted_receipts_without_another_model_request
 
 
 async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blank_lines():
-    from paa_server.agent.reply_review import reply_segments, check_segments
+    from app.agent.reply_review import reply_segments, check_segments
     answer = '\n你好！\n\n请确认具体事项。\n  '
     parts = reply_segments(answer)
     assert len(parts) == 2 and all(part.strip() for part in parts)
@@ -546,7 +546,7 @@ async def test_history_replaces_stale_confirmation_text_with_persisted_state(set
 
 
 async def test_review_removes_empty_table_shell_without_damaging_retained_table():
-    from paa_server.agent.reply_review import check_segments
+    from app.agent.reply_review import check_segments
     parts = ['| 字段 | 更新后 |\n', '|---|---|\n', '| 标题 | 已改为测试 |\n', '还有哪些要讨论？']
     verdict = json.dumps({'segments': [{'index': i, 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
     assert check_segments(parts, verdict, []).text == '还有哪些要讨论？'

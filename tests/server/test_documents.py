@@ -1,30 +1,30 @@
 import asyncio
 import io
 import json
-import paa_server.tasks.documents as documents
-import paa_server.tasks.handlers as worker
+import app.tasks.documents as documents
+import app.tasks.handlers as worker
 import pytest
 from PIL import Image
 from datetime import timedelta
 from document_fakes import document_model
 from document_samples import samples
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.harness import invoke_harness as worker_invoke_harness
-from paa_server.agent.tools.documents import find_documents, read_document
-from paa_server.agent.tools.work import propose_progress
-from paa_server.db.base import now
-from paa_server.integrations.parsing.process import parse_process as documents_parse_process
-from paa_server.modules.attachments.documents import DOCUMENT_TYPES, verified_citations
-from paa_server.modules.attachments.models import Attachment, DocumentChunk
-from paa_server.modules.messages.models import Message
-from paa_server.modules.model_services.models import ModelUsage
-from paa_server.modules.reports.models import Report, ReportRevision
-from paa_server.modules.work.models import ProgressDraft, WorkItem, WorkRevision
-from paa_server.tasks.context import InputChanged, LostLease, RunContext
-from paa_server.tasks.documents import prepare_document
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.lease import lease
-from paa_server.tasks.models import Job
+from app.agent.harness import invoke_harness as worker_invoke_harness
+from app.agent.tools.documents import find_documents, read_document
+from app.agent.tools.work import propose_progress
+from app.db.base import now
+from app.integrations.parsing.process import parse_process as documents_parse_process
+from app.modules.attachments.documents import DOCUMENT_TYPES, verified_citations
+from app.modules.attachments.models import Attachment, DocumentChunk
+from app.modules.messages.models import Message
+from app.modules.model_services.models import ModelUsage
+from app.modules.reports.models import Report, ReportRevision
+from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
+from app.tasks.context import InputChanged, LostLease, RunContext
+from app.tasks.documents import prepare_document
+from app.tasks.handlers import process_job
+from app.tasks.lease import lease
+from app.tasks.models import Job
 from sqlalchemy import func, select, text
 from test_company import keyed
 from test_management import conversation, message, remove
@@ -325,7 +325,7 @@ async def test_cancelled_parse_is_retryable_and_file_only_cannot_propose(setup, 
     async with sessions() as db:
         document = await db.get(Attachment, item['id'])
         assert document.extraction_status == 'failed' and '中断' in document.extraction_info['error']
-    from paa_server.agent.tools.work import propose_progress
+    from app.agent.tools.work import propose_progress
     result = await propose_progress.coroutine(title='自动完成', summary='文件不代表工作', status='done', blocker='', next_step='', runtime=SimpleNamespace(context=context))
     assert '询问' in result
     async with sessions() as db:

@@ -4,14 +4,14 @@ import httpx
 import pytest
 from dataclasses import replace
 from importlib.util import resolve_name
-from paa_server.api import create_app
-from paa_server.core.config import Settings
-from paa_server.db.registry import metadata
+from app.main import create_app
+from app.core.config import Settings
+from app.db.registry import metadata
 from pathlib import Path
 
 
 
-ROOT = Path(__file__).resolve().parents[2] / 'apps/server/src/paa_server'
+ROOT = Path(__file__).resolve().parents[2] / 'apps/server/app'
 
 
 def module_dependencies(root=ROOT):
@@ -23,7 +23,7 @@ def module_dependencies(root=ROOT):
         parts = relative.as_posix().removesuffix('.py').split('/')
         if parts[-1] == '__init__':
             parts.pop()
-        modules['.'.join(['paa_server', *parts])] = path
+        modules['.'.join(['app', *parts])] = path
 
     graph = {}
     for name, path in modules.items():
@@ -63,13 +63,13 @@ def assert_dependency_boundaries(graph):
 
     for name, targets in graph.items():
         visit(name)
-        assert not targets & {'paa_server.api', 'paa_server.worker', 'paa_server.cli'}, name
-        if in_package(name, 'paa_server.core', 'paa_server.integrations') or name in ('paa_server.db.base', 'paa_server.tasks.context'):
-            assert not any(in_package(target, 'paa_server.agent', 'paa_server.modules', 'paa_server.http.routers') for target in targets), name
-        if in_package(name, 'paa_server.modules') and not name.endswith(('_router', '.router')):
-            assert not any(target.endswith(('_router', '.router', '.harness')) or target == 'paa_server.http.dependencies' for target in targets), name
-        if name == 'paa_server.tasks.lease':
-            assert not targets & {'paa_server.tasks.handlers', 'paa_server.tasks.runner', 'paa_server.agent.harness'}, name
+        assert not targets & {'app.main', 'app.worker', 'app.cli'}, name
+        if in_package(name, 'app.core', 'app.integrations') or name in ('app.db.base', 'app.tasks.context'):
+            assert not any(in_package(target, 'app.agent', 'app.modules', 'app.http.routers') for target in targets), name
+        if in_package(name, 'app.modules') and not name.endswith(('_router', '.router')):
+            assert not any(target.endswith(('_router', '.router', '.harness')) or target == 'app.http.dependencies' for target in targets), name
+        if name == 'app.tasks.lease':
+            assert not targets & {'app.tasks.handlers', 'app.tasks.runner', 'app.agent.harness'}, name
 
 
 def test_dependencies_are_acyclic_and_do_not_import_entrypoints():
@@ -85,24 +85,24 @@ def source_dependencies(tmp_path, sources):
 
 
 @pytest.mark.parametrize(('source', 'statement', 'target'), [
-    ('core/config.py', 'import paa_server.api as entry', 'api.py'),
-    ('core/config.py', 'from paa_server import api as entry', 'api.py'),
-    ('modules/work/commands.py', 'from paa_server.agent import harness', 'agent/harness.py'),
-    ('tasks/lease.py', 'from paa_server.tasks import runner', 'tasks/runner.py'),
+    ('core/config.py', 'import app.main as entry', 'main.py'),
+    ('core/config.py', 'from app import main as entry', 'main.py'),
+    ('modules/work/commands.py', 'from app.agent import harness', 'agent/harness.py'),
+    ('tasks/lease.py', 'from app.tasks import runner', 'tasks/runner.py'),
     ('tasks/lease.py', 'from . import runner as run', 'tasks/runner.py'),
     ('core/__init__.py', 'from ..agent import harness', 'agent/harness.py'),
-    ('__init__.py', 'from . import api', 'api.py'),
+    ('__init__.py', 'from . import main', 'main.py'),
 ])
 def test_import_variants_cannot_bypass_boundaries(tmp_path, source, statement, target):
     graph = source_dependencies(tmp_path, {source: statement, target: ''})
-    with pytest.raises(AssertionError, match='^paa_server'):
+    with pytest.raises(AssertionError, match='^app'):
         assert_dependency_boundaries(graph)
 
 
 @pytest.mark.parametrize('sources', [
     {
         'helpers/__init__.py': 'from . import first',
-        'helpers/first.py': 'from paa_server.helpers import second',
+        'helpers/first.py': 'from app.helpers import second',
         'helpers/second.py': 'from . import first',
     },
     {
@@ -120,13 +120,13 @@ def test_symbol_imports_and_package_reexports_do_not_create_false_dependencies(t
         '__init__.py': 'from .helpers import api',
         'helpers/__init__.py': 'from . import operations\nfrom .operations import api',
         'helpers/operations.py': 'def api(): pass',
-        'core/config.py': 'from ..helpers import api\nfrom paa_server.helpers import operations as ops',
+        'core/config.py': 'from ..helpers import api\nfrom app.helpers import operations as ops',
     })
     assert graph == {
-        'paa_server': {'paa_server.helpers'},
-        'paa_server.helpers': {'paa_server.helpers.operations'},
-        'paa_server.helpers.operations': set(),
-        'paa_server.core.config': {'paa_server.helpers', 'paa_server.helpers.operations'},
+        'app': {'app.helpers'},
+        'app.helpers': {'app.helpers.operations'},
+        'app.helpers.operations': set(),
+        'app.core.config': {'app.helpers', 'app.helpers.operations'},
     }
     assert_dependency_boundaries(graph)
 

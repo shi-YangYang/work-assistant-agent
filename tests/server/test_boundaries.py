@@ -8,16 +8,16 @@ from dataclasses import replace
 from datetime import timedelta
 from fakes import controlled_model
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.model import reserve_call
-from paa_server.db.base import now
-from paa_server.modules.messages.models import Message
-from paa_server.modules.model_services.models import ModelUsage
-from paa_server.modules.work.models import WorkItem
-from paa_server.tasks.context import BudgetExceeded, LostLease, RunContext
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.lease import lease
-from paa_server.tasks.models import Job
-from paa_server.tasks.queue import claim
+from app.agent.model import reserve_call
+from app.db.base import now
+from app.modules.messages.models import Message
+from app.modules.model_services.models import ModelUsage
+from app.modules.work.models import WorkItem
+from app.tasks.context import BudgetExceeded, LostLease, RunContext
+from app.tasks.handlers import process_job
+from app.tasks.lease import lease
+from app.tasks.models import Job
+from app.tasks.queue import claim
 from sqlalchemy import select
 from test_company import send
 from uuid import uuid4
@@ -59,7 +59,7 @@ async def test_voice_is_decoded_original_retained_and_corrected_asr_is_versioned
         return httpx.Response(200,json={'choices':[{'message':{'content':'方案完成，等待报价'}}]})
     original_client=httpx.AsyncClient
     def mock_client(settings): return original_client(transport=httpx.MockTransport(response))
-    monkeypatch.setattr('paa_server.integrations.models.transport.client', mock_client)
+    monkeypatch.setattr('app.integrations.models.transport.client', mock_client)
     configured=replace(settings,asr_base_url='https://controlled.invalid/v1',asr_key='test-only-key')
     async with sessions.begin() as db:
         job=await db.get(Job,result['jobId']);job.state='running';job.fence=1;job.lease_until=now()+timedelta(seconds=90)
@@ -99,7 +99,7 @@ async def test_concurrent_idempotent_send_returns_one_message(setup):
     assert responses[0].json()==responses[1].json()
 
 async def test_long_conversation_is_summarized_before_hard_context_limit(setup):
-    from paa_server.agent.harness import invoke_harness
+    from app.agent.harness import invoke_harness
     settings,sessions,users,c=setup
     actor=users['employee']
     sent=await send(c['employee'],'今天继续方案。'*700)
@@ -118,7 +118,7 @@ async def test_long_conversation_is_summarized_before_hard_context_limit(setup):
 
 async def test_tool_cannot_bless_a_work_revision_it_did_not_read(setup):
     from types import SimpleNamespace
-    from paa_server.agent.tools.work import propose_progress
+    from app.agent.tools.work import propose_progress
     settings,sessions,users,c=setup
     result=await send(c['employee'])
     job=await claim(sessions,users['employee'].id)
@@ -139,7 +139,7 @@ async def test_progress_confirmation_commits_before_success_response(setup, monk
     import httpx
     from sqlalchemy.exc import SQLAlchemyError
     from sqlalchemy.ext.asyncio import AsyncSession
-    from paa_server.modules.work.models import ProgressDraft, WorkRevision
+    from app.modules.work.models import ProgressDraft, WorkRevision
     settings, sessions, users, clients = setup
     actor = users['employee']
     old = {'title':'提交顺序', 'summary':'旧进展', 'status':'blocked', 'blocker':'等待报价', 'nextStep':'测算'}

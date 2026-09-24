@@ -71,8 +71,8 @@ npm ci
 初始化完成后，启动数据库和应用：
 
 ```sh
-docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d --wait
-npm run dev:company
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.dev.yml up -d --wait
+npm run dev:web
 ```
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令同时启动 Web、API 和后台任务。管理员配置模型服务、添加成员后，员工即可发送记录或直接要求助手办理工作事项。声纹登记需要额外安装[公司声纹组件](docs/setup.md#公司声纹)。
@@ -80,12 +80,12 @@ npm run dev:company
 ### Electron 桌面端
 
 ```sh
-npm run dev
+npm run dev:electron
 ```
 
 在设置中下载转写模型、配置纪要模型，然后开始会议。模型下载后可离线转写，生成纪要需要在线模型 API。桌面安装包自带 Python，终端用户无需配置开发环境。
 
-需要识别公司成员时，开发者或部署者在根目录 `.env` 配置 `PAA_DESKTOP_COMPANY_URL`（见 [.env.example](.env.example)），启动或打包时自动使用该地址。用户在“公司连接”登录管理员账号并同步声纹，之后可离线识别；留空则使用游客模式。日常本地会议无需启动公司后端，详见[连接公司与离线识别](docs/setup.md#连接公司与离线识别)。
+需要识别公司成员时，开发者或部署者在 `apps/desktop/.env.electron` 配置 `PAA_DESKTOP_COMPANY_URL`（见 [apps/desktop/.env.electron.example](apps/desktop/.env.electron.example)），启动或打包时自动使用该地址。用户在“公司连接”登录管理员账号并同步声纹，之后可离线识别；留空则使用游客模式。日常本地会议无需启动公司后端，详见[连接公司与离线识别](docs/setup.md#连接公司与离线识别)。
 
 ## 技术栈
 

@@ -172,7 +172,7 @@ jobs:
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
       - name: Verify installed package
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        run: npx playwright test tests/e2e/desktop/package.spec.ts --output=artifacts/playwright-package
+        run: npx playwright test --config apps/desktop/playwright.config.ts tests/e2e/desktop/package.spec.ts --output=artifacts/playwright-package
         env:
           PAA_PACKAGE_SMOKE: '1'
       - uses: actions/upload-artifact@v4

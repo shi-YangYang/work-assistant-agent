@@ -5,15 +5,15 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.completion import receipt_completion
-from paa_server.agent.harness import invoke_harness
-from paa_server.agent.operations import execute
-from paa_server.agent.tools.team import query_team_business
-from paa_server.core.digests import digest
-from paa_server.modules.members.models import Member
-from paa_server.modules.messages.models import Message
-from paa_server.modules.operations.models import BusinessAction
-from paa_server.tasks.models import Job
+from app.agent.completion import receipt_completion
+from app.agent.harness import invoke_harness
+from app.agent.operations import execute
+from app.agent.tools.team import query_team_business
+from app.core.digests import digest
+from app.modules.members.models import Member
+from app.modules.messages.models import Message
+from app.modules.operations.models import BusinessAction
+from app.tasks.models import Job
 from pydantic import Field
 from test_business_actions import Judge, create, read_work, runtime
 from types import SimpleNamespace

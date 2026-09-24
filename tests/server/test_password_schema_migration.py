@@ -2,10 +2,10 @@
 import os
 from alembic import command
 from alembic.config import Config
-from paa_server.core.config import Settings
-from paa_server.db.base import now
-from paa_server.modules.members.models import Company, Member
-from paa_server.modules.work.models import WorkItem
+from app.core.config import Settings
+from app.db.base import now
+from app.modules.members.models import Company, Member
+from app.modules.work.models import WorkItem
 from pathlib import Path
 from sqlalchemy import MetaData, Table, create_engine, inspect, select, text
 from sqlalchemy.engine import make_url
@@ -24,7 +24,7 @@ def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
     scoped = create_engine(scoped_url)
     monkeypatch.setenv('DATABASE_URL', scoped_url.render_as_string(hide_password=False))
     config = Config()
-    config.set_main_option('script_location', str(Path(__file__).resolve().parents[2] / 'apps/server/src/paa_server/migrations'))
+    config.set_main_option('script_location', str(Path(__file__).resolve().parents[2] / 'apps/server/app/migrations'))
     with engine.begin() as connection:
         connection.execute(CreateSchema(schema))
     try:

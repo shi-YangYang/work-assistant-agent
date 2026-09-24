@@ -5,16 +5,16 @@ from PIL import Image
 from datetime import timedelta
 from fakes import controlled_model
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.policies import ALLOWED_TOOLS
-from paa_server.db.base import now
-from paa_server.modules.members.models import Company, Member
-from paa_server.modules.reports.models import Report, ReportRevision
-from paa_server.modules.work.models import WorkItem
-from paa_server.tasks.context import LostLease, RunContext
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.lease import lease
-from paa_server.tasks.models import Job
-from paa_server.tasks.scheduling import schedule_once
+from app.agent.policies import ALLOWED_TOOLS
+from app.db.base import now
+from app.modules.members.models import Company, Member
+from app.modules.reports.models import Report, ReportRevision
+from app.modules.work.models import WorkItem
+from app.tasks.context import LostLease, RunContext
+from app.tasks.handlers import process_job
+from app.tasks.lease import lease
+from app.tasks.models import Job
+from app.tasks.scheduling import schedule_once
 from sqlalchemy import select
 from uuid import uuid4
 from zoneinfo import ZoneInfo

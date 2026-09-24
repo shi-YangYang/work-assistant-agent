@@ -5,10 +5,10 @@ import logging
 import pytest
 from datetime import timedelta
 from fastapi.responses import StreamingResponse
-from paa_server.api import create_app
-from paa_server.db.base import now
-from paa_server.modules.members.models import Member
-from paa_server.modules.support.models import SupportFeedback
+from app.main import create_app
+from app.db.base import now
+from app.modules.members.models import Member
+from app.modules.support.models import SupportFeedback
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from uuid import uuid4

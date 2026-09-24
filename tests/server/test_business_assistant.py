@@ -6,22 +6,22 @@ from fakes import ReviewedFixtureModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from paa_server.agent.harness import invoke_harness
-from paa_server.agent.history import conversation_history
-from paa_server.agent.tools.team import propose_followup, query_team_business, read_team_source
-from paa_server.agent.tools.work import find_work_items
-from paa_server.db.base import now
-from paa_server.modules.members.models import Company, Member
-from paa_server.modules.messages.models import Message
-from paa_server.modules.reports.models import Report, ReportRevision
-from paa_server.modules.team.agent_queries import date_range as business_date_range, find_members as business_find_members, query_summary as business_query_summary
-from paa_server.modules.work.models import ProgressDraft, WorkItem, WorkRevision
-from paa_server.security.access import receipt as business_receipt, scope as business_scope
-from paa_server.tasks.context import RunContext
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.lease import lease
-from paa_server.tasks.models import Job
-from paa_server.tasks.queue import claim
+from app.agent.harness import invoke_harness
+from app.agent.history import conversation_history
+from app.agent.tools.team import propose_followup, query_team_business, read_team_source
+from app.agent.tools.work import find_work_items
+from app.db.base import now
+from app.modules.members.models import Company, Member
+from app.modules.messages.models import Message
+from app.modules.reports.models import Report, ReportRevision
+from app.modules.team.agent_queries import date_range as business_date_range, find_members as business_find_members, query_summary as business_query_summary
+from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
+from app.security.access import receipt as business_receipt, scope as business_scope
+from app.tasks.context import RunContext
+from app.tasks.handlers import process_job
+from app.tasks.lease import lease
+from app.tasks.models import Job
+from app.tasks.queue import claim
 from pydantic import Field
 from sqlalchemy import select
 from test_company import send
@@ -262,7 +262,7 @@ async def test_old_edit_paths_preserve_team_access_and_links(setup, path):
     assert (await clients['admin'].get('/api/v1/work-items/' + own_id)).status_code == 403
     assert not (await clients['admin'].get('/api/v1/work-items')).json()['items']
     # A downgraded account's report must not turn protected revisions into plain text.
-    from paa_server.modules.reports.service import ensure_report
+    from app.modules.reports.service import ensure_report
     async with sessions.begin() as db:
         actor = await db.get(Member, admin.id)
         _, report_job = await ensure_report(db, actor, 'daily', now().date())
@@ -334,9 +334,9 @@ async def test_followup_text_promise_requires_real_draft_with_one_repair(setup, 
 @pytest.mark.parametrize('kind', ['clarification', 'query', 'budget'])
 async def test_followup_guard_preserves_clarification_query_and_existing_budget(setup, kind):
     from langchain.agents.middleware.types import ModelResponse
-    from paa_server.tasks.context import BudgetExceeded
-    from paa_server.agent.middleware import ToolBoundary
-    from paa_server.agent.model import reserve_call
+    from app.tasks.context import BudgetExceeded
+    from app.agent.middleware import ToolBoundary
+    from app.agent.model import reserve_call
     _, sessions, users, _ = setup
     await facts(sessions, users['employee'])
     rt, job, sent = await runtime(setup, text='团队有哪些要跟进的事项？' if kind == 'query' else '帮我跟进张晨的采购报价')
@@ -527,7 +527,7 @@ async def test_model_return_after_role_change_cannot_publish_or_restore(setup, m
 
 
 async def test_raw_context_tool_inherits_authorization_and_denies_revoked_reply_to(setup):
-    from paa_server.agent.tools.messages import get_message_context
+    from app.agent.tools.messages import get_message_context
     settings, sessions, users, clients = setup
     work, _, _ = await facts(sessions, users['employee'])
     _, job, sent = await runtime(setup)
@@ -546,7 +546,7 @@ async def test_raw_context_tool_inherits_authorization_and_denies_revoked_reply_
 
 
 async def test_team_document_requires_confirmed_parent_and_reports_are_bounded(setup):
-    from paa_server.modules.attachments.models import Attachment, DocumentChunk
+    from app.modules.attachments.models import Attachment, DocumentChunk
     _, sessions, users, _ = setup
     work, _, message = await facts(sessions, users['employee'])
     async with sessions.begin() as db:

@@ -13,7 +13,7 @@ macOS／Linux：
 ```sh
 python3.12 -m venv .venv-server
 .venv-server/bin/python -m pip install -r apps/server/requirements.lock
-cp .env.company.example .env.company
+cp apps/server/.env.web.example apps/server/.env.web
 ```
 
 Windows PowerShell：
@@ -21,15 +21,15 @@ Windows PowerShell：
 ```powershell
 py -3.12 -m venv .venv-server
 .venv-server\Scripts\python.exe -m pip install -r apps/server/requirements.lock
-Copy-Item .env.company.example .env.company
+Copy-Item apps/server/.env.web.example apps/server/.env.web
 ```
 
-仅首次创建 `.env.company`；已有配置不要覆盖。编辑其中的 `POSTGRES_PASSWORD` 为长随机字母数字密码，并同步 `DATABASE_URL`。FFmpeg 不在 PATH 时设置 `PAA_FFMPEG` 为其可执行文件路径。
+仅首次创建 `apps/server/.env.web`；已有配置不要覆盖。编辑其中的 `POSTGRES_PASSWORD` 为长随机字母数字密码，并同步 `DATABASE_URL`。FFmpeg 不在 PATH 时设置 `PAA_FFMPEG` 为其可执行文件路径。
 
 先启动 Docker，再依次执行；`--wait` 会等待数据库健康后返回：
 
 ```sh
-docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d --wait
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.dev.yml up -d --wait
 npm run db:company
 node scripts/company/run.mjs model-key
 npm run admin:company
@@ -40,7 +40,7 @@ npm run admin:company
 初始化完成后启动：
 
 ```sh
-npm run dev:company
+npm run dev:web
 ```
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。命令同时启动 Web、API 和后台任务；修改 Python 代码后重启，`Ctrl+C` 停止应用，数据库继续运行。下次使用前可重新执行上面的 Compose 命令，确保数据库已启动。
@@ -82,7 +82,7 @@ node scripts/desktop/install-python.mjs
 桌面使用 `.venv`，公司服务使用 `.venv-server`，均不需要手动激活。解释器命令名称不同时，用对应的 Python 3.12 创建环境，不替换系统 Python。
 
 ```sh
-npm run dev
+npm run dev:electron
 ```
 
 首次使用时，在“本地转写模型”下载模型，在“模型服务管理”配置纪要模型。转写模型下载后可离线使用，在线纪要需要模型 API。
@@ -95,21 +95,21 @@ npm run dev
 
 ### 连接公司与离线识别
 
-在根目录 `.env` 设置 `PAA_DESKTOP_COMPANY_URL=https://你的公司地址`，模板沿用 `.env.example`；已有 `.env` 时只添加此项。桌面公司地址由开发／构建配置决定，客户端不再提供地址输入框。留空始终使用游客模式，不加载之前的公司登录或声纹缓存；配置地址后，只恢复同一地址的缓存。修改后重启 `npm run dev` 或重新构建；已安装的客户端不会跟随环境文件自动更新。
+将 `apps/desktop/.env.electron.example` 复制为同目录 `.env.electron`，设置 `PAA_DESKTOP_COMPANY_URL=https://你的公司地址`；已有 `.env.electron` 时只添加此项。桌面公司地址由开发／构建配置决定，客户端不再提供地址输入框。留空始终使用游客模式，不加载之前的公司登录或声纹缓存；配置地址后，只恢复同一地址的缓存。修改后重启 `npm run dev:electron` 或重新构建；已安装的客户端不会跟随环境文件自动更新。
 
-这一项独立于服务端 `.env.company`，只将公开地址写入桌面主进程产物，不打包环境文件或其他配置。发行前填写员工能访问的 HTTPS 地址，不使用开发机的 `127.0.0.1`。Python 路径等既有运行时选项继续通过 shell 设置。
+这一项独立于服务端 `apps/server/.env.web`，只将公开地址写入桌面主进程产物，不打包环境文件或其他配置。发行前填写员工能访问的 HTTPS 地址，不使用开发机的 `127.0.0.1`。Python 路径等既有运行时选项继续通过 shell 设置。
 
-在“公司连接”点击“登录公司账号”，在系统浏览器确认账号。未配置地址或连接失败会弹出提示；网络恢复后可直接重试登录，无需重启桌面。本机联调将上述环境变量设为 `http://127.0.0.1:5174`，在另一个终端启动 `npm run dev:company`。管理员登录后可同步公司声纹，会议音频仍在本机处理。
+在“公司连接”点击“登录公司账号”，在系统浏览器确认账号。未配置地址或连接失败会弹出提示；网络恢复后可直接重试登录，无需重启桌面。本机联调将上述环境变量设为 `http://127.0.0.1:5174`，在另一个终端启动 `npm run dev:web`。管理员登录后可同步公司声纹，会议音频仍在本机处理。
 
 声音不足时先显示临时说话人，匹配可靠后更新姓名；陌生人或无法确定的发言保留未知身份，可人工纠正。声纹同步后长期离线可用，重启或登录过期不影响识别；获取更新需要重新验证在线权限。退出公司账号或清除声纹缓存不删除已有会议。
 
-不连接公司也可直接 `npm run dev` 使用游客模式，继续录音、转写及本地会议管理。
+不连接公司也可直接 `npm run dev:electron` 使用游客模式，继续录音、转写及本地会议管理。
 
 ## Web 部署
 
 [生产 Compose](../deploy/company/compose.yml) 在 Linux 上运行 Caddy、API、worker 和 PostgreSQL，自动先执行数据库迁移。Web 与 API 同源，通过 HTTPS 提供访问；数据库不暴露公网端口。服务器调用外部 AI／ASR API，不部署桌面的 faster-whisper。
 
-部署前准备固定公网 IPv4 或域名、Docker Compose 和 `.env.company`：
+部署前准备固定公网 IPv4 或域名、Docker Compose 和 `apps/server/.env.web`：
 
 - 开放公网 TCP 80／443；仅 Web 暴露端口，API 和数据库保持在 Compose 内网。80 端口还用于证书首次签发和续期，不能只在首次申请时开放。
 - `PAA_DOMAIN` 填访问主机（沿用原变量名，也可填公网 IPv4）；`PAA_WEB_ORIGIN=https://同一个主机`，不带路径或末尾斜线。生产 Compose 强制启用 Secure Cookie。
@@ -121,13 +121,13 @@ npm run dev
 将域名解析到服务器，按以下命令启动。Caddy 自动申请并续期域名证书：
 
 ```sh
-docker compose --env-file .env.company -f deploy/company/compose.yml up --build -d
-docker compose --env-file .env.company -f deploy/company/compose.yml exec api python -m paa_server.cli bootstrap-admin
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.yml up --build -d
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.yml exec api python -m app.cli bootstrap-admin
 ```
 
 ### 公网 IP 部署
 
-无需先购买域名。`.env.company` 中将 `PAA_DOMAIN` 设为固定公网 IPv4，`PAA_WEB_ORIGIN` 设为 `https://该IP`，再使用 [IP Compose 配置](../deploy/company/compose.ip.yml)。不要只把 IP 填进默认域名配置：当前 Caddy 版本的默认 IP 证书不受员工浏览器信任。
+无需先购买域名。`apps/server/.env.web` 中将 `PAA_DOMAIN` 设为固定公网 IPv4，`PAA_WEB_ORIGIN` 设为 `https://该IP`，再使用 [IP Compose 配置](../deploy/company/compose.ip.yml)。不要只把 IP 填进默认域名配置：当前 Caddy 版本的默认 IP 证书不受员工浏览器信任。
 
 以下在 Linux 服务器执行，使用系统 Python 3 的 venv 支持（Debian／Ubuntu 可安装 `python3-venv`）与固定版本 `certbot==5.4.0`。证书与私钥保留在仓库之外；Caddy 只读挂载整个 `/etc/letsencrypt`，包含 `live/` 指向 `archive/` 的符号链接目标。
 
@@ -138,7 +138,7 @@ sudo install -d -m 700 /etc/letsencrypt
 sudo install -d -m 755 /var/lib/paa-acme /var/lib/letsencrypt
 
 # 首次仅启动 HTTP 验证文件服务；此配置不提供业务页面或 API。
-PAA_IP_CADDY_CONFIG=Caddyfile.ip-bootstrap docker compose --env-file .env.company \
+PAA_IP_CADDY_CONFIG=Caddyfile.ip-bootstrap docker compose --env-file apps/server/.env.web \
   -f deploy/company/compose.yml -f deploy/company/compose.ip.yml up --build -d --no-deps web
 ```
 
@@ -153,10 +153,10 @@ sudo /opt/paa-certbot/bin/certbot certonly --non-interactive --agree-tos \
   --webroot --webroot-path /var/lib/paa-acme --ip-address '固定公网IPv4'
 
 # 证书存在后切换到 HTTPS，并启动业务服务；不要持久设置 bootstrap 变量。
-docker compose --env-file .env.company -f deploy/company/compose.yml \
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.yml \
   -f deploy/company/compose.ip.yml up --build -d
-docker compose --env-file .env.company -f deploy/company/compose.yml \
-  -f deploy/company/compose.ip.yml exec api python -m paa_server.cli bootstrap-admin
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.yml \
+  -f deploy/company/compose.ip.yml exec api python -m app.cli bootstrap-admin
 ```
 
 IP 证书有效期为 6 天，必须配置自动续期。[续期脚本](../deploy/company/ip-certificate.sh) 用 deploy hook 在签发成功后执行 `caddy reload --force`，以相同路径重新读取证书；重载失败会返回失败并保留标记，下次运行会先重试。Certbot 自身可能在 hook 失败时返回 0，因此定时任务要调用该脚本。
@@ -201,9 +201,9 @@ SSH 端口使用 `22`，部署目录使用 `/srv/work-assistant-agent`；需要�
 **一次性准备服务器：**
 
 1. 使用 Linux x86_64，安装 Docker Engine、Buildx、Compose 2.24.4 或更新版本，以及 Bash、Python 3、rsync、curl、flock 和 GNU coreutils。`docker buildx version` 须正常；Ubuntu 仓库安装的 Docker 可用 `sudo apt-get install docker-buildx` 补齐插件。GitHub 托管 runner 须能连接服务器 SSH，服务器须能获取基础镜像与构建依赖。Docker Hub 使用云厂商提供的加速器；腾讯云服务器可在 `/etc/docker/daemon.json` 的 `registry-mirrors` 配置 `https://mirror.ccs.tencentyun.com`，合并到已有配置后再重启 Docker，不要覆盖其他设置。
-2. 创建部署根目录并交给部署用户管理，将生产 `.env.company` 放在该目录，权限设为 `600`。按前文准备主密钥、HTTPS 和钉钉回调；IP 部署先完成证书申请与续期配置。CD 不自动签署证书服务协议或生成新的主密钥。
+2. 创建部署根目录并交给部署用户管理，将生产配置放在该目录的 `apps/server/.env.web`（先创建父目录），权限设为 `600`。按前文准备主密钥、HTTPS 和钉钉回调；IP 部署先完成证书申请与续期配置。CD 不自动签署证书服务协议或生成新的主密钥。
 3. 构建默认使用腾讯云 Debian／PyPI 源、npmmirror npm 源和南京大学 PyTorch CPU 源；固定依赖版本，保留 npm 完整性校验与 HTTPS 校验。只安装 CPU 版 PyTorch，不下载 CUDA。源地址集中在 `deploy/company/Dockerfile` 的 `ARG`，可按网络环境调整；不修改开发电脑的软件源或锁文件。
-4. 首次发布成功后，在服务器创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m paa_server.cli bootstrap-admin`。实际部署路径不同时替换路径。
+4. 首次发布成功后，在服务器创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m app.cli bootstrap-admin`。实际部署路径不同时替换路径。
 
 升级先在服务器串行构建镜像、拉取 PostgreSQL 并检查配置与主密钥，再停止写入并备份数据库、附件及主密钥，执行迁移，启动服务，检查 HTTPS 页面、API 数据库连接和 worker 进程。备份分别位于部署根目录的 `backups/` 和 `key-backups/`，仍须按下文要求异机保存。
 
@@ -211,14 +211,14 @@ SSH 端口使用 `22`，部署目录使用 `/srv/work-assistant-agent`；需要�
 
 `current/` 指向本次尝试的版本，`previous/` 保留前一版本路径；结果写入版本目录的 `deployment-status`。构建、基础镜像下载或配置检查失败不停止旧服务；备份失败会尝试恢复旧服务。迁移或上线检查失败时应用保持停止，数据库与备份保留，Actions 标红，不会假装成功或自动启动可能不兼容的旧代码。排障可运行 `sh /srv/work-assistant-agent/current/deploy/company/compose.sh logs --tail=100 api worker migrate`。涉及 schema 变化时按备份恢复流程处理，不能只切换旧镜像。
 
-已有手工部署接入 CD 时，将 `DEPLOY_PATH` 指向原部署根目录，保留原 `.env.company`、主密钥和 `paa-company` 数据卷。IP 证书续期的 cron 路径改为 `/实际部署根目录/current/deploy/company/ip-certificate.sh`，使重载使用当前发布配置。日常备份也改为运行 current 下的 `backup.sh`。首次发布仍需在真实服务器验收，配置检查不等于已经上线成功。
+已有手工部署接入 CD 时，将 `DEPLOY_PATH` 指向原部署根目录，保留原 `.env.company`、主密钥和 `paa-company` 数据卷。新发布会读取旧主机的 `.env.company`，在发布目录的 `apps/server/.env.web` 建立链接；旧发布仍能使用原配置。IP 证书续期的 cron 路径改为 `/实际部署根目录/current/deploy/company/ip-certificate.sh`，使重载使用当前发布配置。日常备份也改为运行 current 下的 `backup.sh`。首次发布仍需在真实服务器验收，配置检查不等于已经上线成功。
 
 ### 钉钉登录配置
 
 1. 请公司钉钉主管理员授予「应用开发子管理员」，或由管理员创建企业内部应用并授予开发管理权限；需要管理应用凭证、接口权限、可用范围、安全设置与发布。
 2. 在钉钉开发者后台创建企业内部应用，取得企业 **CorpId**、应用 **AppKey／Client ID** 与 **AppSecret／Client Secret**。在「开发配置 → 权限管理」开通基础访问凭证权限 `open_app_api_base`、个人信息读权限 `Contact.User.Read` 和成员信息读权限 `qyapi_get_member`，供登录及核验企业成员。确认审批通过后发布应用版本。将**通讯录授权范围限定为允许登录的员工**，并与应用可使用范围保持一致；工作台可见性不能替代服务端成员准入校验。不需要考勤、审批或消息权限。
 3. 登记回调地址 **`PAA_WEB_ORIGIN` + `/api/v1/auth/dingtalk/callback`**，并发布给目标员工。公网 IP 回调是否被实际钉钉应用接受须在后台登记并实测；本机调试成功不代表生产 IP 回调已通过。
-4. 如果部署数据库只有一家公司，可留空 `PAA_LOGIN_COMPANY_ID`；多公司部署必须在 `.env.company` 指定试点公司的 UUID，重启 API 后生效。未指定且存在多家公司时，公共钉钉入口关闭，不会自动选第一家公司。
+4. 如果部署数据库只有一家公司，可留空 `PAA_LOGIN_COMPANY_ID`；多公司部署必须在 `apps/server/.env.web` 指定试点公司的 UUID，重启 API 后生效。未指定且存在多家公司时，公共钉钉入口关闭，不会自动选第一家公司。
 5. 本系统管理员在「系统设置 → 登录方式」填写并保存应用配置，再进行试登录，验证成功后开启入口。Secret 留空保留原值；不要将 Secret、授权码、Token 或完整回调地址查询参数写入 Git、截图或日志。「已保存」仅表示字段已保存，不能当作真实授权成功。
 
 首次允许范围内的成员登录会创建员工账号；已有账号应先在「账户」验证身份并主动绑定，系统不按姓名合并，也不把钉钉管理员自动提升成本系统管理员。钉钉新账号可按需在账户中设置本地密码；密码登录入口始终保留。停用钉钉前先确认管理员密码可用，并为需要密码登录的员工设置密码。离职或需要阻止再次登录时，应停用本系统账号，以撤销本地密码与已有会话访问，并阻止通过钉钉重新开户。
@@ -283,4 +283,4 @@ npm run package
 | 公司业务数据 | PostgreSQL；原始附件在共享私有目录，生产环境默认使用 Docker 卷 |
 | 公司密钥 | 数据库保存密文，主密钥单独保管；本地默认为 `data/company/model-master.key` |
 
-桌面备份前关闭应用，复制整个资料目录，包含数据库、录音、模型和配置。公司备份按上面的“备份与恢复”操作，同时保留数据库、附件和独立主密钥。不要将 `.env.company`、密钥或业务资料提交到 Git。
+桌面备份前关闭应用，复制整个资料目录，包含数据库、录音、模型和配置。公司备份按上面的“备份与恢复”操作，同时保留数据库、附件和独立主密钥。不要将 `apps/server/.env.web`、密钥或业务资料提交到 Git。

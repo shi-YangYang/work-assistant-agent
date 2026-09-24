@@ -3,13 +3,13 @@ import httpx
 import json
 import pytest
 from langchain_core.messages import AIMessage
-from paa_server.agent.intent import authorize_intent
-from paa_server.agent.middleware import ToolBoundary
-from paa_server.agent.operations import execute
-from paa_server.agent.reply_review import check_segments, reply_segments
-from paa_server.modules.reports.models import Report
-from paa_server.modules.work.models import WorkRevision
-from paa_server.tasks.models import Job
+from app.agent.intent import authorize_intent
+from app.agent.middleware import ToolBoundary
+from app.agent.operations import execute
+from app.agent.reply_review import check_segments, reply_segments
+from app.modules.reports.models import Report
+from app.modules.work.models import WorkRevision
+from app.tasks.models import Job
 from sqlalchemy import select
 from test_business_actions import Judge, create, read_work, run_reply, runtime
 from types import SimpleNamespace
@@ -35,7 +35,7 @@ async def test_query_in_parallel_write_batch_is_deferred_until_next_model_step(s
 
 
 async def test_business_planning_default_preserves_explicit_reasoning_and_unknown_providers():
-    from paa_server.modules.model_services.parameters import business_model_config
+    from app.modules.model_services.parameters import business_model_config
     config = {'baseUrl': 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'model': 'deepseek-v4.1-flash', 'parameters': {'temperature': .2}}
     assert business_model_config(config, {})['parameters'] == {'temperature': .2, 'enable_thinking': True, 'reasoning_effort': 'low'}
     assert config['parameters'] == {'temperature': .2}
@@ -109,8 +109,8 @@ async def test_equivalent_success_resolves_old_feedback_even_if_model_changes_st
 
 
 async def test_incomplete_intent_model_response_is_not_reported_as_bad_user_fields(setup):
-    from paa_server.agent.intent import IntentCheckFailed
-    from paa_server.integrations.models.transport import ProviderError
+    from app.agent.intent import IntentCheckFailed
+    from app.integrations.models.transport import ProviderError
     _, _, _, c = setup
     work = await create(c['employee'])
     context, sent = await runtime(setup, '完成这项工作')
@@ -138,7 +138,7 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
     async def before(context):
         context.intent_model = Judge(mode != 'rejected')
         await execute(context, step=1, action='create_work', changes={'title': '已有一次操作'})
-    monkeypatch.setattr('paa_server.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
     data = await run_reply(setup, '帮我创建一项工作', '', CompletionJudge(), before=before if mode in ('already_saved', 'rejected') else None)
     assert len(calls) == (1 if mode in ('already_saved', 'rejected') else 2)
     if len(calls) == 2:
@@ -149,7 +149,7 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
 
 
 async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected_milestone(setup):
-    from paa_server.agent.tools.actions import query_reports
+    from app.agent.tools.actions import query_reports
     _, sessions, users, c = setup
     work = await create(c['employee'], title='试用初稿', nextStep='拟出初稿并发出内部确认')
     async with sessions.begin() as db:
@@ -200,8 +200,8 @@ async def test_delegated_candidate_only_prepares_confirmed_object_and_cancel_pre
 
 
 async def test_intent_judge_gets_actual_own_read_choices_without_stale_or_other_members(setup):
-    from paa_server.agent.tools.work import find_work_items
-    from paa_server.modules.work.models import WorkItem
+    from app.agent.tools.work import find_work_items
+    from app.modules.work.models import WorkItem
     _, sessions, _, c = setup
     first = await create(c['employee'], title='准备名单')
     second = await create(c['employee'], title='整理结论')
@@ -221,7 +221,7 @@ async def test_intent_judge_gets_actual_own_read_choices_without_stale_or_other_
 
 async def test_intent_request_uses_short_verification_without_changing_user_config(setup, monkeypatch):
     from test_model_services import create as service_create, payload, route
-    from paa_server.modules.model_services.bindings import bind_job
+    from app.modules.model_services.bindings import bind_job
     settings, sessions, _, c = setup
     service = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1')
     service['models'][0]['model'] = 'deepseek-v4.1-flash'
@@ -240,7 +240,7 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
         assert not body.get('tools')
         result = {'allowed': True, 'quote': '生成今天日报，交之前让我看一眼', 'reason': ''}
         return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': json.dumps(result)}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 120, 'completion_tokens': 40, 'total_tokens': 160}})
-    monkeypatch.setattr('paa_server.integrations.models.transport.client', lambda _: httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda _: httpx.AsyncClient(transport=httpx.MockTransport(respond)))
     assert (await authorize_intent(context, {'action': 'generate_report', 'submitAfter': True}))[0]
     assert len(calls) == 1 and context.calls == 1
 

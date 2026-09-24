@@ -2,21 +2,21 @@ import asyncio
 import httpx
 import json
 import logging
-import paa_server.cli as cli
-import paa_server.modules.auth.dingtalk.router as routes
-import paa_server.modules.auth.router as api_module
+import app.cli as cli
+import app.modules.auth.dingtalk.router as routes
+import app.modules.auth.router as api_module
 import pytest
 from dataclasses import replace
 from datetime import timedelta
-from paa_server.api import create_app
-from paa_server.cli import prepare_model_key as cli_prepare_model_key
-from paa_server.db.base import now
-from paa_server.integrations.dingtalk import DingTalkProvider
-from paa_server.modules.auth.dingtalk.service import BROWSER_COOKIE, PROOF_COOKIE, login_company as routes_login_company
-from paa_server.modules.auth.models import DingTalkAuthorization, DingTalkConfig, DingTalkIdentity, Session
-from paa_server.modules.auth.sessions import COOKIE, digest, verify_password as api_module_verify_password
-from paa_server.modules.members.models import Member
-from paa_server.modules.reports.models import ReportEligibility
+from app.main import create_app
+from app.cli import prepare_model_key as cli_prepare_model_key
+from app.db.base import now
+from app.integrations.dingtalk import DingTalkProvider
+from app.modules.auth.dingtalk.service import BROWSER_COOKIE, PROOF_COOKIE, login_company as routes_login_company
+from app.modules.auth.models import DingTalkAuthorization, DingTalkConfig, DingTalkIdentity, Session
+from app.modules.auth.sessions import COOKIE, digest, verify_password as api_module_verify_password
+from app.modules.members.models import Member
+from app.modules.reports.models import ReportEligibility
 from sqlalchemy import func, select, update
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
@@ -285,7 +285,7 @@ async def test_company_resolution_never_picks_first_and_account_csrf_required(se
 async def test_missing_master_key_does_not_replace_dingtalk_credentials(setup, monkeypatch):
     settings, sessions, users, clients = setup
     await enable(setup, monkeypatch)
-    from paa_server.security.secrets import SecretUnavailable
+    from app.security.secrets import SecretUnavailable
     monkeypatch.setattr(cli, 'Settings', lambda: settings)
     settings.model_key_file.unlink()
     with pytest.raises(SecretUnavailable):
@@ -343,7 +343,7 @@ async def test_sensitive_route_rate_limits_complete_with_the_three_connection_po
     results = await asyncio.wait_for(asyncio.gather(*requests), 10)
     assert [result.status_code for result in results] == [200, 400, 409, 400, 400]
     # Failure counts survive each route's business rollback.
-    from paa_server.modules.auth.models import LoginAttempt
+    from app.modules.auth.models import LoginAttempt
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.identity == digest('dingtalk-account:' + users['employee'].id))) == 3
 

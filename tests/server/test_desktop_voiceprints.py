@@ -7,12 +7,12 @@ import pytest
 import secrets
 import wave
 from datetime import timedelta
-from paa_server.db.base import now
-from paa_server.modules.auth.models import DesktopAuthorization, DesktopSession
-from paa_server.modules.auth.sessions import digest, revoke_member
-from paa_server.modules.members.models import Member
-from paa_server.modules.voiceprints.models import Voiceprint
-from paa_server.tasks.voiceprints import process_once
+from app.db.base import now
+from app.modules.auth.models import DesktopAuthorization, DesktopSession
+from app.modules.auth.sessions import digest, revoke_member
+from app.modules.members.models import Member
+from app.modules.voiceprints.models import Voiceprint
+from app.tasks.voiceprints import process_once
 from paa_voiceprints import MODEL_ID
 from sqlalchemy import delete, select, update
 
@@ -203,8 +203,8 @@ async def test_version_mismatch_is_actionable_and_inactive_is_not_synced(setup):
 async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
     import sys
     from dataclasses import replace
-    from paa_server.core.config import Settings
-    from paa_server.tasks.voiceprints import extract
+    from app.core.config import Settings
+    from app.tasks.voiceprints import extract
     runner = tmp_path / 'runner.py'
     runner.write_text('import sys,time\nprint("ready",flush=True)\ntime.sleep(60)\n')
     actual_spawn = asyncio.create_subprocess_exec
@@ -216,8 +216,8 @@ async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
         child_started.set()
         return child
     async def audio(*args): return wav_bytes(), 1
-    monkeypatch.setattr('paa_server.tasks.voiceprints.audio_wav', audio)
-    monkeypatch.setattr('paa_server.tasks.voiceprints.asyncio.create_subprocess_exec', spawn)
+    monkeypatch.setattr('app.tasks.voiceprints.audio_wav', audio)
+    monkeypatch.setattr('app.tasks.voiceprints.asyncio.create_subprocess_exec', spawn)
     task = asyncio.create_task(extract(tmp_path / 'sample', Settings()))
     await asyncio.wait_for(child_started.wait(), 5)
     task.cancel()

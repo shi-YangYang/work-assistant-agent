@@ -10,12 +10,18 @@ mode=${3:?Missing deployment mode}
 [[ "$mode" == domain || "$mode" == ip ]] || { echo 'Invalid deployment mode' >&2; exit 1; }
 [[ $(uname -m) == x86_64 ]] || { echo 'This release requires a Linux x86_64 server' >&2; exit 1; }
 release="$root/releases/$release_id"
-[[ -f "$root/.env.company" && -f "$release/deploy/company/build.sh" ]] || { echo 'Missing server environment or release source' >&2; exit 1; }
+env_file="$root/apps/server/.env.web"
+# Existing installations keep their host-owned credentials for upgrades and rollback.
+if [[ ! -f "$env_file" && -f "$root/.env.company" ]]; then
+  env_file="$root/.env.company"
+fi
+[[ -f "$env_file" && -f "$release/deploy/company/build.sh" ]] || { echo 'Missing server environment or release source' >&2; exit 1; }
 exec 9>"$root/.deploy.lock"
 flock -n 9 || { echo 'Another deployment is running' >&2; exit 1; }
 # Build and download before touching the running release. The manifest pins local image IDs.
 bash "$release/deploy/company/build.sh" "$release" "$release_id" "$mode"
-ln -s "$root/.env.company" "$release/.env.company"
+mkdir -p "$release/apps/server"
+ln -s "$env_file" "$release/apps/server/.env.web"
 compose() { PAA_COMPOSE_ROOT="$release" sh "$release/deploy/company/compose.sh" "$@"; }
 compose config --quiet
 compose pull postgres
@@ -102,6 +108,6 @@ for attempt in {1..12}; do
 done
 curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "$origin/" \
   | python3 -c 'import sys; assert "<html" in sys.stdin.read().lower()'
-compose exec -T worker python -c 'import os; assert b"paa_server.worker" in open("/proc/1/cmdline", "rb").read()'
+compose exec -T worker python -c 'import os; assert b"app.worker" in open("/proc/1/cmdline", "rb").read()'
 printf 'ready\n' > "$release/deployment-status"
 printf 'Deployment ready: %s\n' "$release_id"

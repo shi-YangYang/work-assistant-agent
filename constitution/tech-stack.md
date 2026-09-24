@@ -50,7 +50,7 @@
 | Electron main／preload、React、桌面契约 | `apps/desktop/src/{main,preload,renderer,shared}/` |
 | 本地 Python 核心、依赖锁与构建元数据 | `apps/desktop/core/`；包为 `src/paa_core/` |
 | 公司 Web | `apps/web/`；`src/app` 装配、`pages` 路由组合、`features` 业务，公共 API／组件／Hook 分层，见[前端结构](../docs/architecture.md#web-前端组织) |
-| 公司 API、任务与 harness | `apps/server/src/paa_server/`；业务 modules、HTTP／任务入口及 Agent 分工见[服务端组织](../docs/architecture.md#公司服务端组织) |
+| 公司 API、任务与 harness | `apps/server/app/`；业务 modules、HTTP／任务入口及 Agent 分工见[服务端组织](../docs/architecture.md#公司服务端组织) |
 | 公司 HTTP 类型、纯模型参数校验、品牌资源 | `packages/api-contracts/`、`packages/model-config/`、`packages/ui-web/` |
 | 桌面／公司共用声纹提取与匹配 | `packages/voiceprint-engine/`，轻量协议与可选模型运行依赖分离 |
 | 测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
@@ -65,9 +65,9 @@
 
 | 操作 | 命令 |
 | --- | --- |
-| 桌面开发／构建／预览 | `npm run dev`／`npm run build`／`npm start` |
+| 桌面开发／构建／预览 | `npm run dev:electron`／`npm run build`／`npm start` |
 | 桌面 Python 依赖 | 在仓库根用 Python 3.12 建立 `.venv`，执行 `node scripts/desktop/install-python.mjs` |
-| 公司开发 | `npm run dev:company` 启动 Web 5174、API 8000、worker；各自也有 `dev:web`、`dev:server`、`dev:worker` |
+| 公司开发 | `npm run dev:web` 启动 Web 5174、API 8000、worker；各自也有 `dev:web:ui`、`dev:server`、`dev:worker` |
 | 公司初始化 | `npm run db:company` 迁移；`npm run admin:company` 交互创建首位管理员 |
 | 公司声纹运行依赖 | `python3.12 scripts/company/install-voiceprints.py`（Windows 用 `py -3.12`） |
 | 桌面定向检查入口 | `npm test`（unit＋Python）、`npm run typecheck`、`npm run lint`、`npm run format:check` |
@@ -82,8 +82,8 @@
 - ASR 模型由用户发起下载，固定 revision／SHA256，就绪后只读本地，无云回退；任务锁定模型、语言与推理设备，默认设置不改变历史任务。Apple GPU 使用独立 MLX 权重目录，CPU 与 NVIDIA GPU 共用 CTranslate2 权重；已测 CPU 错误率／内存不作为 GPU 指标。模型清单、候选发布与 CPU 三语言实测见 [Spec 013](../specs/spec-013-local-model-library/spec.md)，设备策略见 [0007](../.ai/decisions/0007-local-transcription-baseline.md)。纪要任务固定完整文字、所用发言人信息及配置快照，失败保留旧结果；输入变更后由用户手动更新，纯文本模式不因姓名变化失效。新纪要为 version 2，兼容历史 version 1，凭证不入业务数据库。
 - 页面导航不改变桌面 renderer URL／IPC 信任边界；会议页签共享唯一播放器，服务编辑器保留草稿。`paa.appearance.theme` 仅存外观偏好，不存 Key。
 - 桌面公司连接可选，游客模式无需公司 API；地址使用部署者的 Web 根地址。main 用 safeStorage 保存凭证与公司声纹，按服务／公司／账号隔离，模板不进入 renderer；缓存长期离线可用，断网或令牌过期不清除，主动退出／清缓存才删除。声纹匹配只标记发言，不授予权限。
-- 本机桌面验收直接 `npm run dev` 使用默认日常资料。自动故障测试继续使用临时数据，不能让含清理或故障注入的测试操作用户资料；不为 GUI 验收设置隔离 userData。
-- 公司配置来自忽略的 `.env.company` 及数据库。API／worker 共用独立私有主密钥文件，凭证只在服务端短暂解密；数据库与密钥分开备份、配对恢复。旧环境模式仅为升级公司保留，显式导入后不回退。
+- 本机桌面验收直接 `npm run dev:electron` 使用默认日常资料。自动故障测试继续使用临时数据，不能让含清理或故障注入的测试操作用户资料；不为 GUI 验收设置隔离 userData。
+- 公司配置来自忽略的 `apps/server/.env.web` 及数据库。API／worker 共用独立私有主密钥文件，凭证只在服务端短暂解密；数据库与密钥分开备份、配对恢复。旧环境模式仅为升级公司保留，显式导入后不回退。
 - 公司出站校验 DNS 并固定连接 IP，保留 TLS 主机验证；工具与任务均受公司／员工权限、输入版本、配置修订及预算约束。完整协议和恢复契约分别见 [Spec 008 Plan](../specs/spec-008-meeting-followup/plan.md)、[Spec 009 Plan](../specs/spec-009-company-model-services/plan.md)。
 - 公司聊天通过 PostgreSQL 有界快照与同源 SSE 交付受控反馈；工具和来源仍需完整校验。请求记录保留调用时的服务／模型，实际 Token 与预算估算分离，缺失为未知；见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
 - 公司报告采用受控结构化输出、服务端校验和事务保存；周期安排保存版本与生效边界，汇报待办独立于生成结果，站内提醒不调用模型。行为与验证入口见 [Spec 017](../specs/spec-017-report-reliability-and-reminders/spec.md)。

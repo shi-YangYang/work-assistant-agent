@@ -6,20 +6,20 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from langchain_core.messages import AIMessage
-from paa_server.agent.model import reserve_call
-from paa_server.db.base import now
-from paa_server.modules.members.models import Company, Member
-from paa_server.modules.model_services.models import ModelUsage
-from paa_server.modules.reports.models import Report, ReportNotification, ReportObligation, ReportSchedule
-from paa_server.modules.reports.schedule import eligibility_changed, save_schedule
-from paa_server.modules.reports.service import ensure_report
-from paa_server.modules.work.models import WorkItem, WorkRevision
-from paa_server.tasks.context import RunContext
-from paa_server.tasks.handlers import process_job
-from paa_server.tasks.models import Job
-from paa_server.tasks.queue import claim
-from paa_server.tasks.runner import run_slots
-from paa_server.tasks.scheduling import schedule_company
+from app.agent.model import reserve_call
+from app.db.base import now
+from app.modules.members.models import Company, Member
+from app.modules.model_services.models import ModelUsage
+from app.modules.reports.models import Report, ReportNotification, ReportObligation, ReportSchedule
+from app.modules.reports.schedule import eligibility_changed, save_schedule
+from app.modules.reports.service import ensure_report
+from app.modules.work.models import WorkItem, WorkRevision
+from app.tasks.context import RunContext
+from app.tasks.handlers import process_job
+from app.tasks.models import Job
+from app.tasks.queue import claim
+from app.tasks.runner import run_slots
+from app.tasks.scheduling import schedule_company
 from sqlalchemy import func, select
 from test_company import keyed
 from uuid import uuid4
@@ -152,7 +152,7 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
     settings, sessions, users, _ = setup
     company = users['employee'].company_id
     from functools import partial
-    monkeypatch.setattr('paa_server.tasks.runner.claim',partial(claim,company_id=company))
+    monkeypatch.setattr('app.tasks.runner.claim',partial(claim,company_id=company))
     owners = []
     async with sessions.begin() as db:
         for index in range(30):
@@ -226,7 +226,7 @@ async def test_todos_no_work_reminders_read_submission_permissions_and_delete(se
     settings,sessions,users,c=setup
     instant=datetime(2027,1,4,17,0,tzinfo=timezone.utc)
     await arrange(setup,instant)
-    monkeypatch.setattr('paa_server.modules.reports.schedule.now',lambda:instant)
+    monkeypatch.setattr('app.modules.reports.schedule.now',lambda:instant)
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     data=(await c['employee'].get('/api/v1/report-obligations')).json()
     assert len(data['items'])==1 and data['items'][0]['job']['phase']=='empty'
@@ -300,8 +300,8 @@ async def test_bounded_outage_backfill_current_priority_future_rules_and_activat
         assert '2027-02-11' in periods and not {'2027-02-09','2027-02-10'} & periods
 
 async def test_unsent_reservation_requeues_but_old_fence_cannot_publish(setup):
-    from paa_server.tasks.lease import lease
-    from paa_server.tasks.context import LostLease
+    from app.tasks.lease import lease
+    from app.tasks.context import LostLease
     from test_company import send
     settings,sessions,users,c=setup
     await send(c['employee'])
@@ -343,7 +343,7 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
             else:
                 assert 'enable_thinking' not in data
         return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':content},'finish_reason':'stop'}],'usage':{'prompt_tokens':123,'completion_tokens':45,'total_tokens':168}})
-    monkeypatch.setattr('paa_server.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(respond)))
     await process_job(await claim(sessions,users['employee'].id),sessions,settings,None)
     async with sessions() as db:
         assert (await db.get(Job,job.id)).state=='succeeded'
@@ -357,7 +357,7 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
 
 
 async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(setup):
-    from paa_server.modules.reports.schedule import draft_ready
+    from app.modules.reports.schedule import draft_ready
     settings,sessions,users,c=setup
     instant=datetime(2027,3,1,17,tzinfo=timezone.utc)
     await arrange(setup,instant)
