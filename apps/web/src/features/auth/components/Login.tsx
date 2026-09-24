@@ -75,15 +75,16 @@ export function Login({
   }
 
   function fieldError(field: Field) {
-    return errors[field] ? (
+    return (
       <small
         className={`${formFieldStyles['form-field-error']} ${loginStyles['login-field-error']}`}
         id={`login-${field}-error`}
-        role="alert"
+        role={errors[field] ? 'alert' : undefined}
+        aria-hidden={!errors[field] || undefined}
       >
         {errors[field]}
       </small>
-    ) : null
+    )
   }
 
   function focusError(next: FieldErrors) {
@@ -140,9 +141,7 @@ export function Login({
         <header className={loginStyles['book-form__header']}>
           <p className={loginStyles['book-form__eyebrow']}>WELCOME BACK</p>
           <h1 id="login-title">登录工作助手</h1>
-          <p className={loginStyles['book-form__caption']}>你的工作，从这里继续。</p>
         </header>
-        <DingTalkResult className={loginStyles['login-notice']} />
         <form
           className={loginStyles['book-form__form']}
           ref={formRef}
@@ -182,12 +181,6 @@ export function Login({
             </button>
             {fieldError('password')}
           </div>
-          <ErrorNotice
-            className={loginStyles['login-notice']}
-            actionsClassName={loginStyles['login-notice-actions']}
-          >
-            {error}
-          </ErrorNotice>
           <BusyButton
             busy={busy}
             disabled={dingtalkBusy}
@@ -197,7 +190,21 @@ export function Login({
             <span aria-hidden="true">↗</span>
           </BusyButton>
         </form>
-        <DingTalkLogin vault={vault} disabled={busy} onBusyChange={setDingtalkBusy} />
+        <DingTalkLogin
+          vault={vault}
+          disabled={busy}
+          onBusyChange={setDingtalkBusy}
+          onError={setError}
+        />
+        <div className={loginStyles['book-form__feedback']}>
+          {!error && <DingTalkResult className={loginStyles['login-notice']} />}
+          <ErrorNotice
+            className={loginStyles['login-notice']}
+            actionsClassName={loginStyles['login-notice-actions']}
+          >
+            {error}
+          </ErrorNotice>
+        </div>
         <small className={loginStyles['book-form__help']}>尚无账号？请联系公司管理员</small>
       </section>
     </LoginBook>

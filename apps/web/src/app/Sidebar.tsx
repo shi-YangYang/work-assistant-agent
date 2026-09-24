@@ -83,7 +83,7 @@ export function Sidebar({
       >
         <span className={styles['brand-mark']} aria-hidden="true" />
         <span className={styles['nav-label']}>
-          公司工作助手<small>团队的每一步，都在这里</small>
+          工作助手<small>团队的每一步，都在这里</small>
         </span>
       </Link>
       <button

@@ -39,7 +39,7 @@ export function LoginBook({
     >
       <header className={styles['masthead']}>
         <button className={styles['wordmark']} type="button" onClick={close} disabled={busy}>
-          公司工作助手
+          工作助手
           <span className={styles['wordmark-line']} aria-hidden="true" />
           <span className={styles['wordmark-en']}>WORK ASSISTANT</span>
         </button>
@@ -67,7 +67,7 @@ export function LoginBook({
           <span className={styles['chapter-dot']} />
           <span>{opened ? 'YOUR WORK, IN FOCUS' : 'A NEW CHAPTER BEGINS'}</span>
         </div>
-        <section className={styles['scene']} aria-label="公司工作助手登录">
+        <section className={styles['scene']} aria-label="工作助手登录">
           <div className={styles['book-shadow']} aria-hidden="true" />
           <div className={styles['book']}>
             <div className={styles['back-board']} aria-hidden="true" />

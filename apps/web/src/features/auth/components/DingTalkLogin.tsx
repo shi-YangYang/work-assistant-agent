@@ -11,16 +11,21 @@ export function DingTalkLogin({
   vault,
   disabled,
   onBusyChange,
+  onError,
 }: {
   vault: SessionDrafts
   disabled: boolean
   onBusyChange: (busy: boolean) => void
+  onError: (error: Error | string) => void
 }) {
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
   const [enabled, setEnabled] = useState(false)
   const redirect = useDingTalkRedirect(
     drafts,
-    undefined,
+    (error) => {
+      onError(error instanceof Error ? error : '钉钉登录暂不可用，请稍后重试。')
+      return true
+    },
     loginStyles['login-notice'],
     loginStyles['login-notice-actions'],
   )
@@ -54,7 +59,10 @@ export function DingTalkLogin({
         type="button"
         busy={redirect.busy}
         disabled={disabled}
-        onClick={() => redirect.launch('login')}
+        onClick={() => {
+          onError('')
+          redirect.launch('login')
+        }}
       >
         <img src={dingtalkIcon} width={20} height={20} alt="" aria-hidden="true" />
         使用钉钉登录
