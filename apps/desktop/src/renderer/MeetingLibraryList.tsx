@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
-import { AudioLines, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { AudioLines, ChevronLeft, ChevronRight, RefreshCw, Search, X } from 'lucide-react'
 import type { Meeting } from '../shared/contracts'
 import type { LibraryPage, MeetingHit } from '../shared/library-contracts'
 import { MeetingActions } from './MeetingActions'
@@ -124,6 +124,7 @@ export function MeetingLibraryList({
       <div className="section-heading">
         <h2 id="meetings-title">我的会议</h2>
         <button className="text-button" disabled={!connected || busy} onClick={invalidate}>
+          <RefreshCw size={15} aria-hidden="true" />
           刷新记录
         </button>
       </div>

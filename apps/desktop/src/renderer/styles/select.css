@@ -17,13 +17,16 @@ select:not([size])::picker(select) {
     flip-block flip-inline;
   overflow-y: auto;
   border: 1px solid var(--control);
-  border-radius: 7px;
+  padding: 5px;
+  border-radius: 12px;
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow);
 }
 select:not([size]) option {
-  padding: 8px 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  gap: 8px;
   white-space: normal;
   overflow-wrap: anywhere;
 }
@@ -31,4 +34,15 @@ select:not([size]) option:checked,
 select:not([size]) option:hover {
   background: var(--selection);
   color: var(--accent);
+}
+select:not([size]) option::checkmark {
+  order: 1;
+  margin-left: auto;
+}
+select:not([size])::picker-icon {
+  color: var(--muted);
+  transition: rotate 160ms ease;
+}
+select:open::picker-icon {
+  rotate: 180deg;
 }

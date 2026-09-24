@@ -28,6 +28,7 @@
 | [024](spec-024-web-frontend-architecture/spec.md) | Web 前端按业务模块重构、组件与 Hook 拆分、请求和样式分层 | IMPLEMENTED | [PASS](spec-024-web-frontend-architecture/acceptance.md)，含全量 Web 检查与本地页面回归 |
 | [025](spec-025-web-css-modules/spec.md) | Web CSS Modules、组件样式就近维护与两端样式解耦 | ACCEPTANCE | [Web 测试已全绿，桌面两项交互待验](spec-025-web-css-modules/acceptance.md) |
 | [026](spec-026-web-design-refresh/spec.md) | Web 中性黑白灰设计落地、助手交互与全站响应式统一 | IMPLEMENTED | [PASS](spec-026-web-design-refresh/acceptance.md)，含原型对照返工、全 Web 检查与独立视觉及交互验收 |
+| [027](spec-027-desktop-design-refresh/spec.md) | Electron 中性黑白灰设计、全屏画布、会议及设置交互统一 | IMPLEMENTED | [PASS](spec-027-desktop-design-refresh/acceptance.md)，含 macOS 浅深主题截图与四条定向桌面 E2E；Windows 未实测 |
 
 录音／ASR 实录结果见 [Spec 003 验证记录](spec-003-local-transcription/verification.md)，纪要与最新工程检查见 [Spec 004 实施报告](spec-004-meeting-minutes/implementation.md)。旧 Spec 的报告保留当时验证范围，不代表当前产品仍停留在旧状态。
 

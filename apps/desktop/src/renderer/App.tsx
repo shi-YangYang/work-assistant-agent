@@ -462,14 +462,26 @@ export function App(): React.JSX.Element {
         </button>
       </aside>
       <div className="main-shell">
-        <header className="topbar">
-          <span>
-            {['services', 'local-model', 'appearance', 'company'].includes(page)
-              ? '设置'
-              : '工作空间'}
-          </span>
-          <ChevronRight size={14} />
-          <strong>{pageLabels[page]}</strong>
+        <header className="topbar" aria-label="当前位置">
+          {page === 'meeting' && selected ? (
+            <>
+              <button className="breadcrumb-link" onClick={() => navigate('meetings')}>
+                会议记录
+              </button>
+              <ChevronRight size={14} aria-hidden="true" />
+              <strong title={selected.title}>{selected.title}</strong>
+            </>
+          ) : (
+            <>
+              {['services', 'local-model', 'appearance', 'company'].includes(page) && (
+                <>
+                  <span>设置</span>
+                  <ChevronRight size={14} aria-hidden="true" />
+                </>
+              )}
+              <strong>{pageLabels[page]}</strong>
+            </>
+          )}
         </header>
         <main
           className={
@@ -498,7 +510,11 @@ export function App(): React.JSX.Element {
           )}
           <div className="page-heading">
             <div>
-              <h1 ref={heading} tabIndex={-1}>
+              <h1
+                ref={heading}
+                tabIndex={-1}
+                title={page === 'meeting' ? selected?.title : undefined}
+              >
                 {page === 'meeting' && selected ? selected.title : pageLabels[page]}
               </h1>
               {page === 'meetings' && <p>保留讨论，回顾决定与下一步。</p>}

@@ -618,67 +618,69 @@ function ServiceEditor({
           </label>
           <small>按服务支持情况选择，部分模型需要开启。</small>
         </div>
-        <p className="recipient-note">
-          生成纪要会将该会议的文字发送至 {recipient || '所填服务'}，可能产生 API 调用费用。
-        </p>
-        <div className="button-row">
-          <button
-            className="secondary-button"
-            disabled={!!network || !!editing || !draft.model || knownNontext}
-            onClick={() => void run('check')}
-          >
-            测试连接
-          </button>
-          <button
-            className="primary-button"
-            disabled={!!editing || knownNontext}
-            onClick={() =>
-              void (async () => {
-                if (await mutate(() => window.paa.saveModelService(draft), '服务已保存。')) {
-                  setDraft({ ...draft, apiKey: '' })
-                  setSavedDraft(JSON.stringify({ ...draft, apiKey: '' }))
-                  setHasKey(true)
-                }
-              })()
-            }
-          >
-            {busy ? '正在保存…' : '保存服务'}
-          </button>
-          {saved && (
+        <div className="service-footer">
+          <p className="recipient-note">
+            生成纪要会将该会议的文字发送至 {recipient || '所填服务'}，可能产生 API 调用费用。
+          </p>
+          <div className="button-row">
             <button
               className="secondary-button"
-              disabled={list.activeProfileId === draft.id || hasUnsavedChanges || knownNontext}
-              onClick={() =>
-                void mutate(() => window.paa.selectModelService(draft.id), '已切换纪要服务。')
-              }
+              disabled={!!network || !!editing || !draft.model || knownNontext}
+              onClick={() => void run('check')}
             >
-              用于纪要
+              测试连接
             </button>
-          )}
-          {saved && (
-            <button className="text-button" disabled={!!network} onClick={() => void load(id)}>
-              还原已保存
-            </button>
-          )}
-          {saved && (
             <button
-              className="text-button"
+              className="primary-button"
+              disabled={!!editing || knownNontext}
               onClick={() =>
                 void (async () => {
-                  if (
-                    await mutate(
-                      () => window.paa.removeModelService(draft.id),
-                      '服务已移除，已有纪要保留。',
-                    )
-                  ) {
-                    onRemove()
+                  if (await mutate(() => window.paa.saveModelService(draft), '服务已保存。')) {
+                    setDraft({ ...draft, apiKey: '' })
+                    setSavedDraft(JSON.stringify({ ...draft, apiKey: '' }))
+                    setHasKey(true)
                   }
                 })()
               }
             >
-              移除服务
+              {busy ? '正在保存…' : '保存服务'}
             </button>
-          )}
+            {saved && (
+              <button
+                className="secondary-button"
+                disabled={list.activeProfileId === draft.id || hasUnsavedChanges || knownNontext}
+                onClick={() =>
+                  void mutate(() => window.paa.selectModelService(draft.id), '已切换纪要服务。')
+                }
+              >
+                用于纪要
+              </button>
+            )}
+            {saved && (
+              <button className="text-button" disabled={!!network} onClick={() => void load(id)}>
+                还原已保存
+              </button>
+            )}
+            {saved && (
+              <button
+                className="text-button danger-text"
+                onClick={() =>
+                  void (async () => {
+                    if (
+                      await mutate(
+                        () => window.paa.removeModelService(draft.id),
+                        '服务已移除，已有纪要保留。',
+                      )
+                    ) {
+                      onRemove()
+                    }
+                  })()
+                }
+              >
+                移除服务
+              </button>
+            )}
+          </div>
         </div>
       </fieldset>
       {network && <p role="status">{network}</p>}
