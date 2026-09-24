@@ -1,13 +1,13 @@
 FROM python:3.12.14-slim-bookworm AS service
 ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com
 ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/services/company/src:/app/packages/voiceprint-engine/src
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app/apps/server/src:/app/packages/voiceprint-engine/src
 RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
     && apt-get update && apt-get install -y --no-install-recommends ffmpeg=7:5.1.9-0+deb12u1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY services/company/requirements.lock ./services/company/requirements.lock
-RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r services/company/requirements.lock
-COPY services/company/src ./services/company/src
+COPY apps/server/requirements.lock ./apps/server/requirements.lock
+RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r apps/server/requirements.lock
+COPY apps/server/src ./apps/server/src
 COPY packages/api-contracts/input-rules.json ./packages/api-contracts/input-rules.json
 COPY packages/voiceprint-engine ./packages/voiceprint-engine
 RUN useradd --uid 10001 --create-home paa && mkdir -p /data/media && chown -R paa:paa /data

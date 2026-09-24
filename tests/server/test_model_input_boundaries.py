@@ -1,9 +1,8 @@
 """Model input checks do not require a database or external provider."""
 import json
-
 import pytest
+from paa_server.modules.model_services.schemas import ServiceInput, parameters
 
-from paa_server.model_schemas import ServiceInput, parameters
 
 
 def test_parameter_limit_uses_compact_utf8():

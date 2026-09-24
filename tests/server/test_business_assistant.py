@@ -1,24 +1,36 @@
 """Team business policy at query, model-input, persistence and confirmation edges."""
-from datetime import date, timedelta
 import json
+import pytest
+from datetime import date, timedelta
+from fakes import ReviewedFixtureModel
+from langchain_core.messages import AIMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from paa_server.agent.harness import invoke_harness
+from paa_server.agent.history import conversation_history
+from paa_server.agent.tools.team import propose_followup, query_team_business, read_team_source
+from paa_server.agent.tools.work import find_work_items
+from paa_server.db.base import now
+from paa_server.modules.members.models import Company, Member
+from paa_server.modules.messages.models import Message
+from paa_server.modules.reports.models import Report, ReportRevision
+from paa_server.modules.team.agent_queries import date_range as business_date_range, find_members as business_find_members, query_summary as business_query_summary
+from paa_server.modules.work.models import ProgressDraft, WorkItem, WorkRevision
+from paa_server.security.access import receipt as business_receipt, scope as business_scope
+from paa_server.tasks.context import RunContext
+from paa_server.tasks.handlers import process_job
+from paa_server.tasks.lease import lease
+from paa_server.tasks.models import Job
+from paa_server.tasks.queue import claim
+from pydantic import Field
+from sqlalchemy import select
+from test_company import send
 from types import SimpleNamespace
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-import pytest
-from fastapi import HTTPException
-from langchain_core.messages import AIMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
-from fakes import ReviewedFixtureModel
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from pydantic import Field
-from sqlalchemy import func, select
 
-from paa_server import business_access as business
-from paa_server.agent.harness import RunContext, conversation_history, find_work_items, invoke_harness, lease, propose_followup, query_team_business, read_team_source
-from paa_server.models import Company, Job, Member, Message, ProgressDraft, Report, ReportRevision, WorkItem, WorkRevision, now
-from paa_server.worker import claim, process_job
-from test_company import send
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -174,7 +186,7 @@ async def test_submitted_report_versions_periods_and_pagination(setup):
     async with sessions() as db:
         live = await db.get(Job, job.id)
         assert len(live.access['reads']) == 23
-        summary = await business.query_summary(db, live.result['businessQueries'])
+        summary = await business_query_summary(db, live.result['businessQueries'])
         assert '工作 ·' in summary and '共 22 条' in summary
         assert '已提交报告 ·' in summary and '共 1 条' in summary
         assert '第 1～20、21～22 条' in summary
@@ -212,9 +224,9 @@ async def test_old_edit_paths_preserve_team_access_and_links(setup, path):
     _, source_revision, _ = await facts(sessions, users['employee'])
     admin = users['admin']
     sent = await send(clients['admin'], '管理我的普通事项')
-    evidence = business.receipt('work', source_revision)
+    evidence = business_receipt('work', source_revision)
     links = [{'token': 'fixture-source-token', 'evidence': evidence}]
-    tagged = {**business.scope(admin), 'team': True, 'reads': {'fixture-source-token': evidence}}
+    tagged = {**business_scope(admin), 'team': True, 'reads': {'fixture-source-token': evidence}}
     async with sessions.begin() as db:
         work = WorkItem(company_id=admin.company_id, owner_id=admin.id, title='原事项', content=progress(summary='TEAM-DERIVED-SECRET'), access={} if path == 'new_source' else tagged, business_links=[] if path == 'new_source' else links)
         db.add(work); await db.flush()
@@ -250,7 +262,7 @@ async def test_old_edit_paths_preserve_team_access_and_links(setup, path):
     assert (await clients['admin'].get('/api/v1/work-items/' + own_id)).status_code == 403
     assert not (await clients['admin'].get('/api/v1/work-items')).json()['items']
     # A downgraded account's report must not turn protected revisions into plain text.
-    from paa_server.service import ensure_report
+    from paa_server.modules.reports.service import ensure_report
     async with sessions.begin() as db:
         actor = await db.get(Member, admin.id)
         _, report_job = await ensure_report(db, actor, 'daily', now().date())
@@ -263,8 +275,8 @@ async def test_relinked_draft_cannot_confirm_after_revocation(setup):
     admin = users['admin']
     sent = await send(clients['admin'], '更新我的事项')
     async with sessions.begin() as db:
-        evidence = business.receipt('work', source_revision)
-        work = WorkItem(company_id=admin.company_id, owner_id=admin.id, title='原事项', content=progress(), access={**business.scope(admin), 'team': True, 'reads': {'source': evidence}})
+        evidence = business_receipt('work', source_revision)
+        work = WorkItem(company_id=admin.company_id, owner_id=admin.id, title='原事项', content=progress(), access={**business_scope(admin), 'team': True, 'reads': {'source': evidence}})
         draft = ProgressDraft(company_id=admin.company_id, owner_id=admin.id, message_id=sent['messageId'], content=progress(), tool_key=uuid4().hex)
         db.add_all([work, draft]); await db.flush()
     response = await clients['admin'].patch('/api/v1/progress-drafts/' + draft.id, json={**progress(), 'workId': work.id, 'expectedRevision': 1})
@@ -322,7 +334,9 @@ async def test_followup_text_promise_requires_real_draft_with_one_repair(setup, 
 @pytest.mark.parametrize('kind', ['clarification', 'query', 'budget'])
 async def test_followup_guard_preserves_clarification_query_and_existing_budget(setup, kind):
     from langchain.agents.middleware.types import ModelResponse
-    from paa_server.agent.harness import BudgetExceeded, ToolBoundary, reserve_call
+    from paa_server.tasks.context import BudgetExceeded
+    from paa_server.agent.middleware import ToolBoundary
+    from paa_server.agent.model import reserve_call
     _, sessions, users, _ = setup
     await facts(sessions, users['employee'])
     rt, job, sent = await runtime(setup, text='团队有哪些要跟进的事项？' if kind == 'query' else '帮我跟进张晨的采购报价')
@@ -417,10 +431,10 @@ async def test_historical_window_and_duplicate_names_are_explicit(setup):
     rt, job, _ = await runtime(setup)
     async with sessions.begin() as db:
         live, actor = await lease(db, rt.context)
-        names = await business.find_members(db, actor, live, '张晨')
+        names = await business_find_members(db, actor, live, '张晨')
         assert names['clarificationRequired'] and names['total'] == 2
         company = await db.get(Company, actor.company_id)
-        _, _, window = business.date_range(company, 'last_week')
+        _, _, window = business_date_range(company, 'last_week')
         assert date.fromisoformat(window['start']).weekday() == 0
         assert date.fromisoformat(window['end']).weekday() == 6
     day = prior.created_at.astimezone(ZoneInfo(company.rules['timezone'])).date().isoformat()
@@ -513,7 +527,7 @@ async def test_model_return_after_role_change_cannot_publish_or_restore(setup, m
 
 
 async def test_raw_context_tool_inherits_authorization_and_denies_revoked_reply_to(setup):
-    from paa_server.agent.harness import get_message_context
+    from paa_server.agent.tools.messages import get_message_context
     settings, sessions, users, clients = setup
     work, _, _ = await facts(sessions, users['employee'])
     _, job, sent = await runtime(setup)
@@ -532,7 +546,7 @@ async def test_raw_context_tool_inherits_authorization_and_denies_revoked_reply_
 
 
 async def test_team_document_requires_confirmed_parent_and_reports_are_bounded(setup):
-    from paa_server.models import Attachment, DocumentChunk
+    from paa_server.modules.attachments.models import Attachment, DocumentChunk
     _, sessions, users, _ = setup
     work, _, message = await facts(sessions, users['employee'])
     async with sessions.begin() as db:

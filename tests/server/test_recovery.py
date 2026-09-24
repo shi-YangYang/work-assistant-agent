@@ -1,18 +1,26 @@
 """Job identity regressions through actual PostgreSQL checkpoints and tool execution."""
-from datetime import timedelta
-
 import pytest
+from datetime import timedelta
+from fakes import ReviewedFixtureModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from fakes import ReviewedFixtureModel
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from paa_server.agent.history import conversation_history
+from paa_server.agent.middleware import ToolBoundary
+from paa_server.db.base import now
+from paa_server.modules.messages.models import Message
+from paa_server.modules.reports.models import Report
+from paa_server.modules.work.models import ProgressDraft
+from paa_server.security.access import scope as business_scope
+from paa_server.tasks.context import RunContext
+from paa_server.tasks.handlers import process_job
+from paa_server.tasks.models import Job
+from paa_server.tasks.queue import claim
 from pydantic import Field
 from sqlalchemy import select
-
-from paa_server.agent.harness import RunContext, ToolBoundary, conversation_history
-from paa_server.models import Job, Message, ProgressDraft, Report, now
-from paa_server.worker import claim, process_job
 from test_company import send
+
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -168,7 +176,7 @@ class ReferenceRecoveryModel(ReviewedFixtureModel):
 
 @pytest.mark.parametrize(('other_owner', 'new_reference'), [('peer', 'null'), ('outsider', None)])
 async def test_model_recovers_invalid_references_without_exposing_other_work(setup, other_owner, new_reference):
-    from paa_server.models import WorkItem
+    from paa_server.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     target = users[other_owner]
     async with sessions.begin() as db:
@@ -195,8 +203,9 @@ async def test_model_recovers_invalid_references_without_exposing_other_work(set
 async def test_work_search_and_message_context_use_confirmed_state_after_reply(setup):
     import json
     from types import SimpleNamespace
-    from paa_server.agent.harness import find_work_items, get_message_context
-    from paa_server.models import WorkItem
+    from paa_server.agent.tools.work import find_work_items
+    from paa_server.agent.tools.messages import get_message_context
+    from paa_server.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     actor = users['employee']
     sent = await send(clients['employee'])
@@ -223,8 +232,8 @@ async def test_work_search_and_message_context_use_confirmed_state_after_reply(s
 async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setup):
     import json
     from types import SimpleNamespace
-    from paa_server.agent.harness import find_work_items
-    from paa_server.models import WorkItem
+    from paa_server.agent.tools.work import find_work_items
+    from paa_server.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     actor = users['employee']
     sent = await send(clients['employee'])
@@ -259,16 +268,15 @@ async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setu
 async def test_work_tool_returns_whole_long_records_with_a_continuation(setup):
     import json
     from types import SimpleNamespace
-    from paa_server.agent.harness import find_work_items
-    from paa_server import business_access as business
-    from paa_server.models import WorkItem
+    from paa_server.agent.tools.work import find_work_items
+    from paa_server.modules.work.models import WorkItem
     settings, sessions, users, clients = setup
     actor = users['admin']
     sent = await send(clients['admin'])
     job = await claim(sessions, actor.id)
     context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
     async with sessions.begin() as db:
-        rows = [WorkItem(company_id=actor.company_id, owner_id=actor.id, title='长内容 '+str(i), content={'title': '长内容 '+str(i), 'status': 'in_progress', 'summary': '文' * 4000, 'blocker': '阻' * 2000, 'nextStep': '续' * 2000}, access={**business.scope(actor), 'team': True}) for i in range(2)]
+        rows = [WorkItem(company_id=actor.company_id, owner_id=actor.id, title='长内容 '+str(i), content={'title': '长内容 '+str(i), 'status': 'in_progress', 'summary': '文' * 4000, 'blocker': '阻' * 2000, 'nextStep': '续' * 2000}, access={**business_scope(actor), 'team': True}) for i in range(2)]
         db.add_all(rows)
     runtime = SimpleNamespace(context=context)
     first = json.loads(await find_work_items.coroutine('', runtime))

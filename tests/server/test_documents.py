@@ -1,21 +1,34 @@
 import asyncio
-from datetime import timedelta
 import io
 import json
-from types import SimpleNamespace
-from uuid import uuid4
+import paa_server.tasks.documents as documents
+import paa_server.tasks.handlers as worker
 import pytest
 from PIL import Image
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from sqlalchemy import func, select, text
-from paa_server.agent.harness import RunContext, find_documents, read_document, propose_progress, lease, InputChanged, LostLease
-from paa_server.documents import DOCUMENT_TYPES, agent_attachment, prepare_document, verified_citations
-from paa_server.models import Attachment, DocumentChunk, Job, Message, ModelUsage, ProgressDraft, Report, ReportRevision, WorkItem, WorkRevision, now
-from paa_server.worker import process_job
-from document_samples import samples
+from datetime import timedelta
 from document_fakes import document_model
-from test_management import conversation, message, remove
+from document_samples import samples
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from paa_server.agent.harness import invoke_harness as worker_invoke_harness
+from paa_server.agent.tools.documents import find_documents, read_document
+from paa_server.agent.tools.work import propose_progress
+from paa_server.db.base import now
+from paa_server.integrations.parsing.process import parse_process as documents_parse_process
+from paa_server.modules.attachments.documents import DOCUMENT_TYPES, verified_citations
+from paa_server.modules.attachments.models import Attachment, DocumentChunk
+from paa_server.modules.messages.models import Message
+from paa_server.modules.model_services.models import ModelUsage
+from paa_server.modules.reports.models import Report, ReportRevision
+from paa_server.modules.work.models import ProgressDraft, WorkItem, WorkRevision
+from paa_server.tasks.context import InputChanged, LostLease, RunContext
+from paa_server.tasks.documents import prepare_document
+from paa_server.tasks.handlers import process_job
+from paa_server.tasks.lease import lease
+from paa_server.tasks.models import Job
+from sqlalchemy import func, select, text
 from test_company import keyed
+from test_management import conversation, message, remove
+from types import SimpleNamespace
 
 pytestmark = pytest.mark.asyncio
 
@@ -170,8 +183,7 @@ async def test_delete_during_real_extraction_cannot_publish_late_result(setup, m
     item = await upload(c['employee'])
     sent = await message(c['employee'], conv, '', [item['id']])
     context = await running_context(settings, sessions, users['employee'], sent)
-    import paa_server.documents as documents
-    original = documents.parse_process
+    original = documents_parse_process
     entered, release = asyncio.Event(), asyncio.Event()
     async def delayed(*args, **kwargs):
         result = await original(*args, **kwargs)
@@ -302,7 +314,6 @@ async def test_cancelled_parse_is_retryable_and_file_only_cannot_propose(setup, 
     item = await upload(c['employee'])
     sent = await message(c['employee'], conv, '', [item['id']])
     context = await running_context(settings, sessions, users['employee'], sent)
-    import paa_server.documents as documents
     entered = asyncio.Event()
     async def pending(*args, **kwargs):
         entered.set(); await asyncio.Event().wait()
@@ -314,7 +325,7 @@ async def test_cancelled_parse_is_retryable_and_file_only_cannot_propose(setup, 
     async with sessions() as db:
         document = await db.get(Attachment, item['id'])
         assert document.extraction_status == 'failed' and '中断' in document.extraction_info['error']
-    from paa_server.agent.harness import propose_progress
+    from paa_server.agent.tools.work import propose_progress
     result = await propose_progress.coroutine(title='自动完成', summary='文件不代表工作', status='done', blocker='', next_step='', runtime=SimpleNamespace(context=context))
     assert '询问' in result
     async with sessions() as db:
@@ -326,8 +337,7 @@ async def test_unchanged_document_checkpoint_reuses_verified_reads_on_retry(setu
     conv = await conversation(c['employee'])
     item = await upload(c['employee'])
     sent = await message(c['employee'], conv, '读取后半部分', [item['id']])
-    import paa_server.worker as worker
-    original = worker.invoke_harness
+    original = worker_invoke_harness
     async def fail_after_completed_graph(*args, **kwargs):
         await original(*args, **kwargs)
         raise ValueError('fixed failure after graph')

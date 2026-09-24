@@ -1,20 +1,23 @@
-from datetime import timedelta
-from dataclasses import replace
 import io
 import json
-from uuid import uuid4
-from zoneinfo import ZoneInfo
-
 import pytest
 from PIL import Image
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from sqlalchemy import select
-
-from paa_server.agent.harness import ALLOWED_TOOLS, RunContext, LostLease, lease, propose_progress
-from paa_server.models import Company, Job, Member, Message, ProgressDraft, Report, ReportRevision, WorkItem, now
-from paa_server.worker import claim, process_job, schedule_once
-from paa_server.service import ensure_report
+from datetime import timedelta
 from fakes import controlled_model
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from paa_server.agent.policies import ALLOWED_TOOLS
+from paa_server.db.base import now
+from paa_server.modules.members.models import Company, Member
+from paa_server.modules.reports.models import Report, ReportRevision
+from paa_server.modules.work.models import WorkItem
+from paa_server.tasks.context import LostLease, RunContext
+from paa_server.tasks.handlers import process_job
+from paa_server.tasks.lease import lease
+from paa_server.tasks.models import Job
+from paa_server.tasks.scheduling import schedule_once
+from sqlalchemy import select
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 pytestmark = pytest.mark.asyncio
 

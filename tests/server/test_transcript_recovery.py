@@ -1,18 +1,24 @@
 """Corrected voice inputs through the real API, graph and PostgreSQL checkpoint."""
 import hashlib
-
+import paa_server.tasks.handlers as worker
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from paa_server.agent.harness import invoke_harness as worker_invoke_harness
+from paa_server.agent.middleware import ToolBoundary
+from paa_server.modules.attachments.models import Attachment
+from paa_server.modules.messages.models import Message
+from paa_server.modules.work.models import ProgressDraft, WorkItem, WorkRevision
+from paa_server.tasks.handlers import process_job
+from paa_server.tasks.models import Job
+from paa_server.tasks.queue import claim
 from sqlalchemy import select
-
-from paa_server import worker
-from paa_server.agent.harness import ToolBoundary
-from paa_server.models import Attachment, Job, Message, ProgressDraft, WorkItem, WorkRevision
-from paa_server.worker import claim, process_job
 from test_company import keyed, send
 from test_recovery import RecoveryModel
+
+
+
 
 pytestmark = pytest.mark.asyncio
 OLD = '项目已全部完成'
@@ -77,7 +83,7 @@ async def test_corrected_transcript_restarts_old_checkpoint_and_reuses_new_compl
     actor, client = users['employee'], clients['employee']
     result, attachment_id, raw = await voice_message(setup)
     original_boundary = ToolBoundary.awrap_tool_call
-    original_invoke = worker.invoke_harness
+    original_invoke = worker_invoke_harness
 
     async def fail_before_tool(self, request, handler):
         raise RuntimeError('Controlled pending tool failure')
@@ -172,7 +178,7 @@ async def test_correction_during_processing_blocks_late_writes_and_allows_retry(
     settings, sessions, users, clients = setup
     actor, client = users['employee'], clients['employee']
     result, _, _ = await voice_message(setup)
-    original_boundary, original_invoke = ToolBoundary.awrap_tool_call, worker.invoke_harness
+    original_boundary, original_invoke = ToolBoundary.awrap_tool_call, worker_invoke_harness
     changed = False
 
     async def correct_after_boundary(self, request, handler):

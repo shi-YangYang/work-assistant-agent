@@ -12,7 +12,7 @@ macOS／Linux：
 
 ```sh
 python3.12 -m venv .venv-server
-.venv-server/bin/python -m pip install -r services/company/requirements.lock
+.venv-server/bin/python -m pip install -r apps/server/requirements.lock
 cp .env.company.example .env.company
 ```
 
@@ -20,7 +20,7 @@ Windows PowerShell：
 
 ```powershell
 py -3.12 -m venv .venv-server
-.venv-server\Scripts\python.exe -m pip install -r services/company/requirements.lock
+.venv-server\Scripts\python.exe -m pip install -r apps/server/requirements.lock
 Copy-Item .env.company.example .env.company
 ```
 

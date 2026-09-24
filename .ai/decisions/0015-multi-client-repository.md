@@ -2,9 +2,9 @@
 
 ## 决策
 
-- 保持一个仓库，以 `apps` 存客户端、`services` 存后端、`packages` 存真实共享代码；Node 部分采用现有 npm 的 workspaces，继续一个 package-lock。Python 保持独立环境和依赖锁。
-- Electron 的 Python 核心属于桌面应用；公司 API 与 worker 属于同一个后端，目录整理不引入微服务。共享公司 API 类型、纯参数校验和浏览器 UI，桌面协议留在桌面。
-- Android／iOS 仅确定未来放置规则，不创建空项目、不预选 React Native／Flutter／原生框架。CSS 共享包不能被当成原生 UI，业务权限与私有凭证不进入客户端公共包。
+- 保持一个仓库，以 `apps/web`、`apps/desktop`、`apps/server` 分别存 Web、桌面和公司共享后端，`packages` 存真实共享代码；Node 部分采用现有 npm 的 workspaces，继续一个 package-lock。Python 保持独立环境和依赖锁。
+- Electron 的 Python 核心属于桌面应用；公司 API 与 worker 属于同一个后端，同时服务 Web、桌面和未来客户端，目录整理不引入微服务。共享公司输入契约、纯参数校验、声纹引擎和品牌资源，桌面协议留在桌面。
+- Android／iOS 仅确定未来放置规则，不创建空项目、不预选 React Native／Flutter／原生框架。各端独立维护 UI 和 CSS，业务权限与私有凭证不进入客户端公共包。
 - 保留根开发命令和真实用户数据位置。清理依赖入口／引用证据，低频的验收工具、迁移和手动测试不等于无用文件；历史材料用固定 Git 版本追溯。
 
 ## 理由与取舍

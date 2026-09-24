@@ -1,20 +1,24 @@
 """Native-session isolation and enrollment publication boundaries; no real models."""
 import asyncio
 import base64
-from datetime import timedelta
 import hashlib
 import io
+import pytest
 import secrets
 import wave
-
-import pytest
-
-pytestmark = pytest.mark.asyncio
+from datetime import timedelta
+from paa_server.db.base import now
+from paa_server.modules.auth.models import DesktopAuthorization, DesktopSession
+from paa_server.modules.auth.sessions import digest, revoke_member
+from paa_server.modules.members.models import Member
+from paa_server.modules.voiceprints.models import Voiceprint
+from paa_server.tasks.voiceprints import process_once
+from paa_voiceprints import MODEL_ID
 from sqlalchemy import delete, select, update
 
-from paa_server.authentication import digest, revoke_member
-from paa_server.models import DesktopAuthorization, DesktopSession, Member, Voiceprint, now
-from paa_server.voiceprints import MODEL_ID, process_once, private_path
+
+
+pytestmark = pytest.mark.asyncio
 
 
 def wav_bytes():
@@ -199,8 +203,8 @@ async def test_version_mismatch_is_actionable_and_inactive_is_not_synced(setup):
 async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
     import sys
     from dataclasses import replace
-    from paa_server.config import Settings
-    from paa_server.voiceprints import extract
+    from paa_server.core.config import Settings
+    from paa_server.tasks.voiceprints import extract
     runner = tmp_path / 'runner.py'
     runner.write_text('import sys,time\nprint("ready",flush=True)\ntime.sleep(60)\n')
     actual_spawn = asyncio.create_subprocess_exec
@@ -212,8 +216,8 @@ async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
         child_started.set()
         return child
     async def audio(*args): return wav_bytes(), 1
-    monkeypatch.setattr('paa_server.voiceprints.audio_wav', audio)
-    monkeypatch.setattr('paa_server.voiceprints.asyncio.create_subprocess_exec', spawn)
+    monkeypatch.setattr('paa_server.tasks.voiceprints.audio_wav', audio)
+    monkeypatch.setattr('paa_server.tasks.voiceprints.asyncio.create_subprocess_exec', spawn)
     task = asyncio.create_task(extract(tmp_path / 'sample', Settings()))
     await asyncio.wait_for(child_started.wait(), 5)
     task.cancel()

@@ -1,19 +1,24 @@
 """Execution shortcuts and live receipts must keep the existing trust boundaries."""
 import json
-from types import SimpleNamespace
-
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from pydantic import Field
-
 from paa_server.agent.completion import receipt_completion
-from paa_server.agent.harness import invoke_harness, query_team_business
-from paa_server.business_actions import digest, execute
-from paa_server.models import BusinessAction, Job, Member, Message
+from paa_server.agent.harness import invoke_harness
+from paa_server.agent.operations import execute
+from paa_server.agent.tools.team import query_team_business
+from paa_server.core.digests import digest
+from paa_server.modules.members.models import Member
+from paa_server.modules.messages.models import Message
+from paa_server.modules.operations.models import BusinessAction
+from paa_server.tasks.models import Job
+from pydantic import Field
 from test_business_actions import Judge, create, read_work, runtime
+from types import SimpleNamespace
+
+
 
 pytestmark = pytest.mark.asyncio
 

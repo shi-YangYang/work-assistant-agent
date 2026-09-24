@@ -11,7 +11,7 @@ const action = process.argv[2]
 const env = {
   ...process.env,
   PYTHONPATH: [
-    join(root, 'services/company/src'),
+    join(root, 'apps/server/src'),
     join(root, 'packages/voiceprint-engine/src'),
     process.env.PYTHONPATH,
   ]
@@ -19,7 +19,7 @@ const env = {
     .join(delimiter),
 }
 if (!existsSync(python)) {
-  console.error('请先用 Python 3.12 创建 .venv-server，并安装 services/company/requirements.lock。')
+  console.error('请先用 Python 3.12 创建 .venv-server，并安装 apps/server/requirements.lock。')
   process.exit(1)
 }
 const children = []
@@ -53,7 +53,7 @@ if (action === 'all' || action === 'api')
     '8000',
     '--reload',
     '--reload-dir',
-    join(root, 'services/company/src'),
+    join(root, 'apps/server/src'),
     '--reload-dir',
     join(root, 'packages/voiceprint-engine/src'),
   ])

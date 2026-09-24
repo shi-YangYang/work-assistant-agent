@@ -1,18 +1,26 @@
 """Conversation continuity, retry boundaries and explicit voice instructions."""
 import json
+import pytest
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from paa_server.agent.history import conversation_history
+from paa_server.agent.intent import authorize_intent
+from paa_server.agent.operations import execute
+from paa_server.agent.policies import action_policy
+from paa_server.agent.tools.messages import get_message_context
+from paa_server.agent.tools.work import find_work_items
+from paa_server.modules.attachments.models import Attachment
+from paa_server.modules.messages.models import Message
+from paa_server.modules.work.models import WorkItem
+from paa_server.tasks.handlers import process_job
+from paa_server.tasks.models import Job
+from paa_server.tasks.queue import claim
+from sqlalchemy import func, select
+from test_business_actions import Judge, ReplyJudge, create, finish, read_work, run_reply, runtime
+from test_company import keyed
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-import pytest
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from sqlalchemy import func, select
 
-from paa_server.agent.harness import action_policy, conversation_history, find_work_items, get_message_context
-from paa_server.business_actions import authorize_intent, execute
-from paa_server.models import Attachment, Job, Message, WorkItem
-from paa_server.worker import claim, process_job
-from test_business_actions import Judge, ReplyJudge, create, finish, read_work, run_reply, runtime
-from test_company import keyed
 
 pytestmark = pytest.mark.asyncio
 
@@ -31,7 +39,7 @@ async def test_intent_and_reasoning_share_referenced_plan_outside_recent_window(
         await finish(intermediate)
     response = await c['employee'].post('/api/v1/messages', json={'text': '按上表改，状态和日期不变。', 'replyTo': sent['messageId']}, headers=keyed())
     assert response.status_code == 202
-    from paa_server.agent.harness import RunContext
+    from paa_server.tasks.context import RunContext
     job = await claim(sessions, prior.owner_id)
     context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, prior.settings, source_revision=0, intent_model=Judge())
     history = '\n'.join(str(m.content) for m in await conversation_history(context, job, '按上表改'))
@@ -106,7 +114,7 @@ async def test_review_retry_never_reexecutes_business_even_with_current_config(s
     retry = await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={'useCurrentConfig': True})
     assert retry.status_code == 200
     graph = AsyncMock(side_effect=AssertionError('review retry must not run the graph'))
-    monkeypatch.setattr('paa_server.worker.invoke_harness', graph)
+    monkeypatch.setattr('paa_server.tasks.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information']))
@@ -122,7 +130,7 @@ async def test_review_retry_never_reexecutes_business_even_with_current_config(s
 
 async def test_voice_instruction_requires_explicit_attached_audio_choice(setup):
     _, sessions, users, c = setup
-    from paa_server.agent.harness import RunContext
+    from paa_server.tasks.context import RunContext
     actor = users['employee']
     async with sessions.begin() as db:
         audio = Attachment(company_id=actor.company_id, owner_id=actor.id, kind='audio', mime='audio/wav', name='voice.wav', size=100, sha256='a' * 64)

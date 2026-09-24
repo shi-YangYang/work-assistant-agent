@@ -27,7 +27,7 @@
 | 范围 | 当前选择 |
 | --- | --- |
 | Web | 现有 React／TypeScript／Vite；React Router 7.18.3 data router 支持草稿离开保护；独立输出 `apps/web/out/` |
-| 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`services/company/requirements.in`／`.lock` |
+| 服务 | Python 3.12、FastAPI 0.141.1、Uvicorn 0.52.4；独立 `.venv-server`、`apps/server/requirements.in`／`.lock` |
 | 数据 | PostgreSQL 17、SQLAlchemy 2.0.52 async、psycopg 3.3.5、Alembic 1.20.0；schema `0013_drop_password_change`，业务数据、私有附件、公司身份、可恢复业务操作及声纹模板 |
 | 登录 | 账号密码与可选钉钉企业内部应用 OAuth；本地成员、角色、8 小时会话与 CSRF；桌面经系统浏览器确认及一次性 PKCE 授权，受限令牌依附原 Web 会话；自动开户仅限已核验的公司员工 |
 | Harness | Deep Agents 0.7.13、LangGraph 1.2.11、checkpoint-postgres 3.1.2、langchain-openai 1.6.2；按角色授权的业务工具、独立语义意图校验、版本化来源与持久操作回执，提交／删除需确认 |
@@ -50,14 +50,14 @@
 | Electron main／preload、React、桌面契约 | `apps/desktop/src/{main,preload,renderer,shared}/` |
 | 本地 Python 核心、依赖锁与构建元数据 | `apps/desktop/core/`；包为 `src/paa_core/` |
 | 公司 Web | `apps/web/`；`src/app` 装配、`pages` 路由组合、`features` 业务，公共 API／组件／Hook 分层，见[前端结构](../docs/architecture.md#web-前端组织) |
-| 公司 API、任务与 harness | `services/company/src/paa_server/` |
+| 公司 API、任务与 harness | `apps/server/src/paa_server/`；业务 modules、HTTP／任务入口及 Agent 分工见[服务端组织](../docs/architecture.md#公司服务端组织) |
 | 公司 HTTP 类型、纯模型参数校验、品牌资源 | `packages/api-contracts/`、`packages/model-config/`、`packages/ui-web/` |
 | 桌面／公司共用声纹提取与匹配 | `packages/voiceprint-engine/`，轻量协议与可选模型运行依赖分离 |
 | 测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
 | 工程脚本、公司部署 | `scripts/{desktop,company,benchmarks,lib}/`、`deploy/company/` |
 | 产品／架构、规格、决策／规则／交接 | `docs/`、`specs/`、`.ai/` |
 
-目录按用户确认的 [Spec 015](../specs/spec-015-monorepo-structure/spec.md) 迁移；当前实施／验收状态以该 Spec 为准。Node 应用与共享包由 npm workspaces 管理，一个根 package-lock；各包显式声明依赖，共享包不反向依赖应用。Python 继续使用独立环境。`AGENTS.md`、`constitution/`、`specs/`、`.ai/` 的位置与职责不变，后续不任意建立重复结构。取舍见 [0015](../.ai/decisions/0015-multi-client-repository.md)。
+多端仓库基础见 [目录整理](../specs/spec-015-monorepo-structure/spec.md)，公司后端迁入 apps 并按业务拆分见 [后端重构](../specs/spec-028-company-backend-architecture/spec.md)；实施／验收状态以对应 Spec 为准。Node 应用与共享包由 npm workspaces 管理，一个根 package-lock；各包显式声明依赖，共享包不反向依赖应用。Python 继续使用独立环境。`AGENTS.md`、`constitution/`、`specs/`、`.ai/` 的位置与职责不变，后续不任意建立重复结构。取舍见 [共享边界](../.ai/decisions/0015-multi-client-repository.md)。
 
 应用构建输出位于各自 `apps/*/out/`，发行包仍在根 `dist/desktop/`，冻结核心在 `dist/core/`。未来移动项目按技术选择放在 apps 下；本轮未创建移动 App，也未承诺原生界面能直接使用浏览器 CSS。
 

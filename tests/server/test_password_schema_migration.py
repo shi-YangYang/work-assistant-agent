@@ -1,16 +1,17 @@
 """Exercise the real migration chain in a disposable PostgreSQL schema."""
 import os
-from pathlib import Path
-from uuid import uuid4
-
 from alembic import command
 from alembic.config import Config
+from paa_server.core.config import Settings
+from paa_server.db.base import now
+from paa_server.modules.members.models import Company, Member
+from paa_server.modules.work.models import WorkItem
+from pathlib import Path
 from sqlalchemy import MetaData, Table, create_engine, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
+from uuid import uuid4
 
-from paa_server.config import Settings
-from paa_server.models import Company, Member, WorkItem, now
 
 
 def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
@@ -23,7 +24,7 @@ def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
     scoped = create_engine(scoped_url)
     monkeypatch.setenv('DATABASE_URL', scoped_url.render_as_string(hide_password=False))
     config = Config()
-    config.set_main_option('script_location', str(Path(__file__).resolve().parents[2] / 'services/company/src/paa_server/migrations'))
+    config.set_main_option('script_location', str(Path(__file__).resolve().parents[2] / 'apps/server/src/paa_server/migrations'))
     with engine.begin() as connection:
         connection.execute(CreateSchema(schema))
     try:

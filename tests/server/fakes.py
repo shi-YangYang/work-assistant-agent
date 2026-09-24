@@ -6,6 +6,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import Field
 
 
+
 class ReviewedFixtureModel(ChatOpenAI):
     """Fixed benign fixtures supply a separate review response, not network IO.
 

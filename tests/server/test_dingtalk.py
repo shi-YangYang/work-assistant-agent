@@ -1,20 +1,25 @@
 import asyncio
-from dataclasses import replace
-from datetime import timedelta
+import httpx
 import json
 import logging
+import paa_server.cli as cli
+import paa_server.modules.auth.dingtalk.router as routes
+import paa_server.modules.auth.router as api_module
+import pytest
+from dataclasses import replace
+from datetime import timedelta
+from paa_server.api import create_app
+from paa_server.cli import prepare_model_key as cli_prepare_model_key
+from paa_server.db.base import now
+from paa_server.integrations.dingtalk import DingTalkProvider
+from paa_server.modules.auth.dingtalk.service import BROWSER_COOKIE, PROOF_COOKIE, login_company as routes_login_company
+from paa_server.modules.auth.models import DingTalkAuthorization, DingTalkConfig, DingTalkIdentity, Session
+from paa_server.modules.auth.sessions import COOKIE, digest, verify_password as api_module_verify_password
+from paa_server.modules.members.models import Member
+from paa_server.modules.reports.models import ReportEligibility
+from sqlalchemy import func, select, update
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
-
-import httpx
-import pytest
-from sqlalchemy import func, select, update
-
-from paa_server.api import create_app
-from paa_server.authentication import COOKIE, digest
-from paa_server.dingtalk import BROWSER_COOKIE, PROOF_COOKIE
-from paa_server.dingtalk_provider import DingTalkProvider
-from paa_server.models import Company, DingTalkAuthorization, DingTalkConfig, DingTalkIdentity, Member, ReportEligibility, Session, now
 
 
 class OfficialResponses:
@@ -60,8 +65,7 @@ def browser(app):
 
 async def enable(setup, monkeypatch, enabled=True):
     settings, sessions, users, clients = setup
-    import paa_server.dingtalk as routes
-    original = routes.login_company
+    original = routes_login_company
     async def company(db, settings):
         return await original(db, replace(settings, login_company_id=users['admin'].company_id))
     monkeypatch.setattr(routes, 'login_company', company)
@@ -281,12 +285,11 @@ async def test_company_resolution_never_picks_first_and_account_csrf_required(se
 async def test_missing_master_key_does_not_replace_dingtalk_credentials(setup, monkeypatch):
     settings, sessions, users, clients = setup
     await enable(setup, monkeypatch)
-    from paa_server import cli
-    from paa_server.model_secrets import SecretUnavailable
+    from paa_server.security.secrets import SecretUnavailable
     monkeypatch.setattr(cli, 'Settings', lambda: settings)
     settings.model_key_file.unlink()
     with pytest.raises(SecretUnavailable):
-        await cli.prepare_model_key()
+        await cli_prepare_model_key()
     assert not settings.model_key_file.exists()
     assert (await clients['admin'].put('/api/v1/settings/login/dingtalk', json={'corpId': 'corp-test', 'clientId': 'client-test', 'secret': '', 'enabled': False, 'expectedRevision': 1})).status_code == 503
 
@@ -295,8 +298,7 @@ async def test_missing_master_key_does_not_replace_dingtalk_credentials(setup, m
 @pytest.mark.parametrize('change', ['reset', 'password', 'disable'])
 async def test_password_login_cannot_issue_after_concurrent_revocation(setup, monkeypatch, change):
     settings, sessions, users, clients = setup
-    import paa_server.api as api_module
-    verify = api_module.verify_password
+    verify = api_module_verify_password
     waiting, release = asyncio.Event(), asyncio.Event()
     blocked_once = False
     async def paused_verify(value, stored):
@@ -341,7 +343,7 @@ async def test_sensitive_route_rate_limits_complete_with_the_three_connection_po
     results = await asyncio.wait_for(asyncio.gather(*requests), 10)
     assert [result.status_code for result in results] == [200, 400, 409, 400, 400]
     # Failure counts survive each route's business rollback.
-    from paa_server.models import LoginAttempt
+    from paa_server.modules.auth.models import LoginAttempt
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.identity == digest('dingtalk-account:' + users['employee'].id))) == 3
 

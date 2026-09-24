@@ -35,12 +35,47 @@ Electron 保留本地会议能力；公司 Web 与后端处理账号、员工消
 
 ## 公司业务与 Harness
 
-- `apps/web` 是独立的浏览器应用，通过同源 API 使用公司业务；`services/company/src/paa_server` 同时提供 API 和 worker，二者共用业务服务与数据库，没有按进程拆成多个微服务。
+- `apps/web` 是独立的浏览器应用，通过同源 API 使用公司业务；`apps/server/src/paa_server` 同时提供 API 和 worker，二者共用业务服务与数据库，没有按进程拆成多个微服务。
 - API 负责会话身份、公司／成员授权、输入校验和业务事务。worker 执行可恢复任务，harness 管理授权上下文、工具、预算、checkpoint 和人工确认；模型不能凭参数更改真实身份或绕过业务权限。
 - PostgreSQL 保存业务、修订、任务、文件分段及公司声纹，原件在私有卷。文档解析和声纹提取通过受管子进程进行；声纹使用独立 CPU 运行环境，图片理解／语音转写仍调用外部服务。
 - 员工确认工作与提交报告，管理员查看授权业务并创建自己的督办。团队来源依赖贯穿模型输入、历史回答、恢复与确认，撤权／删除后重新校验；具体范围见 [Spec 014](../specs/spec-014-admin-business-assistant/spec.md)。
 - 工作检索在服务端授权后分页，看板与明细共用期间和人员范围。worker 将受控聊天反馈写入 PostgreSQL 有界快照，API 经权限复核后通过 SSE 交付；正式结果仍来自业务记录。管理员用量按模型请求记录真实返回值，缺失数据保留未知，见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
 - 公司 Key 在服务端加密保存，API 与 worker 使用同一独立私有主密钥；数据库、附件和主密钥分开备份、配对恢复。部署挂载、迁移与备份命令见[使用指南](setup.md)。
+
+## 公司服务端组织
+
+`apps/server/src/paa_server` 是公司共享后端，API 与 worker 是同一套业务代码的不同入口。桌面本地核心仍在 `apps/desktop/core`，不依赖公司后端才能启动。
+
+```text
+api.py / worker.py / cli.py  应用、任务进程、运维命令入口
+http/                       应用依赖、中间件、错误响应与路由注册
+core/                       设置、资源路径、基础输入与版本规则
+db/                         连接、公共 Base、完整 ORM 模型登记
+modules/                    认证、成员、消息、工作、报告等业务
+security/                   公司范围、所有权、来源授权与凭证保护
+tasks/                      上下文、租约、领取、处理、调度与反馈
+agent/                      提示词、模型、工具、核对与图编排
+integrations/               模型及钉钉协议、媒体与隔离解析进程
+migrations/ / assets/       历史迁移与包内静态资源
+```
+
+业务按需维护 router、schemas、models、commands、service、queries 和 serializers，不强制每个模块配齐文件。路由处理 HTTP 参数与依赖，commands 编排写入用例，service 保存复用的业务规则；HTTP 与 Agent 工具调用同一套业务能力。ORM 定义就近归业务，统一使用 `db` 的 Base；登记模块负责完整加载模型，业务不通过登记模块获取所有实体。
+
+添加接口先选择 `modules/<业务>/`，复用公共身份和请求事务依赖，再在 HTTP 装配处挂载路由。增加业务行为放到对应 service，复杂查询单独放 queries；增加 Agent 工具时调用这些业务服务，保留授权与租约检查；后台流程由 tasks 处理器编排，worker 入口只负责进程生命周期。单个 Python 文件超过约 400 个非空行时检查职责，不通过压缩代码或空层满足行数。
+
+阅读“发送一条消息”时，按以下顺序查看，路径均相对 `apps/server/src/paa_server`：
+
+1. `modules/messages/router.py` 接收参数与身份，调用 `commands.py` 的 `submit_message`。
+2. `submit_message` 校验幂等键、会话和附件，在同一请求事务内保存消息及 Job；`http/dependencies.py` 在返回成功前提交，失败回滚。
+3. `tasks/queue.py` 领取任务，`tasks/handlers.py` 的 `process_job` 管理处理过程，再调用 `agent/harness.py`。
+4. `agent/tools/work.py` 等工具读取授权业务并提出操作；确定性业务规则与保存仍由 modules 承担，模型不能直接写数据库。
+5. 员工确认进展时，由工作路由进入 `modules/work/progress.py` 的 `confirm_drafts`，检查版本并更新工作记录。
+
+HTTP 和后台并发任务各自使用 session，不共享全局 AsyncSession。新增代码遵循同样的事务与调用边界。
+
+底层配置、ORM 和任务上下文不反向导入 API、worker 或 harness。模块间引用具体职责文件，不保留汇总全应用的万能 service 或兼容导出层。启动命令仍为 `paa_server.api:app`、`python -m paa_server.worker`、`python -m paa_server.cli`，根 npm 命令、环境文件和部署数据位置不变。
+
+`npm run test:server` 包含 `tests/server/test_architecture.py`，检查反向依赖、模块循环、ORM 完整登记和不同应用实例的依赖隔离。
 
 ## Web 前端组织
 

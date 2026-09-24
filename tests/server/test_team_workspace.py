@@ -1,8 +1,6 @@
-from datetime import datetime, timedelta, timezone
-
 import pytest
-
-from paa_server.models import Report, ReportObligation, ReportRevision
+from datetime import datetime, timedelta, timezone
+from paa_server.modules.reports.models import Report, ReportObligation, ReportRevision
 from test_search_metrics_feedback import content, work
 
 pytestmark = pytest.mark.asyncio
@@ -17,7 +15,7 @@ async def test_current_blockers_and_historical_updates_keep_scope_and_permission
         changed = await work(db, users['employee'], content('历史阻碍', 'blocked', '待确认'), DAY)
         changed.content = content('现在完成', 'done')
         changed.title, changed.revision, changed.updated_at = '现在完成', 2, DAY + timedelta(days=2)
-        from paa_server.models import WorkRevision
+        from paa_server.modules.work.models import WorkRevision
         db.add(WorkRevision(company_id=changed.company_id, owner_id=changed.owner_id, work_id=changed.id, revision=2, content=changed.content, source_ids=[], created_at=changed.updated_at))
         for role in ('admin', 'outsider'):
             await work(db, users[role], content('不可出现在员工看板', 'blocked'), DAY)
@@ -115,7 +113,7 @@ async def test_report_search_uses_full_published_body_and_literal_patterns(setup
 
 
 async def test_history_filters_latest_accessible_revision_before_search(setup):
-    from paa_server.models import WorkRevision
+    from paa_server.modules.work.models import WorkRevision
     _, sessions, users, clients = setup
     async with sessions.begin() as db:
         employee = users['employee']
@@ -134,7 +132,7 @@ async def test_history_filters_latest_accessible_revision_before_search(setup):
 
 async def test_workspace_query_count_does_not_grow_with_page_size(setup):
     from sqlalchemy import event
-    from paa_server.team_workspace import work_view, report_view
+    from paa_server.modules.team.workspace import work_view, report_view
     _, sessions, users, _ = setup
     async with sessions.begin() as db:
         for index in range(65):

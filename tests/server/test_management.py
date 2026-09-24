@@ -1,20 +1,24 @@
-from datetime import timedelta
 import asyncio
 import io
-from pathlib import Path
-from types import SimpleNamespace
-from uuid import uuid4
-
 import pytest
 from PIL import Image
-from sqlalchemy import select, text
+from datetime import timedelta
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-from paa_server.agent.harness import RunContext, LostLease, conversation_history, draft_report
 from paa_server.agent.checkpoints import GuardedSaver
-from paa_server.models import Attachment, Conversation, Job, Message, ProgressDraft, Report, ReportRevision, WorkItem, WorkRevision, now
-from paa_server.service import report_inputs
+from paa_server.agent.history import conversation_history
+from paa_server.agent.tools.reports import draft_report
+from paa_server.db.base import now
+from paa_server.modules.messages.models import Message
+from paa_server.modules.reports.models import Report, ReportRevision
+from paa_server.modules.reports.sources import report_inputs
+from paa_server.modules.work.models import WorkRevision
+from paa_server.tasks.context import LostLease, RunContext
+from paa_server.tasks.models import Job
+from pathlib import Path
+from sqlalchemy import select, text
 from test_company import keyed, run_target
+from types import SimpleNamespace
+from uuid import uuid4
 
 pytestmark = pytest.mark.asyncio
 
@@ -306,7 +310,7 @@ async def test_member_creation_accepts_four_character_password_without_relaxing_
 
 async def test_initial_admin_uses_same_password_requirement():
     from pydantic import ValidationError
-    from paa_server.schemas import AdminBootstrap
+    from paa_server.modules.members.schemas import AdminBootstrap
     for password in ('123', 'x' * 129):
         with pytest.raises(ValidationError):
             AdminBootstrap(username='admin', name='管理员', password=password)

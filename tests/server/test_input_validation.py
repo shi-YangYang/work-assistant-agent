@@ -1,15 +1,16 @@
-from datetime import date
-from types import SimpleNamespace
-
 import pytest
+from datetime import date
 from fastapi import HTTPException
+from paa_server.core.input_rules import MEMBER_RULES, PASSWORD_RULES
+from paa_server.core.periods import period_range
+from paa_server.http.validation import validation_detail
+from paa_server.modules.auth.schemas import Password
+from paa_server.modules.conversations.schemas import ConversationEdit
+from paa_server.modules.members.schemas import AdminBootstrap, MemberCreate, ResetPassword
+from paa_server.modules.reports.periods import period
+from paa_server.modules.work.schemas import DraftEdit, Progress
 from pydantic import ValidationError
-
-from paa_server.input_rules import MEMBER_RULES, PASSWORD_RULES
-from paa_server.queries import period_range
-from paa_server.schemas import AdminBootstrap, ConversationEdit, DraftEdit, MemberCreate, Password, Progress, ResetPassword
-from paa_server.service import period
-from paa_server.validation import validation_detail
+from types import SimpleNamespace
 
 
 def test_every_new_password_entry_uses_shared_limits():

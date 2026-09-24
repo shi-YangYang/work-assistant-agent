@@ -1,20 +1,29 @@
 """Real transactions and API boundaries; fixed judge avoids paid model calls."""
-from datetime import date, timedelta
 import json
-from types import SimpleNamespace
-from uuid import uuid4
 import pytest
+from datetime import timedelta
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
+from paa_server.agent.history import conversation_history
+from paa_server.agent.intent import authorize_intent
+from paa_server.agent.operations import execute
+from paa_server.agent.tools.actions import query_report_obligations, query_reports
+from paa_server.agent.tools.team import query_team_business
+from paa_server.agent.tools.work import find_work_items, get_work_item
+from paa_server.db.base import now
+from paa_server.modules.messages.models import Message
+from paa_server.modules.operations.receipts import receipt_reply
+from paa_server.modules.reports.models import Report, ReportRevision
+from paa_server.modules.work.models import WorkItem
+from paa_server.security.access import receipt as business_receipt, remember as business_remember
+from paa_server.tasks.context import RunContext
+from paa_server.tasks.models import Job
+from paa_server.tasks.queue import claim
 from sqlalchemy import func, select
-from paa_server import business_access as business
-from paa_server.business_actions import execute, authorize_intent, receipt_reply
-from paa_server.agent.harness import RunContext, conversation_history, find_work_items, get_work_item, query_team_business
-from paa_server.agent.action_tools import query_reports, query_report_obligations
-from paa_server.models import Attachment, BusinessAction, Company, Job, Member, Message, Report, ReportRevision, WorkItem, WorkRevision, now
-from paa_server.worker import claim
-from test_company import keyed, send
 from test_business_assistant import facts
+from test_company import keyed, send
+from types import SimpleNamespace
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -202,7 +211,7 @@ async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     await finish(context)
     report_job = await claim(sessions, users['employee'].id)
     assert report_job.kind == 'report'
-    from paa_server.agent.harness import draft_report
+    from paa_server.agent.tools.reports import draft_report
     report_context = RunContext(report_job.owner_id, report_job.company_id, report_job.id, report_job.fence, sessions, settings)
     await draft_report.coroutine(completed='完成报价', ongoing='', blockers='', next='', runtime=SimpleNamespace(context=report_context))
     await finish(report_context)
@@ -230,11 +239,11 @@ async def test_admin_delete_cleans_sources_and_retains_minimal_receipt(setup):
         db.add(report); await db.flush()
         public = ReportRevision(company_id=work.company_id, owner_id=work.owner_id, report_id=report.id, revision=1, content=report.content, source_ids=[rev.id])
         db.add(public); await db.flush()
-        evidence = business.receipt('report', public)
+        evidence = business_receipt('report', public)
     context, sent = await runtime(setup, '删除员工今天已提交的日报', 'admin')
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
-        business.remember(job, users['admin'], evidence)
+        business_remember(job, users['admin'], evidence)
     await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id)
     row = await execute(context, step=1, action='delete_report', target_id=report.id, expected_revision=1)
     assert row['impact']['messages'] == 1
@@ -281,7 +290,7 @@ async def test_generate_and_submit_waits_for_real_report_then_exact_preview(setu
     assert result['state'] == 'running' and not result.get('canConfirm')
     await finish(context)
     job = await claim(sessions, users['employee'].id)
-    from paa_server.agent.harness import draft_report
+    from paa_server.agent.tools.reports import draft_report
     report_context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
     await draft_report.coroutine('完成方案', '', '', '核对合同', SimpleNamespace(context=report_context))
     await finish(report_context)
@@ -384,7 +393,7 @@ class ReplyJudge:
         payload = json.loads(messages[-1].content)
         self.inputs.append(payload)
         if self.fail:
-            from paa_server.agent.harness import BudgetExceeded
+            from paa_server.tasks.context import BudgetExceeded
             raise BudgetExceeded('existing call budget exhausted')
         assert len(payload['segments']) == len(self.kinds)
         proof = [payload['toolEvidence'][0]['id']] if payload['toolEvidence'] else []
@@ -396,7 +405,7 @@ async def run_reply(setup, text, answer, judge, *, read_report=False, before=Non
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langchain_openai import ChatOpenAI
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from paa_server.worker import process_job
+    from paa_server.tasks.handlers import process_job
     class ReplyModel(ChatOpenAI):
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
             response = AIMessage(content=answer)
