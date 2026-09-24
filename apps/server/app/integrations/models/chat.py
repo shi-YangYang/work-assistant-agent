@@ -21,10 +21,17 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
         await on_event('started')
     async with transport.client(settings) as http:
         async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body) as response:
+            if response.status_code == 429:
+                await response.aread()
             status_error(response)
             if not config['streaming']:
                 await response.aread()
-                result = response.json()
+                try:
+                    result = response.json()
+                except ValueError:
+                    raise ProviderError('invalid_response', '模型返回无法解析的内容') from None
+                if not isinstance(result, dict):
+                    raise ProviderError('invalid_response', '模型返回内容结构无效')
                 if on_event:
                     await on_event('usage', result.get('usage'))
             else:
@@ -40,6 +47,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         part = json.loads(raw)
                     except ValueError:
                         raise ProviderError('invalid_response', '流式接口返回无效数据') from None
+                    if not isinstance(part, dict):
+                        raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if part.get('error'):
                         raise ProviderError('protocol', '流式接口报告请求失败，请核对模型参数')
                     if part.get('usage'):

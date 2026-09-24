@@ -144,6 +144,9 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
         from app.core.digests import digest
         review_input = digest({'blocks': blocks, 'sourceRevision': transcript_revision, 'documents': context.document_snapshot, 'voiceCommandAttachmentId': job.result.get('voiceCommandAttachmentId')})
+        from app.tasks.node_execution import initialize
+        context.node_retry = True
+        await initialize(context, review_input)
         async with sessions.begin() as db:
             live, _ = await lease(db, context)
             pending = live.result.get('pendingReply', {})
@@ -231,13 +234,17 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 live.result = {**live.result, 'replyReviewError': review.error_code or 'UnverifiedReply'}
                 live.state, live.phase = 'awaiting_retry', 'reply_review'
                 live.error = '答复核对暂时失败。可重试核对，已保存的业务操作不会重复执行。'
+            if review.verified:
+                from app.tasks.node_state import release_outputs
+                release_outputs(live)
             update_feedback(live, 'complete' if review.verified else 'reviewing', '')
             live.lease_until, live.updated_at = None, now()
     except LostLease:
         log.info('job=%s lost lease', job.id)
     except Exception as error:
         from app.agent.intent import IntentCheckFailed
-        if isinstance(error, (ValueError, BudgetExceeded, IntentCheckFailed)):
+        from app.tasks.retry import NodeFailed
+        if isinstance(error, (ValueError, BudgetExceeded, IntentCheckFailed, NodeFailed)):
             reason = str(error)[:300]
         elif isinstance(error, HTTPException):
             reason = error.detail.get('message', '媒体处理失败') if isinstance(error.detail, dict) else '媒体处理失败'

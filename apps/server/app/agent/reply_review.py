@@ -188,11 +188,23 @@ information：问候、材料分析、澄清问题、能力解释、条件或建
             judge = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=2000, streaming=False, use_responses_api=False, stream_usage=False)
             judge._run_context = context
             judge._verification = True
-        response = await judge.ainvoke(prompt)
-        reviewed = check_segments(parts, response.text, evidence)
+        from app.tasks.node_execution import execute_node
+        from app.integrations.models.transport import ProviderError
+        def parse(response):
+            try:
+                check_segments(parts, response.text, evidence)
+            except ReviewFormatError as error:
+                raise ProviderError('invalid_response', '答复核对未返回完整有效结果') from error
+            return response.text
+        if isinstance(judge, BoundedChatModel):
+            judge._response_validator = parse
+        async def check():
+            return parse(await judge.ainvoke(prompt))
+        raw = await execute_node(context, identity=fingerprint, kind='review', label='核对结果中', operation=check)
+        reviewed = check_segments(parts, raw, evidence)
         async with context.sessions.begin() as db:
             job, _ = await lease(db, context)
-            job.result = {**job.result, 'replyReview': {'digest': fingerprint, 'verdict': response.text}}
+            job.result = {**job.result, 'replyReview': {'digest': fingerprint, 'verdict': raw}}
         return reviewed
     except (LostLease, InputChanged, HTTPException):
         raise
@@ -200,4 +212,6 @@ information：问候、材料分析、澄清问题、能力解释、条件或建
         # Network/budget/schema failure concerns explanatory prose only. It must
         # not undo saved actions; the user may retry only this review stage.
         log.info('job=%s reply_review_failure=%s', context.job_id, type(error).__name__)
-        return ReviewedReply(error_code=type(error).__name__)
+        from app.tasks.retry import NodeFailed
+        cause = error.__cause__ if isinstance(error, NodeFailed) and error.__cause__ else error
+        return ReviewedReply(error_code=type(cause).__name__)

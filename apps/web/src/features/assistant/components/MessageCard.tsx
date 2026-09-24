@@ -166,10 +166,12 @@ export function MessageCard({
                       state: live.feedback.state,
                       stage: live.feedback.stage,
                       error: live.feedback.error,
+                      nodes: live.feedback.nodes,
                     }
                   : {}),
               }}
               refresh={onChange}
+              showNodes
             />
           )}
           {own &&

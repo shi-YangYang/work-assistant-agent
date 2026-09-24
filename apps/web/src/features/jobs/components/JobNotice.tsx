@@ -8,22 +8,29 @@ import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
 import { retryJob } from '@web/features/jobs/api/requests'
+import { TaskProgress } from './TaskProgress'
 import { LoaderCircle } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 export function JobNotice({
   job,
   refresh,
+  showNodes = false,
 }: {
   job: NonNullable<WorkMessage['job']>
   refresh: () => void
+  showNodes?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const [confirmation, setConfirmation] = useState<'original' | 'current' | null>(null)
   const inFlight = useRef(false)
+  const progress =
+    showNodes &&
+    !!job.nodes?.length &&
+    !(job.state === 'running' && ['preparing', 'parsing', 'transcribing'].includes(job.stage || ''))
   const reviewOnly = job.phase === 'reply_review'
-  const retryLabel = reviewOnly ? '重试答复核对' : '重试处理'
+  const retryLabel = progress ? '重试此步骤' : reviewOnly ? '重试答复核对' : '重试处理'
   const retry = async (useCurrentConfig = false) => {
     if (inFlight.current) return
     inFlight.current = true
@@ -44,6 +51,26 @@ export function JobNotice({
     setError('')
     setConfirmation(mode)
   }
+  if (progress)
+    return (
+      <>
+        <TaskProgress
+          job={job}
+          busy={busy}
+          onRetry={() => void retry()}
+          onCurrentConfig={() => confirmRetry('current')}
+        />
+        <ErrorNotice>{error}</ErrorNotice>
+        {confirmation && (
+          <Modal title="使用当前配置重新处理" onClose={() => setConfirmation(null)}>
+            <p>使用当前模型重新处理，已保存的业务操作会保留。模型调用可能再次产生用量。</p>
+            <BusyButton busy={busy} onClick={() => void retry(true)}>
+              确认重新处理
+            </BusyButton>
+          </Modal>
+        )}
+      </>
+    )
   if (job.state === 'succeeded' || job.state === 'cancelled') return null
   if (job.state === 'awaiting_input')
     return (

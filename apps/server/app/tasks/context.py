@@ -31,6 +31,9 @@ class RunContext:
     model_binding: dict | None = None
     model_purpose: str = 'assistant'
     config_attempt: int = 0
+    node_retry: bool = False
+    node_scope: str = ''
+    node_deadline: float = 0
     calls: int = 0
     tools: int = 0
     input_tokens: int = 0

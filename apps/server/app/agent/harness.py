@@ -75,15 +75,15 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
             instruction = '服务端核对：用户明确要求的操作尚无工具回执，上一条仅写了文字。回看原用户请求与本轮已读材料；信息足够时调用 execute_business_action。用户委托挑选单条删除对象并确认时，应调用工具准备确认卡，不是再用文字询问。管理员明确要求新建本人督办时直接保存本人工作并关联已有真实 source_tokens。不得扩展范围，不改员工工作，不实际删除或提交；有歧义则明确说明。'
-            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, 180 - (time.monotonic() - context.started)))
+            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         elif state.values:
             # The worker already checked retry authorization and lease. Resume this
             # job's unchanged input; a completed graph needs no second external request.
-            result = await asyncio.wait_for(graph.ainvoke(None, config, context=context), timeout=max(0.01, 180 - (time.monotonic() - context.started))) if state.next else state.values
+            result = await asyncio.wait_for(graph.ainvoke(None, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started))) if state.next else state.values
         else:
             history = await conversation_history(context, job, content) if job.kind == 'message' else []
             inputs = {'messages': [*history, HumanMessage(id=f'job:{job.id}', content=content)]}
-            result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, 180 - (time.monotonic() - context.started)))
+            result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     messages = result.get('messages', [])
     answer = next((m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None)
     if answer is None:

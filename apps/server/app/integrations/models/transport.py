@@ -8,9 +8,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 
 class ProviderError(ValueError):
-    def __init__(self, code, message, status=None):
+    def __init__(self, code, message, status=None, retry_after=None, *, sent=None):
         super().__init__(message)
-        self.code, self.status = code, status
+        self.code, self.status, self.retry_after, self.sent = code, status, retry_after, sent
 
 
 def normalize_url(value, settings):
@@ -57,7 +57,7 @@ class CheckedBackend(AutoBackend):
         except ProviderError:
             raise
         except (OSError, asyncio.TimeoutError):
-            raise ProviderError('network', '无法连接模型服务，请检查地址和网络') from None
+            raise ProviderError('network', '无法连接模型服务，请检查地址和网络', sent=False) from None
 
 
 class LimitedStream(httpx.AsyncByteStream):
@@ -103,17 +103,41 @@ def status_error(response):
     if code in (401, 403):
         raise ProviderError('authentication', '鉴权失败，请核对密钥、模型权限及服务地域', code)
     if code == 429:
-        raise ProviderError('quota', '服务额度不足或请求受限，请查看服务商账户', code)
+        # Only structured provider codes distinguish temporary throttling from
+        # exhausted credits. An ambiguous 429 is not safe to repeat blindly.
+        try:
+            detail = response.json().get('error', {})
+            reason = detail.get('code') or detail.get('type')
+        except (ValueError, TypeError, AttributeError, httpx.ResponseNotRead):
+            reason = None
+        temporary = reason in ('rate_limit_exceeded', 'rate_limit_error', 'too_many_requests', 'throttled', 'Throttling', 'Throttling.RateQuota')
+        raise ProviderError('rate_limit' if temporary else 'quota', '服务请求暂时受限' if temporary else '服务额度不足或请求受限，请查看服务商账户', code, retry_after(response))
     if code in (400, 404, 405, 415, 422):
         raise ProviderError('protocol', '服务不支持当前路径、模型或参数，请核对接口配置', code)
     if 300 <= code < 400:
         raise ProviderError('address', '服务返回重定向，请直接填写最终服务地址', code)
-    raise ProviderError('network', '模型服务暂不可用，请稍后手动重试', code)
+    raise ProviderError('network', '模型服务暂不可用，请稍后重试', code, retry_after(response))
+
+
+def retry_after(response):
+    from email.utils import parsedate_to_datetime
+    import math
+    value = response.headers.get('retry-after', '')
+    try:
+        seconds = float(value)
+    except ValueError:
+        try:
+            seconds = parsedate_to_datetime(value).timestamp() - time.time()
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return max(0, seconds) if math.isfinite(seconds) and seconds >= 0 else None
 
 
 def safe_error(error):
     if isinstance(error, ProviderError):
         return error
+    if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+        return ProviderError('network', '未能连接模型服务，请检查地址和网络', sent=False)
     if isinstance(error, (asyncio.TimeoutError, httpx.TimeoutException)):
         return ProviderError('timeout', '请求超时，可能已产生调用费用；请核对后再重试')
     if isinstance(error, httpx.HTTPError):

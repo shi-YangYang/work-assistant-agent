@@ -50,7 +50,7 @@ class RequestRecord:
             failure = safe_error(error) if error is not None else None
             # Address validation without an HTTP status rejects before sending;
             # redirects carry a status and remain actual, failed requests.
-            if failure and failure.code == 'address' and failure.status is None:
+            if failure and (failure.sent is False or failure.code == 'address' and failure.status is None):
                 row.started_at = None
             row.elapsed_ms = max(0, round((row.finished_at - row.started_at).total_seconds() * 1000)) if row.started_at else None
             if error is None:

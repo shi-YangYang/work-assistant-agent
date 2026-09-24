@@ -138,7 +138,32 @@ export interface OperationFeedback {
   state: 'failed' | 'conflict' | 'clarification' | 'waiting'
   message: string
 }
+export interface TaskNode {
+  id: string
+  parentId: string | null
+  kind: 'model' | 'tool' | 'authorization' | 'review'
+  label: string
+  state:
+    | 'waiting'
+    | 'running'
+    | 'retry_wait'
+    | 'succeeded'
+    | 'failed'
+    | 'awaiting_confirmation'
+    | 'awaiting_input'
+    | 'cancelled'
+  attempts: number
+  maxAttempts: number
+  retries: number
+  totalRetries: number
+  round: number
+  nextRetryAt: string | null
+  errorCode: string
+  error: string
+  canRetry: boolean
+}
 export interface Job {
+  nodes?: TaskNode[]
   operationFeedback?: OperationFeedback[]
   stage?: string
   attempt?: number
@@ -323,6 +348,7 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  nodes?: TaskNode[]
   jobId: string
   attempt: number
   fence: number

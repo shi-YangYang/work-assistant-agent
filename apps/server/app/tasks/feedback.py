@@ -70,9 +70,10 @@ async def snapshot(sessions, token_hash, job_id):
             problem(403, '账号权限已变化，请重新提问', 'business_access_changed')
         feedback = job.feedback or {}
         text = feedback.get('text','') if not job.access.get('team') and job.state not in ('succeeded','awaiting_input','cancelled') and job.updated_at >= now() - timedelta(days=1) else ''
+        from app.tasks.node_state import node_dtos
         from app.modules.operations.receipts import message_actions
         actions = await message_actions(db, actor, message)
-        return {'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
+        return {'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
 async def events(sessions, token_hash, job_id):

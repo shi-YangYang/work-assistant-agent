@@ -23,7 +23,8 @@ export function acceptFeedback(
     if (
       incoming.updatedAt === current.updatedAt &&
       incoming.state === current.state &&
-      JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? [])
+      JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
+      JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? [])
     )
       return current
   }

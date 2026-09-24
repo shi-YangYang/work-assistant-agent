@@ -59,6 +59,9 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         item.config_attempt += 1
         if item.kind == 'report':
             item.result = {k: v for k, v in item.result.items() if k != 'reportSaved'}
+    if item.kind == 'message' and item.result.get('nodeExecution'):
+        from app.tasks.node_state import reopen_failed
+        reopen_failed(item)
     item.attempt += 1
     from app.tasks.feedback_state import update_feedback
     update_feedback(item, 'queued', '')

@@ -215,7 +215,9 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
         assert data['job']['state']=='awaiting_input' and data['reply']=='Hello world'
         assert (await c[role].get(f"/api/v1/jobs/{job.id}/feedback")).json()['text']==''
     usage=(await c['admin'].get('/api/v1/settings/model-usage')).json()
-    expected_calls=(2 if tools else 1) + (0 if interrupted else 1)
+    expected_calls=4 if interrupted else (2 if tools else 1) + 1
+    if interrupted:
+        assert data['job']['nodes'][0]['attempts']==4 and data['job']['nodes'][0]['retries']==3
     assert usage['summary']['calls']==expected_calls and usage['summary']['inputTokens']==0 and usage['summary']['inputKnown']==expected_calls
     row=usage['items'][0]
     assert row['inputTokens']==0 and row['outputTokens']==7 and row['model']=='controlled-chat'

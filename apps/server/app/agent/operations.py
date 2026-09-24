@@ -15,6 +15,22 @@ from app.security.ownership import owned
 from sqlalchemy import select
 
 
+async def receipt(context, db, actor, job, row):
+    result = await action_dto(db, actor, row)
+    if context.node_retry:
+        from app.tasks.node_execution import active_node
+        from app.tasks.node_state import execution, save
+        node = active_node.get()
+        if node and node[1] == 'tool':
+            state = execution(job)
+            current = next(item for item in state['nodes'] if item['id'] == node[0])
+            # The reference and business effect commit together. A worker can
+            # recover it even if no tool output/read version was journaled.
+            current['receiptId'] = row.id
+            save(job, state)
+    return result
+
+
 async def execute(context, **arguments):
     """Keep operation feedback even if a later model/review request fails."""
     from app.tasks.lease import lease
@@ -47,6 +63,8 @@ async def execute(context, **arguments):
         raise
     else:
         await remember(result)
+        if result.get('objectRevision') and result.get('objectId'):
+            context.read_versions[result['objectId']] = result['objectRevision']
         return result
 
 
@@ -74,7 +92,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             # A stable ordinal binds retries even if the provider changes its call ID.
             if prior.digest != fingerprint:
                 return {'state': 'conflict', 'message': '这一操作步骤已有保存结果，本次新参数未写入。使用 existingOperation 回答，不再重试该步骤；进一步修改需新的用户请求。', 'existingOperation': await action_dto(db, actor, prior)}
-            return await action_dto(db, actor, prior)
+            return await receipt(context, db, actor, job, prior)
         if requires_step:
             predecessor = await db.scalar(select(BusinessAction).where(BusinessAction.message_id == job.target_id, BusinessAction.step == requires_step))
             if not predecessor or predecessor.state != 'succeeded':
@@ -116,7 +134,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         job, actor = await lease(db, context)
         prior = await db.scalar(select(BusinessAction).where(BusinessAction.message_id == job.target_id, ((BusinessAction.step == step) | (BusinessAction.intent_key == intent_key))))
         if prior:
-            return await action_dto(db, actor, prior) if prior.digest == fingerprint else {'state': 'conflict', 'message': '操作内容已变化'}
+            return await receipt(context, db, actor, job, prior) if prior.digest == fingerprint else {'state': 'conflict', 'message': '操作内容已变化'}
         message = await owned(db, Message, job.target_id, actor, lock=True)
         row = BusinessAction(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, conversation_id=message.conversation_id, step=step, action=action, digest=fingerprint, intent_key=intent_key, params={**params, 'sourceRevision': message.transcript_revision, 'documents': context.document_versions}, access=job.access or business_scope(actor))
         db.add(row)
@@ -137,4 +155,4 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         if step == 1 and digest(proposal) in context.receipt_candidates and row.state in ('succeeded', 'pending', 'running'):
             row.result = {**row.result, 'receiptOnly': True, 'receiptInput': digest({'text': request_text(message, job), 'sourceRevision': message.transcript_revision, 'documents': context.document_versions})}
         await db.flush()
-        return await action_dto(db, actor, row)
+        return await receipt(context, db, actor, job, row)

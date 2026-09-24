@@ -125,14 +125,22 @@ async def authorize_intent(context, proposal):
         HumanMessage(content=json.dumps(request, ensure_ascii=False, default=str)),
     ]
     from app.integrations.models.transport import ProviderError
+    from app.tasks.node_execution import execute_node
+    def parse(response):
+        try:
+            return IntentVerdict.model_validate_json(response.text.strip().removeprefix('```json').removesuffix('```').strip())
+        except ValueError as error:
+            raise ProviderError('invalid_response', '操作核对未返回完整有效结果，本次操作尚未执行') from error
+    if isinstance(judge, BoundedChatModel):
+        judge._response_validator = parse
+    async def check():
+        return parse(await judge.ainvoke(prompt))
     try:
-        response = await judge.ainvoke(prompt)
+        verdict = await execute_node(context, identity=digest(proposal), kind='authorization', label='核对操作授权中', operation=check,
+                                     encode=lambda v: v.model_dump(), decode=IntentVerdict.model_validate,
+                                     outcome=lambda v: ('succeeded', '') if v.allowed and v.quote.strip() and v.quote in current else ('awaiting_input', '需要补充操作授权'))
     except ProviderError as error:
         raise IntentCheckFailed('操作核对模型未返回完整有效结果，请重试；本次操作尚未执行。') from error
-    try:
-        verdict = IntentVerdict.model_validate_json(response.text.strip().removeprefix('```json').removesuffix('```').strip())
-    except ValueError as error:
-        raise IntentCheckFailed('操作核对暂时失败，请重试；尚未执行本次操作。') from error
     allowed = verdict.allowed and bool(verdict.quote.strip()) and verdict.quote in current
     if allowed and verdict.receiptOnly and not previous_steps:
         context.receipt_candidates.add(digest(proposal))
