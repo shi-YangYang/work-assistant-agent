@@ -1,3 +1,4 @@
+import styles from './LoginBackground.module.css'
 import { useEffect, useRef } from 'react'
 
 /*
@@ -193,7 +194,7 @@ export function LoginBackground() {
     return startSilk(canvas.current)
   }, [])
   return (
-    <div className="login-ambient" aria-hidden="true">
+    <div className={styles['login-ambient']} aria-hidden="true">
       <canvas ref={canvas} />
     </div>
   )

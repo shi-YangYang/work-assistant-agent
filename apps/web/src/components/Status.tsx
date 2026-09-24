@@ -1,4 +1,5 @@
-export const statusLabel = (status: string) =>
+import styles from './Status.module.css'
+const statusLabel = (status: string) =>
   ({
     in_progress: '进行中',
     blocked: '有阻碍',
@@ -9,5 +10,9 @@ export const statusLabel = (status: string) =>
   })[status] ?? status
 
 export function Status({ value }: { value: string }) {
-  return <span className={`status ${value}`}>{statusLabel(value)}</span>
+  return (
+    <span className={styles['status']} data-status={value}>
+      {statusLabel(value)}
+    </span>
+  )
 }

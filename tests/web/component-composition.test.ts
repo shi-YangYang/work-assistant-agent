@@ -1,6 +1,7 @@
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
+import { FormField } from '../../apps/web/src/components/FormField'
 import { MessageComposer } from '../../apps/web/src/features/assistant/components/MessageComposer'
 import { ServiceConnectionFields } from '../../apps/web/src/features/model-services/components/ServiceConnectionFields'
 import { ServiceEditor } from '../../apps/web/src/features/model-services/components/ServiceEditor'
@@ -52,7 +53,8 @@ it('connection fields route edits, provider changes and secrets to the correct d
     changeAddress,
     update,
   })
-  const fields = nodes(tree).filter((node) => node.type === 'input')
+  // FormField owns its input; inspect its public change callback at this boundary.
+  const fields = nodes(tree).filter((node) => node.type === 'input' || node.type === FormField)
   const change = (field: ReactElement<Props>, value: string) =>
     (field.props.onChange as (event: { target: { value: string } }) => void)({ target: { value } })
   change(
@@ -140,6 +142,7 @@ it('service editor saves the exact draft before assignment and does not save an 
 
 it('message composer renders pending submission, attachment slot and recording controls without owning session state', () => {
   const props = {
+    containerRef: { current: null },
     send: vi.fn(),
     addFiles: vi.fn(),
     composer: {

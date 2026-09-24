@@ -1,17 +1,17 @@
 import asyncio
+import httpx
 import json
 import logging
-from datetime import timedelta
-from uuid import uuid4
-
-import httpx
 import pytest
+from datetime import timedelta
 from fastapi.responses import StreamingResponse
+from app.main import create_app
+from app.db.base import now
+from app.modules.members.models import Member
+from app.modules.support.models import SupportFeedback
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-
-from paa_server.api import create_app
-from paa_server.models import Member, SupportFeedback, now
+from uuid import uuid4
 
 
 def payload(description='发送消息时遇到问题'):

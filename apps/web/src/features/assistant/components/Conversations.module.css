@@ -1,0 +1,63 @@
+.assistant-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.conversation-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.conversation-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+}
+.conversation-heading {
+  min-height: 60px;
+  padding: 8px 30px;
+  border-bottom: 0;
+  flex-shrink: 0;
+}
+.conversation-heading h2 {
+  font-size: 14px;
+  color: var(--secondary);
+  font-weight: 500;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-heading > svg {
+  color: var(--muted);
+}
+.conversation-caption {
+  color: var(--muted);
+  font-size: 12px;
+  border-left: 1px solid var(--control);
+  padding-left: 12px;
+  margin-left: 4px;
+}
+.new-conversation {
+  margin-left: auto;
+}
+@media (max-width: 1100px) {
+  .conversation-heading {
+    padding: 10px 16px;
+  }
+}
+@media (max-width: 760px) {
+  .conversation-caption {
+    display: none;
+  }
+  .conversation-heading {
+    min-height: 52px;
+  }
+  .conversation-heading {
+    padding: 8px 12px;
+  }
+}

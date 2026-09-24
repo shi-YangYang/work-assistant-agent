@@ -1,0 +1,25 @@
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: var(--form-field-margin, 16px 0);
+}
+.form-field > label {
+  display: block;
+  margin: 0 0 2px;
+}
+.form-field > label > span,
+.form-field-error {
+  color: var(--danger);
+}
+.form-field > small {
+  overflow-wrap: anywhere;
+}
+.form-field input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.form-field input[aria-invalid='true']:focus-visible {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}

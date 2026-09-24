@@ -1,16 +1,20 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { Draft, Page, Progress, Work } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ConflictRecovery } from '@web/components/ConflictRecovery'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
 import {
   availableWorkPath,
+  progressFieldErrors,
   readProgressSource,
   updateProgressDraft,
 } from '@web/features/work/api/requests'
 import { ProgressFields } from '@web/features/work/components/ProgressFields'
 import type { ProgressEdit } from '@web/features/work/utils/progress-edit'
-import { progressEditValue } from '@web/features/work/utils/progress-edit'
+import { progressEditValue, progressTitleError } from '@web/features/work/utils/progress-edit'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
@@ -32,19 +36,27 @@ export function ProgressEditor({
   const { data } = useResource<Page<Work>>(availableWorkPath())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
-  const change = (content: Progress, nextWork = workId) =>
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Progress, string>>>({})
+  const change = (content: Progress, nextWork = workId) => {
+    setFieldErrors({})
     setDraft(key, { content, workId: nextWork, revision })
+  }
   return (
     <Modal title="编辑进展建议" onClose={onClose}>
       <form
         onSubmit={async (e) => {
           e.preventDefault()
+          const title = progressTitleError(value.title)
+          setFieldErrors({ title })
+          if (title) return
+          setError('')
           setBusy(true)
           try {
             await updateProgressDraft(draft, { ...value, workId, expectedRevision: revision })
             setDraft(key, undefined)
             onSaved()
           } catch (e) {
+            setFieldErrors(progressFieldErrors(e))
             setError(e as Error)
           } finally {
             setBusy(false)
@@ -62,9 +74,9 @@ export function ProgressEditor({
             ))}
           </select>
         </label>
-        <ProgressFields value={value} change={change} />
+        <ProgressFields value={value} change={change} errors={fieldErrors} />
         <ErrorNotice>{error}</ErrorNotice>
-        {error && (
+        {error instanceof ApiError && error.status === 409 && (
           <ConflictRecovery<Draft>
             load={async () => {
               const message = await readProgressSource(draft)
@@ -95,11 +107,11 @@ export function ProgressEditor({
             }}
           />
         )}
-        <div className="form-actions">
+        <div className={layoutStyles['form-actions']}>
           <button type="button" onClick={onClose}>
             稍后继续
           </button>
-          <BusyButton busy={busy} className="primary">
+          <BusyButton busy={busy} className={controlsStyles['primary']}>
             保存修改
           </BusyButton>
         </div>

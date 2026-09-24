@@ -1,3 +1,7 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import documentsStyles from '../styles/documents.module.css'
 import type { Attachment, DocumentCitation, ExtractionPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -6,7 +10,7 @@ import { documentExtractionPath, retryDocument } from '@web/features/assistant/a
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
 import { currentCitation, fileSize } from '@web/features/assistant/utils/files'
 import { useResource } from '@web/hooks/useResource'
-import { Download, FileText } from 'lucide-react'
+import { ChevronDown, Download, FileText } from 'lucide-react'
 import { useState } from 'react'
 
 const statuses: Record<string, string> = {
@@ -33,29 +37,31 @@ export function DocumentCard({
   const [error, setError] = useState<Error | string>('')
   const extraction = attachment.extraction
   return (
-    <div className="document-card">
-      <div className="document-heading">
+    <div className={documentsStyles['document-card']}>
+      <div className={documentsStyles['document-heading']}>
         <FileText size={21} />
         <strong>{attachment.name}</strong>
       </div>
-      <p className="muted small-text">
+      <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
         {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)} ·{' '}
         {statuses[extraction?.status ?? 'pending']}
       </p>
-      {extraction?.error && <p className="document-warning">{extraction.error}</p>}
+      {extraction?.error && (
+        <p className={documentsStyles['document-warning']}>{extraction.error}</p>
+      )}
       {extraction?.warnings?.map((warning) => (
-        <p className="document-warning" key={warning}>
+        <p className={documentsStyles['document-warning']} key={warning}>
           {warning}
         </p>
       ))}
-      <div className="card-actions">
+      <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
         {attachment.mime === 'application/pdf' && (
-          <button className="text-button" onClick={() => setPdf(true)}>
+          <button className={`${controlsStyles['text-button']}`} onClick={() => setPdf(true)}>
             查看原页
           </button>
         )}
         {['ready', 'partial'].includes(extraction?.status ?? '') && (
-          <button className="text-button" onClick={() => setOpen(true)}>
+          <button className={`${controlsStyles['text-button']}`} onClick={() => setOpen(true)}>
             查看提取内容
           </button>
         )}
@@ -84,7 +90,9 @@ export function DocumentCard({
         )}
       </div>
       {extraction?.status === 'failed' && (
-        <p className="muted small-text">可重新解析，或修正文件后重新发送。</p>
+        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
+          可重新解析，或修正文件后重新发送。
+        </p>
       )}
       <ErrorNotice>{error}</ErrorNotice>
       {pdf && (
@@ -102,7 +110,7 @@ export function DocumentCard({
   )
 }
 
-export function DocumentPreview({
+function DocumentPreview({
   attachmentId,
   revision,
   name,
@@ -123,16 +131,16 @@ export function DocumentPreview({
   )
   return (
     <Modal title={name} onClose={onClose}>
-      <div className="document-preview">
+      <div className={documentsStyles['document-preview']}>
         <ErrorNotice retry={refresh}>{error}</ErrorNotice>
         {data && !error && (
           <>
-            <p className="muted small-text">
+            <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
               {data.attachment.extraction?.scope ?? '提取文字'} ·{' '}
               {statuses[data.attachment.extraction?.status ?? 'pending']}
             </p>
             {data.attachment.extraction?.warnings?.map((warning) => (
-              <p className="document-warning" key={warning}>
+              <p className={documentsStyles['document-warning']} key={warning}>
                 {warning}
               </p>
             ))}
@@ -142,11 +150,11 @@ export function DocumentPreview({
                 <pre>{chunk.text}</pre>
               </section>
             ))}
-            <div className="row-between">
+            <div className={layoutStyles['row-between']}>
               <button disabled={starts.length === 1} onClick={() => setStarts(starts.slice(0, -1))}>
                 上一组
               </button>
-              <span className="muted small-text">
+              <span className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
                 分段 {start + 1}–{start + data.items.length}
               </span>
               <button
@@ -165,11 +173,17 @@ export function DocumentPreview({
 
 export function DocumentCitations({ citations }: { citations: DocumentCitation[] }) {
   const [selected, setSelected] = useState<DocumentCitation | null>(null)
+  if (!citations.length) return null
   return (
-    <div className="document-citations">
+    <details className={documentsStyles['document-citations']}>
+      <summary>
+        <FileText size={14} />
+        <span>引用文件 · {citations.length}</span>
+        <ChevronDown size={14} />
+      </summary>
       {citations.map((citation, index) => (
         <button
-          className="text-button"
+          className={`${controlsStyles['text-button']}`}
           key={`${citation.attachmentId}:${citation.ordinal}`}
           onClick={() => setSelected(citation)}
         >
@@ -186,6 +200,6 @@ export function DocumentCitations({ citations }: { citations: DocumentCitation[]
           onClose={() => setSelected(null)}
         />
       )}
-    </div>
+    </details>
   )
 }

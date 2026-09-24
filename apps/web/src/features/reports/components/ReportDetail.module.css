@@ -1,0 +1,13 @@
+.history-row {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+}
+.report-owner {
+  color: var(--text);
+  font-weight: 600;
+}

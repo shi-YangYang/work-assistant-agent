@@ -1,3 +1,6 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import recordDetailStyles from '../../../components/RecordDetail.module.css'
+import styles from './ReportSources.module.css'
 import type { Report } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { reportSourcesPath } from '@web/features/reports/api/requests'
@@ -20,10 +23,10 @@ export function ReportSources({ report }: { report: Report }) {
   }>(reportSourcesPath(report))
   if (error) return <ErrorNotice retry={refresh}>{error}</ErrorNotice>
   return data?.items.length ? (
-    <details className="record-evidence">
+    <details className={recordDetailStyles['record-evidence']}>
       <summary>工作依据</summary>
       {data.items.map((item) => (
-        <div className="source-row" key={item.id}>
+        <div className={styles['source-row']} key={item.id}>
           {item.workDeleted ? (
             <span>{item.title} · 工作已删除</span>
           ) : (
@@ -36,7 +39,7 @@ export function ReportSources({ report }: { report: Report }) {
           )}
           {item.sourceIds.map((id) =>
             item.deletedSourceIds?.includes(id) ? (
-              <span key={id} className="muted">
+              <span key={id} className={utilitiesStyles['muted']}>
                 原始消息已删除
               </span>
             ) : (

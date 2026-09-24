@@ -85,10 +85,10 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: services/company/requirements.lock
+          cache-dependency-path: apps/server/requirements.lock
       - run: npm ci --ignore-scripts
       - run: python -m venv .venv-server
-      - run: .venv-server/bin/python -m pip install -r services/company/requirements.lock
+      - run: .venv-server/bin/python -m pip install -r apps/server/requirements.lock
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run db:company
       - run: npm run test:server
@@ -172,7 +172,7 @@ jobs:
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
       - name: Verify installed package
         if: ${{ !cancelled() && steps.package.outcome == 'success' }}
-        run: npx playwright test tests/e2e/desktop/package.spec.ts --output=artifacts/playwright-package
+        run: npx playwright test --config apps/desktop/playwright.config.ts tests/e2e/desktop/package.spec.ts --output=artifacts/playwright-package
         env:
           PAA_PACKAGE_SMOKE: '1'
       - uses: actions/upload-artifact@v4

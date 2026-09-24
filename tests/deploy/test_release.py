@@ -83,6 +83,7 @@ class ReleaseTests(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.release = self.root / 'releases' / RELEASE_ID
         shutil.copytree(REPO / 'deploy/company', self.release / 'deploy/company')
+        (self.release / 'apps/server').mkdir(parents=True)
         self.env_file = self.root / '.env.company'
         self.env_file.write_text(
             'POSTGRES_PASSWORD=test-password\nPAA_DOMAIN=company.example\n'
@@ -122,6 +123,9 @@ class ReleaseTests(unittest.TestCase):
         self.env['DATABASE_STATE'] = 'initialized'
         previous = self.root / 'releases' / 'old'
         shutil.copytree(REPO / 'deploy/company', previous / 'deploy/company')
+        # The previous release retains its original layout, including the env_file in YAML.
+        compose_file = previous / 'deploy/company/compose.yml'
+        compose_file.write_text(compose_file.read_text().replace('../../apps/server/.env.web', '../../.env.company'))
         (previous / '.env.company').symlink_to(self.env_file)
         (previous / '.release.env').write_text(self.manifest + 'PAA_DEPLOY_MODE=domain\n')
         (self.root / 'current').symlink_to(previous)
@@ -144,6 +148,26 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual((self.release / '.release.env').read_text(), self.manifest + 'PAA_DEPLOY_MODE=domain\n')
         self.assertEqual((self.root / 'current').resolve(), self.release)
         self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'ready')
+        self.assertEqual((self.release / 'apps/server/.env.web').resolve(), self.env_file)
+        self.assertFalse((self.release / '.env.company').exists())
+
+    def test_new_environment_location_takes_precedence_without_touching_legacy_config(self):
+        preferred = self.root / 'apps/server/.env.web'
+        preferred.parent.mkdir(parents=True)
+        original = self.env_file.read_bytes()
+        preferred.write_bytes(original + b'# preferred configuration\n')
+        result = self.run_release()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.release / 'apps/server/.env.web').resolve(), preferred)
+        self.assertEqual(self.env_file.read_bytes(), original)
+
+    def test_new_installation_does_not_require_a_root_environment_file(self):
+        preferred = self.root / 'apps/server/.env.web'
+        preferred.parent.mkdir(parents=True)
+        self.env_file.rename(preferred)
+        result = self.run_release()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.release / 'apps/server/.env.web').resolve(), preferred)
 
     def test_retry_with_an_empty_database_volume_does_not_back_up(self):
         self.previous_release()
@@ -186,7 +210,7 @@ class ReleaseTests(unittest.TestCase):
         for failure in ('build-service', 'build-worker', 'build-web', 'image-id', 'pull', 'key', 'inspect-database'):
             with self.subTest(failure=failure):
                 (self.release / '.release.env').unlink(missing_ok=True)
-                (self.release / '.env.company').unlink(missing_ok=True)
+                (self.release / 'apps/server/.env.web').unlink(missing_ok=True)
                 self.log.unlink(missing_ok=True)
                 result = self.run_release(failure)
                 self.assertNotEqual(result.returncode, 0)
@@ -233,8 +257,8 @@ class ReleaseTests(unittest.TestCase):
         for mode in ('domain', 'ip'):
             with self.subTest(mode=mode):
                 (self.release / '.release.env').write_text(self.manifest + f'PAA_DEPLOY_MODE={mode}\n')
-                (self.release / '.env.company').unlink(missing_ok=True)
-                (self.release / '.env.company').symlink_to(self.env_file)
+                (self.release / 'apps/server/.env.web').unlink(missing_ok=True)
+                (self.release / 'apps/server/.env.web').symlink_to(self.env_file)
                 result = subprocess.run(
                     ['sh', str(self.release / 'deploy/company/compose.sh'), 'config', '--format', 'json'],
                     env={**os.environ, 'PAA_COMPOSE_ROOT': str(self.release)},

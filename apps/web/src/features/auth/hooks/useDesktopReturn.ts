@@ -15,7 +15,7 @@ export function useDesktopReturn(identity: Identity | null) {
         sessionStorage.setItem(STORAGE, JSON.stringify({ id, until: Date.now() + 300000 }))
       return
     }
-    if (!identity || identity.member.mustChangePassword) return
+    if (!identity) return
     try {
       const saved = JSON.parse(sessionStorage.getItem(STORAGE) ?? 'null')
       if (saved?.until > Date.now() && /^[A-Za-z0-9_-]{43}$/.test(saved.id))

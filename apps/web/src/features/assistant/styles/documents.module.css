@@ -1,0 +1,90 @@
+.document-card {
+  min-width: 0;
+  flex: 1 1 290px;
+  max-width: 100%;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.document-heading {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.document-heading svg {
+  flex-shrink: 0;
+}
+.document-heading strong,
+.document-citations button {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.document-card p {
+  margin: 8px 0;
+}
+.document-card .slot-card-actions {
+  flex-wrap: wrap;
+}
+.document-card a {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+.document-warning {
+  color: var(--muted);
+  font-size: 13px;
+}
+.document-preview {
+  min-width: 0;
+}
+.document-preview pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.document-preview section {
+  margin: 16px 0;
+}
+.document-citations {
+  margin-top: 12px;
+}
+.document-citations > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+.document-citations > summary::-webkit-details-marker {
+  display: none;
+}
+.document-citations > summary svg:last-child {
+  transition: transform 180ms;
+}
+.document-citations[open] > summary svg:last-child {
+  transform: rotate(180deg);
+}
+.document-citations > button {
+  display: flex;
+  margin-top: 6px;
+}
+
+@media (max-width: 600px) {
+  .document-card {
+    flex-basis: 100%;
+  }
+}
+.document-citations button {
+  white-space: normal;
+  text-align: left;
+}

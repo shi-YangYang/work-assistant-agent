@@ -10,7 +10,6 @@
     "src/renderer/env.d.ts",
     "../../tests/desktop/**/*.ts",
     "../../tests/e2e/desktop/**/*.ts",
-    "*.ts",
-    "../../playwright.config.ts"
+    "*.ts"
   ]
 }

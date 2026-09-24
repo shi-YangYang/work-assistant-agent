@@ -1,0 +1,54 @@
+.team-date-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 8px;
+  flex: 0 1 376px;
+  min-width: 320px;
+}
+.team-date-range label {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  gap: 4px;
+}
+.team-date-range input {
+  color: var(--text);
+  font-size: 14px;
+}
+.team-date-range > span {
+  padding-bottom: 8px;
+  color: var(--muted);
+}
+@media (max-width: 760px) {
+  .team-date-range {
+    flex: 1 1 100%;
+    min-width: 0;
+    max-width: 420px;
+  }
+}
+.period-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+.period-filter > select {
+  min-width: 110px;
+  width: auto;
+}
+.period-caption {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0;
+  flex-basis: 100%;
+}
+@media (max-width: 520px) {
+  .period-filter,
+  .period-filter .team-date-range {
+    width: 100%;
+    min-width: 0;
+  }
+}

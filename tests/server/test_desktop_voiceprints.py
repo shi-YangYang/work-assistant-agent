@@ -1,20 +1,24 @@
 """Native-session isolation and enrollment publication boundaries; no real models."""
 import asyncio
 import base64
-from datetime import timedelta
 import hashlib
 import io
+import pytest
 import secrets
 import wave
-
-import pytest
-
-pytestmark = pytest.mark.asyncio
+from datetime import timedelta
+from app.db.base import now
+from app.modules.auth.models import DesktopAuthorization, DesktopSession
+from app.modules.auth.sessions import digest, revoke_member
+from app.modules.members.models import Member
+from app.modules.voiceprints.models import Voiceprint
+from app.tasks.voiceprints import process_once
+from paa_voiceprints import MODEL_ID
 from sqlalchemy import delete, select, update
 
-from paa_server.authentication import digest, revoke_member
-from paa_server.models import DesktopAuthorization, DesktopSession, Member, Voiceprint, now
-from paa_server.voiceprints import MODEL_ID, process_once, private_path
+
+
+pytestmark = pytest.mark.asyncio
 
 
 def wav_bytes():
@@ -80,7 +84,7 @@ async def test_desktop_pkce_atomic_exchange_and_cookie_isolation(setup):
     assert (await client.get('/api/v1/desktop/me', headers=headers)).status_code == 401
 
 
-@pytest.mark.parametrize('change', ['revoke', 'disable', 'password_required', 'demote', 'web_logout'])
+@pytest.mark.parametrize('change', ['revoke', 'disable', 'demote', 'web_logout'])
 async def test_desktop_revocation_and_current_roles(setup, change):
     _, sessions, users, c = setup
     headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
@@ -88,12 +92,19 @@ async def test_desktop_revocation_and_current_roles(setup, change):
         actor = await db.get(Member, users['admin'].id)
         if change == 'revoke': await revoke_member(db, actor.id)
         if change == 'disable': actor.active = False
-        if change == 'password_required': actor.must_change_password = True
         if change == 'demote': actor.role = 'employee'
     if change == 'web_logout':
         assert (await c['admin'].post('/api/v1/auth/logout')).status_code == 200
     result = await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)
     assert result.status_code == (403 if change == 'demote' else 401)
+
+
+async def test_desktop_authorization_needs_no_password_change_step(setup):
+    _, _, users, c = setup
+    headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
+    result = await c['admin'].get('/api/v1/desktop/me', headers=headers)
+    assert result.status_code == 200 and result.json()['member']['id'] == users['admin'].id
+    assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)).status_code == 200
 
 
 async def test_grant_expiry_denial_and_origin_boundaries(setup):
@@ -192,8 +203,8 @@ async def test_version_mismatch_is_actionable_and_inactive_is_not_synced(setup):
 async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
     import sys
     from dataclasses import replace
-    from paa_server.config import Settings
-    from paa_server.voiceprints import extract
+    from app.core.config import Settings
+    from app.tasks.voiceprints import extract
     runner = tmp_path / 'runner.py'
     runner.write_text('import sys,time\nprint("ready",flush=True)\ntime.sleep(60)\n')
     actual_spawn = asyncio.create_subprocess_exec
@@ -205,8 +216,8 @@ async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
         child_started.set()
         return child
     async def audio(*args): return wav_bytes(), 1
-    monkeypatch.setattr('paa_server.voiceprints.audio_wav', audio)
-    monkeypatch.setattr('paa_server.voiceprints.asyncio.create_subprocess_exec', spawn)
+    monkeypatch.setattr('app.tasks.voiceprints.audio_wav', audio)
+    monkeypatch.setattr('app.tasks.voiceprints.asyncio.create_subprocess_exec', spawn)
     task = asyncio.create_task(extract(tmp_path / 'sample', Settings()))
     await asyncio.wait_for(child_started.wait(), 5)
     task.cancel()

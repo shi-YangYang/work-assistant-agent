@@ -1,5 +1,9 @@
 import type { Draft, Progress, Work, WorkMessage } from '@paa/api-contracts'
-import { api, write } from '@web/api/client'
+import { api, ApiError, write } from '@web/api/client'
+
+export function progressFieldErrors(error: unknown): Partial<Record<keyof Progress, string>> {
+  return error instanceof ApiError ? error.fieldErrors : {}
+}
 
 export function availableWorkPath() {
   return '/work-items'

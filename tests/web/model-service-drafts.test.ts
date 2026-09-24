@@ -3,8 +3,11 @@ import {
   appendServiceModels,
   cleanServiceDraft,
   newModel,
+  modelApiKeyError,
+  sameServiceAddress,
   serviceHasChanges,
   validateCompanyParameters,
+  validateServiceModels,
 } from '../../apps/web/src/features/model-services/utils/service-drafts'
 import {
   changeModelProtocol,
@@ -16,6 +19,44 @@ import {
 } from '../../apps/web/src/features/model-services/utils/service-presets'
 
 describe('company model drafts', () => {
+  it('rejects invalid edited models and presets before saving a service', () => {
+    const model = {
+      ...newModel('whisper-1'),
+      protocol: 'transcriptions' as const,
+      protocolMode: 'manual' as const,
+    }
+    for (const value of ['', '   ', 'bad\tmodel'])
+      expect(() => validateServiceModels([{ ...model, model: value }])).toThrow('模型 ID')
+    for (const language of ['zh_CN', '中文', 'zh CN'])
+      expect(() => validateServiceModels([{ ...model, language }])).toThrow('识别语言')
+    expect(() => validateServiceModels([{ ...model, language: 'zh-CN' }])).not.toThrow()
+    expect(() => validateServiceModels([model, { ...model, id: 'another' }])).toThrow('重复')
+    expect(() =>
+      validateServiceModels([
+        {
+          ...newModel('chat'),
+          presets: [{ id: 'p', name: 'test', mode: 'simple', value: '   ', parameters: {} }],
+        },
+      ]),
+    ).toThrow('推理强度')
+  })
+  it('checks header-safe API keys and preserves credentials for trailing-slash edits only', () => {
+    for (const key of ['测试key', '   ', 'key\t', 'key\u007f'])
+      expect(modelApiKeyError(key)).not.toBe('')
+    for (const key of ['', 'sk-controlled-key']) expect(modelApiKeyError(key)).toBe('')
+    expect(sameServiceAddress('https://example.com/v1///', 'https://example.com/v1')).toBe(true)
+    expect(sameServiceAddress('https://other.example/v1', 'https://example.com/v1')).toBe(false)
+    expect(sameServiceAddress('https://example.com/v2', 'https://example.com/v1')).toBe(false)
+  })
+  it('measures parameter JSON using compact UTF-8 at the 4 KiB boundary', () => {
+    const value = Object.fromEntries(
+      Array.from({ length: 8 }, (_, i) => [`k${i}`, 'a'.repeat(503)]),
+    )
+    expect(new TextEncoder().encode(JSON.stringify(value))).toHaveLength(4089)
+    expect(() => validateCompanyParameters(value)).not.toThrow()
+    value.k0 += 'a'.repeat(8)
+    expect(() => validateCompanyParameters(value)).toThrow('4 KiB')
+  })
   it('adds a catalog selection together, preserving existing model settings and rejecting overflow', () => {
     const draft = {
       id: 'service',

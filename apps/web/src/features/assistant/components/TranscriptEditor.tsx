@@ -1,9 +1,14 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { AutoTextarea } from '@web/components/AutoTextarea'
 import { BusyButton } from '@web/components/BusyButton'
+import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
 import { correctTranscript } from '@web/features/assistant/api/requests'
 import type * as React from 'react'
+import { useState } from 'react'
 
 export function TranscriptEditor({
   transcript,
@@ -11,7 +16,6 @@ export function TranscriptEditor({
   setBusy,
   message,
   onChange,
-  setError,
   busy,
 }: {
   transcript: boolean
@@ -19,24 +23,30 @@ export function TranscriptEditor({
   setBusy: React.Dispatch<React.SetStateAction<boolean>>
   message: WorkMessage
   onChange: () => void
-  setError: React.Dispatch<React.SetStateAction<string | Error>>
   busy: boolean
 }) {
+  const [error, setError] = useState<Error | string>('')
+  const fieldError = error instanceof ApiError ? error.fieldErrors.text : ''
+  const close = () => {
+    setError('')
+    setTranscript(false)
+  }
   return (
     <>
       {transcript && (
-        <Modal title="修正语音文字" onClose={() => setTranscript(false)}>
+        <Modal title="修正语音文字" onClose={close}>
           <form
             onSubmit={async (e) => {
               e.preventDefault()
-              const text = new FormData(e.currentTarget).get('text')
+              const text = String(new FormData(e.currentTarget).get('text') ?? '')
+              setError('')
               setBusy(true)
               try {
                 await correctTranscript(message, {
                   text,
                   expectedRevision: message.transcriptRevision,
                 })
-                setTranscript(false)
+                close()
                 onChange()
               } catch (e) {
                 setError(e as Error)
@@ -50,13 +60,16 @@ export function TranscriptEditor({
               rows={3}
               defaultValue={message.transcript}
               maxLength={8000}
-              required
+              aria-label="语音文字"
+              aria-invalid={fieldError ? true : undefined}
+              onChange={() => setError('')}
             />
-            <div className="form-actions">
-              <button type="button" onClick={() => setTranscript(false)}>
+            <ErrorNotice>{fieldError || error}</ErrorNotice>
+            <div className={layoutStyles['form-actions']}>
+              <button type="button" onClick={close}>
                 取消
               </button>
-              <BusyButton busy={busy} className="primary">
+              <BusyButton busy={busy} className={controlsStyles['primary']}>
                 保存修正
               </BusyButton>
             </div>

@@ -1,26 +1,4 @@
-/* Keep this import order: later feature and responsive rules refine the shared base. */
-@import 'base.css';
-@import '../app/layout.css';
-@import 'surfaces.css';
-@import '../features/records/styles/list.css';
-@import 'controls.css';
-@import '../features/assistant/styles/chat.css';
-@import '../features/settings/styles/settings.css';
-@import '../features/records/styles/details.css';
-@import '../features/auth/styles/login.css';
-@import 'overlays.css';
-@import 'responsive.css';
-@import '../features/model-services/styles/models.css';
-@import '../features/assistant/styles/conversations.css';
-@import 'navigation-controls.css';
-@import '../features/assistant/styles/documents.css';
-@import '../features/sources/styles/sources.css';
-@import 'data-lists.css';
-@import '../features/records/styles/surfaces.css';
-@import '../features/reports/styles/obligations.css';
-@import 'network-feedback.css';
-@import '../features/assistant/styles/media.css';
-@import '../features/auth/styles/integrations.css';
-@import '../features/assistant/styles/actions.css';
-@import '../features/voiceprints/styles/voiceprints.css';
-@import '../features/team/styles/team.css';
+/* Web-only foundations, imported before components in main.tsx. */
+@import './theme.css';
+@import './select.css';
+@import './base.css';

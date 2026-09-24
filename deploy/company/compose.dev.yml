@@ -3,7 +3,7 @@ services:
   postgres:
     image: postgres:17.11-bookworm
     container_name: paa-company-postgres
-    env_file: ../../.env.company
+    env_file: ../../apps/server/.env.web
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-paa_company}
       POSTGRES_USER: ${POSTGRES_USER:-paa}

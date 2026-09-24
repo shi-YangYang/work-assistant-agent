@@ -10,12 +10,14 @@ export function TeamWorkspace() {
       renderDetail={(view, id, revision, onDeleted) =>
         view === 'work' ? (
           <WorkDetail
+            compact
             key={`${id}:${revision}`}
             recordId={id}
             recordSearch={revision ? `?revision=${revision}` : ''}
           />
         ) : (
           <ReportDetail
+            compact
             key={`${id}:${revision}`}
             recordId={id}
             recordSearch={revision ? `?revision=${revision}` : ''}

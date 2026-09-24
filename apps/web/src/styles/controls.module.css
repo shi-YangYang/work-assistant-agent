@@ -1,0 +1,50 @@
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+  border-radius: var(--primary-radius, 10px);
+}
+button.primary:hover:where(:not(:disabled)) {
+  opacity: var(--primary-hover-opacity, 0.88);
+  filter: var(--primary-hover-filter, none);
+}
+button.danger {
+  color: var(--danger);
+}
+.icon-button {
+  border: 1px solid transparent;
+  background: transparent;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 7px;
+  border-radius: 9px;
+  line-height: 1;
+}
+.icon-button:hover:where(:not(:disabled)) {
+  background: var(--hover);
+  border-color: transparent;
+  color: var(--accent);
+}
+.text-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 4px 8px;
+  border-radius: 8px;
+}
+@media (max-width: 760px) {
+  .icon-button {
+    min-height: 44px;
+  }
+  .icon-button {
+    width: 44px;
+    height: 44px;
+    padding: 10px;
+  }
+  .icon-button,
+  .text-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

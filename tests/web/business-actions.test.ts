@@ -31,3 +31,26 @@ it('distinguishes queued report generation, failed generation and committed resu
   expect(actionStateLabel({ ...base, state: 'succeeded' })).toBe('已完成')
   expect(actionStateLabel({ ...base, state: 'conflict' })).toBe('内容已变化')
 })
+
+it('renders changed empty fields and actual blocker/next step from saved receipts', async () => {
+  const { createElement } = await import('react')
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { WorkActionDetails } =
+    await import('../../apps/web/src/features/assistant/components/BusinessActionCard')
+  const html = renderToStaticMarkup(
+    createElement(WorkActionDetails, {
+      action: {
+        ...base,
+        action: 'update_work',
+        state: 'succeeded',
+        details: { summary: '更新后的摘要', blocker: '', nextStep: '执行测试', dueDate: null },
+        changedFields: ['summary', 'blocker', 'nextStep', 'dueDate'],
+      },
+    }),
+  )
+  expect(html).toContain('阻碍')
+  expect(html).toContain('下一步')
+  expect(html).toContain('执行测试')
+  expect(html).toContain('截止日期')
+  expect(html.match(/已清空/g)).toHaveLength(2)
+})

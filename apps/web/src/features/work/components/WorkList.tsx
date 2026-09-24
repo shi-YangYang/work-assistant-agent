@@ -1,3 +1,6 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
 import type { Work } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
 import { Status } from '@web/components/Status'
@@ -5,7 +8,7 @@ import { DeleteRecord } from '@web/features/records/components/DeleteRecord'
 import { WorkEditor } from '@web/features/work/components/WorkEditor'
 import { dateLabel } from '@web/utils/date'
 import { detailState } from '@web/utils/navigation'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, CircleCheck, CircleDashed, CircleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation } from 'react-router'
 
@@ -22,33 +25,67 @@ export function WorkList({
   const [deleting, setDeleting] = useState<Work | null>(null)
   const location = useLocation()
   return (
-    <div className="record-list">
+    <div className={recordLayoutStyles['record-list']}>
+      <div className={recordLayoutStyles['record-list-heading']} aria-hidden="true">
+        <span>工作事项</span>
+        <span>状态</span>
+        <span>最近更新</span>
+        <span />
+      </div>
       {items.map((work) => (
-        <div className="record-row work-row" key={work.id}>
+        <div
+          className={`${recordLayoutStyles['record-row']} ${recordLayoutStyles['work-row']}`}
+          key={work.id}
+        >
+          <span
+            className={recordLayoutStyles['work-state-icon']}
+            data-status={work.status}
+            aria-hidden="true"
+          >
+            {work.status === 'done' ? (
+              <CircleCheck size={18} />
+            ) : work.status === 'blocked' ? (
+              <CircleAlert size={18} />
+            ) : (
+              <CircleDashed size={18} />
+            )}
+          </span>
           <Link
-            className="record-main"
+            className={recordLayoutStyles['record-main']}
             to={`/work/${work.id}${work.historical ? `?revision=${work.revision}` : ''}`}
             state={detailState(location)}
           >
-            <div className="row-between">
+            <div
+              className={`${layoutStyles['row-between']} ${recordLayoutStyles['slot-row-between']}`}
+            >
               <h3>{work.title}</h3>
-              <Status value={work.status} />
             </div>
-            <p className="record-summary">{work.summary}</p>
-            {work.dueDate && <small className="record-note">截止 {work.dueDate}</small>}
+            <p className={recordLayoutStyles['record-summary']}>{work.summary}</p>
+            {work.dueDate && (
+              <small className={recordLayoutStyles['record-note']}>截止 {work.dueDate}</small>
+            )}
             {(work.blocker || work.nextStep) && (
-              <small className={`record-note ${work.blocker ? 'work-blocker' : ''}`}>
+              <small
+                className={`${recordLayoutStyles['record-note']} ${work.blocker ? recordLayoutStyles['work-blocker'] : ''}`}
+              >
                 {work.blocker ? `阻碍：${work.blocker}` : `下一步：${work.nextStep}`}
               </small>
             )}
           </Link>
-          <time className="record-updated">{dateLabel(work.updatedAt)}</time>
+          <span className={recordLayoutStyles['work-status']}>
+            <Status value={work.status} />
+          </span>
+          <time className={recordLayoutStyles['record-updated']}>{dateLabel(work.updatedAt)}</time>
           {own ? (
-            <Actions>
+            <Actions className={recordLayoutStyles['record-actions']}>
               <button role="menuitem" onClick={() => setEditing(work)}>
                 编辑工作
               </button>
-              <button role="menuitem" className="danger" onClick={() => setDeleting(work)}>
+              <button
+                role="menuitem"
+                className={controlsStyles['danger']}
+                onClick={() => setDeleting(work)}
+              >
                 删除工作
               </button>
             </Actions>

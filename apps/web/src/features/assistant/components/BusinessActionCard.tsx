@@ -1,4 +1,8 @@
-import type { BusinessAction, ReportContent } from '@paa/api-contracts'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './BusinessActionCard.module.css'
+import type { BusinessAction, Progress, ReportContent } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
@@ -13,6 +17,34 @@ const reportLabels: Record<keyof ReportContent, string> = {
   ongoing: '进行中的工作',
   blockers: '问题与阻碍',
   next: '下一步计划',
+}
+
+const workLabels: Partial<Record<keyof Progress, string>> = {
+  summary: '摘要',
+  blocker: '阻碍',
+  nextStep: '下一步',
+  dueDate: '截止日期',
+}
+
+export function WorkActionDetails({ action }: { action: BusinessAction }) {
+  return (
+    <div className={styles['business-action-preview']}>
+      {Object.entries(workLabels)
+        .filter(
+          ([key]) =>
+            action.details?.[key as keyof Progress] ||
+            action.changedFields?.includes(key as keyof Progress),
+        )
+        .map(([key, label]) => (
+          <section key={key}>
+            <strong>{label}</strong>
+            <p className={utilitiesStyles['preserve']}>
+              {action.details?.[key as keyof Progress] || '已清空'}
+            </p>
+          </section>
+        ))}
+    </div>
+  )
 }
 
 export const actionStateLabel = (action: BusinessAction) => {
@@ -39,7 +71,10 @@ export function BusinessActionCard({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const [saved, setSaved] = useState<BusinessAction | null>(null)
-  const current = saved && saved.revision > action.revision ? saved : action
+  const current =
+    saved && saved.revision > action.revision && !['unavailable', 'conflict'].includes(action.state)
+      ? saved
+      : action
   const Icon =
     current.state === 'succeeded'
       ? CheckCircle2
@@ -65,10 +100,11 @@ export function BusinessActionCard({
   }
   return (
     <section
-      className={`business-action-card business-action-${current.state}`}
+      className={styles['business-action-card']}
+      data-status={current.state}
       aria-label={`${current.label} · ${actionStateLabel(current)}`}
     >
-      <div className="business-action-heading">
+      <div className={styles['business-action-heading']}>
         <Icon size={18} />
         <strong>{current.label}</strong>
         <span>{actionStateLabel(current)}</span>
@@ -77,15 +113,14 @@ export function BusinessActionCard({
         <h4>{current.title ?? current.preview?.title}</h4>
       )}
       {current.details?.status && <Status value={current.details.status} />}
-      {current.details?.dueDate && <p className="muted">截止日期：{current.details.dueDate}</p>}
-      {current.details?.summary && <p className="preserve">{current.details.summary}</p>}
-      {current.message && <p className="muted">{current.message}</p>}
+      {current.details && <WorkActionDetails action={current} />}
+      {current.message && <p className={utilitiesStyles['muted']}>{current.message}</p>}
       {current.preview?.content && (
-        <div className="business-action-preview">
+        <div className={styles['business-action-preview']}>
           {Object.entries(reportLabels).map(([key, label]) => (
             <section key={key}>
               <strong>{label}</strong>
-              <p className="preserve">
+              <p className={utilitiesStyles['preserve']}>
                 {current.preview?.content?.[key as keyof ReportContent] || '暂无记录'}
               </p>
             </section>
@@ -101,15 +136,19 @@ export function BusinessActionCard({
         </p>
       )}
       <ErrorNotice>{error}</ErrorNotice>
-      <div className="card-actions">
+      {current.objectRevision && (
+        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
+          本次操作结果：第 {current.objectRevision} 版
+        </p>
+      )}
+      <div className={`${layoutStyles['card-actions']} ${styles['slot-card-actions']}`}>
         {current.objectId && (
           <Link
-            className="button text-button"
+            className={`${controlsStyles['text-button']}`}
             to={`/${current.objectType === 'work' ? 'work' : 'reports'}/${current.objectId}`}
             state={detailState(location)}
           >
-            查看{current.objectType === 'work' ? '工作' : '报告'}
-            {current.objectRevision ? ` · 第 ${current.objectRevision} 版结果` : ''}
+            查看当前{current.objectType === 'work' ? '工作' : '报告'}
           </Link>
         )}
         {current.canConfirm && (
@@ -119,7 +158,11 @@ export function BusinessActionCard({
             </button>
             <BusyButton
               busy={busy}
-              className={current.action.startsWith('delete_') ? 'danger' : 'primary'}
+              className={
+                current.action.startsWith('delete_')
+                  ? controlsStyles['danger']
+                  : controlsStyles['primary']
+              }
               onClick={() => void respond('confirm')}
             >
               {current.action.startsWith('delete_') ? '确认删除' : '确认提交'}

@@ -1,10 +1,9 @@
-from datetime import timedelta
-
 import pytest
-from sqlalchemy import event, select
+from datetime import timedelta
+from app.modules.reports.models import ReportRevision
+from app.tasks.models import Job
+from sqlalchemy import event
 from sqlalchemy.engine import Engine
-
-from paa_server.models import Job, ReportRevision
 from test_team_workspace import DAY, report
 
 pytestmark = pytest.mark.asyncio

@@ -1,9 +1,15 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import type { Purpose } from '@web/features/model-services/types'
 import { protocolNames } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
+import { modelFieldErrors } from '@web/features/model-services/utils/service-drafts'
 import { changeModelProtocol } from '@web/features/model-services/utils/service-presets'
 import type * as React from 'react'
 
@@ -39,25 +45,29 @@ export function ModelOptions({
   setActiveModel: React.Dispatch<React.SetStateAction<string>>
   error: string | Error
 }) {
+  const fields = model ? modelFieldErrors(model) : { model: '', language: '' }
   return (
     <>
       {modelOpen && model && draft && (
         <Modal
           title={`设置 ${model.model || '模型'}`}
-          className="model-settings-dialog"
+          className={modelServicesStyles['model-settings-dialog']}
+          bodyClassName={modelServicesStyles['model-settings-body']}
           onClose={() => setModelOpen(false)}
         >
-          <fieldset disabled={!!busy} className="model-options" aria-label="模型配置">
-            <div className="field-grid">
-              <label>
-                模型 ID
-                <input
-                  value={model.model}
-                  maxLength={200}
-                  onChange={(e) => updateModel({ ...model, model: e.target.value })}
-                />
-              </label>
-              <div className="model-protocol-status" role="status">
+          <fieldset disabled={!!busy} aria-label="模型配置">
+            <div
+              className={`${layoutStyles['field-grid']} ${modelServicesStyles['slot-field-grid']}`}
+            >
+              <FormField
+                label="模型 ID"
+                value={model.model}
+                maxLength={200}
+                required
+                error={fields.model}
+                onChange={(e) => updateModel({ ...model, model: e.target.value })}
+              />
+              <div className={modelServicesStyles['model-protocol-status']} role="status">
                 {automaticMatch && !automaticMatch.protocol
                   ? model.model
                     ? automaticMatch.reason
@@ -65,7 +75,7 @@ export function ModelOptions({
                   : `${automaticMatch ? '已自动匹配' : '当前接口'}：${protocolNames[model.protocol]}`}
               </div>
               <details
-                className="model-advanced full-field"
+                className={`${modelServicesStyles['model-advanced']} ${layoutStyles['full-field']}`}
                 key={model.id}
                 open={!!automaticMatch && !automaticMatch.protocol}
               >
@@ -98,7 +108,9 @@ export function ModelOptions({
               </details>
               {automaticMatch && !automaticMatch.protocol ? null : model.protocol === 'chat' ? (
                 <>
-                  <label className="check-label">
+                  <label
+                    className={`${layoutStyles['check-label']} ${modelServicesStyles['slot-check-label']}`}
+                  >
                     <input
                       type="checkbox"
                       checked={model.streaming}
@@ -122,7 +134,9 @@ export function ModelOptions({
                       ))}
                     </select>
                   </label>
-                  <div className="card-actions full-field">
+                  <div
+                    className={`${layoutStyles['card-actions']} ${modelServicesStyles['slot-card-actions']} ${layoutStyles['full-field']}`}
+                  >
                     <button
                       disabled={model.presets.length >= 16}
                       onClick={() => {
@@ -165,19 +179,18 @@ export function ModelOptions({
                   </div>
                 </>
               ) : (
-                <label>
-                  识别语言（可选）
-                  <input
-                    value={model.language}
-                    disabled={model.protocol === 'dashscope-asr'}
-                    placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
-                    maxLength={20}
-                    onChange={(e) => updateModel({ ...model, language: e.target.value })}
-                  />
-                </label>
+                <FormField
+                  label="识别语言（可选）"
+                  value={model.language}
+                  disabled={model.protocol === 'dashscope-asr'}
+                  placeholder={model.protocol === 'dashscope-asr' ? '自动识别' : '例如 zh'}
+                  maxLength={20}
+                  error={fields.language}
+                  onChange={(e) => updateModel({ ...model, language: e.target.value })}
+                />
               )}
               <button
-                className="text-button danger full-field"
+                className={`${controlsStyles['text-button']} ${layoutStyles['slot-text-button']} ${modelServicesStyles['slot-text-button']} ${controlsStyles['danger']} ${layoutStyles['full-field']}`}
                 onClick={() => {
                   update({ ...draft, models: draft.models.filter((m) => m.id !== model.id) })
                   setActiveModel('')
@@ -189,9 +202,17 @@ export function ModelOptions({
             </div>
           </fieldset>
           <ErrorNotice>{error}</ErrorNotice>
-          <div className="form-actions">
-            <span className="muted">完成后记得保存服务</span>
-            <button className="primary" onClick={() => setModelOpen(false)}>
+          <div
+            className={`${layoutStyles['form-actions']} ${modelServicesStyles['slot-form-actions']}`}
+          >
+            <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+              完成后记得保存服务
+            </span>
+            <button
+              className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
+              disabled={!!fields.model || !!fields.language}
+              onClick={() => setModelOpen(false)}
+            >
               完成
             </button>
           </div>

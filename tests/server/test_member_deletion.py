@@ -1,9 +1,13 @@
-from datetime import timedelta
-
 import pytest
+from datetime import timedelta
+from app.db.base import now
+from app.modules.auth.models import DesktopSession, Session
+from app.modules.members.models import Member
+from app.modules.messages.models import Message
+from app.modules.reports.models import ReportEligibility, ReportNotification, ReportObligation
+from app.modules.voiceprints.models import Voiceprint
+from app.tasks.models import Job
 from sqlalchemy import func, select
-
-from paa_server.models import DesktopSession, Job, Member, Message, ReportEligibility, ReportNotification, ReportObligation, Session, Voiceprint, now
 from test_search_metrics_feedback import content, work
 from test_team_workspace import DAY, RANGE, report
 
@@ -111,7 +115,7 @@ async def test_deleted_dingtalk_member_can_register_again_without_old_data(setup
         assert (await clients['admin'].delete('/api/v1/members/' + identifier)).status_code == 200
         assert (await client.get('/api/v1/auth/me')).status_code == 200
         async with sessions() as db:
-            from paa_server.models import DingTalkIdentity
+            from app.modules.auth.models import DingTalkIdentity
             after = await db.scalar(select(func.count()).select_from(Member).where(Member.company_id == users['admin'].company_id))
             assert after == before + 1
             assert (await db.get(Member, identifier)).deleted

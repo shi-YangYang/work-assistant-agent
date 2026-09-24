@@ -1,3 +1,5 @@
+import controlsStyles from '../styles/controls.module.css'
+import styles from './Breadcrumbs.module.css'
 import { Modal } from '@web/components/Modal'
 import {
   readConversationForBreadcrumb,
@@ -142,10 +144,10 @@ export function Breadcrumbs() {
   const points =
     loaded?.path === path ? loaded.points : [{ path, state: null, label: pageName(path) }]
   return (
-    <nav className="breadcrumbs" aria-label="面包屑">
+    <nav className={styles['breadcrumbs']} aria-label="面包屑">
       {points.length > 1 && !location.pathname.startsWith('/settings/') && (
         <Link
-          className="icon-button"
+          className={controlsStyles['icon-button']}
           aria-label={`返回${points[points.length - 2].label}`}
           title={`返回${points[points.length - 2].label}`}
           to={points[points.length - 2].path}
@@ -157,7 +159,7 @@ export function Breadcrumbs() {
       {points.map((point, index) => (
         <span
           key={`${index}:${point.path}`}
-          className={index > 0 && index < points.length - 1 ? 'breadcrumb-middle' : ''}
+          className={index > 0 && index < points.length - 1 ? styles['breadcrumb-middle'] : ''}
         >
           {index > 0 && <ChevronRight size={13} aria-hidden="true" />}
           {index === points.length - 1 ? (
@@ -173,7 +175,7 @@ export function Breadcrumbs() {
       ))}
       {points.length > 2 && (
         <button
-          className="icon-button breadcrumb-overflow"
+          className={`${controlsStyles['icon-button']} ${styles['breadcrumb-overflow']}`}
           aria-label="查看完整页面路径"
           onClick={() => setExpanded(true)}
         >
@@ -182,7 +184,7 @@ export function Breadcrumbs() {
       )}
       {expanded && (
         <Modal title="页面路径" onClose={() => setExpanded(false)}>
-          <nav className="breadcrumb-path">
+          <nav className={styles['breadcrumb-path']}>
             {points.map((point, index) =>
               index === points.length - 1 ? (
                 <strong aria-current="page" key={`${index}:${point.path}`}>

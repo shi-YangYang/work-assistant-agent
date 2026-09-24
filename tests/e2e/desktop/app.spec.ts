@@ -411,6 +411,28 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     await page.getByRole('button', { name: '返回会议列表', exact: true }).click()
     await expect(player).toHaveCount(0)
     await expect(page.locator('audio')).toHaveCount(0)
+    const row = page.locator('.library-row').first()
+    const menu = row.locator('.meeting-menu')
+    const menuTrigger = menu.locator('summary')
+    await menuTrigger.click()
+    const rename = menu.getByRole('button', { name: '重命名', exact: true })
+    await expect(rename).toBeVisible()
+    const triggerBox = (await menuTrigger.boundingBox())!
+    const renameBox = (await rename.boundingBox())!
+    const menuBox = (await menu.locator('.meeting-menu-items').boundingBox())!
+    const rowBox = (await row.boundingBox())!
+    expect(menuBox.x).toBeGreaterThanOrEqual(0)
+    expect(menuBox.x + menuBox.width).toBeCloseTo(triggerBox.x + triggerBox.width, 1)
+    expect(menuBox.y + menuBox.height).toBeGreaterThan(rowBox.y + rowBox.height)
+    expect(menuBox.y + menuBox.height).toBeLessThanOrEqual(await page.evaluate(() => innerHeight))
+    // Move through the trigger/menu boundary instead of jumping straight to the item.
+    await page.mouse.move(triggerBox.x + triggerBox.width / 2, renameBox.y + renameBox.height / 2, {
+      steps: 15,
+    })
+    await expect(rename).toBeVisible()
+    await rename.click()
+    await expect(page.getByRole('dialog', { name: '重命名会议', exact: true })).toBeVisible()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
     // Ending immediately must leave the current-meeting route even before a poll sees recording.
     await page.getByRole('button', { name: '开始会议', exact: true }).click()
     await page.getByRole('button', { name: '结束会议', exact: true }).click()

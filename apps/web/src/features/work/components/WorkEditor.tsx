@@ -1,10 +1,14 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { Progress, Work } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ConflictRecovery } from '@web/components/ConflictRecovery'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
-import { readWork, updateWorkProgress } from '@web/features/work/api/requests'
+import { progressFieldErrors, readWork, updateWorkProgress } from '@web/features/work/api/requests'
 import { ProgressFields } from '@web/features/work/components/ProgressFields'
+import { progressTitleError } from '@web/features/work/utils/progress-edit'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
 
@@ -23,11 +27,16 @@ export function WorkEditor({
   const value = stored?.content ?? work
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Progress, string>>>({})
   return (
     <Modal title="更正工作进展" onClose={onClose}>
       <form
         onSubmit={async (e) => {
           e.preventDefault()
+          const titleError = progressTitleError(value.title)
+          setFieldErrors({ title: titleError })
+          if (titleError) return
+          setError('')
           setBusy(true)
           try {
             const { title, summary, status, blocker, nextStep, dueDate } = value
@@ -45,6 +54,7 @@ export function WorkEditor({
             window.dispatchEvent(new Event('paa-record-updated'))
             onSaved()
           } catch (e) {
+            setFieldErrors(progressFieldErrors(e))
             setError(e as Error)
           } finally {
             setBusy(false)
@@ -53,12 +63,14 @@ export function WorkEditor({
       >
         <ProgressFields
           value={value}
-          change={(content) =>
+          errors={fieldErrors}
+          change={(content) => {
+            setFieldErrors({})
             setDraft(key, { content, revision: stored?.revision ?? work.revision })
-          }
+          }}
         />
         <ErrorNotice>{error}</ErrorNotice>
-        {error && (
+        {error instanceof ApiError && error.status === 409 && (
           <ConflictRecovery<Work>
             load={() => readWork(work)}
             render={(latest) => (
@@ -80,11 +92,11 @@ export function WorkEditor({
             }}
           />
         )}
-        <div className="form-actions">
+        <div className={layoutStyles['form-actions']}>
           <button type="button" onClick={onClose}>
             稍后继续
           </button>
-          <BusyButton busy={busy} className="primary">
+          <BusyButton busy={busy} className={controlsStyles['primary']}>
             保存更正
           </BusyButton>
         </div>

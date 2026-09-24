@@ -1,18 +1,16 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
 import type { Member, Page } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
-import { BusyButton } from '@web/components/BusyButton'
+import { RecordEmpty } from '@web/components/RecordEmpty'
 import { ErrorNotice } from '@web/components/ErrorNotice'
-import { Modal } from '@web/components/Modal'
-import {
-  createMember,
-  membersPath,
-  resetMemberPassword,
-  updateMember,
-} from '@web/features/members/api/requests'
+import { membersPath, updateMember } from '@web/features/members/api/requests'
 import { DeleteMember } from '@web/features/members/components/DeleteMember'
+import { MemberForm } from '@web/features/members/components/MemberForm'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
-import { UserPlus } from 'lucide-react'
+import { UserPlus, Users } from 'lucide-react'
 import { useState } from 'react'
 
 export function MembersPage() {
@@ -20,7 +18,6 @@ export function MembersPage() {
   const [create, setCreate] = useState(false)
   const [reset, setReset] = useState<Member | null>(null)
   const [deleting, setDeleting] = useState<Member | null>(null)
-  const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
   const { notify } = useWorkspace()
   async function change(member: Member) {
@@ -36,22 +33,47 @@ export function MembersPage() {
     }
   }
   return (
-    <div className="page">
-      <div className="page-heading">
+    <div className={layoutStyles['page']} data-scroll-container>
+      <div className={`${layoutStyles['page-heading']}`}>
         <div>
           <h2>成员管理</h2>
         </div>
-        <button className="primary" onClick={() => setCreate(true)}>
+        <button
+          className={controlsStyles['primary']}
+          onClick={() => {
+            setFailure('')
+            setCreate(true)
+          }}
+        >
           <UserPlus size={16} />
           添加成员
         </button>
       </div>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
-      <div className="record-list">
+      <div className={recordLayoutStyles['record-list']}>
+        {!data && !error && (
+          <p className={recordLayoutStyles['records-loading']} role="status">
+            正在读取成员…
+          </p>
+        )}
+        {data && !data.items.length && (
+          <RecordEmpty
+            icon={<Users size={26} />}
+            title="还没有成员"
+            action={
+              <button className={controlsStyles['primary']} onClick={() => setCreate(true)}>
+                <UserPlus size={16} />
+                添加成员
+              </button>
+            }
+          >
+            添加公司成员，一起记录与跟进工作。
+          </RecordEmpty>
+        )}
         {data?.items.map((member) => (
-          <div className="record-row" key={member.id}>
-            <span className="avatar">{member.name.slice(0, 1)}</span>
-            <div className="record-main">
+          <div className={recordLayoutStyles['record-row']} key={member.id}>
+            <span className={layoutStyles['avatar']}>{member.name.slice(0, 1)}</span>
+            <div className={recordLayoutStyles['record-main']}>
               <h3>{member.name}</h3>
               <p>
                 {member.username} · {member.role === 'admin' ? '管理员' : '用户'} ·{' '}
@@ -60,12 +82,16 @@ export function MembersPage() {
             </div>
             <Actions>
               <button role="menuitem" onClick={() => setReset(member)}>
-                重置临时密码
+                重置密码
               </button>
               <button role="menuitem" onClick={() => void change(member)}>
                 {member.active ? '停用账号' : '启用账号'}
               </button>
-              <button role="menuitem" className="danger" onClick={() => setDeleting(member)}>
+              <button
+                role="menuitem"
+                className={controlsStyles['danger']}
+                onClick={() => setDeleting(member)}
+              >
                 删除账号
               </button>
             </Actions>
@@ -84,87 +110,20 @@ export function MembersPage() {
         />
       )}
       {(create || reset) && (
-        <Modal
-          title={reset ? `重置 ${reset.name} 的密码` : '添加成员'}
+        <MemberForm
+          key={reset?.id ?? 'create'}
+          member={reset}
           onClose={() => {
             setCreate(false)
             setReset(null)
           }}
-        >
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault()
-              const form = new FormData(e.currentTarget)
-              setBusy(true)
-              try {
-                if (reset)
-                  await resetMemberPassword(reset, {
-                    password: form.get('password'),
-                  })
-                else
-                  await createMember({
-                    name: form.get('name'),
-                    username: form.get('username'),
-                    role: 'employee',
-                    password: form.get('password'),
-                  })
-                setCreate(false)
-                setReset(null)
-                refresh()
-                notify('已保存，请将账号与临时密码交给成员；首次登录需修改')
-              } catch (e) {
-                setFailure(e as Error)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            {!reset && (
-              <>
-                <label>
-                  姓名
-                  <input name="name" required maxLength={80} />
-                </label>
-                <label>
-                  账号
-                  <input
-                    name="username"
-                    required
-                    pattern="[a-zA-Z0-9._@-]{3,80}"
-                    autoComplete="off"
-                  />
-                </label>
-              </>
-            )}
-            <label>
-              临时密码
-              <input
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={12}
-                maxLength={128}
-              />
-            </label>
-            <small>至少 12 位。请通过公司认可的方式交给本人。</small>
-            <ErrorNotice>{failure}</ErrorNotice>
-            <div className="form-actions">
-              <button
-                type="button"
-                onClick={() => {
-                  setCreate(false)
-                  setReset(null)
-                }}
-              >
-                取消
-              </button>
-              <BusyButton busy={busy} className="primary">
-                保存
-              </BusyButton>
-            </div>
-          </form>
-        </Modal>
+          onSaved={() => {
+            setCreate(false)
+            setReset(null)
+            refresh()
+            notify(reset ? '密码已重置，该成员需使用新密码重新登录' : '成员已创建')
+          }}
+        />
       )}
     </div>
   )

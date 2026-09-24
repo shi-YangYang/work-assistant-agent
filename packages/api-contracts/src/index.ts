@@ -1,3 +1,5 @@
+export { default as inputRules } from '../input-rules.json'
+
 export type Role = 'admin' | 'employee'
 export type Theme = 'system' | 'light' | 'dark'
 export interface Member {
@@ -7,7 +9,6 @@ export interface Member {
   role: Role
   active: boolean
   deleted?: boolean
-  mustChangePassword: boolean
   hasPassword: boolean
 }
 export interface Identity {
@@ -81,6 +82,7 @@ export interface BusinessAction {
   objectRevision?: number
   title?: string
   details?: Partial<Progress>
+  changedFields?: (keyof Progress)[]
   message?: string
   canConfirm?: boolean
   preview?: { title: string; content?: ReportContent; revision: number }
@@ -129,7 +131,15 @@ export interface Draft {
   status: 'pending' | 'confirmed' | 'ignored'
   revision: number
 }
+export interface OperationFeedback {
+  step: number
+  action: string
+  label: string
+  state: 'failed' | 'conflict' | 'clarification' | 'waiting'
+  message: string
+}
 export interface Job {
+  operationFeedback?: OperationFeedback[]
   stage?: string
   attempt?: number
   fence?: number
@@ -322,6 +332,7 @@ export interface JobFeedback {
   text: string
   error: string
   updatedAt: string
+  actions?: BusinessAction[]
 }
 export interface UsageRecord {
   id: string

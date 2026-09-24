@@ -1,4 +1,10 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import formFieldStyles from '../../../components/FormField.module.css'
+import styles from './RulesPage.module.css'
 import type { Rules, Schedule } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ConflictRecovery } from '@web/components/ConflictRecovery'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -10,9 +16,10 @@ import {
   saveReportRules,
 } from '@web/features/settings/api/requests'
 import { useResource } from '@web/hooks/useResource'
+import { reportRuleErrors, revealRuleErrors } from '@web/features/settings/utils/rule-validation'
 import { useWorkspace } from '@web/lib/workspace'
 import { companyTimezones, timezoneLabel } from '@web/utils/timezones'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 
 export function RulesPage() {
   const { data, error, refresh } = useResource<Rules>(reportRulesPath())
@@ -20,27 +27,36 @@ export function RulesPage() {
   const value = (drafts.rules as Rules | undefined) ?? data
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
+  const [attempted, setAttempted] = useState(0)
+  const form = useRef<HTMLFormElement>(null)
+  const fieldErrors = attempted && value ? reportRuleErrors(value) : {}
+  useLayoutEffect(() => {
+    if (attempted && form.current) revealRuleErrors(form.current)
+  }, [attempted])
   const canEdit = identity.member.role === 'admin'
   const update = (kind: 'daily' | 'weekly', schedule: Schedule) => {
     if (value) setDraft('rules', { ...value, [kind]: schedule })
   }
   return (
-    <div className="settings-page">
+    <div className={layoutStyles['settings-page']}>
       <h2>汇报规则</h2>
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && !canEdit && (
-        <div className="sectioned-panel rule-summary">
-          <div className="panel-intro muted">公司时区：{timezoneLabel(value.timezone)}</div>
+        <div className={`${layoutStyles['sectioned-panel']} ${styles['rule-summary']}`}>
+          <div className={`${layoutStyles['panel-intro']} ${utilitiesStyles['muted']}`}>
+            公司时区：{timezoneLabel(value.timezone)}
+          </div>
           {(['daily', 'weekly'] as const).map((kind) => (
             <PanelSection
+              separated={kind === 'daily'}
               key={kind}
               title={kind === 'daily' ? '日报' : '周报'}
               status={value[kind].enabled ? '已启用' : '未启用'}
               defaultOpen={value[kind].enabled}
             >
               {value[kind].enabled ? (
-                <dl className="summary-grid">
-                  <div className="full-field">
+                <dl className={styles['summary-grid']}>
+                  <div className={layoutStyles['full-field']}>
                     <dt>周期</dt>
                     <dd>
                       {value[kind].days
@@ -58,17 +74,19 @@ export function RulesPage() {
                   </div>
                 </dl>
               ) : (
-                <p className="muted">可在我的报告中手动准备报告。</p>
+                <p className={utilitiesStyles['muted']}>可在我的报告中手动准备报告。</p>
               )}
               {value[kind].enabled && (
-                <p className="muted">
+                <p className={utilitiesStyles['muted']}>
                   {value[kind].reminders === false
                     ? '站内提醒已关闭'
                     : `草稿就绪、截止前 ${value[kind].beforeMinutes ?? 30} 分钟及逾期后提醒`}
                 </p>
               )}
               {value.effectivePeriods?.[kind] && (
-                <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
+                <p className={utilitiesStyles['muted']}>
+                  当前设置从 {value.effectivePeriods[kind]} 起的周期生效
+                </p>
               )}
             </PanelSection>
           ))}
@@ -76,9 +94,14 @@ export function RulesPage() {
       )}
       {value && canEdit && (
         <form
-          className="sectioned-panel rules-form"
+          ref={form}
+          noValidate
+          className={layoutStyles['sectioned-panel']}
           onSubmit={async (e) => {
             e.preventDefault()
+            setAttempted((previous) => previous + 1)
+            setFailure('')
+            if (Object.keys(reportRuleErrors(value)).length) return
             setBusy(true)
             try {
               await saveReportRules({
@@ -98,7 +121,7 @@ export function RulesPage() {
           }}
         >
           <PanelSection title="时间设置" status={timezoneLabel(value.timezone)} defaultOpen>
-            <label className="timezone-field">
+            <label className={styles['timezone-field']}>
               公司时区
               <select
                 value={value.timezone}
@@ -115,6 +138,7 @@ export function RulesPage() {
           </PanelSection>
           {(['daily', 'weekly'] as const).map((kind) => (
             <PanelSection
+              separated={kind === 'daily'}
               key={kind}
               title={kind === 'daily' ? '日报' : '周报'}
               status={
@@ -124,8 +148,8 @@ export function RulesPage() {
               }
               defaultOpen={kind === 'daily'}
             >
-              <div className="schedule-panel">
-                <label className="check">
+              <div className={styles['schedule-panel']}>
+                <label className={`${layoutStyles['check']} ${styles['slot-check']}`}>
                   <input
                     type="checkbox"
                     checked={value[kind].enabled}
@@ -133,13 +157,17 @@ export function RulesPage() {
                   />
                   启用汇报安排
                 </label>
-                <div className="weekdays">
+                <div className={styles['weekdays']}>
                   {['一', '二', '三', '四', '五', '六', '日'].map((day, index) => (
                     <label key={day}>
                       <input
                         type={kind === 'weekly' ? 'radio' : 'checkbox'}
                         name={kind}
                         checked={value[kind].days.includes(index)}
+                        aria-invalid={fieldErrors[`${kind}.days`] ? true : undefined}
+                        aria-describedby={
+                          fieldErrors[`${kind}.days`] ? `${kind}-days-error` : undefined
+                        }
                         onChange={(e) =>
                           update(kind, {
                             ...value[kind],
@@ -156,11 +184,21 @@ export function RulesPage() {
                     </label>
                   ))}
                 </div>
-                <div className="two-columns">
+                {fieldErrors[`${kind}.days`] && (
+                  <small
+                    className={formFieldStyles['form-field-error']}
+                    id={`${kind}-days-error`}
+                    role="alert"
+                  >
+                    {fieldErrors[`${kind}.days`]}
+                  </small>
+                )}
+                <div className={layoutStyles['two-columns']}>
                   <label>
                     草稿生成时间
                     <TimeField
                       required={value[kind].enabled}
+                      error={fieldErrors[`${kind}.generateTime`]}
                       value={value[kind].generateTime}
                       onChange={(time) => update(kind, { ...value[kind], generateTime: time })}
                     />
@@ -169,13 +207,14 @@ export function RulesPage() {
                     提交截止时间
                     <TimeField
                       required={value[kind].enabled}
+                      error={fieldErrors[`${kind}.deadline`]}
                       value={value[kind].deadline}
                       onChange={(time) => update(kind, { ...value[kind], deadline: time })}
                     />
                   </label>
                 </div>
-                <div className="reminder-settings">
-                  <label className="check">
+                <div className={styles['reminder-settings']}>
+                  <label className={`${layoutStyles['check']} ${styles['slot-check']}`}>
                     <input
                       type="checkbox"
                       checked={value[kind].reminders ?? true}
@@ -185,31 +224,47 @@ export function RulesPage() {
                     />
                     站内提醒
                   </label>
-                  <label>
+                  <label className={formFieldStyles['form-field']}>
                     截止前提醒（分钟）
                     <input
                       type="number"
                       min={0}
                       max={1440}
+                      step={1}
+                      aria-invalid={fieldErrors[`${kind}.beforeMinutes`] ? true : undefined}
+                      aria-describedby={
+                        fieldErrors[`${kind}.beforeMinutes`] ? `${kind}-minutes-error` : undefined
+                      }
                       disabled={value[kind].reminders === false}
                       value={value[kind].beforeMinutes ?? 30}
                       onChange={(e) =>
                         update(kind, { ...value[kind], beforeMinutes: Number(e.target.value) })
                       }
                     />
+                    {fieldErrors[`${kind}.beforeMinutes`] && (
+                      <small
+                        className={formFieldStyles['form-field-error']}
+                        id={`${kind}-minutes-error`}
+                        role="alert"
+                      >
+                        {fieldErrors[`${kind}.beforeMinutes`]}
+                      </small>
+                    )}
                   </label>
                 </div>
                 {value.effectivePeriods?.[kind] && (
-                  <p className="muted">当前设置从 {value.effectivePeriods[kind]} 起的周期生效</p>
+                  <p className={utilitiesStyles['muted']}>
+                    当前设置从 {value.effectivePeriods[kind]} 起的周期生效
+                  </p>
                 )}
               </div>
             </PanelSection>
           ))}
-          <div className="panel-footer">
-            <p className="muted">
+          <div className={layoutStyles['panel-footer']}>
+            <p className={utilitiesStyles['muted']}>
               时间按公司时区计算。修改后不重复生成历史周期，也不会改写已提交报告。
             </p>
-            {failure && canEdit && (
+            {failure instanceof ApiError && failure.status === 409 && canEdit && (
               <ConflictRecovery<Rules>
                 load={() => readReportRules()}
                 render={(latest) => (
@@ -235,8 +290,8 @@ export function RulesPage() {
                 }}
               />
             )}
-            <div className="form-actions editor-actions">
-              <BusyButton busy={busy} className="primary">
+            <div className={`${layoutStyles['form-actions']} ${layoutStyles['editor-actions']}`}>
+              <BusyButton busy={busy} className={controlsStyles['primary']}>
                 保存汇报规则
               </BusyButton>
             </div>

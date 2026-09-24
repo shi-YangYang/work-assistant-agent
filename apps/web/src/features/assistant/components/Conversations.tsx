@@ -1,6 +1,12 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './Conversations.module.css'
 import type { Conversation, Page } from '@paa/api-contracts'
+import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import {
   conversationPath,
@@ -14,7 +20,7 @@ import { ConversationPicker } from '@web/features/assistant/components/Conversat
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
-import { Plus } from 'lucide-react'
+import { MessageSquare, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 
@@ -59,6 +65,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
   const [editing, setEditing] = useState<Conversation | null>(null)
+  const [titleError, setTitleError] = useState('')
   const [deleting, setDeleting] = useState<Conversation | null>(null)
   const [impact, setImpact] = useState<{ retainedSources: number } | null>(null)
   const [older, setOlder] = useState<Conversation[]>([])
@@ -67,8 +74,26 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [renamed, setRenamed] = useState<Record<string, Conversation>>({})
   const list = useResource<Page<Conversation>>(conversationsPath(search))
   const current = useResource<Conversation>(conversationPath(conversationId))
+  const [chatSession, setChatSession] = useState({
+    routeId: conversationId,
+    createdId: undefined as string | undefined,
+    key: 0,
+  })
+  if (chatSession.routeId !== conversationId) {
+    // First-send navigation keeps the composer; switching conversations still resets local UI.
+    const adoptingCreated = !!conversationId && chatSession.createdId === conversationId
+    setChatSession({
+      routeId: conversationId,
+      createdId: adoptingCreated ? chatSession.createdId : undefined,
+      key: adoptingCreated ? chatSession.key : chatSession.key + 1,
+    })
+  }
+  const createdHere =
+    !!chatSession.createdId &&
+    (!conversationId || conversationId === chatSession.createdId) &&
+    !current.error
   useEffect(() => {
-    if (conversationId || explicitNew || newDraft) return
+    if (conversationId || explicitNew || newDraft || createdHere) return
     let active = true
     const controller = new AbortController()
     void restoreConversation(lastConversationId, controller.signal)
@@ -93,6 +118,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     conversationId,
     explicitNew,
     newDraft,
+    createdHere,
     lastConversationId,
     rememberConversation,
     navigate,
@@ -126,13 +152,19 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     setFailure('')
   }
   return (
-    <div className="assistant-workspace">
-      <section className="conversation-main">
-        <header className="conversation-heading">
+    <div className={styles['assistant-workspace']}>
+      <section className={styles['conversation-main']}>
+        <header className={styles['conversation-heading']}>
+          <MessageSquare size={17} />
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
-          <button onClick={create}>
-            <Plus size={16} />
-            新会话
+          {!current.data && <span className={styles['conversation-caption']}>随时为你准备</span>}
+          <button
+            className={`${controlsStyles['icon-button']} ${styles['new-conversation']}`}
+            aria-label="新会话"
+            title="新会话"
+            onClick={create}
+          >
+            <SquarePen size={18} />
           </button>
           <ConversationPicker
             picker={picker}
@@ -148,7 +180,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             items={items}
             conversationId={conversationId}
             stopBeforeAction={stopBeforeAction}
-            setEditing={setEditing}
+            setEditing={(next) => {
+              setTitleError('')
+              setFailure('')
+              setEditing(next)
+            }}
             setImpact={setImpact}
             setDeleting={setDeleting}
             setFailure={setFailure}
@@ -156,24 +192,29 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           />
         </header>
         <ErrorNotice>{failure || (conversationId ? current.error : '')}</ErrorNotice>
-        {!conversationId && !explicitNew && !newDraft && (
+        {!conversationId && !explicitNew && !newDraft && !createdHere && (
           <>
             <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
               {resumeError}
             </ErrorNotice>
             {(!resumed || lastConversationId) && !resumeError && (
-              <p className="muted">正在打开上次会话…</p>
+              <p className={utilitiesStyles['muted']}>正在打开上次会话…</p>
             )}
           </>
         )}
         {(current.data ||
+          createdHere ||
           (!conversationId &&
             (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))) && (
           <ConversationChat
-            key={conversationId ?? 'new'}
+            key={chatSession.key}
             conversationId={conversationId}
             onSent={(id) => {
-              if (!conversationId) navigate(`/assistant/${id}`, { replace: true })
+              if (!conversationId) {
+                setChatSession((previous) => ({ ...previous, createdId: id }))
+                navigate(`/assistant/${id}`, { replace: true })
+              }
+              rememberConversation(id)
               updated()
             }}
           />
@@ -185,6 +226,12 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             onSubmit={async (e) => {
               e.preventDefault()
               const title = String(new FormData(e.currentTarget).get('title') ?? '').trim()
+              if (!title) {
+                setTitleError('请输入会话名称')
+                return
+              }
+              setTitleError('')
+              setFailure('')
               setBusy(true)
               try {
                 const saved = await renameConversation(editing, {
@@ -195,22 +242,29 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
                 setEditing(null)
                 updated()
               } catch (e) {
+                if (e instanceof ApiError) setTitleError(e.fieldErrors.title || '')
                 setFailure(e as Error)
               } finally {
                 setBusy(false)
               }
             }}
           >
-            <label>
-              会话名称
-              <input name="title" required maxLength={120} defaultValue={editing.title} autoFocus />
-            </label>
+            <FormField
+              label="会话名称"
+              name="title"
+              required
+              maxLength={120}
+              defaultValue={editing.title}
+              autoFocus
+              error={titleError}
+              onChange={() => setTitleError('')}
+            />
             <ErrorNotice>{failure}</ErrorNotice>
-            <div className="form-actions">
+            <div className={layoutStyles['form-actions']}>
               <button type="button" onClick={() => setEditing(null)}>
                 取消
               </button>
-              <BusyButton busy={busy} className="primary">
+              <BusyButton busy={busy} className={controlsStyles['primary']}>
                 保存
               </BusyButton>
             </div>
@@ -224,13 +278,13 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             <p>其中 {impact.retainedSources} 条消息已作为工作或报告来源，将保留在业务记录中。</p>
           )}
           <ErrorNotice>{failure}</ErrorNotice>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button disabled={busy} onClick={() => setDeleting(null)}>
               取消
             </button>
             <BusyButton
               busy={busy}
-              className="danger"
+              className={controlsStyles['danger']}
               onClick={async () => {
                 setBusy(true)
                 try {

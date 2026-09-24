@@ -1,3 +1,4 @@
+import mediaPreviewStyles from '../styles/media-preview.module.css'
 import { isCancelled } from '@web/api/client'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -121,9 +122,9 @@ export function PdfPreview({
     }
   }, [document, page, width, zoom])
   return (
-    <Modal title={name} className="media-dialog" onClose={onClose}>
-      <div className="media-preview">
-        <div className="preview-toolbar">
+    <Modal title={name} variant="media" onClose={onClose}>
+      <div className={mediaPreviewStyles['media-preview']}>
+        <div className={mediaPreviewStyles['preview-toolbar']}>
           <div>
             <button
               aria-label="上一页"
@@ -135,7 +136,7 @@ export function PdfPreview({
             >
               <ChevronLeft size={18} />
             </button>
-            <label className="pdf-page-label">
+            <label className={mediaPreviewStyles['pdf-page-label']}>
               <input
                 aria-label="PDF 页码"
                 type="number"
@@ -183,7 +184,7 @@ export function PdfPreview({
             </button>
             {download && (
               <a
-                className="preview-download"
+                className={mediaPreviewStyles['preview-download']}
                 href={download}
                 download={name}
                 aria-label="下载 PDF 原文件"
@@ -194,9 +195,9 @@ export function PdfPreview({
           </div>
         </div>
         <ErrorNotice>{error}</ErrorNotice>
-        <div className="pdf-viewport" ref={viewport}>
+        <div className={mediaPreviewStyles['pdf-viewport']} ref={viewport}>
           {loading && (
-            <p role="status" className="preview-loading">
+            <p role="status" className={mediaPreviewStyles['preview-loading']}>
               正在载入页面…
             </p>
           )}

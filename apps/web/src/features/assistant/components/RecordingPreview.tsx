@@ -1,3 +1,4 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
 import { recordingPreview } from '@web/features/assistant/lib/audio-preview'
 import { useEffect, useState } from 'react'
 
@@ -24,7 +25,7 @@ export function RecordingPreview({ file }: { file: File }) {
   if (preview?.file === file && preview.url)
     return <audio controls src={preview.url} preload="metadata" aria-label={`试听${file.name}`} />
   return (
-    <p className="muted small-text" role="status">
+    <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`} role="status">
       {preview?.file === file && preview.failed
         ? '暂时无法试听，可发送原录音后播放。'
         : '正在准备录音试听…'}

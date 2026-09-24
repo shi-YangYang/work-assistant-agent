@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -23,6 +27,8 @@ import type { ServiceDraft } from '@web/features/model-services/utils/service-dr
 import {
   appendServiceModels,
   cleanServiceDraft,
+  modelApiKeyError,
+  validateServiceModels,
 } from '@web/features/model-services/utils/service-drafts'
 import {
   matchModelProtocol,
@@ -125,6 +131,9 @@ export function ModelServices() {
     setBusy('save')
     setError('')
     try {
+      const keyError = modelApiKeyError(keys[target.id] || '')
+      if (keyError) throw new Error(keyError)
+      validateServiceModels(target.models)
       const payload =
         target === draft
           ? capture()
@@ -236,22 +245,33 @@ export function ModelServices() {
       .map((purpose) => purposeNames[purpose])
   }
   return (
-    <div className="settings-page model-management">
-      <div className="page-heading">
+    <div className={`${layoutStyles['settings-page']} ${modelServicesStyles['model-management']}`}>
+      <div
+        className={`${layoutStyles['page-heading']} ${modelServicesStyles['slot-page-heading']}`}
+      >
         <div>
           <h2>模型服务管理</h2>
+          <p>连接你信任的模型，为不同工作选择合适的能力。</p>
         </div>
-        {!draft && tab === 'services' && (
-          <button className="primary" disabled={!!busy || !resource.data} onClick={createService}>
+        {tab === 'services' && (
+          <button
+            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
+            disabled={!!busy || !resource.data}
+            onClick={createService}
+          >
             <Plus size={16} /> 添加服务
           </button>
         )}
       </div>
-      <div className="tabs" role="tablist" aria-label="模型管理页面">
+      <div
+        className={`${layoutStyles['tabs']} ${modelServicesStyles['slot-tabs']}`}
+        role="tablist"
+        aria-label="模型管理页面"
+      >
         <button
           role="tab"
           aria-selected={tab === 'services'}
-          className={tab === 'services' ? 'active' : ''}
+          data-active={tab === 'services'}
           disabled={!!busy}
           onClick={() => setTab('services')}
         >
@@ -260,7 +280,7 @@ export function ModelServices() {
         <button
           role="tab"
           aria-selected={tab === 'routing'}
-          className={tab === 'routing' ? 'active' : ''}
+          data-active={tab === 'routing'}
           disabled={!!busy}
           onClick={() => {
             setAssignServiceId('')
@@ -281,16 +301,21 @@ export function ModelServices() {
       {tab === 'routing' ? (
         <>
           {assignServiceId && (
-            <div className="model-next-step">
+            <div className={modelServicesStyles['model-next-step']}>
               <Check size={18} />
               <span>服务已保存，选择下方各功能使用的模型。</span>
-              <button className="text-button" onClick={() => setTab('services')}>
+              <button
+                className={`${controlsStyles['text-button']} ${modelServicesStyles['slot-text-button']}`}
+                onClick={() => setTab('services')}
+              >
                 返回服务
               </button>
             </div>
           )}
           {assignServiceId && !services.some((service) => service.id === assignServiceId) ? (
-            <p className="muted">正在更新可选模型…</p>
+            <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
+              正在更新可选模型…
+            </p>
           ) : (
             <Routing
               services={services}
@@ -299,73 +324,99 @@ export function ModelServices() {
             />
           )}
         </>
-      ) : !draft ? (
-        <ServiceList
-          allServices={allServices}
-          resource={resource}
-          createService={createService}
-          drafts={drafts}
-          services={services}
-          keys={keys}
-          usesFor={usesFor}
-          select={select}
-        />
       ) : (
-        <ServiceEditor
-          busy={busy}
-          select={select}
-          dirty={dirty}
-          draft={draft}
-          setRemoveOpen={setRemoveOpen}
-          update={update}
-          setKeys={setKeys}
-          connectionReady={connectionReady}
-          error={error}
-          conflict={conflict}
-          save={save}
-          setAssignServiceId={setAssignServiceId}
-          setTab={setTab}
-        >
-          <ServiceConnectionFields
-            draft={draft}
-            busy={busy}
-            changeAddress={changeAddress}
-            update={update}
-            keyValue={keys[draft.id] || ''}
-            onKeyChange={(value) => {
-              generationRef.current++
-              setCheck(null)
-              setCatalog(null)
-              setKeys({ ...keys, [draft.id]: value })
-            }}
-          />
-          <ServiceModelLibrary
-            draft={draft}
-            busy={busy}
-            connectionReady={connectionReady}
+        <div className={modelServicesStyles['service-workspace']}>
+          <ServiceList
+            compact
+            disabled={!!busy}
+            selectedId={draft?.id}
+            allServices={allServices}
+            resource={resource}
+            createService={createService}
+            drafts={drafts}
+            services={services}
+            keys={keys}
             usesFor={usesFor}
-            onAdd={(mode) => {
-              if (mode === 'catalog') {
-                setPicker('catalog')
-                void request('models')
-              } else {
-                setError('')
-                setPicker('manual')
-              }
-            }}
-            onConfigure={(item) => {
-              setActiveModel(item.id)
-              setError('')
-              setModelOpen(true)
-            }}
-            onTest={(item) => {
-              setActiveModel(item.id)
-              setTestPurpose(item.protocol === 'chat' ? 'assistant' : 'asr')
-              setError('')
-              setTestOpen(true)
-            }}
+            select={select}
           />
-        </ServiceEditor>
+          <div className={modelServicesStyles['service-workspace-detail']}>
+            {draft ? (
+              <ServiceEditor
+                busy={busy}
+                select={select}
+                dirty={dirty}
+                draft={draft}
+                setRemoveOpen={setRemoveOpen}
+                update={update}
+                setKeys={setKeys}
+                connectionReady={connectionReady}
+                error={error}
+                conflict={conflict}
+                save={save}
+                setAssignServiceId={setAssignServiceId}
+                setTab={setTab}
+              >
+                <ServiceConnectionFields
+                  draft={draft}
+                  busy={busy}
+                  changeAddress={changeAddress}
+                  update={update}
+                  keyValue={keys[draft.id] || ''}
+                  onKeyChange={(value) => {
+                    generationRef.current++
+                    setCheck(null)
+                    setCatalog(null)
+                    setKeys({ ...keys, [draft.id]: value })
+                  }}
+                />
+                <ServiceModelLibrary
+                  draft={draft}
+                  busy={busy}
+                  connectionReady={connectionReady}
+                  usesFor={usesFor}
+                  onAdd={(mode) => {
+                    if (mode === 'catalog') {
+                      setPicker('catalog')
+                      void request('models')
+                    } else {
+                      setError('')
+                      setPicker('manual')
+                    }
+                  }}
+                  onConfigure={(item) => {
+                    setActiveModel(item.id)
+                    setError('')
+                    setModelOpen(true)
+                  }}
+                  onTest={(item) => {
+                    setActiveModel(item.id)
+                    setTestPurpose(item.protocol === 'chat' ? 'assistant' : 'asr')
+                    setError('')
+                    setTestOpen(true)
+                  }}
+                />
+              </ServiceEditor>
+            ) : (
+              <div className={modelServicesStyles['service-welcome']}>
+                <h3>为工作接入合适的模型</h3>
+                <p>选择左侧服务查看连接与模型，或添加一个新服务。</p>
+                <div className={modelServicesStyles['service-flow']}>
+                  <span>连接服务</span>
+                  <span>添加模型</span>
+                  <span>分配用途</span>
+                </div>
+                <button
+                  disabled={!!busy || !resource.data}
+                  className={controlsStyles['primary']}
+                  onClick={createService}
+                >
+                  <Plus size={16} />
+                  添加服务
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
       {picker && draft && (
         <ModelPicker

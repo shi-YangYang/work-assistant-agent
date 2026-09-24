@@ -1,35 +1,48 @@
 """Fixed-response report commits, bounded dispatch and durable report schedules."""
 import asyncio
+import json
+import pytest
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-import json
+from langchain_core.messages import AIMessage
+from app.agent.model import reserve_call
+from app.db.base import now
+from app.modules.members.models import Company, Member
+from app.modules.model_services.models import ModelUsage
+from app.modules.reports.models import Report, ReportNotification, ReportObligation, ReportSchedule
+from app.modules.reports.schedule import eligibility_changed, save_schedule
+from app.modules.reports.service import ensure_report
+from app.modules.work.models import WorkItem, WorkRevision
+from app.tasks.context import RunContext
+from app.tasks.handlers import process_job
+from app.tasks.models import Job
+from app.tasks.queue import claim
+from app.tasks.runner import run_slots
+from app.tasks.scheduling import schedule_company
+from sqlalchemy import func, select
+from test_company import keyed
 from uuid import uuid4
 
-import pytest
-from langchain_core.messages import AIMessage
-from sqlalchemy import func, select
 
-from paa_server.agent.harness import RunContext, reserve_call
-from paa_server.models import Company, Job, Member, ModelUsage, Report, ReportEligibility, ReportNotification, ReportObligation, ReportSchedule, WorkItem, WorkRevision, now
-from paa_server.report_schedule import eligibility_changed, schedule_company, schedule_once, save_schedule
-from paa_server.service import ensure_report
-from paa_server.worker import claim, process_job, run_slots
-from test_company import keyed
 
 pytestmark = pytest.mark.asyncio
 CONTENT = {'completed': '方案初稿已完成', 'ongoing': '等待确认', 'blockers': '', 'next': '继续核对'}
 
 
 class ReportModel:
-    def __init__(self, content=None, callback=None, finish='stop'):
+    def __init__(self, content=None, callback=None, finish='stop', verdict='{"valid":true}'):
         self.content = json.dumps(CONTENT, ensure_ascii=False) if content is None else content
         self.calls = 0
         self.callback = callback
         self.finish = finish
         self.inputs = []
+        self.verdict, self.reviews = verdict, []
 
     async def ainvoke(self, messages):
+        if json.loads(messages[-1].content).get('task') == 'report_fact_review':
+            self.reviews.append(messages)
+            return AIMessage(content=self.verdict)
         self.calls += 1
         self.inputs.append(messages)
         if self.callback:
@@ -95,6 +108,25 @@ async def test_invalid_report_keeps_original_without_success(setup, content, fin
     assert model.calls == 1
 
 
+@pytest.mark.parametrize('verdict', ['{"valid":false}', '{"valid":"true"}', '{}', 'invalid'])
+async def test_report_fact_failure_keeps_original_and_never_regenerates_implicitly(setup, verdict):
+    settings, sessions, users, _ = setup
+    report, job, _ = await prepared(setup)
+    async with sessions.begin() as db:
+        saved = await db.get(Report, report.id); saved.content = {**CONTENT, 'completed': '原报告'}
+    model = ReportModel(json.dumps({**CONTENT, 'completed': '整项方案已经完成'}), verdict=verdict)
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
+    async with sessions() as db:
+        saved = await db.get(Report, report.id)
+        live = await db.get(Job, job.id)
+        assert saved.content['completed'] == '原报告' and saved.candidate is None and not saved.published_revision
+        assert live.state == 'failed' and not live.result.get('reportSaved')
+    assert model.calls == 1 and len(model.reviews) == 1
+    checked = json.loads(model.reviews[0][-1].content)
+    assert checked['confirmed'][0]['content']['summary'] == '初稿完成'
+    assert checked['report']['completed'] == '整项方案已经完成'
+
+
 @pytest.mark.parametrize('change', ['delete_report', 'delete_work', 'inactive', 'role'])
 async def test_report_late_response_cannot_restore_revoked_material(setup, change):
     settings, sessions, users, c = setup
@@ -120,11 +152,11 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
     settings, sessions, users, _ = setup
     company = users['employee'].company_id
     from functools import partial
-    monkeypatch.setattr('paa_server.worker.claim',partial(claim,company_id=company))
+    monkeypatch.setattr('app.tasks.runner.claim',partial(claim,company_id=company))
     owners = []
     async with sessions.begin() as db:
         for index in range(30):
-            member = Member(company_id=company, username='parallel_' + uuid4().hex, name='并行员工', password_hash='unused', must_change_password=False)
+            member = Member(company_id=company, username='parallel_' + uuid4().hex, name='并行员工', password_hash='unused')
             db.add(member); await db.flush(); owners.append(member.id)
             db.add(Job(company_id=company, owner_id=member.id, kind='message', target_id=str(uuid4())))
         # The first owner has a second queued request; it cannot overlap itself.
@@ -194,7 +226,7 @@ async def test_todos_no_work_reminders_read_submission_permissions_and_delete(se
     settings,sessions,users,c=setup
     instant=datetime(2027,1,4,17,0,tzinfo=timezone.utc)
     await arrange(setup,instant)
-    monkeypatch.setattr('paa_server.report_schedule.now',lambda:instant)
+    monkeypatch.setattr('app.modules.reports.schedule.now',lambda:instant)
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     data=(await c['employee'].get('/api/v1/report-obligations')).json()
     assert len(data['items'])==1 and data['items'][0]['job']['phase']=='empty'
@@ -268,7 +300,8 @@ async def test_bounded_outage_backfill_current_priority_future_rules_and_activat
         assert '2027-02-11' in periods and not {'2027-02-09','2027-02-10'} & periods
 
 async def test_unsent_reservation_requeues_but_old_fence_cannot_publish(setup):
-    from paa_server.agent.harness import lease, LostLease
+    from app.tasks.lease import lease
+    from app.tasks.context import LostLease
     from test_company import send
     settings,sessions,users,c=setup
     await send(c['employee'])
@@ -284,11 +317,16 @@ async def test_unsent_reservation_requeues_but_old_fence_cannot_publish(setup):
         with pytest.raises(LostLease):await lease(db,context)
 
 
-async def test_structured_report_actual_request_usage_and_report_probe(setup,monkeypatch):
+@pytest.mark.parametrize('reasoning_check', [False, True])
+async def test_structured_report_actual_request_usage_and_report_probe(setup,monkeypatch,reasoning_check):
     import httpx
     from test_model_services import create,payload,route
     settings,sessions,users,c=setup
-    saved=await create(c['admin'])
+    config=payload()
+    if reasoning_check:
+        config['baseUrl']='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
+        config['models'][0]['model']='deepseek-v4.1-flash'
+    saved=await create(c['admin'], config)
     routing=route(saved);routing['assistant']['streaming']=False
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     report,job,_=await prepared(setup)
@@ -297,22 +335,29 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
         data=json.loads(request.content);requests.append(data)
         assert not data.get('tools') and not data.get('tool_choice')
         content='测试成功' if '只回复：测试成功' in str(data['messages']) else json.dumps(CONTENT,ensure_ascii=False)
+        if 'report_fact_review' in str(data['messages']):
+            content='{"valid":true}'
+            assert data['max_tokens'] == 2000
+            if reasoning_check:
+                assert data['enable_thinking'] is True and data['reasoning_effort']=='low'
+            else:
+                assert 'enable_thinking' not in data
         return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':content},'finish_reason':'stop'}],'usage':{'prompt_tokens':123,'completion_tokens':45,'total_tokens':168}})
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(respond)))
     await process_job(await claim(sessions,users['employee'].id),sessions,settings,None)
     async with sessions() as db:
         assert (await db.get(Job,job.id)).state=='succeeded'
-        usage=await db.scalar(select(ModelUsage).where(ModelUsage.job_id==job.id))
-        assert usage.status=='succeeded' and usage.kind=='report' and usage.actual_input_tokens==123 and usage.actual_output_tokens==45
-    assert len(requests)==1
+        usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
+        assert len(usages)==2 and all(usage.status=='succeeded' and usage.kind=='report' and usage.actual_input_tokens==123 and usage.actual_output_tokens==45 for usage in usages)
+    assert len(requests)==2
     result=await c['admin'].post('/api/v1/settings/model-services/test',json={**payload(),'models':[{**model,'streaming':False} for model in payload()['models']],'draftVersion':'report-json','modelId':'chat','purpose':'report'})
     assert result.status_code==200
     assert [check['state'] for check in result.json()['checks']]==['passed','passed'],result.text
-    assert result.json()['checks'][-1]['name']=='报告结构' and len(requests)==3
+    assert result.json()['checks'][-1]['name']=='报告结构' and len(requests)==4
 
 
 async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(setup):
-    from paa_server.report_schedule import draft_ready
+    from app.modules.reports.schedule import draft_ready
     settings,sessions,users,c=setup
     instant=datetime(2027,3,1,17,tzinfo=timezone.utc)
     await arrange(setup,instant)

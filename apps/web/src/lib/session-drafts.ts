@@ -29,7 +29,7 @@ export class SessionDrafts {
   }
   resume(identity: Identity) {
     const scope = identityScope(identity)
-    if (this.scope !== scope || identity.member.mustChangePassword) this.clear()
+    if (this.scope !== scope) this.clear()
     this.scope = scope
     this.generation++
   }

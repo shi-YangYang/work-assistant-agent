@@ -1,16 +1,23 @@
+import controlsStyles from '../styles/controls.module.css'
+import layoutStyles from '../styles/layout.module.css'
+import formFieldStyles from './FormField.module.css'
+import styles from './TimeField.module.css'
 import { Modal } from '@web/components/Modal'
 import { Clock3 } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 
 export function TimeField({
   value,
   onChange,
   required,
+  error,
 }: {
   value: string
   onChange: (value: string) => void
   required?: boolean
+  error?: string
 }) {
+  const errorId = useId()
   const [open, setOpen] = useState(false)
   const [choice, setChoice] = useState('09:00')
   const show = () => {
@@ -18,28 +25,42 @@ export function TimeField({
     setOpen(true)
   }
   return (
-    <span className="time-field">
-      <input
-        value={value}
-        required={required}
-        placeholder="时:分"
-        inputMode="numeric"
-        pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
-        onChange={(e) => onChange(e.target.value)}
-        onClick={show}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            show()
-          }
-        }}
-      />
-      <button type="button" className="icon-button" aria-label="选择时间" onClick={show}>
-        <Clock3 size={17} />
-      </button>
+    <span className={formFieldStyles['form-field']} style={{ margin: 0 }}>
+      <span className={styles['time-field']}>
+        <input
+          value={value}
+          required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
+          placeholder="时:分"
+          inputMode="numeric"
+          pattern="([01][0-9]|2[0-3]):[0-5][0-9]"
+          onChange={(e) => onChange(e.target.value)}
+          onClick={show}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              show()
+            }
+          }}
+        />
+        <button
+          type="button"
+          className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
+          aria-label="选择时间"
+          onClick={show}
+        >
+          <Clock3 size={17} />
+        </button>
+      </span>
+      {error && (
+        <small className={formFieldStyles['form-field-error']} id={errorId} role="alert">
+          {error}
+        </small>
+      )}
       {open && (
         <Modal title="选择时间" onClose={() => setOpen(false)}>
-          <div className="time-picker">
+          <div className={styles['time-picker']}>
             <label>
               时
               <select
@@ -64,7 +85,7 @@ export function TimeField({
               </select>
             </label>
           </div>
-          <div className="form-actions">
+          <div className={layoutStyles['form-actions']}>
             <button
               type="button"
               onClick={() => {
@@ -76,7 +97,7 @@ export function TimeField({
             </button>
             <button
               type="button"
-              className="primary"
+              className={controlsStyles['primary']}
               onClick={() => {
                 onChange(choice)
                 setOpen(false)

@@ -1,0 +1,122 @@
+.voiceprint-heading,
+.voiceprint-toolbar,
+.voiceprint-member,
+.voiceprint-actions,
+.voiceprint-toolbar > span,
+.voiceprint-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.voiceprint-heading {
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.voiceprint-heading p {
+  margin: 6px 0 0;
+}
+.voiceprint-heading button,
+.voiceprint-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.voiceprint-library {
+  padding: 0;
+  overflow: hidden;
+}
+.voiceprint-toolbar {
+  padding: 16px 20px;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+}
+.voiceprint-toolbar input {
+  width: min(280px, 45%);
+  margin: 0;
+}
+.voiceprint-member {
+  padding: 18px 20px;
+  gap: 14px;
+}
+.voiceprint-member + .voiceprint-member {
+  border-top: 1px solid var(--line);
+}
+.voiceprint-avatar {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--canvas);
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+.voiceprint-member-info {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.voiceprint-member-info strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.voiceprint-member-info strong small {
+  font-weight: 400;
+  padding: 2px 6px;
+  background: var(--canvas);
+  border-radius: 4px;
+}
+.voiceprint-member-info small,
+.voiceprint-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+.voiceprint-status[data-ready='true'] {
+  color: var(--positive);
+}
+.voiceprint-error {
+  margin: 2px 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+.voiceprint-empty {
+  padding: 20px;
+  margin: 0;
+}
+.voiceprint-enroll {
+  display: grid;
+  gap: 16px;
+}
+.voiceprint-enroll p,
+.voiceprint-enroll label {
+  margin: 0;
+}
+.voiceprint-enroll .slot-check {
+  align-items: flex-start;
+}
+@media (max-width: 600px) {
+  .voiceprint-heading {
+    align-items: flex-start;
+  }
+  .voiceprint-member {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .voiceprint-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .voiceprint-toolbar {
+    padding: 16px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .voiceprint-toolbar input {
+    width: 100%;
+  }
+}

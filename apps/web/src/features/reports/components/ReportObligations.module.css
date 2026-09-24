@@ -1,0 +1,105 @@
+.report-obligations {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.report-obligations[data-embedded='true'] {
+  gap: 0;
+}
+.report-obligations[data-embedded='true'] .obligation-filters {
+  margin: 0;
+  justify-content: flex-start;
+}
+.report-obligations[data-embedded='true'] > .obligation-notice {
+  margin: 16px 20px;
+}
+.report-obligations[data-embedded='true'] > .slot-form-actions {
+  margin: 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+}
+@container (max-width: 600px) {
+  .report-obligations[data-embedded='true'] .obligation-filters {
+    display: flex;
+    flex-direction: row;
+  }
+  .report-obligations[data-embedded='true'] .obligation-filters {
+    align-items: flex-end;
+  }
+  .report-obligations[data-embedded='true'] .obligation-filters > select,
+  .report-obligations[data-embedded='true'] .obligation-filters > .slot-record-date-field {
+    flex: 1 1 120px;
+    min-width: 0;
+  }
+  .report-obligations[data-embedded='true'] .obligation-filters > select {
+    height: 44px;
+  }
+}
+@container (max-width: 400px) {
+  .report-obligations[data-embedded='true'] .obligation-row {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    align-items: start;
+  }
+  .report-obligations[data-embedded='true'] .obligation-row > :is(button, .obligation-link) {
+    grid-column: 2;
+    justify-self: start;
+    margin-left: 0;
+  }
+}
+.obligation-filters {
+  justify-content: flex-start;
+  margin: 0 0 16px;
+}
+.obligation-filters > select,
+.obligation-filters > input {
+  width: auto;
+  min-width: 140px;
+}
+.obligation-row {
+  gap: 12px;
+}
+.obligation-row .slot-record-main small {
+  display: block;
+}
+.obligation-row .obligation-status {
+  margin-left: 8px;
+}
+.obligation-metrics > div {
+  display: grid;
+  gap: 10px;
+}
+.obligation-metrics strong {
+  font-size: 24px;
+}
+.obligation-metrics small {
+  font-size: 13px;
+  font-weight: 400;
+}
+@media (max-width: 600px) {
+  .obligation-row {
+    flex-wrap: wrap;
+  }
+  .obligation-row > .obligation-link,
+  .obligation-row > button {
+    margin-left: auto;
+  }
+  .obligation-filters {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .obligation-filters > select,
+  .obligation-filters > input {
+    width: 100%;
+    min-width: 0;
+  }
+  .obligation-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .obligation-metrics > div {
+    padding: 12px;
+  }
+  .obligation-metrics small {
+    display: block;
+  }
+}

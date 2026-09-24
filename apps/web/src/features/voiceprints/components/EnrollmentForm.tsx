@@ -1,3 +1,7 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import voiceprintsStyles from '../styles/voiceprints.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -26,7 +30,7 @@ export function EnrollmentForm({
       }}
     >
       <form
-        className="voiceprint-enroll"
+        className={voiceprintsStyles['voiceprint-enroll']}
         onSubmit={async (e) => {
           e.preventDefault()
           if (!file || !consent) return
@@ -61,8 +65,10 @@ export function EnrollmentForm({
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
         </label>
-        <small className="muted">最长 3 分钟，最大 20 MiB。替换处理成功前保留原声纹。</small>
-        <label className="check">
+        <small className={utilitiesStyles['muted']}>
+          最长 3 分钟，最大 20 MiB。替换处理成功前保留原声纹。
+        </small>
+        <label className={`${layoutStyles['check']} ${voiceprintsStyles['slot-check']}`}>
           <input
             type="checkbox"
             checked={consent}
@@ -72,11 +78,15 @@ export function EnrollmentForm({
           我已取得本人知情同意，授权用于公司会议发言者识别
         </label>
         <ErrorNotice>{error}</ErrorNotice>
-        <div className="form-actions">
+        <div className={layoutStyles['form-actions']}>
           <button type="button" disabled={busy} onClick={onClose}>
             取消
           </button>
-          <BusyButton className="primary" busy={busy} disabled={!file || !consent}>
+          <BusyButton
+            className={controlsStyles['primary']}
+            busy={busy}
+            disabled={!file || !consent}
+          >
             上传并提取声纹
           </BusyButton>
         </div>

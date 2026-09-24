@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import type { Member } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -24,12 +26,12 @@ export function DeleteMember({
       <p>该成员将退出登录，待处理任务和汇报提醒会停止。历史工作、报告和原始消息会保留。</p>
       <p>之后可用同一账号名重新创建，或通过钉钉重新注册；新账号不会继承旧资料。</p>
       <ErrorNotice>{failure}</ErrorNotice>
-      <div className="form-actions">
+      <div className={layoutStyles['form-actions']}>
         <button type="button" onClick={onClose}>
           取消
         </button>
         <BusyButton
-          className="danger"
+          className={controlsStyles['danger']}
           busy={busy}
           onClick={async () => {
             setBusy(true)

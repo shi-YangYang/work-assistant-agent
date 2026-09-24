@@ -11,7 +11,7 @@ const action = process.argv[2]
 const env = {
   ...process.env,
   PYTHONPATH: [
-    join(root, 'services/company/src'),
+    join(root, 'apps/server'),
     join(root, 'packages/voiceprint-engine/src'),
     process.env.PYTHONPATH,
   ]
@@ -19,7 +19,7 @@ const env = {
     .join(delimiter),
 }
 if (!existsSync(python)) {
-  console.error('请先用 Python 3.12 创建 .venv-server，并安装 services/company/requirements.lock。')
+  console.error('请先用 Python 3.12 创建 .venv-server，并安装 apps/server/requirements.lock。')
   process.exit(1)
 }
 const children = []
@@ -42,8 +42,22 @@ function stop(code) {
 }
 process.on('SIGINT', () => stop(0))
 process.on('SIGTERM', () => stop(0))
-if (action === 'all' || action === 'api') launch(python, ['-m', 'paa_server.api'])
-if (action === 'all' || action === 'worker') launch(python, ['-m', 'paa_server.worker'])
+if (action === 'all' || action === 'api')
+  launch(python, [
+    '-m',
+    'uvicorn',
+    'app.main:app',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    '8000',
+    '--reload',
+    '--reload-dir',
+    join(root, 'apps/server'),
+    '--reload-dir',
+    join(root, 'packages/voiceprint-engine/src'),
+  ])
+if (action === 'all' || action === 'worker') launch(python, ['-m', 'app.worker'])
 if (action === 'all')
   launch(process.execPath, [
     join(dirname(webRequire.resolve('vite/package.json')), 'bin/vite.js'),
@@ -51,7 +65,7 @@ if (action === 'all')
     'apps/web/vite.config.ts',
   ])
 if (action === 'migrate' || action === 'bootstrap-admin' || action === 'model-key')
-  launch(python, ['-m', 'paa_server.cli', action])
+  launch(python, ['-m', 'app.cli', action])
 if (action === 'test')
   launch(python, [
     '-m',

@@ -1,7 +1,7 @@
 import type { Job, JobFeedback, Report } from '@paa/api-contracts'
 import { api, ApiError, expireSession, isCancelled } from '@web/api/client'
 
-export const terminalJob = (state: string) => !['queued', 'running'].includes(state)
+const terminalJob = (state: string) => !['queued', 'running'].includes(state)
 
 export const reportNeedsPolling = (report: Pick<Report, 'historical' | 'job'>) =>
   !report.historical && !!report.job && !terminalJob(report.job.state)
@@ -17,7 +17,15 @@ export function acceptFeedback(
       if (incoming[field] < current[field]) return current
       if (incoming[field] > current[field]) return incoming
     }
-    if (incoming.updatedAt <= current.updatedAt) return current
+    if (incoming.updatedAt < current.updatedAt) return current
+    // Cards can change independently of the worker's feedback version. Match the
+    // server's snapshot identity so retries deduplicate without hiding card updates.
+    if (
+      incoming.updatedAt === current.updatedAt &&
+      incoming.state === current.state &&
+      JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? [])
+    )
+      return current
   }
   return incoming
 }
@@ -48,6 +56,8 @@ export const stageNames: Record<string, string> = {
   transcribing: '正在识别语音…',
   searching: '正在查询资料…',
   generating: '正在生成回复…',
+  operating: '操作结果已更新，正在继续处理…',
+  reviewing: '正在核对答复…',
   complete: '已完成',
 }
 
@@ -88,6 +98,7 @@ export function subscribeJobFeedback(
     receiveValue(null)
     setError(message)
     if (status === 401) expireSession()
+    else if (status === 403 || status === 404) refresh()
   }
   const poll = async () => {
     if (closed || polling || completed || document.hidden) return

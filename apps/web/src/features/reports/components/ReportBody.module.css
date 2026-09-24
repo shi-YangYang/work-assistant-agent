@@ -1,0 +1,25 @@
+.report-body section + section {
+  margin-top: 24px;
+}
+.report-body h3 {
+  margin-bottom: 8px;
+}
+.report-body p {
+  color: var(--text);
+  line-height: 1.9;
+}
+.report-body[data-compact='true'] {
+  display: grid;
+  gap: 18px;
+}
+.report-body[data-compact='true'] section {
+  margin: 0;
+}
+.report-body[data-compact='true'] h3 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+.report-body[data-compact='true'] p {
+  margin: 0;
+  line-height: 1.7;
+}

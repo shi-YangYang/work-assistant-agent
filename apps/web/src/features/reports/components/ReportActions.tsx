@@ -1,3 +1,5 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import recordLayoutStyles from '../../../components/RecordLayout.module.css'
 import type { Report } from '@paa/api-contracts'
 import { Actions } from '@web/components/Actions'
 import { DeleteRecord } from '@web/features/records/components/DeleteRecord'
@@ -13,14 +15,18 @@ export function ReportActions({ report, onDeleted }: { report: Report; onDeleted
   const own = report.ownerId === identity.member.id && identity.member.role === 'employee'
   return (
     <>
-      <Actions label="管理报告">
+      <Actions className={recordLayoutStyles['record-actions']} label="管理报告">
         {own && (
           <Link role="menuitem" to={`/reports/${report.id}?edit=1`} state={detailState(location)}>
             编辑报告
           </Link>
         )}
         {(identity.member.role === 'admin' || (own && !report.publishedRevision)) && (
-          <button role="menuitem" className="danger" onClick={() => setDeleting(true)}>
+          <button
+            role="menuitem"
+            className={controlsStyles['danger']}
+            onClick={() => setDeleting(true)}
+          >
             删除报告
           </button>
         )}

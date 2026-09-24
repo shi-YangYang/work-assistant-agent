@@ -1,3 +1,4 @@
+import styles from './Markdown.module.css'
 import type { ReactNode } from 'react'
 import React from 'react'
 
@@ -121,5 +122,5 @@ export function Markdown({
     while (index < lines.length && !startsBlock(lines[index])) paragraph.push(lines[index++])
     blocks.push(<p key={key}>{inline(paragraph.join('\n'), 0, renderBusinessCitation)}</p>)
   }
-  return <div className="markdown">{blocks}</div>
+  return <div className={styles['markdown']}>{blocks}</div>
 }

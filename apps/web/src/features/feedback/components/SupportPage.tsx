@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './SupportPage.module.css'
 import type { SupportDiagnostics, SupportFeedback, SupportFeedbackCreate } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { AutoTextarea } from '@web/components/AutoTextarea'
@@ -85,13 +89,13 @@ export function SupportPage() {
     setError('')
   }
   return (
-    <div className="settings-page support-page">
+    <div className={`${layoutStyles['settings-page']} ${styles['support-page']}`}>
       <h2>问题反馈</h2>
-      <p className="muted">描述遇到的问题，由本公司管理员处理。</p>
-      <div className="sectioned-panel">
+      <p className={utilitiesStyles['muted']}>描述遇到的问题，由本公司管理员处理。</p>
+      <div className={layoutStyles['sectioned-panel']}>
         <PanelSection title="提交反馈" defaultOpen>
           <form
-            className="support-compose"
+            className={styles['support-compose']}
             aria-label="提交反馈"
             onSubmit={(event) => {
               event.preventDefault()
@@ -112,18 +116,22 @@ export function SupportPage() {
                 placeholder="你做了什么，遇到了什么问题？"
               />
             </label>
-            <details className="support-diagnostics">
+            <details className={styles['support-diagnostics']}>
               <summary>查看本次诊断摘要</summary>
-              <p className="muted">
+              <p className={utilitiesStyles['muted']}>
                 仅包含以下环境信息，不自动采集聊天、文件或完整网址。请勿在描述中填写密码或密钥。
               </p>
-              <pre className="diagnostic-summary">{diagnosticText(draft.diagnostics)}</pre>
+              <pre className={styles['diagnostic-summary']}>
+                {diagnosticText(draft.diagnostics)}
+              </pre>
             </details>
             {draft.pending && (
-              <p className="muted">提交结果待确认，请原样重试；本次反馈不会重复创建。</p>
+              <p className={utilitiesStyles['muted']}>
+                提交结果待确认，请原样重试；本次反馈不会重复创建。
+              </p>
             )}
             <ErrorNotice>{error}</ErrorNotice>
-            <div className="form-actions">
+            <div className={`${layoutStyles['form-actions']} ${styles['slot-form-actions']}`}>
               <button
                 type="button"
                 onClick={() =>
@@ -136,7 +144,7 @@ export function SupportPage() {
                 复制反馈信息
               </button>
               <BusyButton
-                className="primary"
+                className={controlsStyles['primary']}
                 busy={busy}
                 disabled={!!retryWait || !draft.description.trim()}
               >
@@ -155,9 +163,9 @@ export function SupportPage() {
             list.data?.items.length === 0 ? '暂无反馈' : scope === 'all' ? '公司反馈' : '我的反馈'
           }
         >
-          <div className="support-history">
-            <header className="support-heading">
-              <div className="support-filters">
+          <div>
+            <header className={styles['support-heading']}>
+              <div className={styles['support-filters']}>
                 {admin && (
                   <label>
                     查看范围
@@ -184,26 +192,32 @@ export function SupportPage() {
               </div>
             </header>
             <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-            {!list.data && !list.error && <p className="muted">正在读取反馈…</p>}
+            {!list.data && !list.error && <p className={utilitiesStyles['muted']}>正在读取反馈…</p>}
             {list.data && !list.data.items.length && (
-              <div className="support-empty">
+              <div className={styles['support-empty']}>
                 <Inbox size={30} strokeWidth={1.5} aria-hidden="true" />
                 <p>{filterState ? '暂无符合条件的反馈' : '暂无反馈'}</p>
               </div>
             )}
-            <div className="support-list">
+            <div className={styles['support-list']}>
               {list.data?.items.map((item) => (
-                <button className="support-item" key={item.id} onClick={() => open(item)}>
-                  <span className="row-between">
-                    <span className={`support-state ${item.state}`}>
+                <button className={styles['support-item']} key={item.id} onClick={() => open(item)}>
+                  <span className={layoutStyles['row-between']}>
+                    <span className={styles['support-state']} data-status={item.state}>
                       {item.state === 'pending' ? '待处理' : '已处理'}
                     </span>
                     <time>{dateLabel(item.createdAt)}</time>
                   </span>
                   {admin && <small>{item.ownerName}</small>}
-                  <span className="preserve">{item.description}</span>
+                  <span className={`${utilitiesStyles['preserve']} ${styles['slot-preserve']}`}>
+                    {item.description}
+                  </span>
                   {item.handlingNote && (
-                    <span className="muted preserve">处理说明：{item.handlingNote}</span>
+                    <span
+                      className={`${utilitiesStyles['muted']} ${utilitiesStyles['preserve']} ${styles['slot-preserve']}`}
+                    >
+                      处理说明：{item.handlingNote}
+                    </span>
                   )}
                 </button>
               ))}
@@ -221,8 +235,10 @@ export function SupportPage() {
       </div>
       {selected && (
         <Modal title="反馈详情" onClose={() => !busy && setSelected(null)}>
-          <p className="preserve">{selected.description}</p>
-          <pre className="diagnostic-summary">{diagnosticText(selected.diagnostics)}</pre>
+          <p className={`${utilitiesStyles['preserve']} ${styles['slot-preserve']}`}>
+            {selected.description}
+          </p>
+          <pre className={styles['diagnostic-summary']}>{diagnosticText(selected.diagnostics)}</pre>
           {admin ? (
             <form
               onSubmit={async (event) => {
@@ -281,14 +297,14 @@ export function SupportPage() {
                   读取最新处理结果
                 </button>
               )}
-              <div className="form-actions">
-                <BusyButton busy={busy} className="primary">
+              <div className={`${layoutStyles['form-actions']} ${styles['slot-form-actions']}`}>
+                <BusyButton busy={busy} className={controlsStyles['primary']}>
                   保存处理结果
                 </BusyButton>
               </div>
             </form>
           ) : (
-            <p className="preserve">
+            <p className={`${utilitiesStyles['preserve']} ${styles['slot-preserve']}`}>
               {selected.state === 'pending' ? '待处理' : '已处理'} ·{' '}
               {selected.handlingNote || '暂无处理说明'}
             </p>

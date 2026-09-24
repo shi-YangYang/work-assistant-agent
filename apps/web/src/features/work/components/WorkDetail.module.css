@@ -1,0 +1,24 @@
+.timeline article {
+  position: relative;
+  border-left: 1px solid var(--control);
+  padding: 0 0 24px 20px;
+}
+.timeline p {
+  margin: 8px 0;
+}
+.timeline a {
+  font-size: 12px;
+  display: block;
+}
+
+.timeline article::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--secondary);
+  border: 2px solid var(--stage);
+}

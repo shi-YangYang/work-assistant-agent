@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="packages/ui-web/assets/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
+  <img src="packages/ui-web/brand/desktop/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
 </p>
 
 <h1 align="center">work-assistant-agent</h1>
@@ -55,7 +55,7 @@ cd work-assistant-agent
 npm ci
 ```
 
-选择要运行的应用，先完成一次环境初始化：
+首次运行先初始化对应应用：
 
 | 应用 | 初始化内容 | 指南 |
 | --- | --- | --- |
@@ -71,21 +71,21 @@ npm ci
 初始化完成后，启动数据库和应用：
 
 ```sh
-docker compose --env-file .env.company -f deploy/company/compose.dev.yml up -d --wait
-npm run dev:company
+docker compose --env-file apps/server/.env.web -f deploy/company/compose.dev.yml up -d --wait
+npm run dev:web
 ```
 
-访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令同时启动 Web、API 和后台任务。管理员配置模型服务、添加成员后，员工即可发送记录或直接要求助手办理工作事项。声纹登记需要额外安装[公司声纹组件](docs/setup.md#公司声纹)。
+访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。管理员配置模型服务、添加成员后即可使用。
 
 ### Electron 桌面端
 
 ```sh
-npm run dev
+npm run dev:electron
 ```
 
 在设置中下载转写模型、配置纪要模型，然后开始会议。模型下载后可离线转写，生成纪要需要在线模型 API。桌面安装包自带 Python，终端用户无需配置开发环境。
 
-需要识别公司成员时，开发者或部署者在根目录 `.env` 配置 `PAA_DESKTOP_COMPANY_URL`（见 [.env.example](.env.example)），启动或打包时自动使用该地址。用户在“公司连接”登录管理员账号并同步声纹，之后可离线识别；留空则使用游客模式。日常本地会议无需启动公司后端，详见[连接公司与离线识别](docs/setup.md#连接公司与离线识别)。
+需要匹配员工姓名时，在 `apps/desktop/.env.electron` 设置 `PAA_DESKTOP_COMPANY_URL`，登录并同步公司声纹。留空为游客模式；本地会议无需公司后端。见[公司连接配置](docs/setup.md#连接公司与离线识别)。
 
 ## 技术栈
 
@@ -107,16 +107,15 @@ npm run dev
 apps/
   web/              公司 Web
   desktop/          Electron 应用与本地 Python 核心
-services/
-  company/          公司 API、后台任务与 Agent
-packages/           共享类型、模型配置、界面样式与声纹引擎
+  server/           公司 API、后台任务与 Agent
+packages/           共享类型、模型参数、品牌资源与声纹引擎
 scripts/            开发与构建脚本
 tests/              各模块测试
 deploy/             部署配置
 docs/               安装指南与技术架构
 ```
 
-应用通过 npm workspaces 组织，桌面 Python 核心与公司服务使用各自的依赖环境。模块职责和数据流见[技术架构](docs/architecture.md)。
+模块职责和数据流见[技术架构](docs/architecture.md)，视觉与品牌见[设计规范](docs/design/README.md)。
 
 ## 部署与打包
 

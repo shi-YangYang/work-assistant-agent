@@ -1,0 +1,53 @@
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  overflow: hidden;
+}
+.breadcrumbs > span {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+.breadcrumbs > span:not(:last-of-type) {
+  flex-shrink: 2;
+}
+.breadcrumbs a,
+.breadcrumbs strong {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.breadcrumbs a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.breadcrumbs a:hover {
+  color: var(--text);
+}
+.breadcrumbs svg {
+  flex-shrink: 0;
+}
+.breadcrumb-overflow {
+  display: none;
+  order: 1;
+}
+.breadcrumb-path {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+@media (max-width: 760px) {
+  .breadcrumbs .breadcrumb-middle {
+    display: none;
+  }
+  .breadcrumb-overflow {
+    display: inline-flex;
+  }
+  .breadcrumbs > span:last-of-type {
+    order: 2;
+  }
+}

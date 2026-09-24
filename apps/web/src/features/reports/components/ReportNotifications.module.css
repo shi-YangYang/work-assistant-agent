@@ -1,0 +1,42 @@
+.notification-launch {
+  position: relative;
+}
+.notification-count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  min-width: 15px;
+  padding: 1px 4px;
+  font-size: 10px;
+  line-height: 15px;
+}
+.notification-list {
+  display: grid;
+}
+.notification-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.notification-content {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 16px 8px;
+}
+.notification-content span,
+.notification-content small {
+  color: var(--muted);
+}
+.notification-item[data-unread='true'] .notification-content strong {
+  color: var(--accent);
+}

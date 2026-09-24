@@ -1,3 +1,7 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
@@ -32,7 +36,7 @@ export function ModelPicker({
       {picker && draft && (
         <Modal
           title={picker === 'catalog' ? '添加可用模型' : '手动添加模型'}
-          className="model-picker-dialog"
+          className={modelServicesStyles['model-picker-dialog']}
           onClose={() => {
             if (!busy) setPicker(null)
           }}
@@ -56,11 +60,16 @@ export function ModelPicker({
                 />
               </label>
               <ErrorNotice>{error}</ErrorNotice>
-              <div className="form-actions">
+              <div
+                className={`${layoutStyles['form-actions']} ${modelServicesStyles['slot-form-actions']}`}
+              >
                 <button type="button" onClick={() => setPicker(null)}>
                   取消
                 </button>
-                <button className="primary" disabled={!manualModel.trim()}>
+                <button
+                  className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
+                  disabled={!manualModel.trim()}
+                >
                   添加模型
                 </button>
               </div>
@@ -71,7 +80,7 @@ export function ModelPicker({
               <ErrorNotice>{error}</ErrorNotice>
               {catalog && (
                 <>
-                  <label className="model-picker-search">
+                  <label className={modelServicesStyles['model-picker-search']}>
                     <Search size={16} />
                     <input
                       aria-label="搜索可用模型"
@@ -80,7 +89,10 @@ export function ModelPicker({
                       onChange={(event) => setQuery(event.target.value)}
                     />
                   </label>
-                  <div className="model-picker-list" aria-label="可用模型目录">
+                  <div
+                    className={modelServicesStyles['model-picker-list']}
+                    aria-label="可用模型目录"
+                  >
                     {catalog.models
                       .filter((id) => id.toLowerCase().includes(query.toLowerCase()))
                       .map((id) => {
@@ -110,15 +122,31 @@ export function ModelPicker({
                       })}
                     {!catalog.models.some((id) =>
                       id.toLowerCase().includes(query.toLowerCase()),
-                    ) && <p className="muted">没有找到匹配的模型，可手动添加。</p>}
+                    ) && (
+                      <p
+                        className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}
+                      >
+                        没有找到匹配的模型，可手动添加。
+                      </p>
+                    )}
                   </div>
                   {catalog.truncated && (
-                    <small className="muted">列表未完全返回，可手动输入其它模型 ID。</small>
+                    <small
+                      className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}
+                    >
+                      列表未完全返回，可手动输入其它模型 ID。
+                    </small>
                   )}
                 </>
               )}
-              <div className="form-actions model-picker-actions">
-                <span className="muted">已选 {pickedModels.length} 个</span>
+              <div
+                className={`${layoutStyles['form-actions']} ${modelServicesStyles['slot-form-actions']} ${modelServicesStyles['model-picker-actions']}`}
+              >
+                <span
+                  className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}
+                >
+                  已选 {pickedModels.length} 个
+                </span>
                 <button
                   disabled={!!busy}
                   onClick={() => {
@@ -130,7 +158,7 @@ export function ModelPicker({
                   手动输入
                 </button>
                 <button
-                  className="primary"
+                  className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
                   disabled={!!busy || !pickedModels.length}
                   onClick={() => addModels(pickedModels)}
                 >

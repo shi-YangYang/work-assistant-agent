@@ -1,0 +1,26 @@
+.work-search {
+  position: relative;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.work-search > svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.work-search > input {
+  padding-left: 36px;
+  min-height: 37px;
+  font-size: 13px;
+  border-color: transparent;
+  border-radius: 9px;
+  background: var(--subtle);
+}
+@container (max-width: 400px) {
+  .work-search {
+    flex-basis: 100%;
+  }
+}

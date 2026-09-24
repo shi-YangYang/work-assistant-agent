@@ -1,3 +1,4 @@
+import loginStyles from '../styles/login-form.module.css'
 import dingtalkIcon from '@web/assets/dingtalk.svg'
 import { BusyButton } from '@web/components/BusyButton'
 import { readLoginProviders } from '@web/features/auth/api/requests'
@@ -6,10 +7,29 @@ import { dingtalkDraftSummary } from '@web/features/auth/utils/dingtalk-flow'
 import type { SessionDrafts } from '@web/lib/session-drafts'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 
-export function DingTalkLogin({ vault }: { vault: SessionDrafts }) {
+export function DingTalkLogin({
+  vault,
+  disabled,
+  onBusyChange,
+  onError,
+}: {
+  vault: SessionDrafts
+  disabled: boolean
+  onBusyChange: (busy: boolean) => void
+  onError: (error: Error | string) => void
+}) {
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
   const [enabled, setEnabled] = useState(false)
-  const redirect = useDingTalkRedirect(drafts)
+  const redirect = useDingTalkRedirect(
+    drafts,
+    (error) => {
+      onError(error instanceof Error ? error : '钉钉登录暂不可用，请稍后重试。')
+      return true
+    },
+    loginStyles['login-notice'],
+    loginStyles['login-notice-actions'],
+  )
+  useEffect(() => onBusyChange(redirect.busy), [redirect.busy, onBusyChange])
   useEffect(() => {
     const controller = new AbortController()
     void readLoginProviders({ signal: controller.signal }).then(
@@ -33,12 +53,20 @@ export function DingTalkLogin({ vault }: { vault: SessionDrafts }) {
   }, [drafts])
   if (!enabled) return null
   return (
-    <div className="dingtalk-login">
-      <BusyButton type="button" busy={redirect.busy} onClick={() => redirect.launch('login')}>
+    <div className={loginStyles['dingtalk-login']}>
+      <div className={loginStyles['login-divider']}>或</div>
+      <BusyButton
+        type="button"
+        busy={redirect.busy}
+        disabled={disabled}
+        onClick={() => {
+          onError('')
+          redirect.launch('login')
+        }}
+      >
         <img src={dingtalkIcon} width={20} height={20} alt="" aria-hidden="true" />
         使用钉钉登录
       </BusyButton>
-      <div className="login-divider">或使用账号登录</div>
       {redirect.guard}
     </div>
   )

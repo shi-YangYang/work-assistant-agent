@@ -1,3 +1,5 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Modal } from '@web/components/Modal'
@@ -44,12 +46,12 @@ export function DeleteRecord({
       <ErrorNotice retry={impact.error ? impact.refresh : undefined}>
         {error || impact.error}
       </ErrorNotice>
-      <div className="form-actions">
+      <div className={layoutStyles['form-actions']}>
         <button disabled={busy} onClick={onClose}>
           取消
         </button>
         <BusyButton
-          className="danger"
+          className={controlsStyles['danger']}
           busy={busy}
           disabled={kind === 'reports' && !impact.data}
           onClick={async () => {

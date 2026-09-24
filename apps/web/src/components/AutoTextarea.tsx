@@ -1,3 +1,4 @@
+import styles from './AutoTextarea.module.css'
 import type { RefObject, TextareaHTMLAttributes } from 'react'
 import { useLayoutEffect, useRef } from 'react'
 
@@ -45,7 +46,7 @@ export function AutoTextarea({
       value={value}
       defaultValue={defaultValue}
       rows={rows}
-      className={`auto-textarea ${className}`}
+      className={`${styles['auto-textarea']} ${className}`}
       onInput={(event) => {
         resizeTextarea(event.currentTarget)
         onInput?.(event)

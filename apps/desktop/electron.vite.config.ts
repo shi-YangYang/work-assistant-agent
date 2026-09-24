@@ -1,14 +1,22 @@
 import { resolve } from 'node:path'
-import { defineConfig, loadEnv } from 'electron-vite'
+import { readFileSync } from 'node:fs'
+import { parseEnv } from 'node:util'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import { companyOrigin } from './src/main/company-connection'
 
-export function defaultCompanyUrl(
-  mode: string,
-  envDir = resolve(import.meta.dirname, '../..'),
-): string {
-  const value =
-    loadEnv(mode, envDir, 'PAA_DESKTOP_COMPANY_URL').PAA_DESKTOP_COMPANY_URL?.trim() ?? ''
+export function defaultCompanyUrl(envDir = import.meta.dirname): string {
+  let value = process.env.PAA_DESKTOP_COMPANY_URL
+  if (value === undefined) {
+    try {
+      value = parseEnv(
+        readFileSync(resolve(envDir, '.env.electron'), 'utf8'),
+      ).PAA_DESKTOP_COMPANY_URL
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  value = value?.trim() ?? ''
   if (!value) return ''
   try {
     if (value.length > 2048) throw new Error('length')
@@ -18,9 +26,9 @@ export function defaultCompanyUrl(
   }
 }
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   main: {
-    define: { __PAA_DESKTOP_COMPANY_URL__: JSON.stringify(defaultCompanyUrl(mode)) },
+    define: { __PAA_DESKTOP_COMPANY_URL__: JSON.stringify(defaultCompanyUrl()) },
     build: {
       externalizeDeps: { exclude: ['@paa/model-config', '@paa/ui-web'] },
       rollupOptions: { input: { index: resolve(import.meta.dirname, 'src/main/main.ts') } },
@@ -33,7 +41,7 @@ export default defineConfig(({ mode }) => ({
   },
   renderer: {
     root: resolve(import.meta.dirname, 'src/renderer'),
-    publicDir: resolve(import.meta.dirname, '../../packages/ui-web/public'),
+    publicDir: resolve(import.meta.dirname, '../../packages/ui-web/brand/web'),
     plugins: [
       react(),
       {

@@ -3,7 +3,8 @@ import io
 import json
 from pathlib import Path
 from pypdf import PdfWriter
-from pypdf.generic import ArrayObject, DecodedStreamObject, DictionaryObject, NameObject, NumberObject
+from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
 
 
 def pdf_bytes(texts=('Demo progress', 'Later page: agreed delivery Friday')):

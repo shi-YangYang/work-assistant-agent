@@ -1,9 +1,10 @@
 """Fixed responses drive real file tools. No external model calls or work writes."""
 import json
+from fakes import ReviewedFixtureModel
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from fakes import ReviewedFixtureModel
 from pydantic import Field
+
 
 
 class DocumentModel(ReviewedFixtureModel):

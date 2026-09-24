@@ -6,6 +6,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import Field
 
 
+
 class ReviewedFixtureModel(ChatOpenAI):
     """Fixed benign fixtures supply a separate review response, not network IO.
 
@@ -20,6 +21,8 @@ class ReviewedFixtureModel(ChatOpenAI):
                 payload = {}
             if payload.get('task') == 'business_reply_review':
                 return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'kind': 'information', 'evidence': []} for row in payload['segments']]}))
+            if payload.get('task') == 'report_fact_review':
+                return AIMessage(content='{"valid":true}')
         return await super().ainvoke(input, config, stop=stop, **kwargs)
 
 

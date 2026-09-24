@@ -1,0 +1,16 @@
+.list-pagination {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.list-pagination span {
+  color: var(--muted);
+  font-size: 13px;
+}
+@media (max-width: 520px) {
+  .list-pagination {
+    justify-content: center;
+  }
+}

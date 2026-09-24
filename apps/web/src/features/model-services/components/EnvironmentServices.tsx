@@ -1,3 +1,6 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import noticeStyles from '../../../components/Notice.module.css'
+import modelServicesStyles from '../styles/model-services.module.css'
 import { BusyButton } from '@web/components/BusyButton'
 import { importEnvironmentServices } from '@web/features/model-services/api/requests'
 import type { Listing } from '@web/features/model-services/types'
@@ -19,17 +22,17 @@ export function EnvironmentServices({
   return (
     <>
       {resource.data?.routing.source === 'environment' && (
-        <div className="notice model-environment">
+        <div className={`${noticeStyles['notice']} ${modelServicesStyles['model-environment']}`}>
           <details>
             <summary>当前使用服务器环境配置</summary>
             <p>
               助手：{resource.data.routing.environment?.assistant.model || '未设置'}；语音：
               {resource.data.routing.environment?.asr.model || '未设置'}。
             </p>
-            <p className="wrap-anywhere">
+            <p className={utilitiesStyles['wrap-anywhere']}>
               {resource.data.routing.environment?.assistant.baseUrl || '助手地址未设置'}
             </p>
-            <p className="wrap-anywhere">
+            <p className={utilitiesStyles['wrap-anywhere']}>
               {resource.data.routing.environment?.asr.baseUrl || '语音地址未设置'}
             </p>
           </details>

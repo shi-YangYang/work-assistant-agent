@@ -1,8 +1,10 @@
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import noticeStyles from '../../../components/Notice.module.css'
 import { dingtalkResult } from '@web/features/auth/utils/dingtalk-flow'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 
-export function DingTalkResult() {
+export function DingTalkResult({ className = '' }: { className?: string }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [result] = useState(() => dingtalkResult(location.search))
@@ -19,7 +21,7 @@ export function DingTalkResult() {
       : result.message
   return (
     <div
-      className={`notice${result.failed ? ' error' : ''}`}
+      className={`${noticeStyles['notice']} ${result.failed ? utilitiesStyles['error'] + ' ' + noticeStyles['slot-error'] : ''} ${className}`}
       role={result.failed ? 'alert' : 'status'}
     >
       <span>{message}</span>

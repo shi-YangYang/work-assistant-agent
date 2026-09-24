@@ -1,3 +1,6 @@
+import layoutStyles from '../../../styles/layout.module.css'
+import utilitiesStyles from '../../../styles/utilities.module.css'
+import styles from './ModelUsagePage.module.css'
 import type { ModelUsage, UsageRecord } from '@paa/api-contracts'
 import { Empty } from '@web/components/Empty'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -40,14 +43,14 @@ export function ModelUsagePage() {
   )
   const data = list.data
   return (
-    <div className="settings-page usage-page">
-      <div className="page-heading">
+    <div className={layoutStyles['settings-page']}>
+      <div className={layoutStyles['page-heading']}>
         <h2>模型用量</h2>
         <button aria-label="刷新模型用量" onClick={list.refresh}>
           <RefreshCw size={16} />
         </button>
       </div>
-      <div className="filters usage-filters">
+      <div className={`${layoutStyles['filters']} ${styles['usage-filters']}`}>
         <PeriodFilter params={params} range={data?.range} change={list.filter} />
         <select
           aria-label="模型服务"
@@ -87,10 +90,10 @@ export function ModelUsagePage() {
         </select>
       </div>
       <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
-      {!data && !list.error && <p className="muted">正在读取调用记录…</p>}
+      {!data && !list.error && <p className={utilitiesStyles['muted']}>正在读取调用记录…</p>}
       {data && (
         <>
-          <div className="metrics usage-metrics">
+          <div className={`${layoutStyles['metrics']} ${styles['usage-metrics']}`}>
             <div>
               <small>模型请求</small>
               <strong>{data.summary.calls}</strong>
@@ -124,7 +127,7 @@ export function ModelUsagePage() {
               </small>
             </div>
           </div>
-          <div className="usage-caption">
+          <div className={styles['usage-caption']}>
             <span>成功率仅统计已有明确请求结果的调用，不代表业务保存成功。</span>
             <span>
               {Object.entries(data.summary.states)
@@ -138,8 +141,8 @@ export function ModelUsagePage() {
             </span>
           </div>
           {data.items.length ? (
-            <div className="usage-table-wrap">
-              <table className="usage-table">
+            <div className={styles['usage-table-wrap']}>
+              <table className={styles['usage-table']}>
                 <thead>
                   <tr>
                     <th>时间</th>
@@ -163,7 +166,7 @@ export function ModelUsagePage() {
                       </td>
                       <td>{purposeNames[row.purpose] || '历史未知'}</td>
                       <td>
-                        <span className={`usage-state ${row.state}`}>
+                        <span className={styles['usage-state']} data-status={row.state}>
                           {stateNames[row.state] || '未知'}
                         </span>
                         {row.error && <small>{row.error}</small>}

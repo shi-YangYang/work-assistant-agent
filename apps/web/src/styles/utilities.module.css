@@ -1,0 +1,20 @@
+.error {
+  color: var(--danger);
+}
+.muted {
+  color: var(--muted);
+}
+.small-text {
+  font-size: 12px;
+}
+.preserve {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wrap-anywhere {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.error-text {
+  color: var(--danger);
+}

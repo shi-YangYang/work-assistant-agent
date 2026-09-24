@@ -1,3 +1,4 @@
+import styles from './AppRoutes.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { LoginMethods } from '@web/features/auth/components/LoginMethods'
 import { SupportPage } from '@web/features/feedback/components/SupportPage'
@@ -15,24 +16,9 @@ import { SourcePage } from '@web/pages/SourcePage'
 import { TeamLegacyRedirect, TeamWorkspace } from '@web/pages/TeamPage'
 import { WorkDetailPage } from '@web/pages/WorkDetailPage'
 import { WorkPage } from '@web/pages/WorkPage'
-import type { LucideIcon } from 'lucide-react'
-import type * as React from 'react'
-import { Navigate, NavLink, Route, Routes } from 'react-router'
+import { Navigate, Route, Routes } from 'react-router'
 
-export function AppRoutes({
-  identity,
-  allowedSettings,
-  setExpandedNav,
-  onLogout,
-}: {
-  identity: Identity
-  allowedSettings: (
-    | { path: string; title: string; detail: string; icon: LucideIcon; admin: boolean }
-    | { path: string; title: string; detail: string; icon: LucideIcon; admin?: undefined }
-  )[]
-  setExpandedNav: React.Dispatch<React.SetStateAction<boolean>>
-  onLogout: () => void
-}) {
+export function AppRoutes({ identity, onLogout }: { identity: Identity; onLogout: () => void }) {
   return (
     <Routes>
       <Route
@@ -65,20 +51,7 @@ export function AppRoutes({
       <Route
         path="/settings/*"
         element={
-          <div className="settings-layout">
-            <nav className="settings-nav" aria-label="设置页面">
-              {allowedSettings.map((p) => (
-                <NavLink
-                  key={p.path}
-                  to={p.path}
-                  title={p.title}
-                  aria-label={p.title}
-                  onClick={() => setExpandedNav(false)}
-                >
-                  {p.title}
-                </NavLink>
-              ))}
-            </nav>
+          <div className={styles['settings-layout']} data-scroll-container>
             <Routes>
               <Route
                 path="account"

@@ -1,10 +1,11 @@
 """Small synthetic media only: no user files or network are used."""
-from datetime import date
 import io
-from pathlib import Path
 import subprocess
 import zipfile
 from PIL import Image, ImageDraw
+from datetime import date
+from pathlib import Path
+
 
 
 def image_samples():

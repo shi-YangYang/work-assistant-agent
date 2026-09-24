@@ -4,6 +4,7 @@
 .venv-server
 .venv-voiceprints
 .env*
+**/.env*
 data
 models
 artifacts

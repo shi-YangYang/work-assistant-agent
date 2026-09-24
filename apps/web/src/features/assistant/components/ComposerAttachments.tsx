@@ -1,3 +1,6 @@
+import controlsStyles from '../../../styles/controls.module.css'
+import styles from './ComposerAttachments.module.css'
+import attachmentsStyles from '../styles/attachments.module.css'
 import type { PreviewImage } from '@web/features/assistant/components/ImageGallery'
 import { RecordingPreview } from '@web/features/assistant/components/RecordingPreview'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -21,17 +24,17 @@ export function ComposerAttachments({
   change: (next: Composer) => void
 }) {
   return (
-    <div className="pending-attachments">
+    <div className={styles['pending-attachments']}>
       {(['audio', 'image', 'document'] as const).map((kind) => {
         const files = composer.files.filter((item) => fileKind(item.file) === kind)
         return (
           files.length > 0 && (
-            <div className={`pending-group pending-${kind}`} key={kind}>
+            <div className={styles['pending-group']} data-kind={kind} key={kind}>
               {files.map((item) => (
-                <div key={item.id} className={`pending-file pending-${kind}-file`}>
+                <div key={item.id} className={styles['pending-file']} data-kind={kind}>
                   {fileKind(item.file) === 'image' ? (
                     <button
-                      className="attachment-preview-button"
+                      className={`${attachmentsStyles['attachment-preview-button']} ${styles['slot-attachment-preview-button']}`}
                       aria-label={`预览${item.file.name}`}
                       disabled={locked}
                       onClick={() =>
@@ -45,7 +48,7 @@ export function ComposerAttachments({
                       )}
                     </button>
                   ) : kind === 'audio' ? (
-                    <div className="pending-audio-player">
+                    <div className={styles['pending-audio-player']}>
                       {item.recorded ? (
                         <RecordingPreview file={item.file} />
                       ) : (
@@ -59,7 +62,7 @@ export function ComposerAttachments({
                     </div>
                   ) : item.file.name.toLowerCase().endsWith('.pdf') ? (
                     <button
-                      className="attachment-preview-button"
+                      className={`${attachmentsStyles['attachment-preview-button']} ${styles['slot-attachment-preview-button']}`}
                       aria-label={`预览${item.file.name}`}
                       onClick={() => setPdf(item.file)}
                     >
@@ -68,7 +71,7 @@ export function ComposerAttachments({
                   ) : (
                     <FileText size={24} />
                   )}
-                  <div className="pending-file-info">
+                  <div className={styles['pending-file-info']}>
                     <strong>{item.file.name}</strong>
                     <span>
                       {item.file.name.split('.').pop()?.toUpperCase()} · {fileSize(item.file.size)}{' '}
@@ -83,7 +86,7 @@ export function ComposerAttachments({
                     </span>
                   </div>
                   <button
-                    className="icon-button"
+                    className={controlsStyles['icon-button']}
                     disabled={locked}
                     aria-label={`移除${item.file.name}`}
                     onClick={() => {

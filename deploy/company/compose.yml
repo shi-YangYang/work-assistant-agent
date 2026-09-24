@@ -16,18 +16,18 @@ services:
     restart: unless-stopped
   migrate:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
-    env_file: ../../.env.company
+    env_file: ../../apps/server/.env.web
     environment: &service-env
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-paa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-paa_company}
       PAA_MEDIA_DIR: /data/media
       PAA_FFMPEG: ffmpeg
       PAA_COOKIE_SECURE: 'true'
       PAA_MODEL_KEY_FILE: /run/paa/model-master.key
-    command: ['python', '-m', 'paa_server.cli', 'migrate']
+    command: ['python', '-m', 'app.cli', 'migrate']
     depends_on: { postgres: { condition: service_healthy } }
   api:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
-    env_file: ../../.env.company
+    env_file: ../../apps/server/.env.web
     environment: *service-env
     volumes:
       - media:/data/media
@@ -43,9 +43,9 @@ services:
     cpus: 2.0
     mem_limit: 3g
     memswap_limit: 3g
-    env_file: ../../.env.company
+    env_file: ../../apps/server/.env.web
     environment: *service-env
-    command: ['python', '-m', 'paa_server.worker']
+    command: ['python', '-m', 'app.worker']
     stop_grace_period: 20s
     volumes:
       - media:/data/media

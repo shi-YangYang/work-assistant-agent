@@ -1,23 +1,30 @@
 """Company model boundary regressions against PostgreSQL and controlled HTTP responses."""
 import asyncio
 import base64
-from dataclasses import replace
-import json
-from pathlib import Path
-from uuid import uuid4
 import httpx
+import json
+import app.modules.model_services.probes as model_services
 import pytest
-from sqlalchemy import select
+from dataclasses import replace
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-from paa_server.models import Company, Job, ModelRouting, ModelService, ModelServiceRevision, ModelUsage
-from paa_server.model_secrets import SecretUnavailable, decrypt, encrypt, initialize_key
-from paa_server.model_provider import CheckedBackend, ProviderError, SafeTransport, allowed_address, chat, normalize_url, request_options, transcribe, reply_review_config
-from paa_server.model_services import bind_job, resolve_bound
-from paa_server.model_schemas import ServiceInput, parameters
-from paa_server.worker import claim, process_job
+from app.integrations.models.asr import transcribe
+from app.integrations.models.chat import chat
+from app.integrations.models.transport import CheckedBackend, ProviderError, SafeTransport, allowed_address, normalize_url
+from app.modules.model_services.bindings import bind_job, resolve_bound
+from app.modules.model_services.models import ModelService, ModelServiceRevision, ModelUsage
+from app.modules.model_services.parameters import reply_review_config, request_options
+from app.modules.model_services.probes import reserve_probe as model_services_reserve_probe
+from app.modules.model_services.schemas import ServiceInput, parameters
+from app.security.secrets import SecretUnavailable, decrypt, initialize_key
+from app.tasks.handlers import process_job
+from app.tasks.models import Job
+from app.tasks.queue import claim
+from pathlib import Path
+from sqlalchemy import select
 from test_company import send
 from test_recovery import model
+
+
 
 pytestmark = pytest.mark.asyncio
 SECRET='controlled-key-not-real'
@@ -72,7 +79,7 @@ async def test_cross_company_csrf_secret_failure_and_environment_takeover(setup)
     settings, sessions, users, c = setup
     saved = await create(c['admin'])
     async with sessions.begin() as db:
-        outsider=await db.get(__import__('paa_server.models',fromlist=['Member']).Member, users['outsider'].id)
+        outsider=await db.get(__import__('app.modules.members.models',fromlist=['Member']).Member, users['outsider'].id)
         outsider.role='admin'
     assert (await c['outsider'].get('/api/v1/settings/model-services/'+saved['id'])).status_code==404
     assert (await c['outsider'].put('/api/v1/settings/model-routing',json=route(saved))).status_code==404
@@ -162,13 +169,13 @@ async def test_streamed_tools_are_complete_and_audio_protocols_are_distinct(setu
         data=''.join('data: '+json.dumps(x,ensure_ascii=False)+'\n\n' for x in chunks)
         if mode[0]=='complete':data+='data: [DONE]\n\n'
         return httpx.Response(200,stream=Bytes(data.encode()))
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
     config={'baseUrl':'https://example.com/v1','model':'test','streaming':True,'protocol':'chat','parameters':{}}
     result=await chat(settings,config,SECRET,[{'role':'user','content':'test'}])
     assert result['choices'][0]['message']['tool_calls'][0]['function']=={'name':'probe_echo','arguments':'{"value":"测试成功"}'}
     mode[0]='incomplete'
     with pytest.raises(ProviderError,match='未完整结束'):await chat(settings,config,SECRET,[{'role':'user','content':'test'}])
-    wav=(Path(__file__).parents[2]/'services/company/src/paa_server/assets/probe-zh.wav').read_bytes()
+    wav=(Path(__file__).parents[2]/'apps/server/app/assets/probe-zh.wav').read_bytes()
     for protocol in ('transcriptions','qwen-asr'):
         transcript,_=await transcribe(settings,{**config,'protocol':protocol},SECRET,wav)
         assert '工作' in transcript
@@ -185,20 +192,23 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     saved=await create(c['admin'], service); routing=route(saved);routing['assistant']['streaming']=streaming
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
-    from paa_server.feedback import publish
+    from app.tasks.feedback import publish
     phases = []
     async def track_phase(context, stage, *args, **kwargs):
         phases.append(stage)
         return await publish(context, stage, *args, **kwargs)
-    monkeypatch.setattr('paa_server.feedback.publish', track_phase)
-    monkeypatch.setattr('paa_server.worker.publish', track_phase)
+    monkeypatch.setattr('app.tasks.feedback.publish', track_phase)
+    monkeypatch.setattr('app.tasks.handlers.publish', track_phase)
     reply='请确认这条进展建议。'
     async def response(request):
         body=json.loads(request.content);calls.append((str(request.url),body))
         assert request.headers['Authorization']=='Bearer '+SECRET
         assert body['stream']==streaming and body['max_tokens']<=4000
-        if len(calls) == 3 and fast_review:
-            assert body['enable_thinking'] is False
+        if fast_review:
+            if len(calls) == 3:
+                assert body['enable_thinking'] is False and 'reasoning_effort' not in body
+            else:
+                assert body['enable_thinking'] is True and body['reasoning_effort'] == 'low'
         else:
             assert 'enable_thinking' not in body
         if len(calls)==1:
@@ -225,7 +235,7 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             raw='data: '+json.dumps({'choices':[{'delta':delta,'finish_reason':finish}]})+'\n\ndata: [DONE]\n\n'
             return httpx.Response(200,stream=Bytes(raw.encode()))
         return httpx.Response(200,json={'choices':[{'message':message,'finish_reason':finish}], 'usage':{'prompt_tokens':120,'completion_tokens':30,'total_tokens':150}})
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
     sent=await send(c['employee'],'今天完成初稿')
     job=await claim(sessions,users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
@@ -282,7 +292,7 @@ async def test_admin_probe_and_directory_validate_real_capabilities_without_busi
             if 'tool_calls' in delta:delta['tool_calls'][0]['index']=0
             return httpx.Response(200,stream=Bytes(('data: '+json.dumps({'choices':[{'delta':delta,'finish_reason':finish}]})+'\n\ndata: [DONE]\n\n').encode()))
         return httpx.Response(200,json={'choices':[{'message':message,'finish_reason':finish}]})
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
     body={**payload(),'draftVersion':'draft-1','modelId':'chat','purpose':'assistant'}
     directory=await c['admin'].post('/api/v1/settings/model-services/models',json=body)
     assert directory.status_code==200 and directory.json()['models']==['controlled-chat']
@@ -291,7 +301,10 @@ async def test_admin_probe_and_directory_validate_real_capabilities_without_busi
     assert all(x['state']=='passed' for x in test.json()['checks'])
     assert SECRET not in test.text and test.json()['usage'] is None
     async with sessions() as db:
-        from paa_server.models import Message,WorkItem,Report,ModelCheck
+        from app.modules.messages.models import Message
+        from app.modules.work.models import WorkItem
+        from app.modules.reports.models import Report
+        from app.modules.model_services.models import ModelCheck
         for table in (Message,WorkItem,Report,Job):
             assert not (await db.scalars(select(table).where(table.company_id==users['admin'].company_id))).all()
         assert len((await db.scalars(select(ModelUsage).where(ModelUsage.company_id==users['admin'].company_id))).all())==4
@@ -333,7 +346,7 @@ async def test_probe_stops_unissued_calls_after_saved_service_revoked(setup, mon
             assert removed.status_code == 200
         return probe_response(request)
 
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     response = await clients['admin'].post('/api/v1/settings/model-services/test', json=probe_body(saved, draft_key=draft_key))
     assert response.status_code == 200
     checks = response.json()['checks']
@@ -360,7 +373,7 @@ async def test_probe_keeps_original_revision_after_service_edit(setup, monkeypat
             assert result.status_code == 200 and result.json()['revision'] == 2
         return probe_response(request)
 
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     response = await clients['admin'].post('/api/v1/settings/model-services/test', json=probe_body(saved))
     assert response.status_code == 200
     assert len(calls) == 4 and response.json()['revision'] == 1
@@ -369,13 +382,12 @@ async def test_probe_keeps_original_revision_after_service_edit(setup, monkeypat
 
 @pytest.mark.parametrize('protocol', ['transcriptions', 'qwen-asr', 'dashscope-asr'])
 async def test_asr_probe_checks_revocation_immediately_before_outbound(setup, monkeypatch, protocol):
-    from paa_server import model_services
     settings, sessions, users, clients = setup
     body = payload()
     body['models'][1]['protocol'] = protocol
     saved = await create(clients['admin'], body)
     calls = []
-    reserve = model_services.reserve_probe
+    reserve = model_services_reserve_probe
 
     async def reserve_then_revoke(*args):
         usage_id = await reserve(*args)
@@ -388,7 +400,7 @@ async def test_asr_probe_checks_revocation_immediately_before_outbound(setup, mo
         return httpx.Response(200, json={'text': '今天的工作已经完成', 'choices': [{'message': {'content': '今天的工作已经完成'}}]})
 
     monkeypatch.setattr(model_services, 'reserve_probe', reserve_then_revoke)
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     response = await clients['admin'].post('/api/v1/settings/model-services/test', json=probe_body(saved, purpose='asr'))
     assert response.status_code == 200
     assert calls == []
@@ -403,8 +415,8 @@ async def test_asr_probe_checks_revocation_immediately_before_outbound(setup, mo
     ('https://token-plan.cn-beijing.maas.aliyuncs.com', 'https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1', {'output': {'sentence': {'text': '今天的工作已经完成'}}}),
 ])
 async def test_dashscope_asr_preserves_origin_and_decodes_native_response(monkeypatch, base, endpoint, response_body):
-    from paa_server.config import Settings
-    wav = (Path(__file__).parents[2] / 'services/company/src/paa_server/assets/probe-zh.wav').read_bytes()
+    from app.core.config import Settings
+    wav = (Path(__file__).parents[2] / 'apps/server/app/assets/probe-zh.wav').read_bytes()
     calls = []
 
     def response(request):
@@ -422,7 +434,7 @@ async def test_dashscope_asr_preserves_origin_and_decodes_native_response(monkey
         assert base64.b64decode(audio['input_audio']['data'].split(',', 1)[1]) == wav
         return httpx.Response(200, json=response_body)
 
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result, usage = await transcribe(Settings(), {'baseUrl': base, 'model': 'qwen-audio-3.0-asr-flash', 'protocol': 'dashscope-asr'}, SECRET, wav)
     assert result == '今天的工作已经完成' and usage is None
     assert len(calls) == 1
@@ -434,9 +446,9 @@ async def test_dashscope_asr_preserves_origin_and_decodes_native_response(monkey
     ('qwen-audio-3.0-asr-flash', 'qwen-asr'),
 ])
 async def test_token_plan_asr_explains_incompatible_model_before_request(monkeypatch, model, protocol):
-    from paa_server.config import Settings
+    from app.core.config import Settings
     calls = []
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: calls.append(settings))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: calls.append(settings))
     with pytest.raises(ProviderError) as error:
         await transcribe(Settings(), {'baseUrl': 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'model': model, 'protocol': protocol}, SECRET, b'RIFF')
     assert error.value.code == 'protocol'
@@ -446,14 +458,14 @@ async def test_token_plan_asr_explains_incompatible_model_before_request(monkeyp
 
 @pytest.mark.parametrize('response_body', [{}, [], {'text': ''}, {'output': {'text': ' ' * 10}}, {'text': '字' * 8001}])
 async def test_dashscope_asr_rejects_invalid_text_without_retry(monkeypatch, response_body):
-    from paa_server.config import Settings
+    from app.core.config import Settings
     calls = []
 
     def response(request):
         calls.append(request)
         return httpx.Response(200, json=response_body)
 
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     with pytest.raises(ProviderError, match='没有返回有效文字'):
         await transcribe(Settings(), {'baseUrl': 'https://example.com/api/v1', 'model': 'asr', 'protocol': 'dashscope-asr'}, SECRET, b'RIFF')
     assert len(calls) == 1
@@ -476,7 +488,7 @@ async def test_dashscope_asr_saved_routing_and_real_audio_probe(setup, monkeypat
         assert json.loads(request.content)['input']['messages'][0]['content'][0]['input_audio']['data'].startswith('data:audio/wav;base64,')
         return httpx.Response(200, json={'output': {'text': '今天的工作已经完成，谢谢。'}})
 
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result = await clients['admin'].post('/api/v1/settings/model-services/test', json=probe_body(saved, purpose='asr'))
     assert result.status_code == 200
     assert result.json()['checks'] == [{'name': '语音转写', 'state': 'passed'}]
@@ -487,7 +499,7 @@ async def test_dashscope_asr_saved_routing_and_real_audio_probe(setup, monkeypat
 
 
 async def test_explicit_environment_import_preserves_behavior_and_clear_never_falls_back(setup):
-    from paa_server.model_services import import_environment, routing_dto
+    from app.modules.model_services.service import import_environment, routing_dto
     settings,sessions,users,c=setup
     configured=replace(settings,agent_base_url='https://example.com/v1',agent_key=SECRET,agent_model='legacy',agent_options={'enable_thinking':False},asr_base_url='https://example.com/v1',asr_key=SECRET,asr_model='legacy-asr')
     async with sessions.begin() as db:
@@ -527,7 +539,7 @@ async def test_revocation_blocks_bound_call_and_new_company_does_not_inherit_env
 
 
 async def test_directory_official_pagination_stays_same_origin_and_rejects_response_compression(setup,monkeypatch):
-    from paa_server.model_provider import catalog
+    from app.integrations.models.catalog import catalog
     settings,*_=setup
     calls=[]
     def response(request):
@@ -535,7 +547,7 @@ async def test_directory_official_pagination_stays_same_origin_and_rejects_respo
         assert request.url.host=='space.cn-beijing.maas.aliyuncs.com'
         assert request.url.path=='/api/v1/models'
         return httpx.Response(200,json={'output':{'models':[{'model':'model-'+str(i)} for i in range(100)] if request.url.params['page_no']=='1' else [{'model':'last'}]}})
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result=await catalog(settings,'https://space.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',SECRET)
     assert len(calls)==2 and len(result['models'])==101
     async def compressed(self,request):return httpx.Response(200,headers={'content-encoding':'gzip'},stream=Bytes(b'not-inflated'))
@@ -546,7 +558,7 @@ async def test_directory_official_pagination_stays_same_origin_and_rejects_respo
 
 
 async def test_directory_token_plan_uses_openai_catalog(setup, monkeypatch):
-    from paa_server.model_provider import catalog
+    from app.integrations.models.catalog import catalog
     settings, *_ = setup
     calls = []
     endpoint = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models'
@@ -556,14 +568,14 @@ async def test_directory_token_plan_uses_openai_catalog(setup, monkeypatch):
             return httpx.Response(404)
         assert request.headers['Authorization'] == 'Bearer ' + SECRET
         return httpx.Response(200, json={'data': [{'id': 'controlled-model'}], 'has_more': False})
-    monkeypatch.setattr('paa_server.model_provider.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result = await catalog(settings, endpoint.removesuffix('/models'), SECRET)
     assert result == {'models': ['controlled-model'], 'source': endpoint, 'truncated': False}
     assert len(calls) == 1
 
 
 async def test_master_key_pair_restore_and_missing_key_cannot_be_reinitialized(setup,monkeypatch):
-    from paa_server.cli import prepare_model_key
+    from app.cli import prepare_model_key
     settings,sessions,users,c=setup
     saved=await create(c['admin'])
     original=settings.model_key_file.read_bytes()
@@ -572,7 +584,7 @@ async def test_master_key_pair_restore_and_missing_key_cannot_be_reinitialized(s
     async with sessions() as db:
         revision=await db.scalar(select(ModelServiceRevision).where(ModelServiceRevision.service_id==saved['id']))
     settings.model_key_file.unlink()
-    monkeypatch.setattr('paa_server.cli.Settings',lambda:settings)
+    monkeypatch.setattr('app.cli.Settings',lambda:settings)
     with pytest.raises(SecretUnavailable):await prepare_model_key()
     assert not settings.model_key_file.exists()
     settings.model_key_file.write_bytes(b'x'*32);settings.model_key_file.chmod(0o600)
@@ -589,7 +601,7 @@ async def test_failed_probe_does_not_claim_other_capabilities_or_reveal_remote_e
     def response(request):
         requests.append(request)
         return httpx.Response(401,json={'error':{'message':'Remote accidentally echoed '+SECRET},'usage':{'authorization':SECRET}})
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result=await c['admin'].post('/api/v1/settings/model-services/test',json={**payload(),'draftVersion':'failure','modelId':'chat','purpose':'assistant'})
     assert result.status_code==200
     check=result.json()
@@ -598,7 +610,7 @@ async def test_failed_probe_does_not_claim_other_capabilities_or_reveal_remote_e
 
 
 async def test_report_current_config_attempt_preserves_saved_draft_as_new_candidate(setup):
-    from paa_server.models import Report
+    from app.modules.reports.models import Report
     from test_report_reliability import prepared, ReportModel, CONTENT
     settings,sessions,users,c=setup
     saved=await create(c['admin']);await c['admin'].put('/api/v1/settings/model-routing',json=route(saved))
@@ -616,14 +628,14 @@ async def test_report_current_config_attempt_preserves_saved_draft_as_new_candid
         assert report.content['completed']=='原报告' and report.candidate['content']['completed']=='新候选' and report.published_revision==0
 
 
-async def test_company_probe_concurrency_and_quota_are_bounded(setup,monkeypatch):
-    from paa_server.model_services import reserve_probe
+async def test_company_probe_concurrency_is_bounded_without_daily_quota(setup,monkeypatch):
+    from app.modules.model_services.probes import reserve_probe
     settings,sessions,users,c=setup
     entered,release=asyncio.Event(),asyncio.Event()
     async def response(request):
         entered.set();await release.wait()
         return httpx.Response(200,json={'data':[]})
-    monkeypatch.setattr('paa_server.model_provider.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
     body={**payload(),'draftVersion':'busy','modelId':'chat'}
     pending=asyncio.create_task(c['admin'].post('/api/v1/settings/model-services/models',json=body))
     await asyncio.wait_for(entered.wait(),2)
@@ -633,6 +645,10 @@ async def test_company_probe_concurrency_and_quota_are_bounded(setup,monkeypatch
     finally:
         release.set()
         assert (await pending).status_code==200
-    limited=replace(settings,daily_calls=1)
-    await reserve_probe(sessions,limited,users['admin'])
-    with pytest.raises(ProviderError,match='额度'):await reserve_probe(sessions,limited,users['admin'])
+    async with sessions.begin() as db:
+        db.add_all([ModelUsage(company_id=users['admin'].company_id,owner_id=users['admin'].id,job_id=None,kind='admin_test') for _ in range(201)])
+    first=await reserve_probe(sessions,settings,users['admin'])
+    second=await reserve_probe(sessions,settings,users['admin'])
+    assert first != second
+    async with sessions() as db:
+        assert (await db.get(ModelUsage,second)).kind == 'admin_test'

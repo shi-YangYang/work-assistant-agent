@@ -70,7 +70,6 @@ it.each([false, true])(
       username: 'dd_controlled',
       role: 'employee',
       active: true,
-      mustChangePassword: false,
       hasPassword,
     }
     const html = renderToStaticMarkup(
@@ -83,7 +82,7 @@ it.each([false, true])(
     expect(html).toContain('dd_controlled')
     expect(html).toContain('复制账号')
     expect(html).toContain(hasPassword ? '已设置密码' : '未设置密码')
-    expect(html.includes('name="current"')).toBe(hasPassword)
+    expect(html.includes('name="currentPassword"')).toBe(hasPassword)
     if (!hasPassword) expect(html).toContain('disabled=""')
   },
 )

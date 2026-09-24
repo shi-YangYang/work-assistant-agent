@@ -1,3 +1,4 @@
+import authLayoutStyles from '../components/AuthLayout.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { isCancelled, setCsrf } from '@web/api/client'
 import { Shell } from '@web/app/Shell'
@@ -6,7 +7,6 @@ import { readIdentity } from '@web/features/auth/api/requests'
 import { DesktopConnect } from '@web/features/auth/components/DesktopConnect'
 import { Login } from '@web/features/auth/components/Login'
 import { useDesktopReturn } from '@web/features/auth/hooks/useDesktopReturn'
-import { DingTalkAccountPage as AccountPage } from '@web/features/settings/components/AccountPage'
 import { identityScope, SessionDrafts } from '@web/lib/session-drafts'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
@@ -60,7 +60,7 @@ export function App() {
   }
   if (loading)
     return (
-      <div className="login">
+      <div className={authLayoutStyles['login']}>
         <p>正在连接…</p>
       </div>
     )
@@ -80,16 +80,6 @@ export function App() {
           setIdentity(value)
         }}
       />
-    )
-  if (identity.member.mustChangePassword)
-    return (
-      <div className="login">
-        <div className="login-card">
-          <h1>设置你的密码</h1>
-          <p>首次登录，请更换管理员提供的临时密码。</p>
-          <AccountPage force member={identity.member} onLogout={logout} />
-        </div>
-      </div>
     )
   if (location.pathname === '/desktop/connect')
     return <DesktopConnect identity={identity} onLogout={logout} />

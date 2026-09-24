@@ -1,0 +1,24 @@
+.credentials-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0 12px;
+}
+.credentials-fields > label {
+  margin: 0;
+}
+@media (max-width: 760px) {
+  .credentials-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.login-methods input[readonly] {
+  overflow: auto;
+}
+.login-methods .settings-section-body > p {
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.login-methods .slot-form-actions {
+  flex-wrap: wrap;
+}

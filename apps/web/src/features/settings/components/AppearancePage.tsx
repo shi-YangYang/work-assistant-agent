@@ -1,39 +1,21 @@
-import type { Theme } from '@paa/api-contracts'
-import { useEffect, useState } from 'react'
-
-function applyTheme(value: Theme) {
-  localStorage.setItem('paa.company.theme', value)
-  document.documentElement.dataset.theme =
-    value === 'system'
-      ? matchMedia('(prefers-color-scheme: dark)').matches
-        ? 'dark'
-        : 'light'
-      : value
-}
+import layoutStyles from '../../../styles/layout.module.css'
+import styles from './AppearancePage.module.css'
+import { useTheme } from '@web/lib/theme'
 
 export function AppearancePage() {
-  const [value, setValue] = useState<Theme>(
-    () => (localStorage.getItem('paa.company.theme') as Theme) || 'system',
-  )
-  useEffect(() => {
-    applyTheme(value)
-    const media = matchMedia('(prefers-color-scheme: dark)')
-    const change = () => applyTheme(value)
-    media.addEventListener('change', change)
-    return () => media.removeEventListener('change', change)
-  }, [value])
+  const { value, setTheme } = useTheme()
   return (
-    <div className="settings-page">
+    <div className={layoutStyles['settings-page']}>
       <h2>外观</h2>
-      <div className="theme-options">
+      <div className={styles['theme-options']}>
         {(['light', 'dark', 'system'] as const).map((theme) => (
           <button
             key={theme}
-            className={theme === value ? 'selected' : ''}
-            onClick={() => setValue(theme)}
+            data-selected={theme === value}
+            onClick={() => setTheme(theme)}
             aria-pressed={theme === value}
           >
-            <div className={`theme-preview ${theme}`}>
+            <div className={styles['theme-preview']} data-theme-preview={theme}>
               <i />
               <span />
             </div>

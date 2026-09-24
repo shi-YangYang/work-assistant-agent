@@ -1,6 +1,3 @@
-@import '@paa/ui-web/theme.css';
-@import '@paa/ui-web/select.css';
-@import '@paa/ui-web/brand.css';
 * {
   box-sizing: border-box;
 }
@@ -46,6 +43,7 @@ body,
 body {
   background: var(--canvas);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
   font:
     14px/1.6 -apple-system,
     BlinkMacSystemFont,
@@ -76,33 +74,26 @@ button {
   gap: 7px;
   border: 1px solid var(--control);
   background: var(--surface);
-  border-radius: 6px;
+  border-radius: 10px;
   min-height: 38px;
   padding: 7px 12px;
   font-weight: 500;
   line-height: 1.5;
+  transition:
+    background-color 160ms,
+    border-color 160ms,
+    color 160ms,
+    box-shadow 160ms;
   cursor: pointer;
   white-space: nowrap;
 }
-button:hover {
-  background: var(--subtle);
+button:hover:where(:not(:disabled)) {
+  background: var(--hover);
   border-color: var(--control);
 }
 button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-button.primary {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: transparent;
-}
-button.primary:hover {
-  filter: brightness(0.95);
-}
-button.danger,
-.error {
-  color: var(--danger);
+  opacity: var(--button-disabled-opacity, 0.5);
+  cursor: var(--button-disabled-cursor, not-allowed);
 }
 a {
   color: var(--accent);
@@ -118,7 +109,7 @@ textarea {
   min-width: 0;
   border: 1px solid var(--control);
   background: var(--surface);
-  border-radius: 6px;
+  border-radius: 10px;
   min-height: 38px;
   padding: 7px 10px;
 }
@@ -134,10 +125,6 @@ input[type='radio'] {
 textarea {
   resize: vertical;
 }
-.auto-textarea {
-  resize: none;
-  max-height: 280px;
-}
 button,
 a,
 label,
@@ -147,30 +134,16 @@ h2 {
 button {
   max-width: 100%;
 }
-.full-field {
-  grid-column: 1 / -1;
-}
-.field-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-  margin-top: 16px;
-}
-.field-grid > label,
-.field-grid > .card-actions {
-  margin: 0;
-}
-.field-grid > .text-button {
-  justify-self: start;
-}
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
 }
 input:not([type='checkbox'], [type='radio']):focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline-offset: 0;
+  outline: none;
+  border-color: var(--secondary);
+  box-shadow: 0 0 0 1px var(--secondary);
 }
 select:not([size])::picker(select) {
   width: max-content;
@@ -189,7 +162,7 @@ p {
 }
 h1,
 h2 {
-  font-size: 25px;
+  font-size: 26px;
   font-weight: 650;
   letter-spacing: -0.6px;
   line-height: 1.4;
@@ -203,12 +176,10 @@ p {
   overflow-wrap: anywhere;
 }
 small,
-.muted,
 time {
   color: var(--muted);
 }
 small,
-.small-text,
 time {
   font-size: 12px;
 }
@@ -223,7 +194,55 @@ fieldset {
   border: 0;
   min-width: 0;
 }
-.preserve {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+svg {
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+@media (max-width: 760px) {
+  body {
+    font-size: 14px;
+  }
+  h2 {
+    font-size: 21px;
+  }
+  input:not([type='checkbox'], [type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  button,
+  input:not([type='checkbox'], [type='radio']),
+  select {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *:before,
+  *:after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+@media (max-width: 760px) {
+  button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  clip: rect(0, 0, 0, 0);
+  overflow: hidden;
+  white-space: nowrap;
 }

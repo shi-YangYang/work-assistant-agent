@@ -1,4 +1,4 @@
-import type { CompanyModel, CompanyService } from '@paa/api-contracts'
+import type { CompanyModel, CompanyPreset, CompanyService } from '@paa/api-contracts'
 import { validateParameters } from '@paa/model-config'
 import type { ServicePreset } from '@web/features/model-services/utils/service-presets'
 import { resolveModelProtocol } from '@web/features/model-services/utils/service-presets'
@@ -55,6 +55,64 @@ export function serviceHasChanges(draft: ServiceDraft, saved?: CompanyService): 
     draft.baseUrl !== saved.baseUrl ||
     JSON.stringify(draft.models) !== JSON.stringify(saved.models)
   )
+}
+
+export function modelFieldErrors(model: CompanyModel) {
+  return {
+    model:
+      !model.model.trim() ||
+      model.model.length > 200 ||
+      [...model.model].some((character) => character.charCodeAt(0) < 32)
+        ? '模型 ID 需为 1–200 个字符，不能全为空白或包含控制字符。'
+        : '',
+    language: !/^[a-zA-Z-]{0,20}$/.test(model.language)
+      ? '识别语言只支持最多 20 位英文字母和连字符，例如 zh 或 zh-CN。'
+      : '',
+  }
+}
+
+export function presetFieldErrors(preset: CompanyPreset) {
+  return {
+    name: !preset.name.trim() || preset.name.length > 80 ? '预设名称需为 1–80 个字符。' : '',
+    value:
+      preset.mode === 'simple' && (!preset.value.trim() || preset.value.length > 512)
+        ? '请输入 1–512 个字符的推理强度，不能全为空白。'
+        : '',
+  }
+}
+
+export function validateServiceModels(models: CompanyModel[]) {
+  const seen = new Set<string>()
+  for (const model of models) {
+    const errors = modelFieldErrors(model)
+    const message = errors.model || errors.language
+    if (message) throw new Error(`${model.model || '未命名模型'}：${message}`)
+    const identity = JSON.stringify([model.model, model.protocol])
+    if (seen.has(identity)) throw new Error(`模型 ${model.model} 的接口配置重复，请修改或移除。`)
+    seen.add(identity)
+    for (const preset of model.presets) {
+      const errors = presetFieldErrors(preset)
+      const message = errors.name || errors.value
+      if (message)
+        throw new Error(`${model.model} 的预设 ${preset.name || '（未命名）'}：${message}`)
+      validateCompanyParameters(
+        preset.mode === 'simple' ? { reasoning_effort: preset.value } : preset.parameters,
+      )
+    }
+  }
+}
+
+export function modelApiKeyError(value: string) {
+  return value &&
+    (!value.trim() ||
+      value.length > 4096 ||
+      [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) > 126))
+    ? 'API 密钥需为最多 4096 位可打印 ASCII 字符，不能全为空白。'
+    : ''
+}
+
+export function sameServiceAddress(left: string, right?: string) {
+  return right !== undefined && left.replace(/\/+$/, '') === right.replace(/\/+$/, '')
 }
 
 export function validateCompanyParameters(value: unknown) {

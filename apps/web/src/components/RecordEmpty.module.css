@@ -1,0 +1,52 @@
+.record-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 275px;
+  padding: 50px 20px;
+  text-align: center;
+}
+.record-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--subtle);
+  color: var(--muted);
+}
+.record-empty h3 {
+  font-size: 18px;
+  font-weight: 550;
+}
+.record-empty > p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.record-empty > p {
+  max-width: 340px;
+  margin-top: 6px;
+}
+.record-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 18px;
+  margin-top: 20px;
+}
+.record-empty-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+@container (max-width: 400px) {
+  .record-empty {
+    min-height: 220px;
+    padding: 32px 16px;
+  }
+}

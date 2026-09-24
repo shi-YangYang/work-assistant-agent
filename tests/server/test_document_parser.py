@@ -2,14 +2,14 @@ import asyncio
 import io
 import json
 import os
-from pathlib import Path
+import pytest
 import sys
 import zipfile
-import pytest
+from document_samples import pdf_bytes, samples
+from app.integrations.parsing.document_parser import MAX_EXPANDED
+from app.integrations.parsing.process import parse_process
+from pathlib import Path
 from pypdf import PdfWriter
-from paa_server.document_parser import MAX_EXPANDED, extract
-from paa_server.documents import parse_process
-from document_samples import samples, pdf_bytes
 
 pytestmark = pytest.mark.asyncio
 
@@ -73,7 +73,7 @@ async def test_partial_limits_and_blank_pages_are_explicit(tmp_path):
 
 
 async def test_timeout_reaps_real_child_and_resource_guard(tmp_path):
-    parser_path = Path(__file__).parents[2] / 'services/company/src/paa_server/document_parser.py'
+    parser_path = Path(__file__).parents[2] / 'apps/server/app/integrations/parsing/document_parser.py'
     runner = tmp_path / 'runner.py'
     marker = tmp_path / 'child.json'
     runner.write_text('import sys, os, time, json, runpy, resource\n'
@@ -138,7 +138,7 @@ async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok)
     """API contract only; does not claim a real Windows kernel execution."""
     import ctypes
     from types import SimpleNamespace
-    from paa_server.document_parser import windows_resource_limits
+    from app.integrations.parsing.document_parser import windows_resource_limits
     calls = []
     class Function:
         def __init__(self, callback): self.callback = callback

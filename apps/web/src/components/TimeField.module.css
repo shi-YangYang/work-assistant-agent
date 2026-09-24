@@ -1,0 +1,23 @@
+.time-field {
+  display: flex;
+  position: relative;
+}
+.time-field > input {
+  width: 100%;
+  padding-right: 40px;
+}
+.time-field > .slot-icon-button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.time-picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+.time-picker label {
+  min-width: 90px;
+}
