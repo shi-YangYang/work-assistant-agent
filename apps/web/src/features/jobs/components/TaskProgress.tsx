@@ -8,12 +8,10 @@ export function TaskProgress({
   job,
   busy,
   onRetry,
-  onCurrentConfig,
 }: {
   job: Job
   busy: boolean
   onRetry: () => void
-  onCurrentConfig: () => void
 }) {
   const nodes = job.nodes ?? []
   const [now, setNow] = useState(Date.now)
@@ -44,6 +42,17 @@ export function TaskProgress({
           : failed
             ? `${failed.label} · 未完成`
             : '处理步骤'
+  if (['failed', 'awaiting_retry'].includes(job.state))
+    return (
+      <div className={`${styles.progress} ${styles.failure}`} role="status">
+        <p>{job.error || failed?.error || '本次处理未完成，请重试。'}</p>
+        <div className={styles.actions}>
+          <button type="button" disabled={busy} onClick={onRetry}>
+            {busy ? '正在重试…' : '重试'}
+          </button>
+        </div>
+      </div>
+    )
   return (
     <div className={styles.progress}>
       <details className={styles.details}>
@@ -58,19 +67,6 @@ export function TaskProgress({
           ))}
         </ol>
       </details>
-      {['failed', 'awaiting_retry'].includes(job.state) && (
-        <div className={styles.failure}>
-          <p>{failed?.error || job.error}</p>
-          <div className={styles.actions}>
-            <button type="button" disabled={busy} onClick={onRetry}>
-              {busy ? '正在恢复…' : '重试此步骤'}
-            </button>
-            <button type="button" disabled={busy} onClick={onCurrentConfig}>
-              使用当前配置重新处理
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

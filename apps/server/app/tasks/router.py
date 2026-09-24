@@ -46,15 +46,23 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
     if item.kind == 'document':
         document = await owned(db, Attachment, item.target_id, actor)
         await active_message(db, document.message_id, actor)
+    elif item.kind == 'message':
+        message = await active_message(db, item.target_id, actor)
     else:
-        await active_message(db, item.target_id, actor) if item.kind == 'message' else await owned(db, Report, item.target_id, actor)
+        await owned(db, Report, item.target_id, actor)
     if item.state not in ('failed', 'awaiting_retry'):
         problem(409, '当前任务不需要重试')
     await business_require(db, actor, item.access)
     if item.access and item.access.get('role') != actor.role:
         problem(403, '账号权限已变化，请重新提问')
     item.state, item.error, item.request_started = 'queued', '', False
-    if body.useCurrentConfig:
+    if item.kind == 'message':
+        # Replace the failed response in place. Keep the source and operation
+        # receipts so retrying cannot turn saved effects into a new request.
+        message.reply, message.citations = '', []
+        item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'operationFeedback', 'operationFeedbackKeys')}
+        item.result = {**item.result, 'refreshModelBinding': True}
+    elif body.useCurrentConfig:
         item.model_binding = None
         item.config_attempt += 1
         if item.kind == 'report':

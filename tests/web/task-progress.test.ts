@@ -53,7 +53,6 @@ it('renders compact accessible progress, completion totals, and in-place manual 
         job: value,
         busy: false,
         onRetry: vi.fn(),
-        onCurrentConfig: vi.fn(),
       }),
     )
   const running = render(job())
@@ -67,7 +66,7 @@ it('renders compact accessible progress, completion totals, and in-place manual 
     }),
   )
   expect(complete).toContain('已完成 1 个步骤 · 自动重试 2 次')
-  expect(complete).not.toContain('重试此步骤')
+  expect(complete).not.toContain('<button')
   const failed = render(
     job({
       state: 'awaiting_retry',
@@ -77,8 +76,28 @@ it('renders compact accessible progress, completion totals, and in-place manual 
     }),
   )
   expect(failed).toContain('已停止自动重试')
-  expect(failed).toContain('重试此步骤')
+  expect(failed).toContain('>重试</button>')
+  expect(failed.match(/<button /g)).toHaveLength(1)
+  expect(failed).not.toContain('<details')
+  expect(failed).not.toContain('使用当前配置')
 })
+
+it.each(['failed', 'awaiting_retry'] as const)(
+  'offers one direct retry for %s before nodes exist',
+  (state) => {
+    const html = renderToStaticMarkup(
+      createElement(JobNotice, {
+        job: job({ state, nodes: [], error: '模型暂未响应' }),
+        refresh: vi.fn(),
+        showNodes: true,
+      }),
+    )
+    expect(html).toContain('模型暂未响应')
+    expect(html.match(/<button /g)).toHaveLength(1)
+    expect(html).toContain('>重试</button>')
+    expect(html).not.toMatch(/使用当前配置|确认重试|dialog/)
+  },
+)
 
 it('requires explicit assistant opt-in and preserves other JobNotice presentation', () => {
   const ordinary = renderToStaticMarkup(createElement(JobNotice, { job: job(), refresh: vi.fn() }))

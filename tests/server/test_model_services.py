@@ -97,7 +97,7 @@ async def test_cross_company_csrf_secret_failure_and_environment_takeover(setup)
     assert (await c['admin'].get('/api/v1/settings/model-routing')).json()['source']=='database'
 
 
-async def test_bound_revision_survives_edit_and_retry_current_config_isolated(setup):
+async def test_bound_revision_survives_edit_and_manual_retry_uses_latest_config(setup):
     settings,sessions,users,c=setup
     first=await create(c['admin']);await c['admin'].put('/api/v1/settings/model-routing',json=route(first))
     sent=await send(c['employee'],'配置恢复样本')
@@ -113,17 +113,20 @@ async def test_bound_revision_survives_edit_and_retry_current_config_isolated(se
         await process_job(claimed,sessions,settings,saver,model=model('旧版本',fail_once=True))
         response=await c['employee'].post('/api/v1/jobs/'+claimed.id+'/retry',json={})
         assert response.status_code==200
+        # The selection is refreshed at execution time, not frozen at the click.
+        changed=await c['admin'].patch('/api/v1/settings/model-services/'+first['id'],json={**payload(url='https://third.example/v1'),'apiKey':'latest-test-key','expectedRevision':2})
+        assert changed.status_code==200
         retry=await claim(sessions,users['employee'].id)
         async with sessions() as db:
-            assert (await db.get(Job,retry.id)).model_binding==binding
-        await process_job(retry,sessions,settings,saver,model=model('仍旧版本',fail_once=True))
-        await c['employee'].post('/api/v1/jobs/'+claimed.id+'/retry',json={'useCurrentConfig':True})
-        retry=await claim(sessions,users['employee'].id)
+            assert (await db.get(Job,retry.id)).result['refreshModelBinding']
         await process_job(retry,sessions,settings,saver,model=model('新版本'))
         async with sessions() as db:
             live=await db.get(Job,retry.id)
             assert live.state=='succeeded' and live.config_attempt==1
-            assert live.model_binding['assistant']['revision']==2
+            assert live.model_binding['assistant']['revision']==3
+            assert 'refreshModelBinding' not in live.result
+            config,key=await resolve_bound(db,settings,users['employee'].company_id,live.model_binding,'assistant')
+            assert config['baseUrl']=='https://third.example/v1' and key=='latest-test-key'
             assert SECRET not in json.dumps(live.model_binding)
 
 

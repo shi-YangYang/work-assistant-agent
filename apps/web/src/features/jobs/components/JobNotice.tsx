@@ -2,7 +2,7 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
-import type { WorkMessage } from '@paa/api-contracts'
+import type { Job, WorkMessage } from '@paa/api-contracts'
 import { stageNames } from '@web/api/job-feedback'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -16,15 +16,18 @@ export function JobNotice({
   job,
   refresh,
   showNodes = false,
+  onRetryJob,
 }: {
   job: NonNullable<WorkMessage['job']>
   refresh: () => void
   showNodes?: boolean
+  onRetryJob?: (job: Job | null) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const [confirmation, setConfirmation] = useState<'original' | 'current' | null>(null)
   const inFlight = useRef(false)
+  const assistant = showNodes && job.kind === 'message'
   const progress =
     showNodes &&
     !!job.nodes?.length &&
@@ -37,10 +40,22 @@ export function JobNotice({
     setConfirmation(null)
     setBusy(true)
     setError('')
+    if (assistant)
+      onRetryJob?.({
+        ...job,
+        attempt: (job.attempt ?? 0) + 1,
+        state: 'queued',
+        stage: 'queued',
+        error: '',
+        nodes: [],
+        operationFeedback: [],
+      })
     try {
-      await retryJob(job, useCurrentConfig ? { useCurrentConfig: true } : {})
+      const next = await retryJob(job, useCurrentConfig ? { useCurrentConfig: true } : {})
+      if (assistant) onRetryJob?.(next)
       refresh()
     } catch (e) {
+      if (assistant) onRetryJob?.(null)
       setError(e as Error)
     } finally {
       inFlight.current = false
@@ -51,25 +66,13 @@ export function JobNotice({
     setError('')
     setConfirmation(mode)
   }
-  if (progress)
+  if (progress || (assistant && ['failed', 'awaiting_retry'].includes(job.state)))
     return (
-      <>
-        <TaskProgress
-          job={job}
-          busy={busy}
-          onRetry={() => void retry()}
-          onCurrentConfig={() => confirmRetry('current')}
-        />
-        <ErrorNotice>{error}</ErrorNotice>
-        {confirmation && (
-          <Modal title="使用当前配置重新处理" onClose={() => setConfirmation(null)}>
-            <p>使用当前模型重新处理，已保存的业务操作会保留。模型调用可能再次产生用量。</p>
-            <BusyButton busy={busy} onClick={() => void retry(true)}>
-              确认重新处理
-            </BusyButton>
-          </Modal>
-        )}
-      </>
+      <TaskProgress
+        job={error ? { ...job, error: error instanceof Error ? error.message : error } : job}
+        busy={busy}
+        onRetry={() => void retry()}
+      />
     )
   if (job.state === 'succeeded' || job.state === 'cancelled') return null
   if (job.state === 'awaiting_input')
