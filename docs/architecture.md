@@ -1,133 +1,133 @@
 # 技术架构
 
-同仓库维护独立的桌面应用、公司 Web 与后端，根目录提供统一开发命令。实际版本与目录见 [技术栈](../constitution/tech-stack.md)，安装部署见[使用指南](setup.md)，迁移取舍见 [决策 0015](../.ai/decisions/0015-multi-client-repository.md)。
-
 ## 应用与服务
 
 ```text
-Electron renderer ──受限 preload API──→ Electron main
-                                        │ JSON Lines／stdio
-                                        ▼
-                              内置 Python 本地核心
-                              ├─ 麦克风 → WAV
-                              ├─ 本地模型 → 转写
-                              ├─ 在线模型 → 纪要
-                              └─ SQLite／用户数据目录
+Electron renderer → 受限 preload → main → stdio → Python 本地核心
+                                                   ├─ 录音／WAV
+                                                   ├─ 本地转写／说话人
+                                                   ├─ 在线模型／纪要
+                                                   └─ SQLite／用户目录
 
-电脑／手机浏览器 ──HTTPS──→ Caddy ──/api──→ 公司 API
-                            │               │
-                            └─ Web 静态文件  ▼
-                                      PostgreSQL ←→ worker／harness
-                                      私有附件卷      │
-                                                      ▼
-                                               外部模型／ASR API
+电脑／手机浏览器 → HTTPS → Caddy → Web 静态文件
+                                └─ /api → 公司 API → PostgreSQL
+                                                     ↕
+                                                  worker／harness
+                                                   ├─ 私有附件
+                                                   └─ 外部模型／ASR
 ```
 
-Electron 保留本地会议能力；公司 Web 与后端处理账号、员工消息、文件、工作、报告及授权团队问答。两者独立运行与发布；桌面 main 可通过 HTTPS 连接公司 API，浏览器授权后同步声纹，不自动上传会议或密钥。未来移动 App 使用公司 API，当前尚未实现。
+桌面、公司 Web 和后端独立运行与发布。桌面 main 可通过公司 API 登录、同步声纹，不自动上传会议或密钥；本地会议无需公司后端。
 
 ## 桌面边界
 
-- `apps/desktop/src/main` 管理窗口、权限、核心进程、加密服务配置及受限音频协议；`preload` 只公开类型化业务接口，renderer 不具备 Node、任意 IPC、文件或网络代理权限。
-- `apps/desktop/core/src/paa_core` 负责录音、SQLite、模型下载、受管 ASR worker 和纪要任务。录音回调、有界队列、WAV 写盘、推理与网络请求分离，ASR／LLM 延迟不阻塞采集。
-- 播放通过授权的 `paa-audio` Range 读取，引用跳转复用同一播放器。原始录音、模型、SQLite 及系统加密配置保存在原 userData；正式包从资源目录启动随包 Python 核心，无需系统解释器。
-- 转写任务锁定模型／语言，候选完成后原子发布；纪要固定文字、使用到的发言人信息、输入模式与配置，失败保留旧结果。自动纪要有界等待会后说话人处理，识别后续完成不重复付费生成；仅姓名变化不影响纯文本纪要。见[本地转写模型](../specs/spec-013-local-model-library/spec.md)与[发言人视图及会议分析](../specs/spec-023-speaker-aware-minutes/spec.md)。
-- main 加密保存公司凭证和声纹；本地核心分窗识别发言者并在会后校正，保留人工修改。模板长期离线可用，退出账号或清缓存才删除，renderer 不接触令牌或向量。
+- `apps/desktop/src/main` 管理窗口、权限、核心进程、加密配置和音频协议；preload 只公开类型化业务接口，renderer 无 Node、任意 IPC、文件或网络代理权限。
+- `apps/desktop/core/src/paa_core` 管理录音、SQLite、模型和后台任务。录音回调、写盘、推理与网络请求分离，模型延迟不阻塞采集。
+- 音频通过授权的 `paa-audio` Range 读取，引用跳转复用同一播放器；数据保存在 userData，正式包从自身资源启动 Python 核心。
+- 转写固定模型、语言和设备，候选成功后原子发布。纪要固定文字、所用发言人信息和配置，失败保留旧结果。
+- 自动纪要有界等待会后说话人处理，不因识别稍后完成重复付费生成；仅姓名变化不影响纯文本纪要。
+- main 加密保存公司凭证及声纹，renderer 不接触令牌或向量；会后校正保留人工修改，缓存按服务／公司／账号隔离。
 
 ## 公司业务与 Harness
 
-- `apps/web` 是独立的浏览器应用，通过同源 API 使用公司业务；`apps/server/app` 同时提供 API 和 worker，二者共用业务服务与数据库，没有按进程拆成多个微服务。
-- API 负责会话身份、公司／成员授权、输入校验和业务事务。worker 执行可恢复任务，harness 管理授权上下文、工具、预算、checkpoint 和人工确认；模型不能凭参数更改真实身份或绕过业务权限。
-- PostgreSQL 保存业务、修订、任务、文件分段及公司声纹，原件在私有卷。文档解析和声纹提取通过受管子进程进行；声纹使用独立 CPU 运行环境，图片理解／语音转写仍调用外部服务。
-- 员工确认工作与提交报告，管理员查看授权业务并创建自己的督办。团队来源依赖贯穿模型输入、历史回答、恢复与确认，撤权／删除后重新校验；具体范围见 [Spec 014](../specs/spec-014-admin-business-assistant/spec.md)。
-- 工作检索在服务端授权后分页，看板与明细共用期间和人员范围。worker 将受控聊天反馈写入 PostgreSQL 有界快照，API 经权限复核后通过 SSE 交付；正式结果仍来自业务记录。管理员用量按模型请求记录真实返回值，缺失数据保留未知，见 [Spec 016](../specs/spec-016-web-search-metrics-and-feedback/spec.md)。
-- 公司 Key 在服务端加密保存，API 与 worker 使用同一独立私有主密钥；数据库、附件和主密钥分开备份、配对恢复。部署挂载、迁移与备份命令见[使用指南](setup.md)。
+- API 负责身份、权限、输入校验和业务事务；worker 执行可恢复任务；harness 管理业务工具、来源、checkpoint 与人工确认。
+- 模型不直接读写数据库，也不能靠参数改变身份。员工访问本人资料，管理员团队问答使用已确认业务及关联来源；撤权或删除后复核历史回答和待执行操作。
+- PostgreSQL 保存业务、修订、任务、附件分段和声纹；原件在私有卷。解析与声纹提取使用受管子进程，聊天、图片理解和语音转写调用外部服务。
+- 检索先授权再分页，看板与明细共用统计范围。处理反馈写入数据库有界快照，API 复核权限后经 SSE 交付；正式结果仍来自业务记录。
+- 模型用量保存真实返回值，缺失为未知。公司凭证由独立主密钥加密，API／worker 共用；数据库、附件、主密钥配对恢复。
 
 ## 公司服务端组织
 
-`apps/server/app` 是公司共享后端，API 与 worker 是同一套业务代码的不同入口。桌面本地核心仍在 `apps/desktop/core`，不依赖公司后端才能启动。
+`apps/server/app` 同时提供 API 和 worker，共用业务模块：
 
 ```text
-main.py / worker.py / cli.py  应用、任务进程、运维命令入口
-http/                       应用依赖、中间件、错误响应与路由注册
-core/                       设置、资源路径、基础输入与版本规则
-db/                         连接、公共 Base、完整 ORM 模型登记
+main.py / worker.py / cli.py  HTTP、任务进程、运维入口
+http/                       请求依赖、中间件、错误和路由注册
+core/                       设置、资源路径、基础输入和版本规则
+db/                         连接、公共 Base、ORM 模型登记
 modules/                    认证、成员、消息、工作、报告等业务
-security/                   公司范围、所有权、来源授权与凭证保护
-tasks/                      上下文、租约、领取、处理、调度与反馈
-agent/                      提示词、模型、工具、核对与图编排
-integrations/               模型及钉钉协议、媒体与隔离解析进程
-migrations/ / assets/       历史迁移与包内静态资源
+security/                   公司范围、所有权、来源授权和凭证保护
+tasks/                      上下文、租约、队列、处理器和调度
+agent/                      提示词、模型、工具、核对和图编排
+integrations/               模型／钉钉协议、媒体和解析进程
+migrations/ / assets/       数据库迁移、包内资源
 ```
 
-业务按需维护 router、schemas、models、commands、service、queries 和 serializers，不强制每个模块配齐文件。路由处理 HTTP 参数与依赖，commands 编排写入用例，service 保存复用的业务规则；HTTP 与 Agent 工具调用同一套业务能力。ORM 定义就近归业务，统一使用 `db` 的 Base；登记模块负责完整加载模型，业务不通过登记模块获取所有实体。
+- 业务模块按需组织 router、schemas、models、commands、service、queries、serializers，不强制建齐。
+- router 处理 HTTP 参数与依赖，commands 编排写入，service 保存复用规则，queries 管理复杂查询；HTTP 和 Agent 调用同一套业务能力。
+- ORM 定义归业务模块，共用 `db` 的 Base；模型登记只负责完整加载，不作为实体的统一导出入口。
+- HTTP 和后台任务各自持有 AsyncSession；配置、ORM、上下文和租约不反向依赖 API、worker 或 harness 装配。
+- Python 入口为 `app.main:app`、`python -m app.worker`、`python -m app.cli`，模块根为 `apps/server`。
+- 单文件超过约 400 个非空行时检查职责，不靠压缩代码或空层达标。
 
-添加接口先选择 `modules/<业务>/`，复用公共身份和请求事务依赖，再在 HTTP 装配处挂载路由。增加业务行为放到对应 service，复杂查询单独放 queries；增加 Agent 工具时调用这些业务服务，保留授权与租约检查；后台流程由 tasks 处理器编排，worker 入口只负责进程生命周期。单个 Python 文件超过约 400 个非空行时检查职责，不通过压缩代码或空层满足行数。
+发送消息的服务端路径：
 
-阅读“发送一条消息”时，按以下顺序查看，路径均相对 `apps/server/app`：
+1. `modules/messages/router.py` → `commands.py:submit_message`，校验幂等键、会话和附件，保存消息与 Job。
+2. `http/dependencies.py` 提交请求事务，失败回滚。
+3. `tasks/queue.py` 领取任务，`tasks/handlers.py:process_job` 调用 `agent/harness.py`。
+4. `agent/tools/` 调用授权业务服务；工作进展确认进入 `modules/work/progress.py:confirm_drafts`，检查版本后保存。
 
-1. `modules/messages/router.py` 接收参数与身份，调用 `commands.py` 的 `submit_message`。
-2. `submit_message` 校验幂等键、会话和附件，在同一请求事务内保存消息及 Job；`http/dependencies.py` 在返回成功前提交，失败回滚。
-3. `tasks/queue.py` 领取任务，`tasks/handlers.py` 的 `process_job` 管理处理过程，再调用 `agent/harness.py`。
-4. `agent/tools/work.py` 等工具读取授权业务并提出操作；确定性业务规则与保存仍由 modules 承担，模型不能直接写数据库。
-5. 员工确认进展时，由工作路由进入 `modules/work/progress.py` 的 `confirm_drafts`，检查版本并更新工作记录。
-
-HTTP 和后台并发任务各自使用 session，不共享全局 AsyncSession。新增代码遵循同样的事务与调用边界。
-
-底层配置、ORM 和任务上下文不反向导入 API、worker 或 harness。模块间引用具体职责文件，不保留汇总全应用的万能 service 或兼容导出层。Python 入口为 `app.main:app`、`python -m app.worker`、`python -m app.cli`，模块查找根目录为 `apps/server`。通过根目录 `npm run dev:web` 同时启动 Web、API 与 worker；数据库、附件及主密钥位置保持不变。
-
-`npm run test:server` 包含 `tests/server/test_architecture.py`，检查反向依赖、模块循环、ORM 完整登记和不同应用实例的依赖隔离。
+`tests/server/test_architecture.py` 检查反向依赖、循环、ORM 登记和应用实例隔离。
 
 ## Web 前端组织
 
-`apps/web/src` 按业务组织，路由页面保持轻量：
+`apps/web/src` 按业务组织：
 
 ```text
-app/          身份初始化、Provider、路由与应用布局
-pages/        路由参数和跨业务页面组合
+app/          身份、Provider、路由和应用布局
+pages/        路由参数、跨业务页面组合
 features/     assistant、work、reports、team、members 等业务
 api/          唯一请求客户端、会话代次和错误处理
-components/   不主动查询业务数据的公共 UI
-hooks/        跨业务复用的 React 逻辑
-lib/          上下文和非 React 资源控制器
+components/   无业务查询的公共 UI
+hooks/        跨业务 React 逻辑
+lib/          上下文、非 React 资源控制器
 utils/        无请求副作用的通用纯函数
-styles/       本端基础 CSS 与显式复用的布局／控件 Module
+styles/       本端基础 CSS、公共布局和控件 Module
 ```
 
-业务自己的组件、Hook、API 和工具放在对应 `features/<业务>/` 内，按需建目录；不为每个小函数建立文件，也不把领域逻辑统一堆入根 `hooks`／`utils`。服务端 DTO 复用 `packages/api-contracts`，组件 props 与内部状态就近定义。
-
-依赖由 `app → pages → features → 基础层` 向下组织。跨业务页面在 pages 组合；确需复用业务能力时，直接导入职责明确的具体组件或 API，保持单向依赖。基础层不得导入 app、pages 或 features；纯工具不依赖 React、网络或工作空间。使用 Web 局部 `@web/` 别名，不建立汇总整个应用的 barrel 文件。
-
-新增页面先选业务归属，再定义其请求与状态所有者。页面和展示组件不直接拼请求路径；传输层统一处理身份、CSRF、超时、取消和错误。用户身份、跨页面草稿、服务端资源、URL 筛选与局部弹窗状态分别管理，避免重复持有同一可变状态。拆 Hook 是为了复用或隔离一个完整流程，不是把整页搬进返回几十个字段的函数。
-
-业务 TSX 超过约 350 个非空行时检查是否混合了列表、编辑、弹窗和异步流程；行数是审查提示，不能通过压缩代码或无意义拆碎达标。样式按端独立维护，Web 使用 CSS Modules；路由切换不得改变层叠结果。
+- 业务组件、Hook、API 和工具就近放在 feature；服务端 DTO 使用 `packages/api-contracts`，组件 props 和内部状态就近定义。
+- 依赖方向为 `app → pages → features → 基础层`。跨业务组合在 pages；基础层不能导入业务，纯工具不依赖 React、网络或工作空间。
+- 使用 `@web/` 别名和具体模块导入，不建立汇总整个应用的 barrel。
+- 页面不拼请求路径，业务 API 统一经过请求客户端处理身份、CSRF、超时、取消和错误。
+- 身份、跨页草稿、服务端数据、URL 筛选和局部弹窗各有明确状态所有者；Hook 负责完整流程，避免重复持有状态。
+- 业务 TSX 超过约 350 个非空行时检查职责，不机械拆碎。
 
 ### Web 样式边界
 
-组件专用样式就近放在 `组件名.module.css`，由组件 `import styles` 显式使用，断点与状态规则一起维护。同一业务内共用的登录表单、模型服务、附件等组合样式放在对应 `features/*/styles/*.module.css`。无专用样式的组件直接使用公共样式，不强制建立空文件。
+- 组件样式放在就近的 `*.module.css`；同业务组合样式放 `features/*/styles/`，断点和状态一起维护，不强制创建空样式文件。
+- `styles/index.css` 仅导入 `theme.css`、`select.css`、`base.css`；全局类仅保留 `sr-only`、`keyboard-open`，不放页面布局。
+- 公共布局与控件使用 `styles/{layout,controls,utilities}.module.css`；工作／报告呈现由 `components/RecordLayout.module.css`、`RecordDetail.module.css` 维护。
+- 组件通过 className 插槽、变体或限定用途的变量提供定制；调用者不依赖内层私有选择器，业务不互相导入私有 CSS。
+- 不用跨文件 `@value`／`composes`；显式组合 Module 类，基础 CSS 先加载，公共 Module 先于局部 Module 导入。
+- 交互状态使用 ARIA／`data-*`；保留 `data-scroll-container`、`data-chat-content`，不在 JS 拼生成类名。`:global(.keyboard-open)` 仅用于手机键盘避让。
+- Web 与 Electron 各自维护主题和样式，共享品牌图片。路由切换不得改变层叠结果。
 
-- `styles/index.css` 只导入本端 `theme.css`、`select.css`、`base.css`：主题变量、原生选择器、reset、基础标签与表单、滚动条、焦点及减少动态效果。全局类白名单只有 `sr-only`，以及手机键盘状态 `keyboard-open`；品牌样式由侧栏 Module 维护，不在全局入口写页面布局。
-- `styles/{layout,controls,utilities}.module.css` 是显式的公共布局与视觉工具；`components/RecordLayout.module.css`、`RecordDetail.module.css` 维护工作／报告共用的记录呈现。业务之间不导入对方私有 CSS。
-- 公共组件的内层结构由组件自己维护。调用者通过实际需要的 `className`、`bodyClassName`、`compact` 等插槽／变体定制；状态色通过限定用途的 CSS 变量继承。同一元素需要公共外观与局部定制时，显式组合两个 Module 的类名；局部 CSS 仅引用自己定义的槽类。模块之间不使用 `@value`／跨文件 `composes` 导入选择器，避免重复输出 CSS 和层叠依赖。基础 CSS 在 `main.tsx` 首先加载，公共 Module 先于调用者的局部 Module 导入。
-- 交互状态使用 `data-*` 或 ARIA 属性，滚动容器与聊天内容观察使用稳定的 `data-scroll-container`、`data-chat-content`。不要从 JS 拼接 CSS Module 生成的类名；`:global(.keyboard-open)` 只用于现有手机键盘避让。
+发送消息的前端路径：`app/AppRoutes.tsx` → `features/assistant/components/Conversations.tsx` → `ConversationChat.tsx`／`MessageComposer.tsx` → `hooks/useMessageSubmission.ts` → `api/requests.ts` → `apps/web/src/api/client.ts`。消息和反馈由 `ChatHistory.tsx`／`MessageCard.tsx` 展示，录音由 `hooks/useRecording.ts` 管理。
 
-Web 与 Desktop 各自拥有主题、选择器和品牌样式，Web 品牌样式位于 `app/Sidebar.module.css`，Desktop 位于 `apps/desktop/src/renderer/styles/`；两端不互相引用或自动同步 CSS。品牌图片统一由 `packages/ui-web/brand/` 提供。初始外观一致不意味着后续样式必须联动。
-
-读“发送一条消息”时，依次看：
-
-1. `app/AppRoutes.tsx`：找到工作助手的路由入口。
-2. `features/assistant/components/Conversations.tsx`：选择与恢复会话。
-3. `features/assistant/components/ConversationChat.tsx`：协调聊天内容、编辑器和发送流程；输入展示在 `MessageComposer.tsx`，录音生命周期在 `hooks/useRecording.ts`。
-4. `features/assistant/hooks/useMessageSubmission.ts`：检查发送条件、依次上传附件、提交消息并处理发送结果；业务请求在 `features/assistant/api/requests.ts`，传输规则在 `api/client.ts`。
-5. `features/assistant/components/ChatHistory.tsx`、`MessageCard.tsx`：查看消息、处理反馈与业务结果如何展示。
-
-以上路径均相对 `apps/web/src`。跨页面草稿由 `lib/session-drafts.ts` 管理账号代次，聊天模块的 `lib/composer-drafts.ts` 提供附件清理策略；公共层不需要知道聊天附件的具体结构。
-
-`npm run test:web` 包含架构依赖检查；单独检查可运行 `npm run test:web -- tests/web/architecture.test.ts`。它约束向上依赖、纯工具依赖、绕过业务 API 的请求和运行时循环，同时检查 CSS 归属、基础入口与跨端引用，新增模块继续遵循这些边界。
+`lib/session-drafts.ts` 管理账号代次，聊天 feature 的 `lib/composer-drafts.ts` 管理附件清理。`tests/web/architecture.test.ts` 检查依赖方向、请求入口、循环和 CSS 归属。
 
 ## 共享代码与工程边界
 
-`packages/api-contracts` 提供公司 HTTP 的 TypeScript 类型；`model-config` 提供两端使用的纯校验；`ui-web` 提供品牌图片与 favicon；`voiceprint-engine` 统一公司登记与桌面匹配的模型、预处理和模板规范。共享包不导入应用或服务端，桌面协议留在桌面。CSS 不是原生 Android／iOS UI，移动框架及原生适配尚待立项。
+| 包 | 职责 |
+| --- | --- |
+| `api-contracts` | 公司 HTTP 的 TypeScript 类型 |
+| `model-config` | 两端的纯模型参数校验 |
+| `ui-web` | 品牌图片与 favicon，不导出 CSS |
+| `voiceprint-engine` | 登记和匹配共用的模型、预处理及模板协议 |
 
-JS 应用由 npm workspaces 管理，各自声明依赖与构建配置；Python 核心与后端保留不同锁文件和虚拟环境。测试仍集中在 `tests`，按对象分区；CI 触发与检查范围见 [工作流](../.github/workflows/ci.yml)，具体通过与未验范围在 [各 Spec 验收](../specs/README.md)。
+共享包不导入应用，桌面 IPC 契约留在桌面。Node 使用 npm workspaces 和根锁文件；Python 核心与公司服务独立锁定依赖。测试集中在 `tests/`，按对象分区。
 
-此前混入本页的旧 schema、协议清单和逐轮状态已归回各 Spec；整理前原文保留在 [6e83d28 快照](https://github.com/shi-YangYang/work-assistant-agent/blob/6e83d289a16a0783705ae17c879d39d1e059e839/docs/architecture.md)，不把旧 CI 结果当成当前代码的验证。
+### 声纹引擎
+
+- `packages/voiceprint-engine` 使用固定 WeSpeaker 权重及 16 kHz 单声道 PCM；模板最多 12 个归一化 256 维向量，`MODEL_ID` 标记权重与预处理版本。相似度不是识别准确率。
+- 只加载本地权重并校验 SHA256，可用 `PAA_VOICEPRINT_MODEL` 指定路径；不在线下载。生产 CPU 依赖由 `scripts/company/install-voiceprints.py` 安装。
+- 输入为 6 秒至 3 分钟规范 WAV，声音不足时拒绝生成；调用者负责上传校验、单人授权和进程资源限制。
+- 成功输出 JSON，失败返回 exit 2 和 `{error:{code,message}}`。员工录音、账号关联和模板属于私有业务数据，不入包或 Git；模型署名随权重保留。
+
+提取命令（Python 3.12，已安装引擎运行依赖）：
+
+```sh
+python -m paa_voiceprints enrollment.wav --model apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin
+```
+
+本地包可用 `pip install './packages/voiceprint-engine[runtime]'` 安装；公开语音验证入口为 `scripts/benchmarks/company-voiceprints.py`。
