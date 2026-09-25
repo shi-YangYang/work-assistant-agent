@@ -17,14 +17,15 @@ from typing import Literal
 
 
 @tool
-async def find_team_members(query: str, runtime: ToolRuntime[RunContext]) -> str:
+async def find_team_members(query: str, runtime: ToolRuntime[RunContext], cursor: int = 0) -> str:
     """Match employee names within the administrator's company. Multiple matches
     require clarification; IDs returned here are filters, not write authority.
+    Pass nextCursor with unchanged query until null to list all matching members.
     """
     async with runtime.context.sessions.begin() as db:
         job, actor = await lease(db, runtime.context)
         try:
-            return json.dumps(await business_find_members(db, actor, job, query), ensure_ascii=False)
+            return json.dumps(await business_find_members(db, actor, job, query, cursor), ensure_ascii=False)
         except HTTPException as error:
             return json.dumps({'error': error.detail}, ensure_ascii=False)
 

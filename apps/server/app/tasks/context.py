@@ -28,6 +28,7 @@ class RunContext:
     document_snapshot: str = ''
     document_versions: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)
+    image_sources: dict[str, str] = field(default_factory=dict)
     model_binding: dict | None = None
     model_purpose: str = 'assistant'
     config_attempt: int = 0
@@ -47,3 +48,4 @@ class RunContext:
     intent_model: Any = None
     reply_evidence: list[dict] = field(default_factory=list)
     receipt_candidates: set[str] = field(default_factory=set)
+    unrequested_actions: set[str] = field(default_factory=set)

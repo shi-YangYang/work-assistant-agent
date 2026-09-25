@@ -17,16 +17,42 @@ active_node = contextvars.ContextVar('assistant_node', default=None)
 async def initialize(context, input_key):
     if not context.node_retry:
         return
-    scope = digest({'input': input_key, 'config': context.model_binding, 'configAttempt': context.config_attempt})
     async with context.sessions.begin() as db:
-        job, _ = await lease(db, context)
+        job, actor = await lease(db, context)
         state = execution(job)
+        previous_scope = state.get('scope')
+        revision = state.get('dataRevision', 0)
+        try:
+            # A process can stop after committing a write but before journaling
+            # its new version. Recover that exact receipt first; its own version
+            # advance is not an external change that should restart the graph.
+            pending_receipt = any(row.get('receiptId') and 'output' not in row
+                                  and row.get('scope') == previous_scope
+                                  for row in state.get('nodes', []))
+            if not pending_receipt:
+                await validate_cached_versions(db, actor, state.get('readVersions', {}))
+        except Exception as error:
+            from fastapi import HTTPException
+            from app.integrations.models.transport import ProviderError
+            if not (isinstance(error, ProviderError) and error.code == 'version_conflict' or
+                    isinstance(error, HTTPException) and error.status_code in (403, 404)):
+                raise
+            revision += 1
+        scope = digest({'input': input_key, 'config': context.model_binding,
+                        'configAttempt': context.config_attempt, 'dataRevision': revision})
         if state.get('scope') != scope:
             # Changed input starts a new graph. Retain bounded summaries only;
             # prior raw results must not become a second source of business truth.
             for row in state.get('nodes', []):
                 row.pop('output', None)
-            state = {'scope': scope, 'nodes': state.get('nodes', [])[-32:]}
+            state = {'scope': scope, 'dataRevision': revision, 'nodes': state.get('nodes', [])[-32:]}
+            context.read_versions.clear()
+            # A reply and its evidence belong to the same data/configuration
+            # scope as the graph. Business receipts remain for safe replay.
+            stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted'}
+            if previous_scope:
+                stale.update(('operationFeedback', 'operationFeedbackKeys'))
+            job.result = {key: value for key, value in job.result.items() if key not in stale}
         state.setdefault('deadline', time.time() + 420)
         state.setdefault('nodes', [])
         save(job, state)
@@ -104,7 +130,10 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
         if row is None:
             active = [item for item in state['nodes'] if item['scope'] == context.node_scope]
             count = sum(item['kind'] == kind for item in active)
-            if len(state['nodes']) >= MAX_NODES or kind == 'tool' and count >= 16 or kind != 'tool' and sum(item['kind'] != 'tool' for item in active) >= 8:
+            # Planning, authorization and final review share the durable
+            # 32-call provider budget. A second aggregate cap of eight nodes
+            # could reject the final review after valid multi-step writes.
+            if len(state['nodes']) >= MAX_NODES or kind == 'tool' and count >= 16:
                 raise BudgetExceeded('本次处理步骤已达到限制，请补充说明后继续')
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,

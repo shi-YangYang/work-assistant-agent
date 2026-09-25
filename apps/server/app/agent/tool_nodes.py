@@ -10,7 +10,7 @@ LABELS = {
     'find_documents': '查找文件', 'read_document': '读取文件', 'read_file': '读取材料',
     'find_team_members': '查找成员', 'query_team_business': '查询团队工作',
     'read_team_source': '读取团队来源', 'propose_progress': '整理进展建议',
-    'propose_followup': '整理督办建议', 'draft_report': '整理报告',
+    'propose_followup': '整理督办建议',
 }
 ACTIONS = {'create_work': '创建工作', 'update_work': '更新工作', 'delete_work': '准备删除确认',
            'generate_report': '报告生成入队', 'edit_report': '修改报告',
@@ -28,6 +28,8 @@ def outcome(message):
         return ('failed', '工具未完成，请查看答复') if message.status == 'error' else ('awaiting_input', '请查看答复并补充信息')
     if isinstance(value, dict):
         state = value.get('state') or value.get('status')
+        if state == 'not_requested':
+            return 'cancelled', '本次未要求该操作'
         if 'error' in value or state in ('failed', 'conflict', 'unavailable', 'cancelled'):
             return 'failed', '操作未执行，请查看业务说明'
         if state in ('clarification', 'waiting', 'not_found'):

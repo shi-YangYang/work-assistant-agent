@@ -508,7 +508,9 @@ async def test_reply_review_validates_partition_and_reuses_exact_verified_result
 
 async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):
     from app.agent.reply_review import review_reply
+    from test_assistant_execution import ReceiptJudge
     context, _ = await runtime(setup)
+    context.intent_model = ReceiptJudge()
     saved = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     judge = ReplyJudge([], fail=True)
     reviewed = await review_reply(context, '', model=judge)

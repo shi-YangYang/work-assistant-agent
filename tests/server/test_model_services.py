@@ -533,7 +533,9 @@ async def test_revocation_blocks_bound_call_and_new_company_does_not_inherit_env
     await c['admin'].put('/api/v1/settings/model-routing',json={'expectedRevision':1,'assistant':None,'report':None,'asr':None})
     assert (await c['admin'].request('DELETE','/api/v1/settings/model-services/'+saved['id'],json={'expectedRevision':1})).status_code==200
     async with sessions() as db:
-        with pytest.raises(ProviderError,match='撤销'):await resolve_bound(db,settings,job.company_id,binding,'assistant')
+        with pytest.raises(ProviderError) as error:
+            await resolve_bound(db,settings,job.company_id,binding,'assistant')
+        assert error.value.code == 'revoked'
     await send(c['outsider']);other=await claim(sessions,users['outsider'].id)
     async with sessions.begin() as db:
         live=await db.get(Job,other.id)

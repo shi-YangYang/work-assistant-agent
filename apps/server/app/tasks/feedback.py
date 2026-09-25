@@ -73,7 +73,7 @@ async def snapshot(sessions, token_hash, job_id):
         from app.tasks.node_state import node_dtos
         from app.modules.operations.receipts import message_actions
         actions = await message_actions(db, actor, message)
-        return {'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
+        return {'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
 async def events(sessions, token_hash, job_id):

@@ -35,7 +35,7 @@ export function useMessageSubmission({
   retryWait: number
   refresh: () => void
 }) {
-  const { setDraft } = useWorkspace()
+  const { setDraft, rememberConversation } = useWorkspace()
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
@@ -92,6 +92,7 @@ export function useMessageSubmission({
         )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
+      rememberConversation(sent.conversationId)
       current.files.forEach((file) => URL.revokeObjectURL(file.url))
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, null),

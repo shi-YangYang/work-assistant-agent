@@ -134,7 +134,8 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
         return '已创建工作。'
     class CompletionJudge:
         async def ainvoke(self, messages):
-            return AIMessage(content='{"segments":[{"index":0,"kind":"execution","evidence":[]}],"needs_action":true}')
+            payload = json.loads(messages[-1].content)
+            return AIMessage(content=json.dumps({'segments': [{'index': 0, 'kind': 'execution', 'evidence': []}], 'needs_action': not payload['currentActions']}))
     async def before(context):
         context.intent_model = Judge(mode != 'rejected')
         await execute(context, step=1, action='create_work', changes={'title': '已有一次操作'})
@@ -161,6 +162,12 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
     context, _ = await runtime(setup, '把日报改成老板看得懂的简短版本，不要夸大成果')
     data = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id))
     assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': source.content}]
+    assert not data['items'][0]['sourceFacts']['complete']
+    rejected = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=1, changes={'ongoing': '保留计划'})
+    assert rejected['state'] == 'clarification' and '来源不完整' in rejected['message']
+    assert not context.intent_model.inputs
+    async with sessions.begin() as db:
+        (await db.get(Report, report.id)).source_ids = [source.id]
     class FactJudge(Judge):
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)

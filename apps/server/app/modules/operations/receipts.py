@@ -95,6 +95,8 @@ def receipt_reply(review, cards):
     parts = [review.text] if review.text else []
     if summary:
         parts.append(summary + '。')
+    if review.verified and review.needs_action:
+        parts.append('本次请求仍有操作未完成；已保存的结果会保留，请继续说明要处理的剩余事项。')
     if not review.verified:
         parts.append('答复说明暂未完成核对；已保存的操作结果以上方记录为准。' if cards else '答复暂未完成核对，请重试答复核对；业务操作结果会保留。')
     elif review.execution_claims and not cards:

@@ -5,8 +5,19 @@ from app.security.ownership import owned
 
 
 def clip(value):
-    rendered = json.dumps(value, ensure_ascii=False, default=str)
-    return rendered[:6000]
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def text_page(fields, start=0, width=1500):
+    """Keep JSON intact; the offset applies to each named text field."""
+    start = max(0, start)
+    values = {key: str(value or '') for key, value in fields.items()}
+    size = max((len(value) for value in values.values()), default=0)
+    return {key: value[start:start + width] for key, value in values.items()}, {
+        'contentOffset': start,
+        'contentTruncated': start > 0 or size > width,
+        'nextContentOffset': start + width if size > start + width else None,
+    }
 
 
 def explicit_followup(text):

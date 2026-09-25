@@ -53,4 +53,10 @@ async def lease(db, context):
         attachment = await owned(db, Attachment, identifier, actor)
         if attachment.extraction_revision != revision:
             raise InputChanged(document=True)
+    for identifier, message_id in context.image_sources.items():
+        attachment = await owned(db, Attachment, identifier, actor)
+        parent = await active_message(db, message_id, actor)
+        if attachment.message_id != parent.id or attachment.kind != 'image':
+            raise ValueError('引用的图片已不可用，请重新发送')
+        await business_require(db, actor, parent.access)
     return job, actor

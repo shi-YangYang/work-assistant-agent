@@ -99,6 +99,21 @@ it.each(['failed', 'awaiting_retry'] as const)(
   },
 )
 
+it('distinguishes partial task completion from completed processing steps', () => {
+  const html = renderToStaticMarkup(
+    createElement(TaskProgress, {
+      job: job({
+        state: 'awaiting_input',
+        incompleteTask: true,
+        nodes: [node({ state: 'succeeded' })],
+      }),
+      busy: false,
+      onRetry: vi.fn(),
+    }),
+  )
+  expect(html).toContain('仍有事项未完成 · 已完成 1 个步骤')
+})
+
 it('requires explicit assistant opt-in and preserves other JobNotice presentation', () => {
   const ordinary = renderToStaticMarkup(createElement(JobNotice, { job: job(), refresh: vi.fn() }))
   expect(ordinary).not.toContain('处理步骤')

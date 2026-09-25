@@ -32,7 +32,7 @@ export function TaskProgress({
   const confirmations = nodes.filter((node) => node.state === 'awaiting_confirmation').length
   const retries = nodes.reduce((total, node) => total + node.totalRetries, 0)
   const summary = complete
-    ? `已完成 ${completed} 个步骤${confirmations ? ` · ${confirmations} 项待确认` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
+    ? `${job.incompleteTask ? '仍有事项未完成 · ' : ''}已完成 ${completed} 个步骤${confirmations ? ` · ${confirmations} 项待确认` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
     : job.state === 'queued'
       ? '等待继续处理'
       : job.state === 'cancelled'

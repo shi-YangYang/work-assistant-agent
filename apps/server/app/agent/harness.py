@@ -58,6 +58,8 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         # Checkpoints include pending executable tools. Never share them between jobs,
         # even for the same employee or report; history below contains business data only.
         thread = f'{actor.company_id}:{actor.id}:job:{job.id}'
+        if context.node_retry:
+            thread += ':scope:' + context.node_scope
         if context.model_binding is not None:
             config_digest = hashlib.sha256(json.dumps(context.model_binding, sort_keys=True).encode()).hexdigest()
             thread += f':config:{context.config_attempt}:{config_digest}'
@@ -74,7 +76,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         repair_id = f'completion-repair:{job.id}'
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
-            instruction = '服务端核对：用户明确要求的操作尚无工具回执，上一条仅写了文字。回看原用户请求与本轮已读材料；信息足够时调用 execute_business_action。用户委托挑选单条删除对象并确认时，应调用工具准备确认卡，不是再用文字询问。管理员明确要求新建本人督办时直接保存本人工作并关联已有真实 source_tokens。不得扩展范围，不改员工工作，不实际删除或提交；有歧义则明确说明。'
+            instruction = '服务端核对：原用户请求还有遗漏的操作。先 get_business_actions 读取当前回执，逐项对照原请求，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。'
             result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         elif state.values:
             # The worker already checked retry authorization and lease. Resume this

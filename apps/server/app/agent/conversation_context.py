@@ -41,11 +41,26 @@ async def conversation_references(db, actor, job, current, budget=12000):
         if not await business_valid(db, actor, row.access):
             continue
         reference = await message_reference(db, actor, row)
-        reference['userText'] = reference['userText'][:3000]
-        reference['materialTranscript'] = reference['materialTranscript'][:2000]
-        reference['assistantReference'] = reference['assistantReference'][:5000]
         reference['explicitReplyTarget'] = row.id == current.reply_to
+        # Never silently lose the end of a user's instruction, especially an
+        # explicitly selected reply target. Compress secondary prose first.
+        reference['truncatedFields'] = []
+        for field, limit in (('materialTranscript', 2000), ('assistantReference', 3000)):
+            if len(reference[field]) > limit:
+                reference[field] = reference[field][:limit]
+                reference['truncatedFields'].append(field)
         size = len(json.dumps(reference, ensure_ascii=False))
+        if size > budget and reference['explicitReplyTarget']:
+            for field in ('assistantReference', 'materialTranscript'):
+                excess = size - budget
+                if excess <= 0:
+                    break
+                reference[field] = reference[field][:max(0, len(reference[field]) - excess - 100)]
+                if field not in reference['truncatedFields']:
+                    reference['truncatedFields'].append(field)
+                size = len(json.dumps(reference, ensure_ascii=False))
+            if size > budget:
+                raise ValueError('明确引用的原消息过长，请将本次要采用的要求直接写在新消息中')
         if size > budget:
             continue
         budget -= size

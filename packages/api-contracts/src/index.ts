@@ -163,6 +163,7 @@ export interface TaskNode {
   canRetry: boolean
 }
 export interface Job {
+  incompleteTask?: boolean
   nodes?: TaskNode[]
   operationFeedback?: OperationFeedback[]
   stage?: string
@@ -348,6 +349,7 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  incompleteTask?: boolean
   nodes?: TaskNode[]
   jobId: string
   attempt: number

@@ -171,6 +171,7 @@ export function MessageCard({
                 ...(live.feedback
                   ? {
                       state: live.feedback.state,
+                      incompleteTask: live.feedback.incompleteTask ?? job.incompleteTask,
                       stage: live.feedback.stage,
                       error: live.feedback.error,
                       nodes: live.feedback.nodes,
