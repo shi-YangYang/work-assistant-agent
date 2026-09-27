@@ -1,4 +1,4 @@
-import type { Attachment } from '@paa/api-contracts'
+import type { Attachment, PersonaId } from '@paa/api-contracts'
 
 type PendingFile = {
   id: string
@@ -15,12 +15,15 @@ export type Composer = {
   key: string
   replyTo?: string
   sending?: boolean
+  personaId?: PersonaId
+  submissionPersonaId?: PersonaId
   uploading?: string
   pending?: {
     key: string
     body: {
       conversationId?: string
       newConversation?: boolean
+      personaId?: PersonaId
       text: string
       attachmentIds: string[]
       voiceCommandAttachmentId?: string
@@ -34,6 +37,7 @@ export function appendRecordedFile(previous: Composer | undefined, file: File): 
   return {
     ...current,
     key: crypto.randomUUID(),
+    submissionPersonaId: undefined,
     files: [
       ...current.files,
       { id: crypto.randomUUID(), file, url: URL.createObjectURL(file), recorded: true },

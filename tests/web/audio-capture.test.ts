@@ -51,6 +51,27 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllGlobals())
 
+it('clears a failed submission persona when new audio changes the draft', () => {
+  const previous: Composer = {
+    text: '补充录音后发送',
+    files: [],
+    key: 'failed-submission',
+    personaId: 'professional',
+    submissionPersonaId: 'dabao',
+  }
+  const file = new File(['captured audio'], 'voice.webm', { type: 'audio/webm' })
+  const next = appendRecordedFile(previous, file)
+
+  expect(next.submissionPersonaId).toBeUndefined()
+  expect(next.personaId).toBe('professional')
+  expect(next.key).not.toBe(previous.key)
+  expect(next.text).toBe(previous.text)
+  expect(next.files[0]).toMatchObject({ file, recorded: true })
+  expect(previous.submissionPersonaId).toBe('dabao')
+  expect(previous.files).toHaveLength(0)
+  URL.revokeObjectURL(next.files[0].url)
+})
+
 describe('asynchronous microphone ownership', () => {
   it('stops every late track after page unmount without constructing a recorder', async () => {
     const request = deferredStream()

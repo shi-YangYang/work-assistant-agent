@@ -163,7 +163,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
         payload = json.loads(request.content)
         if not payload.get('tools'):
             # Independent presentation request is counted like every provider call.
-            verdict = json.dumps({'segments': [{'index': 0, 'kind': 'information', 'evidence': []}]})
+            verdict = json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []}]})
             event = {'choices': [{'delta': {'content': verdict}, 'finish_reason': 'stop'}]}
             wire = 'data: ' + json.dumps(event) + '\n\ndata: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\ndata: [DONE]\n\n'
             return httpx.Response(200, text=wire, headers={'content-type': 'text/event-stream'})

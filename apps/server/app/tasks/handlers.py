@@ -29,6 +29,17 @@ from sqlalchemy import select
 log = logging.getLogger('paa.company')
 
 
+def message_input_digest(context, blocks, transcript_revision, voice_command_attachment_id):
+    from app.core.digests import digest
+    from app.core.personas import LEGACY_PERSONA
+    payload = {'blocks': blocks, 'sourceRevision': transcript_revision, 'documents': context.document_snapshot, 'voiceCommandAttachmentId': voice_command_attachment_id}
+    # Historical professional jobs must retain their node scope and pending reply.
+    # The new persona gets a distinct scope without invalidating old checkpoints.
+    if context.persona_id != LEGACY_PERSONA:
+        payload['personaId'] = context.persona_id
+    return digest(payload)
+
+
 async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
     try:
         await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model), timeout=450)
@@ -64,6 +75,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
             order = job.result.get('attachmentOrder', [])
             attachments = sorted(attachments, key=lambda a: order.index(a.id) if a.id in order else a.created_at.timestamp())
+            context.persona_id = message.persona_id
             transcript_revision = message.transcript_revision
             text, transcript = message.text, message.transcript
             reply_to = message.reply_to
@@ -146,8 +158,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；正文需通过工具读取，状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
         if not model and not context.model_binding.get(context.model_purpose):
             raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
-        from app.core.digests import digest
-        review_input = digest({'blocks': blocks, 'sourceRevision': transcript_revision, 'documents': context.document_snapshot, 'voiceCommandAttachmentId': job.result.get('voiceCommandAttachmentId')})
+        review_input = message_input_digest(context, blocks, transcript_revision, job.result.get('voiceCommandAttachmentId'))
         from app.tasks.node_execution import initialize
         context.node_retry = True
         await initialize(context, review_input)

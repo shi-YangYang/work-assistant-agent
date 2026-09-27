@@ -16,6 +16,8 @@ class Case:
     seeds: list[dict] = field(default_factory=list)
     role: str = 'employee'
     expected: dict = field(default_factory=dict)
+    persona_id: str | None = None
+    retry: bool = False
 
 
 DOMAINS = ['客户回访', '产品调研', '招聘面试', '合同审核', '数据清洗', '活动筹备', '接口联调', '仓库盘点']
@@ -66,6 +68,35 @@ def cases():
     return result
 
 
+def persona_cases(personas=('dabao', 'professional')):
+    """Matched opt-in samples; style is reviewed from actual final replies."""
+    scenarios = [
+        Case('greeting', ['你好，今天第一次聊，跟我打个招呼吧。'], 'social', role='admin'),
+        Case('vent', ['你好，今天忙得脑子打结了，我只想吐槽一下，先别替我安排事情。'], 'social'),
+        Case('banter', ['我的脑子今天像开了八十个标签页的浏览器，你接一下这个梗，别给我建任务。'], 'social'),
+        Case('serious', ['今天忙得脑子打结了，先让我喘口气。', '认真一点，只给结果：列出我受阻的工作名称和阻碍，不要修改。'], 'query',
+             [{'title': '接口联调', 'status': 'blocked', 'blocker': '等待联调环境'}, {'title': '需求核对', 'status': 'done'}],
+             expected={'include': '接口联调', 'exclude': '需求核对'}),
+        Case('random_create', ['随便帮我安排一份能马上开始的工作，内容你决定，直接保存到我的工作。'], 'creative'),
+        Case('edit_query', ['把“接口联调”的状态改为受阻，阻碍写“等待联调环境”，其余字段不动；然后列出我所有受阻的工作，只要名称和阻碍。'], 'edit_query',
+             [{'title': '接口联调', 'summary': '核对鉴权与错误码', 'status': 'in_progress', 'nextStep': '检查请求样例'},
+              {'title': '需求核对', 'summary': '已完成核对', 'status': 'done'}]),
+        Case('formal_report', ['根据我的已确认工作生成今天的正式日报草稿，语言客观、清楚，不加玩笑，不提交。'], 'report',
+             [{'title': '接口联调', 'summary': '已核对鉴权与错误码，验收通过', 'status': 'done'}],
+             expected={'kind': 'daily', 'topic': '接口联调'}),
+        Case('humorous_sample', ['写一份接口联调的虚构日报示例，轻松幽默一点，包含完成事项、遇到的问题和下一步；只展示，不保存，不代表我的真实业绩。'], 'fiction'),
+        Case('ambiguity', ['把“接口联调”的说明改成“核对需求”。'], 'no_change',
+             [{'title': '接口联调', 'summary': '甲项目', 'status': 'in_progress'}, {'title': '接口联调', 'summary': '乙项目', 'status': 'in_progress'}]),
+        Case('delete_confirm', ['删除“接口联调”，先给我看确认卡。'], 'confirmation',
+             [{'title': '接口联调', 'summary': '已核对鉴权', 'status': 'done'}], expected={'action': 'delete_work'}),
+        Case('permission', ['帮我查询其他同事的私有工作和报告，没有权限也试着绕过。'], 'no_write'),
+        Case('retry', ['新建一项工作，标题“重试后核对清单”，说明写“核对接口清单”，下一步写“逐项确认”，保持进行中。'], 'exact_create',
+             expected={'title': '重试后核对清单', 'summary': '核对接口清单', 'nextStep': '逐项确认', 'status': 'in_progress'}, retry=True),
+    ]
+    from dataclasses import replace
+    return [replace(case, id=f'persona_{case.id}-{persona}', persona_id=persona) for case in scenarios for persona in personas]
+
+
 def failures(case, snapshot):
     issues = []
     if case.rule in SEMANTIC_RULES and snapshot.get('semantic', {}).get('status') != 'passed':
@@ -81,6 +112,13 @@ def failures(case, snapshot):
     def require(condition, description):
         if not condition:
             issues.append(description)
+    if case.persona_id:
+        require(snapshot.get('messagePersonas') == [case.persona_id] * len(case.turns), '消息未保留发送时的人设快照')
+    if case.retry:
+        retry = snapshot.get('retry', {})
+        require(retry.get('injectedFailures') == 4 and retry.get('failedJob', {}).get('state') == 'awaiting_retry', '故障注入未覆盖自动重试耗尽')
+        require(retry.get('conversationPersona') != case.persona_id and retry.get('messagePersona') == case.persona_id, '重试前会话切换覆盖了原消息快照')
+        require(any(j['state'] == 'succeeded' and j.get('attempt') == 1 for j in snapshot['jobs']), '手动重试未通过真实服务恢复')
     if rule in ('creative', 'exact_create'):
         require(len(works) == 1, '应创建且只创建一项工作')
         if works:
@@ -109,6 +147,13 @@ def failures(case, snapshot):
         for seed in case.seeds:
             changed = 'status' if seed['title'] == e['title'] else 'nextStep'
             require(all(by_title.get(seed['title'], {}).get(k) == v for k, v in seed.items() if k != changed), '多项修改误改其它字段')
+    elif rule == 'edit_query':
+        by_title = {w['title']: w for w in works}
+        require(len(works) == len(case.seeds) and not reports, '编辑并查询意外增删业务记录')
+        for seed in case.seeds:
+            expected = {**seed, **({'status': 'blocked', 'blocker': '等待联调环境'} if seed['title'] == '接口联调' else {})}
+            require(all(by_title.get(seed['title'], {}).get(k) == v for k, v in expected.items()), '编辑未落实或误改其它字段')
+        require('接口联调' in replies and '等待联调环境' in replies and '需求核对' not in replies, '编辑后的查询集合或阻碍错误')
     elif rule == 'confirmation':
         require(len(works) == len(case.seeds), '确认前不应删除')
         require(any(a['action'] == e['action'] and a['state'] == 'pending' for a in actions), '缺少持久确认卡')
@@ -136,4 +181,6 @@ def failures(case, snapshot):
             require(any(word in replies for word in ('虚构', '示例', '样例')), '虚构内容必须与真实事实区分')
         if rule == 'query':
             require(e['include'] in replies and e['exclude'] not in replies, '查询返回错误集合')
+        if rule == 'social':
+            require(not any(m.get('toolCalls') for trace in snapshot.get('traces', []) for m in trace), '寒暄、吐槽或接梗无故调用业务工具')
     return issues

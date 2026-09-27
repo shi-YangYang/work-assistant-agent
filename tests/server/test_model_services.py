@@ -230,7 +230,7 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
             assert 'persistedOperations' not in review
             assert body['max_tokens'] == 2000
-            verdict={'segments':[{'index':0,'kind':'information','evidence':[]}]}
+            verdict={'segments':[{'index':0,'scope_reason':'受控范围判定','scope':'answer','kind':'information','evidence':[]}]}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         if streaming:
             delta=dict(message)

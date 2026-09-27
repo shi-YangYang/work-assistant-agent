@@ -97,7 +97,9 @@ export interface Progress {
   blocker: string
   nextStep: string
 }
+export type PersonaId = 'dabao' | 'professional'
 export interface Conversation {
+  personaId: PersonaId
   id: string
   title: string
   revision: number

@@ -1,11 +1,13 @@
+from app.core.personas import LEGACY_PERSONA
 from app.db.base import Base, Owned
-from sqlalchemy import Boolean, ForeignKey, Integer, Text
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 
 class Message(Owned, Base):
     __tablename__ = 'company_message'
+    persona_id: Mapped[str] = mapped_column(String(32), default=LEGACY_PERSONA, server_default=LEGACY_PERSONA)
     access: Mapped[dict] = mapped_column(JSONB, default=dict)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey('company_conversation.id'), nullable=True, index=True)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)

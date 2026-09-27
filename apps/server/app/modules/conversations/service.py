@@ -1,13 +1,14 @@
+from app.core.personas import DEFAULT_PERSONA
 from app.modules.conversations.models import Conversation
 from app.modules.members.models import Member
 from sqlalchemy import select
 
 
-async def default_conversation(db, actor):
+async def default_conversation(db, actor, persona_id=None):
     await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
-    item = await db.scalar(select(Conversation).where(Conversation.owner_id == actor.id, Conversation.deleted.is_(False)).order_by(Conversation.created_at).limit(1))
+    item = await db.scalar(select(Conversation).where(Conversation.owner_id == actor.id, Conversation.deleted.is_(False)).order_by(Conversation.created_at).limit(1).with_for_update())
     if item is None:
-        item = Conversation(company_id=actor.company_id, owner_id=actor.id)
+        item = Conversation(company_id=actor.company_id, owner_id=actor.id, persona_id=persona_id or DEFAULT_PERSONA)
         db.add(item)
         await db.flush()
     return item

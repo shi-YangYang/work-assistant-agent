@@ -11,9 +11,11 @@ from langsmith import tracing_context
 from app.agent.history import conversation_history
 from app.agent.middleware import ToolBoundary
 from app.agent.model import BoundedChatModel, approximate_tokens
+from app.agent.persona import persona_prompt
 from app.agent.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
 from app.agent.tools.registry import BUSINESS_TOOLS
 from app.agent.tools.team import TEAM_TOOLS
+from app.core.personas import LEGACY_PERSONA
 from app.db.base import now
 from app.modules.messages.models import Message
 from app.security.access import scope as business_scope
@@ -33,7 +35,7 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + getattr(context, 'request_clock', ''), middleware=[BusinessSummary(model, trigger=('tokens', 12000), keep=('messages', 6), token_counter=approximate_tokens), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + getattr(context, 'request_clock', ''), middleware=[BusinessSummary(model, trigger=('tokens', 12000), keep=('messages', 6), token_counter=approximate_tokens), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -67,6 +69,8 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             if context.source_revision is None:
                 raise ValueError('消息输入版本缺失，无法恢复处理')
             digest = hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            if context.persona_id != LEGACY_PERSONA:
+                thread += f':persona:{context.persona_id}'
             thread += f':input:{context.source_revision}:{digest}'
             if context.document_snapshot:
                 thread += ':files:' + context.document_snapshot

@@ -311,7 +311,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
             payload = json.loads(messages[-1]['content'])
             if payload.get('task') == 'business_reply_review':
                 counts['review'] += 1
-                content = json.dumps({'segments': [{'index': p['index'], 'kind': 'information', 'evidence': []} for p in payload['segments']]})
+                content = json.dumps({'segments': [{'index': p['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for p in payload['segments']]})
             else:
                 counts['intent'] += 1
                 content = json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '', 'receiptOnly': False})

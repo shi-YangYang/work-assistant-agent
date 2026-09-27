@@ -49,7 +49,7 @@ async def test_business_planning_default_preserves_explicit_reasoning_and_unknow
 
 
 def verdict(kinds, proof=()):
-    return json.dumps({'segments': [{'index': i, 'kind': kind, 'evidence': list(proof) if kind == 'query_fact' else []} for i, kind in enumerate(kinds)]})
+    return json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': kind, 'evidence': list(proof) if kind == 'query_fact' else []} for i, kind in enumerate(kinds)]})
 
 
 async def test_numbered_list_and_its_count_are_an_atomic_review_block():
@@ -79,7 +79,7 @@ async def test_invalid_query_proof_is_dropped_without_retaining_false_claim(proo
     result = check_segments(['报告已经提交。', '要查看哪一天？'], verdict(['query_fact', 'information'], proof), evidence)
     assert result.verified and result.text == '要查看哪一天？'
     with pytest.raises(ValueError):
-        check_segments(['a', 'b'], '{"segments":[{"index":0,"kind":"information"},{"index":0,"kind":"information"}]}', [])
+        check_segments(['a', 'b'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"},{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"}]}', [])
 
 
 async def test_current_fields_can_use_saved_snapshot_but_not_pending_or_execution_claims():
@@ -135,7 +135,7 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
     class CompletionJudge:
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            return AIMessage(content=json.dumps({'segments': [{'index': 0, 'kind': 'execution', 'evidence': []}], 'needs_action': not payload['currentActions']}))
+            return AIMessage(content=json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'execution', 'evidence': []}], 'needs_action': not payload['currentActions']}))
     async def before(context):
         context.intent_model = Judge(mode != 'rejected')
         await execute(context, step=1, action='create_work', changes={'title': '已有一次操作'})

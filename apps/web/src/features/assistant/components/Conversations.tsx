@@ -15,6 +15,8 @@ import {
 } from '@web/features/assistant/api/requests'
 import { restoreConversation } from '@web/features/assistant/api/restore-conversation'
 import { ConversationChat } from '@web/features/assistant/components/ConversationChat'
+import { PersonaPicker } from '@web/features/assistant/components/PersonaPicker'
+import { useConversationPersona } from '@web/features/assistant/hooks/useConversationPersona'
 import { ConversationPicker } from '@web/features/assistant/components/ConversationPicker'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { useConversationSearch } from '@web/features/assistant/hooks/useConversationSearch'
@@ -138,6 +140,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     current.refresh()
     window.dispatchEvent(new Event('paa-record-updated'))
   }
+  const persona = useConversationPersona(conversationId, current.data, updated)
   const stopBeforeAction = () => {
     if (!drafts.recording) return true
     notify('请先停止录音，再管理会话；录音会保留在当前会话。')
@@ -156,6 +159,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           <MessageSquare size={17} />
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
           {!current.data && <span className={styles['conversation-caption']}>随时为你准备</span>}
+          <PersonaPicker
+            value={persona.selected}
+            disabled={persona.disabled || !!persona.interaction.busy}
+            onChange={(value) => void persona.choose(value)}
+          />
           <button
             className={`${controlsStyles['icon-button']} ${styles['new-conversation']}`}
             aria-label="新会话"
@@ -189,7 +197,9 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             nextCursor={nextCursor}
           />
         </header>
-        <ErrorNotice>{failure || (conversationId ? current.error : '')}</ErrorNotice>
+        <ErrorNotice>
+          {persona.error || failure || (conversationId ? current.error : '')}
+        </ErrorNotice>
         {!conversationId && !explicitNew && !newDraft && !createdHere && (
           <>
             <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
@@ -207,8 +217,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           <ConversationChat
             key={chatSession.key}
             conversationId={conversationId}
-            onSent={(id) => {
+            personaId={persona.selected}
+            interaction={persona.interaction}
+            onSent={(id, sentPersona) => {
               if (!conversationId) {
+                persona.adoptCreated(id, sentPersona)
                 setChatSession((previous) => ({ ...previous, createdId: id }))
                 navigate(`/assistant/${id}`, { replace: true })
               }

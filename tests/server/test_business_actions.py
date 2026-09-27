@@ -387,8 +387,10 @@ async def test_final_completion_sentences_are_replaced_with_actual_receipts(stat
 
 
 class ReplyJudge:
-    def __init__(self, kinds, *, fail=False, forged_evidence=False):
+    def __init__(self, kinds, *, scopes=None, fail=False, forged_evidence=False):
         self.kinds, self.fail, self.forged_evidence, self.inputs = kinds, fail, forged_evidence, []
+        self.scopes = scopes if scopes is not None else ['answer'] * len(kinds)
+        assert len(self.scopes) == len(kinds)
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
         self.inputs.append(payload)
@@ -397,7 +399,7 @@ class ReplyJudge:
             raise BudgetExceeded('existing call budget exhausted')
         assert len(payload['segments']) == len(self.kinds)
         proof = [payload['toolEvidence'][0]['id']] if payload['toolEvidence'] else []
-        return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'kind': kind, 'evidence': [99999] if self.forged_evidence else proof if kind == 'query_fact' else []} for row, kind in zip(payload['segments'], self.kinds)]}))
+        return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': scope, 'kind': kind, 'evidence': [99999] if self.forged_evidence else proof if kind == 'query_fact' else []} for row, kind, scope in zip(payload['segments'], self.kinds, self.scopes)]}))
 
 
 async def run_reply(setup, text, answer, judge, *, read_report=False, before=None):
@@ -496,9 +498,9 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
 async def test_reply_review_validates_partition_and_reuses_exact_verified_result(setup):
     from app.agent.reply_review import check_segments, review_reply
     with pytest.raises(ValueError):
-        check_segments(['a', 'b'], '{"segments":[{"index":0,"kind":"information"}]}', [])
-    assert check_segments(['a'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[]}]}', []).text == ''
-    assert check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}]).text == ''
+        check_segments(['a', 'b'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"}]}', [])
+    assert check_segments(['a'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"query_fact","evidence":[]}]}', []).text == ''
+    assert check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}]).text == ''
     context, _ = await runtime(setup, '只是讨论，不执行。')
     judge = ReplyJudge(['information'])
     first = await review_reply(context, '需要讨论哪部分？', model=judge)
@@ -523,7 +525,7 @@ async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blan
     answer = '\n你好！\n\n请确认具体事项。\n  '
     parts = reply_segments(answer)
     assert len(parts) == 2 and all(part.strip() for part in parts)
-    verdict = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(2)]})
+    verdict = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'} for i in range(2)]})
     assert check_segments(parts, verdict, []).text == answer.strip()
     assert reply_segments('\n \t') == []
 
@@ -550,9 +552,9 @@ async def test_history_replaces_stale_confirmation_text_with_persisted_state(set
 async def test_review_removes_empty_table_shell_without_damaging_retained_table():
     from app.agent.reply_review import check_segments
     parts = ['| 字段 | 更新后 |\n', '|---|---|\n', '| 标题 | 已改为测试 |\n', '还有哪些要讨论？']
-    verdict = json.dumps({'segments': [{'index': i, 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
+    verdict = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
     assert check_segments(parts, verdict, []).text == '还有哪些要讨论？'
-    keep = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(4)]})
+    keep = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'} for i in range(4)]})
     assert check_segments(parts, keep, []).text == ''.join(parts)
 
 

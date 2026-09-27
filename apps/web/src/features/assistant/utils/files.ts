@@ -1,4 +1,4 @@
-import type { DocumentCitation } from '@paa/api-contracts'
+import type { DocumentCitation, PersonaId } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 
 const documents = new Set(['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx'])
@@ -68,12 +68,14 @@ export function currentCitation(citations: DocumentCitation[], selected: Documen
 export function messageSubmission(
   composer: Composer,
   conversationId?: string,
+  personaId?: PersonaId,
 ): NonNullable<Composer['pending']> {
   if (composer.pending) return composer.pending
   return {
     key: composer.key,
     body: {
       conversationId,
+      personaId: composer.submissionPersonaId ?? personaId,
       ...(!conversationId ? { newConversation: true } : {}),
       text: composer.text,
       attachmentIds: composer.files.map((file) => {

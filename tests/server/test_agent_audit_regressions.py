@@ -40,7 +40,7 @@ class Review:
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
         return AIMessage(content=json.dumps({'segments': [
-            {'index': item['index'], 'kind': 'information', 'evidence': []}
+            {'index': item['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []}
             for item in payload['segments']], 'needs_action': False}))
 
 

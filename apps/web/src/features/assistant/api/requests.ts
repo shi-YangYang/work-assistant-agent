@@ -3,6 +3,7 @@ import type {
   BusinessAction,
   Conversation,
   Page,
+  PersonaId,
   WorkMessage,
 } from '@paa/api-contracts'
 import { api, write } from '@web/api/client'
@@ -64,6 +65,7 @@ export function sendMessage(
   body: {
     conversationId?: string
     newConversation?: boolean
+    personaId?: PersonaId
     text: string
     attachmentIds: string[]
     voiceCommandAttachmentId?: string
@@ -106,6 +108,13 @@ export function renameConversation(
   body: { title: string; expectedRevision: number },
 ) {
   return write<Conversation>(`/conversations/${editing.id}`, body, 'PATCH')
+}
+
+export function updateConversationPersona(
+  conversation: Conversation,
+  body: { personaId: PersonaId; expectedRevision: number },
+) {
+  return write<Conversation>(`/conversations/${conversation.id}`, body, 'PATCH')
 }
 
 export function deleteConversation(deleting: Conversation, body: { expectedRevision: number }) {

@@ -29,6 +29,7 @@ it('remembers the accepted conversation when navigating away during submission',
     submission = useMessageSubmission({
       composer: { text: '发送后切换页面', files: [], key: 'draft-key' },
       composerKey: 'new-conversation',
+      personaId: 'dabao',
       onSent,
       previewUploading: false,
       capturing: false,

@@ -1,3 +1,5 @@
+import type { PersonaId } from '@paa/api-contracts'
+import type { PersonaInteraction } from './useConversationPersona'
 import { ApiError, isCancelled } from '@web/api/client'
 import { sendMessage, uploadAttachment } from '@web/features/assistant/api/requests'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -14,6 +16,8 @@ export function useMessageSubmission({
   composer,
   composerKey,
   conversationId,
+  personaId,
+  interaction,
   onSent,
   previewUploading,
   capturing,
@@ -26,7 +30,9 @@ export function useMessageSubmission({
   composer: Composer
   composerKey: string
   conversationId?: string
-  onSent: (id: string) => void
+  personaId: PersonaId
+  interaction?: PersonaInteraction
+  onSent: (id: string, personaId: PersonaId) => void
   previewUploading: boolean
   capturing: boolean
   active: RefObject<boolean>
@@ -54,10 +60,15 @@ export function useMessageSubmission({
       setLimitError(selectionError)
       return
     }
+    if (interaction && !interaction.acquire('message')) return
     sendingRef.current = true
     setBusy(true)
     setSendError('')
-    let current = { ...composer, files: composer.files.map((file) => ({ ...file })) }
+    let current = {
+      ...composer,
+      submissionPersonaId: composer.submissionPersonaId ?? personaId,
+      files: composer.files.map((file) => ({ ...file })),
+    }
     let uploading: string | undefined
     setDraft(composerKey, { ...current, sending: true })
     try {
@@ -86,7 +97,7 @@ export function useMessageSubmission({
           )
         }
         uploading = undefined
-        current.pending = messageSubmission(current, conversationId)
+        current.pending = messageSubmission(current, conversationId, personaId)
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: current.pending }),
         )
@@ -99,7 +110,7 @@ export function useMessageSubmission({
       )
       if (active.current) {
         refresh()
-        onSent(sent.conversationId)
+        onSent(sent.conversationId, current.pending.body.personaId ?? current.submissionPersonaId)
       }
     } catch (e) {
       if (uploading) {
@@ -127,6 +138,7 @@ export function useMessageSubmission({
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, { sending: false, uploading: undefined }),
       )
+      interaction?.release('message')
       sendingRef.current = false
       if (active.current) setBusy(false)
     }

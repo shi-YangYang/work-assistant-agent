@@ -1,6 +1,7 @@
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from app.core.personas import LEGACY_PERSONA, PersonaId
 
 
 class BudgetExceeded(Exception):
@@ -24,6 +25,7 @@ class RunContext:
     fence: int
     sessions: Any
     settings: Any
+    persona_id: PersonaId = LEGACY_PERSONA
     source_revision: int | None = None
     document_snapshot: str = ''
     document_versions: dict[str, int] = field(default_factory=dict)

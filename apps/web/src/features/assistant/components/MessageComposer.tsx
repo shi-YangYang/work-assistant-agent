@@ -31,6 +31,7 @@ export function MessageComposer({
   textInput,
   busy,
   previewUploading,
+  personaSaving = false,
   pending,
   sendError,
   recording,
@@ -48,6 +49,7 @@ export function MessageComposer({
   textInput: React.RefObject<HTMLTextAreaElement | null>
   busy: boolean
   previewUploading: boolean
+  personaSaving?: boolean
   pending: boolean
   sendError: string | Error
   recording: { state: CaptureState; seconds: number; start: () => Promise<void>; stop: () => void }
@@ -222,6 +224,7 @@ export function MessageComposer({
               busy ||
               !!retryWait ||
               previewUploading ||
+              personaSaving ||
               capturing ||
               (!composer.text.trim() && !composer.files.length)
             }

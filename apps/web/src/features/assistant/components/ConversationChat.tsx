@@ -1,7 +1,7 @@
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import styles from './ConversationChat.module.css'
-import type { BusinessAction, WorkMessage } from '@paa/api-contracts'
+import type { BusinessAction, PersonaId, WorkMessage } from '@paa/api-contracts'
 import { Modal } from '@web/components/Modal'
 import {
   conversationMessagesPath,
@@ -16,6 +16,7 @@ import type { PreviewImage } from '@web/features/assistant/components/ImageGalle
 import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
 import { MessageComposer } from '@web/features/assistant/components/MessageComposer'
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
+import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
 import { useMessageSubmission } from '@web/features/assistant/hooks/useMessageSubmission'
 import { useRecording } from '@web/features/assistant/hooks/useRecording'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -34,10 +35,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 export function ConversationChat({
   conversationId,
+  personaId,
+  interaction,
   onSent,
 }: {
   conversationId?: string
-  onSent: (conversationId: string) => void
+  personaId: PersonaId
+  interaction: PersonaInteraction
+  onSent: (conversationId: string, personaId: PersonaId) => void
 }) {
   const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
@@ -55,7 +60,8 @@ export function ConversationChat({
     orphanActionsPath(conversationId),
     3000,
   )
-  const [previewUploading, setPreviewUploading] = useState(false)
+  const [previewBusy, setPreviewUploading] = useState(false)
+  const previewUploading = previewBusy || (!!composer.uploading && !composer.sending)
   const [gallery, setGallery] = useState<number | null>(null)
   const [pdf, setPdf] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -74,6 +80,8 @@ export function ConversationChat({
     composer,
     composerKey,
     conversationId,
+    personaId,
+    interaction,
     onSent,
     previewUploading,
     capturing,
@@ -83,7 +91,7 @@ export function ConversationChat({
     retryWait,
     refresh,
   })
-  const locked = busy || pending || previewUploading
+  const locked = busy || pending || previewUploading || interaction.busy === 'persona'
   const textInput = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const pageElement = useRef<HTMLDivElement>(null)
@@ -110,10 +118,11 @@ export function ConversationChat({
     composerRef.current = composer
   }, [composer])
   const change = (next: Composer) => {
+    next = { ...next, submissionPersonaId: undefined }
     composerRef.current = next
     setDraft(
       composerKey,
-      next.text || next.files.length || next.replyTo || next.pending
+      next.text || next.files.length || next.replyTo || next.pending || next.personaId
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
     )
@@ -172,7 +181,11 @@ export function ConversationChat({
       warnings: item.attachment?.image?.warnings,
       prepare: async () => {
         if (locked || capturing || sendingRef.current) throw new Error('请等待当前操作结束后再预览')
+        if (!interaction.acquire('preview')) throw new Error('请等待人设保存后再预览')
         setPreviewUploading(true)
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, { uploading: item.id }),
+        )
         try {
           const form = new FormData()
           form.append('file', item.file)
@@ -187,6 +200,10 @@ export function ConversationChat({
           )
           return attachment.previewUrl ?? attachment.url
         } finally {
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, { uploading: undefined }),
+          )
+          interaction.release('preview')
           if (active.current) setPreviewUploading(false)
         }
       },
@@ -284,6 +301,7 @@ export function ConversationChat({
         textInput={textInput}
         busy={busy}
         previewUploading={previewUploading}
+        personaSaving={interaction.busy === 'persona'}
         pending={pending}
         sendError={sendError}
         retryWait={retryWait}

@@ -94,7 +94,7 @@ async def test_dropped_query_uses_actual_rows_not_rejected_prose(setup):
     evidence = [{'id': 2, 'tool': 'find_work_items', 'result': result}]
     context.reply_evidence = evidence
     parts = ['编造的查询结论。', '未做任何修改。']
-    verdict = json.dumps({'segments': [{'index': 0, 'kind': 'unsupported'}, {'index': 1, 'kind': 'information'}]})
+    verdict = json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'unsupported'}, {'index': 1, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'}]})
     reviewed = check_segments(parts, verdict, evidence)
     assert reviewed.verified and reviewed.dropped_query and reviewed.text == parts[1]
     async with sessions() as db:
