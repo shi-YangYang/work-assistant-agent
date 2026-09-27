@@ -1,5 +1,6 @@
 """Real transactions and API boundaries; fixed judge avoids paid model calls."""
 import json
+from zoneinfo import ZoneInfo
 import pytest
 from datetime import timedelta
 from fastapi import HTTPException
@@ -85,7 +86,7 @@ async def test_manual_create_date_source_and_edit_compatibility(setup):
     assert removed.json()['dueDate'] is None
     assert (await c['peer'].get('/api/v1/work-items/' + work['id'])).status_code == 404
     assert (await c['admin'].post('/api/v1/work-items/' + work['id'] + '/progress', json=patch)).status_code == 404
-    report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().date().isoformat()}, headers=keyed())
+    report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}, headers=keyed())
     async with sessions() as db:
         job = await db.get(Job, report.json()['jobId'])
         assert len(job.result['sourceIds']) == 1
@@ -200,7 +201,7 @@ async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     settings, sessions, users, c = setup
     await create(c['employee'], status='done', summary='完成报价')
     context, sent = await runtime(setup, '生成今天日报')
-    result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat())
+    result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert result['state'] == 'running'
     intent = context.intent_model.inputs[0]
     assert intent['proposedOperation']['effect'] == 'enqueue_report'
@@ -286,7 +287,7 @@ async def test_generate_and_submit_waits_for_real_report_then_exact_preview(setu
     settings, sessions, users, c = setup
     await create(c['employee'], summary='完成方案', status='done')
     context, sent = await runtime(setup, '生成今天日报并提交')
-    result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat(), submit_after=True)
+    result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(), submit_after=True)
     assert result['state'] == 'running' and not result.get('canConfirm')
     await finish(context)
     job = await claim(sessions, users['employee'].id)
@@ -454,7 +455,7 @@ async def test_worker_keeps_verified_existing_report_state_and_clarification(set
 
 async def test_worker_removes_unissued_business_markers_without_team_queries(setup):
     answer = '请补充你要查看的事项。[[business:work/3e3b3f56-738c-4380-858a-49052fb034c6]]'
-    result = await run_reply(setup, '查看工作', answer, ReplyJudge(['information', 'information']))
+    result = await run_reply(setup, '查看工作', answer, ReplyJudge(['information']))
     assert result['reply'] == '请补充你要查看的事项。'
     assert not result['businessCitations']
 

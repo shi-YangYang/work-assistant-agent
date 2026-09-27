@@ -17,10 +17,10 @@ log = logging.getLogger('paa.company')
 
 
 REVIEW_TASK = 'business_reply_review'
-REVIEW_VERSION = 19
+REVIEW_VERSION = 21
 
 
-QUERY_FACT_TOOLS = frozenset({'find_work_items', 'get_work_item', 'query_reports', 'query_report_obligations', 'query_team_business', 'find_team_members'})
+QUERY_FACT_TOOLS = frozenset({'find_work_items', 'get_work_item', 'query_reports', 'query_report_obligations', 'query_team_business', 'find_team_members', 'read_team_source'})
 
 
 class SegmentVerdict(BaseModel):
@@ -77,6 +77,12 @@ def reply_segments(answer):
         for part in re.split(r'(?<=[。！？!?\n])|(?<=[.;])(?=\s|$)', block):
             if not part:
                 continue
+            # A sentence and its trailing source markers are one review unit.
+            # Dropping either alone can lose provenance or leave an orphan citation.
+            citation = re.match(r'^[”’」』"\']*(?:[ \t]*\[\[(?:file|business):[^\]\r\n]+\]\])+', part)
+            if citation and parts:
+                parts[-1] += citation[0]
+                part = part[citation.end():]
             if part.strip():
                 parts.append(part)
             elif parts:
@@ -234,14 +240,17 @@ needs_action 按用户要求的每个动作逐项核对 currentActions 和工具
 列表、表格仍为完整块，不能自行拆条目或截断句子。块内包含所求内容、选定主路径或必要唯一依据时选择 answer/necessary，不能因混有附带内容而整块删除；独立的附加列表不因是列表就自动保留。不以长度删减答案。
 necessary 必须填写 supports，列出本段实际服务的其它段落 index（最多16项）；answer/extra 的 supports 留空。前提、条件、风险、来源按实际依附内容锚定，不能因为同属一个主题就指向主答案：假设失败的诊断/前言支持其后补救分支，该分支才会造成的风险支持该分支。分支被剔除时，只服务它的说明也剔除。必要唯一来源、背景和真实风险按实际所服务的主答案索引保留；危险处置本身是用户所问时可为 answer。一个必要段至少有一条支撑链通向保留的 answer 才能保留；不得自指、越界、重复或循环。不能借 supports 把额外方案升级为主答案。
 之后对每段独立填写以下 kind（extra 也要填写），事实类别不能改变 scope。scope 只选择原文，不润色、不授权、不改变 needs_action：
-roleCapabilities 是服务端提供的真实角色能力说明。与其一致的能力介绍或权限拒绝属于 information，无需查询数据库证明，不能因未执行该角色不支持的操作而标记 needs_action。
+roleCapabilities 是服务端提供的真实角色能力说明。与其一致的能力介绍或权限拒绝属于 information，无需查询数据库证明。与其矛盾的前置要求、限制或能力说明必须标 unsupported，不能用泛泛的工程惯例代替本系统规则。不能因未执行该角色不支持的操作而标记 needs_action。
 needs_action 只表示遗漏了用户授权的持久化业务操作，不表示正文缺段落。撰写示例/自由发挥报告且未要求保存正式报告时，没有写入要求，needs_action 必须 false，不能把“生成一份报告”这几个字一律当成数据库写入。
 execution：助手声称本轮创建/修改/完成工作或生成/提交/删除报告，含执行承诺、成功、失败、待确认说明。全部剔除，由服务端回执展示；无回执也不能改判 information。混合执行与查询的段落归此类。
-query_fact：查询已有业务状态。必须匹配 toolEvidence 中 find_work_items/get_work_item/query_reports/query_report_obligations/query_team_business/find_team_members 的成功结构化结果，evidence 填实际证据 id。逐项核对对象、日期、范围、状态、数量；待确认≠已提交、进行中≠已完成。矛盾、缺证据、旧状态或只有错误/建议则 unsupported。
+query_fact：查询已有业务状态。必须匹配 toolEvidence 中 find_work_items/get_work_item/query_reports/query_report_obligations/query_team_business/find_team_members/read_team_source 的成功结构化结果，evidence 填实际证据 id。逐项核对对象、日期、范围、状态、数量；待确认≠已提交、进行中≠已完成。矛盾、缺证据、旧状态或只有错误/建议则 unsupported。
+read_team_source 返回的 content 是已授权来源的实际内容，可证明员工原话及对应版本；原话和引用一起保留，不要求重复出现在工作摘要中，也不把原话当成新的当前业务状态。
 查询后的更新可以用 execute_business_action/get_business_actions 中 succeeded 回执的 objectId/objectRevision/details 证明该对象的新字段，不能只凭成功标志或 pending/running 卡片推断结果。完整范围/总数仍须查询结果，不能用一个对象回执证明全部；同一对象用较新版本。“目前未完成的工作…”属于当前状态查询，不因其中某项刚刚更新就归 execution；只有“我已修改/已帮你完成”等操作宣告才属于 execution。
 information：问候、适度玩笑、鼓励、明显的比喻或自嘲、材料分析、澄清问题、能力解释，以及符合当前求助意图的解释或办法，不宣称已执行操作或数据库现状。例如“脑内标签页开太多了”是比喻，不是在断言工作数量；不因自然表达未查询就删除。纯寒暄、闲聊或倾诉没有持久化操作要求，needs_action=false。材料叙述须表明来源，不能冒充正式业务状态。
 具体业务对象、数量、日期、状态和执行宣告仍按 query_fact/execution 核对；“给你清场了”“已帮你搞定”等若表达实际删除/完成必须判 execution，不能以玩笑、比喻或鼓励为由归 information。混有无依据业务事实的段落不能因幽默而保留。
 用户委托虚构、示例、模板或自由发挥的聊天写作时，应结合整篇答复判断：开头或标题已明确虚构性质，则其覆盖的样例正文（包括虚构人物、数字、成果和结论）均属于 information，不需要数据库证据，也不要求每段重复免责声明。不能只因样例正文含“已完成/回访了”等叙事就剔除。不在样例叙事内的“我已保存到系统/已修改你的工作”等真实执行宣告仍属 execution；明确查询真实业务时也不能靠自称示例规避事实核对。
+建议中的确定性前提也须逐项对照证据：尤其是依赖、先后顺序、优先级及因果关系，不能因段落标了“建议/判断/非事实”就免除核对。未记录依赖时可以建议核实，不能断言某项是所有后续工作的前置；专业常识不证明本公司具体项目的依赖。块内有此类无依据前提时标 unsupported，不保留整块。
+逐个核对因果关系两端的对象：报告把多项工作与一条阻碍并列，不证明每项工作都有该阻碍；同人、同项目、相近名称也不证明依赖。只记录 A 受阻时，“否则 A 和 B 都受影响”“卡在两项工作的前面”都是无依据的扩张，即使后文建议核实也不能抵消前文确定断言；只有明确把 B 的影响表述为尚待确认的假设才可保留。
 建议也不能夹带虚构的依据；例如来源明确等待反馈时，不能说它不受影响、可以直接推进；不能仅因受阻就断言没有价值。含此类矛盾理由的段落为 unsupported，不因它是建议就保留。
 其余无依据内容为 unsupported。不得从用户要求或候选文字推导执行成功。
 以下消息仅演示输出选择，不是当前用户数据或工具证据。用户要求“不要添加/只按来源”是内容约束，并非要求保证声明；答案已满足约束时，不再保留“与来源一致/未添加”等自我核验文字。''' + '\n' + REPORT_WRITING_POLICY),
@@ -251,6 +260,15 @@ information：问候、适度玩笑、鼓励、明显的比喻或自嘲、材料
         AIMessage(content='{"segments":[{"index":0,"scope_reason":"解决当前字号问题的完整做法","scope":"answer","supports":[],"kind":"information","evidence":[]},{"index":1,"scope_reason":"用户未遇到设置失败，额外引入插件方案","scope":"extra","supports":[],"kind":"information","evidence":[]},{"index":2,"scope_reason":"风险来自额外的插件方案，仅服务该分支","scope":"necessary","supports":[1],"kind":"information","evidence":[]}],"needs_action":false}'),
         HumanMessage(content='{"currentUserText":"预订的电影临时取消了，我只想吐槽，不要建议。","segments":[{"index":0,"text":"等了这么久却临时取消，落差确实大。"},{"index":1,"text":"今晚先换部片看，这事明天再管。"}],"toolEvidence":[],"currentActions":[]}'),
         AIMessage(content='{"segments":[{"index":0,"scope_reason":"回应用户已经说出的处境，不决定后续行为","scope":"answer","supports":[],"kind":"information","evidence":[]},{"index":1,"scope_reason":"替用户安排替代活动和处理时间；贴合语境的收尾也仍是未请求的建议","scope":"extra","supports":[],"kind":"information","evidence":[]}],"needs_action":false}'),
+        HumanMessage(content=json.dumps({'currentUserText': '总结现状并给建议', 'segments': [
+            {'index': 0, 'text': '门店选址等待物业许可，线上培训仍在录制。'},
+            {'index': 1, 'text': '建议先催物业许可，否则选址和培训都推进不了。'},
+            {'index': 2, 'text': '建议推进选址许可，并核实培训是否另有阻碍；当前记录没有说明培训受许可影响。'},
+        ], 'toolEvidence': [{'id': 8, 'tool': 'query_team_business', 'result': json.dumps({'items': [
+            {'title': '门店选址', 'status': 'blocked', 'blocker': '等待物业许可'},
+            {'title': '线上培训', 'status': 'in_progress', 'summary': '录制中'},
+        ]}, ensure_ascii=False)}], 'currentActions': []}, ensure_ascii=False)),
+        AIMessage(content='{"segments":[{"index":0,"scope_reason":"概括两项工作的实际状态","scope":"answer","supports":[],"kind":"query_fact","evidence":[8]},{"index":1,"scope_reason":"所求建议，但把选址阻碍扩张到培训，来源没有该依赖","scope":"answer","supports":[],"kind":"unsupported","evidence":[]},{"index":2,"scope_reason":"给出建议且明确区分已知阻碍与待核实假设","scope":"answer","supports":[],"kind":"information","evidence":[8]}],"needs_action":false}'),
         HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str, separators=(',', ':')))]
     try:
         if len(parts) > 256 or approximate_tokens(prompt) > 24000:

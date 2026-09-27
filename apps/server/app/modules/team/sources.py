@@ -1,3 +1,4 @@
+import json
 import re
 from fastapi import HTTPException
 from app.core.errors import problem
@@ -102,7 +103,24 @@ async def read_source(db, actor, job, token, child_id='', start=0):
     return dto
 
 
-async def citations(db, actor, access, answer):
+def current_source_tokens(tool_evidence):
+    """Fallback provenance comes from this turn's reads, never inherited access."""
+    tokens = []
+    for evidence in tool_evidence:
+        if evidence['tool'] not in ('query_team_business', 'read_team_source'):
+            continue
+        try:
+            result = json.loads(evidence['result'])
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(result, dict) or 'error' in result:
+            continue
+        rows = result.get('items', []) if evidence['tool'] == 'query_team_business' else [result]
+        tokens.extend(row['token'] for row in rows if isinstance(row, dict) and row.get('kind') == 'business' and row.get('token'))
+    return list(dict.fromkeys(tokens))
+
+
+async def citations(db, actor, access, answer, *, fallback_tokens=()):
     result, cited = [], []
     for token in re.findall(r'\[\[business:([^\]]+)\]\]', answer):
         evidence = access.get('reads', {}).get(token)
@@ -111,10 +129,12 @@ async def citations(db, actor, access, answer):
             result.append({k: v for k, v in dto.items() if k not in ('content', 'sourceIds')})
             cited.append(token)
     answer = re.sub(r'\[\[business:([^\]]+)\]\]', lambda m: f'〔来源 {cited.index(m[1]) + 1}〕' if m[1] in cited else '', answer)
-    # Even an omitted marker must not erase the provenance of an answer.
+    # Missing markers can use actual current reads, but access may also contain
+    # previous turns and is not evidence that this answer used those sources.
     if not result:
-        for token, evidence in access.get('reads', {}).items():
-            if evidence['type'] in ('work', 'report') and len(result) < 20:
+        for token in dict.fromkeys(fallback_tokens):
+            evidence = access.get('reads', {}).get(token, {})
+            if evidence.get('type') in ('work', 'report', 'message', 'document') and len(result) < 20:
                 dto = await source_dto(db, actor, evidence, token)
                 result.append({k: v for k, v in dto.items() if k not in ('content', 'sourceIds')})
     return answer, result

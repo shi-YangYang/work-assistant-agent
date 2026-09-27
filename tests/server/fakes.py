@@ -14,7 +14,7 @@ class ReviewedFixtureModel(ChatOpenAI):
     Keep this request out of each scenario's graph step/call counters.
     """
     async def ainvoke(self, input, config=None, *, stop=None, **kwargs):
-        if isinstance(input, list) and len(input) == 2 and isinstance(input[-1], HumanMessage):
+        if isinstance(input, list) and input and isinstance(input[-1], HumanMessage):
             try:
                 payload = json.loads(input[-1].content)
             except (ValueError, TypeError):

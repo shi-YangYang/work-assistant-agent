@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+from zoneinfo import ZoneInfo
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -366,7 +367,7 @@ async def test_persona_stays_out_of_authorization_and_report_generation(setup):
             return await super().ainvoke(messages)
     context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings, persona_id='dabao', source_revision=0, intent_model=CaptureJudge())
     from app.db.base import now
-    result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat())
+    result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert result['state'] == 'running'
     assert context.intent_model.inputs and 'personaId' not in context.intent_model.inputs[0]
     await finish(context)

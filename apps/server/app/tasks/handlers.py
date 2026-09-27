@@ -13,7 +13,7 @@ from app.modules.messages.models import Message
 from app.modules.model_services.usage import interrupt_usage
 from app.modules.operations.models import BusinessAction
 from app.modules.team.agent_queries import query_summary as business_query_summary
-from app.modules.team.sources import citations as business_citations
+from app.modules.team.sources import citations as business_citations, current_source_tokens
 from app.modules.work.models import ProgressDraft
 from app.security.access import inherit as business_inherit, require as business_require
 from app.security.ownership import owned
@@ -208,7 +208,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         async with sessions.begin() as db:
             live, actor = await lease(db, context)
             message = await owned(db, Message, job.target_id, actor, lock=True)
-            from app.modules.operations.receipts import message_actions, receipt_reply
+            from app.modules.operations.receipts import message_actions, receipt_reply, receipt_summary
             cards = await message_actions(db, actor, message)
             if review.verified and review.dropped_query and not review.needs_action and not cards:
                 from dataclasses import replace
@@ -216,17 +216,23 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 fallback = await work_query_fallback(db, actor, context)
                 if fallback:
                     review = replace(review, text='\n\n'.join(part for part in (fallback, review.text) if part))
-            answer = receipt_reply(review, cards)
-            message.reply, message.citations = await verified_citations(db, context, answer)
-            message.access = live.access
-            drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status == 'pending'))).all()
+            drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status != 'deleted').order_by(ProgressDraft.created_at))).all()
             for draft in drafts:
                 business_inherit(actor, draft, live)
                 await business_require(db, actor, draft.access)
+            answer = receipt_reply(review, cards, drafts)
+            message.reply, message.citations = await verified_citations(db, context, answer)
+            message.access = live.access
             # Validate markers even when no team tool ran; models can invent
             # business markers from ordinary work IDs without a read receipt.
-            message.reply, references = await business_citations(db, actor, live.access, message.reply)
+            message.reply, references = await business_citations(db, actor, live.access, message.reply, fallback_tokens=current_source_tokens(context.reply_evidence))
             message.citations = [*message.citations, *references]
+            # The appended receipt is server-owned. Preserve its surrounding
+            # prose separately so future reads can render current card states.
+            summary = receipt_summary(cards, drafts)
+            prefix, separator, _ = message.reply.rpartition(summary) if summary else ('', '', '')
+            receipt_end = len(prefix) + len(summary)
+            live.result = {key: value for key, value in live.result.items() if key != 'replyReceipt'}
             if live.access.get('team'):
                 message.reply += await business_query_summary(db, live.result.get('businessQueries', []))
             source_ids = set(context.document_versions) | {row['id'] for row in documents}
@@ -246,6 +252,8 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
             if image_warnings:
                 message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)
+            if separator:
+                live.result = {**live.result, 'replyReceipt': {'prefix': prefix, 'suffix': message.reply[receipt_end:]}}
             has_actions = await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == message.id, BusinessAction.state.in_(['succeeded', 'pending', 'running'])).limit(1))
             if review.verified:
                 live.result = {key: value for key, value in live.result.items() if key not in ('pendingReply', 'replyReviewError')}
