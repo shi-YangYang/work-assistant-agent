@@ -14,17 +14,68 @@ import {
   resolveModelProtocol,
 } from '@web/features/model-services/utils/service-presets'
 import { useResource } from '@web/hooks/useResource'
+import { identityScope } from '@web/lib/session-drafts'
 import { useWorkspace } from '@web/lib/workspace'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { useBlocker } from 'react-router'
+
+function readSelection(scope: string) {
+  let id: string | null = null
+  try {
+    id = localStorage.getItem(scope)
+  } catch {
+    /* Storage may be disabled. */
+  }
+  return { scope, id }
+}
+
+function rememberSelection(scope: string, id: string | null) {
+  try {
+    if (id) localStorage.setItem(scope, id)
+    else localStorage.removeItem(scope)
+  } catch {
+    /* Selection still works in memory. */
+  }
+}
 
 export function useServiceDraftSession() {
   const workspace = useWorkspace()
   const resource = useResource<Listing>(modelServicesPath())
-  const [selected, setSelected] = useState<string | null>(null)
-  const [keys, setKeys] = useState<Record<string, string>>({})
+  const selectionKey = `paa:model-service:${identityScope(workspace.identity)}`
   const drafts = (workspace.drafts.modelServices as Record<string, ServiceDraft>) || {}
   const services = resource.data?.services ?? []
+  const allServices = [
+    ...services,
+    ...Object.values(drafts).filter((d) => !d.revision && !services.some((s) => s.id === d.id)),
+  ]
+  const [selection, changeSelection] = useState(() => readSelection(selectionKey))
+  const preference = selection.scope === selectionKey ? selection : readSelection(selectionKey)
+  const selected =
+    !resource.data || allServices.some((service) => service.id === preference.id)
+      ? preference.id
+      : allServices.length === 1
+        ? allServices[0].id
+        : null
+  // Reconcile derived selection before children render; effects only persist the committed choice.
+  if (selection.scope !== selectionKey || selection.id !== selected)
+    changeSelection({ scope: selectionKey, id: selected })
+  const setSelected = (id: string | null) => {
+    changeSelection({ scope: selectionKey, id })
+    rememberSelection(selectionKey, id)
+  }
+  useEffect(() => {
+    if (resource.data) rememberSelection(selectionKey, selected)
+  }, [selectionKey, selected, resource.data])
+  const [credentials, changeCredentials] = useState<{
+    scope: string
+    values: Record<string, string>
+  }>({ scope: selectionKey, values: {} })
+  const keys = credentials.scope === selectionKey ? credentials.values : {}
+  const setKeys: Dispatch<SetStateAction<Record<string, string>>> = (next) =>
+    changeCredentials((previous) => {
+      const current = previous.scope === selectionKey ? previous.values : {}
+      return { scope: selectionKey, values: typeof next === 'function' ? next(current) : next }
+    })
   const draft: ServiceDraft | undefined = selected
     ? (drafts[selected] ?? services.find((s) => s.id === selected))
     : undefined
@@ -56,7 +107,7 @@ export function useServiceDraftSession() {
       epoch.current++
       window.removeEventListener('beforeunload', before)
     }
-  }, [hasKeys])
+  }, [hasKeys, selectionKey])
   const update = (next: ServiceDraft) => {
     generationRef.current++
     workspace.setDraft('modelServices', {
@@ -90,10 +141,6 @@ export function useServiceDraftSession() {
       apiKey: keys[draft.id] || '',
     }
   }
-  const allServices = [
-    ...services,
-    ...Object.values(drafts).filter((d) => !d.revision && !services.some((s) => s.id === d.id)),
-  ]
   return {
     resource,
     services,

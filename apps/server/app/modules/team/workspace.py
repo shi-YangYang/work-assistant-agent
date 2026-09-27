@@ -22,13 +22,13 @@ async def employees(db, actor, scope, member):
     return people, {p.id: p for p in people if not member or p.id == member}
 
 
-async def retained_filter(db, actor, query, access):
+async def retained_filter(db, actor, query, access, *, retained=True):
     # Ordinary employee records need no reference lookups. For team-derived
     # content, keep the existing policy and validate each distinct envelope once,
     # before either pagination or counts. Never authorize only the visible page.
     ordinary = or_(access['team'].is_(None), access.contains({'team': False}), access.contains({'team': None}))
     envelopes = (await db.scalars(query.with_only_columns(access).order_by(None).where(~ordinary).distinct())).all()
-    allowed = [envelope for envelope in envelopes if await business_valid(db, actor, envelope, retained=True)]
+    allowed = [envelope for envelope in envelopes if await business_valid(db, actor, envelope, retained=retained)]
     return or_(ordinary, access.in_(allowed)) if allowed else ordinary
 
 

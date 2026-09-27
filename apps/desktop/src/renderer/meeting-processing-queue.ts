@@ -1,4 +1,4 @@
-import type { DesktopApi, TranscriptionStatus } from '../shared/contracts'
+import type { DesktopApi, MeetingState, TranscriptionStatus } from '../shared/contracts'
 import type { SummaryView } from '../shared/summary-contracts'
 
 type Listener = (label: string) => void
@@ -10,19 +10,27 @@ type Entry = {
   inFlight: boolean
 }
 
-function processingLabel(transcript: TranscriptionStatus, summary: SummaryView): string {
+export function recordingStateLabel(state: MeetingState): string {
+  if (state === 'completed') return '录音完成'
+  if (state === 'interrupted') return '录音中断'
+  if (state === 'failed') return '录音失败'
+  if (state === 'stopping') return '录音保存中'
+  return '录音中'
+}
+
+export function processingLabel(transcript: TranscriptionStatus, summary: SummaryView): string {
   const task = summary.task
+  if (transcript.state === 'queued') return '转写排队中'
+  if (transcript.state === 'running') return '正在转写'
+  if (transcript.state === 'draining') return '转写收尾中'
+  if (transcript.state === 'failed' || transcript.state === 'paused') return '转写待继续'
   if (task?.state === 'waiting_speakers') return '等待发言人处理'
   if (task?.state === 'running') return '正在生成纪要'
   if (task?.state === 'queued') return '纪要排队中'
   if (task?.state === 'failed' || task?.state === 'interrupted') return '纪要待重试'
   if (summary.result) return summary.result.stale ? '纪要待更新' : '纪要已就绪'
   if (transcript.state === 'completed') return '文字已完成'
-  if (transcript.state === 'failed' || transcript.state === 'paused') return '转写待继续'
-  if (transcript.state === 'not_started') return '尚未转写'
-  if (transcript.state === 'queued') return '转写排队中'
-  if (transcript.state === 'draining') return '转写收尾中'
-  return '正在转写'
+  return '尚未转写'
 }
 
 // All list rows share this budget, including requests still settling after a row leaves view.

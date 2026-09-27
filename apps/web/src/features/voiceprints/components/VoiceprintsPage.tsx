@@ -6,6 +6,7 @@ import { ErrorNotice } from '@web/components/ErrorNotice'
 import { manageVoiceprint, voiceprintsPath } from '@web/features/voiceprints/api/requests'
 import type { Enrollment, VoiceprintList } from '@web/features/voiceprints/api/types'
 import { status } from '@web/features/voiceprints/api/types'
+import { VoiceprintCleanup } from '@web/features/voiceprints/components/VoiceprintCleanup'
 import { EnrollmentForm } from '@web/features/voiceprints/components/EnrollmentForm'
 import { useResource } from '@web/hooks/useResource'
 import { dateLabel } from '@web/utils/date'
@@ -143,6 +144,7 @@ export function VoiceprintsPage() {
           )}
         </div>
       </section>
+      <VoiceprintCleanup refresh={resource.refresh} />
       {selected && (
         <EnrollmentForm
           item={selected}

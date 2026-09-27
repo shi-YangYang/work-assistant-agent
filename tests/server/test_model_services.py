@@ -614,7 +614,7 @@ async def test_failed_probe_does_not_claim_other_capabilities_or_reveal_remote_e
     assert SECRET not in result.text and len(requests)==1
 
 
-async def test_report_current_config_attempt_preserves_saved_draft_as_new_candidate(setup):
+async def test_report_retry_restores_committed_receipt_without_generating_again(setup):
     from app.modules.reports.models import Report
     from test_report_reliability import prepared, ReportModel, CONTENT
     settings,sessions,users,c=setup
@@ -627,10 +627,12 @@ async def test_report_current_config_attempt_preserves_saved_draft_as_new_candid
         # A legacy tool-flow receipt may predate the final worker success write.
         live.state='failed'
     assert (await c['employee'].post('/api/v1/jobs/'+job.id+'/retry',json={'useCurrentConfig':True})).status_code==200
-    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'新候选'})))
+    retry_model = ReportModel(json.dumps({**CONTENT, 'completed': '不能再生成'}))
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=retry_model)
+    assert retry_model.calls == 0
     async with sessions() as db:
         report=await db.get(Report,report.id)
-        assert report.content['completed']=='原报告' and report.candidate['content']['completed']=='新候选' and report.published_revision==0
+        assert report.content['completed']=='原报告' and report.candidate is None and report.published_revision==0
 
 
 async def test_company_probe_concurrency_is_bounded_without_daily_quota(setup,monkeypatch):

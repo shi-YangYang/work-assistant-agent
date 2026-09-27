@@ -28,6 +28,7 @@ import {
   reportLabels,
 } from '@web/features/reports/components/ReportBody'
 import { ReportSources } from '@web/features/reports/components/ReportSources'
+import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { dateLabel } from '@web/utils/date'
@@ -64,6 +65,7 @@ export function ReportDetail({
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<Error | string>('')
   const key = `report:${id}`
+  const saving = useDraftSubmission(key, editing)
   const saved = drafts[key] as { content: ReportContent; revision: number } | undefined
   const value = saved?.content ?? data?.content
   const own =
@@ -71,18 +73,16 @@ export function ReportDetail({
   async function save() {
     if (!data || !value) return
     setFailure('')
-    setBusy(true)
-    try {
-      await updateReport(id, { content: value, expectedRevision: saved?.revision ?? data.revision })
-      setDraft(key, undefined)
-      setEditing(false)
-      refresh()
-      notify('草稿已保存')
-    } catch (e) {
-      setFailure(e as Error)
-    } finally {
-      setBusy(false)
-    }
+    await saving.submit(
+      () =>
+        updateReport(id, { content: value, expectedRevision: saved?.revision ?? data.revision }),
+      () => {
+        setEditing(false)
+        refresh()
+        notify('草稿已保存')
+      },
+      (error) => setFailure(error as Error),
+    )
   }
   if (data?.ownerId === identity.member.id && identity.member.role === 'admin')
     return <Navigate to="/team" replace />
@@ -189,6 +189,7 @@ export function ReportDetail({
                 <label key={field}>
                   {label}
                   <AutoTextarea
+                    disabled={saving.busy}
                     rows={2}
                     maxLength={8000}
                     aria-invalid={
@@ -229,7 +230,7 @@ export function ReportDetail({
                 <button type="button" onClick={() => setEditing(false)}>
                   稍后继续
                 </button>
-                <BusyButton busy={busy} className={controlsStyles['primary']}>
+                <BusyButton busy={saving.busy} className={controlsStyles['primary']}>
                   保存草稿
                 </BusyButton>
               </div>

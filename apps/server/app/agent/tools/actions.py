@@ -89,7 +89,9 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
     or submission. period filters exact YYYY-MM-DD start date; cursor paginates.
     Administrators must query_team_business for employee submitted reports, then
     pass a returned report_id here to resolve its deletion management revision;
-    no drafts or private report candidates are returned to administrators.
+    no drafts or private report candidates are returned to administrators. An
+    explicit report ID supplied by the user can resolve deletion-only metadata
+    (period, revision, impact), never unpublished content.
     Lists contain bounded previews. For full text pass report_id, then pass its
     nextContentOffset as content_start until null. Do not treat a preview as full
     text. A single own report includes immutable sourceFacts for rewriting.
@@ -116,7 +118,14 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
                 if actor.id != report.owner_id:
                     evidence = next((e for e in job.access.get('reads', {}).values() if e.get('type') == 'report' and e['id'] == report.id), None)
                     if not evidence:
-                        return '请先通过团队业务查询定位已提交报告。'
+                        from app.agent.conversation_context import request_text
+                        from app.modules.operations.writes import deletion_impact
+                        message = await owned(db, Message, job.target_id, actor)
+                        if not report_id or report.id not in request_text(message, job):
+                            return '请先通过团队业务查询定位已提交报告，或提供要删除报告的准确链接；不能猜测未提交报告。'
+                        impact = await deletion_impact(db, report, actor)
+                        context.read_versions[report.id] = report.revision
+                        return json.dumps({'items': [{'id': report.id, 'kind': report.kind, 'period': report.period, 'revision': report.revision, 'managementOnly': True, 'impact': {key: impact[key] for key in ('messages', 'attachments')}}], 'nextCursor': None}, ensure_ascii=False)
                     public, _ = await business_resolve(db, actor, evidence, latest=True)
                     content = public.content
                 content, page = text_page(content, content_start if report_id else 0, 1200 if report_id or len(reports) == 1 else 240)

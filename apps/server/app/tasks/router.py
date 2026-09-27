@@ -62,11 +62,13 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         message.reply, message.citations = '', []
         item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'operationFeedback', 'operationFeedbackKeys')}
         item.result = {**item.result, 'refreshModelBinding': True}
+    elif item.kind == 'report':
+        # Resolve the latest settings when this run starts; unchanged settings
+        # retain correction checkpoints and committed report receipts.
+        item.result = {**item.result, 'refreshModelBinding': True}
     elif body.useCurrentConfig:
         item.model_binding = None
         item.config_attempt += 1
-        if item.kind == 'report':
-            item.result = {k: v for k, v in item.result.items() if k != 'reportSaved'}
     if item.kind == 'message' and item.result.get('nodeExecution'):
         from app.tasks.node_state import reopen_failed
         reopen_failed(item)

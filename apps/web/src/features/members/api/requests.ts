@@ -1,8 +1,8 @@
-import type { Member } from '@paa/api-contracts'
+import type { Member, MemberDeletionImpact } from '@paa/api-contracts'
 import { write } from '@web/api/client'
 
 export function deleteMember(member: Member, body: undefined) {
-  return write(`/members/${member.id}`, body, 'DELETE')
+  return write<{ ok: boolean; cleanupPending: number }>(`/members/${member.id}`, body, 'DELETE')
 }
 
 export function membersPath() {
@@ -25,3 +25,8 @@ export function createMember(body: {
 }) {
   return write('/members', body)
 }
+
+export function memberDeletionPath(member: Member) {
+  return `/members/${member.id}/deletion`
+}
+export type { MemberDeletionImpact }

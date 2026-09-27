@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/
 from paa_core.audio_store import AudioWriter
 from paa_core.repository import Repository, DomainError
 from paa_core.transcript_store import TranscriptStore
-from paa_core.speaker_store import SpeakerStore, assign_speaker
+from paa_core.speaker_store import SpeakerStore, assign_speaker, normalize_speaker_name, SPEAKER_NAME_WHITESPACE
 from paa_core.speakers import Speakers
 from paa_core.speaker_worker import run_worker, bundled_model_path, verified
 from paa_core.meeting_library import document_lines
@@ -36,7 +36,14 @@ class SpeakerTests(unittest.TestCase):
         self.store = SpeakerStore(self.repo)
 
     def test_bundled_weights_are_complete_and_path_is_independent_of_cwd(self):
+        expected = Path(__file__).resolve().parents[2] / 'packages/voiceprint-engine/resources/models/speaker-community-1'
+        self.assertEqual(bundled_model_path(), expected)
         self.assertTrue(verified(bundled_model_path()))
+        from paa_voiceprints import model_file
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(model_file(), expected / 'embedding/pytorch_model.bin')
+        with patch.dict(os.environ, {'PAA_VOICEPRINT_MODEL': str(expected / 'embedding/pytorch_model.bin')}):
+            self.assertEqual(model_file(), expected / 'embedding/pytorch_model.bin')
         with patch('paa_core.speaker_worker.sys.frozen', True, create=True), patch('paa_core.speaker_worker.sys._MEIPASS', str(self.root), create=True):
             self.assertEqual(bundled_model_path(), self.root/'models'/'speaker-community-1')
         self.assertFalse(verified(self.root))
@@ -71,6 +78,34 @@ class SpeakerTests(unittest.TestCase):
             exported = '\n'.join(document_lines(db,mid,{'scope':'transcript','format':'txt','timestamps':True}))
         self.assertIn('张三：我来跟进。', exported)
         self.assertEqual(self.transcripts.page(mid)['segments'][1]['speakerName'],'张三')
+
+    def test_names_use_unicode_code_points_and_existing_long_names_remain_readable(self):
+        mid = self.meeting()
+        status = self.finish(mid)
+        safe_whitespace = ' \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000'
+        names = ['中' * 40, '中' * 41, 'a' * 100, '😀' * 100, '  张三😀  ', '\ufeff', '\ufeff' + '中' * 99, '\u00a0张\u3000三\u00a0']
+        names.extend(char + '😀' * 100 + char for char in safe_whitespace)
+        for name in names:
+            with self.subTest(name=name):
+                status = self.store.edit(mid, status['generation'], status['revision'], speaker_id='speaker_00', name=name)
+                self.assertEqual(status['speakers'][0]['name'], name.strip())
+                self.assertEqual(self.transcripts.page(mid)['segments'][0]['speakerName'], name.strip())
+        invalid = ['a' * 101, '😀' * 101, '\ufeff' + '中' * 100, '张\n三', '张\u0085三', '张\u2028三', *SPEAKER_NAME_WHITESPACE]
+        invalid.extend(char + '😀' * 100 + char for char in '\t\n\v\f\r\u001c\u001d\u001e\u001f\u0085\u2028\u2029')
+        for name in invalid:
+            with self.subTest(name=name), self.assertRaises(DomainError) as error:
+                self.store.edit(mid, status['generation'], status['revision'], speaker_id='speaker_00', name=name)
+            self.assertEqual(error.exception.code, 'invalid_name')
+
+    def test_name_normalization_matches_the_complete_legacy_python_whitespace_set(self):
+        whitespace = {chr(code) for code in range(0x110000) if not chr(code).strip()}
+        self.assertEqual(set(SPEAKER_NAME_WHITESPACE), whitespace)
+        for char in whitespace:
+            with self.subTest(code=f'U+{ord(char):04X}'):
+                self.assertEqual(normalize_speaker_name(char + '😀' * 100 + char), '😀' * 100)
+                self.assertEqual(normalize_speaker_name(char), '')
+        self.assertEqual(normalize_speaker_name(' \ufeff张三\ufeff '), '\ufeff张三\ufeff')
+        self.assertEqual(normalize_speaker_name('\ufeff'), '\ufeff')
 
     def test_cross_meeting_edits_and_busy_delete_are_rejected(self):
         first, second = self.meeting(), self.meeting()

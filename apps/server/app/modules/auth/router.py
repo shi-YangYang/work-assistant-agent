@@ -10,7 +10,7 @@ from app.modules.auth.sessions import COOKIE, issue_session, limit_authenticated
 from app.modules.members.models import Company, Member
 from app.modules.members.serializers import member_dto
 from app.security.locks import company_lock as business_company_lock
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 from starlette.concurrency import run_in_threadpool
 
 router = APIRouter()
@@ -19,6 +19,11 @@ router = APIRouter()
 @router.post('/api/v1/auth/login')
 async def login(body: Login, response: Response, request: Request, db=DB, settings=SETTINGS):
     ident = hashlib.sha256(f'{request.client.host}:{body.username.lower()}'.encode()).hexdigest()
+    # Never queue unbounded expensive password checks for the same identity.
+    # The transaction lock covers both the failure count and its final update.
+    acquired = await db.scalar(text('SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))'), {'key': 'login:' + ident})
+    if not acquired:
+        problem(429, '登录请求正在处理，请稍后重试')
     recent = now() - timedelta(minutes=10)
     count = await db.scalar(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.identity == ident, LoginAttempt.created_at > recent))
     if count >= 8:

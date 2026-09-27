@@ -61,3 +61,15 @@
     padding: 8px 12px;
   }
 }
+
+@media (max-width: 760px) {
+  .conversation-heading > h2,
+  .conversation-heading > svg {
+    display: none;
+  }
+  .conversation-heading {
+    min-height: 44px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+}

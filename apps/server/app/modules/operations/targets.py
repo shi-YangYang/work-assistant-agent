@@ -17,8 +17,6 @@ async def read_target(db, actor, action, identifier):
     else:
         item = await owned(db, Report, identifier, actor, read=action == 'delete_report', lock=True)
         if action == 'delete_report' and actor.role == 'admin':
-            if not item.published_revision:
-                problem(404, '报告尚未提交或无权查看')
             await writes_deletion_impact(db, item, actor)
         elif actor.role != 'employee':
             problem(403, '管理员不能代员工管理或提交个人报告')

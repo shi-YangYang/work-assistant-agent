@@ -2,6 +2,8 @@ import { SpeakerPanel } from './SpeakerPanel'
 import type { SpeakerStatus } from '../shared/speaker-contracts'
 export { ModelSettings } from './LocalModelSettings'
 import { languageNames } from './LocalModelSettings'
+import { TranscriptionToolbar, time } from './TranscriptionToolbar'
+export { time } from './TranscriptionToolbar'
 import { useEffect, useRef, useState } from 'react'
 import type {
   ModelState,
@@ -10,21 +12,6 @@ import type {
   TranscriptSegment,
 } from '../shared/contracts'
 
-export const time = (milliseconds: number): string => {
-  const seconds = Math.floor(milliseconds / 1000)
-  return `${Math.floor(seconds / 60)
-    .toString()
-    .padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
-}
-const states: Record<TranscriptionStatus['state'], string> = {
-  not_started: '尚未转写',
-  queued: '等待处理',
-  running: '正在转写',
-  draining: '正在补齐文字',
-  completed: '转写完成',
-  paused: '转写已暂停',
-  failed: '转写失败',
-}
 export function Transcript({
   meetingId,
   modelReady,
@@ -274,80 +261,21 @@ export function Transcript({
   const canStart = status && ['not_started', 'paused', 'failed'].includes(status.state)
   return (
     <section className="transcript-card" aria-label="会议文字">
-      <div className="section-heading">
-        <h2>{live ? '实时文字' : '会议文字'}</h2>
-        <span role="status">
-          {locating
-            ? '正在定位引用…'
-            : status
-              ? `${status.candidate ? '重新转写 · ' : ''}${states[status.state]}`
-              : '正在读取文字'}
-        </span>
-      </div>
-      <div className="transcript-view-toolbar">
-        <div className="view-switch" role="group" aria-label="文字记录视图">
-          {(['speakers', 'text'] as const).map((mode) => (
-            <button
-              key={mode}
-              aria-pressed={viewMode === mode}
-              onClick={() => {
-                setViewMode(mode)
-                setSpeakerSegment(null)
-                setCopyMessage('')
-              }}
-            >
-              {mode === 'speakers' ? '按发言人' : '纯文本'}
-            </button>
-          ))}
-        </div>
-        <button
-          className="text-button"
-          disabled={copying || !connected || !segments.length}
-          onClick={() => void copyTranscript()}
-          title={
-            viewMode === 'speakers'
-              ? '复制完整文字，包含发言人和时间戳'
-              : '复制完整文字，仅包含文字和时间戳'
-          }
-        >
-          {copying ? '正在复制…' : '复制文字'}
-        </button>
-        {copyMessage && <small role="status">{copyMessage}</small>}
-      </div>
-      {status?.published && (
-        <p className="transcript-configuration">
-          当前文字：
-          {status.published.modelId
-            .split('/')
-            .at(-1)
-            ?.replace(/^(?:faster-)?whisper-/, 'Whisper ')
-            .replace(/-mlx$/, '')}{' '}
-          · {languageNames[status.published.language]}
-          {' · '}
-          {(status.published.device ?? 'cpu').toUpperCase()}
-        </p>
-      )}
-      {status?.actual && (!status.published || status.candidate) && (
-        <p className="transcript-configuration">
-          {status.candidate ? '本次重新转写' : '本次转写'}：
-          {status.actual.modelId
-            .split('/')
-            .at(-1)
-            ?.replace(/^(?:faster-)?whisper-/, 'Whisper ')
-            .replace(/-mlx$/, '')}{' '}
-          · {languageNames[status.actual.language]}
-          {' · '}
-          {(status.actual.device ?? 'cpu').toUpperCase()}
-        </p>
-      )}
-      {status && (
-        <p className="transcript-progress">
-          已处理 {time(status.processedMs)} / 录音 {time(status.audioMs)}
-          {status.pendingMs > 0 && status.state !== 'not_started'
-            ? ` · 待处理 ${time(status.pendingMs)}`
-            : ''}
-        </p>
-      )}
+      <TranscriptionToolbar
+        live={live}
+        locating={locating}
+        status={status}
+        viewMode={viewMode}
+        onViewMode={(mode) => {
+          setViewMode(mode)
+          setSpeakerSegment(null)
+          setCopyMessage('')
+        }}
+        copying={copying}
+        canCopy={connected && segments.length > 0}
+        onCopy={() => void copyTranscript()}
+        copyMessage={copyMessage}
+      />
       {status?.sourceIncomplete && (
         <p className="audio-warning">源录音曾中断，文字仅对应保留下来的音频。</p>
       )}

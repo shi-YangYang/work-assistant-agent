@@ -1,6 +1,6 @@
 import type { VoiceprintStatus } from '../shared/company-contracts'
 import type { VoiceprintConfiguration } from './company-connection'
-import { isSpeakerStatus, type SpeakerStatus } from '../shared/speaker-contracts'
+import { isSpeakerStatus, validSpeakerName, type SpeakerStatus } from '../shared/speaker-contracts'
 import type { RuntimeConfig } from '../shared/summary-contracts'
 import { spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
@@ -574,8 +574,7 @@ function isTranscriptPage(
       segment.text.length > 300 ||
       (segment.speaker !== null &&
         (typeof segment.speaker !== 'string' || !/^speaker_\d{1,3}$/.test(segment.speaker))) ||
-      (segment.speakerName != null &&
-        (typeof segment.speakerName !== 'string' || segment.speakerName.length > 40)) ||
+      (segment.speakerName != null && !validSpeakerName(segment.speakerName)) ||
       segment.confidence !== null
     )
       return false

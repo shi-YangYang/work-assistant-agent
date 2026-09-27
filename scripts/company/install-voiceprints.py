@@ -15,4 +15,4 @@ if sys.platform in ('linux', 'win32'):
     command += ['--index-url', 'https://download.pytorch.org/whl/cpu']
 subprocess.run(command, cwd=root, check=True)
 subprocess.run([str(python), '-m', 'pip', 'install', str(root / 'packages/voiceprint-engine') + '[runtime]'], cwd=root, check=True)
-subprocess.run([str(python), '-c', 'import sys; from paa_voiceprints import model_file; model_file(sys.argv[1]); print("公司声纹运行环境与固定模型已就绪")', str(root / 'apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin')], cwd=root, check=True)
+subprocess.run([str(python), '-c', 'import sys; from paa_voiceprints import model_file; model_file(sys.argv[1]); print("公司声纹运行环境与固定模型已就绪")', str(root / 'packages/voiceprint-engine/resources/models/speaker-community-1/embedding/pytorch_model.bin')], cwd=root, check=True)

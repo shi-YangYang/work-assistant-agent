@@ -5,7 +5,15 @@ import re
 from .repository import ACTIVE, DomainError
 from .transcript_store import TranscriptStore
 
+SPEAKER_NAME_LIMIT = 100
+# Preserve the legacy str.strip() set; keep aligned with speaker-contracts.ts.
+# U+FEFF is name content, while U+001C–001F/U+0085 remain forbidden controls.
+SPEAKER_NAME_WHITESPACE = '\t\n\v\f\r\u001c\u001d\u001e\u001f \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000'
 SPEAKER_ID = re.compile(r'^speaker_[0-9]{1,3}$')
+
+
+def normalize_speaker_name(value):
+    return value.strip(SPEAKER_NAME_WHITESPACE)
 
 
 def migrate(db):
@@ -201,9 +209,10 @@ class SpeakerStore:
             if speaker_id is not None and (not isinstance(speaker_id, str) or not SPEAKER_ID.fullmatch(speaker_id) or not db.execute('SELECT 1 FROM meeting_speakers WHERE meetingId=? AND id=?', (meeting_id, speaker_id)).fetchone()):
                 raise DomainError('invalid_speaker', '未找到这场会议中的说话人。')
             if name is not None:
-                if speaker_id is None or not isinstance(name, str) or not 1 <= len(name.strip()) <= 100 or any(ord(c) < 32 or 127 <= ord(c) < 160 or c in '\u2028\u2029' for c in name):
+                normalized_name = normalize_speaker_name(name) if isinstance(name, str) else ''
+                if speaker_id is None or not 1 <= len(normalized_name) <= SPEAKER_NAME_LIMIT or any(ord(c) < 32 or 127 <= ord(c) < 160 or c in '\u2028\u2029' for c in name):
                     raise DomainError('invalid_name', '姓名须为 1～100 个字符，不能包含换行。')
-                db.execute('UPDATE meeting_speakers SET name=?,manual=1 WHERE meetingId=? AND id=?', (name.strip(), meeting_id, speaker_id))
+                db.execute('UPDATE meeting_speakers SET name=?,manual=1 WHERE meetingId=? AND id=?', (normalized_name, meeting_id, speaker_id))
             else:
                 if not isinstance(segment_id, str) or not db.execute('SELECT 1 FROM transcript_segments WHERE meetingId=? AND id=?', (meeting_id, segment_id)).fetchone():
                     raise DomainError('invalid_segment', '未找到这段文字。')

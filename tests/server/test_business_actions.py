@@ -554,3 +554,25 @@ async def test_review_removes_empty_table_shell_without_damaging_retained_table(
     assert check_segments(parts, verdict, []).text == '还有哪些要讨论？'
     keep = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(4)]})
     assert check_segments(parts, keep, []).text == ''.join(parts)
+
+
+async def test_admin_explicit_draft_deletion_metadata_never_reveals_content(setup):
+    _, sessions, users, c = setup
+    async with sessions.begin() as db:
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-17', period_end='2026-09-17', timezone='Asia/Shanghai', content={'completed': 'PRIVATE-UNSUBMITTED'}, published_revision=0)
+        db.add(report)
+        await db.flush()
+    context, _ = await runtime(setup, '删除这份报告 /reports/' + report.id, 'admin')
+    data = await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id)
+    assert 'PRIVATE-UNSUBMITTED' not in data
+    metadata = json.loads(data)['items'][0]
+    assert metadata['managementOnly'] and metadata['revision'] == 1
+    assert (await c['admin'].get('/api/v1/reports/' + report.id)).status_code == 404
+    impact = await c['admin'].get('/api/v1/reports/' + report.id + '/deletion')
+    assert impact.status_code == 200 and impact.json()['revision'] == metadata['revision']
+    row = await execute(context, step=1, action='delete_report', target_id=report.id, expected_revision=1)
+    assert row['state'] == 'pending' and 'PRIVATE-UNSUBMITTED' not in json.dumps(row)
+    result = await c['admin'].post(f"/api/v1/business-actions/{row['id']}/confirm", json={'expectedRevision': row['revision']})
+    assert result.json()['state'] == 'succeeded'
+    again = await c['admin'].post(f"/api/v1/business-actions/{row['id']}/confirm", json={'expectedRevision': row['revision']})
+    assert again.json()['state'] == 'succeeded'

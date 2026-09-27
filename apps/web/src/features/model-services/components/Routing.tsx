@@ -11,6 +11,7 @@ import { PanelSection } from '@web/components/PanelSection'
 import { readModelRouting, saveModelRouting } from '@web/features/model-services/api/requests'
 import type { Purpose } from '@web/features/model-services/types'
 import { purposeNames } from '@web/features/model-services/types'
+import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
 
@@ -25,7 +26,7 @@ export function Routing({
 }) {
   const { drafts, setDraft, notify } = useWorkspace()
   const value = (drafts.modelRouting as ModelRouting) || initial
-  const [busy, setBusy] = useState(false)
+  const { busy, submit } = useDraftSubmission('modelRouting')
   const [error, setError] = useState<Error | string>('')
   const [conflict, setConflict] = useState(false)
   if (!value) return <p>正在读取用途…</p>
@@ -67,6 +68,7 @@ export function Routing({
               <label>
                 使用的模型
                 <select
+                  disabled={busy}
                   value={
                     choice === 'follow'
                       ? 'follow'
@@ -112,6 +114,7 @@ export function Routing({
                   <label>
                     推理预设
                     <select
+                      disabled={busy}
                       value={choice.presetId || ''}
                       onChange={(e) =>
                         change(purpose, { ...choice, presetId: e.target.value || null })
@@ -129,6 +132,7 @@ export function Routing({
                     className={`${layoutStyles['check-label']} ${modelServicesStyles['slot-check-label']}`}
                   >
                     <input
+                      disabled={busy}
                       type="checkbox"
                       checked={choice.streaming}
                       onChange={(e) => change(purpose, { ...choice, streaming: e.target.checked })}
@@ -164,23 +168,24 @@ export function Routing({
             className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
             busy={busy}
             onClick={async () => {
-              setBusy(true)
-              try {
-                await saveModelRouting({
-                  assistant: value.assistant,
-                  report: value.report,
-                  asr: value.asr,
-                  expectedRevision: value.revision,
-                })
-                setDraft('modelRouting', undefined)
-                refresh()
-                notify('用途分配已保存')
-              } catch (e) {
-                setError(e as Error)
-                setConflict(e instanceof ApiError && e.status === 409)
-              } finally {
-                setBusy(false)
-              }
+              setError('')
+              await submit(
+                () =>
+                  saveModelRouting({
+                    assistant: value.assistant,
+                    report: value.report,
+                    asr: value.asr,
+                    expectedRevision: value.revision,
+                  }),
+                () => {
+                  refresh()
+                  notify('用途分配已保存')
+                },
+                (error) => {
+                  setError(error as Error)
+                  setConflict(error instanceof ApiError && error.status === 409)
+                },
+              )
             }}
           >
             保存用途分配

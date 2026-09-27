@@ -22,3 +22,15 @@
   background: var(--secondary);
   border: 2px solid var(--stage);
 }
+
+.empty-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 0 24px;
+  color: var(--muted);
+}
+.empty-content p {
+  margin: 0;
+}

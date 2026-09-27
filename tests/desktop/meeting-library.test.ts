@@ -2,6 +2,12 @@ import { mkdtemp, readFile, readdir, rm, writeFile, mkdir } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import {
+  processingLabel,
+  recordingStateLabel,
+} from '../../apps/desktop/src/renderer/meeting-processing-queue'
+import type { TranscriptionStatus } from '../../apps/desktop/src/shared/contracts'
+import type { SummaryView } from '../../apps/desktop/src/shared/summary-contracts'
 import { CoreManager } from '../../apps/desktop/src/main/core-manager'
 import {
   DesktopLibrary,
@@ -314,4 +320,21 @@ it('rejects invalid transcript options and inconsistent snapshots without touchi
   expect(failed).toEqual({ ok: false, message: '快照内容不完整，请重试。' })
   expect(copy).not.toHaveBeenCalled()
   expect(request.mock.lastCall).toEqual(['library.release', { id }])
+})
+
+it('distinguishes a saved recording from its pending or failed processing stage', () => {
+  expect(recordingStateLabel('completed')).toBe('录音完成')
+  expect(
+    processingLabel(
+      { state: 'running' } as TranscriptionStatus,
+      { task: null, result: { stale: false } } as SummaryView,
+    ),
+  ).toBe('正在转写')
+  const transcript = { state: 'completed' } as TranscriptionStatus
+  const failed = { task: { state: 'failed' }, result: null } as SummaryView
+  expect(processingLabel(transcript, failed)).toBe('纪要待重试')
+  expect(processingLabel(transcript, { task: null, result: null })).toBe('文字已完成')
+  expect(
+    processingLabel({ state: 'running' } as TranscriptionStatus, { task: null, result: null }),
+  ).toBe('正在转写')
 })

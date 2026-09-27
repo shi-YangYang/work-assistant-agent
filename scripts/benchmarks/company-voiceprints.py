@@ -23,7 +23,7 @@ def main():
     import numpy as np
     parser=argparse.ArgumentParser();parser.add_argument('--data',type=Path,default=ROOT/'artifacts/speaker-evaluation');parser.add_argument('--probes',type=Path,help='Separate new-sample manifest; evaluates final split only');parser.add_argument('--output',type=Path,default=ROOT/'artifacts/spec022/voiceprint-evaluation.json');args=parser.parse_args()
     manifest=json.loads((args.data/'manifest.json').read_text())
-    began=time.perf_counter();extractor=Extractor(ROOT/'apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin')
+    began=time.perf_counter();extractor=Extractor(ROOT/'packages/voiceprint-engine/resources/models/speaker-community-1/embedding/pytorch_model.bin')
     load=time.perf_counter()-began
     profiles=[];enrollment=[]
     for member in manifest['registeredSpeakers']:

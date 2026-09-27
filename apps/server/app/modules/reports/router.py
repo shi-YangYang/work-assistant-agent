@@ -3,7 +3,7 @@ from .queries import get_report_query, report_sources_query, reports_query
 from fastapi import APIRouter, Header, Query
 from app.core.schemas import Revision
 from app.db.idempotency import idem_begin, idem_save
-from app.http.dependencies import AUTH, DB, SETTINGS
+from app.http.dependencies import READ_AUTH, AUTH, DB, SETTINGS
 from app.modules.operations.writes import deletion_impact as writes_deletion_impact, remove_record as writes_remove_record
 from app.modules.reports.models import Report
 from app.modules.reports.queries import report_dto
@@ -17,17 +17,17 @@ router = APIRouter()
 
 
 @router.get('/api/v1/reports')
-async def reports(kind: str = 'daily', cursor: str | None = None, actor=AUTH, db=DB):
+async def reports(kind: str = 'daily', cursor: str | None = None, actor=READ_AUTH, db=DB):
     return await reports_query(kind, cursor, actor, db)
 
 
 @router.get('/api/v1/reports/{identifier}')
-async def get_report(identifier: str, revision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
+async def get_report(identifier: str, revision: int | None = Query(None, ge=1), actor=READ_AUTH, db=DB):
     return await get_report_query(identifier, revision, actor, db)
 
 
 @router.get('/api/v1/reports/{identifier}/sources')
-async def report_sources(identifier: str, revision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
+async def report_sources(identifier: str, revision: int | None = Query(None, ge=1), actor=READ_AUTH, db=DB):
     return await report_sources_query(identifier, revision, actor, db)
 
 
@@ -57,7 +57,7 @@ async def submit(identifier: str, body: Revision, idempotency_key: Annotated[str
 
 
 @router.get('/api/v1/reports/{identifier}/deletion')
-async def report_deletion(identifier: str, actor=AUTH, db=DB):
+async def report_deletion(identifier: str, actor=READ_AUTH, db=DB):
     item = await owned(db, Report, identifier, actor, read=True)
     impact = await writes_deletion_impact(db, item, actor)
     return {key: impact[key] for key in ('messages', 'attachments', 'revision')}

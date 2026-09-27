@@ -50,7 +50,11 @@ export function MeetingProcessingState({
     }
   }, [meetingId, visible, connected, state, refreshVersion])
   return (
-    <small ref={element} className="processing-state">
+    <small
+      ref={element}
+      className="processing-state"
+      data-attention={result.meetingId === meetingId && /待重试|待继续|待更新/.test(result.label)}
+    >
       {result.meetingId === meetingId ? result.label : ''}
     </small>
   )

@@ -10,7 +10,7 @@ from uuid import uuid4
 
 
 async def bind_job(db, job, settings):
-    refresh = job.kind == 'message' and job.result.get('refreshModelBinding', False)
+    refresh = job.kind in ('message', 'report') and job.result.get('refreshModelBinding', False)
     previous = job.model_binding
     if previous is not None and not refresh:
         return job.model_binding

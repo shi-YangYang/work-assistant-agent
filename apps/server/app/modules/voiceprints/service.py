@@ -34,7 +34,13 @@ def valid_templates(value):
 
 
 def private_path(settings, identifier):
-    # File names originate solely from our random IDs, never client input.
+    # Defend persisted cleanup intents too: never follow a corrupted path.
+    from uuid import UUID
+    try:
+        if str(UUID(identifier)) != identifier:
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise ValueError('声纹录音路径无效，请联系管理员处理') from None
     return settings.media_dir / 'voiceprints' / identifier
 
 

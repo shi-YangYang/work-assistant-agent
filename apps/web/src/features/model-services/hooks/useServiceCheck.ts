@@ -65,8 +65,10 @@ export function useServiceCheck({
     } catch (e) {
       if (alive.current && requestGeneration === generationRef.current) handleError(e)
     } finally {
-      if (alive.current) setBusy('')
-      setTestOpen(false)
+      if (alive.current && requestGeneration === generationRef.current) {
+        setBusy('')
+        setTestOpen(false)
+      }
     }
   }
   return {

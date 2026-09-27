@@ -370,3 +370,21 @@
 .page-heading {
   --status-margin-bottom: 4px;
 }
+
+@media (max-width: 760px) {
+  .page > .page-heading h2,
+  .settings-page > h2,
+  .settings-page > .page-heading h2,
+  .settings-page > header h2 {
+    display: none;
+  }
+  .page > .page-heading,
+  .settings-page > .page-heading {
+    margin-bottom: 16px;
+    gap: 8px;
+  }
+  .page > .page-heading p,
+  .settings-page > .page-heading p {
+    margin-top: 0;
+  }
+}

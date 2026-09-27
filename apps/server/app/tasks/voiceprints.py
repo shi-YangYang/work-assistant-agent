@@ -26,9 +26,11 @@ async def extract(path, settings):
         except OSError:
             raise ValueError('声纹运行环境未安装，请联系管理员安装公司声纹组件') from None
         async def bounded():
-            data = await process.stdout.read(256 * 1024 + 1)
-            if len(data) > 256 * 1024:
-                raise ValueError('声纹处理结果异常，请重新上传清晰的单人录音')
+            data = bytearray()
+            while chunk := await process.stdout.read(64 * 1024):
+                data.extend(chunk)
+                if len(data) > 256 * 1024:
+                    raise ValueError('声纹处理结果异常，请重新上传清晰的单人录音')
             await process.wait()
             try:
                 result = json.loads(data)
@@ -50,6 +52,33 @@ async def extract(path, settings):
             await process.wait()
 
 
+class EnrollmentRemoved(Exception):
+    pass
+
+
+async def extract_current(extractor, path, settings, sessions, identifier, revision):
+    async def invalidated():
+        while True:
+            await asyncio.sleep(1)
+            async with sessions() as db:
+                current = await db.scalar(select(Voiceprint.revision).where(Voiceprint.id == identifier))
+                if current != revision:
+                    return
+    extraction = asyncio.create_task(extractor(path, settings))
+    watcher = asyncio.create_task(invalidated())
+    try:
+        completed, _ = await asyncio.wait((extraction, watcher), return_when=asyncio.FIRST_COMPLETED)
+        if watcher in completed:
+            await watcher
+            raise EnrollmentRemoved()
+        return await extraction
+    finally:
+        for task in (extraction, watcher):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(extraction, watcher, return_exceptions=True)
+
+
 async def process_once(sessions, settings, *, extractor=extract):
     async with sessions.begin() as db:
         item = await db.scalar(select(Voiceprint).where((Voiceprint.state == 'queued') | ((Voiceprint.state == 'processing') & (Voiceprint.lease_until < now()))).order_by(Voiceprint.created_at).with_for_update(skip_locked=True).limit(1))
@@ -59,7 +88,9 @@ async def process_once(sessions, settings, *, extractor=extract):
         identifier, company_id, revision, pending = item.id, item.company_id, item.revision, item.pending_path
     error, result = '', None
     try:
-        result = await extractor(private_path(settings, pending), settings)
+        result = await extract_current(extractor, private_path(settings, pending), settings, sessions, identifier, revision)
+    except EnrollmentRemoved:
+        return True
     except asyncio.CancelledError:
         async with sessions.begin() as db:
             item = await db.get(Voiceprint, identifier)
@@ -77,7 +108,9 @@ async def process_once(sessions, settings, *, extractor=extract):
     async with sessions.begin() as db:
         await company_lock(db, company_id)
         item = await db.scalar(select(Voiceprint).where(Voiceprint.id == identifier).with_for_update())
-        if not item or item.revision != revision or item.pending_path != pending:
+        from app.modules.members.models import Member
+        member = await db.get(Member, item.member_id) if item else None
+        if not item or item.revision != revision or item.pending_path != pending or not member or member.deleted:
             return True
         item.lease_until, item.updated_at = None, now()
         if error:
@@ -88,8 +121,11 @@ async def process_once(sessions, settings, *, extractor=extract):
             item.templates = result['templates']
             item.speech_seconds = round(result['speechSeconds'])
             item.ready_path, item.pending_path = pending, ''
-    if old_ready and old_ready != pending:
-        private_path(settings, old_ready).unlink(missing_ok=True)
+        if old_ready and old_ready != pending:
+            from app.modules.voiceprints.cleanup import schedule_paths
+            await schedule_paths(db, company_id, item.member_id, [old_ready])
+    from app.modules.voiceprints.cleanup import drain
+    await drain(sessions, settings, company_id=company_id)
     return True
 
 

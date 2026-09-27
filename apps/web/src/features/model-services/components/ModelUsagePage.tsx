@@ -102,9 +102,13 @@ export function ModelUsagePage() {
               <small>请求成功率</small>
               <strong>
                 {data.summary.successRate === null
-                  ? '未知'
+                  ? '暂无'
                   : `${(data.summary.successRate * 100).toFixed(1)}%`}
               </strong>
+              <small>
+                已知结果 {(data.summary.states.succeeded ?? 0) + (data.summary.states.failed ?? 0)}{' '}
+                次 · 未知 {data.summary.states.unknown ?? 0} 次
+              </small>
             </div>
             <div>
               <small>平均耗时</small>

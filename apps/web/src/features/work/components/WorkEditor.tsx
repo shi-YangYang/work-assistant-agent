@@ -9,6 +9,7 @@ import { Modal } from '@web/components/Modal'
 import { progressFieldErrors, readWork, updateWorkProgress } from '@web/features/work/api/requests'
 import { ProgressFields } from '@web/features/work/components/ProgressFields'
 import { progressTitleError } from '@web/features/work/utils/progress-edit'
+import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
 
@@ -25,7 +26,7 @@ export function WorkEditor({
   const key = `work:${work.id}`
   const stored = drafts[key] as { content: Progress; revision: number } | undefined
   const value = stored?.content ?? work
-  const [busy, setBusy] = useState(false)
+  const { busy, submit } = useDraftSubmission(key)
   const [error, setError] = useState<Error | string>('')
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Progress, string>>>({})
   return (
@@ -37,31 +38,32 @@ export function WorkEditor({
           setFieldErrors({ title: titleError })
           if (titleError) return
           setError('')
-          setBusy(true)
-          try {
-            const { title, summary, status, blocker, nextStep, dueDate } = value
-            await updateWorkProgress(work, {
-              title,
-              summary,
-              status,
-              blocker,
-              nextStep,
-              dueDate,
-              sourceIds: [],
-              expectedRevision: stored?.revision ?? work.revision,
-            })
-            setDraft(key, undefined)
-            window.dispatchEvent(new Event('paa-record-updated'))
-            onSaved()
-          } catch (e) {
-            setFieldErrors(progressFieldErrors(e))
-            setError(e as Error)
-          } finally {
-            setBusy(false)
-          }
+          const { title, summary, status, blocker, nextStep, dueDate } = value
+          await submit(
+            () =>
+              updateWorkProgress(work, {
+                title,
+                summary,
+                status,
+                blocker,
+                nextStep,
+                dueDate,
+                sourceIds: [],
+                expectedRevision: stored?.revision ?? work.revision,
+              }),
+            () => {
+              window.dispatchEvent(new Event('paa-record-updated'))
+              onSaved()
+            },
+            (error) => {
+              setFieldErrors(progressFieldErrors(error))
+              setError(error as Error)
+            },
+          )
         }}
       >
         <ProgressFields
+          disabled={busy}
           value={value}
           errors={fieldErrors}
           change={(content) => {

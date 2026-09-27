@@ -111,6 +111,9 @@ export function TeamWorkspace({
         {metrics.map(([value, label, key]) => (
           <button
             key={key}
+            data-secondary={
+              view === 'reports' && !['submitted', 'pending', 'overdue'].includes(key)
+            }
             aria-pressed={status === value}
             data-selected={status === value}
             onClick={() => update({ [`${view}Status`]: value })}

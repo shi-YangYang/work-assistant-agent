@@ -51,7 +51,7 @@ const labels: Record<string, string> = {
   paused: '已暂停',
   resuming: '正在继续',
   stopping: '正在保存',
-  completed: '已完成',
+  completed: '录音完成',
   interrupted: '录制中断',
   failed: '录制失败',
 }
@@ -508,44 +508,44 @@ export function App(): React.JSX.Element {
               </button>
             </div>
           )}
-          <div className="page-heading">
-            <div>
-              <h1
-                ref={heading}
-                tabIndex={-1}
-                title={page === 'meeting' ? selected?.title : undefined}
-              >
-                {page === 'meeting' && selected ? selected.title : pageLabels[page]}
-              </h1>
-              {page === 'meetings' && <p>保留讨论，回顾决定与下一步。</p>}
-              {page === 'services' && <p>管理生成会议纪要所使用的服务。</p>}
-              {page === 'company' && company.serverUrl && <p>同步员工声纹，在会议中识别发言者。</p>}
-              {page === 'current' && (
-                <p>
-                  {recording.deviceName || '正在准备麦克风'} ·{' '}
-                  {available ? '麦克风已就绪' : '等待录音设备'}
-                </p>
-              )}
-            </div>
-            {['meetings', 'current', 'meeting'].includes(page) && (
-              <div className="meeting-action">
-                <button
-                  className="primary-button"
-                  disabled={!canStart}
-                  onClick={() => void start()}
-                >
-                  <Plus size={18} />
-                  {busy && !active ? '正在准备…' : '开始会议'}
-                </button>
-                {page === 'meetings' && (
-                  <small>
-                    {available ? '麦克风已就绪' : '麦克风暂不可用'} ·{' '}
-                    {model?.state === 'ready' ? '录音时自动转写' : '可先录音，准备模型后补转写'}
-                  </small>
+          {page !== 'meeting' && (
+            <div className="page-heading">
+              <div>
+                <h1 ref={heading} tabIndex={-1}>
+                  {pageLabels[page]}
+                </h1>
+                {page === 'meetings' && <p>保留讨论，回顾决定与下一步。</p>}
+                {page === 'services' && <p>管理生成会议纪要所使用的服务。</p>}
+                {page === 'company' && company.serverUrl && (
+                  <p>同步员工声纹，在会议中识别发言者。</p>
+                )}
+                {page === 'current' && (
+                  <p>
+                    {recording.deviceName || '正在准备麦克风'} ·{' '}
+                    {available ? '麦克风已就绪' : '等待录音设备'}
+                  </p>
                 )}
               </div>
-            )}
-          </div>
+              {['meetings', 'current'].includes(page) && (
+                <div className="meeting-action">
+                  <button
+                    className="primary-button"
+                    disabled={!canStart}
+                    onClick={() => void start()}
+                  >
+                    <Plus size={18} />
+                    {busy && !active ? '正在准备…' : '开始会议'}
+                  </button>
+                  {page === 'meetings' && (
+                    <small>
+                      {available ? '麦克风已就绪' : '麦克风暂不可用'} ·{' '}
+                      {model?.state === 'ready' ? '录音时自动转写' : '可先录音，准备模型后补转写'}
+                    </small>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <div hidden={page !== 'meetings'} className="page-content list-page">
             <MeetingLibraryList
               viewportRef={listViewport}
@@ -597,6 +597,10 @@ export function App(): React.JSX.Element {
             <MeetingWorkspace
               key={selected.id}
               meeting={selected}
+              headingRef={heading}
+              onStart={() => void start()}
+              canStart={canStart}
+              starting={busy && !active}
               hit={selectionHit}
               onChanged={meetingChanged}
               onDeleted={meetingDeleted}

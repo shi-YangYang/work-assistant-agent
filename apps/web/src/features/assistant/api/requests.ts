@@ -90,9 +90,14 @@ export function readConversationDeletion(item: Conversation) {
   return api<{ retainedSources: number }>(`/conversations/${item.id}/deletion`)
 }
 
-export function readMoreConversations(search: string, nextCursor: string) {
+export function readMoreConversations(
+  search: string,
+  nextCursor?: string | null,
+  signal?: AbortSignal,
+) {
   return api<Page<Conversation>>(
-    `/conversations?q=${encodeURIComponent(search)}&cursor=${nextCursor}`,
+    `${conversationsPath(search)}${nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : ''}`,
+    { signal },
   )
 }
 

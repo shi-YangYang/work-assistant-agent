@@ -1,9 +1,8 @@
 import type { MeetingHit } from '../shared/library-contracts'
-import { MeetingActions } from './MeetingActions'
+import { MeetingDetailHeader } from './MeetingDetailHeader'
 import { useRef, useState, type RefObject } from 'react'
-import { ArrowLeft } from 'lucide-react'
 import type { Meeting } from '../shared/contracts'
-import { AudioPlayer, audioTime, type AudioPlayerHandle } from './AudioPlayer'
+import { AudioPlayer, type AudioPlayerHandle } from './AudioPlayer'
 import { MeetingMinutes } from './MeetingMinutes'
 import { Transcript } from './Transcription'
 
@@ -19,7 +18,15 @@ export function MeetingWorkspace({
   onBack,
   onServices,
   onModels,
+  headingRef,
+  onStart,
+  canStart,
+  starting,
 }: {
+  headingRef: RefObject<HTMLHeadingElement | null>
+  onStart: () => void
+  canStart: boolean
+  starting: boolean
   meeting: Meeting
   hit?: MeetingHit | null
   onChanged: (meeting: Meeting) => void
@@ -51,42 +58,18 @@ export function MeetingWorkspace({
   }
   return (
     <section className="meeting-detail" aria-label="会议工作区">
-      <div className="meeting-context">
-        <button className="text-button" onClick={onBack}>
-          <ArrowLeft size={16} />
-          返回会议列表
-        </button>
-        <span className={`meeting-state ${meeting.status}`}>
-          {meeting.status === 'completed'
-            ? '已完成'
-            : meeting.status === 'interrupted'
-              ? '录制中断'
-              : meeting.status === 'failed'
-                ? '录制失败'
-                : '处理中'}
-        </span>
-        <details className="meeting-metadata">
-          <summary>
-            {new Date(meeting.startedAt || meeting.createdAt).toLocaleString('zh-CN', {
-              hour12: false,
-            })}{' '}
-            · {audioTime(meeting.durationMs / 1000)} · 详情
-          </summary>
-          <p>麦克风：{meeting.deviceName || '未打开设备'}</p>
-          {meeting.status === 'interrupted' && <p>这场会议曾中断，音频只包含可恢复的部分。</p>}
-          {meeting.status === 'failed' && (
-            <p>录音未成功保存，请检查麦克风、磁盘空间与目录权限后重试。</p>
-          )}
-        </details>
-        <MeetingActions
-          meeting={meeting}
-          detail
-          summaryAvailable={summaryAvailable}
-          onChanged={onChanged}
-          onDeleted={onDeleted}
-          beforeDelete={() => audioRef.current?.release()}
-        />
-      </div>
+      <MeetingDetailHeader
+        meeting={meeting}
+        headingRef={headingRef}
+        summaryAvailable={summaryAvailable}
+        onBack={onBack}
+        onStart={onStart}
+        canStart={canStart}
+        starting={starting}
+        onChanged={onChanged}
+        onDeleted={onDeleted}
+        beforeDelete={() => audioRef.current?.release()}
+      />
       {meeting.deleting && (
         <p role="alert" className="audio-warning">
           {meeting.deletionError || '删除尚未完成，请从操作菜单重试删除。'}

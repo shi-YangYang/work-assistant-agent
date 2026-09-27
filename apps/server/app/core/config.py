@@ -42,7 +42,7 @@ class Settings:
     ffmpeg: str = field(default_factory=lambda: os.getenv('PAA_FFMPEG', 'ffmpeg'))
 
     voiceprint_python: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_PYTHON', str(ROOT / '.venv-voiceprints' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')))))
-    voiceprint_model: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_MODEL', str(ROOT / 'apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin'))).resolve())
+    voiceprint_model: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_MODEL', str(ROOT / 'packages/voiceprint-engine/resources/models/speaker-community-1/embedding/pytorch_model.bin'))).resolve())
 
     worker_concurrency: int = field(default_factory=lambda: int(os.getenv('PAA_WORKER_CONCURRENCY', '3')))
 

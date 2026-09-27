@@ -44,7 +44,7 @@ const result = spawnSync(
     '--paths',
     'packages/voiceprint-engine/src',
     '--add-data',
-    `${resolve('apps/desktop/resources/models/speaker-community-1')}${delimiter}models/speaker-community-1`,
+    `${resolve('packages/voiceprint-engine/resources/models/speaker-community-1')}${delimiter}models/speaker-community-1`,
     '--collect-all',
     'pyannote.audio',
     '--collect-all',

@@ -518,3 +518,14 @@ export interface TeamWorkspacePage<T> extends Page<T> {
   range: DateRange
   members: Member[]
 }
+
+export interface MemberDeletionImpact {
+  voiceprints: number
+  recordings: number
+}
+
+export interface VoiceprintCleanupSummary {
+  legacy: MemberDeletionImpact & { members: number }
+  pending: number
+  failed: number
+}

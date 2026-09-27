@@ -47,10 +47,13 @@ export function TeamResults({
               : '所选周期的汇报'}{' '}
             · {data.total} 条
           </span>
-          {(params.get('q') || params.get('member') || status) && (
+          {(params.get('q') ||
+            params.get('member') ||
+            (params.get('members') && params.get('members') !== 'active') ||
+            status) && (
             <button
               className={`${controlsStyles['text-button']} ${teamStyles['slot-text-button']}`}
-              onClick={() => update({ q: '', member: '', [`${view}Status`]: '' })}
+              onClick={() => update({ q: '', member: '', members: '', [`${view}Status`]: '' })}
             >
               清除筛选
             </button>

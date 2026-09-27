@@ -28,6 +28,12 @@ const state = vi.hoisted(() => ({
 }))
 vi.mock('react', async (load) => ({
   ...(await load<typeof import('react')>()),
+  useLayoutEffect: () => {},
+  useRef: <T>(initial: T) => {
+    const slot = state.cursor++
+    if (!(slot in state.slots)) state.slots[slot] = { current: initial }
+    return state.slots[slot]
+  },
   useState: <T>(initial: T | (() => T)) => {
     const slot = state.cursor++
     if (!(slot in state.slots))
@@ -45,7 +51,7 @@ vi.mock('../../apps/web/src/lib/workspace', () => ({
     drafts: state.drafts,
     setDraft: vi.fn(),
     notify: vi.fn(),
-    identity: { member: { id: 'owner', role: 'employee' } },
+    identity: { company: { id: 'company' }, member: { id: 'owner', role: 'employee' } },
   }),
 }))
 vi.mock('../../apps/web/src/hooks/useResource', () => ({

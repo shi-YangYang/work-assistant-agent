@@ -27,6 +27,7 @@
 | Web 前端 | `apps/web/src/` |
 | 公司 API、worker、harness、迁移 | `apps/server/app/`，包名 `app` |
 | 共享 HTTP 类型、模型参数、品牌、声纹引擎 | `packages/{api-contracts,model-config,ui-web,voiceprint-engine}/` |
+| 固定公共说话人权重 | `packages/voiceprint-engine/resources/models/speaker-community-1/` |
 | 测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
 | 脚本与部署 | `scripts/`、`deploy/company/` |
 | 产品方向、架构／使用指南、规格、Agent 规则 | `constitution/`、`docs/`、`specs/`、`.ai/` |

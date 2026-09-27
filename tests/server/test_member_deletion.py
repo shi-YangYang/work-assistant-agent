@@ -58,8 +58,7 @@ async def test_delete_member_revokes_access_stops_work_and_preserves_history(set
         assert not await db.scalar(select(DesktopSession.id).where(DesktopSession.member_id == employee.id))
         assert (await db.get(Job, job.id)).state == 'cancelled'
         assert (await db.get(Job, job.id)).fence == 3
-        assert (await db.get(Voiceprint, enrollment.id)).revision == 3
-        assert (await db.get(Voiceprint, enrollment.id)).state == 'failed'
+        assert await db.get(Voiceprint, enrollment.id) is None
         assert (await db.get(ReportEligibility, eligibility.id)).ends_at
         assert (await db.get(ReportObligation, obligation.id)).state == 'cancelled'
         assert not await db.scalar(select(ReportNotification.id).where(ReportNotification.owner_id == employee.id))
