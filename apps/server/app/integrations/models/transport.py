@@ -13,6 +13,33 @@ class ProviderError(ValueError):
         self.code, self.status, self.retry_after, self.sent = code, status, retry_after, sent
 
 
+RATE_LIMIT_CODES = frozenset(('rate_limit_exceeded', 'rate_limit_error', 'too_many_requests', 'throttled', 'throttling', 'throttling.ratequota'))
+CONTENT_FILTER_CODES = frozenset(('data_inspection_failed', 'datainspectionfailed', 'content_filter', 'content_policy_violation'))
+
+
+def structured_error(value, *, status=None, delay=None):
+    """Map provider codes, never echo untrusted error prose or request data."""
+    if not isinstance(value, dict):
+        return None
+    detail = value.get('error', value)
+    if not isinstance(detail, dict):
+        return None
+    codes = {detail[field].lower() for field in ('code', 'type') if isinstance(detail.get(field), str)}
+    if codes & CONTENT_FILTER_CODES:
+        return ProviderError('content_filter', '模型服务的内容审核拦截了本次生成。请调整问题后重新发送；原样重试可能仍会失败。', status)
+    if codes & RATE_LIMIT_CODES:
+        return ProviderError('rate_limit', '服务请求暂时受限，请稍后重试', status or 429, delay)
+    if codes & {'insufficient_quota', 'quota_exceeded'}:
+        return ProviderError('quota', '服务额度不足，请查看服务商账户', status or 429, delay)
+    if codes & {'invalid_api_key', 'authentication_error'}:
+        return ProviderError('authentication', '鉴权失败，请核对密钥、模型权限及服务地域', status or 401)
+    if codes & {'invalid_request_error', 'invalid_parameter', 'invalidparameter'}:
+        return ProviderError('protocol', '服务不支持当前路径、模型或参数，请核对接口配置', status or 400)
+    if codes & {'server_error', 'internal_error', 'internalerror', 'service_unavailable', 'serviceunavailable'}:
+        return ProviderError('network', '模型服务暂不可用，请稍后重试', status or 503, delay)
+    return None
+
+
 def normalize_url(value, settings):
     try:
         if any(ord(c) < 33 or ord(c) == 127 for c in value) or '\\' in value:
@@ -102,16 +129,16 @@ def status_error(response):
         return
     if code in (401, 403):
         raise ProviderError('authentication', '鉴权失败，请核对密钥、模型权限及服务地域', code)
+    try:
+        structured = structured_error(response.json(), status=code, delay=retry_after(response))
+    except (ValueError, httpx.ResponseNotRead):
+        structured = None
+    if structured:
+        raise structured
     if code == 429:
         # Only structured provider codes distinguish temporary throttling from
         # exhausted credits. An ambiguous 429 is not safe to repeat blindly.
-        try:
-            detail = response.json().get('error', {})
-            reason = detail.get('code') or detail.get('type')
-        except (ValueError, TypeError, AttributeError, httpx.ResponseNotRead):
-            reason = None
-        temporary = reason in ('rate_limit_exceeded', 'rate_limit_error', 'too_many_requests', 'throttled', 'Throttling', 'Throttling.RateQuota')
-        raise ProviderError('rate_limit' if temporary else 'quota', '服务请求暂时受限' if temporary else '服务额度不足或请求受限，请查看服务商账户', code, retry_after(response))
+        raise ProviderError('quota', '服务额度不足或请求受限，请查看服务商账户', code, retry_after(response))
     if code in (400, 404, 405, 415, 422):
         raise ProviderError('protocol', '服务不支持当前路径、模型或参数，请核对接口配置', code)
     if 300 <= code < 400:

@@ -16,7 +16,7 @@ export function nodeStatus(node: Node, now = Date.now()) {
   return {
     waiting: '等待执行',
     succeeded: '已完成',
-    failed: '未完成',
+    failed: '已失败',
     awaiting_confirmation: '待确认',
     awaiting_input: '需要补充',
     cancelled: '已停止',

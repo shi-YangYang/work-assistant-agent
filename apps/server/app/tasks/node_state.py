@@ -32,7 +32,9 @@ def node_dtos(job):
         status = row['state']
         if job.state == 'cancelled' and status in ('running', 'retry_wait', 'waiting'):
             status = 'cancelled'
-        elif job.state in ('failed', 'awaiting_retry') and status in ('running', 'retry_wait'):
+        # Retrying can take a different path, leaving reopened nodes unused.
+        # Once the task ends, those nodes cannot still be waiting or running.
+        elif job.state in ('succeeded', 'awaiting_input', 'failed', 'awaiting_retry') and status in ('running', 'retry_wait', 'waiting'):
             status = 'failed'
         result.append({
             'id': row['id'], 'parentId': row.get('parentId'), 'kind': row['kind'],

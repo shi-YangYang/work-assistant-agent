@@ -62,10 +62,15 @@ it('renders compact accessible progress, completion totals, and in-place manual 
   const complete = render(
     job({
       state: 'succeeded',
-      nodes: [node({ state: 'succeeded', attempts: 3, retries: 2, totalRetries: 2 })],
+      nodes: [
+        node({ state: 'succeeded', attempts: 3, retries: 2, totalRetries: 2 }),
+        node({ id: 'abandoned', state: 'failed', attempts: 0, round: 1 }),
+      ],
     }),
   )
   expect(complete).toContain('已完成 1 个步骤 · 自动重试 2 次')
+  expect(complete).toContain('已失败')
+  expect(complete).not.toContain('等待执行')
   expect(complete).not.toContain('<button')
   const failed = render(
     job({

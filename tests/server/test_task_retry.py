@@ -25,7 +25,7 @@ from app.tasks import node_execution
 from app.tasks.context import InputChanged, LostLease, RunContext
 from app.tasks.models import Job
 from app.tasks.node_failures import classify
-from app.tasks.node_state import execution, node_dtos, save
+from app.tasks.node_state import execution, node_dtos, reopen_failed, save
 from app.tasks.queue import claim
 from app.tasks.retry import Attempt, Failure, NodeFailed, run
 from test_business_actions import create, read_work, runtime
@@ -35,6 +35,35 @@ pytestmark = pytest.mark.asyncio
 
 async def noop(*args):
     pass
+
+
+@pytest.mark.parametrize('terminal', ['succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled'])
+async def test_retry_abandoned_nodes_stop_waiting_when_task_ends(terminal):
+    job = SimpleNamespace(state='failed', attempt=0, feedback={}, result={
+        'nodeExecution': {'scope': 'current', 'nodes': [
+            {'id': 'search', 'scope': 'current', 'kind': 'tool', 'label': '搜索公开资料', 'state': 'succeeded', 'attempts': 1},
+            {'id': 'old-model', 'scope': 'current', 'kind': 'model', 'label': '思考中', 'state': 'failed', 'attempts': 1, 'resumable': True},
+            {'id': 'old-read', 'scope': 'current', 'kind': 'tool', 'label': '读取网页', 'state': 'failed', 'attempts': 1, 'output': {'state': 'unavailable'}},
+        ]},
+    })
+    reopen_failed(job)
+    for active in ('queued', 'running'):
+        job.state = active
+        assert [row['state'] for row in node_dtos(job)] == ['succeeded', 'waiting', 'waiting']
+
+    # The resumed model takes another path; previous reopened nodes are unused.
+    job.result['nodeExecution']['nodes'].append({
+        'id': 'new-model', 'scope': 'current', 'kind': 'model', 'label': '思考中', 'state': 'succeeded', 'attempts': 1,
+    })
+    job.state = terminal
+    expected = 'cancelled' if terminal == 'cancelled' else 'failed'
+    rows = node_dtos(job)
+    assert [row['state'] for row in rows] == ['succeeded', expected, expected, 'succeeded']
+    if terminal in ('succeeded', 'awaiting_input', 'cancelled'):
+        assert not any(row['canRetry'] for row in rows)
+    # Presentation must not alter retry inputs or cached tool outputs.
+    assert job.result['nodeExecution']['nodes'][2]['state'] == 'waiting'
+    assert job.result['nodeExecution']['nodes'][2]['output'] == {'state': 'unavailable'}
 
 
 @pytest.mark.parametrize('failures', [0, 2, 4])
