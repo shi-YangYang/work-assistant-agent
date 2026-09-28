@@ -57,9 +57,11 @@
 }
 .nodeContent {
   display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 10px;
   min-width: 0;
+  line-height: 20px;
 }
 .nodeContent > span:first-child {
   color: var(--text);

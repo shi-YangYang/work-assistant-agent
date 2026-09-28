@@ -7,17 +7,7 @@ import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
-import {
-  CornerUpLeft,
-  Plus,
-  ImagePlus,
-  Mic,
-  Paperclip,
-  ArrowUp,
-  LoaderCircle,
-  Square,
-  X,
-} from 'lucide-react'
+import { CornerUpLeft, Plus, ImagePlus, Mic, Paperclip, ArrowUp, Square, X } from 'lucide-react'
 import type * as React from 'react'
 import { useId, useRef } from 'react'
 
@@ -70,6 +60,7 @@ export function MessageComposer({
   const attachmentMenu = useRef<HTMLDivElement>(null)
   const attachmentMenuId = useId()
   const capturing = recording.state !== 'idle'
+  const retryPending = pending && !busy
   return (
     <div ref={containerRef} className={styles['composer-wrap']} data-empty={empty}>
       <div className={styles['composer']} data-dragging={dragging}>
@@ -125,7 +116,7 @@ export function MessageComposer({
           }}
           onKeyDown={(event) => submitOnEnter(event, () => void send())}
         />
-        {pending && !busy && (
+        {retryPending && (
           <p className={noticeStyles['notice']} role="status">
             原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
           </p>
@@ -242,13 +233,13 @@ export function MessageComposer({
                   ? '正在发送'
                   : retryWait
                     ? `${retryWait} 秒后再试`
-                    : pending
+                    : retryPending
                       ? '原样重试，确认结果'
                       : '发送'
               }
               aria-busy={busy}
               title={busy ? '正在发送' : '发送'}
-              data-expanded={!!retryWait || pending}
+              data-expanded={!!retryWait || retryPending}
               className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
               disabled={
                 busy ||
@@ -260,8 +251,8 @@ export function MessageComposer({
               }
               onClick={send}
             >
-              {busy ? <LoaderCircle size={18} /> : <ArrowUp size={18} />}
-              {retryWait || pending ? (
+              <ArrowUp size={18} />
+              {retryWait || retryPending ? (
                 <span>{retryWait ? `${retryWait} 秒后再试` : '原样重试，确认结果'}</span>
               ) : null}
             </button>

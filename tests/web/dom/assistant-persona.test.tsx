@@ -249,7 +249,10 @@ it('freezes the persona before upload and reuses the same pending body after a l
     .mockResolvedValueOnce({ conversationId: 'created' })
   render(assistantView(vault))
   choose('专业人设')
-  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  const sendButton = screen.getByRole('button', { name: '发送' })
+  const contextButton = screen.getByRole('button', { name: /^上下文使用情况/ })
+  const sendIcon = sendButton.querySelector('svg')
+  fireEvent.click(sendButton)
   expect(vault.getSnapshot()['composer:new']).toMatchObject({
     submissionPersonaId: 'professional',
     sending: true,
@@ -268,6 +271,12 @@ it('freezes the persona before upload and reuses the same pending body after a l
     } as Attachment),
   )
   await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
+  const sendingButton = screen.getByRole('button', { name: '正在发送' })
+  expect(sendingButton).toBe(sendButton)
+  expect(sendingButton.getAttribute('data-expanded')).toBe('false')
+  expect(sendingButton.querySelector('svg')).toBe(sendIcon)
+  expect(screen.queryByText('原样重试，确认结果')).toBeNull()
+  expect(screen.getByRole('button', { name: /^上下文使用情况/ })).toBe(contextButton)
   const [body, key] = vi.mocked(sendMessage).mock.calls[0]
   expect(body).toMatchObject({
     personaId: 'professional',
@@ -275,6 +284,9 @@ it('freezes the persona before upload and reuses the same pending body after a l
     attachmentIds: ['uploaded'],
   })
   await act(async () => firstSend.reject(new Error('网络连接中断')))
+  expect(
+    screen.getByRole('button', { name: '原样重试，确认结果' }).getAttribute('data-expanded'),
+  ).toBe('true')
   choose('大包人设')
   expect((vault.getSnapshot()['composer:new'] as Composer).pending?.body.personaId).toBe(
     'professional',
