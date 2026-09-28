@@ -207,3 +207,44 @@ it('shows compaction within the existing node progress and accepts newer context
   )
   expect(html).toContain('上下文已压缩')
 })
+
+it('only marks actual execution for shine and clears unfinished nodes on interruption', () => {
+  const render = (value: Job) =>
+    renderToStaticMarkup(createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }))
+  expect(render(job())).toContain('data-running="true"')
+  for (const value of [
+    job({ state: 'queued' }),
+    job({ nodes: [node({ state: 'retry_wait' })] }),
+    job({ state: 'awaiting_input' }),
+    job({ state: 'succeeded' }),
+  ]) {
+    expect(render(value)).not.toContain('data-running="true"')
+  }
+  const cancelled = render(
+    job({
+      state: 'cancelled',
+      nodes: [node({ id: 'saved', state: 'succeeded' }), node({ state: 'retry_wait' })],
+    }),
+  )
+  expect(cancelled).toContain('已中断')
+  expect(cancelled).toContain('已完成')
+  expect(cancelled).not.toMatch(/data-running="true"|data-state="retry_wait"|秒后重试/)
+})
+
+it('does not relight a terminal attempt when a late snapshot has a larger sequence', () => {
+  const terminal: JobFeedback = {
+    jobId: 'job',
+    attempt: 1,
+    fence: 2,
+    seq: 5,
+    state: 'cancelled',
+    stage: 'complete',
+    text: '',
+    error: '',
+    updatedAt: '2026-09-01',
+  }
+  expect(acceptFeedback(terminal, { ...terminal, seq: 99, state: 'running' }, 'job')).toBe(terminal)
+  expect(
+    acceptFeedback(terminal, { ...terminal, attempt: 2, state: 'running' }, 'job')?.state,
+  ).toBe('running')
+})

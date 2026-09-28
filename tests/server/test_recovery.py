@@ -132,7 +132,10 @@ async def test_history_keeps_explicit_clarification_and_excludes_future_or_other
     response = await clients['employee'].post('/api/v1/messages', json={'text': '是华远的方案', 'replyTo': parent.id}, headers={'Idempotency-Key': 'history-recovery'})
     assert response.status_code == 202
     job = await claim(sessions, actor.id)
-    await send(clients['employee'], '后发的 B 不能成为 A 的历史')
+    # Reproduce pre-existing queued history; the API now rejects a concurrent
+    # message in this conversation before it reaches the history boundary.
+    async with sessions.begin() as db:
+        db.add(Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation['id'], text='后发的 B 不能成为 A 的历史'))
     context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
     content = [{'type': 'text', 'text': '文' * 8000}, *[{'type': 'image_url', 'image_url': {'url': 'controlled-image'}} for _ in range(4)]]
     history = await conversation_history(context, job, content)

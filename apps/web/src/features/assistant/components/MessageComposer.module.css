@@ -63,11 +63,6 @@
   background: var(--hover);
   color: var(--muted);
 }
-.send-actions > .slot-primary[data-expanded='true'] {
-  width: auto;
-  border-radius: 99px;
-  padding-inline: 12px;
-}
 .composer-wrap[data-empty='true'] {
   max-width: 862px;
   padding-bottom: 0;

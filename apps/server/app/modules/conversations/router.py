@@ -65,3 +65,11 @@ async def delete_conversation(identifier: str, body: Revision, actor=AUTH, db=DB
 async def get_context_usage(identifier: str, actor=AUTH, db=DB):
     from app.modules.conversations.context_usage import latest_usage
     return await latest_usage(db, actor, identifier)
+
+
+@router.get('/api/v1/conversations/{identifier}/active-job')
+async def get_active_job(identifier: str, actor=AUTH, db=DB):
+    from app.tasks.conversation_activity import current_job
+    from app.tasks.serializers import job_dto
+    item = await current_job(db, actor, identifier)
+    return {'job': job_dto(item) if item else None}

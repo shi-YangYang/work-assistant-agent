@@ -7,3 +7,10 @@ export function retryJob(
 ) {
   return write<Job>(`/jobs/${job.id}/retry`, body)
 }
+
+export function cancelJob(job: Job) {
+  return write<Job>(`/jobs/${job.id}/cancel`, {
+    expectedAttempt: job.attempt ?? 0,
+    expectedFence: job.fence ?? 0,
+  })
+}

@@ -8,6 +8,7 @@ import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-c
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
 import { CornerUpLeft, Plus, ImagePlus, Mic, Paperclip, ArrowUp, Square, X } from 'lucide-react'
+import type { useAssistantTask } from '../hooks/useAssistantTask'
 import type * as React from 'react'
 import { useId, useRef } from 'react'
 
@@ -32,7 +33,9 @@ export function MessageComposer({
   contextKey,
   contextUsage = null,
   contextUnavailable = false,
+  task,
 }: {
+  task?: ReturnType<typeof useAssistantTask>
   containerRef: React.RefObject<HTMLDivElement | null>
   dragging?: boolean
   empty?: boolean
@@ -61,6 +64,20 @@ export function MessageComposer({
   const attachmentMenuId = useId()
   const capturing = recording.state !== 'idle'
   const retryPending = pending && !busy
+  const interrupting = !pending && !!task?.running
+  const label = interrupting
+    ? task?.cancelling
+      ? '中断中'
+      : '中断'
+    : busy
+      ? '正在发送'
+      : retryWait
+        ? `${retryWait} 秒后再试`
+        : retryPending
+          ? '原样重试，确认结果'
+          : task?.blocked
+            ? '正在恢复处理状态'
+            : '发送'
   return (
     <div ref={containerRef} className={styles['composer-wrap']} data-empty={empty}>
       <div className={styles['composer']} data-dragging={dragging}>
@@ -114,7 +131,11 @@ export function MessageComposer({
             event.preventDefault()
             void addFiles(images)
           }}
-          onKeyDown={(event) => submitOnEnter(event, () => void send())}
+          onKeyDown={(event) =>
+            submitOnEnter(event, () => {
+              if (pending || !task?.blocked) void send()
+            })
+          }
         />
         {retryPending && (
           <p className={noticeStyles['notice']} role="status">
@@ -122,6 +143,7 @@ export function MessageComposer({
           </p>
         )}
         <ErrorNotice>{sendError}</ErrorNotice>
+        <ErrorNotice retry={task?.refresh}>{task?.error}</ErrorNotice>
         <div className={styles['composer-actions']}>
           <div>
             <input
@@ -228,33 +250,25 @@ export function MessageComposer({
           <div className={styles['send-actions']}>
             <ContextUsage key={contextKey} usage={contextUsage} unavailable={contextUnavailable} />
             <button
-              aria-label={
-                busy
-                  ? '正在发送'
-                  : retryWait
-                    ? `${retryWait} 秒后再试`
-                    : retryPending
-                      ? '原样重试，确认结果'
-                      : '发送'
-              }
-              aria-busy={busy}
-              title={busy ? '正在发送' : '发送'}
-              data-expanded={!!retryWait || retryPending}
+              data-expanded={false}
+              aria-label={label}
+              aria-busy={busy || task?.cancelling}
+              title={label}
               className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
               disabled={
-                busy ||
-                !!retryWait ||
-                previewUploading ||
-                personaSaving ||
-                capturing ||
-                (!composer.text.trim() && !composer.files.length)
+                interrupting
+                  ? task?.cancelling
+                  : busy ||
+                    !!retryWait ||
+                    previewUploading ||
+                    personaSaving ||
+                    capturing ||
+                    (!pending && task?.blocked) ||
+                    (!composer.text.trim() && !composer.files.length)
               }
-              onClick={send}
+              onClick={interrupting ? task?.interrupt : send}
             >
-              <ArrowUp size={18} />
-              {retryWait || retryPending ? (
-                <span>{retryWait ? `${retryWait} 秒后再试` : '原样重试，确认结果'}</span>
-              ) : null}
+              {interrupting ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}
             </button>
           </div>
         </div>

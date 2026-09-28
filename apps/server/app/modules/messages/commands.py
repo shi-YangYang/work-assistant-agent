@@ -12,6 +12,7 @@ from app.modules.messages.service import active_message
 from app.security.access import require as business_require, scope as business_scope
 from app.security.ownership import owned
 from app.tasks.models import Job
+from app.tasks.conversation_activity import require_idle
 from sqlalchemy import select
 
 
@@ -39,6 +40,7 @@ async def submit_message(db, actor, body, idempotency_key):
         await db.flush()
     else:
         conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor, body.personaId)
+    await require_idle(db, actor, conversation.id)
     if body.deliverableReference:
         from app.modules.deliverables.queries import check_reference
         await check_reference(db, actor, body.deliverableReference.model_dump(), conversation.id)

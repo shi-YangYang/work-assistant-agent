@@ -61,6 +61,15 @@ def reopen_failed(job):
         save(job, state)
 
 
+def cancel_unfinished(job):
+    state = execution(job)
+    if state:
+        for row in state.get('nodes', []):
+            if row.get('scope') == state.get('scope') and row['state'] in ('waiting', 'running', 'retry_wait'):
+                row.update(state='cancelled', nextAt=None, error='已中断', errorCode='cancelled', resumable=False)
+        save(job, state)
+
+
 def release_outputs(job):
     state = execution(job)
     if state:

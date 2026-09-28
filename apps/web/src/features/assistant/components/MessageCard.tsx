@@ -33,8 +33,16 @@ export function MessageCard({
   onReply,
   onDeliverable,
   onContextUpdate,
+  activeJob,
+  retryBlocked,
+  onRetryStart,
+  onRetrySettled,
 }: {
   message: WorkMessage
+  activeJob?: Job | null
+  retryBlocked?: boolean
+  onRetryStart?: () => boolean
+  onRetrySettled?: (job: Job | null) => void
   own?: boolean
   onChange: () => void
   onReply?: () => void
@@ -46,12 +54,24 @@ export function MessageCard({
   // Older SSE snapshots must not restore the response that was just replaced.
   const replacing =
     retriedJob?.id === message.job?.id && (retriedJob?.attempt ?? 0) > (message.job?.attempt ?? 0)
-  const job = replacing ? retriedJob : message.job
+  const sourceJob = replacing ? retriedJob : message.job
+  const job =
+    activeJob?.id === sourceJob?.id &&
+    (activeJob?.attempt ?? 0) >= (sourceJob?.attempt ?? 0) &&
+    (activeJob?.fence ?? 0) >= (sourceJob?.fence ?? 0) &&
+    ((activeJob?.attempt ?? 0) > (sourceJob?.attempt ?? 0) ||
+      (activeJob?.fence ?? 0) > (sourceJob?.fence ?? 0) ||
+      (sourceJob && ['queued', 'running'].includes(sourceJob.state)) ||
+      (activeJob && !['queued', 'running'].includes(activeJob.state)))
+      ? activeJob!
+      : sourceJob
   const live = useJobFeedback(job, own && !message.businessUnavailable, onChange)
   useEffect(() => {
     if (own && !message.businessUnavailable && job) onContextUpdate?.(job, live.feedback)
   }, [own, message.businessUnavailable, job, live.feedback, onContextUpdate])
-  const failed = ['failed', 'awaiting_retry'].includes(live.feedback?.state ?? job?.state ?? '')
+  const failed = ['failed', 'awaiting_retry', 'cancelled'].includes(
+    live.feedback?.state ?? job?.state ?? '',
+  )
   const location = useLocation()
   const [editing, setEditing] = useState<Draft | null>(null)
   const [gallery, setGallery] = useState<number | null>(null)
@@ -190,6 +210,9 @@ export function MessageCard({
               }}
               refresh={onChange}
               onRetryJob={setRetriedJob}
+              retryBlocked={retryBlocked}
+              onRetryStart={onRetryStart}
+              onRetrySettled={onRetrySettled}
               showNodes
             />
           )}

@@ -26,6 +26,7 @@ export function useMessageSubmission({
   setSendError,
   retryWait,
   refresh,
+  task,
 }: {
   composer: Composer
   composerKey: string
@@ -40,6 +41,11 @@ export function useMessageSubmission({
   setSendError: (error: Error | string) => void
   retryWait: number
   refresh: () => void
+  task?: {
+    canSubmit: () => boolean
+    accepted: (sent: { conversationId: string; messageId: string; jobId: string }) => void
+    refresh: () => Promise<void>
+  }
 }) {
   const { setDraft, rememberConversation } = useWorkspace()
   const [sending, setBusy] = useState(false)
@@ -47,6 +53,7 @@ export function useMessageSubmission({
   const sendingRef = useRef(false)
   async function send() {
     if (
+      (!composer.pending && task && !task.canSubmit()) ||
       sendingRef.current ||
       retryWait ||
       busy ||
@@ -103,6 +110,7 @@ export function useMessageSubmission({
         )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
+      task?.accepted(sent)
       rememberConversation(sent.conversationId)
       current.files.forEach((file) => URL.revokeObjectURL(file.url))
       setDraft(composerKey, (previous: Composer | undefined) =>
@@ -124,11 +132,15 @@ export function useMessageSubmission({
       }
       // A structured 4xx rejection is definite, except authentication interruption
       // and an idempotency conflict. Network/5xx/invalid replies remain uncertain.
-      if (e instanceof ApiError && [400, 403, 404, 413, 415, 422, 429].includes(e.status)) {
+      if (
+        e instanceof ApiError &&
+        ([400, 403, 404, 413, 415, 422, 429].includes(e.status) || e.code === 'conversation_busy')
+      ) {
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: undefined }),
         )
       }
+      if (e instanceof ApiError && e.code === 'conversation_busy') void task?.refresh()
       if (active.current && !isCancelled(e)) {
         if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
           setLimitError(e.message)

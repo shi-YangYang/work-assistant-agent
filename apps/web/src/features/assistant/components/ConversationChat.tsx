@@ -17,6 +17,7 @@ import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
 import { MessageComposer } from '@web/features/assistant/components/MessageComposer'
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
 import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
+import { useAssistantTask } from '@web/features/assistant/hooks/useAssistantTask'
 import { useContextUsage } from '@web/features/assistant/hooks/useContextUsage'
 import { useMessageSubmission } from '@web/features/assistant/hooks/useMessageSubmission'
 import { useRecording } from '@web/features/assistant/hooks/useRecording'
@@ -61,6 +62,11 @@ export function ConversationChat({
     'createdAt',
     2000,
   )
+  const messages = useMemo(
+    () => [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [data],
+  )
+  const task = useAssistantTask(conversationId, messages)
   const actionReceipts = useResource<{ items: BusinessAction[] }>(
     orphanActionsPath(conversationId),
     3000,
@@ -95,6 +101,7 @@ export function ConversationChat({
     setSendError,
     retryWait,
     refresh,
+    task,
   })
   const locked = busy || pending || previewUploading || interaction.busy === 'persona'
   const textInput = useRef<HTMLTextAreaElement>(null)
@@ -216,11 +223,17 @@ export function ConversationChat({
         }
       },
     }))
-  const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const latestJob =
     [...messages].reverse().find((message) => !message.businessUnavailable && message.job)?.job ??
     null
-  const context = useContextUsage(conversationId, latestJob)
+  const contextJob =
+    task.job && (task.running || !latestJob || task.job.updatedAt >= latestJob.updatedAt)
+      ? task.job
+      : latestJob
+  const context = useContextUsage(conversationId, contextJob)
+  useEffect(() => {
+    if (task.job) context.receive(task.job, task.feedback)
+  }, [task.job, task.feedback, context.receive])
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
   return (
@@ -284,6 +297,7 @@ export function ConversationChat({
       )}
       <ChatHistory
         onContextUpdate={context.receive}
+        task={task}
         scroller={scroller}
         atBottomRef={atBottomRef}
         setNewReply={setNewReply}
@@ -324,6 +338,7 @@ export function ConversationChat({
         empty={empty}
         dragging={dragging}
         send={send}
+        task={task}
         addFiles={addFiles}
         composer={composer}
         locked={locked}

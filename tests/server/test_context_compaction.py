@@ -94,8 +94,6 @@ async def test_summary_can_cross_report_boundary_and_invalidates_with_source(set
     from uuid import uuid4
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await send(clients['employee'], '请保持简洁')
-    reply = await clients['employee'].post('/api/v1/messages', json={'text': '按刚才要求生成报告', 'conversationId': first['conversationId']}, headers={'Idempotency-Key': uuid4().hex})
-    assert reply.status_code == 202
     job = await claim(sessions, actor.id)
     context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings, source_revision=0)
     async with sessions.begin() as db:
@@ -103,6 +101,11 @@ async def test_summary_can_cross_report_boundary_and_invalidates_with_source(set
         await references(db, actor, job, current)
         sources = await capture_sources(db, actor, current)
     await publish_summary(context, {'id': 'summary', 'summary': '用户要求简洁。', 'covered': [first['messageId']], 'sources': sources})
+    async with sessions.begin() as db:
+        completed = await db.get(Job, job.id)
+        completed.state, completed.lease_until = 'awaiting_input', None
+    reply = await clients['employee'].post('/api/v1/messages', json={'text': '按刚才要求生成报告', 'conversationId': first['conversationId']}, headers={'Idempotency-Key': uuid4().hex})
+    assert reply.status_code == 202
     async with sessions.begin() as db:
         current = await db.get(Message, reply.json()['messageId'])
         source = await capture_brief(db, actor, current, job)

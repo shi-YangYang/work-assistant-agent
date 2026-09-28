@@ -23,11 +23,19 @@ export function nodeStatus(node: Node, now = Date.now()) {
     failed: '已失败',
     awaiting_confirmation: '待确认',
     awaiting_input: '需要补充',
-    cancelled: '已停止',
+    cancelled: '已中断',
   }[node.state]
 }
 
-export function TaskNode({ node, now }: { node: Node; now: number }) {
+export function TaskNode({
+  node,
+  now,
+  running = false,
+}: {
+  node: Node
+  now: number
+  running?: boolean
+}) {
   const Icon = {
     waiting: Circle,
     running: LoaderCircle,
@@ -39,7 +47,12 @@ export function TaskNode({ node, now }: { node: Node; now: number }) {
     cancelled: Minus,
   }[node.state]
   return (
-    <li className={styles.node} data-state={node.state} data-child={!!node.parentId}>
+    <li
+      className={styles.node}
+      data-state={node.state}
+      data-child={!!node.parentId}
+      data-running={running}
+    >
       <Icon size={14} aria-hidden="true" className={styles.icon} />
       <div className={styles.nodeContent}>
         <span>{node.label}</span>

@@ -22,10 +22,20 @@ async def sent(client, text, conversation=None):
     return response.json()
 
 
+async def legacy_message(sessions, actor, text, conversation):
+    # Historical queued messages remain readable, although new requests can no
+    # longer enqueue a second active message through the public API.
+    async with sessions.begin() as db:
+        item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation, text=text)
+        db.add(item)
+        await db.flush()
+        return {'messageId': item.id, 'conversationId': conversation}
+
+
 async def test_snapshot_incremental_history_order_and_owner_isolation(setup, monkeypatch):
     settings, sessions, users, clients = setup
     first = await sent(clients['employee'], '第一条')
-    second = await sent(clients['employee'], '第二条', first['conversationId'])
+    second = await legacy_message(sessions, users['employee'], '第二条', first['conversationId'])
     actor = users['employee']
     job = await claim(sessions, actor.id)
     async with sessions.begin() as db:
@@ -51,7 +61,7 @@ async def test_snapshot_incremental_history_order_and_owner_isolation(setup, mon
 async def test_late_reply_revision_replaces_cached_reference(setup):
     settings, sessions, users, clients = setup
     first = await sent(clients['employee'], '原问题')
-    second = await sent(clients['employee'], '后续', first['conversationId'])
+    second = await legacy_message(sessions, users['employee'], '后续', first['conversationId'])
     actor = users['employee']; job = await claim(sessions, actor.id)
     async with sessions.begin() as db:
         current = await db.get(Message, second['messageId'])
@@ -118,7 +128,7 @@ async def test_newer_tool_summary_is_not_visible_to_older_task(setup):
     from app.modules.conversations.context_store import capture_sources
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '较早问题')
-    second = await sent(clients['employee'], '较晚的工具查询', first['conversationId'])
+    second = await legacy_message(sessions, users['employee'], '较晚的工具查询', first['conversationId'])
     job = await claim(sessions, actor.id)
     async with sessions.begin() as db:
         newer = await db.get(Message, second['messageId'])

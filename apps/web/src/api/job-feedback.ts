@@ -1,5 +1,5 @@
 import type { Job, JobFeedback, Report } from '@paa/api-contracts'
-import { api, ApiError, expireSession, isCancelled } from '@web/api/client'
+import { api, ApiError, epoch, expireSession, isCancelled } from '@web/api/client'
 
 const terminalJob = (state: string) => !['queued', 'running'].includes(state)
 
@@ -13,6 +13,12 @@ export function acceptFeedback(
 ): JobFeedback | null {
   if (incoming.jobId !== jobId) return current
   if (current && current.jobId === jobId) {
+    if (
+      current.attempt === incoming.attempt &&
+      terminalJob(current.state) &&
+      !terminalJob(incoming.state)
+    )
+      return current
     for (const field of ['attempt', 'fence', 'seq'] as const) {
       if (incoming[field] < current[field]) return current
       if (incoming[field] > current[field]) return incoming
@@ -64,7 +70,7 @@ export const stageNames: Record<string, string> = {
   complete: '已完成',
 }
 
-export function subscribeJobFeedback(
+function connectJobFeedback(
   jobId: string | null,
   state: string | undefined,
   attempt: number,
@@ -82,7 +88,7 @@ export function subscribeJobFeedback(
   let timer: ReturnType<typeof setTimeout> | undefined
   const controller = new AbortController()
   const receive = (incoming: JobFeedback) => {
-    if (closed || incoming.attempt < attempt || incoming.fence < fence) return
+    if (closed || completed || incoming.attempt < attempt || incoming.fence < fence) return
     receiveValue(incoming)
     setError('')
     if (terminalJob(incoming.state)) {
@@ -186,5 +192,86 @@ export function subscribeJobFeedback(
     controller.abort()
     source?.close()
     clearTimeout(timer)
+  }
+}
+
+type FeedbackListener = {
+  attempt: number
+  fence: number
+  receive: (value: JobFeedback | null) => void
+  error: (message: string) => void
+  refresh: () => void
+}
+type FeedbackConnection = {
+  attempt: number
+  fence: number
+  value: JobFeedback | null
+  error: string
+  listeners: Set<FeedbackListener>
+  dispose?: () => void
+}
+const connections = new Map<string, FeedbackConnection>()
+
+// Message cards and the composer share one connection, including fallback polling.
+export function subscribeJobFeedback(
+  jobId: string | null,
+  state: string | undefined,
+  attempt: number,
+  fence: number,
+  receive: FeedbackListener['receive'],
+  error: FeedbackListener['error'],
+  refresh: FeedbackListener['refresh'],
+) {
+  if (!jobId || ['succeeded', 'awaiting_input', 'cancelled'].includes(state ?? '')) return
+  const generation = epoch
+  const key = `${generation}:${jobId}`
+  let connection = connections.get(key)
+  const listener = { attempt, fence, receive, error, refresh }
+  const restart = !connection || attempt > connection.attempt || fence > connection.fence
+  if (!connection) {
+    connection = { attempt, fence, value: null, error: '', listeners: new Set() }
+    connections.set(key, connection)
+  }
+  const shared = connection
+  shared.listeners.add(listener)
+  if (restart) {
+    shared.dispose?.()
+    shared.attempt = attempt
+    shared.fence = fence
+    shared.value = null
+    shared.dispose = connectJobFeedback(
+      jobId,
+      state,
+      attempt,
+      fence,
+      (incoming) => {
+        if (epoch !== generation) return
+        const next = incoming ? acceptFeedback(shared.value, incoming, jobId) : null
+        if (next === shared.value && incoming) return
+        shared.value = next
+        shared.listeners.forEach((item) => {
+          if (!next || (next.attempt >= item.attempt && next.fence >= item.fence))
+            item.receive(next)
+        })
+      },
+      (message) => {
+        if (epoch !== generation) return
+        shared.error = message
+        shared.listeners.forEach((item) => item.error(message))
+      },
+      () => {
+        if (epoch === generation) shared.listeners.forEach((item) => item.refresh())
+      },
+    )
+  }
+  if (shared.value && shared.value.attempt >= attempt && shared.value.fence >= fence)
+    receive(shared.value)
+  error(shared.error)
+  return () => {
+    shared.listeners.delete(listener)
+    if (!shared.listeners.size) {
+      shared.dispose?.()
+      if (connections.get(key) === shared) connections.delete(key)
+    }
   }
 }

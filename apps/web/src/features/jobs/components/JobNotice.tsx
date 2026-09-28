@@ -28,6 +28,9 @@ interface JobNoticeProps {
   job: NonNullable<WorkMessage['job']>
   refresh: () => void
   showNodes?: boolean
+  retryBlocked?: boolean
+  onRetryStart?: () => boolean
+  onRetrySettled?: (job: Job | null) => void
   onRetryJob?: (job: Job | null) => void
 }
 
@@ -50,6 +53,9 @@ function JobRetryNotice({
   refresh,
   showNodes = false,
   onRetryJob,
+  retryBlocked = false,
+  onRetryStart,
+  onRetrySettled,
   onOptimistic,
 }: JobNoticeProps & {
   onOptimistic: (job: Job) => void
@@ -82,7 +88,7 @@ function JobRetryNotice({
   const retryLabel = progress ? '重试此步骤' : reviewOnly ? '重试答复核对' : '重试处理'
   const retry = async (useCurrentConfig = false) => {
     const committed = current.current
-    if (!committed || committed.request) return
+    if (!committed || committed.request || retryBlocked || (onRetryStart && !onRetryStart())) return
     const request = {}
     committed.request = request
     const valid = () => current.current === committed && committed.request === request
@@ -108,11 +114,13 @@ function JobRetryNotice({
     }
     try {
       const next = await retryJob(job, useCurrentConfig || report ? { useCurrentConfig: true } : {})
+      onRetrySettled?.(next)
       if (!valid()) return
       if (report) update({ retrying: next })
       if (assistant) onRetryJob?.(next)
       if (valid()) refresh()
     } catch (e) {
+      onRetrySettled?.(null)
       if (!valid()) return
       update({ retrying: null, error: e as Error })
       if (assistant) onRetryJob?.(null)
@@ -131,10 +139,17 @@ function JobRetryNotice({
       <TaskProgress
         job={error ? { ...job, error: error instanceof Error ? error.message : error } : job}
         busy={busy}
+        disabled={retryBlocked}
         onRetry={() => void retry()}
       />
     )
-  if (job.state === 'succeeded' || job.state === 'cancelled') return null
+  if (job.state === 'cancelled')
+    return assistant ? (
+      <p className={utilitiesStyles['muted']} role="status">
+        已中断
+      </p>
+    ) : null
+  if (job.state === 'succeeded') return null
   if (job.state === 'awaiting_input')
     return (
       <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
@@ -160,7 +175,7 @@ function JobRetryNotice({
         className={`${noticeStyles['notice']} ${utilitiesStyles['error']} ${noticeStyles['slot-error']}`}
       >
         <span>{error ? (error instanceof Error ? error.message : error) : job.error}</span>
-        <BusyButton busy={busy} onClick={() => void retry(true)}>
+        <BusyButton busy={busy} disabled={retryBlocked} onClick={() => void retry(true)}>
           重试
         </BusyButton>
       </div>
@@ -174,11 +189,12 @@ function JobRetryNotice({
         {!confirmation && <ErrorNotice>{error}</ErrorNotice>}
         <BusyButton
           busy={busy}
+          disabled={retryBlocked}
           onClick={() => (job.state === 'awaiting_retry' ? confirmRetry('original') : void retry())}
         >
           {retryLabel}
         </BusyButton>
-        <BusyButton busy={busy} onClick={() => confirmRetry('current')}>
+        <BusyButton busy={busy} disabled={retryBlocked} onClick={() => confirmRetry('current')}>
           使用当前配置重新处理
         </BusyButton>
       </div>
@@ -203,6 +219,7 @@ function JobRetryNotice({
             </button>
             <BusyButton
               busy={busy}
+              disabled={retryBlocked}
               className={controlsStyles['primary']}
               onClick={() => void retry(confirmation === 'current')}
             >

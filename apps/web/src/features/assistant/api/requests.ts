@@ -4,6 +4,7 @@ import type {
   BusinessAction,
   Conversation,
   ContextUsage,
+  Job,
   Page,
   PersonaId,
   WorkMessage,
@@ -77,7 +78,12 @@ export function sendMessage(
   },
   key: string,
 ) {
-  return write<{ conversationId: string }>('/messages', body, 'POST', key)
+  return write<{ conversationId: string; messageId: string; jobId: string }>(
+    '/messages',
+    body,
+    'POST',
+    key,
+  )
 }
 
 export function conversationsPath(search: string) {
@@ -142,4 +148,8 @@ export function readConversationContext(conversationId: string, signal?: AbortSi
     `/conversations/${conversationId}/context-usage`,
     { signal },
   )
+}
+
+export function readActiveAssistantJob(conversationId: string, signal?: AbortSignal) {
+  return api<{ job: Job | null }>(`/conversations/${conversationId}/active-job`, { signal })
 }

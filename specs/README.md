@@ -12,6 +12,7 @@
 | [031](spec-031-assistant-persona/spec.md) | 工作助手可切换“大包／专业”人设 | [验收 PASS](spec-031-assistant-persona/acceptance.md) |
 | [032](spec-032-work-assistant-task-delivery/spec.md) | 工作助手任务协助、连续修改、轻量联网与自主汇报 | [验收 PASS](spec-032-work-assistant-task-delivery/acceptance.md) |
 | [033](spec-033-assistant-context-usage/spec.md) | 会话 JSONB 上下文、模型窗口用量与 90% 自动压缩 | [验收 PASS](spec-033-assistant-context-usage/acceptance.md) |
+| [034](spec-034-assistant-interrupt-progress/spec.md) | 工作助手单会话发送限制、中断与任务执行光带 | [验收 PASS](spec-034-assistant-interrupt-progress/acceptance.md) |
 
 ## 文档分工
 
@@ -22,4 +23,4 @@
 
 ## 生命周期
 
-新 Spec 从 **034** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **035** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../apps/web/src/api/client'
 import {
   readConversation,
+  readActiveAssistantJob,
   sendMessage,
   updateConversationPersona,
   uploadAttachment,
@@ -21,6 +22,7 @@ vi.mock('@web/features/assistant/api/requests', async (load) => ({
   ...(await load<typeof import('../../../apps/web/src/features/assistant/api/requests')>()),
   updateConversationPersona: vi.fn(),
   readConversation: vi.fn(),
+  readActiveAssistantJob: vi.fn(),
   sendMessage: vi.fn(),
   uploadAttachment: vi.fn(),
 }))
@@ -66,6 +68,7 @@ function assistantView(vault = createVault(), route = '/assistant?new=1') {
 beforeEach(() => {
   dialogs()
   vi.clearAllMocks()
+  vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: null })
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
@@ -75,6 +78,12 @@ beforeEach(() => {
         : { items: [], nextCursor: null }
       return new Response(JSON.stringify(body), { status: 200 })
     }),
+  )
+  vi.stubGlobal(
+    'EventSource',
+    class extends EventTarget {
+      close = vi.fn()
+    },
   )
   URL.createObjectURL = vi.fn(() => 'blob:attachment')
   URL.revokeObjectURL = vi.fn()
@@ -230,7 +239,7 @@ it('does not overwrite a newer record response with an older save response', asy
 
 it('freezes the persona before upload and reuses the same pending body after a later selection change', async () => {
   const upload = deferred<Attachment>(),
-    firstSend = deferred<{ conversationId: string }>(),
+    firstSend = deferred<{ conversationId: string; messageId: string; jobId: string }>(),
     vault = createVault()
   vault.writer()('composer:new', {
     text: '带附件发送',
@@ -246,7 +255,7 @@ it('freezes the persona before upload and reuses the same pending body after a l
   vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
   vi.mocked(sendMessage)
     .mockReturnValueOnce(firstSend.promise)
-    .mockResolvedValueOnce({ conversationId: 'created' })
+    .mockResolvedValueOnce({ conversationId: 'created', messageId: 'message', jobId: 'job' })
   render(assistantView(vault))
   choose('专业人设')
   const sendButton = screen.getByRole('button', { name: '发送' })
@@ -286,7 +295,7 @@ it('freezes the persona before upload and reuses the same pending body after a l
   await act(async () => firstSend.reject(new Error('网络连接中断')))
   expect(
     screen.getByRole('button', { name: '原样重试，确认结果' }).getAttribute('data-expanded'),
-  ).toBe('true')
+  ).toBe('false')
   choose('大包人设')
   expect((vault.getSnapshot()['composer:new'] as Composer).pending?.body.personaId).toBe(
     'professional',
