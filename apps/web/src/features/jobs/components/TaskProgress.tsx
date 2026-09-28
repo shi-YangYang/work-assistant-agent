@@ -9,11 +9,15 @@ export function TaskProgress({
   busy,
   onRetry,
   disabled = false,
+  expanded,
+  onExpandedChange,
 }: {
   job: Job
   busy: boolean
   disabled?: boolean
   onRetry: () => void
+  expanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
 }) {
   const nodes = (job.nodes ?? []).map((node) =>
     job.state === 'cancelled' && ['waiting', 'running', 'retry_wait'].includes(node.state)
@@ -63,6 +67,8 @@ export function TaskProgress({
     <div className={styles.progress}>
       <details
         className={styles.details}
+        open={expanded}
+        onToggle={(event) => onExpandedChange?.(event.currentTarget.open)}
         data-running={job.state === 'running' && current?.state === 'running'}
       >
         <summary>

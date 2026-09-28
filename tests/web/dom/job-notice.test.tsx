@@ -39,6 +39,54 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
+it.each([true, false])('preserves manually chosen expansion %s across task updates', (expanded) => {
+  const node: NonNullable<Job['nodes']>[number] = {
+    id: 'thinking',
+    parentId: null,
+    kind: 'model',
+    label: '思考中',
+    state: 'running',
+    attempts: 1,
+    maxAttempts: 4,
+    retries: 0,
+    totalRetries: 0,
+    round: 0,
+    nextRetryAt: null,
+    errorCode: '',
+    error: '',
+    canRetry: false,
+  }
+  const job: Job = { ...first, kind: 'message', state: 'running', error: '', nodes: [node] }
+  const renderJob = (value: Job) => <JobNotice job={value} refresh={vi.fn()} showNodes />
+  const mounted = render(renderJob(job))
+  const details = () => mounted.container.querySelector('details')!
+  const toggle = () => {
+    fireEvent.click(details().querySelector('summary')!)
+    fireEvent(details(), new Event('toggle'))
+  }
+  toggle()
+  if (!expanded) toggle()
+  expect(details().open).toBe(expanded)
+
+  for (const state of ['running', 'retry_wait', 'succeeded'] as const) {
+    mounted.rerender(
+      renderJob({
+        ...job,
+        state: state === 'succeeded' ? 'succeeded' : 'running',
+        updatedAt: `2026-09-25T00:00:0${state === 'running' ? 1 : state === 'retry_wait' ? 2 : 3}Z`,
+        nodes: [
+          { ...node, state: 'succeeded' },
+          { ...node, id: 'search', kind: 'tool', label: '搜索公开资料', state },
+        ],
+      }),
+    )
+    expect(details().open).toBe(expanded)
+    expect(details().textContent).toContain('搜索公开资料')
+  }
+  mounted.rerender(renderJob({ ...job, id: 'another-job' }))
+  expect(details().open).toBe(false)
+})
+
 it.each(outcomes)(
   'makes the new report actionable and ignores the old retry %s',
   async (outcome) => {

@@ -37,12 +37,15 @@ interface JobNoticeProps {
 export function JobNotice(props: JobNoticeProps) {
   const signature = jobVersion(props.job)
   const [source, setSource] = useState({ signature, optimistic: '' })
+  const [expandedJob, setExpandedJob] = useState<string | null>(null)
   if (source.signature !== signature && source.optimistic !== signature)
     setSource({ signature, optimistic: '' })
   return (
     <JobRetryNotice
       key={source.signature}
       {...props}
+      expanded={expandedJob === props.job.id}
+      onExpandedChange={(expanded) => setExpandedJob(expanded ? props.job.id : null)}
       onOptimistic={(job) => setSource({ ...source, optimistic: jobVersion(job) })}
     />
   )
@@ -57,8 +60,12 @@ function JobRetryNotice({
   onRetryStart,
   onRetrySettled,
   onOptimistic,
+  expanded,
+  onExpandedChange,
 }: JobNoticeProps & {
   onOptimistic: (job: Job) => void
+  expanded: boolean
+  onExpandedChange: (expanded: boolean) => void
 }) {
   const [local, setLocal] = useState({
     busy: false,
@@ -141,6 +148,8 @@ function JobRetryNotice({
         busy={busy}
         disabled={retryBlocked}
         onRetry={() => void retry()}
+        expanded={expanded}
+        onExpandedChange={onExpandedChange}
       />
     )
   if (job.state === 'cancelled')

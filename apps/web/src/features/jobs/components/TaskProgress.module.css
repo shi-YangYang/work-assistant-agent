@@ -52,6 +52,15 @@
   flex: 0 0 auto;
   margin-top: 3px;
 }
+.node[data-running='true'] > .icon {
+  animation: node-spin 900ms linear infinite;
+  transform-origin: center;
+}
+@keyframes node-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 .nodeContent {
   display: flex;
   align-items: baseline;
@@ -126,6 +135,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .node[data-running='true'] > .icon {
+    animation: none;
+  }
   .chevron {
     transition: none;
   }
