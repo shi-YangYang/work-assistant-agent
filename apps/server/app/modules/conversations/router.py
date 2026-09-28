@@ -1,5 +1,6 @@
 from .queries import conversations_query
 from fastapi import APIRouter, Query
+from typing import Literal
 from app.core.errors import problem
 from app.core.schemas import Revision
 from app.core.versions import version
@@ -14,8 +15,8 @@ router = APIRouter()
 
 
 @router.get('/api/v1/conversations')
-async def conversations(q: str = Query('', max_length=120), cursor: str | None = None, actor=AUTH, db=DB):
-    return await conversations_query(q, cursor, actor, db)
+async def conversations(q: str = Query('', max_length=120), cursor: str | None = None, order: Literal['updated', 'last_message'] = 'updated', actor=AUTH, db=DB):
+    return await conversations_query(q, cursor, actor, db, order=order)
 
 
 @router.post('/api/v1/conversations', status_code=201)

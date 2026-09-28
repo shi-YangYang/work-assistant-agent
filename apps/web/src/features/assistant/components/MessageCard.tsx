@@ -10,6 +10,7 @@ import { Status } from '@web/components/Status'
 import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
 import type { TaskContinuation } from '../api/interactions'
 import { QuestionHistory } from './QuestionPanel'
+import { WorkReferenceChip } from './WorkReferenceChip'
 import { DeliverableEntry } from './Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { DocumentCard, DocumentCitations } from '@web/features/assistant/components/Documents'
@@ -139,6 +140,7 @@ export function MessageCard({
             </button>
           )}
         </header>
+        {message.workReference && <WorkReferenceChip reference={message.workReference} linked />}
         {message.text && (
           <p className={`${utilitiesStyles['preserve']} ${styles['user-bubble']}`}>
             {message.text}

@@ -15,6 +15,7 @@
 | [034](spec-034-assistant-interrupt-progress/spec.md) | 工作助手单会话发送限制、中断与任务执行光带 | [验收 PASS](spec-034-assistant-interrupt-progress/acceptance.md) |
 | [035](spec-035-assistant-task-consistency/spec.md) | 工作助手多轮任务、授权承接、恢复与完成判断统一 | 已完成，验收通过 |
 | [036](spec-036-assistant-permissions-questions/spec.md) | 工作助手三级执行权限与临时回答框 | [验收 PASS](spec-036-assistant-permissions-questions/acceptance.md) |
+| [037](spec-037-assistant-work-reference/spec.md) | 从工作或输入框引用工作，复用最近聊天并读取最新内容 | 已完成 |
 
 ## 文档分工
 
@@ -25,4 +26,4 @@
 
 ## 生命周期
 
-新 Spec 从 **037** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **038** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

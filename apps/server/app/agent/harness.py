@@ -78,10 +78,13 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             thread += f':input:{context.source_revision}:{digest}'
             if context.document_snapshot:
                 thread += ':files:' + context.document_snapshot
+    history = await conversation_history(context, job, content) if job.kind == 'message' else []
+    if context.work_reference_snapshot:
+        reference_digest = hashlib.sha256(json.dumps(context.work_reference_snapshot, sort_keys=True).encode()).hexdigest()
+        thread += ':work:' + reference_digest
     context.compaction_packet, context.compaction_loaded = None, False
     context.context_checkpoint = GuardedSaver(checkpointer, context)
     context.context_checkpoint_config = {'configurable': {'thread_id': thread + ':context', 'checkpoint_ns': ''}}
-    history = await conversation_history(context, job, content) if job.kind == 'message' else []
     config = {'configurable': {'thread_id': thread}, 'recursion_limit': 36, 'callbacks': []}
     with tracing_context(enabled=False):
         state = await graph.aget_state(config)
@@ -112,7 +115,8 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
-    context.reply_evidence = [*context.context_evidence, *[
+    from app.agent.work_context import reference_evidence
+    context.reply_evidence = [*reference_evidence(context), *context.context_evidence, *[
         {'id': index, 'tool': message.name, 'result': message.content}
         for index, message in enumerate(messages)
         if isinstance(message, ToolMessage) and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES

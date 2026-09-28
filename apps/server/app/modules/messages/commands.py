@@ -18,6 +18,8 @@ from sqlalchemy import select
 
 async def submit_message(db, actor, body, idempotency_key):
     payload = body.model_dump()
+    if body.workReference is None:
+        payload.pop('workReference')
     if body.executionMode is None:
         payload.pop('executionMode')
     if not body.fullAccessConfirmed:
@@ -38,6 +40,9 @@ async def submit_message(db, actor, body, idempotency_key):
     if prior:
         await active_message(db, prior['messageId'], actor)
         return prior
+    if body.workReference:
+        from app.modules.messages.work_references import require_work
+        await require_work(db, actor, body.workReference.workId)
     if body.executionMode == 'full' and not body.conversationId and not body.fullAccessConfirmed:
         problem(422, '请先确认自主执行的范围')
     if body.newConversation:
@@ -67,7 +72,7 @@ async def submit_message(db, actor, body, idempotency_key):
         await business_require(db, actor, reply.access)
         if reply.conversation_id != conversation.id:
             problem(422, '回复必须属于当前会话')
-    item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo, deliverable_reference=body.deliverableReference.model_dump() if body.deliverableReference else {})
+    item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo, work_reference=body.workReference.model_dump() if body.workReference else {}, deliverable_reference=body.deliverableReference.model_dump() if body.deliverableReference else {})
     db.add(item)
     await db.flush()
     from app.modules.conversations.task_state import begin_input

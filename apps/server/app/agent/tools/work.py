@@ -97,7 +97,7 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
     Use blocked when a dependency prevents the next step, in_progress for ongoing
     work, and done only when the entire work is finished. For new work, work_id
     can be omitted or JSON null. For existing work, use only an ID
-    returned by find_work_items or get_work_item. blocker contains only unresolved
+    returned by find_work_items, get_work_item or the server workReference context. blocker contains only unresolved
     dependencies; use an empty string when none remain and describe any resolved
     blocker in summary instead.
     """

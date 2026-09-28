@@ -6,6 +6,10 @@ from app.modules.deliverables.schemas import DeliverableReference
 from pydantic import Field, model_validator
 
 
+class WorkReference(Input):
+    workId: str = Field(min_length=1, max_length=36)
+
+
 class SendMessage(Input):
     conversationId: str | None = None
     personaId: PersonaId | None = None
@@ -18,6 +22,7 @@ class SendMessage(Input):
     voiceCommandAttachmentIds: list[str] | None = Field(default=None, max_length=MAX_AUDIO_ATTACHMENTS)
     replyTo: str | None = None
     deliverableReference: DeliverableReference | None = None
+    workReference: WorkReference | None = None
 
     @model_validator(mode='after')
     def content_present(self):

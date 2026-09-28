@@ -13,7 +13,7 @@ import {
   deleteConversation,
   renameConversation,
 } from '@web/features/assistant/api/requests'
-import { restoreConversation } from '@web/features/assistant/api/restore-conversation'
+import { latestChat, restoreConversation } from '@web/features/assistant/api/restore-conversation'
 import { ConversationChat } from '@web/features/assistant/components/ConversationChat'
 import { PersonaPicker } from '@web/features/assistant/components/PersonaPicker'
 import { useExecutionMode } from '../hooks/useExecutionMode'
@@ -31,7 +31,10 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { drafts, setDraft, notify, lastConversationId, rememberConversation } = useWorkspace()
-  const explicitNew = params.get('new') === '1'
+  const workEntry = params.get('workId') || undefined
+  const [resolvedWorkEntry, setResolvedWorkEntry] = useState<string | undefined>()
+  const needsWorkRestore = !!workEntry && !conversationId && resolvedWorkEntry !== workEntry
+  const explicitNew = !workEntry && params.get('new') === '1'
   const showConversations = params.get('conversations') === '1'
   const [resumed, setResumed] = useState(false)
   const [resumeError, setResumeError] = useState<Error | string>('')
@@ -94,19 +97,35 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     (!conversationId || conversationId === chatSession.createdId) &&
     !current.error
   useEffect(() => {
-    if (conversationId || explicitNew || newDraft || createdHere) return
+    if (
+      conversationId ||
+      (!needsWorkRestore &&
+        (explicitNew ||
+          newDraft ||
+          createdHere ||
+          (resolvedWorkEntry === workEntry && !!workEntry)))
+    )
+      return
     let active = true
     const controller = new AbortController()
-    void restoreConversation(lastConversationId, controller.signal)
+    void (
+      needsWorkRestore
+        ? latestChat(controller.signal)
+        : restoreConversation(lastConversationId, controller.signal)
+    )
       .then((id) => {
         if (!active) return
         rememberConversation(id)
         setResumeError('')
         setResumed(true)
+        if (workEntry && !id) setResolvedWorkEntry(workEntry)
         if (id)
-          navigate(`/assistant/${id}${showConversations ? '?conversations=1' : ''}`, {
-            replace: true,
-          })
+          navigate(
+            `/assistant/${id}${workEntry ? `?workId=${encodeURIComponent(workEntry)}` : showConversations ? '?conversations=1' : ''}`,
+            {
+              replace: true,
+            },
+          )
       })
       .catch((error) => {
         if (active) setResumeError(error as Error)
@@ -125,6 +144,9 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     navigate,
     showConversations,
     resumeRevision,
+    needsWorkRestore,
+    workEntry,
+    resolvedWorkEntry,
   ])
   useEffect(() => {
     if (current.data && current.data.id === conversationId) rememberConversation(current.data.id)
@@ -202,38 +224,42 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
         <ErrorNotice>
           {persona.error || failure || (conversationId ? current.error : '')}
         </ErrorNotice>
-        {!conversationId && !explicitNew && !newDraft && !createdHere && (
+        {!conversationId && (needsWorkRestore || (!explicitNew && !newDraft && !createdHere)) && (
           <>
             <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
               {resumeError}
             </ErrorNotice>
-            {(!resumed || lastConversationId) && !resumeError && (
+            {(needsWorkRestore || !resumed || lastConversationId) && !resumeError && (
               <p className={utilitiesStyles['muted']}>正在打开上次会话…</p>
             )}
           </>
         )}
-        {(current.data ||
-          createdHere ||
-          (!conversationId &&
-            (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))) && (
-          <ConversationChat
-            key={chatSession.key}
-            conversationId={conversationId}
-            personaId={persona.selected}
-            interaction={persona.interaction}
-            execution={execution}
-            onSent={(id, sentPersona) => {
-              if (!conversationId) {
-                persona.adoptCreated(id, sentPersona)
-                execution.adoptCreated(id)
-                setChatSession((previous) => ({ ...previous, createdId: id }))
-                navigate(`/assistant/${id}`, { replace: true })
-              }
-              rememberConversation(id)
-              updated()
-            }}
-          />
-        )}
+        {!needsWorkRestore &&
+          (current.data ||
+            createdHere ||
+            (!conversationId &&
+              (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))) && (
+            <ConversationChat
+              key={chatSession.key}
+              conversationId={conversationId}
+              personaId={persona.selected}
+              interaction={persona.interaction}
+              execution={execution}
+              onSent={(id, sentPersona) => {
+                if (!conversationId) {
+                  persona.adoptCreated(id, sentPersona)
+                  execution.adoptCreated(id)
+                  setChatSession((previous) => ({ ...previous, createdId: id }))
+                  navigate(
+                    `/assistant/${id}${workEntry ? `?workId=${encodeURIComponent(workEntry)}` : ''}`,
+                    { replace: true },
+                  )
+                }
+                rememberConversation(id)
+                updated()
+              }}
+            />
+          )}
       </section>
       {editing && (
         <Modal title="重命名会话" onClose={() => !busy && setEditing(null)}>

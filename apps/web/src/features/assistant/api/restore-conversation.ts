@@ -18,3 +18,8 @@ export async function resumeConversation(
 export function restoreConversation(remembered: string | null, signal: AbortSignal) {
   return resumeConversation(remembered, (path) => api(path, { signal }))
 }
+
+export async function latestChat(signal: AbortSignal) {
+  const page = await api<Page<Conversation>>('/conversations?order=last_message', { signal })
+  return page.items[0]?.id ?? null
+}

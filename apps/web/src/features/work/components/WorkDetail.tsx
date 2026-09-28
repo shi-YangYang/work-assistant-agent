@@ -59,6 +59,11 @@ export function WorkDetail({
             </div>
             {data.ownerId === identity.member.id && !data.historical && (
               <div className={layoutStyles['inline']}>
+                <button
+                  onClick={() => navigate(`/assistant?workId=${encodeURIComponent(data.id)}`)}
+                >
+                  让助手协助
+                </button>
                 <button onClick={() => setEditing(true)}>编辑工作</button>
                 <Actions label="管理工作">
                   <button

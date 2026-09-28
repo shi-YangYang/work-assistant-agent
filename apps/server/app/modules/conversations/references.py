@@ -17,6 +17,7 @@ async def message_reference(db, actor, message, *, job=None, job_loaded=False):
     # Legacy replies may claim obsolete pending/success states, so omit those.
     reply = stored.get('conversationReply', '') if cards else message.reply
     return {
+        **({'workReference': {'workId': message.work_reference['workId']}} if message.work_reference else {}),
         'id': message.id, 'userText': request_text(message, job),
         'materialTranscript': transcript_groups(message.transcript, stored)[1],
         'assistantReference': reply,

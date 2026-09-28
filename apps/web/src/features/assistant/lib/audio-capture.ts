@@ -1,4 +1,11 @@
-import type { Attachment, DeliverableReference, ExecutionMode, PersonaId } from '@paa/api-contracts'
+import type {
+  Attachment,
+  DeliverableReference,
+  ExecutionMode,
+  PersonaId,
+  WorkReference,
+  WorkReferenceView,
+} from '@paa/api-contracts'
 import { MAX_FILE_BYTES } from './attachment-limits'
 
 type PendingFile = {
@@ -16,6 +23,7 @@ export type Composer = {
   key: string
   deliverableReference?: DeliverableReference
   deliverableTitle?: string
+  workReference?: WorkReferenceView
   replyTo?: string
   sending?: boolean
   personaId?: PersonaId
@@ -37,6 +45,7 @@ export type Composer = {
       voiceCommandAttachmentIds?: string[]
       replyTo: string | null
       deliverableReference?: DeliverableReference
+      workReference?: WorkReference
     }
   }
 }

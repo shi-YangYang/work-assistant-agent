@@ -33,6 +33,7 @@ export function Modal({
   }, [])
   return (
     <dialog
+      aria-label={title}
       className={`${styles['dialog']} ${variant === 'media' ? styles['media-dialog'] : variant === 'drawer' ? styles['team-detail-drawer'] : ''} ${className}`}
       ref={ref}
       onKeyDown={onKeyDown}

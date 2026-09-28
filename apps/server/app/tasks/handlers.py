@@ -38,6 +38,8 @@ def message_input_digest(context, blocks, transcript_revision, voice_command_att
     # The new persona gets a distinct scope without invalidating old checkpoints.
     if context.persona_id != LEGACY_PERSONA:
         payload['personaId'] = context.persona_id
+    if context.work_reference_snapshot:
+        payload['workReference'] = context.work_reference_snapshot
     return digest(payload)
 
 
@@ -172,10 +174,18 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；正文需通过工具读取，状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
     if not model and not context.model_binding.get(context.model_purpose):
         raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
+    from app.agent.work_context import work_context
+    async with sessions.begin() as db:
+        live, actor = await lease(db, context)
+        current = await owned(db, Message, live.target_id, actor)
+        await work_context(db, actor, live, current, context)
     review_input = message_input_digest(context, blocks, transcript_revision, job.result.get('voiceCommandAttachmentIds', job.result.get('voiceCommandAttachmentId')))
     from app.tasks.node_execution import initialize
     context.node_retry = True
     await initialize(context, review_input)
+    if context.work_reference_snapshot and not context.work_reference_snapshot.get('unavailable'):
+        reference = context.work_reference_snapshot
+        context.read_versions.setdefault(reference['id'], reference['revision'])
     async with sessions.begin() as db:
         live, _ = await lease(db, context)
         pending = live.result.get('pendingReply', {})

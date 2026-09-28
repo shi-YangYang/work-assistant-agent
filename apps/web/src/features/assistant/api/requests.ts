@@ -9,6 +9,8 @@ import type {
   Page,
   PersonaId,
   WorkMessage,
+  Work,
+  WorkReference,
 } from '@paa/api-contracts'
 import { api, write } from '@web/api/client'
 
@@ -80,6 +82,7 @@ export function sendMessage(
     voiceCommandAttachmentIds?: string[]
     replyTo: string | null
     deliverableReference?: DeliverableReference
+    workReference?: WorkReference
   },
   key: string,
 ) {
@@ -157,4 +160,12 @@ export function readConversationContext(conversationId: string, signal?: AbortSi
 
 export function readActiveAssistantJob(conversationId: string, signal?: AbortSignal) {
   return api<{ job: Job | null }>(`/conversations/${conversationId}/active-job`, { signal })
+}
+
+export function referenceWorksPath(query: string) {
+  return `/work-items?q=${encodeURIComponent(query)}`
+}
+
+export function readReferenceWork(id: string, signal: AbortSignal) {
+  return api<Work>(`/work-items/${encodeURIComponent(id)}`, { signal })
 }

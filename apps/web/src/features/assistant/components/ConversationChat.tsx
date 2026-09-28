@@ -19,6 +19,7 @@ import { ChatHistory } from '@web/features/assistant/components/ChatHistory'
 import { ComposerAttachments } from '@web/features/assistant/components/ComposerAttachments'
 import type { PreviewImage } from '@web/features/assistant/components/ImageGallery'
 import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
+import { useWorkReference } from '../hooks/useWorkReference'
 import { MessageComposer } from '@web/features/assistant/components/MessageComposer'
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
 import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
@@ -143,6 +144,7 @@ export function ConversationChat({
     interaction.busy === 'persona' ||
     execution.saving
   const textInput = useRef<HTMLTextAreaElement>(null)
+  const workReference = useWorkReference(composerKey, locked, textInput)
   const scroller = useRef<HTMLDivElement>(null)
   const pageElement = useRef<HTMLDivElement>(null)
   const composerElement = useRef<HTMLDivElement>(null)
@@ -178,7 +180,8 @@ export function ConversationChat({
         next.pending ||
         next.personaId ||
         next.executionMode ||
-        next.deliverableReference
+        next.deliverableReference ||
+        next.workReference
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
     )
@@ -382,6 +385,7 @@ export function ConversationChat({
         }}
       />
       <MessageComposer
+        workReference={workReference}
         contextKey={`context:${identity.company.id}:${identity.member.id}:${conversationId ?? 'new'}`}
         contextUsage={context.usage}
         contextUnavailable={context.unavailable}

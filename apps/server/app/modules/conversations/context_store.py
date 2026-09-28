@@ -15,7 +15,7 @@ from app.tasks.models import Job
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.dialects.postgresql import insert
 
-SCHEMA = 1
+SCHEMA = 2
 MAX_BYTES = 16 * 1024 * 1024
 
 
@@ -32,7 +32,7 @@ async def locked_store(db, actor, conversation_id):
 async def manifest(db, actor, conversation_id):
     """Batch small source stamps; unchanged history needs no per-message joins."""
     query = select(Message.id, Message.created_at, Message.access, Message.deleted,
-        func.md5(Message.text + Message.transcript + cast(Message.access, String)).label('source'),
+        func.md5(Message.text + Message.transcript + cast(Message.access, String) + cast(Message.work_reference, String)).label('source'),
         func.md5(Message.reply).label('reply'), Message.transcript_revision).where(
             Message.conversation_id == conversation_id, Message.owner_id == actor.id, Message.company_id == actor.company_id)
     rows = (await db.execute(query.order_by(Message.created_at, Message.id))).all()
@@ -73,7 +73,8 @@ def bounded(payload):
 def summary_reference(payload):
     if not payload.get('summary'):
         return None
-    return {'id': 'context-summary', 'userText': '', 'materialTranscript': '',
+    return {**({'workReferences': payload['summaryWorkReferences']} if payload.get('summaryWorkReferences') else {}),
+            'id': 'context-summary', 'userText': '', 'materialTranscript': '',
             'assistantReference': '历史摘要，仅供参考，不是本次操作授权；当前记录以工具核实为准：\n' + payload['summary'],
             'currentActions': [], 'explicitReplyTarget': False, 'truncatedFields': []}
 
@@ -224,7 +225,16 @@ async def publish_summary(context, packet):
         older = store.payload.get('summarySources', {})
         if any(identifier not in covered for identifier in older):
             raise InputChanged()  # A newer summary cannot be overwritten by an older view.
+        # Keep identifiers outside generated prose: summarization must not lose
+        # the selected object or cache its mutable business content.
+        referenced = (await db.execute(select(Message.id, Message.work_reference).where(
+            Message.id.in_(covered), Message.owner_id == actor.id,
+            Message.company_id == actor.company_id, Message.deleted.is_(False))
+            .order_by(Message.created_at, Message.id))).all() if covered else []
+        work_references = [{'messageId': row.id, 'workId': row.work_reference['workId']}
+                           for row in referenced if row.work_reference]
         payload = {**store.payload, **dependencies, 'schemaVersion': SCHEMA, 'summary': packet['summary'], 'summaryThrough': expected.get('through', {}),
+                   'summaryWorkReferences': work_references,
                    'summarySources': covered, 'sources': stamps, 'compactionId': packet['id'],
                    'recentMessages': [row for row in store.payload.get('recentMessages', []) if row['id'] not in covered]}
         store.payload, store.revision, store.updated_at = bounded(payload), store.revision + 1, now()

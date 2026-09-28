@@ -284,7 +284,15 @@ export interface Deliverable extends DeliverableSummary {
   items: { id: string; title: string; body: string }[]
   links: { itemId: string; workId: string; sourceRevision: number; unavailable: boolean }[]
 }
+export interface WorkReference {
+  workId: string
+}
+export interface WorkReferenceView extends WorkReference {
+  title?: string
+  unavailable?: boolean
+}
 export interface WorkMessage {
+  workReference?: WorkReferenceView | null
   interactions?: AssistantInteraction[]
   deliverables?: DeliverableSummary[]
   actions?: BusinessAction[]

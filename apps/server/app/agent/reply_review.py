@@ -18,10 +18,10 @@ log = logging.getLogger('paa.company')
 
 
 REVIEW_TASK = 'business_reply_review'
-REVIEW_VERSION = 27
+REVIEW_VERSION = 28
 
 
-QUERY_FACT_TOOLS = frozenset({'find_work_items', 'get_work_item', 'query_reports', 'query_report_obligations', 'query_team_business', 'find_team_members', 'read_team_source'})
+QUERY_FACT_TOOLS = frozenset({'work_reference', 'find_work_items', 'get_work_item', 'query_reports', 'query_report_obligations', 'query_team_business', 'find_team_members', 'read_team_source'})
 
 
 OperationField = Literal['title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate']
@@ -303,7 +303,7 @@ save_deliverable/read_deliverable 是已保存的私人成果与准确版本，�
 needs_action 只表示遗漏了用户授权的持久化业务操作，不表示正文缺段落。撰写示例/自由发挥报告且未要求保存正式报告时，没有写入要求，needs_action 必须 false，不能把“生成一份报告”这几个字一律当成数据库写入。
 operation_explanation：仅在用户明确要求解释/概括修改时，保留真实回执支持的必要正文。每个对象涉及的事实都填写 operationFacts:[{"receiptId":"currentActions中的准确id","field":"nextStep","value":"details中nextStep的实际值"}]，字段只允许 title/summary/status/blocker/nextStep/dueDate，不加 details. 前缀，value 是准确字符串或 null；解释实际修改字段集合时 field=changedFields，value 必须为准确字段名数组，例如 ["nextStep"]，不是字符串。服务端逐项核对。说工作已完成必须 status=done，不能拿 action.state=succeeded 替代；只改下一步不能说已完成工作。若段落任一对象事实不符则 unsupported 并 needs_response=true，改正必要正文。泛泛执行宣告仍用 execution。
 execution：仅指正式业务系统操作。助手声称本轮创建/修改/完成工作记录或生成/提交/删除正式报告，含执行承诺、成功、失败、待确认说明。全部剔除，由服务端回执展示；无回执也不能改判 information。混合执行与查询的段落归此类。
-query_fact：查询已有业务状态。必须匹配 toolEvidence 中 find_work_items/get_work_item/query_reports/query_report_obligations/query_team_business/find_team_members/read_team_source 的成功结构化结果，evidence 填实际证据 id。逐项核对对象、日期、范围、状态、数量；待确认≠已提交、进行中≠已完成。矛盾、缺证据、旧状态或只有错误/建议则 unsupported。
+query_fact：查询已有业务状态。必须匹配 toolEvidence 中 work_reference/find_work_items/get_work_item/query_reports/query_report_obligations/query_team_business/find_team_members/read_team_source 的成功结构化结果，evidence 填实际证据 id。逐项核对对象、日期、范围、状态、数量；待确认≠已提交、进行中≠已完成。矛盾、缺证据、旧状态或只有错误/建议则 unsupported。
 read_team_source 返回的 content 是已授权来源的实际内容，可证明员工原话及对应版本；原话和引用一起保留，不要求重复出现在工作摘要中，也不把原话当成新的当前业务状态。
 查询后的更新可以用 execute_business_action/get_business_actions 中 succeeded 回执的 objectId/objectRevision/details 证明该对象的新字段，不能只凭成功标志或 pending/running 卡片推断结果。逐个对象核对 changedFields 和 details：更新操作 succeeded 仅表示所列字段保存成功，不表示工作 status=done。多对象混合段落中只要一个对象的状态/变更描述不符就 unsupported，不能用另一对象的完成状态概括整组。完整范围/总数仍须查询结果，不能用一个对象回执证明全部；同一对象用较新版本。“目前未完成的工作…”属于当前状态查询，不因其中某项刚刚更新就归 execution；只有“我已修改/已帮你完成”等操作宣告才属于 execution。
 information：问候、适度玩笑、鼓励、明显的比喻或自嘲、材料分析、澄清问题、能力解释，以及符合当前求助意图的解释或办法，不宣称已执行操作或数据库现状。例如“脑内标签页开太多了”是比喻，不是在断言工作数量；不因自然表达未查询就删除。纯寒暄、闲聊或倾诉没有持久化操作要求，needs_action=false。材料叙述须表明来源，不能冒充正式业务状态。

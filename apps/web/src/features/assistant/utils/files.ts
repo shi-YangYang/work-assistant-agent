@@ -103,6 +103,9 @@ export function messageSubmission(
           }
         : {}),
       replyTo: composer.replyTo ?? null,
+      ...(composer.workReference
+        ? { workReference: { workId: composer.workReference.workId } }
+        : {}),
       ...(composer.deliverableReference
         ? { deliverableReference: structuredClone(composer.deliverableReference) }
         : {}),

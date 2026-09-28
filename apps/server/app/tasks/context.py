@@ -61,6 +61,7 @@ class RunContext:
     explicit_confirmations: set[str] = field(default_factory=set)
     authorization_outcomes: dict = field(default_factory=dict)
     append_values: dict = field(default_factory=dict)
+    work_reference_snapshot: dict | None = None
     task_snapshot: dict = field(default_factory=dict)
     task_item_keys: dict = field(default_factory=dict)
     suggestion_items: dict = field(default_factory=dict)

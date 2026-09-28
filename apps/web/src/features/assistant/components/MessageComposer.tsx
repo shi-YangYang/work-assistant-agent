@@ -1,13 +1,26 @@
 import controlsStyles from '../../../styles/controls.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageComposer.module.css'
+import { WorkReferenceChip } from './WorkReferenceChip'
+import { WorkReferencePicker } from './WorkReferencePicker'
+import type { useWorkReference } from '../hooks/useWorkReference'
 import { ContextUsage } from './ContextUsage'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
-import { CornerUpLeft, Plus, ImagePlus, Mic, Paperclip, ArrowUp, Square, X } from 'lucide-react'
+import {
+  CornerUpLeft,
+  Plus,
+  ImagePlus,
+  Mic,
+  Paperclip,
+  ArrowUp,
+  Square,
+  X,
+  BriefcaseBusiness,
+} from 'lucide-react'
 import type { useAssistantTask } from '../hooks/useAssistantTask'
 import type * as React from 'react'
 import { useId, useRef } from 'react'
@@ -30,6 +43,7 @@ export function MessageComposer({
   recording,
   retryWait,
   children,
+  workReference,
   executionControl,
   executionError,
   questionPanel,
@@ -39,6 +53,7 @@ export function MessageComposer({
   contextLoading = false,
   task,
 }: {
+  workReference?: ReturnType<typeof useWorkReference>
   executionControl?: React.ReactNode
   executionError?: Error | string
   questionPanel?: React.ReactNode
@@ -94,7 +109,23 @@ export function MessageComposer({
       data-question={!!questionPanel}
     >
       {questionPanel}
+      {workReference?.pickerOpen && (
+        <WorkReferencePicker
+          selected={composer.workReference?.workId}
+          onClose={() => workReference.setPickerOpen(false)}
+          onSelect={workReference.select}
+        />
+      )}
       <div className={styles['composer']} data-dragging={dragging}>
+        {composer.workReference && (
+          <WorkReferenceChip
+            reference={composer.workReference}
+            disabled={locked}
+            onRemove={workReference?.remove}
+          />
+        )}
+        {workReference?.loading && <small role="status">正在引用工作…</small>}
+        <ErrorNotice retry={workReference?.retry}>{workReference?.error}</ErrorNotice>
         {composer.deliverableReference && (
           <div className={styles['replying']}>
             <span>继续处理：{composer.deliverableTitle ?? '当前方案'}</span>
@@ -235,6 +266,20 @@ export function MessageComposer({
                   添加文件<small>文档、PDF 或语音文件</small>
                 </span>
               </button>
+              {workReference && (
+                <button
+                  disabled={locked || capturing}
+                  onClick={() => {
+                    attachmentMenu.current?.hidePopover()
+                    workReference.setPickerOpen(true)
+                  }}
+                >
+                  <BriefcaseBusiness size={18} />
+                  <span>
+                    引用工作<small>选择我的工作作为本条消息的参考</small>
+                  </span>
+                </button>
+              )}
             </div>
             {executionControl}
           </div>
