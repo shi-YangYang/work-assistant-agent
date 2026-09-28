@@ -34,3 +34,28 @@
 .empty-content p {
   margin: 0;
 }
+
+.changes {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 14px;
+}
+.changes > div {
+  display: grid;
+  grid-template-columns: 5em minmax(0, 1fr);
+  gap: 12px;
+}
+.changes dt,
+.before {
+  color: var(--muted);
+}
+.changes dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.arrow {
+  margin: 0 8px;
+  color: var(--muted);
+}

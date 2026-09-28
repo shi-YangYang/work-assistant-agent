@@ -22,7 +22,7 @@ class ReviewedFixtureModel(ChatOpenAI):
             if payload.get('task') == 'business_reply_review':
                 return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for row in payload['segments']]}))
             if payload.get('proposedOperation'):
-                return AIMessage(content=json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '受控授权；语义边界由独立用例验证'}))
+                return AIMessage(content=json.dumps({'allowed': True, 'requireConfirmation': payload['proposedOperation']['action'] in ('propose_progress', 'propose_followup'), 'quote': payload['currentUserText'], 'reason': '受控待确认建议；自动执行与语义边界由独立用例验证'}))
             if payload.get('task') == 'report_fact_review':
                 return AIMessage(content='{"valid":true}')
         return await super().ainvoke(input, config, stop=stop, **kwargs)

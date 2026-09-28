@@ -91,7 +91,8 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext]) -> str:
 async def propose_progress(title: str, summary: str, status: Literal['in_progress', 'blocked', 'done'], blocker: str, next_step: str, runtime: ToolRuntime[RunContext], work_id: str | None = None) -> str:
     """Save a progress suggestion ONLY when explicitly requested to record/report
     progress or prepare a pending suggestion. Mere progress descriptions, advice
-    requests and plan writing do not authorize this. Never confirms work.
+    requests and plan writing do not authorize this. Execution mode decides whether
+    to save immediately or wait for approval; an explicit preview request always waits.
 
     Use blocked when a dependency prevents the next step, in_progress for ongoing
     work, and done only when the entire work is finished. For new work, work_id
@@ -106,7 +107,7 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
     if isinstance(work_id, str) and work_id.strip() in ('', 'null'):
         work_id = None
     context = runtime.context
-    from app.agent.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt
+    from app.agent.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt, settle_suggestion
     rejected = await authorize_suggestion(context, 'propose_progress', content, work_id)
     if rejected:
         return clip(rejected)
@@ -136,4 +137,4 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
         await db.flush()
         # Public original snapshot never changes when the employee edits the private draft.
         message.suggestions = [*message.suggestions, {'id': draft.id, 'content': content, 'workId': draft.work_id}]
-        return clip({**suggestion_receipt(context, job, 'propose_progress', draft, content, work_id), 'message': '等待员工确认'})
+        return clip(await settle_suggestion(context, db, job, actor, message, draft, 'propose_progress', content, work_id))

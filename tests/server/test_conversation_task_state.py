@@ -24,19 +24,20 @@ pytestmark = pytest.mark.asyncio
 
 
 class ScopedJudge:
-    def __init__(self, *, source='', quote='', allowed=True, resume=False, append=(), append_values=None, kind='missing_info', interpretation=None, directive_target='', directive_fields=()):
+    def __init__(self, *, source='', quote='', allowed=True, resume=False, append=(), append_values=None, kind='missing_info', interpretation=None, directive_target='', directive_fields=(), preview=False):
         self.source, self.quote, self.allowed, self.resume, self.append, self.kind = source, quote, allowed, resume, append, kind
         self.inputs = []
         self.interpretation = interpretation
         self.directive_target, self.directive_fields = directive_target, directive_fields
         self.append_values = append_values
+        self.preview = preview
 
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
         self.inputs.append(payload)
         return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': self.quote or payload['currentUserText'],
             'quoteMessageId': self.source, 'reason': '' if self.allowed else '请说明要更新的对象',
-            'resumeTask': self.resume, 'appendFields': list(self.append),
+            'requireConfirmation': self.preview, 'resumeTask': self.resume, 'appendFields': list(self.append),
             'appendValues': self.append_values if self.append_values is not None else {name: payload['proposedOperation']['changes'][name] for name in self.append},
             'failureKind': self.kind, 'taskContext': self.interpretation,
             'directiveTargetId': self.directive_target, 'directiveFields': list(self.directive_fields)}))
@@ -489,11 +490,11 @@ async def test_missing_source_id_can_only_use_unique_exact_active_quote(setup):
 async def test_continuing_pending_suggestion_reuses_card_in_dto_and_feedback(setup):
     _, sessions, users, clients = setup
     first, sent = await runtime(setup, '先帮我整理待确认建议')
-    first.intent_model = ScopedJudge()
+    first.intent_model = ScopedJudge(preview=True)
     original = json.loads(await propose_progress.coroutine('准备报价', '梳理规格', 'in_progress', '', '询价', SimpleNamespace(context=first)))
     await close_task(first, state='needs_confirmation')
     context, newer = await runtime(setup, '继续刚才的建议，先让我确认')
-    context.intent_model = ScopedJudge(resume=True)
+    context.intent_model = ScopedJudge(resume=True, preview=True)
     repeated = json.loads(await propose_progress.coroutine('改写但不是新的事项', '另一种说法', 'in_progress', '', '询价', SimpleNamespace(context=context)))
     assert repeated['draftId'] == original['draftId']
     await close_task(context, state='needs_confirmation', relation='continue')

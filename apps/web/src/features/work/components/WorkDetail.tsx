@@ -11,6 +11,7 @@ import { DeleteRecord } from '@web/features/records/components/DeleteRecord'
 import { workSourcesPath } from '@web/features/sources/api/requests'
 import { BusinessSources } from '@web/features/sources/components/BusinessSources'
 import { workDetailPath } from '@web/features/work/api/requests'
+import { WorkHistory } from './WorkHistory'
 import { WorkEditor } from '@web/features/work/components/WorkEditor'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
@@ -104,33 +105,7 @@ export function WorkDetail({
           )}
           <details className={recordDetailStyles['record-evidence']}>
             <summary>进展记录与来源</summary>
-            <div className={styles['timeline']}>
-              {data.history?.map((h) => (
-                <article key={h.id}>
-                  <small>
-                    第 {h.revision} 版 · {dateLabel(h.createdAt)}
-                  </small>
-                  <p>{h.content.summary}</p>
-                  {h.sourceIds.length ? (
-                    h.sourceIds.map((source) =>
-                      h.deletedSourceIds?.includes(source) ? (
-                        <span className={utilitiesStyles['muted']} key={source}>
-                          原始消息已删除
-                        </span>
-                      ) : (
-                        <Link key={source} to={`/messages/${source}`} state={detailState(location)}>
-                          查看原始上报
-                        </Link>
-                      ),
-                    )
-                  ) : (
-                    <small>
-                      {h.revision === 1 && data.origin === 'manual' ? '手动创建' : '手动更新'}
-                    </small>
-                  )}
-                </article>
-              ))}
-            </div>
+            <WorkHistory work={data} />
           </details>
           {editing && (
             <WorkEditor

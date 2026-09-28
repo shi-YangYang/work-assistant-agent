@@ -160,6 +160,7 @@ export interface Work extends Progress {
     id: string
     revision: number
     content: Progress
+    origin?: 'manual' | 'assistant' | 'assistant_confirmed' | 'unknown'
     sourceIds: string[]
     deletedSourceIds?: string[]
     createdAt: string

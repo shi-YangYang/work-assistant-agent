@@ -377,8 +377,8 @@ async def test_source_update_blocks_pending_confirmation_but_preserves_old_citat
     rt, job, sent = await runtime(setup, text='帮我跟进采购报价')
     listing = json.loads(await query_team_business.coroutine(runtime=rt))
     await find_work_items.coroutine(query='', runtime=rt)
-    from test_business_actions import Judge
-    rt.context.intent_model = Judge()
+    from test_assistant_write_scope import ScopeJudge
+    rt.context.intent_model = ScopeJudge(True, preview=True)
     answer = json.loads(await propose_followup.coroutine(title='跟进', summary='核对报价', status='in_progress', blocker='', next_step='明天询问', source_tokens=[listing['items'][0]['token']], runtime=rt))
     changed = await clients['employee'].post('/api/v1/work-items/' + work.id + '/progress', json={**progress(status='done'), 'expectedRevision': 1, 'sourceIds': []})
     assert changed.status_code == 200

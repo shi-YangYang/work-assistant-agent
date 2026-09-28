@@ -64,5 +64,6 @@ class RunContext:
     task_snapshot: dict = field(default_factory=dict)
     task_item_keys: dict = field(default_factory=dict)
     suggestion_items: dict = field(default_factory=dict)
+    suggestion_options: dict = field(default_factory=dict)
     receipt_candidates: set[str] = field(default_factory=set)
     unrequested_actions: set[str] = field(default_factory=set)

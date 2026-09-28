@@ -48,7 +48,7 @@ def append_contract(verdict, proposal):
     fields = verdict.appendFields
     if len(fields) != len(set(fields)) or set(fields) != set(verdict.appendValues):
         return False
-    if fields and proposal.get('action') != 'update_work':
+    if fields and proposal.get('operation', proposal.get('action')) != 'update_work':
         return False
     changes = proposal.get('changes') or {}
     return all(isinstance(changes.get(name), str) and value.strip() and value in changes[name]
@@ -75,7 +75,7 @@ effect=prepare_confirmation 只创建可审阅的单条确认卡，不执行删�
     generate = '''用户明确同时要求生成并提交（包括“交之前让我看一眼”）时，generate_report 应 submitAfter=true 来准备确认卡；false 会遗漏用户目标，应拒绝并要求修正参数。用户说先别提交/仅草稿则必须 false。
 effect=enqueue_report 仅把生成任务入队，后台从本期已确认工作读取事实并独立核对，不是聊天模型凭空填写报告。因此明确生成日报/周报（包括“根据刚才这些工作整理”）不要求 ownWorkRead 或汇报待办预查询；没有来源时后台会告知无可用工作。用户另行明确要求先查询/核对某事实再生成时，才检查该查询前提。
 生成目标是报告期间，不是一个已有 workId。相对日期按 messageTime 和 timezone 核对。'''
-    suggestion = '''propose_progress/propose_followup 会保存待确认建议，也是业务写入。必须用户明确要求整理待确认建议或准备督办建议；只叙述完成情况、请分析/建议/制定计划不授权保存。正式创建/编辑应使用对应正式操作，不擅自替换成建议。已读成果内容可作为用户本轮明确选中的计划内容，不能把未来计划改成已完成事实。'''
+    suggestion = '''propose_progress/propose_followup 是兼容的工作写入入口，operation 指明实际 create_work/update_work，按相同授权和追加规则核对。用户明确要求保存、补充进展，或有效持续指令覆盖本条内容时可授权；仅叙述完成情况、请分析/建议/制定计划不授权保存。不要因工具名称含 propose 就要求再次确认；执行模式由服务端控制。用户明确要待确认建议、先审阅再保存时 requireConfirmation=true，即使自主执行也尊重此要求。已读成果仅可作为用户明确选中的内容，不能把未来计划改成完成事实。'''
     specific = {
         'propose_progress': work + suggestion, 'propose_followup': work + suggestion,
         'create_work': work, 'update_work': work,
@@ -157,6 +157,11 @@ async def authorize_intent(context, proposal):
         for row in previous_steps:
             card = await action_dto(db, actor, row)
             prior.append({'step': row.step, **{key: card[key] for key in ('action', 'state', 'objectId', 'details') if key in card}})
+        from app.modules.work.draft_receipts import message_drafts
+        for draft in await message_drafts(db, actor, message, job):
+            prior.append({'action': 'update_work' if draft.base_revision is not None else 'create_work',
+                'state': 'succeeded' if draft.status == 'confirmed' else 'pending' if draft.status == 'pending' else 'cancelled',
+                'objectId': draft.work_id, 'details': draft.content})
         from app.agent.deliverable_context import deliverable_context
         results = await deliverable_context(db, actor, message)
         request = {'conversationTask': task, 'privateDeliverables': results, 'completedOrPendingSteps': prior, 'verifiedReads': await verified_read_context(db, actor, job, proposal, context.read_versions), 'currentUserText': current, 'conversationForReferenceOnly': previous, 'messageTime': message.created_at.astimezone(ZoneInfo(company.rules['timezone'])).isoformat(), 'timezone': company.rules['timezone'], 'proposedOperation': proposal}
@@ -278,6 +283,6 @@ async def authorize_intent(context, proposal):
         from app.agent.task_items import bind
         await bind(context, proposal, continuing=verdict.resumeTask, item_id=proposal.get('taskItemId') or verdict.taskItemId)
         await barrier(context, proposal, verdict.reason or '请补充具体的操作要求', kind=verdict.failureKind)
-    if allowed and verdict.receiptOnly and not previous_steps:
+    if allowed and verdict.receiptOnly and not prior:
         context.receipt_candidates.add(digest(proposal))
     return allowed, verdict.reason

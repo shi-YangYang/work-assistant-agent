@@ -222,7 +222,7 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             finish='tool_calls'
         elif verification is not None and 'proposedOperation' in verification:
             assert verification['proposedOperation']['action'] == 'propose_progress'
-            verdict={'allowed':True,'quote':verification['currentUserText'],'reason':''}
+            verdict={'allowed':True,'requireConfirmation':True,'quote':verification['currentUserText'],'reason':''}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         elif body.get('tools'):
             message={'role':'assistant','content':reply};finish='stop'

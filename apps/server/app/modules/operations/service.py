@@ -17,7 +17,7 @@ from app.security.locks import company_lock as business_company_lock
 from app.security.ownership import owned
 
 
-async def perform(db, actor, row, job=None):
+async def perform(db, actor, row, job=None, *, confirmed=False):
     p = row.params
     if row.action in ('create_work', 'update_work'):
         links = []
@@ -36,7 +36,7 @@ async def perform(db, actor, row, job=None):
         from app.modules.operations.publication import snapshot, selected_attachments
         await selected_attachments(db, actor, p.get('sharedAttachmentIds', []), row.conversation_id)
         publication = snapshot(p['changes'], message_ids=[row.message_id], reference=p.get('deliverableReference'), attachments=p.get('sharedAttachmentIds', []))
-        item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access, publication=publication)
+        item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access, publication=publication, revision_origin='assistant_confirmed' if confirmed else 'assistant')
         from app.modules.deliverables.service import link_work
         await link_work(db, actor, p.get('deliverableReference'), row, item)
         row.result = {'objectType': 'work', 'objectId': item.id, 'revision': item.revision, 'changedFields': sorted(p['changes'])}
@@ -121,7 +121,7 @@ async def confirm(db, actor, identifier, expected, *, cancel=False):
     from app.tasks.models import Job
     from sqlalchemy import select
     source_job = await db.scalar(select(Job).where(Job.target_id == row.message_id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
-    await perform(db, actor, row, source_job)
+    await perform(db, actor, row, source_job, confirmed=True)
     row.revision += 1
     await db.flush()
     return await action_dto(db, actor, row)

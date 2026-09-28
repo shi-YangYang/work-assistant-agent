@@ -1,8 +1,7 @@
 from app.core.errors import problem
 from app.core.versions import version
-from app.db.base import now
 from app.modules.messages.service import active_message
-from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
+from app.modules.work.models import ProgressDraft, WorkItem
 from app.security.access import inherit as business_inherit, require as business_require, resolve as business_resolve
 from app.security.locks import company_lock as business_company_lock
 from app.security.ownership import owned
@@ -29,29 +28,20 @@ async def confirm_drafts(db, actor, items, ignore=False):
     result = []
     for draft in drafts:
         if not ignore:
-            from app.modules.operations.execution_policy import decide
-            decision = decide('ask', 'update_work' if draft.work_id else 'create_work', approved=True)
-            if decision.outcome != 'allow':
-                problem(409, '进展建议需要确认')
-            if draft.work_id:
-                work = await owned(db, WorkItem, draft.work_id, actor, lock=True)
-                await business_require(db, actor, work.access, retained=True)
-                version(work, draft.base_revision)
-                work.revision += 1
-                work.content = {**work.content, **draft.content}
-                work.title = draft.content['title']
-                work.updated_at = now()
-            else:
-                work = WorkItem(company_id=actor.company_id, owner_id=actor.id, title=draft.content['title'], content=draft.content)
-                db.add(work)
-                await db.flush()
-                draft.work_id = work.id
-            business_inherit(actor, work, draft)
-            source = await active_message(db, draft.message_id, actor)
-            from app.modules.operations.publication import snapshot
-            publication = snapshot(work.content, message_ids=[source.id]) if source.private_context else {}
-            db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=[] if source.private_context else [source.id], publication=publication, access=work.access, business_links=work.business_links))
+            work = await apply_draft(db, actor, draft, confirmed=True)
             result.append(work.id)
         draft.status = 'ignored' if ignore else 'confirmed'
         draft.revision += 1
     return result
+
+
+async def apply_draft(db, actor, draft, *, confirmed=False):
+    """Both execution modes and approval publish through the same work writer."""
+    from app.modules.work.service import save_work
+    work = await save_work(db, actor, draft.content, identifier=draft.work_id,
+        expected=draft.base_revision, sources=[draft.message_id],
+        origin='suggestion' if confirmed else 'assistant',
+        revision_origin='assistant_confirmed' if confirmed else 'assistant',
+        links=draft.business_links, access=draft.access)
+    draft.work_id = work.id
+    return work
