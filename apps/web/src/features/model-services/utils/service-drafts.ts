@@ -1,4 +1,9 @@
-import type { CompanyModel, CompanyPreset, CompanyService } from '@paa/api-contracts'
+import type {
+  CompanyModel,
+  CompanyPreset,
+  CompanyService,
+  ContextCapability,
+} from '@paa/api-contracts'
 import { validateParameters } from '@paa/model-config'
 import type { ServicePreset } from '@web/features/model-services/utils/service-presets'
 import { resolveModelProtocol } from '@web/features/model-services/utils/service-presets'
@@ -34,7 +39,11 @@ export function newModel(model = '', baseUrl = ''): CompanyModel {
   })
 }
 
-export function appendServiceModels(draft: ServiceDraft, ids: string[]): ServiceDraft {
+export function appendServiceModels(
+  draft: ServiceDraft,
+  ids: string[],
+  capabilities?: Record<string, ContextCapability>,
+): ServiceDraft {
   const existing = new Set(draft.models.map((model) => model.model))
   const additions = [...new Set(ids.map((id) => id.trim()).filter(Boolean))].filter(
     (id) => !existing.has(id),
@@ -44,7 +53,13 @@ export function appendServiceModels(draft: ServiceDraft, ids: string[]): Service
     throw new Error('每家服务最多添加 32 个模型，请减少选择。')
   return {
     ...draft,
-    models: [...draft.models, ...additions.map((id) => newModel(id, draft.baseUrl))],
+    models: [
+      ...draft.models,
+      ...additions.map((id) => ({
+        ...newModel(id, draft.baseUrl),
+        ...(capabilities?.[id] ? { contextCapability: capabilities[id] } : {}),
+      })),
+    ],
   }
 }
 
@@ -53,12 +68,19 @@ export function serviceHasChanges(draft: ServiceDraft, saved?: CompanyService): 
     !saved ||
     draft.name !== saved.name ||
     draft.baseUrl !== saved.baseUrl ||
-    JSON.stringify(draft.models) !== JSON.stringify(saved.models)
+    JSON.stringify(writableModels(draft.models)) !== JSON.stringify(writableModels(saved.models))
   )
 }
 
 export function modelFieldErrors(model: CompanyModel) {
   return {
+    contextWindow:
+      model.contextWindow != null &&
+      (!Number.isInteger(model.contextWindow) ||
+        model.contextWindow < 1 ||
+        model.contextWindow > 10_000_000)
+        ? '上下文窗口需为 1–10,000,000 的整数；留空使用自动值。'
+        : '',
     model:
       !model.model.trim() ||
       model.model.length > 200 ||
@@ -85,7 +107,7 @@ export function validateServiceModels(models: CompanyModel[]) {
   const seen = new Set<string>()
   for (const model of models) {
     const errors = modelFieldErrors(model)
-    const message = errors.model || errors.language
+    const message = errors.model || errors.language || errors.contextWindow
     if (message) throw new Error(`${model.model || '未命名模型'}：${message}`)
     const identity = JSON.stringify([model.model, model.protocol])
     if (seen.has(identity)) throw new Error(`模型 ${model.model} 的接口配置重复，请修改或移除。`)
@@ -136,4 +158,12 @@ export function validateCompanyParameters(value: unknown) {
   }
   walk(value)
   return value
+}
+
+export function writableModels(models: CompanyModel[]): CompanyModel[] {
+  return models.map((model) => {
+    const value = { ...model }
+    delete value.contextCapability
+    return value
+  })
 }

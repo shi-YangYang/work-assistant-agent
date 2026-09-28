@@ -3,6 +3,8 @@ import type {
   BusinessAction,
   DeliverableReference,
   Identity,
+  Job,
+  JobFeedback,
   Page,
   WorkMessage,
 } from '@paa/api-contracts'
@@ -31,7 +33,9 @@ export function ChatHistory({
   textInput,
   actionReceipts,
   onDeliverable,
+  onContextUpdate,
 }: {
+  onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
   onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
   scroller: React.RefObject<HTMLDivElement | null>
   atBottomRef: React.RefObject<boolean>
@@ -101,6 +105,7 @@ export function ChatHistory({
           <MessageCard
             key={message.id}
             message={message}
+            onContextUpdate={onContextUpdate}
             own
             onChange={refresh}
             onDeliverable={locked ? undefined : onDeliverable}

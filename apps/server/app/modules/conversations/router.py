@@ -59,3 +59,9 @@ async def delete_conversation(identifier: str, body: Revision, actor=AUTH, db=DB
     item = await target(db, Conversation, identifier, actor, body.expectedRevision)
     await remove_conversation(db, item)
     return await finish_deletion(db, item.owner_id, settings)
+
+
+@router.get('/api/v1/conversations/{identifier}/context-usage')
+async def get_context_usage(identifier: str, actor=AUTH, db=DB):
+    from app.modules.conversations.context_usage import latest_usage
+    return await latest_usage(db, actor, identifier)

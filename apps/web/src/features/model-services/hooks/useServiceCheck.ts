@@ -1,4 +1,4 @@
-import type { CompanyModel, ModelCheck } from '@paa/api-contracts'
+import type { CompanyModel, ModelCheck, ContextCapability } from '@paa/api-contracts'
 import { checkServiceConfiguration } from '@web/features/model-services/api/requests'
 import { useServiceDraftSession } from '@web/features/model-services/hooks/useServiceDraftSession'
 import type { Purpose } from '@web/features/model-services/types'
@@ -31,6 +31,7 @@ export function useServiceCheck({
 }) {
   const [catalog, setCatalog] = useState<{
     models: string[]
+    capabilities?: Record<string, ContextCapability>
     source: string
     truncated: boolean
   } | null>(null)

@@ -3,6 +3,7 @@ import type {
   DeliverableReference,
   BusinessAction,
   Conversation,
+  ContextUsage,
   Page,
   PersonaId,
   WorkMessage,
@@ -134,4 +135,11 @@ export function readConversationForBreadcrumb(id: string, options: RequestInit) 
 
 export function readMessageForBreadcrumb(id: string, options: RequestInit) {
   return api<WorkMessage>(`/messages/${id}`, options)
+}
+
+export function readConversationContext(conversationId: string, signal?: AbortSignal) {
+  return api<{ contextUsage: ContextUsage | null }>(
+    `/conversations/${conversationId}/context-usage`,
+    { signal },
+  )
 }

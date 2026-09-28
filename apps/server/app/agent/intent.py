@@ -114,7 +114,7 @@ async def authorize_intent(context, proposal):
         message = await owned(db, Message, job.target_id, actor)
         company = await db.get(Company, actor.company_id)
         from app.agent.conversation_context import conversation_references, request_text
-        previous = await conversation_references(db, actor, job, message)
+        previous = await conversation_references(db, actor, job, message, context=context)
         current = request_text(message, job)
         if not current.strip():
             return False, '请明确说明要执行的操作；上传材料本身不会授权修改。'

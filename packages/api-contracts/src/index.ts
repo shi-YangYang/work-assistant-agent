@@ -143,7 +143,7 @@ export interface OperationFeedback {
 export interface TaskNode {
   id: string
   parentId: string | null
-  kind: 'model' | 'tool' | 'authorization' | 'review'
+  kind: 'model' | 'tool' | 'authorization' | 'review' | 'compaction'
   label: string
   state:
     | 'waiting'
@@ -164,7 +164,28 @@ export interface TaskNode {
   error: string
   canRetry: boolean
 }
+export interface ContextUsage {
+  jobId: string
+  attempt: number
+  fence: number
+  seq: number
+  model: string
+  usedTokens: number
+  contextWindow: number | null
+  inputLimit: number | null
+  outputReserve: number
+  capacitySource: string
+  thresholdRatio: number
+  estimated: true
+  state: 'ready' | 'compacting' | 'retry_wait' | 'failed'
+  compactionId?: string | null
+  beforeTokens?: number | null
+  afterTokens?: number | null
+  reason?: string | null
+  updatedAt: string
+}
 export interface Job {
+  contextUsage?: ContextUsage | null
   incompleteTask?: boolean
   nodes?: TaskNode[]
   operationFeedback?: OperationFeedback[]
@@ -315,7 +336,15 @@ export interface CompanyPreset {
   value: string
   parameters: Record<string, import('@paa/model-config').JsonValue>
 }
+export interface ContextCapability {
+  contextWindow: number | null
+  inputLimit: number | null
+  maxOutput: number | null
+  source: string
+}
 export interface CompanyModel {
+  contextWindow?: number | null
+  contextCapability?: ContextCapability
   id: string
   model: string
   protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
@@ -371,6 +400,7 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  contextUsage?: ContextUsage | null
   incompleteTask?: boolean
   nodes?: TaskNode[]
   jobId: string

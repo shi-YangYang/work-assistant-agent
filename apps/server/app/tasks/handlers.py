@@ -257,6 +257,9 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 live.state, live.phase = 'awaiting_retry', 'reply_review'
                 live.error = '答复核对暂时失败。可重试核对，已保存的业务操作不会重复执行。'
             if review.verified:
+                from app.modules.conversations.context_store import references
+                await db.flush()
+                await references(db, actor, live, message, include_current=True)
                 from app.tasks.node_state import release_outputs
                 release_outputs(live)
             update_feedback(live, 'complete' if review.verified else 'reviewing', '')

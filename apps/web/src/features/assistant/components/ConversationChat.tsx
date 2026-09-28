@@ -17,6 +17,7 @@ import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
 import { MessageComposer } from '@web/features/assistant/components/MessageComposer'
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
 import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
+import { useContextUsage } from '@web/features/assistant/hooks/useContextUsage'
 import { useMessageSubmission } from '@web/features/assistant/hooks/useMessageSubmission'
 import { useRecording } from '@web/features/assistant/hooks/useRecording'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -216,6 +217,10 @@ export function ConversationChat({
       },
     }))
   const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const latestJob =
+    [...messages].reverse().find((message) => !message.businessUnavailable && message.job)?.job ??
+    null
+  const context = useContextUsage(conversationId, latestJob)
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
   return (
@@ -278,6 +283,7 @@ export function ConversationChat({
         </button>
       )}
       <ChatHistory
+        onContextUpdate={context.receive}
         scroller={scroller}
         atBottomRef={atBottomRef}
         setNewReply={setNewReply}
@@ -311,6 +317,9 @@ export function ConversationChat({
         }}
       />
       <MessageComposer
+        contextKey={`context:${identity.company.id}:${identity.member.id}:${conversationId ?? 'new'}`}
+        contextUsage={context.usage}
+        contextUnavailable={context.unavailable}
         containerRef={composerElement}
         empty={empty}
         dragging={dragging}

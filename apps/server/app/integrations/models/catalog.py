@@ -31,5 +31,6 @@ async def catalog(settings, base_url, key):
             if len(ids) > 2000:
                 raise ProviderError('limit', '模型目录超过 2000 项，请手动填写模型 ID')
             if not official or len(entries) < 100:
-                return {'models': ids, 'source': endpoint, 'truncated': bool(data.get('has_more'))}
+                from app.integrations.models.capabilities import capability
+                return {'capabilities': {identifier: capability(base_url, identifier) for identifier in ids}, 'models': ids, 'source': endpoint, 'truncated': bool(data.get('has_more'))}
     raise ProviderError('limit', '模型目录超过分页上限，请手动填写模型 ID')

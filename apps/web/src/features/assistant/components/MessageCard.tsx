@@ -4,7 +4,7 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageCard.module.css'
 import attachmentsStyles from '../styles/attachments.module.css'
-import type { DeliverableReference, Draft, Job, WorkMessage } from '@paa/api-contracts'
+import type { DeliverableReference, Draft, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
 import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
@@ -32,11 +32,13 @@ export function MessageCard({
   onChange,
   onReply,
   onDeliverable,
+  onContextUpdate,
 }: {
   message: WorkMessage
   own?: boolean
   onChange: () => void
   onReply?: () => void
+  onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
   onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
 }) {
   const [retriedJob, setRetriedJob] = useState<Job | null>(null)
@@ -46,6 +48,9 @@ export function MessageCard({
     retriedJob?.id === message.job?.id && (retriedJob?.attempt ?? 0) > (message.job?.attempt ?? 0)
   const job = replacing ? retriedJob : message.job
   const live = useJobFeedback(job, own && !message.businessUnavailable, onChange)
+  useEffect(() => {
+    if (own && !message.businessUnavailable && job) onContextUpdate?.(job, live.feedback)
+  }, [own, message.businessUnavailable, job, live.feedback, onContextUpdate])
   const failed = ['failed', 'awaiting_retry'].includes(live.feedback?.state ?? job?.state ?? '')
   const location = useLocation()
   const [editing, setEditing] = useState<Draft | null>(null)

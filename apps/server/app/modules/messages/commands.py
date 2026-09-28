@@ -89,4 +89,6 @@ async def correct_transcript(db, actor, identifier, body):
         problem(422, str(error))
     item.transcript_history = [*item.transcript_history, {'revision': item.transcript_revision, 'text': item.transcript, 'at': now().isoformat()}]
     item.transcript, item.transcript_revision = body.text, item.transcript_revision + 1
+    from app.modules.conversations.context_invalidation import invalidate
+    await invalidate(db, conversation_id=item.conversation_id, owner_id=item.owner_id)
     return await message_dto(db, item, actor)

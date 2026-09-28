@@ -12,20 +12,15 @@ from pydantic import PrivateAttr
 
 
 def approximate_tokens(messages):
-    total = 0
-    for message in messages:
-        content = message.content
-        if isinstance(content, str):
-            total += len(content)  # Conservative for Chinese; avoids tokenizer model downloads.
-        else:
-            for block in content:
-                total += 2048 if isinstance(block, dict) and block.get('type') == 'image_url' else len(str(block))
-    return total
+    from app.agent.context_usage import estimate_request
+    return estimate_request(messages)
 
 
 async def reserve_call(context, kind, estimate=0):
     retry = context.node_retry
-    if context.calls >= (32 if retry else 8) or context.tools > 16 or (time.time() >= context.node_deadline if retry else time.monotonic() - context.started > 180) or context.input_tokens + estimate > (256000 if retry else 64000) or context.output_tokens >= (32000 if retry else 8000):
+    from app.agent.context_usage import input_budget, MAX_CONTEXT_BYTES
+    cumulative = (input_budget(context, 0) or MAX_CONTEXT_BYTES) * (32 if retry else 8)
+    if context.calls >= (32 if retry else 8) or context.tools > 16 or (time.time() >= context.node_deadline if retry else time.monotonic() - context.started > 180) or context.input_tokens + estimate > cumulative or context.output_tokens >= (32000 if retry else 8000):
         raise BudgetExceeded('本次处理已达到限制，请缩短内容后重试或补充说明')
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
@@ -64,7 +59,7 @@ class BoundedChatModel(ChatOpenAI):
         async def operation():
             return await self._single(messages, stop=stop, run_manager=run_manager, **kwargs)
         parent = active_node.get()
-        if not context.node_retry or parent and parent[1] in ('authorization', 'review'):
+        if not context.node_retry or parent and parent[1] in ('authorization', 'review', 'compaction'):
             return await operation()
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
         # Message ids are graph/checkpoint identities, not provider call counters.
@@ -74,9 +69,11 @@ class BoundedChatModel(ChatOpenAI):
 
     async def _single(self, messages, stop=None, run_manager=None, **kwargs):
         context = self._run_context
-        estimate = approximate_tokens(messages)
-        if estimate > 24000:
-            raise BudgetExceeded('本次上下文较长，请分段上报')
+        from app.agent.context_usage import estimate_request, ensure_input, output_reserve
+        payload = self._get_request_payload(messages, stop=stop, **kwargs)
+        estimate = estimate_request(payload['messages'], payload.get('tools', ()))
+        output_limit = output_reserve(context, self.max_tokens)
+        ensure_input(context, estimate, output_limit)
         from app.modules.model_services.bindings import resolve_bound
         from app.integrations.models.chat import chat
         from app.integrations.models.transport import safe_error
@@ -92,7 +89,6 @@ class BoundedChatModel(ChatOpenAI):
         if is_reply:
             await publish(context, 'generating', call_id=usage_id, force=True)
         try:
-            output_limit = min(4000, self.max_tokens or 4000, (32000 if context.node_retry else 8000) - context.output_tokens)
             if self._verification:
                 from app.modules.model_services.parameters import reply_review_config
                 config = reply_review_config(config, reasoning=self._verification_reasoning)

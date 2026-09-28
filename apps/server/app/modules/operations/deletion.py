@@ -31,6 +31,8 @@ async def target(db, model, identifier, actor, expected):
 
 
 async def invalidate_context(db, owner_id, company_id, target_ids, *, sources_changed=False):
+    from app.modules.conversations.context_invalidation import invalidate
+    await invalidate(db, owner_id=owner_id, company_id=company_id)
     # A queued unrelated task has captured no chat context and must stay queued.
     # In-flight tools may have read a shared source; fence those only when actual
     # business inputs changed. Other jobs keep their generation snapshots.
@@ -171,6 +173,8 @@ async def remove_conversation(db, item):
     for draft in drafts:
         draft.status, draft.content = 'deleted', {}
         draft.revision += 1
+    from app.modules.conversations.context_invalidation import remove
+    await remove(db, item.id)
     item.deleted, item.title, item.updated_at = True, '', now()
     item.revision += 1
 

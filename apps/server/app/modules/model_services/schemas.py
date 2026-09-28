@@ -64,6 +64,8 @@ class ServiceModel(Input):
     selectedPresetId: str | None = None
     streaming: bool = True
     language: str = Field(default='', pattern=r'^[a-zA-Z-]{0,20}$')
+    contextWindow: int | None = Field(default=None, ge=1, le=10000000, strict=True)
+    contextCapability: dict | None = Field(default=None, exclude=True)
 
     @model_validator(mode='after')
     def valid(self):

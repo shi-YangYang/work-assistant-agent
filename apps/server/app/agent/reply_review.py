@@ -217,7 +217,7 @@ async def review_reply(context, answer, *, model=None):
         from app.agent.policies import role_capabilities, REPORT_WRITING_POLICY
         from app.agent.deliverable_context import deliverable_context
         results = await deliverable_context(db, actor, message)
-        payload = {'privateDeliverables': results, 'task': REVIEW_TASK, 'version': REVIEW_VERSION, 'currentUserText': request_text(message, job), 'roleCapabilities': role_capabilities(actor.role), 'conversationForReferenceOnly': await conversation_references(db, actor, job, message), 'currentActions': await message_actions(db, actor, message), 'requestClock': getattr(context, 'request_clock', ''), 'segments': [{'index': index, 'text': part} for index, part in enumerate(parts)], 'toolEvidence': evidence}
+        payload = {'privateDeliverables': results, 'task': REVIEW_TASK, 'version': REVIEW_VERSION, 'currentUserText': request_text(message, job), 'roleCapabilities': role_capabilities(actor.role), 'conversationForReferenceOnly': await conversation_references(db, actor, job, message, context=context), 'currentActions': await message_actions(db, actor, message), 'requestClock': getattr(context, 'request_clock', ''), 'segments': [{'index': index, 'text': part} for index, part in enumerate(parts)], 'toolEvidence': evidence}
         fingerprint = digest(payload)
         cached = job.result.get('replyReview', {})
         if cached.get('digest') == fingerprint:
@@ -274,7 +274,9 @@ information：问候、适度玩笑、鼓励、明显的比喻或自嘲、材料
         AIMessage(content='{"segments":[{"index":0,"scope_reason":"概括两项工作的实际状态","scope":"answer","supports":[],"kind":"query_fact","evidence":[8]},{"index":1,"scope_reason":"所求建议，但把选址阻碍扩张到培训，来源没有该依赖","scope":"answer","supports":[],"kind":"unsupported","evidence":[]},{"index":2,"scope_reason":"给出建议且明确区分已知阻碍与待核实假设","scope":"answer","supports":[],"kind":"information","evidence":[8]}],"needs_action":false}'),
         HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str, separators=(',', ':')))]
     try:
-        if len(parts) > 256 or approximate_tokens(prompt) > 24000:
+        from app.agent.context_usage import ensure_input
+        ensure_input(context, approximate_tokens(prompt), 2000)
+        if len(parts) > 256:
             raise ValueError('Reply review context exceeds its existing bound')
         judge = model
         if judge is None:

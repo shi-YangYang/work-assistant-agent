@@ -50,5 +50,13 @@ class RunContext:
     feedback_at: float = 0
     intent_model: Any = None
     reply_evidence: list[dict] = field(default_factory=list)
+    conversation_references: list | None = None
+    context_sources: dict = field(default_factory=dict)
+    context_evidence: list[dict] = field(default_factory=list)
+    compaction_packet: dict | None = None
+    compaction_loaded: bool = False
+    published_compactions: set[str] = field(default_factory=set)
+    context_checkpoint: Any = None
+    context_checkpoint_config: dict = field(default_factory=dict)
     receipt_candidates: set[str] = field(default_factory=set)
     unrequested_actions: set[str] = field(default_factory=set)

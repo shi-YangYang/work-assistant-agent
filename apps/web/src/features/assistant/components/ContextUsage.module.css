@@ -1,0 +1,140 @@
+.trigger {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.trigger:hover,
+.trigger[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--text);
+}
+.trigger:focus-visible {
+  outline: 1px solid var(--text);
+  outline-offset: -3px;
+}
+.track,
+.used {
+  fill: none;
+  stroke-width: 2.5;
+}
+.track {
+  stroke: var(--control);
+}
+.used {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: center;
+  transition: stroke-dasharray 200ms;
+}
+.unknown {
+  fill: currentColor;
+}
+.trigger[data-active='true'] {
+  color: var(--text);
+}
+.panel,
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  max-width: calc(100vw - 24px);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--control);
+  box-shadow: var(--shadow);
+  border-radius: 14px;
+}
+.panel {
+  width: 300px;
+  padding: 16px;
+  max-height: calc(100dvh - 90px);
+  overflow-y: auto;
+}
+.panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.panel header strong {
+  font-size: 14px;
+}
+.panel header button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+.panel .value {
+  margin-block: 14px;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+}
+.panel dl {
+  margin: 0;
+  font-size: 12px;
+}
+.panel dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block: 8px;
+}
+.panel dt {
+  color: var(--muted);
+}
+.panel dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.panel p {
+  margin: 10px 0 0;
+  line-height: 1.6;
+}
+.model {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.caption {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 11px;
+}
+.note {
+  font-size: 12px;
+  padding: 9px 10px;
+  background: var(--subtle);
+  border-radius: 8px;
+}
+.tooltip {
+  width: 220px;
+  padding: 9px 12px;
+  font-size: 12px;
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  .panel header button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .used {
+    transition: none;
+  }
+}

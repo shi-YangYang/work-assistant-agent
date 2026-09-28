@@ -5,14 +5,18 @@ import styles from './TaskProgress.module.css'
 export function nodeStatus(node: Node, now = Date.now()) {
   if (node.state === 'retry_wait') {
     const seconds = Math.max(0, Math.ceil((Date.parse(node.nextRetryAt || '') - now) / 1000))
+    if (node.kind === 'compaction')
+      return `压缩重试中 · ${Math.min(3, node.attempts)}/3${Number.isFinite(seconds) && seconds > 0 ? ` · ${seconds} 秒后继续` : ''}`
     return `${node.kind === 'tool' ? '暂未完成' : '模型暂未响应'}，${Number.isFinite(seconds) && seconds > 0 ? `${seconds} 秒后重试` : '即将重试'} · ${Math.min(3, node.attempts)}/3`
   }
   if (node.state === 'running')
-    return node.retries
-      ? `正在第 ${node.retries}/3 次重试`
-      : node.kind === 'tool'
-        ? '执行中'
-        : '处理中'
+    return node.kind === 'compaction' && node.retries
+      ? `压缩重试中 · ${node.retries}/3`
+      : node.retries
+        ? `正在第 ${node.retries}/3 次重试`
+        : node.kind === 'tool'
+          ? '执行中'
+          : '处理中'
   return {
     waiting: '等待执行',
     succeeded: '已完成',

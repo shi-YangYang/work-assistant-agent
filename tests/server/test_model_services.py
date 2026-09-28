@@ -575,7 +575,8 @@ async def test_directory_token_plan_uses_openai_catalog(setup, monkeypatch):
         return httpx.Response(200, json={'data': [{'id': 'controlled-model'}], 'has_more': False})
     monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result = await catalog(settings, endpoint.removesuffix('/models'), SECRET)
-    assert result == {'models': ['controlled-model'], 'source': endpoint, 'truncated': False}
+    assert result == {'models': ['controlled-model'], 'source': endpoint, 'truncated': False,
+                      'capabilities': {'controlled-model': {'contextWindow': None, 'inputLimit': None, 'maxOutput': None, 'source': 'unknown'}}}
     assert len(calls) == 1
 
 

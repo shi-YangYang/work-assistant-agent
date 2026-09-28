@@ -156,3 +156,54 @@ it('restores node snapshots without accepting previous attempts, leases or accou
   expect(acceptFeedback(current, incoming, 'another-account-job')).toBe(current)
   expect(visibleFeedback(job({ attempt: 2 }), incoming)).toBeNull()
 })
+
+it('shows compaction within the existing node progress and accepts newer context-only feedback', () => {
+  expect(
+    nodeStatus(
+      node({ kind: 'compaction', state: 'retry_wait', nextRetryAt: new Date(3000).toISOString() }),
+      1000,
+    ),
+  ).toBe('压缩重试中 · 1/3 · 2 秒后继续')
+  expect(nodeStatus(node({ kind: 'compaction', attempts: 2, retries: 1 }))).toBe('压缩重试中 · 1/3')
+  const current: JobFeedback = {
+    jobId: 'job',
+    attempt: 1,
+    fence: 1,
+    seq: 5,
+    state: 'running',
+    stage: 'compacting',
+    text: '',
+    error: '',
+    updatedAt: '2026-01-01',
+  }
+  const incoming: JobFeedback = {
+    ...current,
+    contextUsage: {
+      jobId: 'job',
+      attempt: 1,
+      fence: 1,
+      seq: 1,
+      model: 'model',
+      usedTokens: 900000,
+      contextWindow: 1000000,
+      inputLimit: 1000000,
+      outputReserve: 4096,
+      capacitySource: 'override',
+      thresholdRatio: 0.9,
+      estimated: true,
+      state: 'compacting',
+      updatedAt: '2026-01-01',
+    },
+  }
+  expect(acceptFeedback(current, incoming, 'job')).toBe(incoming)
+  const html = renderToStaticMarkup(
+    createElement(TaskProgress, {
+      job: job({
+        nodes: [node({ kind: 'compaction', state: 'succeeded', label: '上下文已压缩' })],
+      }),
+      busy: false,
+      onRetry: vi.fn(),
+    }),
+  )
+  expect(html).toContain('上下文已压缩')
+})

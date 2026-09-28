@@ -15,6 +15,13 @@ async def capture_brief(db, actor, message, job):
     previous = await conversation_references(db, actor, job, message)
     references = []
     for ref in previous:
+        if ref['id'] == 'context-summary':
+            from app.modules.conversations.models import ConversationContext
+            store = await db.get(ConversationContext, message.conversation_id)
+            references.append({'id': 'context-summary', 'reference': ref, 'sources': store.payload.get('summarySources', {}),
+                               'summaryAccess': store.payload.get('summaryAccess', {}), 'summaryDependencies': store.payload.get('summaryDependencies', {}),
+                               'invalidationVersion': store.invalidation_version})
+            continue
         original = await message_reference(db, actor, await active_message(db, ref['id'], actor))
         references.append({'id': ref['id'], 'input': digest(reference_text(ref)),
                            'fullInput': digest(reference_text(original)),
@@ -37,6 +44,22 @@ async def load_brief(db, actor, job):
         raise ValueError('报告写作要求已变化，请使用最新要求重新生成')
     references = []
     for item in source['references']:
+        if item['id'] == 'context-summary':
+            from app.modules.conversations.models import ConversationContext
+            from app.modules.conversations.context_store import manifest, AccessCheck, summary_dependencies_valid
+            store = await db.get(ConversationContext, message.conversation_id)
+            if not store or store.invalidation_version != item['invalidationVersion']:
+                raise ValueError('报告写作上下文已变化，请重新生成')
+            if not await summary_dependencies_valid(db, actor, item):
+                raise ValueError('报告引用的来源已变化或无权查看，请重新生成')
+            stamps = await manifest(db, actor, message.conversation_id)
+            check = AccessCheck(db, actor)
+            for identifier, expected in item['sources'].items():
+                stamp = stamps.get(identifier)
+                if not stamp or stamp['deleted'] or stamp['source'] != expected['source'] or not await check.valid(stamp['access']):
+                    raise ValueError('报告写作上下文已变化，请重新生成')
+            references.append(item['reference'])
+            continue
         previous = await active_message(db, item['id'], actor)
         if previous.conversation_id != message.conversation_id:
             raise ValueError('报告写作上下文已变化，请重新生成')

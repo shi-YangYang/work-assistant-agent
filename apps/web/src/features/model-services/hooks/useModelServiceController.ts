@@ -197,7 +197,7 @@ export function useModelServiceController() {
   const addModels = (ids: string[]) => {
     if (!draft) return
     try {
-      const next = appendServiceModels(draft, ids)
+      const next = appendServiceModels(draft, ids, catalog?.capabilities)
       const added = next.models.slice(draft.models.length)
       if (!added.length) throw new Error('这些模型已经添加，请选择其它模型。')
       update(next)

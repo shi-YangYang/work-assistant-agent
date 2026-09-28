@@ -3,6 +3,7 @@ import controlsStyles from '../../../styles/controls.module.css'
 import utilitiesStyles from '../../../styles/utilities.module.css'
 import modelServicesStyles from '../styles/model-services.module.css'
 import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
+import { capacitySourceLabel } from '@web/utils/model-capacity'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
@@ -45,7 +46,7 @@ export function ModelOptions({
   setActiveModel: React.Dispatch<React.SetStateAction<string>>
   error: string | Error
 }) {
-  const fields = model ? modelFieldErrors(model) : { model: '', language: '' }
+  const fields = model ? modelFieldErrors(model) : { model: '', language: '', contextWindow: '' }
   return (
     <>
       {modelOpen && model && draft && (
@@ -65,7 +66,9 @@ export function ModelOptions({
                 maxLength={200}
                 required
                 error={fields.model}
-                onChange={(e) => updateModel({ ...model, model: e.target.value })}
+                onChange={(e) =>
+                  updateModel({ ...model, model: e.target.value, contextCapability: undefined })
+                }
               />
               <div className={modelServicesStyles['model-protocol-status']} role="status">
                 {automaticMatch && !automaticMatch.protocol
@@ -105,6 +108,36 @@ export function ModelOptions({
                     ))}
                   </select>
                 </label>
+                {model.protocol === 'chat' && (
+                  <FormField
+                    label="上下文窗口（tokens）"
+                    type="number"
+                    min={1}
+                    max={10000000}
+                    step={1}
+                    value={model.contextWindow ?? ''}
+                    placeholder={
+                      model.contextCapability?.contextWindow
+                        ? `自动：${model.contextCapability.contextWindow.toLocaleString('zh-CN')}`
+                        : '窗口大小未配置'
+                    }
+                    hint={
+                      model.contextWindow != null
+                        ? '使用管理员配置；清空后恢复自动。'
+                        : model.contextCapability?.contextWindow
+                          ? `自动 ${model.contextCapability.contextWindow.toLocaleString('zh-CN')} tokens · ${capacitySourceLabel(model.contextCapability.source)}`
+                          : '留空使用服务的自动值；未知窗口时无法显示使用比例。'
+                    }
+                    error={fields.contextWindow}
+                    onChange={(event) =>
+                      updateModel({
+                        ...model,
+                        contextWindow:
+                          event.target.value === '' ? null : Number(event.target.value),
+                      })
+                    }
+                  />
+                )}
               </details>
               {automaticMatch && !automaticMatch.protocol ? null : model.protocol === 'chat' ? (
                 <>
@@ -210,7 +243,7 @@ export function ModelOptions({
             </span>
             <button
               className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
-              disabled={!!fields.model || !!fields.language}
+              disabled={!!fields.model || !!fields.language || !!fields.contextWindow}
               onClick={() => setModelOpen(false)}
             >
               完成

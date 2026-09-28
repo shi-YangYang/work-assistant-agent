@@ -105,11 +105,13 @@ async def test_long_conversation_is_summarized_before_hard_context_limit(setup):
     sent=await send(c['employee'],'今天继续方案。'*700)
     async with sessions.begin() as db:
         current=await db.get(Message,sent['messageId'])
-        for index in range(10):
+        for index in range(20):
             db.add(Message(company_id=actor.company_id,owner_id=actor.id,conversation_id=current.conversation_id,text='历史方案讨论。'*180,reply='此前的讨论记录。'*100,created_at=current.created_at-timedelta(minutes=index+1)))
     job=await claim(sessions,actor.id)
-    context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings,source_revision=0)
+    context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings,source_revision=0,
+                       model_binding={'assistant': {'model': 'controlled-test', 'contextCapability': {'contextWindow': 64000, 'inputLimit': None, 'maxOutput': 4000, 'source': 'override'}}})
     model=controlled_model()
+    context.intent_model = model
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         answer=await invoke_harness(context,saver,'今天继续方案。'*700,model)
         assert answer and model.summaries

@@ -11,7 +11,7 @@ async def conversation_history(context, job, content):
     async with context.sessions.begin() as db:
         live, actor = await lease(db, context)
         current = await owned(db, Message, job.target_id, actor)
-        references = await conversation_references(db, actor, live, current)
+        references = await conversation_references(db, actor, live, current, context=context)
         from app.agent.deliverable_context import deliverable_context
         results = await deliverable_context(db, actor, current)
     messages = []

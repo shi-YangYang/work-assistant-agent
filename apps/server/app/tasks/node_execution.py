@@ -5,6 +5,7 @@ import json
 import random
 import time
 from app.core.digests import digest
+from app.security.versions import validate_cached_versions
 from app.tasks.context import BudgetExceeded, LostLease
 from app.tasks.lease import lease
 from app.tasks.node_failures import classify
@@ -67,21 +68,6 @@ async def validate_config(db, context):
     if (context.model_binding or {}).get('assistant'):
         from app.modules.model_services.bindings import resolve_bound
         await resolve_bound(db, context.settings, context.company_id, context.model_binding, 'assistant')
-
-
-async def validate_cached_versions(db, actor, versions):
-    from app.modules.work.models import WorkItem
-    from app.modules.reports.models import Report
-    from app.security.ownership import owned
-    from app.security.access import require
-    from app.integrations.models.transport import ProviderError
-    for identifier, revision in versions.items():
-        model = WorkItem if await db.get(WorkItem, identifier) else Report
-        record = await owned(db, model, identifier, actor, read=True)
-        if model == WorkItem:
-            await require(db, actor, record.access, retained=True)
-        if record.revision != revision:
-            raise ProviderError('version_conflict', '已读取的工作或报告已变化，请重新提问以读取最新内容')
 
 
 async def check(context):
@@ -176,6 +162,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row['totalRetries'] += max(0, current.count - max(1, row['attempts']))
             row.update(state=status, attempts=current.count, nextAt=current.next_at,
                        errorCode=failure.code if failure else '', error=failure.message[:240] if failure else '')
+            if kind == 'compaction' and job.result.get('contextUsage'):
+                job.result = {**job.result, 'contextUsage': {**job.result['contextUsage'], 'state': 'retry_wait' if status == 'retry_wait' else 'failed' if status in ('failed', 'cancelled') else 'compacting'}}
             save(job, state)
 
     try:

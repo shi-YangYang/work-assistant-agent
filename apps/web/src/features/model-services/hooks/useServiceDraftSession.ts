@@ -126,7 +126,15 @@ export function useServiceDraftSession() {
     if (!draft) return
     if (!sameServiceAddress(baseUrl, draft.baseUrl))
       setKeys((previous) => ({ ...previous, [draft.id]: '' }))
-    update({ ...draft, name: name || draft.name, baseUrl, providerPreset })
+    update({
+      ...draft,
+      name: name || draft.name,
+      baseUrl,
+      providerPreset,
+      models: sameServiceAddress(baseUrl, draft.baseUrl)
+        ? draft.models
+        : draft.models.map((model) => ({ ...model, contextCapability: undefined })),
+    })
   }
   const capture = (requireProtocols = true) => {
     if (!draft) throw new Error('请选择服务')

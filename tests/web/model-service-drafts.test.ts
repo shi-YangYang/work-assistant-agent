@@ -8,6 +8,7 @@ import {
   serviceHasChanges,
   validateCompanyParameters,
   validateServiceModels,
+  writableModels,
 } from '../../apps/web/src/features/model-services/utils/service-drafts'
 import {
   changeModelProtocol,
@@ -235,4 +236,36 @@ describe('service presets and protocol selection', () => {
     expect(() => requireModelProtocols(custom, [audio])).toThrow()
     expect(resolveModelProtocol(tokenPlan, { ...chat, streaming: false }).streaming).toBe(false)
   })
+})
+
+it('preserves automatic model capability separately from an explicit capacity override', () => {
+  const model = newModel('large-context')
+  const capability = {
+    contextWindow: 1048576,
+    inputLimit: 1048576,
+    maxOutput: 32768,
+    source: 'official',
+  }
+  const draft = {
+    id: 'service',
+    name: '模型服务',
+    baseUrl: 'https://example.com/v1',
+    models: [],
+    revision: 1,
+    hasKey: true,
+  }
+  const added = appendServiceModels(draft, [model.model], { [model.model]: capability }).models[0]
+  expect(added.contextCapability).toEqual(capability)
+  expect(added.contextWindow).toBeUndefined()
+  expect(writableModels([{ ...added, contextWindow: null }])[0]).toMatchObject({
+    contextWindow: null,
+  })
+  expect(writableModels([added])[0]).not.toHaveProperty('contextCapability')
+  expect(writableModels([{ ...added, contextWindow: 2000000 }])[0].contextWindow).toBe(2000000)
+  for (const invalid of [0, -1, 1.5, NaN, 10000001])
+    expect(() => validateServiceModels([{ ...model, contextWindow: invalid }])).toThrow(
+      '上下文窗口',
+    )
+  for (const contextWindow of [undefined, null, 1048576])
+    expect(() => validateServiceModels([{ ...model, contextWindow }])).not.toThrow()
 })

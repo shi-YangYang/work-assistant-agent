@@ -1,6 +1,8 @@
 import controlsStyles from '../../../styles/controls.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageComposer.module.css'
+import { ContextUsage } from './ContextUsage'
+import type { ContextUsage as Usage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
@@ -37,6 +39,9 @@ export function MessageComposer({
   recording,
   retryWait,
   children,
+  contextKey,
+  contextUsage = null,
+  contextUnavailable = false,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>
   dragging?: boolean
@@ -54,6 +59,9 @@ export function MessageComposer({
   sendError: string | Error
   recording: { state: CaptureState; seconds: number; start: () => Promise<void>; stop: () => void }
   retryWait: number
+  contextKey?: string
+  contextUsage?: Usage | null
+  contextUnavailable?: boolean
   children: React.ReactNode
 }) {
   const input = useRef<HTMLInputElement>(null)
@@ -226,35 +234,38 @@ export function MessageComposer({
               </button>
             )}
           </div>
-          <button
-            aria-label={
-              busy
-                ? '正在发送'
-                : retryWait
-                  ? `${retryWait} 秒后再试`
-                  : pending
-                    ? '原样重试，确认结果'
-                    : '发送'
-            }
-            aria-busy={busy}
-            title={busy ? '正在发送' : '发送'}
-            data-expanded={!!retryWait || pending}
-            className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
-            disabled={
-              busy ||
-              !!retryWait ||
-              previewUploading ||
-              personaSaving ||
-              capturing ||
-              (!composer.text.trim() && !composer.files.length)
-            }
-            onClick={send}
-          >
-            {busy ? <LoaderCircle size={18} /> : <ArrowUp size={18} />}
-            {retryWait || pending ? (
-              <span>{retryWait ? `${retryWait} 秒后再试` : '原样重试，确认结果'}</span>
-            ) : null}
-          </button>
+          <div className={styles['send-actions']}>
+            <ContextUsage key={contextKey} usage={contextUsage} unavailable={contextUnavailable} />
+            <button
+              aria-label={
+                busy
+                  ? '正在发送'
+                  : retryWait
+                    ? `${retryWait} 秒后再试`
+                    : pending
+                      ? '原样重试，确认结果'
+                      : '发送'
+              }
+              aria-busy={busy}
+              title={busy ? '正在发送' : '发送'}
+              data-expanded={!!retryWait || pending}
+              className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
+              disabled={
+                busy ||
+                !!retryWait ||
+                previewUploading ||
+                personaSaving ||
+                capturing ||
+                (!composer.text.trim() && !composer.files.length)
+              }
+              onClick={send}
+            >
+              {busy ? <LoaderCircle size={18} /> : <ArrowUp size={18} />}
+              {retryWait || pending ? (
+                <span>{retryWait ? `${retryWait} 秒后再试` : '原样重试，确认结果'}</span>
+              ) : null}
+            </button>
+          </div>
         </div>
       </div>
     </div>

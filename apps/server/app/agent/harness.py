@@ -5,7 +5,7 @@ import time
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.profiles import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
-from langchain.agents.middleware import SummarizationMiddleware
+from app.agent.compaction import ContextCompaction
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.history import conversation_history
@@ -23,10 +23,6 @@ from app.tasks.context import RunContext
 from app.tasks.lease import lease
 
 
-class BusinessSummary(SummarizationMiddleware):
-    pass
-
-
 register_harness_profile('openai', HarnessProfile(excluded_tools=EXCLUDED_TOOLS, excluded_middleware=frozenset({'SummarizationMiddleware'}), general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
 
 
@@ -35,7 +31,7 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + getattr(context, 'request_clock', ''), middleware=[BusinessSummary(model, trigger=('tokens', 12000), keep=('messages', 6), token_counter=approximate_tokens), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -46,6 +42,9 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         if not live.access:
             live.access = business_scope(actor)
         context.role = actor.role
+        from app.modules.model_services.bindings import freeze_capacities
+        if context.model_binding:
+            await freeze_capacities(db, context.model_binding)
     from app.modules.members.models import Company
     from zoneinfo import ZoneInfo
     async with context.sessions() as db:
@@ -74,9 +73,20 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             thread += f':input:{context.source_revision}:{digest}'
             if context.document_snapshot:
                 thread += ':files:' + context.document_snapshot
+    context.compaction_packet, context.compaction_loaded = None, False
+    context.context_checkpoint = GuardedSaver(checkpointer, context)
+    context.context_checkpoint_config = {'configurable': {'thread_id': thread + ':context', 'checkpoint_ns': ''}}
+    history = await conversation_history(context, job, content) if job.kind == 'message' else []
     config = {'configurable': {'thread_id': thread}, 'recursion_limit': 36, 'callbacks': []}
     with tracing_context(enabled=False):
         state = await graph.aget_state(config)
+        # Completed graphs bypass middleware. Recover compacted evidence as well
+        # as the final prose before independent review, including a fresh worker.
+        from app.agent.compaction import saved_packet, publish_packet
+        packet = await saved_packet(context)
+        if packet:
+            await publish_packet(context, packet)
+            context.context_evidence = packet.get('evidence', [])
         repair_id = f'completion-repair:{job.id}'
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
@@ -87,7 +97,6 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             # job's unchanged input; a completed graph needs no second external request.
             result = await asyncio.wait_for(graph.ainvoke(None, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started))) if state.next else state.values
         else:
-            history = await conversation_history(context, job, content) if job.kind == 'message' else []
             inputs = {'messages': [*history, HumanMessage(id=f'job:{job.id}', content=content)]}
             result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     messages = result.get('messages', [])
@@ -98,9 +107,10 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
-    context.reply_evidence = [
+    context.reply_evidence = [*context.context_evidence, *[
         {'id': index, 'tool': message.name, 'result': message.content}
         for index, message in enumerate(messages)
         if isinstance(message, ToolMessage) and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
-    ]
+    ]]
+    context.reply_evidence = [{**row, 'id': index} for index, row in enumerate(context.reply_evidence)]
     return answer.text[:16000]

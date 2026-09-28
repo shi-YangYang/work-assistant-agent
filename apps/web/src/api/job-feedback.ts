@@ -24,7 +24,8 @@ export function acceptFeedback(
       incoming.updatedAt === current.updatedAt &&
       incoming.state === current.state &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
-      JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? [])
+      JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? []) &&
+      JSON.stringify(incoming.contextUsage ?? null) === JSON.stringify(current.contextUsage ?? null)
     )
       return current
   }
@@ -59,6 +60,7 @@ export const stageNames: Record<string, string> = {
   generating: '正在生成回复…',
   operating: '操作结果已更新，正在继续处理…',
   reviewing: '正在核对答复…',
+  compacting: '正在压缩上下文…',
   complete: '已完成',
 }
 

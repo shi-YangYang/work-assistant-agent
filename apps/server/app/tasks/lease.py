@@ -31,6 +31,14 @@ async def lease(db, context):
     if job.access and job.access.get('role') != actor.role:
         raise ValueError('账号权限已变化，请重新提问；旧处理已停止')
     await business_require(db, actor, job.access)
+    if context.context_sources:
+        from app.modules.conversations.models import ConversationContext
+        source = await db.get(Message, job.target_id) if job.kind == 'message' else None
+        epoch = await db.scalar(select(ConversationContext.invalidation_version).where(
+            ConversationContext.conversation_id == source.conversation_id,
+            ConversationContext.owner_id == actor.id, ConversationContext.company_id == actor.company_id)) if source and source.conversation_id else None
+        if epoch is None or epoch != context.context_sources['invalidationVersion']:
+            raise InputChanged()
     context.access = job.access or business_scope(actor)
     context.role = actor.role
     context.own_work_searched = job.result.get('ownWorkSearched', False)
