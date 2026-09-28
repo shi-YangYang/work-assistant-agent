@@ -65,7 +65,7 @@ def cancel_unfinished(job):
     state = execution(job)
     if state:
         for row in state.get('nodes', []):
-            if row.get('scope') == state.get('scope') and row['state'] in ('waiting', 'running', 'retry_wait'):
+            if row.get('scope') == state.get('scope') and row['state'] in ('waiting', 'running', 'retry_wait', 'awaiting_input', 'awaiting_confirmation'):
                 row.update(state='cancelled', nextAt=None, error='已中断', errorCode='cancelled', resumable=False)
         save(job, state)
 

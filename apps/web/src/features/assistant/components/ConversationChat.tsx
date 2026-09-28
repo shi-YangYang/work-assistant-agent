@@ -1,7 +1,12 @@
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import styles from './ConversationChat.module.css'
-import type { BusinessAction, PersonaId, WorkMessage } from '@paa/api-contracts'
+import type {
+  AssistantInteraction,
+  BusinessAction,
+  PersonaId,
+  WorkMessage,
+} from '@paa/api-contracts'
 import { Modal } from '@web/components/Modal'
 import {
   conversationMessagesPath,
@@ -17,6 +22,10 @@ import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
 import { MessageComposer } from '@web/features/assistant/components/MessageComposer'
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
 import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
+import { useAssistantInteraction } from '../hooks/useAssistantInteraction'
+import type { useExecutionMode } from '../hooks/useExecutionMode'
+import { ExecutionModePicker } from './ExecutionModePicker'
+import { QuestionPanel } from './QuestionPanel'
 import { useAssistantTask } from '@web/features/assistant/hooks/useAssistantTask'
 import { useContextUsage } from '@web/features/assistant/hooks/useContextUsage'
 import { useMessageSubmission } from '@web/features/assistant/hooks/useMessageSubmission'
@@ -43,11 +52,13 @@ export function ConversationChat({
   conversationId,
   personaId,
   interaction,
+  execution,
   onSent,
 }: {
   conversationId?: string
   personaId: PersonaId
   interaction: PersonaInteraction
+  execution: ReturnType<typeof useExecutionMode>
   onSent: (conversationId: string, personaId: PersonaId) => void
 }) {
   const composerKey = `composer:${conversationId ?? 'new'}`
@@ -71,6 +82,27 @@ export function ConversationChat({
     orphanActionsPath(conversationId),
     3000,
   )
+  const incomingQuestions = useMemo(
+    () => [
+      ...messages.flatMap((message) =>
+        message.businessUnavailable ? [] : (message.interactions ?? []),
+      ),
+      ...(task.feedback?.interactions ?? []),
+    ],
+    [messages, task.feedback?.interactions],
+  )
+  const questions = useAssistantInteraction(conversationId, incomingQuestions, (continuation) => {
+    if (continuation) task.accepted(continuation)
+    else void task.refresh()
+    void refresh()
+    actionReceipts.refresh()
+  })
+  const questionsByMessage = new Map<string, AssistantInteraction[]>()
+  for (const question of questions.items)
+    questionsByMessage.set(question.messageId, [
+      ...(questionsByMessage.get(question.messageId) ?? []),
+      question,
+    ])
   const [previewBusy, setPreviewUploading] = useState(false)
   const previewUploading = previewBusy || (!!composer.uploading && !composer.sending)
   const [gallery, setGallery] = useState<number | null>(null)
@@ -103,7 +135,13 @@ export function ConversationChat({
     refresh,
     task,
   })
-  const locked = busy || pending || previewUploading || interaction.busy === 'persona'
+  const locked =
+    busy ||
+    pending ||
+    !!questions.busy ||
+    previewUploading ||
+    interaction.busy === 'persona' ||
+    execution.saving
   const textInput = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const pageElement = useRef<HTMLDivElement>(null)
@@ -139,6 +177,7 @@ export function ConversationChat({
         next.replyTo ||
         next.pending ||
         next.personaId ||
+        next.executionMode ||
         next.deliverableReference
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
@@ -299,6 +338,12 @@ export function ConversationChat({
       <ChatHistory
         onContextUpdate={context.receive}
         task={task}
+        onContinuation={(continuation) => {
+          if (continuation) task.accepted(continuation)
+          else void task.refresh()
+          questions.refresh()
+          void refresh()
+        }}
         scroller={scroller}
         atBottomRef={atBottomRef}
         setNewReply={setNewReply}
@@ -307,7 +352,12 @@ export function ConversationChat({
         nextCursor={nextCursor}
         loading={loading}
         loadMore={loadMore}
-        messages={messages}
+        messages={messages.map((message) => ({
+          ...message,
+          interactions: questions.unavailable
+            ? []
+            : (questionsByMessage.get(message.id) ?? message.interactions),
+        }))}
         conversationId={conversationId}
         data={data}
         identity={identity}
@@ -348,7 +398,39 @@ export function ConversationChat({
         textInput={textInput}
         busy={busy}
         previewUploading={previewUploading}
-        personaSaving={interaction.busy === 'persona'}
+        personaSaving={interaction.busy === 'persona' || execution.saving}
+        executionControl={
+          <ExecutionModePicker
+            value={execution.selected}
+            acknowledged={execution.acknowledged}
+            disabled={execution.disabled || task.blocked || locked || capturing}
+            onChange={(mode, acknowledged) => void execution.choose(mode, acknowledged)}
+          />
+        }
+        executionError={execution.error}
+        questionPanel={
+          questions.waiting && (
+            <QuestionPanel
+              key={`${questions.waiting.id}:${questions.waiting.revision}`}
+              item={questions.waiting}
+              busy={!!questions.busy}
+              disabled={busy || task.blocked || execution.saving}
+              error={questions.error}
+              onAnswer={(answers) => {
+                if (interaction.acquire('message'))
+                  void questions
+                    .respond(questions.waiting!, answers)
+                    .finally(() => interaction.release('message'))
+              }}
+              onCancel={() => {
+                if (interaction.acquire('message'))
+                  void questions
+                    .respond(questions.waiting!)
+                    .finally(() => interaction.release('message'))
+              }}
+            />
+          )
+        }
         pending={pending}
         sendError={sendError}
         retryWait={retryWait}

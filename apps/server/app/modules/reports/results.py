@@ -28,3 +28,6 @@ async def save_candidate(db, context, content):
     update_feedback(job, 'complete', '')
     from app.modules.reports.schedule import draft_ready
     await draft_ready(db, report)
+
+    from app.modules.operations.report_completion import complete_report
+    await complete_report(db, actor, job)

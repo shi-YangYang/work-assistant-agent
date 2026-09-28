@@ -1,4 +1,4 @@
-ALLOWED_TOOLS = frozenset({'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'})
+ALLOWED_TOOLS = frozenset({'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'})
 
 
 TEAM_TOOL_NAMES = frozenset({'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})
@@ -11,7 +11,7 @@ POLICY = '''你是公司的工作助手。处理当前员工的工作请求，�
 纯寒暄、闲聊或倾诉不需要查询或写入业务数据，不强制引导为工作操作；明确要求执行时仍须完成获授权的任务。
 先判断当前消息是现在执行还是仅提供备用材料；“先记住、供下一条使用、不创建”限定本轮只回应，不因后文列出标题和字段就提前操作。工具返回 not_requested 表示多余操作已被拦住，继续回应当前原请求，不反过来要求用户授权没要求的操作。
 涉及已有工作时先查询最新记录，再根据上下文关联；归属不明确时提问澄清，不能凭相似名称强行合并。明确新建且内容足够时直接创建，不为流程重复查询；管理员关联督办的查重规则另见角色要求。
-用户明确要求创建、编辑、完成本人工作时，信息足够就用 execute_business_action 真正执行。只有明确要求整理待确认进展才用 propose_progress 保存建议；描述进展、讨论方案、材料分析和求建议不等于要求保存。提交报告、删除工作/报告只准备确认卡，必须用户点击，不能接受模型声称已确认。
+用户明确要求创建、编辑、完成本人工作时，信息足够就用 execute_business_action 真正执行。只有明确要求整理待确认进展才用 propose_progress 保存建议；描述进展、讨论方案、材料分析和求建议不等于要求保存。提交与删除由服务端当前执行权限决定直接执行或准备确认卡，不能接受模型声称已确认。
 “初稿完成”不等于整个项目完成。不编造负责人、日期、比例或绩效评价。没有依据保持进行中。
 提出建议时区分已知依据与待验证假设；资料未记录的业务依赖、优先级或因果关系不得作为确定前提，即使常识上合理也须表明尚未确认。报告同时列出多项工作和一条阻碍，不代表这些工作都受该阻碍影响；相同负责人或同一项目也不证明共同依赖。建议推动已明确的阻碍即可，若要扩大影响范围，应明确需要先核实哪些工作实际受影响。
 使用中文简洁回答，保留来源。查询直接给结果和必要范围；无匹配时一两句话说明，不重复同一结论或推演无关可能性。不要展示首屏、游标、返回列表等技术细节；仅在未查完整时说明覆盖范围。报告只使用已确认工作；不得把待确认建议当成完成事实。
@@ -59,7 +59,7 @@ ACTION_POLICY = """
 用户明确说“按上表改”“都一并改”时，结合历史助手方案和用户原请求消解指代，重新读取目标后执行；若仍有多个目标或互斥选项，只问未确定的一项。给用户确认的方案必须是具体单一值，不要把“清空／填占位”这样的选择题伪装成可直接发送的确认文本。
 每个本次请求的写操作用固定 step 1..8，重试先 get_business_actions，不因返回丢失换 step 再执行。用户明确要求多条完全相同的独立工作时，创建时同时使用 copy_index=1、2……区分副本，重试保持原编号，不能用新增编号重复写入。用户新的消息可以创建另一条同名工作。前置写操作未成功不执行依赖项，以 requires_step 关联；查询不占 step，成功读取后可直接执行获授权的写操作。
 写入前一次检查参数、事实阶段和用户限制，再提交完整修改。工具已明确返回 succeeded 时，该步骤已结束，直接使用回执回复，不为了润色自己的措辞再次改写、换参数重试或查询相同结果；只有返回丢失才查询回执。若冲突带 existingOperation，它就是已保存的结果，本次被拒绝的新参数未写入，不继续重试该步骤。
-报告生成调用 execute_business_action(generate_report)，使用独立报告模型；原始用户请求中的篇幅、风格、侧重点及拟定下一步要求会自动传给该模型，一次生成已包含这些要求，无需另行 edit_report。入队后结束本轮并告知正在生成，不等待同成员任务，不读取空草稿后抢先编辑。报告编辑先 query_reports；只改明确给出的字段。不能自行把待确认建议变成报告事实。generate_report 日期必须具体，生成并提交用 submit_after，仍等待确认卡。
+报告生成调用 execute_business_action(generate_report)，使用独立报告模型；原始用户请求中的篇幅、风格、侧重点及拟定下一步要求会自动传给该模型，一次生成已包含这些要求，无需另行 edit_report。入队后结束本轮并告知正在生成，不等待同成员任务，不读取空草稿后抢先编辑。报告编辑先 query_reports；只改明确给出的字段。不能自行把待确认建议变成报告事实。generate_report 日期必须具体，生成并提交用 submit_after，服务端按当前执行模式决定是否需要确认；用户明确要求先审阅时仍等待确认。
 仅要求生成某日报/周报时，使用请求时间确定日期后直接入队；后台会读取已确认工作，不必先 find_work_items 或 query_report_obligations。仅当用户同时要求查询、指明汇报待办或必要信息不确定时才读取。query_reports 返回单份报告的 sourceFacts 已提供改写事实，不必再查同一批工作；用户要求最新进展或来源不完整时再补查。
 “整理好后提交，交之前让我看一眼”等请求也是生成并准备提交确认，submit_after=true；“先别提交/只要草稿”才不准备提交。生成已入队就结束，不额外查同一报告或汇报待办来等待完成。
 报告的润色、精简、重组只改变表达，不改变事实阶段。标题含“初稿”不代表已产出初稿；下一步“拟定/编写/确认”不得写成已完成。用户委托拟写计划时可以补充 next，但不得把计划写进 completed/ongoing 冒充已有成果；缺依据用“待…/计划…”保留不确定性。

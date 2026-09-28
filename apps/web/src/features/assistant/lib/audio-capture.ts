@@ -1,4 +1,4 @@
-import type { Attachment, DeliverableReference, PersonaId } from '@paa/api-contracts'
+import type { Attachment, DeliverableReference, ExecutionMode, PersonaId } from '@paa/api-contracts'
 import { MAX_FILE_BYTES } from './attachment-limits'
 
 type PendingFile = {
@@ -19,6 +19,8 @@ export type Composer = {
   replyTo?: string
   sending?: boolean
   personaId?: PersonaId
+  executionMode?: ExecutionMode
+  fullAccessConfirmed?: boolean
   submissionPersonaId?: PersonaId
   uploading?: string
   pending?: {
@@ -27,6 +29,8 @@ export type Composer = {
       conversationId?: string
       newConversation?: boolean
       personaId?: PersonaId
+      executionMode?: ExecutionMode
+      fullAccessConfirmed?: boolean
       text: string
       attachmentIds: string[]
       voiceCommandAttachmentId?: string

@@ -1,6 +1,7 @@
 from app.core.personas import PersonaId
 from app.core.attachment_limits import MAX_ATTACHMENTS, MAX_AUDIO_ATTACHMENTS
 from app.core.schemas import Input
+from app.modules.operations.execution_policy import ExecutionMode
 from app.modules.deliverables.schemas import DeliverableReference
 from pydantic import Field, model_validator
 
@@ -8,6 +9,8 @@ from pydantic import Field, model_validator
 class SendMessage(Input):
     conversationId: str | None = None
     personaId: PersonaId | None = None
+    executionMode: ExecutionMode | None = None
+    fullAccessConfirmed: bool = False
     newConversation: bool = False
     text: str = Field(default='', max_length=8000)
     attachmentIds: list[str] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
@@ -20,6 +23,8 @@ class SendMessage(Input):
     def content_present(self):
         if 'personaId' in self.model_fields_set and self.personaId is None:
             raise ValueError('请选择有效人设')
+        if 'executionMode' in self.model_fields_set and self.executionMode is None:
+            raise ValueError('请选择有效执行权限')
         if self.newConversation and self.conversationId:
             raise ValueError('新会话不能同时指定已有会话')
         self.text = self.text.strip()

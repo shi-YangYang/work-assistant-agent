@@ -4,6 +4,7 @@ import app.modules.attachments.models
 import app.modules.auth.models
 import app.modules.conversations.models
 import app.modules.deliverables.models
+import app.modules.interactions.models
 import app.modules.members.models
 import app.modules.messages.models
 import app.modules.model_services.models

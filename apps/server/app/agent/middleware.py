@@ -18,6 +18,10 @@ class ToolBoundary(AgentMiddleware):
         context = request.runtime.context
         async with context.sessions() as db:
             await lease(db, context)
+        from app.agent.interactions import waiting_text
+        waiting = await waiting_text(context, include_actions=any(isinstance(message, ToolMessage) and message.name == 'execute_business_action' for message in request.messages))
+        if waiting:
+            return ModelResponse(result=[AIMessage(id=f'interaction-wait:{context.job_id}', content=waiting)])
         from app.agent.completion import receipt_completion
         if await receipt_completion(context, request.messages):
             # Independent intent approval plus the committed receipt suffice
@@ -87,5 +91,8 @@ class ToolBoundary(AgentMiddleware):
             batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
             if batch and any(call['name'] == 'execute_business_action' for call in batch.tool_calls):
                 return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content=json.dumps({'error': '本批次含写操作，本查询尚未执行。请等写操作返回后，在下一批调用查询更新后的结果。'}, ensure_ascii=False))
+        batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
+        if batch and any(call['name'] == 'request_user_input' for call in batch.tool_calls) and request.tool_call['name'] in ('execute_business_action', 'propose_progress', 'propose_followup'):
+            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content=json.dumps({'state': 'waiting', 'message': '本批次正在提问，等待用户回答后再执行写操作'}, ensure_ascii=False))
         from app.agent.tool_nodes import tool_node
         return await tool_node(context, request, lambda: handler(request))

@@ -69,7 +69,40 @@ export interface ExtractionPage {
   items: { ordinal: number; location: string; text: string }[]
   nextCursor: number | null
 }
+export type ExecutionMode = 'ask' | 'auto' | 'full'
+export interface AssistantContinuation {
+  messageId: string
+  jobId: string
+  conversationId: string
+}
+export interface AssistantQuestion {
+  id: string
+  prompt: string
+  type: 'single' | 'multiple' | 'text'
+  options: { id: string; label: string; description?: string }[]
+  allowCustom: boolean
+}
+export interface AssistantAnswer {
+  questionId: string
+  optionIds: string[]
+  text: string
+}
+export interface AssistantInteraction {
+  id: string
+  messageId: string
+  conversationId: string
+  taskId: string
+  revision: number
+  state: 'waiting' | 'answered' | 'cancelled' | 'expired'
+  questions: AssistantQuestion[]
+  answers: AssistantAnswer[]
+  createdAt: string
+  continuation?: AssistantContinuation | null
+}
 export interface BusinessAction {
+  confirmLabel?: string
+  executionMode?: ExecutionMode
+  continuation?: AssistantContinuation | null
   id: string
   messageId: string
   action: string
@@ -85,7 +118,13 @@ export interface BusinessAction {
   changedFields?: (keyof Progress)[]
   message?: string
   canConfirm?: boolean
-  preview?: { title: string; content?: ReportContent; revision: number }
+  preview?: {
+    title: string
+    content?: ReportContent
+    before?: Record<string, unknown>
+    changes?: Record<string, unknown>
+    revision: number
+  }
   impact?: { messages: number; attachments: number }
   job?: Job
 }
@@ -99,6 +138,9 @@ export interface Progress {
 }
 export type PersonaId = 'dabao' | 'professional'
 export interface Conversation {
+  executionMode?: ExecutionMode
+  modeRevision?: number
+  fullAccessConfirmed?: boolean
   personaId: PersonaId
   id: string
   title: string
@@ -242,6 +284,7 @@ export interface Deliverable extends DeliverableSummary {
   links: { itemId: string; workId: string; sourceRevision: number; unavailable: boolean }[]
 }
 export interface WorkMessage {
+  interactions?: AssistantInteraction[]
   deliverables?: DeliverableSummary[]
   actions?: BusinessAction[]
   conversationId: string | null
@@ -415,6 +458,7 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  interactions?: AssistantInteraction[]
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean

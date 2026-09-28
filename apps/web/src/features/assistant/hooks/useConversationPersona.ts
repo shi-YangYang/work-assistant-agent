@@ -6,7 +6,7 @@ import { identityScope } from '@web/lib/session-drafts'
 import { useWorkspace } from '@web/lib/workspace'
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-type Operation = 'persona' | 'message' | 'preview'
+type Operation = 'persona' | 'mode' | 'message' | 'preview'
 export type PersonaInteraction = {
   busy: Operation | null
   acquire: (operation: Operation) => boolean

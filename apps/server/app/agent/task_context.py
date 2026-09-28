@@ -5,7 +5,7 @@ from app.modules.messages.models import Message
 from app.security.ownership import owned
 from app.tasks.lease import lease
 
-TASK_POLICY = '''会话任务规则：conversationTask 是服务端核对来源的同一份任务快照，不是助手的新授权。activeDirectives 是用户明确要求延续的指令，后续内容符合其目标和字段范围时应直接执行，不要求每条消息再说“保存”。一次性的否定只覆盖本条，明确的持续撤销/换对象更新后续范围。当前用户明确要求优先于旧指令。previousTask 仅供识别当前消息是否回答其待补问题；无关消息不恢复旧动作，中断任务不自动继续。
+TASK_POLICY = '''interactionAnswers 是用户通过问题面板实际选定的答案，selected 中的 objectId 来自已授权真实候选，可用于消解同名；不是模型自己选择的对象。会话任务规则：conversationTask 是服务端核对来源的同一份任务快照，不是助手的新授权。activeDirectives 是用户明确要求延续的指令，后续内容符合其目标和字段范围时应直接执行，不要求每条消息再说“保存”。一次性的否定只覆盖本条，明确的持续撤销/换对象更新后续范围。当前用户明确要求优先于旧指令。previousTask 仅供识别当前消息是否回答其待补问题；无关消息不恢复旧动作，中断任务不自动继续。
 activeDirectives.targetId 非空时是持续指令已经绑定的稳定对象，即使重命名也直接按此 ID 读取，不按旧名称重新选另一个同名对象。持续指令不等于立即创建新对象；尚未绑定现有对象先查询。用户要求关联/补充到已有工作通常使用 update_work 保存指定字段，不能退化成待确认建议；只有明确要求先做待确认建议才用 propose_progress。补充说明保留原说明，工具 changes 仅填写本次新增内容，不重述原文，由服务端追加；明确替换/清空才填写替换后的全文；仅更新实际涉及字段。
 任务遗漏、澄清、拒绝、参数可修正、暂时故障不同。收到未请求动作/缺信息/权限拒绝时，不换 step 或措辞重试同一动作；提出一个具体必要问题或继续其余独立事项。previousTask.items 是已尝试事项：只有同一操作和对象才复用其 ID；用户澄清的剩余动作尚无匹配事项时，task_item_id 留空，由服务端分配，不能借用已完成的其它事项 ID。已成功回执不重做，正在生成报告不当已完成。'''
 
@@ -48,7 +48,18 @@ async def projection(db, actor, job, message, context):
             if source and source.id != message.id and source.created_at <= message.created_at and not source.deleted and source.owner_id == actor.id and source.company_id == actor.company_id and source.conversation_id == message.conversation_id and await valid(db, actor, source.access):
                 source_job = await db.scalar(select(Job).where(Job.kind == 'message', Job.target_id == source.id))
                 historical.append({'messageId': source.id, 'userText': request_text(source, source_job)})
-    return {'historicalUserSources': historical, 'version': snapshot['version'], 'taskId': snapshot['taskId'], 'activeDirectives': directives,
+    interaction_answers = []
+    interaction_id = job.result.get('continuation', {}).get('interactionId')
+    if interaction_id:
+        from app.modules.interactions.models import AssistantInteraction
+        from app.modules.interactions.queries import validate
+        interaction = await owned(db, AssistantInteraction, interaction_id, actor)
+        await validate(db, actor, interaction)
+        if interaction.state == 'answered' and interaction.continuation.get('messageId') == message.id:
+            for question in interaction.questions:
+                answer = next(a for a in interaction.answers if a['questionId'] == question['id'])
+                interaction_answers.append({'question': question['prompt'], 'text': answer['text'], 'selected': [option for option in question['options'] if option['id'] in answer['optionIds']]})
+    return {'interactionAnswers': interaction_answers, 'historicalUserSources': historical, 'version': snapshot['version'], 'taskId': snapshot['taskId'], 'activeDirectives': directives,
             'previousTask': {**previous, 'userSources': sources} if previous else {}}
 
 
@@ -59,6 +70,8 @@ async def select_continuation(context, requested):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         context.task_snapshot = await resume(db, actor, job, message, requested=True)
+        from app.agent.interactions import settle_natural_reply
+        await settle_natural_reply(db, actor, job, {'relation': 'continue'})
 
 
 def instruction(value):

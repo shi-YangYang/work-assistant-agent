@@ -9,7 +9,9 @@ import { Status } from '@web/components/Status'
 import { resolveBusinessAction } from '@web/features/assistant/api/requests'
 import { detailState } from '@web/utils/navigation'
 import { AlertCircle, CheckCircle2, Clock3 } from 'lucide-react'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { epoch } from '@web/api/client'
+import type { TaskContinuation } from '../api/interactions'
 import { Link, useLocation } from 'react-router'
 
 const reportLabels: Record<keyof ReportContent, string> = {
@@ -63,13 +65,24 @@ export const actionStateLabel = (action: BusinessAction) => {
 export function BusinessActionCard({
   action,
   refresh,
+  onContinuation,
 }: {
+  onContinuation?: (continuation?: TaskContinuation) => void
   action: BusinessAction
   refresh: () => void
 }) {
   const location = useLocation()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
+  const generation = epoch
+  const active = useRef(false)
+  const submitting = useRef(false)
+  useLayoutEffect(() => {
+    active.current = true
+    return () => {
+      active.current = false
+    }
+  }, [])
   const [saved, setSaved] = useState<BusinessAction | null>(null)
   const current =
     saved && saved.revision > action.revision && !['unavailable', 'conflict'].includes(action.state)
@@ -82,20 +95,26 @@ export function BusinessActionCard({
         ? Clock3
         : AlertCircle
   const respond = async (choice: 'confirm' | 'cancel') => {
+    if (submitting.current) return
+    submitting.current = true
     setBusy(true)
     setError('')
     try {
       const result = await resolveBusinessAction(current, choice, {
         expectedRevision: current.revision,
       })
+      if (!active.current || generation !== epoch) return
       setSaved(result)
+      onContinuation?.(result.continuation ?? undefined)
       refresh()
       window.dispatchEvent(new Event('paa-record-updated'))
     } catch (e) {
+      if (!active.current || generation !== epoch) return
       setError(e as Error)
       refresh()
     } finally {
-      setBusy(false)
+      submitting.current = false
+      if (active.current && generation === epoch) setBusy(false)
     }
   }
   return (
@@ -107,13 +126,16 @@ export function BusinessActionCard({
       <div className={styles['business-action-heading']}>
         <Icon size={18} />
         <strong>{current.label}</strong>
-        <span>{actionStateLabel(current)}</span>
+        <span>{busy ? '正在处理' : actionStateLabel(current)}</span>
       </div>
       {(current.title || current.preview?.title) && (
         <h4>{current.title ?? current.preview?.title}</h4>
       )}
       {current.details?.status && <Status value={current.details.status} />}
-      {current.details && <WorkActionDetails action={current} />}
+      {current.details && !current.preview?.changes && <WorkActionDetails action={current} />}
+      {current.preview?.changes && (
+        <ActionChanges before={current.preview.before} changes={current.preview.changes} />
+      )}
       {current.message && <p className={utilitiesStyles['muted']}>{current.message}</p>}
       {current.preview?.content && (
         <div className={styles['business-action-preview']}>
@@ -151,7 +173,8 @@ export function BusinessActionCard({
             查看当前{current.objectType === 'work' ? '工作' : '报告'}
           </Link>
         )}
-        {current.canConfirm && (
+        {busy && <span role="status">正在处理…</span>}
+        {current.canConfirm && !busy && (
           <>
             <button disabled={busy} onClick={() => void respond('cancel')}>
               取消
@@ -165,11 +188,70 @@ export function BusinessActionCard({
               }
               onClick={() => void respond('confirm')}
             >
-              {current.action.startsWith('delete_') ? '确认删除' : '确认提交'}
+              {current.confirmLabel ??
+                (current.action.startsWith('delete_')
+                  ? '确认删除'
+                  : current.action === 'submit_report'
+                    ? '确认提交'
+                    : '确认执行')}
             </BusyButton>
           </>
         )}
       </div>
     </section>
+  )
+}
+
+const fieldLabels: Record<string, string> = {
+  ...workLabels,
+  ...reportLabels,
+  title: '标题',
+  status: '状态',
+  content: '报告内容',
+  kind: '报告类型',
+  period: '开始日期',
+  periodEnd: '结束日期',
+  summary: '摘要',
+}
+function previewValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '未设置'
+  if (Array.isArray(value)) return value.map(previewValue).join('、')
+  if (typeof value === 'object')
+    return Object.entries(value)
+      .map(([key, item]) => `${fieldLabels[key] ?? key}：${previewValue(item)}`)
+      .join('\n')
+  return (
+    (
+      {
+        in_progress: '进行中',
+        done: '已完成',
+        blocked: '有阻碍',
+        daily: '日报',
+        weekly: '周报',
+      } as Record<string, string>
+    )[String(value)] ?? String(value)
+  )
+}
+function ActionChanges({
+  before,
+  changes,
+}: {
+  before?: Record<string, unknown>
+  changes: Record<string, unknown>
+}) {
+  return (
+    <div className={styles['business-action-preview']}>
+      {Object.entries(changes).map(([key, value]) => (
+        <section key={key}>
+          <strong>{fieldLabels[key] ?? key}</strong>
+          {before && Object.hasOwn(before, key) && (
+            <p className={`${utilitiesStyles.preserve} ${styles.before}`}>
+              原内容：{previewValue(before[key])}
+            </p>
+          )}
+          <p className={utilitiesStyles.preserve}>{previewValue(value)}</p>
+        </section>
+      ))}
+    </div>
   )
 }

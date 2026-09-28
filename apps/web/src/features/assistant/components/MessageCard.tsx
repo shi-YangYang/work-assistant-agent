@@ -8,6 +8,8 @@ import type { DeliverableReference, Draft, Job, JobFeedback, WorkMessage } from 
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
 import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
+import type { TaskContinuation } from '../api/interactions'
+import { QuestionHistory } from './QuestionPanel'
 import { DeliverableEntry } from './Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { DocumentCard, DocumentCitations } from '@web/features/assistant/components/Documents'
@@ -33,11 +35,13 @@ export function MessageCard({
   onReply,
   onDeliverable,
   onContextUpdate,
+  onContinuation,
   activeJob,
   retryBlocked,
   onRetryStart,
   onRetrySettled,
 }: {
+  onContinuation?: (continuation?: TaskContinuation) => void
   message: WorkMessage
   activeJob?: Job | null
   retryBlocked?: boolean
@@ -276,7 +280,17 @@ export function MessageCard({
           {own &&
             !message.businessUnavailable &&
             (live.feedback?.actions ?? message.actions)?.map((action) => (
-              <BusinessActionCard key={action.id} action={action} refresh={onChange} />
+              <BusinessActionCard
+                key={action.id}
+                action={action}
+                refresh={onChange}
+                onContinuation={onContinuation}
+              />
+            ))}
+          {own &&
+            !message.businessUnavailable &&
+            (message.interactions ?? []).map((item) => (
+              <QuestionHistory key={item.id} item={item} />
             ))}
           {own
             ? message.drafts.map((d) => (

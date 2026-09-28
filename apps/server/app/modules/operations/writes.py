@@ -29,13 +29,13 @@ async def deletion_impact(db, item, actor):
     return {'messages': len(message_ids), 'attachments': len(attachment_ids), 'revision': item.revision, 'messageIds': message_ids, 'attachmentIds': attachment_ids}
 
 
-async def remove_record(db, actor, kind, identifier, expected):
+async def remove_record(db, actor, kind, identifier, expected, *, executing_job=None):
     from app.modules.operations.deletion import target, remove_report, remove_work
     item = await target(db, WorkItem if kind == 'work' else Report, identifier, actor, expected)
     if not item.deleted:
         await deletion_impact(db, item, actor)
         if kind == 'work':
-            await remove_work(db, item)
+            await remove_work(db, item, executing_job=executing_job)
         else:
-            await remove_report(db, item, actor)
+            await remove_report(db, item, actor, executing_job=executing_job)
     return item

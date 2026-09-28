@@ -49,15 +49,15 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     still leaves other fields empty. Creating and
     editing save immediately. For update/delete read latest object first; pass its
     actual ID and revision. Never guess IDs. Same-name ambiguity requires asking.
-    Submit/delete ALWAYS return a confirmation card, never direct execution.
+    Server execution mode controls whether writes run or return approval cards.
     When explicitly delegated to choose ONE candidate and show it for confirmation,
     select a read object within that scope and prepare its card; do not require
-    the user to name it again. No deletion/submission happens without a UI click.
+    the user to name it again. Explicit requests to review before executing always require UI approval.
     generate_report forwards the ORIGINAL user request (including style, focus and
     requested next-step planning) to the report model. Enqueue then end this turn;
     do not poll or edit the empty draft to apply that same writing brief. Date is a
     company-local YYYY-MM-DD. submit_after only when explicitly asked to generate
-    AND submit: the final report still requires review and a confirmation click.
+    AND submit: the final report follows server execution mode, retaining any explicit request to review first.
     "Generate, let me review before submitting" means submit_after=true too.
     When kind/date are known, enqueue directly: the report worker reads confirmed
     sources itself. Do not query work/obligations just to start generation.

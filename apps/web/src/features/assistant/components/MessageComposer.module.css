@@ -1,4 +1,6 @@
 .composer-wrap {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 962px;
   margin: 0 auto;
@@ -8,6 +10,8 @@
   flex-shrink: 0;
 }
 .composer {
+  display: flex;
+  flex-direction: column;
   border: 1px solid transparent;
   border-radius: 24px;
   background: var(--subtle);
@@ -18,7 +22,8 @@
 .composer:focus-within {
   border-color: var(--control);
 }
-.composer textarea {
+.composer > textarea {
+  flex-shrink: 0;
   resize: none;
   border: 0;
   padding: 0 2px;
@@ -31,13 +36,14 @@
   background: transparent;
   line-height: 1.8;
 }
-.composer textarea:focus,
-.composer textarea:focus-visible {
+.composer > textarea:focus,
+.composer > textarea:focus-visible {
   outline: none;
   border-color: transparent;
   box-shadow: none;
 }
 .composer-actions {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -78,8 +84,11 @@
 }
 .composer-wrap[data-empty='false'] > .composer {
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   pointer-events: auto;
+}
+.composer-wrap[data-question='true'] > .composer {
+  flex-shrink: 0;
 }
 .attachment-menu {
   position: fixed;
@@ -147,7 +156,7 @@
     padding: 13px 12px 8px;
     border-radius: 13px;
   }
-  .composer textarea {
+  .composer > textarea {
     font-size: 16px;
     min-height: 65px;
     height: 65px;
@@ -155,10 +164,10 @@
   }
   .composer-actions {
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
   .composer-actions > div {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 1px;
   }
   .send-actions > .slot-primary {
@@ -167,14 +176,14 @@
     width: 44px;
     height: 44px;
   }
-  :global(.keyboard-open) .composer textarea {
+  :global(.keyboard-open) .composer > textarea {
     min-height: 60px;
     height: 60px;
     max-height: 100px;
   }
 }
 @media (max-height: 650px) {
-  .composer textarea {
+  .composer > textarea {
     min-height: 62px;
     height: 62px;
     max-height: 100px;
@@ -194,4 +203,52 @@
   flex-wrap: nowrap;
   margin-left: auto;
   gap: 3px;
+}
+
+.composer-actions > div {
+  min-width: 0;
+}
+.recording-slot {
+  position: relative;
+  flex-shrink: 0;
+}
+.recording-slot[data-recording='true'] {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.recording-time {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  text-align: center;
+  font-size: 9px;
+  line-height: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.recording-slot[data-recording='true'] > svg {
+  transform: translateY(-4px);
+}
+@media (max-width: 380px) {
+  .composer-actions {
+    gap: 2px;
+  }
+  .composer-actions > .send-actions {
+    gap: 0;
+  }
+}
+
+@media (max-height: 600px) {
+  .composer-wrap[data-question='true'] {
+    max-height: 100%;
+    padding-top: 4px;
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+  .composer-wrap[data-question='true'] > .composer {
+    padding: 8px 10px 6px;
+  }
+  .composer-wrap[data-question='true'] > .composer > textarea {
+    height: 36px;
+    min-height: 36px;
+  }
 }

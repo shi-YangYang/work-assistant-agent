@@ -8,6 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 class Conversation(Owned, Base):
     __tablename__ = 'company_conversation'
     persona_id: Mapped[str] = mapped_column(String(32), default=DEFAULT_PERSONA, server_default=LEGACY_PERSONA)
+    execution_mode: Mapped[str] = mapped_column(String(8), default='auto', server_default='auto')
+    full_access_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')
+    mode_revision: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
     title: Mapped[str] = mapped_column(String(120), default='新会话')
     revision: Mapped[int] = mapped_column(Integer, default=1)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False)

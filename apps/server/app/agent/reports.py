@@ -77,11 +77,15 @@ async def generate(context, model=None):
         if job.result.get('reportSaved'):
             job.state, job.phase, job.error, job.lease_until, job.updated_at = 'succeeded', 'complete', '', None, now()
             update_feedback(job, 'complete', '')
+            from app.modules.operations.report_completion import complete_report
+            await complete_report(db, actor, job)
             return
         sources = await sources_for(db, report, actor, job.result.get('sourceIds', []))
         if not sources:
             job.state, job.phase, job.error, job.lease_until, job.updated_at = 'succeeded', 'empty', '', None, now()
             update_feedback(job, 'complete', '')
+            from app.modules.operations.report_completion import complete_report
+            await complete_report(db, actor, job)
             return
         payload = {'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'confirmed': [{'content': r.content} for r in sources], 'userRequest': job.result.get('instructions', ''), 'conversationForReferenceOnly': await load_brief(db, actor, job), 'materialsForInstructionsOnly': await load_materials(db, actor, job)}
     from app.modules.model_services.bindings import bind_job

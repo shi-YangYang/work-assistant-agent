@@ -30,6 +30,7 @@ async def refresh_generation(db, actor, row):
                 row.result = {**row.result, 'message': '新生成内容已保留为候选，请在报告页审阅采用后再提出提交。'}
             else:
                 row.action = 'submit_report'
+                row.continuation = {}
                 row.params = {**row.params, 'targetId': report.id, 'expectedRevision': report.revision}
                 value = await preview(db, actor, row)
                 row.result = {**row.result, 'previewDigest': digest(value)}
@@ -45,14 +46,14 @@ async def refresh_generation(db, actor, row):
 async def action_dto(db, actor, row):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
-    base = {'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key, 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
+    base = {'confirmLabel': '确认' + LABELS[row.action], 'executionMode': row.execution_mode, 'continuation': row.continuation or None, 'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key, 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
     if row.action.startswith('delete_') and row.state == 'succeeded' and row.access.get('role') == actor.role:
         return {**base, 'message': '记录已删除'}
     if row.access.get('role') != actor.role or not await business_valid(db, actor, row.access):
         return {**base, 'state': 'unavailable', 'message': '关联资料已变化或无权查看'}
     try:
         await refresh_generation(db, actor, row)
-        base.update(action=row.action, label=LABELS[row.action], state=row.state, revision=row.revision)
+        base.update(action=row.action, label=LABELS[row.action], confirmLabel='确认' + LABELS[row.action], state=row.state, revision=row.revision)
         if row.state == 'pending':
             await source_check(db, actor, row)
             value = await preview(db, actor, row)

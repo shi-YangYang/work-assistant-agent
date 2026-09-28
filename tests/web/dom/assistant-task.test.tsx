@@ -13,6 +13,7 @@ import { cancelJob, retryJob } from '../../../apps/web/src/features/jobs/api/req
 import { MessageCard } from '../../../apps/web/src/features/assistant/components/MessageCard'
 import { ConversationChat } from '../../../apps/web/src/features/assistant/components/ConversationChat'
 import { useAssistantTask } from '../../../apps/web/src/features/assistant/hooks/useAssistantTask'
+import { useExecutionMode } from '../../../apps/web/src/features/assistant/hooks/useExecutionMode'
 import { useConversationPersona } from '../../../apps/web/src/features/assistant/hooks/useConversationPersona'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
 
@@ -103,11 +104,13 @@ afterEach(() => {
 function Chat({ initial = 'first' }: { initial?: string }) {
   const [id, setId] = useState(initial || undefined)
   const persona = useConversationPersona(id, null, vi.fn())
+  const execution = useExecutionMode(id, null, persona.interaction, vi.fn())
   return (
     <ConversationChat
       conversationId={id}
       personaId="professional"
       interaction={persona.interaction}
+      execution={execution}
       onSent={setId}
     />
   )

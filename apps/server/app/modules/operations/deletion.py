@@ -30,7 +30,7 @@ async def target(db, model, identifier, actor, expected):
     return item
 
 
-async def invalidate_context(db, owner_id, company_id, target_ids, *, sources_changed=False):
+async def invalidate_context(db, owner_id, company_id, target_ids, *, sources_changed=False, executing_job=None):
     from app.modules.conversations.context_invalidation import invalidate
     await invalidate(db, owner_id=owner_id, company_id=company_id)
     # A queued unrelated task has captured no chat context and must stay queued.
@@ -40,6 +40,8 @@ async def invalidate_context(db, owner_id, company_id, target_ids, *, sources_ch
     predicate = Job.target_id.in_(target_ids)
     if sources_changed:
         predicate = predicate | (Job.state == 'running')
+    if executing_job:
+        query = query.where(Job.id != executing_job.id)
     jobs = (await db.scalars(query.where(predicate).with_for_update())).all()
     for job in jobs:
         if job.state in ('queued', 'running', 'failed', 'awaiting_retry'):
@@ -53,7 +55,7 @@ async def invalidate_context(db, owner_id, company_id, target_ids, *, sources_ch
     for table in ('checkpoint_writes', 'checkpoint_blobs', 'checkpoints'):
         if prefixes and await db.scalar(text('SELECT to_regclass(:table)'), {'table': table}):
             for prefix in prefixes:
-                await db.execute(text(f'DELETE FROM {table} WHERE thread_id LIKE :prefix'), {'prefix': prefix})
+                await db.execute(text(f'DELETE FROM {table} WHERE thread_id LIKE :prefix AND thread_id NOT LIKE :retained'), {'prefix': prefix, 'retained': f'{company_id}:{owner_id}:job:{executing_job.id}%' if executing_job else 'no-retained-thread'})
 
 
 async def purge_messages(db, ids, *, retain_publications=False):
@@ -110,7 +112,7 @@ async def purge_messages(db, ids, *, retain_publications=False):
             await invalidate_context(db, other.owner_id, other.company_id, {other.id})
 
 
-async def remove_report(db, item, actor):
+async def remove_report(db, item, actor, *, executing_job=None):
     if actor.role != 'admin' and item.published_revision:
         problem(403, '已提交的报告不能删除')
     if item.deleted:
@@ -127,7 +129,7 @@ async def remove_report(db, item, actor):
         await purge_messages(db, actual)
     # Consume documentReads before invalidation clears running job results.
     # The owner lock fences tools/checkpoints until this transaction commits.
-    await invalidate_context(db, item.owner_id, item.company_id, {item.id, *(message_ids if actor.role == 'admin' else [])}, sources_changed=actor.role == 'admin' and bool(message_ids))
+    await invalidate_context(db, item.owner_id, item.company_id, {item.id, *(message_ids if actor.role == 'admin' else [])}, sources_changed=actor.role == 'admin' and bool(message_ids), executing_job=executing_job)
     from app.modules.reports.schedule import link_report
     await link_report(db, item, cancelled=True)
     item.deleted, item.content, item.candidate, item.source_ids = True, {}, None, []
@@ -138,13 +140,13 @@ async def remove_report(db, item, actor):
     await db.execute(delete(Idempotency).where(Idempotency.owner_id == item.owner_id, ((Idempotency.action == f'submit:{item.id}') | ((Idempotency.action == 'generate-report') & (Idempotency.response['reportId'].astext == item.id)))))
 
 
-async def remove_work(db, item):
+async def remove_work(db, item, *, executing_job=None):
     if item.deleted:
         return
     revisions = set((await db.scalars(select(WorkRevision.id).where(WorkRevision.work_id == item.id))).all())
     report_jobs = (await db.scalars(select(Job).where(Job.owner_id == item.owner_id, Job.kind == 'report', Job.state.in_(['queued', 'failed', 'awaiting_retry'])))).all()
     affected_reports = {job.target_id for job in report_jobs if revisions.intersection(job.result.get('sourceIds', []))}
-    await invalidate_context(db, item.owner_id, item.company_id, {item.id, *affected_reports}, sources_changed=True)
+    await invalidate_context(db, item.owner_id, item.company_id, {item.id, *affected_reports}, sources_changed=True, executing_job=executing_job)
     item.deleted, item.title, item.content = True, '', {}
     item.revision += 1
     await db.flush()
@@ -164,6 +166,8 @@ async def conversation_impact(db, item):
 
 
 async def remove_conversation(db, item):
+    from app.modules.interactions.service import expire
+    await expire(db, conversation_id=item.id)
     if item.deleted:
         return
     messages, retained = await conversation_impact(db, item)

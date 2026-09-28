@@ -12,6 +12,7 @@ import { ErrorNotice } from '@web/components/ErrorNotice'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { MessageCard } from '@web/features/assistant/components/MessageCard'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import type { TaskContinuation } from '../api/interactions'
 import type { useAssistantTask } from '../hooks/useAssistantTask'
 import type * as React from 'react'
 import { Sparkles } from 'lucide-react'
@@ -35,8 +36,10 @@ export function ChatHistory({
   actionReceipts,
   onDeliverable,
   onContextUpdate,
+  onContinuation,
   task,
 }: {
+  onContinuation?: (continuation?: TaskContinuation) => void
   task?: ReturnType<typeof useAssistantTask>
   onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
   onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
@@ -102,7 +105,12 @@ export function ChatHistory({
         {actionReceipts.data?.items
           .filter((action) => !messages.some((message) => message.id === action.messageId))
           .map((action) => (
-            <BusinessActionCard key={action.id} action={action} refresh={actionReceipts.refresh} />
+            <BusinessActionCard
+              key={action.id}
+              action={action}
+              refresh={actionReceipts.refresh}
+              onContinuation={onContinuation}
+            />
           ))}
         {messages.map((message) => (
           <MessageCard
@@ -113,6 +121,7 @@ export function ChatHistory({
             onRetryStart={task?.beginRetry}
             onRetrySettled={task?.finishRetry}
             onContextUpdate={onContextUpdate}
+            onContinuation={onContinuation}
             own
             onChange={refresh}
             onDeliverable={locked ? undefined : onDeliverable}

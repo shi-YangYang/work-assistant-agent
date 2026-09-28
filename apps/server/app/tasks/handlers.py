@@ -190,6 +190,9 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         async with sessions.begin() as db:
             live, _ = await lease(db, context)
             live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
+    from app.agent.interactions import finish_waiting
+    if await finish_waiting(context, answer):
+        return
     async with sessions.begin() as db:
         live, _ = await lease(db, context)
         live.phase = 'reply_review'
@@ -295,7 +298,11 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             live.result = {**live.result, 'taskOutcome': outcome}
             from app.modules.conversations.task_state import finish
             await finish(db, actor, live, message, review.task, outcome)
-            live.phase, live.error = 'complete', ''
+            from app.agent.interactions import settle_natural_reply
+            await settle_natural_reply(db, actor, live, review.task or {})
+            live.phase, live.error = 'awaiting_confirmation' if any(card['state'] == 'pending' for card in cards) else 'complete', ''
+            if live.phase == 'awaiting_confirmation':
+                live.state = 'awaiting_input'
         else:
             live.result = {**live.result, 'replyReviewError': review.error_code or 'UnverifiedReply'}
             live.state, live.phase = 'awaiting_retry', 'reply_review'

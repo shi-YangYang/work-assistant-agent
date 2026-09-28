@@ -30,12 +30,18 @@ export function MessageComposer({
   recording,
   retryWait,
   children,
+  executionControl,
+  executionError,
+  questionPanel,
   contextKey,
   contextUsage = null,
   contextUnavailable = false,
   contextLoading = false,
   task,
 }: {
+  executionControl?: React.ReactNode
+  executionError?: Error | string
+  questionPanel?: React.ReactNode
   task?: ReturnType<typeof useAssistantTask>
   containerRef: React.RefObject<HTMLDivElement | null>
   dragging?: boolean
@@ -81,7 +87,13 @@ export function MessageComposer({
             ? '正在恢复处理状态'
             : '发送'
   return (
-    <div ref={containerRef} className={styles['composer-wrap']} data-empty={empty}>
+    <div
+      ref={containerRef}
+      className={styles['composer-wrap']}
+      data-empty={empty}
+      data-question={!!questionPanel}
+    >
+      {questionPanel}
       <div className={styles['composer']} data-dragging={dragging}>
         {composer.deliverableReference && (
           <div className={styles['replying']}>
@@ -144,7 +156,7 @@ export function MessageComposer({
             原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
           </p>
         )}
-        <ErrorNotice>{sendError}</ErrorNotice>
+        <ErrorNotice>{sendError || executionError}</ErrorNotice>
         <ErrorNotice retry={task?.refresh}>{task?.error}</ErrorNotice>
         <div className={styles['composer-actions']}>
           <div>
@@ -224,30 +236,7 @@ export function MessageComposer({
                 </span>
               </button>
             </div>
-            {capturing ? (
-              <button
-                className={styles['recording']}
-                disabled={recording.state === 'stopping'}
-                onClick={() => recording.stop()}
-              >
-                <Square size={15} />
-                {recording.state === 'requesting'
-                  ? '取消麦克风申请'
-                  : recording.state === 'stopping'
-                    ? '正在结束录音…'
-                    : `停止 · ${recording.seconds} 秒`}
-              </button>
-            ) : (
-              <button
-                className={controlsStyles['icon-button']}
-                title="录制语音"
-                aria-label="录制语音"
-                disabled={locked}
-                onClick={recording.start}
-              >
-                <Mic size={20} />
-              </button>
-            )}
+            {executionControl}
           </div>
           <div className={styles['send-actions']}>
             <ContextUsage
@@ -256,6 +245,42 @@ export function MessageComposer({
               unavailable={contextUnavailable}
               loading={contextLoading}
             />
+            <button
+              type="button"
+              className={`${controlsStyles['icon-button']} ${styles['recording-slot']}`}
+              data-recording={capturing}
+              title={
+                capturing
+                  ? recording.state === 'requesting'
+                    ? '取消麦克风申请'
+                    : recording.state === 'stopping'
+                      ? '正在结束录音'
+                      : `停止录音 · ${recording.seconds} 秒`
+                  : '录制语音'
+              }
+              aria-label={
+                capturing
+                  ? recording.state === 'requesting'
+                    ? '取消麦克风申请'
+                    : recording.state === 'stopping'
+                      ? '正在结束录音'
+                      : `停止录音 · ${recording.seconds} 秒`
+                  : '录制语音'
+              }
+              disabled={capturing ? recording.state === 'stopping' : locked}
+              onClick={capturing ? recording.stop : recording.start}
+            >
+              {capturing ? (
+                <>
+                  <Square size={14} fill="currentColor" />
+                  <span className={styles['recording-time']} aria-hidden="true">
+                    {recording.seconds}s
+                  </span>
+                </>
+              ) : (
+                <Mic size={20} />
+              )}
+            </button>
             <button
               data-expanded={false}
               aria-label={label}

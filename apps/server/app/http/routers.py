@@ -6,6 +6,7 @@ from app.modules.auth.dingtalk.router import router as auth_dingtalk_router
 from app.modules.auth.router import router as auth_router
 from app.modules.conversations.router import router as conversations_router
 from app.modules.deliverables.router import router as deliverables_router
+from app.modules.interactions.router import router as interactions_router
 from app.modules.members.router import router as members_router
 from app.modules.messages.router import router as messages_router
 from app.modules.model_services.router import router as model_services_router
@@ -46,4 +47,5 @@ def register_routes(app):
     app.include_router(model_services_usage_router)
     app.include_router(team_router)
     app.include_router(conversations_router)
+    app.include_router(interactions_router)
     app.include_router(deliverables_router)

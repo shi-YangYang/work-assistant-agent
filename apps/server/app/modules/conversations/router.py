@@ -22,7 +22,9 @@ async def conversations(q: str = Query('', max_length=120), cursor: str | None =
 async def add_conversation(body: ConversationCreate, actor=AUTH, db=DB):
     if not body.title.strip():
         problem(422, '请输入会话名称')
-    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId)
+    if body.executionMode == 'full' and not body.fullAccessConfirmed:
+        problem(422, '请先确认自主执行的范围')
+    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId, execution_mode=body.executionMode, full_access_confirmed=body.fullAccessConfirmed)
     db.add(item)
     await db.flush()
     return conversation_dto(item)
@@ -37,6 +39,14 @@ async def get_conversation(identifier: str, actor=AUTH, db=DB):
 async def rename_conversation(identifier: str, body: ConversationEdit, actor=AUTH, db=DB):
     item = await owned(db, Conversation, identifier, actor, lock=True)
     version(item, body.expectedRevision)
+    if 'executionMode' in body.model_fields_set and body.executionMode != item.execution_mode:
+        from app.tasks.conversation_activity import require_idle
+        await require_idle(db, actor, item.id)
+        if body.executionMode == 'full' and not item.full_access_confirmed and not body.fullAccessConfirmed:
+            problem(422, '请先确认自主执行的范围')
+        item.full_access_confirmed = item.full_access_confirmed or body.fullAccessConfirmed
+        item.execution_mode = body.executionMode
+        item.mode_revision += 1
     if 'title' in body.model_fields_set:
         item.title = body.title
     if 'personaId' in body.model_fields_set:

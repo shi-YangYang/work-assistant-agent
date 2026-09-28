@@ -29,6 +29,10 @@ async def confirm_drafts(db, actor, items, ignore=False):
     result = []
     for draft in drafts:
         if not ignore:
+            from app.modules.operations.execution_policy import decide
+            decision = decide('ask', 'update_work' if draft.work_id else 'create_work', approved=True)
+            if decision.outcome != 'allow':
+                problem(409, '进展建议需要确认')
             if draft.work_id:
                 work = await owned(db, WorkItem, draft.work_id, actor, lock=True)
                 await business_require(db, actor, work.access, retained=True)

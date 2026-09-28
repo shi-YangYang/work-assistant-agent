@@ -1,6 +1,7 @@
 import type {
   Attachment,
   DeliverableReference,
+  ExecutionMode,
   BusinessAction,
   Conversation,
   ContextUsage,
@@ -16,7 +17,9 @@ export function resolveBusinessAction(
   choice: 'confirm' | 'cancel',
   body: { expectedRevision: number },
 ) {
-  return write<BusinessAction>(`/business-actions/${current.id}/${choice}`, body)
+  return write<
+    BusinessAction & { continuation?: { conversationId: string; messageId: string; jobId: string } }
+  >(`/business-actions/${current.id}/${choice}`, body)
 }
 
 export function readAttachmentBytes(url: string | undefined, options: RequestInit) {
@@ -69,6 +72,8 @@ export function sendMessage(
     conversationId?: string
     newConversation?: boolean
     personaId?: PersonaId
+    executionMode?: ExecutionMode
+    fullAccessConfirmed?: boolean
     text: string
     attachmentIds: string[]
     voiceCommandAttachmentId?: string

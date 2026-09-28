@@ -69,6 +69,9 @@ async def perform(db, actor, row, job=None):
             inherit(actor, report_job, job)
         row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision, 'jobId': report_job.id, 'submitAfter': p['submitAfter']}
         row.state = 'running'
+        if report_job.state == 'succeeded':
+            from app.modules.operations.report_completion import complete_action
+            await complete_action(db, actor, row)
         return
     elif row.action == 'edit_report':
         item = await writes_edit_report(db, actor, p['targetId'], p['expectedRevision'], p['changes'])
@@ -78,7 +81,16 @@ async def perform(db, actor, row, job=None):
         row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision}
     else:
         kind = 'work' if row.action == 'delete_work' else 'report'
-        item = await writes_remove_record(db, actor, kind, p['targetId'], p['expectedRevision'])
+        if job:
+            from app.modules.operations.targets import read_target
+            from app.modules.operations.writes import deletion_impact
+            target = await read_target(db, actor, row.action, p['targetId'])
+            impact = await deletion_impact(db, target, actor)
+            removed_ids = {target.id, *impact.get('messageIds', []), *impact.get('attachmentIds', [])}
+            # Consuming an authorized deletion receipt removes only the inputs
+            # it deletes. Other readers are still invalidated normally.
+            job.access = {**job.access, 'reads': {key: value for key, value in job.access.get('reads', {}).items() if value.get('id') not in removed_ids}}
+        item = await writes_remove_record(db, actor, kind, p['targetId'], p['expectedRevision'], executing_job=job if job and job.state == 'running' else None)
         row.result = {'objectType': kind, 'objectId': item.id, 'revision': item.revision}
     row.state = 'succeeded'
     # Receipts retain references, never a second copy of deleted/private text.
@@ -89,20 +101,27 @@ async def perform(db, actor, row, job=None):
 async def confirm(db, actor, identifier, expected, *, cancel=False):
     await business_company_lock(db, actor.company_id)
     row = await owned(db, BusinessAction, identifier, actor, lock=True)
-    if row.state in ('succeeded', 'cancelled'):
+    if row.state in ('succeeded', 'running', 'cancelled'):
         return await action_dto(db, actor, row)
     version(row, expected)
     if cancel:
         row.state, row.params, row.result = 'cancelled', {}, {}
         row.revision += 1
         return await action_dto(db, actor, row)
-    if row.state != 'pending' or row.action not in CONFIRM:
+    if row.state != 'pending':
         problem(409, '此操作当前不能确认')
+    from app.tasks.conversation_activity import active_job
+    active = await active_job(db, actor, row.conversation_id)
+    if active and active.target_id != row.message_id:
+        problem(409, '当前会话正在处理后续请求，请完成后再确认', 'conversation_busy')
     await source_check(db, actor, row)
     value = await preview(db, actor, row)
     if digest(value) != row.result.get('previewDigest'):
         problem(409, '内容或删除范围已变化，请重新提出操作')
-    await perform(db, actor, row)
+    from app.tasks.models import Job
+    from sqlalchemy import select
+    source_job = await db.scalar(select(Job).where(Job.target_id == row.message_id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
+    await perform(db, actor, row, source_job)
     row.revision += 1
     await db.flush()
     return await action_dto(db, actor, row)

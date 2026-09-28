@@ -18,6 +18,10 @@ from sqlalchemy import select
 
 async def submit_message(db, actor, body, idempotency_key):
     payload = body.model_dump()
+    if body.executionMode is None:
+        payload.pop('executionMode')
+    if not body.fullAccessConfirmed:
+        payload.pop('fullAccessConfirmed')
     if body.deliverableReference is None:
         payload.pop('deliverableReference')
     if body.personaId is None:
@@ -34,13 +38,17 @@ async def submit_message(db, actor, body, idempotency_key):
     if prior:
         await active_message(db, prior['messageId'], actor)
         return prior
+    if body.executionMode == 'full' and not body.conversationId and not body.fullAccessConfirmed:
+        problem(422, '请先确认自主执行的范围')
     if body.newConversation:
-        conversation = Conversation(company_id=actor.company_id, owner_id=actor.id, persona_id=body.personaId or DEFAULT_PERSONA)
+        conversation = Conversation(company_id=actor.company_id, owner_id=actor.id, persona_id=body.personaId or DEFAULT_PERSONA, execution_mode=body.executionMode or 'auto', full_access_confirmed=body.fullAccessConfirmed)
         db.add(conversation)
         await db.flush()
     else:
         conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor, body.personaId)
     await require_idle(db, actor, conversation.id)
+    if body.executionMode is not None and body.executionMode != conversation.execution_mode:
+        problem(409, '执行权限已变化，请先更新会话设置')
     if body.deliverableReference:
         from app.modules.deliverables.queries import check_reference
         await check_reference(db, actor, body.deliverableReference.model_dump(), conversation.id)
@@ -72,7 +80,11 @@ async def submit_message(db, actor, body, idempotency_key):
         a.message_id = item.id
         if a.kind == 'document':
             a.extraction_status = 'pending'
-    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business_scope(actor), result={'attachmentOrder': body.attachmentIds, 'audioSources': [{'id': a.id, 'name': a.name} for a in attached if a.kind == 'audio'], **({'voiceCommandAttachmentId': body.voiceCommandAttachmentId} if body.voiceCommandAttachmentId else {}), **({'voiceCommandAttachmentIds': voice_ids} if body.voiceCommandAttachmentIds is not None else {})})
+    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business_scope(actor), result={'executionMode': conversation.execution_mode, 'modeRevision': conversation.mode_revision, 'attachmentOrder': body.attachmentIds, 'audioSources': [{'id': a.id, 'name': a.name} for a in attached if a.kind == 'audio'], **({'voiceCommandAttachmentId': body.voiceCommandAttachmentId} if body.voiceCommandAttachmentId else {}), **({'voiceCommandAttachmentIds': voice_ids} if body.voiceCommandAttachmentIds is not None else {})})
+    from app.modules.interactions.models import AssistantInteraction
+    waiting = await db.scalar(select(AssistantInteraction).where(AssistantInteraction.conversation_id == conversation.id, AssistantInteraction.owner_id == actor.id, AssistantInteraction.state == 'waiting').order_by(AssistantInteraction.created_at.desc()).limit(1))
+    if waiting:
+        job.result = {**job.result, 'questionCandidate': waiting.id}
     db.add(job)
     await db.flush()
     return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})

@@ -32,7 +32,8 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    from app.agent.execution_mode import mode_prompt
+    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -43,6 +44,9 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         if not live.access:
             live.access = business_scope(actor)
         context.role = actor.role
+        from app.modules.operations.execution_policy import mode_for
+        source = await db.get(Message, live.target_id) if live.kind == 'message' else None
+        context.execution_mode = await mode_for(db, live, source.conversation_id if source else None)
         from app.modules.model_services.bindings import freeze_capacities
         if context.model_binding:
             await freeze_capacities(db, context.model_binding)

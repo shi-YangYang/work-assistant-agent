@@ -16,6 +16,7 @@ import {
 import { restoreConversation } from '@web/features/assistant/api/restore-conversation'
 import { ConversationChat } from '@web/features/assistant/components/ConversationChat'
 import { PersonaPicker } from '@web/features/assistant/components/PersonaPicker'
+import { useExecutionMode } from '../hooks/useExecutionMode'
 import { useConversationPersona } from '@web/features/assistant/hooks/useConversationPersona'
 import { ConversationPicker } from '@web/features/assistant/components/ConversationPicker'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -141,6 +142,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     window.dispatchEvent(new Event('paa-record-updated'))
   }
   const persona = useConversationPersona(conversationId, current.data, updated)
+  const execution = useExecutionMode(conversationId, current.data, persona.interaction, updated)
   const stopBeforeAction = () => {
     if (!drafts.recording) return true
     notify('请先停止录音，再管理会话；录音会保留在当前会话。')
@@ -219,9 +221,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             conversationId={conversationId}
             personaId={persona.selected}
             interaction={persona.interaction}
+            execution={execution}
             onSent={(id, sentPersona) => {
               if (!conversationId) {
                 persona.adoptCreated(id, sentPersona)
+                execution.adoptCreated(id)
                 setChatSession((previous) => ({ ...previous, createdId: id }))
                 navigate(`/assistant/${id}`, { replace: true })
               }

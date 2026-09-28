@@ -43,6 +43,15 @@ async def execute(context, **arguments):
         request_key = digest({key: value for key, value in arguments.items() if key not in ('step', 'expected_revision')})
         async with context.sessions.begin() as db:
             job, _ = await lease(db, context)
+            if context.node_retry:
+                from app.tasks.node_execution import active_node
+                from app.tasks.node_state import execution, save
+                current_node = active_node.get()
+                if current_node and current_node[1] == 'tool':
+                    state = execution(job)
+                    node = next(item for item in state['nodes'] if item['id'] == current_node[0])
+                    node['requestKey'] = digest({key: value for key, value in arguments.items() if key not in ('step', 'expected_revision', 'task_item_id')})
+                    save(job, state)
             keys = job.result.get('operationFeedbackKeys', {})
             resolved = result.get('state') in ('succeeded', 'pending', 'running')
             feedback = [item for item in job.result.get('operationFeedback', []) if item['step'] != step and not (resolved and keys.get(str(item['step'])) == request_key)]
@@ -153,7 +162,9 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
                 return {'state': 'conflict', 'message': '目标工作不属于该方案条目，请核对关联'}
         from app.modules.operations.publication import selected_attachments
         attachments = await selected_attachments(db, actor, shared_attachment_ids or [], message.conversation_id)
-        effect = 'prepare_confirmation' if action in CONFIRM else 'enqueue_report' if action == 'generate_report' else 'save'
+        from app.modules.operations.execution_policy import mode_for, decide
+        mode = await mode_for(db, job, message.conversation_id)
+        effect = 'prepare_confirmation' if decide(mode, action).outcome == 'ask' else 'enqueue_report' if action == 'generate_report' else 'save'
         proposal = {'targetCandidates': candidates, 'action': action, 'effect': effect, 'target': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}' if target else '', **params}
         if task_item_id:
             proposal['taskItemId'] = task_item_id
@@ -205,18 +216,24 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         saved = await db.scalar(select(BusinessAction).where(BusinessAction.task_id == task_id, BusinessAction.task_item_key == task_item_key, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id))
         if saved:
             return await receipt(context, db, actor, job, saved)
-        row = BusinessAction(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, conversation_id=message.conversation_id, step=step, action=action, task_id=task_id, task_item_key=task_item_key, digest=fingerprint, intent_key=intent_key, params={**params, 'sourceRevision': message.transcript_revision, 'documents': context.document_versions, 'taskSources': [*context.task_snapshot.get('directives', []), *(context.task_snapshot.get('previousTask', {}).get('sources', []) if context.task_snapshot.get('relation') == 'continue' else [])]}, access=job.access or business_scope(actor))
+        from app.modules.operations.execution_policy import mode_for, decide
+        mode = await mode_for(db, job, message.conversation_id)
+        decision = decide(mode, action, explicitly_confirm=digest(proposal) in context.explicit_confirmations)
+        row = BusinessAction(execution_mode=mode, mode_revision=job.result.get('modeRevision', 1), approval_reason=decision.reason, company_id=actor.company_id, owner_id=actor.id, message_id=message.id, conversation_id=message.conversation_id, step=step, action=action, task_id=task_id, task_item_key=task_item_key, digest=fingerprint, intent_key=intent_key, params={**params, 'explicitConfirmation': digest(proposal) in context.explicit_confirmations, 'sourceRevision': message.transcript_revision, 'documents': context.document_versions, 'taskSources': [*context.task_snapshot.get('directives', []), *(context.task_snapshot.get('previousTask', {}).get('sources', []) if context.task_snapshot.get('relation') == 'continue' else [])]}, access=job.access or business_scope(actor))
         db.add(row)
         await db.flush()
         try:
             async with db.begin_nested():
                 await source_check(db, actor, row)
-                if action in CONFIRM:
+                if decision.outcome == 'ask':
                     value = await preview(db, actor, row)
                     row.result = {'previewDigest': digest(value), 'objectType': 'work' if action.endswith('work') else 'report', 'objectId': target_id}
                     row.state = 'pending'
                 else:
                     await perform(db, actor, row, job)
+                    if action.startswith('delete_') and row.state == 'succeeded':
+                        context.context_sources = {}
+                        context.read_versions.pop(target_id, None)
         except HTTPException as error:
             row.state = 'conflict' if error.status_code == 409 else 'failed'
             row.params = {}

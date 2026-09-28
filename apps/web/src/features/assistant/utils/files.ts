@@ -83,7 +83,13 @@ export function messageSubmission(
     body: {
       conversationId,
       personaId: composer.submissionPersonaId ?? personaId,
-      ...(!conversationId ? { newConversation: true } : {}),
+      ...(!conversationId
+        ? {
+            newConversation: true,
+            executionMode: composer.executionMode ?? 'auto',
+            fullAccessConfirmed: !!composer.fullAccessConfirmed,
+          }
+        : {}),
       text: composer.text,
       attachmentIds: composer.files.map((file) => {
         if (!file.attachment) throw new Error('附件尚未上传完成')

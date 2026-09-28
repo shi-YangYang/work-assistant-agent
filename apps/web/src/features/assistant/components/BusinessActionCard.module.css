@@ -88,3 +88,8 @@
     padding: 14px;
   }
 }
+
+.before {
+  color: var(--muted);
+  font-size: 12px;
+}

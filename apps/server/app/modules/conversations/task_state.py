@@ -108,6 +108,9 @@ async def freeze(db, actor, job, message):
     snapshot = {'version': row.revision if row else 1, 'taskId': message.id, 'messageId': message.id,
                 'inputRevision': message.transcript_revision, 'directives': directives,
                 'previousTask': deepcopy(previous), 'relation': 'new', 'allowLegacy': 'task' not in payload}
+    continuation = job.result.get('continuation', {})
+    if continuation and previous and continuation.get('taskId') == previous.get('id'):
+        snapshot = {**snapshot, 'relation': 'continue', 'taskId': previous['id']}
     job.result = {**job.result, 'taskSnapshot': snapshot}
     return deepcopy(snapshot)
 
@@ -147,6 +150,8 @@ async def finish(db, actor, job, message, interpretation, outcome):
     if not row or row.payload.get('latestMessageId') != message.id:
         return
     value = TaskInterpretation.model_validate(interpretation or {})
+    if job.result.get('continuation'):
+        value = value.model_copy(update={'relation': 'continue'})
     # The same verified instruction may have been applied and bound to a target
     # during execution. Do not rebuild it from the final prose review and erase
     # that identity (or its authorized field set).
@@ -177,6 +182,15 @@ async def finish(db, actor, job, message, interpretation, outcome):
 
 
 async def cancel(db, actor, job, message):
+    from app.modules.operations.models import BusinessAction
+    task_id = job.result.get('taskSnapshot', {}).get('taskId', message.id)
+    pending = (await db.scalars(select(BusinessAction).where(
+        BusinessAction.company_id == actor.company_id, BusinessAction.owner_id == actor.id,
+        BusinessAction.task_id == task_id, BusinessAction.state == 'pending').with_for_update())).all()
+    for action in pending:
+        action.state, action.params, action.result = 'cancelled', {}, {}
+        action.revision += 1
+        action.updated_at = now()
     row = await store_for(db, actor, message.conversation_id)
     if row and row.payload.get('latestMessageId') == message.id:
         row.payload = {**row.payload, 'task': {'id': job.result.get('taskSnapshot', {}).get('taskId', message.id),
@@ -189,6 +203,8 @@ async def invalidate_sources(db, message_ids):
     """Remove only grants/tasks depending on corrected or removed user input."""
     if not message_ids:
         return
+    from app.modules.interactions.service import expire
+    await expire(db, message_ids=message_ids)
     messages = (await db.scalars(select(Message).where(Message.id.in_(message_ids)))).all()
     for message in messages:
         row = await db.scalar(select(ConversationTaskState).where(

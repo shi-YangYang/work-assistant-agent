@@ -16,7 +16,7 @@ async def validate_cached_versions(db, actor, versions):
             raise ProviderError('version_conflict', '已读取的工作或报告已变化，请重新提问以读取最新内容')
 
 
-async def receipt_advanced_versions(db, actor, versions, message_id):
+async def receipt_advanced_versions(db, actor, versions, message_id=None, *, task_id=None):
     """Accept only a contiguous series of this request's committed writes.
 
     A checkpoint summary may precede later tools in the same task. Its older
@@ -40,7 +40,7 @@ async def receipt_advanced_versions(db, actor, versions, message_id):
             continue
         receipts = (await db.scalars(select(BusinessAction).where(
             BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id,
-            BusinessAction.message_id == message_id, BusinessAction.state == 'succeeded',
+            (BusinessAction.task_id == task_id if task_id else BusinessAction.message_id == message_id), BusinessAction.state == 'succeeded',
             BusinessAction.action.in_(('update_work', 'edit_report', 'submit_report')),
             BusinessAction.result['objectId'].astext == identifier))).all()
         own_revisions = set()
