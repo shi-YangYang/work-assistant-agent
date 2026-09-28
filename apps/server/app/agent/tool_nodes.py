@@ -11,6 +11,8 @@ LABELS = {
     'find_team_members': '查找成员', 'query_team_business': '查询团队工作',
     'read_team_source': '读取团队来源', 'propose_progress': '整理进展建议',
     'propose_followup': '整理督办建议',
+    'save_deliverable': '整理成果', 'read_deliverable': '读取成果',
+    'web_search': '搜索公开资料', 'web_fetch': '读取网页',
 }
 ACTIONS = {'create_work': '创建工作', 'update_work': '更新工作', 'delete_work': '准备删除确认',
            'generate_report': '报告生成入队', 'edit_report': '修改报告',

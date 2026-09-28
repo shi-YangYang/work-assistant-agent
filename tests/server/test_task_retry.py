@@ -3,6 +3,7 @@ import asyncio
 import json
 import time
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 import httpx
 import pytest
@@ -354,7 +355,7 @@ async def test_report_enqueue_receipt_is_not_repeated_or_report_completion(setup
     calls = []
     request = SimpleNamespace(tool_call={'name': 'execute_business_action', 'id': 'enqueue', 'args': {'action': 'generate_report'}}, state={'messages': [AIMessage(id='enqueue-model', content='', tool_calls=[{'name': 'execute_business_action', 'id': 'enqueue', 'args': {}}])]})
     async def operation():
-        result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat())
+        result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
         calls.append(result)
         if len(calls) == 1:
             raise ProviderError('network', 'response lost')

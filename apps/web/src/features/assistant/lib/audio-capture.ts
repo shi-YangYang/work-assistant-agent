@@ -1,4 +1,4 @@
-import type { Attachment, PersonaId } from '@paa/api-contracts'
+import type { Attachment, DeliverableReference, PersonaId } from '@paa/api-contracts'
 
 type PendingFile = {
   id: string
@@ -13,6 +13,8 @@ export type Composer = {
   text: string
   files: PendingFile[]
   key: string
+  deliverableReference?: DeliverableReference
+  deliverableTitle?: string
   replyTo?: string
   sending?: boolean
   personaId?: PersonaId
@@ -28,6 +30,7 @@ export type Composer = {
       attachmentIds: string[]
       voiceCommandAttachmentId?: string
       replyTo: string | null
+      deliverableReference?: DeliverableReference
     }
   }
 }

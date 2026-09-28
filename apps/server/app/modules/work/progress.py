@@ -43,7 +43,10 @@ async def confirm_drafts(db, actor, items, ignore=False):
                 await db.flush()
                 draft.work_id = work.id
             business_inherit(actor, work, draft)
-            db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=[draft.message_id], access=work.access, business_links=work.business_links))
+            source = await active_message(db, draft.message_id, actor)
+            from app.modules.operations.publication import snapshot
+            publication = snapshot(work.content, message_ids=[source.id]) if source.private_context else {}
+            db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=work.content, source_ids=[] if source.private_context else [source.id], publication=publication, access=work.access, business_links=work.business_links))
             result.append(work.id)
         draft.status = 'ignored' if ignore else 'confirmed'
         draft.revision += 1

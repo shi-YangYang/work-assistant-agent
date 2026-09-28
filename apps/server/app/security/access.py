@@ -65,6 +65,8 @@ async def resolve(db, actor, evidence, *, latest=False, retained=False):
         problem(404, '来源没有可访问的业务关联')
     record, _ = await resolve(db, actor, parent, latest=latest)
     if kind == 'message':
+        if item.private_context:
+            problem(404, '私人会话不作为公开业务原文')
         if parent['type'] == 'work':
             source_ids = record.source_ids
         elif parent['type'] == 'report':
@@ -77,7 +79,10 @@ async def resolve(db, actor, evidence, *, latest=False, retained=False):
         if latest and item.transcript_revision != evidence.get('version'):
             problem(409, '关联语音文字已更新，请重新查询', 'source_changed')
     elif kind == 'document':
-        if parent['type'] != 'message' or item.message_id != record.id or item.kind != 'document':
+        if parent['type'] == 'work':
+            if item.kind != 'document' or item.id not in record.publication.get('attachmentIds', []):
+                problem(404, '文件不属于所选业务资料')
+        elif parent['type'] != 'message' or item.message_id != record.id or item.kind != 'document':
             problem(404, '文件不属于所引用消息')
         if item.extraction_revision != evidence.get('version'):
             problem(409, '文件提取版本已变化，请重新查询', 'source_changed')

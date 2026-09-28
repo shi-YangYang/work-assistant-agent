@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  DeliverableReference,
   BusinessAction,
   Conversation,
   Page,
@@ -70,6 +71,7 @@ export function sendMessage(
     attachmentIds: string[]
     voiceCommandAttachmentId?: string
     replyTo: string | null
+    deliverableReference?: DeliverableReference
   },
   key: string,
 ) {

@@ -1,3 +1,4 @@
+from zoneinfo import ZoneInfo
 """Regressions for partial tasks, scoped reads and resumable report handoffs."""
 import json
 from types import SimpleNamespace
@@ -92,7 +93,7 @@ async def test_report_receives_referenced_style_and_rechecks_source_access(setup
         (await db.get(Message, sent['messageId'])).reply = '按每栏不超过30字，下一步两个编号步骤整理。'
     await finish(previous)
     context, _ = await runtime(setup, '按刚才的要求生成今天日报，不提交。')
-    await execute(context, step=1, action='generate_report', report_date=now().date().isoformat())
+    await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     await finish(context)
     if revoke:
         async with sessions.begin() as db:
@@ -170,7 +171,7 @@ async def test_edit_report_checks_all_sources_beyond_query_preview_limit(setup):
     for index in range(3):
         await create(clients['employee'], '长工作' + str(index), summary='来源说明。' * 500)
     async with sessions.begin() as db:
-        report, job = await ensure_report(db, users['employee'], 'daily', now().date())
+        report, job = await ensure_report(db, users['employee'], 'daily', now().astimezone(ZoneInfo('Asia/Shanghai')).date())
         report.source_ids = job.result['sourceIds']
         report.content = CONTENT
         job.state = 'succeeded'

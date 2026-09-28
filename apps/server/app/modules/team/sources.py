@@ -61,7 +61,12 @@ async def read_source(db, actor, job, token, child_id='', start=0):
         problem(404, '来源未被本次查询读取')
     record, _ = await resolve(db, actor, evidence)
     if child_id:
-        if evidence['type'] in ('work', 'report'):
+        if evidence['type'] == 'work' and child_id in record.publication.get('attachmentIds', []):
+            attachment = await db.get(Attachment, child_id)
+            if not attachment:
+                problem(404, '来源不存在或无权查看')
+            evidence = receipt('document', attachment, version=attachment.extraction_revision, parent=evidence, ordinal=max(0, min(start, 2000)))
+        elif evidence['type'] in ('work', 'report'):
             message = await db.get(Message, child_id)
             if not message:
                 problem(404, '来源不存在或无权查看')
@@ -82,6 +87,8 @@ async def read_source(db, actor, job, token, child_id='', start=0):
         dto['sourceMessageIds'] = list(dict.fromkeys(mid for r in records for mid in r.source_ids))[:40]
     elif evidence['type'] == 'work':
         dto['sourceMessageIds'] = record.source_ids[:40]
+        attachments = (await db.scalars(select(Attachment).where(Attachment.id.in_(record.publication.get('attachmentIds', [])), Attachment.deleted.is_(False), Attachment.company_id == actor.company_id, Attachment.owner_id == record.owner_id))).all()
+        dto['attachments'] = [{'id': attachment.id, 'kind': attachment.kind, 'name': attachment.name} for attachment in attachments]
     elif evidence['type'] == 'message':
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == evidence['id'], Attachment.deleted.is_(False)))).all()
         dto['attachments'] = []

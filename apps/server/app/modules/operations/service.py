@@ -33,7 +33,12 @@ async def perform(db, actor, row, job=None):
         # Access tracks every source the model saw, including older turns. It
         # must not turn an unrelated personal task into a mandatory follow-up.
         # Explicit links are still verified above and source access is retained.
-        item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access)
+        from app.modules.operations.publication import snapshot, selected_attachments
+        await selected_attachments(db, actor, p.get('sharedAttachmentIds', []), row.conversation_id)
+        publication = snapshot(p['changes'], message_ids=[row.message_id], reference=p.get('deliverableReference'), attachments=p.get('sharedAttachmentIds', []))
+        item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access, publication=publication)
+        from app.modules.deliverables.service import link_work
+        await link_work(db, actor, p.get('deliverableReference'), row, item)
         row.result = {'objectType': 'work', 'objectId': item.id, 'revision': item.revision, 'changedFields': sorted(p['changes'])}
     elif row.action == 'generate_report':
         if p['kind'] not in ('daily', 'weekly'):

@@ -122,7 +122,12 @@ export function ConversationChat({
     composerRef.current = next
     setDraft(
       composerKey,
-      next.text || next.files.length || next.replyTo || next.pending || next.personaId
+      next.text ||
+        next.files.length ||
+        next.replyTo ||
+        next.pending ||
+        next.personaId ||
+        next.deliverableReference
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
     )
@@ -288,6 +293,20 @@ export function ConversationChat({
         change={change}
         textInput={textInput}
         actionReceipts={actionReceipts}
+        onDeliverable={(reference, title, text) => {
+          change({
+            ...composer,
+            deliverableReference: reference,
+            deliverableTitle: title,
+            text: text
+              ? composer.text.trim()
+                ? `${composer.text}\n${text}`
+                : text
+              : composer.text,
+            key: '',
+          })
+          textInput.current?.focus()
+        }}
       />
       <MessageComposer
         containerRef={composerElement}

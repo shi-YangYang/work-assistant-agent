@@ -68,7 +68,7 @@ async def execute(context, **arguments):
         return result
 
 
-async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='daily', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1):
+async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='daily', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1, deliverable_id='', deliverable_revision=0, item_id='', shared_attachment_ids=None):
     from app.tasks.lease import lease
     from app.agent.conversation_context import request_text
     if action not in ACTIONS or not 1 <= step <= 8 or requires_step is not None and not 1 <= requires_step < step:
@@ -80,12 +80,24 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
     if changes.keys() - fields or submit_after and action != 'generate_report':
         return {'state': 'failed', 'message': '包含本次操作不支持的字段'}
     params = {'targetId': target_id, 'expectedRevision': expected_revision, 'changes': changes, 'kind': report_kind, 'date': report_date, 'obligationId': obligation_id, 'sourceTokens': sorted(source_tokens or []), 'submitAfter': submit_after, 'requiresStep': requires_step}
+    if deliverable_id or deliverable_revision or item_id:
+        if action not in ('create_work', 'update_work') or not deliverable_id or not item_id or deliverable_revision < 1:
+            return {'state': 'failed', 'message': '成果关联需要准确的版本与一个条目'}
+        params['deliverableReference'] = {'id': deliverable_id, 'revision': deliverable_revision, 'itemIds': [item_id]}
+    if shared_attachment_ids:
+        if action not in ('create_work', 'update_work'):
+            return {'state': 'failed', 'message': '仅工作支持附带材料'}
+        params['sharedAttachmentIds'] = sorted(shared_attachment_ids)
     if copy_index > 1:
         params['copyIndex'] = copy_index
     fingerprint = digest({'action': action, **params})
     identity = {'action': action, 'target': target_id, 'changes': changes, 'kind': report_kind, 'date': report_date, 'submitAfter': submit_after}
     if copy_index > 1:
         identity['copyIndex'] = copy_index
+    if deliverable_id:
+        identity['deliverableReference'] = params['deliverableReference']
+    if shared_attachment_ids:
+        identity['sharedAttachmentIds'] = params['sharedAttachmentIds']
     intent_key = digest(identity)
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
@@ -122,8 +134,29 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         if isinstance(target, WorkItem):
             same_name = (await db.scalars(select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id == actor.id, WorkItem.deleted.is_(False), WorkItem.title == target.title).limit(21))).all()
             candidates = [{'id': w.id, 'title': w.title, 'summary': w.content.get('summary', ''), 'createdAt': w.created_at.isoformat(), 'dueDate': w.content.get('dueDate')} for w in same_name if await business_valid(db, actor, w.access, retained=True)]
+        selected = None
+        if deliverable_id:
+            from app.modules.deliverables.queries import check_reference
+            from app.modules.deliverables.serializers import detail
+            if context.deliverable_reads.get(deliverable_id, job.result.get('deliverableReads', {}).get(deliverable_id)) != deliverable_revision:
+                return {'state': 'conflict', 'message': '请先读取所用成果的准确版本和条目'}
+            item, record = await check_reference(db, actor, params['deliverableReference'], message.conversation_id)
+            selected = await detail(db, actor, item, record)
+            selected['items'] = [entry for entry in record.items if entry['id'] == item_id]
+            selected.pop('body', None)
+            linked = [link for link in selected['links'] if link['itemId'] == item_id and not link['unavailable']]
+            if action == 'create_work' and linked and copy_index == 1:
+                return {'state': 'conflict', 'message': '该方案条目已加入工作，请使用已有工作；仅用户明确要求另建副本时使用 copy_index=2 或更高编号。', 'linkedWorks': linked}
+            if action == 'update_work' and target_id not in [link['workId'] for link in linked]:
+                return {'state': 'conflict', 'message': '目标工作不属于该方案条目，请核对关联'}
+        from app.modules.operations.publication import selected_attachments
+        attachments = await selected_attachments(db, actor, shared_attachment_ids or [], message.conversation_id)
         effect = 'prepare_confirmation' if action in CONFIRM else 'enqueue_report' if action == 'generate_report' else 'save'
         proposal = {'targetCandidates': candidates, 'action': action, 'effect': effect, 'target': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}' if target else '', **params}
+        if selected:
+            proposal['deliverableSelection'] = selected
+        if attachments:
+            proposal['sharedAttachments'] = attachments
         if action == 'edit_report':
             proposal['targetContent'] = target.content
             proposal['reportSourceFacts'] = await report_fact_basis(db, actor, target, full=True)

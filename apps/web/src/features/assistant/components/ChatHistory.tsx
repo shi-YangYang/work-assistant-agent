@@ -1,5 +1,11 @@
 import styles from './ChatHistory.module.css'
-import type { BusinessAction, Identity, Page, WorkMessage } from '@paa/api-contracts'
+import type {
+  BusinessAction,
+  DeliverableReference,
+  Identity,
+  Page,
+  WorkMessage,
+} from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { MessageCard } from '@web/features/assistant/components/MessageCard'
@@ -24,7 +30,9 @@ export function ChatHistory({
   change,
   textInput,
   actionReceipts,
+  onDeliverable,
 }: {
+  onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
   scroller: React.RefObject<HTMLDivElement | null>
   atBottomRef: React.RefObject<boolean>
   setNewReply: React.Dispatch<React.SetStateAction<boolean>>
@@ -95,6 +103,7 @@ export function ChatHistory({
             message={message}
             own
             onChange={refresh}
+            onDeliverable={locked ? undefined : onDeliverable}
             onReply={
               locked
                 ? undefined

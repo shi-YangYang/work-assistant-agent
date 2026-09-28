@@ -4,10 +4,11 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageCard.module.css'
 import attachmentsStyles from '../styles/attachments.module.css'
-import type { Draft, Job, WorkMessage } from '@paa/api-contracts'
+import type { DeliverableReference, Draft, Job, WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
 import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
+import { DeliverableEntry } from './Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { DocumentCard, DocumentCitations } from '@web/features/assistant/components/Documents'
 import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
@@ -30,11 +31,13 @@ export function MessageCard({
   own = false,
   onChange,
   onReply,
+  onDeliverable,
 }: {
   message: WorkMessage
   own?: boolean
   onChange: () => void
   onReply?: () => void
+  onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
 }) {
   const [retriedJob, setRetriedJob] = useState<Job | null>(null)
   // Keep the new attempt visible while the message refresh is still in flight.
@@ -232,6 +235,15 @@ export function MessageCard({
               <DocumentCitations citations={message.citations ?? []} />
             </div>
           )}
+          {own &&
+            !message.businessUnavailable &&
+            message.deliverables?.map((item) => (
+              <DeliverableEntry
+                key={`${item.id}:${item.revision}`}
+                item={item}
+                onContinue={onDeliverable}
+              />
+            ))}
           {own &&
             !message.businessUnavailable &&
             (live.feedback?.actions ?? message.actions)?.map((action) => (

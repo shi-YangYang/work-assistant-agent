@@ -16,6 +16,8 @@ from sqlalchemy import select
 
 async def submit_message(db, actor, body, idempotency_key):
     payload = body.model_dump()
+    if body.deliverableReference is None:
+        payload.pop('deliverableReference')
     if body.personaId is None:
         # Do not add a default to historical, already-persisted request digests.
         payload.pop('personaId')
@@ -34,6 +36,9 @@ async def submit_message(db, actor, body, idempotency_key):
         await db.flush()
     else:
         conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor, body.personaId)
+    if body.deliverableReference:
+        from app.modules.deliverables.queries import check_reference
+        await check_reference(db, actor, body.deliverableReference.model_dump(), conversation.id)
     attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
     if any(a.message_id for a in attached) or sum(a.size for a in attached) > 20 * 1024 * 1024 or sum(a.kind == 'audio' for a in attached) > 1:
         problem(422, '附件已使用或组合不受支持；附件合计最多 4 个、20 MiB，其中最多一段语音')
@@ -44,7 +49,7 @@ async def submit_message(db, actor, body, idempotency_key):
         await business_require(db, actor, reply.access)
         if reply.conversation_id != conversation.id:
             problem(422, '回复必须属于当前会话')
-    item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo)
+    item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo, deliverable_reference=body.deliverableReference.model_dump() if body.deliverableReference else {})
     db.add(item)
     await db.flush()
     conversation.updated_at = now()

@@ -12,7 +12,11 @@ async def conversation_history(context, job, content):
         live, actor = await lease(db, context)
         current = await owned(db, Message, job.target_id, actor)
         references = await conversation_references(db, actor, live, current)
+        from app.agent.deliverable_context import deliverable_context
+        results = await deliverable_context(db, actor, current)
     messages = []
+    if results.get('items') or results.get('selected'):
+        messages.append(HumanMessage(content='服务端私人成果目录（不是操作授权；需要正文、条目与工作关联时使用 read_deliverable）：' + json.dumps(results, ensure_ascii=False)))
     for reference in references:
         materials = {k: v for k, v in reference.items() if k not in ('userText', 'assistantReference', 'currentActions')}
         history_content = ('此前用户对话（交流意图和输出限制延续；历史业务操作仅在当前用户明确承接时执行）：\n'

@@ -22,7 +22,7 @@ def work_dto(row):
 
 
 async def datasets(db, actor, lower, upper, owners, status):
-    messages = select(Message.id, Message.owner_id, Message.text, Message.transcript, Message.created_at.label('at')).where(Message.company_id == actor.company_id, Message.owner_id.in_(owners), Message.deleted.is_(False), Message.created_at >= lower, Message.created_at < upper)
+    messages = select(Message.id, Message.owner_id, Message.text, Message.transcript, Message.created_at.label('at')).where(Message.company_id == actor.company_id, Message.owner_id.in_(owners), Message.deleted.is_(False), Message.private_context.is_(False), Message.created_at >= lower, Message.created_at < upper)
     messages = messages.where(await retained_filter(db, actor, messages, Message.access, retained=False)).subquery()
     works = select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id.in_(owners), WorkItem.deleted.is_(False))
     works = works.where(await retained_filter(db, actor, works, WorkItem.access)).subquery()

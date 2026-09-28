@@ -65,6 +65,26 @@ export function MessageComposer({
   return (
     <div ref={containerRef} className={styles['composer-wrap']} data-empty={empty}>
       <div className={styles['composer']} data-dragging={dragging}>
+        {composer.deliverableReference && (
+          <div className={styles['replying']}>
+            <span>继续处理：{composer.deliverableTitle ?? '当前方案'}</span>
+            <button
+              type="button"
+              aria-label="取消成果关联"
+              disabled={locked}
+              onClick={() =>
+                change({
+                  ...composer,
+                  deliverableReference: undefined,
+                  deliverableTitle: undefined,
+                  key: '',
+                })
+              }
+            >
+              ×
+            </button>
+          </div>
+        )}
         {composer.replyTo && (
           <div className={styles['replying']}>
             <CornerUpLeft size={14} />

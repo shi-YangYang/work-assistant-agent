@@ -41,7 +41,7 @@ def progress(title='采购报价', status='blocked', summary='报价待确认'):
 
 async def facts(sessions, actor, *, title='采购报价', status='blocked'):
     async with sessions.begin() as db:
-        message = Message(company_id=actor.company_id, owner_id=actor.id, text='已确认关联原始材料', reply='PRIVATE-ASSISTANT-REPLY')
+        message = Message(company_id=actor.company_id, owner_id=actor.id, text='已确认关联原始材料', reply='PRIVATE-ASSISTANT-REPLY', private_context=False)
         work = WorkItem(company_id=actor.company_id, owner_id=actor.id, title=title, content=progress(title, status))
         db.add_all([message, work]); await db.flush()
         revision = WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=1, content=work.content, source_ids=[message.id])
@@ -215,7 +215,8 @@ async def test_followup_confirmation_version_conflict_and_employee_unchanged(set
         unchanged = await db.get(WorkItem, work.id)
         assert unchanged.revision == 1 and unchanged.content['status'] == 'blocked'
         revision = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == own_id))
-        assert revision.source_ids == [sent['messageId']]
+        assert revision.source_ids == []
+        assert revision.publication['originMessageIds'] == [sent['messageId']]
 
 
 @pytest.mark.parametrize('path', ['draft_update', 'draft_unlink', 'confirm_existing', 'new_source'])
@@ -364,8 +365,10 @@ async def test_followup_guard_preserves_clarification_query_and_existing_budget(
         assert not (await db.scalars(select(WorkItem).where(WorkItem.owner_id == users['admin'].id))).all()
     if kind == 'query':
         # Even a mistaken tool invocation cannot turn a query into a write.
+        from test_assistant_write_scope import ScopeJudge
+        rt.context.intent_model = ScopeJudge(False)
         denied = await propose_followup.coroutine(title='错误建议', summary='不应写入', status='in_progress', blocker='', next_step='', source_tokens=[], runtime=rt)
-        assert '尚未明确要求' in denied
+        assert json.loads(denied)['state'] == 'not_requested'
 
 
 async def test_source_update_blocks_pending_confirmation_but_preserves_old_citation(setup):
@@ -374,6 +377,8 @@ async def test_source_update_blocks_pending_confirmation_but_preserves_old_citat
     rt, job, sent = await runtime(setup, text='帮我跟进采购报价')
     listing = json.loads(await query_team_business.coroutine(runtime=rt))
     await find_work_items.coroutine(query='', runtime=rt)
+    from test_business_actions import Judge
+    rt.context.intent_model = Judge()
     answer = json.loads(await propose_followup.coroutine(title='跟进', summary='核对报价', status='in_progress', blocker='', next_step='明天询问', source_tokens=[listing['items'][0]['token']], runtime=rt))
     changed = await clients['employee'].post('/api/v1/work-items/' + work.id + '/progress', json={**progress(status='done'), 'expectedRevision': 1, 'sourceIds': []})
     assert changed.status_code == 200

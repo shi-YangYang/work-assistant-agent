@@ -9,7 +9,7 @@ from app.security.locks import company_lock as business_company_lock
 from app.security.ownership import owned
 
 
-async def save_work(db, actor, patch, *, identifier=None, expected=None, sources=(), origin='manual', links=(), access=None):
+async def save_work(db, actor, patch, *, identifier=None, expected=None, sources=(), origin='manual', links=(), access=None, publication=None):
     await business_company_lock(db, actor.company_id)
     if identifier:
         work = await owned(db, WorkItem, identifier, actor, lock=True)
@@ -23,9 +23,12 @@ async def save_work(db, actor, patch, *, identifier=None, expected=None, sources
         await db.flush()
     if not content['title'].strip():
         problem(422, '请填写工作标题')
+    private_sources = []
+    public_sources = []
     for source in sources:
         message = await active_message(db, source, actor)
         await business_require(db, actor, message.access)
+        (private_sources if message.private_context else public_sources).append(source)
         business_inherit(actor, work, message, include_message_links=True)
     if access:
         work.access = business_merge_access(work.access or business_scope(actor), access)
@@ -35,6 +38,11 @@ async def save_work(db, actor, patch, *, identifier=None, expected=None, sources
     if identifier:
         work.revision += 1
     work.content, work.title, work.updated_at = content, content['title'], now()
-    db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=content, source_ids=list(sources), access=work.access, business_links=work.business_links))
+    if publication is None and private_sources:
+        from app.modules.operations.publication import snapshot
+        publication = snapshot(content, message_ids=private_sources)
+    if publication is not None:
+        publication = {**publication, 'content': content}
+    db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=content, source_ids=public_sources, publication=publication or {}, access=work.access, business_links=work.business_links))
     await db.flush()
     return work

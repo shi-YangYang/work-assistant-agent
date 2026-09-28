@@ -10,6 +10,8 @@ async def owned(db, model, identifier, actor, *, read=False, lock=False):
     else:
         employees = select(Member.id).where(Member.company_id == actor.company_id, Member.role == 'employee')
         query = query.where((model.owner_id == actor.id) | model.owner_id.in_(employees))
+    if read and hasattr(model, 'private_context'):
+        query = query.where((model.owner_id == actor.id) | model.private_context.is_(False))
     if hasattr(model, 'deleted'):
         query = query.where(model.deleted.is_(False))
     if lock:

@@ -54,7 +54,7 @@ async def invalidate_context(db, owner_id, company_id, target_ids, *, sources_ch
                 await db.execute(text(f'DELETE FROM {table} WHERE thread_id LIKE :prefix'), {'prefix': prefix})
 
 
-async def purge_messages(db, ids):
+async def purge_messages(db, ids, *, retain_publications=False):
     if not ids:
         return
     messages = (await db.scalars(select(Message).where(Message.id.in_(ids)).with_for_update())).all()
@@ -75,6 +75,9 @@ async def purge_messages(db, ids):
         draft.status, draft.content = 'deleted', {}
         draft.revision += 1
     attachments = (await db.scalars(select(Attachment).where(Attachment.message_id.in_(ids)))).all()
+    if retain_publications:
+        from app.modules.operations.publication import published_attachment
+        attachments = [item for item in attachments if not await published_attachment(db, item)]
     for item in attachments:
         item.deleted, item.name, item.sha256 = True, '', ''
         item.extraction_status, item.extraction_info, item.parser_version = 'deleted', {}, ''
@@ -160,7 +163,7 @@ async def remove_conversation(db, item):
     if item.deleted:
         return
     messages, retained = await conversation_impact(db, item)
-    await purge_messages(db, messages - retained)
+    await purge_messages(db, messages - retained, retain_publications=True)
     # Retained business-source messages may still have generated replies or
     # suggestions depending on a discarded document from this conversation.
     await invalidate_context(db, item.owner_id, item.company_id, messages, sources_changed=bool(messages - retained))

@@ -90,7 +90,9 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext]) -> str:
 
 @tool
 async def propose_progress(title: str, summary: str, status: Literal['in_progress', 'blocked', 'done'], blocker: str, next_step: str, runtime: ToolRuntime[RunContext], work_id: str | None = None) -> str:
-    """Propose progress for employee confirmation; never confirms work.
+    """Save a progress suggestion ONLY when explicitly requested to record/report
+    progress or prepare a pending suggestion. Mere progress descriptions, advice
+    requests and plan writing do not authorize this. Never confirms work.
 
     Use blocked when a dependency prevents the next step, in_progress for ongoing
     work, and done only when the entire work is finished. For new work, work_id
@@ -105,6 +107,10 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
     if isinstance(work_id, str) and work_id.strip() in ('', 'null'):
         work_id = None
     context = runtime.context
+    from app.agent.suggestions import authorize_suggestion
+    rejected = await authorize_suggestion(context, 'propose_progress', content, work_id)
+    if rejected:
+        return clip(rejected)
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if job.kind != 'message':

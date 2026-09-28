@@ -186,7 +186,27 @@ export interface Job {
   error: string
   updatedAt: string
 }
+export interface DeliverableReference {
+  id: string
+  revision: number
+  itemIds: string[]
+}
+export interface DeliverableSummary {
+  id: string
+  revision: number
+  latestRevision: number
+  title: string
+  messageId: string
+  itemCount: number
+  updatedAt: string
+}
+export interface Deliverable extends DeliverableSummary {
+  body: string
+  items: { id: string; title: string; body: string }[]
+  links: { itemId: string; workId: string; sourceRevision: number; unavailable: boolean }[]
+}
 export interface WorkMessage {
+  deliverables?: DeliverableSummary[]
   actions?: BusinessAction[]
   conversationId: string | null
   id: string

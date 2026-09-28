@@ -119,3 +119,9 @@ async def test_report_reply_uses_child_failure_instead_of_stale_running_state(st
     cards = [{'action': 'generate_report', 'label': '生成报告', 'state': 'running', 'job': {'state': state}}]
     assert current_reply(row, job, cards, []) == f'生成报告：{expected}。'
     assert current_reply(row, None, cards, []) == f'生成报告：{expected}。'
+
+
+async def test_legacy_receipt_with_newly_available_title_still_refreshes():
+    row = SimpleNamespace(reply='生成报告：正在处理。')
+    cards = [{'action': 'generate_report', 'label': '生成报告', 'state': 'succeeded', 'title': '2026-09-28 日报'}]
+    assert current_reply(row, None, cards, []) == '生成报告《2026-09-28 日报》：已完成。'

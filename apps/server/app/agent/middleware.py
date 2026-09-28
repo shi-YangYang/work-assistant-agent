@@ -76,14 +76,14 @@ class ToolBoundary(AgentMiddleware):
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
         if request.tool_call['name'] not in allowed:
             raise RuntimeError('Tool is not allowed')
-        if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_')):
+        if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')):
             from app.tasks.feedback import publish
             await publish(context, 'searching', force=True)
         if not context.node_retry:
             context.tools += 1
         if context.tools > 16:
             raise BudgetExceeded('本次处理步骤已达到限制')
-        if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_')):
+        if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')):
             batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
             if batch and any(call['name'] == 'execute_business_action' for call in batch.tool_calls):
                 return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content=json.dumps({'error': '本批次含写操作，本查询尚未执行。请等写操作返回后，在下一批调用查询更新后的结果。'}, ensure_ascii=False))

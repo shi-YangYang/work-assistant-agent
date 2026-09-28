@@ -90,6 +90,9 @@ export function messageSubmission(
           }
         : {}),
       replyTo: composer.replyTo ?? null,
+      ...(composer.deliverableReference
+        ? { deliverableReference: structuredClone(composer.deliverableReference) }
+        : {}),
     },
   }
 }

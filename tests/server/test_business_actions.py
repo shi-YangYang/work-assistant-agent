@@ -472,7 +472,7 @@ async def test_worker_mixed_claims_keep_query_facts_and_partial_receipts(setup):
     result = await run_reply(setup, '创建报价方案并删除它，同时查日报。', answer, ReplyJudge(['query_fact', 'execution', 'information']), read_report=True, before=partial)
     assert '你今天的日报已提交' in result['reply'] and '要查看报告详情' in result['reply']
     assert 'I created' not in result['reply']
-    assert '创建工作：已完成' in result['reply'] and '删除工作：等待你的确认' in result['reply']
+    assert '创建工作《报价方案》：已完成' in result['reply'] and '删除工作：等待你的确认' in result['reply']
     assert [row['state'] for row in result['actions']] == ['succeeded', 'pending']
 
 
@@ -485,14 +485,14 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
     if forged_evidence:
         # Reject the unsupported block, not the already completed operation.
         assert result['job']['state'] == 'succeeded'
-        assert result['reply'] == '创建工作：已完成。'
+        assert result['reply'] == '创建工作《报价方案》：已完成。'
     else:
         assert result['job']['state'] == 'awaiting_retry'
         assert result['job']['phase'] == 'reply_review'
         assert result['job']['stage'] == 'reviewing'
         assert '核对' in result['reply']
     assert result['actions'][0]['state'] == 'succeeded'
-    assert '创建工作：已完成' in result['reply']
+    assert '创建工作《报价方案》：已完成' in result['reply']
     assert 'submitted' not in result['reply']
 
 
@@ -518,7 +518,7 @@ async def test_empty_reply_uses_persisted_receipts_without_another_model_request
     judge = ReplyJudge([], fail=True)
     reviewed = await review_reply(context, '', model=judge)
     assert reviewed.verified and not judge.inputs
-    assert receipt_reply(reviewed, [saved]) == '创建工作：已完成。'
+    assert receipt_reply(reviewed, [saved]) == '创建工作《报价方案》：已完成。'
 
 
 async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blank_lines():

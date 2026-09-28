@@ -55,7 +55,7 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
 
 
 async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
-    context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
+    context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings, intent_model=model)
     heartbeat_task = asyncio.create_task(heartbeat(context))
     try:
         if job.kind == 'report':
@@ -220,7 +220,9 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             for draft in drafts:
                 business_inherit(actor, draft, live)
                 await business_require(db, actor, draft.access)
-            answer = receipt_reply(review, cards, drafts)
+            from app.modules.deliverables.serializers import delivery_summary
+            deliverable_reply = await delivery_summary(db, actor, message)
+            answer = receipt_reply(review, cards, drafts, deliverable_reply)
             message.reply, message.citations = await verified_citations(db, context, answer)
             message.access = live.access
             # Validate markers even when no team tool ran; models can invent
@@ -259,7 +261,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
                 live.result = {key: value for key, value in live.result.items() if key not in ('pendingReply', 'replyReviewError')}
                 live.result = {**live.result, 'conversationReply': review.text}
                 incomplete = review.needs_action or any(card['state'] in ('failed', 'conflict', 'unavailable') for card in cards) or bool(live.result.get('operationFeedback'))
-                live.state = 'succeeded' if not incomplete and (message.suggestions or has_actions) else 'awaiting_input'
+                live.state = 'succeeded' if not incomplete and (message.suggestions or has_actions or deliverable_reply) else 'awaiting_input'
                 live.result = {**live.result, 'incompleteTask': incomplete}
                 live.phase, live.error = 'complete', ''
             else:

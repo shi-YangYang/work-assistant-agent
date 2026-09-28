@@ -97,23 +97,24 @@ def receipt_summary(cards, drafts=()):
         # its terminal child job still determines what the user sees now.
         if state == 'running' and (card.get('job') or {}).get('state') in ('failed', 'awaiting_retry', 'cancelled'):
             state = 'cancelled' if card['job']['state'] == 'cancelled' else 'failed'
-        parts.append(f"{card['label']}：{statuses.get(state, '未完成')}")
+        target = f"《{card['title']}》" if card.get('title') else ''
+        parts.append(f"{card['label']}{target}：{statuses.get(state, '未完成')}")
     draft_statuses = {'pending': '已保存，等待你的确认', 'confirmed': '已确认', 'ignored': '已忽略'}
     parts.extend(dict.fromkeys(f"{'督办' if draft.business_links else '进展'}建议：{draft_statuses.get(draft.status, '当前不可用')}" for draft in drafts))
     return '；'.join(parts) + '。' if parts else ''
 
 
-def receipt_reply(review, cards, drafts=()):
+def receipt_reply(review, cards, drafts=(), deliverables=''):
     """Only independently checked prose plus database-authenticated outcomes."""
     summary = receipt_summary(cards, drafts)
-    parts = [review.text] if review.text else []
+    parts = [review.text] if review.text else [deliverables] if deliverables and review.verified else []
     if summary:
         parts.append(summary)
     if review.verified and review.needs_action:
         parts.append('本次请求仍有操作未完成；已保存的结果会保留，请继续说明要处理的剩余事项。')
     if not review.verified:
         parts.append('答复说明暂未完成核对；已保存的操作结果以上方记录为准。' if cards else '答复暂未完成核对，请重试答复核对；业务操作结果会保留。')
-    elif review.execution_claims and not cards and not drafts:
+    elif review.execution_claims and not cards and not drafts and not deliverables:
         parts.append('本次没有保存新的业务操作结果，未执行创建、修改、提交或删除。')
     elif not parts:
         parts.append('暂时缺少足够依据回答，请补充具体事项。')
@@ -129,7 +130,7 @@ def current_reply(message, job, cards, drafts):
     # Older receipt-only messages predate the structured slot. Never rewrite
     # arbitrary model prose by searching for status words inside it.
     old_cards = [{**card, 'label': '生成报告', 'state': 'running', 'job': None} if card['action'] in ('generate_report', 'submit_report') else card for card in cards]
-    if old_cards and summary and message.reply == receipt_summary(old_cards):
+    if old_cards and summary and message.reply in (receipt_summary(old_cards), receipt_summary([{key: value for key, value in card.items() if key != 'title'} for card in old_cards])):
         return summary
     if drafts and message.reply == '本次没有保存新的业务操作结果，未执行创建、修改、提交或删除。':
         return summary

@@ -1,5 +1,6 @@
 from app.core.personas import PersonaId
 from app.core.schemas import Input
+from app.modules.deliverables.schemas import DeliverableReference
 from pydantic import Field, model_validator
 
 
@@ -11,6 +12,7 @@ class SendMessage(Input):
     attachmentIds: list[str] = Field(default_factory=list, max_length=4)
     voiceCommandAttachmentId: str | None = None
     replyTo: str | None = None
+    deliverableReference: DeliverableReference | None = None
 
     @model_validator(mode='after')
     def content_present(self):

@@ -58,10 +58,7 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     edited = {**draft['content'], 'summary': '员工的私有更正', 'workId': None, 'expectedRevision': draft['revision']}
     saved = await employee.patch('/api/v1/progress-drafts/' + draft['id'], json=edited)
     assert saved.status_code == 200, saved.text
-    public = (await admin.get('/api/v1/messages/' + result['messageId'])).json()
-    assert public['drafts'] == []
-    assert public['suggestions'][0]['content']['summary'] == '方案初稿已完成'
-    assert '员工的私有更正' not in json.dumps(public, ensure_ascii=False)
+    assert (await admin.get('/api/v1/messages/' + result['messageId'])).status_code == 404
     body = {'items': [{'id': draft['id'], 'expectedRevision': saved.json()['revision']}]}
     assert (await admin.post('/api/v1/progress-drafts/confirm', json=body, headers=keyed())).status_code == 404
     key = keyed()
@@ -132,7 +129,7 @@ async def test_images_remain_private_until_sent_and_enter_vision_harness(setup):
     attachment = upload.json()
     assert (await c['admin'].get(attachment['url'])).status_code == 404
     result = await send(c['employee'], '这张图是今天的方案', [attachment['id']])
-    assert (await c['admin'].get(attachment['url'])).status_code == 200
+    assert (await c['admin'].get(attachment['url'])).status_code == 404
     assert (await c['peer'].get(attachment['url'])).status_code == 404
     model = await run_target(settings,sessions,users,result)
     assert model.seen_images[0]['image_url']['url'].startswith('data:image/png;base64,')
@@ -209,7 +206,7 @@ async def test_team_excludes_admins_and_protects_other_admin_materials(setup):
             for section in ('work', 'messages', 'reports'):
                 assert (await client.get(f"/api/v1/team/members/{users[target].id}/{section}")).status_code == 404
         assert (await client.get(f"/api/v1/team/members/{users['employee'].id}/messages")).status_code == 200
-        assert (await client.get('/api/v1/messages/' + employee_message['messageId'])).status_code == 200
+        assert (await client.get('/api/v1/messages/' + employee_message['messageId'])).status_code == 404
         # Member management contains only employees, not administrator accounts.
         assert len((await client.get('/api/v1/members')).json()['items']) == 1
     for path in (f"/messages/{sent['messageId']}", f'/work-items/{work.id}', f'/reports/{report.id}', f'/reports/{report.id}/sources', attachment['url'].removeprefix('/api/v1')):

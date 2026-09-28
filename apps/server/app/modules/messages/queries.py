@@ -8,6 +8,8 @@ from sqlalchemy import select
 
 async def list_messages(db, actor, owner_id, cursor, limit, conversation_id=None):
     query = select(Message).where(Message.company_id == actor.company_id, Message.owner_id == owner_id, Message.deleted.is_(False), ~Message.conversation_id.in_(select(Conversation.id).where(Conversation.deleted.is_(True))))
+    if actor.id != owner_id:
+        query = query.where(Message.private_context.is_(False))
     if conversation_id:
         query = query.where(Message.conversation_id == conversation_id)
     if cursor:

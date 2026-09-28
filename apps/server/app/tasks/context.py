@@ -29,6 +29,7 @@ class RunContext:
     source_revision: int | None = None
     document_snapshot: str = ''
     document_versions: dict[str, int] = field(default_factory=dict)
+    deliverable_reads: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)
     image_sources: dict[str, str] = field(default_factory=dict)
     model_binding: dict | None = None
