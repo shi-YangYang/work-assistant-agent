@@ -33,6 +33,7 @@ export function MessageComposer({
   contextKey,
   contextUsage = null,
   contextUnavailable = false,
+  contextLoading = false,
   task,
 }: {
   task?: ReturnType<typeof useAssistantTask>
@@ -55,6 +56,7 @@ export function MessageComposer({
   contextKey?: string
   contextUsage?: Usage | null
   contextUnavailable?: boolean
+  contextLoading?: boolean
   children: React.ReactNode
 }) {
   const input = useRef<HTMLInputElement>(null)
@@ -248,7 +250,12 @@ export function MessageComposer({
             )}
           </div>
           <div className={styles['send-actions']}>
-            <ContextUsage key={contextKey} usage={contextUsage} unavailable={contextUnavailable} />
+            <ContextUsage
+              key={contextKey}
+              usage={contextUsage}
+              unavailable={contextUnavailable}
+              loading={contextLoading}
+            />
             <button
               data-expanded={false}
               aria-label={label}

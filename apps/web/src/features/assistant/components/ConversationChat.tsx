@@ -334,6 +334,7 @@ export function ConversationChat({
         contextKey={`context:${identity.company.id}:${identity.member.id}:${conversationId ?? 'new'}`}
         contextUsage={context.usage}
         contextUnavailable={context.unavailable}
+        contextLoading={context.loading}
         containerRef={composerElement}
         empty={empty}
         dragging={dragging}

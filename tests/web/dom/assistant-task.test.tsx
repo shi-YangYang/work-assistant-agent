@@ -196,6 +196,47 @@ it('registers acceptance before history refresh and keeps a new conversation loc
   await screen.findByRole('button', { name: '中断' })
 })
 
+it('keeps the context estimate and ring through sending and acceptance before the next estimate', async () => {
+  history = [
+    message({
+      ...running,
+      state: 'succeeded',
+      contextUsage: {
+        jobId: running.id,
+        attempt: 1,
+        fence: 2,
+        seq: 4,
+        model: 'model',
+        capacitySource: '测试容量',
+        usedTokens: 300,
+        contextWindow: 1000,
+        inputLimit: 1000,
+        outputReserve: 100,
+        thresholdRatio: 0.9,
+        estimated: true,
+        state: 'ready',
+        updatedAt: running.updatedAt,
+      },
+    }),
+  ]
+  const submission = deferred<Awaited<ReturnType<typeof sendMessage>>>()
+  vi.mocked(sendMessage).mockReturnValue(submission.promise)
+  view()
+  const button = await screen.findByRole('button', { name: '上下文使用情况：约 30%' })
+  const ring = button.querySelector('circle[pathLength]')
+  await screen.findByRole('button', { name: '发送' })
+  vi.mocked(readActiveAssistantJob).mockReturnValue(deferred<{ job: Job | null }>().promise)
+  type('继续处理')
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 30%' })).toBe(button)
+  await act(async () =>
+    submission.resolve({ conversationId: 'first', messageId: 'next-message', jobId: 'next' }),
+  )
+  await screen.findByRole('button', { name: '中断' })
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 30%' })).toBe(button)
+  expect(button.querySelector('circle[pathLength]')).toBe(ring)
+})
+
 it('confirms an unknown submission verbatim even when that job has already become active', async () => {
   vi.mocked(sendMessage)
     .mockRejectedValueOnce(new Error('提交结果未知'))

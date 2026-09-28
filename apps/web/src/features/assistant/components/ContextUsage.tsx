@@ -18,9 +18,11 @@ export function contextUsageLabel(usage: Usage | null, unavailable = false) {
 export function ContextUsage({
   usage,
   unavailable = false,
+  loading = false,
 }: {
   usage: Usage | null
   unavailable?: boolean
+  loading?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState(false)
@@ -29,7 +31,7 @@ export function ContextUsage({
   const panel = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const id = useId()
-  const label = contextUsageLabel(usage, unavailable)
+  const label = loading && !usage ? '正在读取用量' : contextUsageLabel(usage, unavailable)
   const percent = usage?.contextWindow ? usage.usedTokens / usage.contextWindow : null
   const visible = open || hint
   useLayoutEffect(() => {
@@ -84,6 +86,7 @@ export function ContextUsage({
         aria-label={`上下文使用情况：${label}`}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-busy={loading}
         aria-controls={open ? id : undefined}
         aria-describedby={hint && !open ? `${id}-hint` : undefined}
         data-active={usage?.state === 'compacting' || usage?.state === 'retry_wait'}
@@ -112,17 +115,15 @@ export function ContextUsage({
           data-known={percent !== null}
         >
           <circle className={styles.track} cx="14" cy="14" r="10" />
-          {percent !== null && (
-            <circle
-              className={styles.used}
-              cx="14"
-              cy="14"
-              r="10"
-              pathLength="100"
-              strokeDasharray={`${Math.min(100, Math.max(0, percent * 100))} 100`}
-            />
-          )}
-          {percent === null && <circle className={styles.unknown} cx="14" cy="14" r="1.5" />}
+          <circle
+            className={styles.used}
+            cx="14"
+            cy="14"
+            r="10"
+            pathLength="100"
+            opacity={percent === null ? 0 : 1}
+            strokeDasharray={`${Math.min(100, Math.max(0, (percent ?? 0) * 100))} 100`}
+          />
         </svg>
       </button>
       {visible &&
@@ -211,7 +212,11 @@ export function ContextUsage({
               )}
               {!usage && (
                 <p className={styles.caption}>
-                  {unavailable ? '联网恢复后将重新获取。' : '助手开始处理消息后显示用量。'}
+                  {loading
+                    ? '正在读取这段会话的上下文用量。'
+                    : unavailable
+                      ? '联网恢复后将重新获取。'
+                      : '助手开始处理消息后显示用量。'}
                 </p>
               )}
             </div>

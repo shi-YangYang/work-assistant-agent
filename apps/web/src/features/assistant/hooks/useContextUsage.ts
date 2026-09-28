@@ -27,6 +27,7 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
   const { identity } = useWorkspace()
   const scope = `${identityScope(identity)}:${epoch}:${conversationId ?? 'new'}`
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [restoredScope, setRestoredScope] = useState<string | null>(null)
   const activeScope = useRef(scope)
   const latestId = latestJob?.id ?? null
   const receivedUpdates = useRef(0)
@@ -51,7 +52,8 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
           ? candidate
           : null
       setSnapshot((previous) => {
-        const current = previous?.scope === scope && previous.jobId === job.id ? previous : null
+        const scoped = previous?.scope === scope ? previous : null
+        const current = scoped?.jobId === job.id ? scoped : null
         if (
           current &&
           (attempt < current.attempt || (attempt === current.attempt && fence < current.fence))
@@ -61,7 +63,9 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
         const next = usage
           ? newerContext(reset ? null : current.usage, usage)
           : reset
-            ? null
+            ? scoped?.usage?.jobId !== job.id && scoped?.usage?.state === 'ready'
+              ? scoped.usage
+              : null
             : current.usage
         if (current && next === current.usage && !reset) return previous
         return { scope, jobId: job.id, attempt, fence, usage: next, unavailable: false }
@@ -96,7 +100,11 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
                   unavailable: false,
                 }
           // A slow restore cannot replace a newer message or a restarted attempt.
-          if (latestId && contextUsage.jobId !== latestId) return previous
+          if (latestId && contextUsage.jobId !== latestId) {
+            // The endpoint returns the last estimate, even when a new job has not estimated yet.
+            // Keep it until that job produces its own snapshot, without restoring old activity.
+            if (current?.usage || contextUsage.state !== 'ready') return previous
+          }
           if (
             current &&
             current.jobId === contextUsage.jobId &&
@@ -131,6 +139,8 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
                 unavailable: true,
               },
         )
+      } finally {
+        if (active && !request.signal.aborted) setRestoredScope(scope)
       }
     }
     void restore()
@@ -142,15 +152,21 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
     }
   }, [scope, conversationId, latestId])
 
-  const visible =
-    snapshot?.scope === scope && (!latestId || snapshot.jobId === latestId) ? snapshot : null
+  const visible = snapshot?.scope === scope ? snapshot : null
   const usage = visible?.usage ?? null
   const current =
     usage &&
     latestJob &&
-    (usage.attempt < (latestJob.attempt ?? 0) ||
-      (usage.attempt === (latestJob.attempt ?? 0) && usage.fence < (latestJob.fence ?? 0)))
+    (usage.jobId !== latestJob.id
+      ? usage.state !== 'ready'
+      : usage.attempt < (latestJob.attempt ?? 0) ||
+        (usage.attempt === (latestJob.attempt ?? 0) && usage.fence < (latestJob.fence ?? 0)))
       ? null
       : usage
-  return { usage: current, unavailable: visible?.unavailable ?? false, receive }
+  return {
+    usage: current,
+    loading: !!conversationId && !current && !visible?.unavailable && restoredScope !== scope,
+    unavailable: visible?.unavailable ?? false,
+    receive,
+  }
 }

@@ -129,7 +129,11 @@ function Hook({
   const context = useContextUsage(conversationId, latestJob)
   return (
     <>
-      <ContextUsage usage={context.usage} unavailable={context.unavailable} />
+      <ContextUsage
+        usage={context.usage}
+        unavailable={context.unavailable}
+        loading={context.loading}
+      />
       <button onClick={() => context.receive(latestJob, incoming ?? feedback)}>反馈</button>
     </>
   )
@@ -142,6 +146,93 @@ function viewHook(props: Parameters<typeof Hook>[0] = {}, account: Identity = id
     </TestWorkspace>
   )
 }
+
+it('keeps the same ring while restoring, without briefly claiming the usage is unknown', async () => {
+  const request = deferred<{ contextUsage: Usage | null }>()
+  vi.mocked(readConversationContext).mockReturnValue(request.promise)
+  render(viewHook())
+  const button = screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })
+  const ring = button.querySelector('circle[pathLength]')
+  expect(button.getAttribute('aria-busy')).toBe('true')
+  fireEvent.focus(button)
+  expect(screen.getByRole('tooltip').textContent).not.toContain('尚未计算')
+  await act(async () => request.resolve({ contextUsage: usage }))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 1%' })).toBe(button)
+  expect(button.getAttribute('aria-busy')).toBe('false')
+  expect(button.querySelector('circle[pathLength]')).toBe(ring)
+})
+
+it('only shows unknown after the server confirms no estimate', async () => {
+  const request = deferred<{ contextUsage: Usage | null }>()
+  vi.mocked(readConversationContext).mockReturnValue(request.promise)
+  render(viewHook())
+  const button = screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })
+  await act(async () => request.resolve({ contextUsage: null }))
+  expect(screen.getByRole('button', { name: '上下文使用情况：尚未计算' })).toBe(button)
+})
+
+it('retains the last estimate across acceptance and queued feedback, then ignores a late old restore', async () => {
+  const request = deferred<{ contextUsage: Usage | null }>()
+  vi.mocked(readConversationContext)
+    .mockResolvedValueOnce({ contextUsage: usage })
+    .mockReturnValue(request.promise)
+  const view = render(viewHook())
+  const button = await screen.findByRole('button', { name: '上下文使用情况：约 1%' })
+  const ring = button.querySelector('circle[pathLength]')
+  const nextJob = {
+    ...job,
+    id: 'next',
+    state: 'queued' as const,
+    attempt: 0,
+    fence: 0,
+    contextUsage: null,
+  }
+  view.rerender(
+    viewHook({
+      latestJob: nextJob,
+      incoming: { ...feedback, jobId: 'next', attempt: 0, fence: 0, contextUsage: null },
+    }),
+  )
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 1%' })).toBe(button)
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 1%' })).toBe(button)
+  expect(button.querySelector('circle[pathLength]')).toBe(ring)
+  const started = { ...nextJob, state: 'running' as const, attempt: 1, fence: 2 }
+  view.rerender(
+    viewHook({ latestJob: started, incoming: { ...feedback, jobId: 'next', contextUsage: null } }),
+  )
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 1%' })).toBe(button)
+  view.rerender(
+    viewHook({
+      latestJob: started,
+      incoming: {
+        ...feedback,
+        jobId: 'next',
+        contextUsage: { ...usage, jobId: 'next', usedTokens: 210000 },
+      },
+    }),
+  )
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 20%' })).toBe(button)
+  await act(async () => request.resolve({ contextUsage: usage }))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 20%' })).toBe(button)
+})
+
+it('restores the previous estimate when reloading during a new job that has no metrics yet', async () => {
+  vi.mocked(readConversationContext).mockResolvedValue({ contextUsage: usage })
+  render(
+    viewHook({
+      latestJob: { ...job, id: 'next', state: 'queued', contextUsage: null },
+      incoming: { ...feedback, jobId: 'next', contextUsage: null },
+    }),
+  )
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })).toBeTruthy()
+  await screen.findByRole('button', { name: '上下文使用情况：约 1%' })
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('button', { name: '上下文使用情况：约 1%' })).toBeTruthy()
+})
 
 it('restores once and rejects stale sequence, attempt, lease and slow HTTP snapshots', async () => {
   const request = deferred<{ contextUsage: Usage | null }>()
@@ -188,7 +279,7 @@ it('isolates account and conversation immediately and drops late requests', asyn
   fireEvent.click(screen.getByText('反馈'))
   expect(screen.getByRole('button', { name: '上下文使用情况：约 1%' })).toBeTruthy()
   view.rerender(viewHook({}, { ...identity, member: { ...identity.member, id: 'other' } }))
-  expect(screen.getByRole('button', { name: '上下文使用情况：尚未计算' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })).toBeTruthy()
   await act(async () => {})
 })
 

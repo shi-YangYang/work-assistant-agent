@@ -34,10 +34,9 @@
   stroke-linecap: round;
   transform: rotate(-90deg);
   transform-origin: center;
-  transition: stroke-dasharray 200ms;
-}
-.unknown {
-  fill: currentColor;
+  transition:
+    stroke-dasharray 200ms,
+    opacity 200ms;
 }
 .trigger[data-active='true'] {
   color: var(--text);
