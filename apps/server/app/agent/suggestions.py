@@ -8,6 +8,14 @@ from sqlalchemy import select
 
 
 async def authorize_suggestion(context, action, content, work_id=None, source_tokens=()):
+    from app.agent.task_outcomes import remember
+    result = await _authorize_suggestion(context, action, content, work_id, source_tokens)
+    if result:
+        await remember(context, action, {'target_id': work_id, 'changes': content}, result)
+    return result
+
+
+async def _authorize_suggestion(context, action, content, work_id=None, source_tokens=()):
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         target = await referenced_record(db, WorkItem, work_id, actor) if work_id else None
@@ -23,5 +31,20 @@ async def authorize_suggestion(context, action, content, work_id=None, source_to
         proposal = {'action': action, 'effect': 'prepare_suggestion', 'changes': content, 'targetId': work_id or '', 'target': target.title if target else '', 'targetCandidates': candidates, 'sourceTokens': list(source_tokens)}
     allowed, reason = await authorize_intent(context, proposal)
     if allowed:
+        context.suggestion_items[digest([action, content, work_id, sorted(source_tokens)])] = context.task_item_keys[digest(proposal)]
         return None
-    return {'state': 'not_requested' if digest(proposal) in context.unrequested_actions else 'clarification', 'message': reason or '本次未保存进展；请明确是否要记录到工作中'}
+    return {'state': 'not_requested' if digest(proposal) in context.unrequested_actions else 'clarification', 'category': context.authorization_outcomes.get(digest(proposal), 'missing_info'), 'message': reason or '本次未保存进展；请明确是否要记录到工作中'}
+
+
+def suggestion_key(context, job, action, content, work_id=None, source_tokens=()):
+    item_id = context.suggestion_items[digest([action, content, work_id, sorted(source_tokens)])]
+    return f"{context.task_snapshot.get('taskId', job.target_id)}:{item_id}"
+
+
+def suggestion_receipt(context, job, action, draft, content, work_id=None, source_tokens=()):
+    from app.tasks.outcomes import record
+    from app.tasks.items import record as record_item
+    result = {'draftId': draft.id, 'status': draft.status, 'state': 'pending' if draft.status == 'pending' else 'succeeded' if draft.status == 'confirmed' else 'cancelled'}
+    record(job, action, {'target_id': work_id, 'changes': content}, result)
+    record_item(job, context.suggestion_items[digest([action, content, work_id, sorted(source_tokens)])], result)
+    return result

@@ -45,7 +45,7 @@ async def refresh_generation(db, actor, row):
 async def action_dto(db, actor, row):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
-    base = {'id': row.id, 'messageId': row.message_id, 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
+    base = {'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key, 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
     if row.action.startswith('delete_') and row.state == 'succeeded' and row.access.get('role') == actor.role:
         return {**base, 'message': '记录已删除'}
     if row.access.get('role') != actor.role or not await business_valid(db, actor, row.access):
@@ -84,7 +84,12 @@ async def action_dto(db, actor, row):
 async def message_actions(db, actor, message):
     if message.owner_id != actor.id:
         return []
-    rows = (await db.scalars(select(BusinessAction).where(BusinessAction.message_id == message.id, BusinessAction.owner_id == actor.id).order_by(BusinessAction.step))).all()
+    job = await db.scalar(select(Job).where(Job.kind == 'message', Job.target_id == message.id, Job.owner_id == actor.id))
+    snapshot = (job.result if job else {}).get('taskSnapshot', {})
+    association = BusinessAction.message_id == message.id
+    if snapshot.get('relation') == 'continue':
+        association = association | (BusinessAction.task_id == snapshot['taskId'])
+    rows = (await db.scalars(select(BusinessAction).where(association, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).order_by(BusinessAction.step))).all()
     return [await action_dto(db, actor, row) for row in rows]
 
 

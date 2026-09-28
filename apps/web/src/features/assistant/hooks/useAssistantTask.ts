@@ -100,10 +100,10 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
       },
     )
   }, [valid, update])
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     if (!valid()?.conversationId) return
     update({ checking: true })
-    return restore()
+    await restore()
   }, [restore, update, valid])
   const historyActivity = messages
     .filter((message) => !message.businessUnavailable && activeJob(message.job))

@@ -31,6 +31,8 @@ export function acceptFeedback(
       incoming.state === current.state &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
       JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? []) &&
+      JSON.stringify(incoming.taskOutcome ?? null) ===
+        JSON.stringify(current.taskOutcome ?? null) &&
       JSON.stringify(incoming.contextUsage ?? null) === JSON.stringify(current.contextUsage ?? null)
     )
       return current

@@ -324,3 +324,85 @@ it.each(outcomes)(
     }
   },
 )
+
+it('keeps expanded progress when waiting for an answer and resuming the same job view', () => {
+  const node: NonNullable<Job['nodes']>[number] = {
+    id: 'read',
+    parentId: null,
+    kind: 'tool',
+    label: '查找工作',
+    state: 'succeeded',
+    attempts: 1,
+    maxAttempts: 4,
+    retries: 0,
+    totalRetries: 0,
+    round: 0,
+    nextRetryAt: null,
+    errorCode: '',
+    error: '',
+    canRetry: false,
+  }
+  const pending: Job = {
+    ...first,
+    kind: 'message',
+    state: 'awaiting_input',
+    error: '',
+    nodes: [node],
+    taskOutcome: {
+      state: 'needs_input',
+      completed: [],
+      remaining: ['两项同名，请选择对象'],
+      nextAction: 'reply',
+    },
+  }
+  const mounted = render(<JobNotice job={pending} refresh={vi.fn()} showNodes />)
+  const details = mounted.container.querySelector('details')!
+  fireEvent.click(details.querySelector('summary')!)
+  fireEvent(details, new Event('toggle'))
+  expect(details.open).toBe(true)
+  expect(screen.getByText('两项同名，请选择对象')).toBeTruthy()
+  mounted.rerender(
+    <JobNotice
+      job={{
+        ...pending,
+        state: 'running',
+        updatedAt: '2026-09-28',
+        nodes: [{ ...node, state: 'running' }],
+      }}
+      refresh={vi.fn()}
+      showNodes
+    />,
+  )
+  expect(mounted.container.querySelector('details')!.open).toBe(true)
+  expect(screen.queryByText('两项同名，请选择对象')).toBeNull()
+})
+
+it('records expansion before a delayed native toggle and immediate version update', () => {
+  const node: NonNullable<Job['nodes']>[number] = {
+    id: 'read',
+    parentId: null,
+    kind: 'tool',
+    label: '读取工作',
+    state: 'running',
+    attempts: 1,
+    maxAttempts: 4,
+    retries: 0,
+    totalRetries: 0,
+    round: 0,
+    nextRetryAt: null,
+    errorCode: '',
+    error: '',
+    canRetry: false,
+  }
+  const job: Job = { ...first, kind: 'message', state: 'running', error: '', nodes: [node] }
+  const mounted = render(<JobNotice job={job} refresh={vi.fn()} showNodes />)
+  fireEvent.click(mounted.container.querySelector('summary')!)
+  mounted.rerender(
+    <JobNotice
+      job={{ ...job, updatedAt: '2026-09-28', nodes: [{ ...node, state: 'succeeded' }] }}
+      refresh={vi.fn()}
+      showNodes
+    />,
+  )
+  expect(mounted.container.querySelector('details')!.open).toBe(true)
+})

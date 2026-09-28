@@ -41,17 +41,29 @@ export function TaskProgress({
   const completed = nodes.filter((node) => node.state === 'succeeded').length
   const confirmations = nodes.filter((node) => node.state === 'awaiting_confirmation').length
   const retries = nodes.reduce((total, node) => total + node.totalRetries, 0)
-  const summary = complete
-    ? `${job.incompleteTask ? '仍有事项未完成 · ' : ''}已完成 ${completed} 个步骤${confirmations ? ` · ${confirmations} 项待确认` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
-    : job.state === 'queued'
-      ? '等待继续处理'
-      : job.state === 'cancelled'
-        ? '已中断'
-        : current
-          ? `${current.label} · ${nodeStatus(current, now)}`
-          : failed
-            ? `${failed.label} · 未完成`
-            : '处理步骤'
+  const outcome = complete ? job.taskOutcome : null
+  const outcomeNames = {
+    processing: '正在处理',
+    completed: '已完成',
+    partial: '部分完成',
+    needs_input: '等待补充信息',
+    needs_confirmation: '等待你的确认',
+    blocked: '暂时无法继续',
+    cancelled: '已中断',
+  }
+  const summary = outcome
+    ? `${outcomeNames[outcome.state]}${completed ? ` · ${outcome.state === 'completed' ? '' : '已完成 '}${completed} 个步骤` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
+    : complete
+      ? `${job.incompleteTask ? '仍有事项未完成 · ' : job.state === 'awaiting_input' && nodes.some((node) => node.state === 'awaiting_input') ? '等待补充信息 · ' : ''}已完成 ${completed} 个步骤${confirmations ? ` · ${confirmations} 项待确认` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
+      : job.state === 'queued'
+        ? '等待继续处理'
+        : job.state === 'cancelled'
+          ? '已中断'
+          : current
+            ? `${current.label} · ${nodeStatus(current, now)}`
+            : failed
+              ? `${failed.label} · 未完成`
+              : '处理步骤'
   if (['failed', 'awaiting_retry'].includes(job.state))
     return (
       <div className={`${styles.progress} ${styles.failure}`} role="status">
@@ -71,7 +83,13 @@ export function TaskProgress({
         onToggle={(event) => onExpandedChange?.(event.currentTarget.open)}
         data-running={job.state === 'running' && current?.state === 'running'}
       >
-        <summary>
+        <summary
+          onClick={(event) => {
+            if (!onExpandedChange) return
+            event.preventDefault()
+            onExpandedChange(!expanded)
+          }}
+        >
           <ListChecks size={15} aria-hidden="true" />
           <span>{summary}</span>
           <ChevronRight size={14} aria-hidden="true" className={styles.chevron} />
@@ -89,6 +107,13 @@ export function TaskProgress({
           ))}
         </ol>
       </details>
+      {outcome &&
+        ['partial', 'needs_input', 'blocked'].includes(outcome.state) &&
+        (outcome.reason || outcome.remaining[0]) && (
+          <p className={styles.outcome} role="status">
+            {outcome.reason || outcome.remaining[0]}
+          </p>
+        )}
     </div>
   )
 }

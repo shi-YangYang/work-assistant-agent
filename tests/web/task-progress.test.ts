@@ -248,3 +248,56 @@ it('does not relight a terminal attempt when a late snapshot has a larger sequen
     acceptFeedback(terminal, { ...terminal, attempt: 2, state: 'running' }, 'job')?.state,
   ).toBe('running')
 })
+
+it.each([
+  ['needs_input', '等待补充信息'],
+  ['needs_confirmation', '等待你的确认'],
+  ['partial', '部分完成'],
+  ['processing', '正在处理'],
+  ['blocked', '暂时无法继续'],
+] as const)(
+  'uses the business %s outcome instead of declaring the task complete',
+  (state, label) => {
+    const html = renderToStaticMarkup(
+      createElement(TaskProgress, {
+        job: job({
+          state: 'awaiting_input',
+          nodes: [node({ state: 'succeeded' })],
+          taskOutcome: { state, completed: [], remaining: ['请提供具体对象'], nextAction: 'reply' },
+        }),
+        busy: false,
+        onRetry: vi.fn(),
+      }),
+    )
+    expect(html).toContain(label)
+    expect(html).not.toContain('已完成 ·')
+  },
+)
+
+it('prefers the live retry state and accepts outcome-only feedback updates', () => {
+  const value = job({
+    state: 'running',
+    taskOutcome: { state: 'blocked', completed: [], remaining: [], nextAction: 'reply' },
+  })
+  const html = renderToStaticMarkup(
+    createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }),
+  )
+  expect(html).toContain('思考中')
+  expect(html).not.toContain('暂时无法继续')
+  const base: JobFeedback = {
+    jobId: 'job',
+    attempt: 1,
+    fence: 1,
+    seq: 1,
+    stage: 'complete',
+    state: 'succeeded',
+    text: '',
+    error: '',
+    updatedAt: '2026-09-28',
+  }
+  const changed: JobFeedback = {
+    ...base,
+    taskOutcome: { state: 'completed', completed: ['生成报告'], remaining: [], nextAction: 'none' },
+  }
+  expect(acceptFeedback(base, changed, 'job')).toBe(changed)
+})

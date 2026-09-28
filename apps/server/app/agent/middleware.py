@@ -45,7 +45,7 @@ class ToolBoundary(AgentMiddleware):
             return response
         async with context.sessions.begin() as db:
             job, actor = await lease(db, context)
-            if job.kind != 'message':
+            if job.kind != 'message' or job.result.get('taskBarriers'):
                 return response
             from app.modules.operations.models import BusinessAction
             if await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == job.target_id).limit(1)):

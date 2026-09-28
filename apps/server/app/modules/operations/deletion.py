@@ -66,6 +66,8 @@ async def purge_messages(db, ids, *, retain_publications=False):
         message.suggestions = message.transcript_history = message.citations = []
         message.reply_to = None
         message.transcript_revision += 1
+    from app.modules.conversations.task_state import invalidate_sources
+    await invalidate_sources(db, set(ids))
     await db.flush()
     for company_id in {m.company_id for m in messages}:
         await business_invalidate_deleted(db, company_id)

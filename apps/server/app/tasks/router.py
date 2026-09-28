@@ -22,6 +22,10 @@ router = APIRouter()
 async def get_job(identifier: str, actor=AUTH, db=DB):
     item = await owned(db, Job, identifier, actor)
     await business_require(db, actor, item.access)
+    if item.kind == 'message':
+        from app.modules.messages.serializers import message_dto
+        message = await active_message(db, item.target_id, actor)
+        return (await message_dto(db, message, actor))['job']
     return job_dto(item)
 
 
@@ -61,6 +65,8 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
     if item.kind == 'message':
         from app.tasks.conversation_activity import require_idle
         await require_idle(db, actor, message.conversation_id)
+        from app.modules.conversations.task_state import prepare_retry
+        await prepare_retry(db, actor, item, message)
     item.state, item.error, item.request_started = 'queued', '', False
     if item.kind == 'message':
         # Replace the failed response in place. Keep the source and operation

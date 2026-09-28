@@ -58,5 +58,10 @@ class RunContext:
     published_compactions: set[str] = field(default_factory=set)
     context_checkpoint: Any = None
     context_checkpoint_config: dict = field(default_factory=dict)
+    authorization_outcomes: dict = field(default_factory=dict)
+    append_values: dict = field(default_factory=dict)
+    task_snapshot: dict = field(default_factory=dict)
+    task_item_keys: dict = field(default_factory=dict)
+    suggestion_items: dict = field(default_factory=dict)
     receipt_candidates: set[str] = field(default_factory=set)
     unrequested_actions: set[str] = field(default_factory=set)

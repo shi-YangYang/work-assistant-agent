@@ -341,7 +341,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
             payload = json.loads(messages[-1]['content'])
             if payload.get('task') == 'business_reply_review':
                 counts['review'] += 1
-                content = json.dumps({'segments': [{'index': p['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for p in payload['segments']]})
+                content = json.dumps({'segments': [{'index': p['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for p in payload['segments']], 'taskContext': {'state': 'completed'}})
             else:
                 counts['intent'] += 1
                 content = json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '', 'receiptOnly': False})
@@ -472,3 +472,103 @@ async def test_business_revision_change_stops_a_model_before_its_next_attempt(se
     with pytest.raises(ProviderError, match='已变化'):
         await node_execution.execute_node(context, identity='model', kind='model', label='思考中', operation=request)
     assert len(calls) == 1
+
+
+async def test_wrong_judge_item_reference_is_repaired_internally_before_any_business_write(setup, fast_nodes, monkeypatch):
+    from test_conversation_task_state import close_task
+    _, sessions, _, clients = setup
+    a = await create(clients['employee'], '已处理事项')
+    b = await create(clients['employee'], '待补对象')
+    first, _ = await runtime(setup, '完成已处理事项，再更新待补对象下一步')
+    await read_work(first, a['id'])
+    saved = await execute(first, step=1, action='update_work', target_id=a['id'], expected_revision=1, changes={'status': 'done'})
+    await close_task(first, state='needs_input')
+    context, _ = await runtime(setup, '待补对象下一步写发给客户')
+    context.node_retry, context.intent_model = True, None
+    await node_execution.initialize(context, 'clarified-input')
+    await read_work(context, b['id'])
+    async def resolve(*args):
+        return {'model': 'controlled', 'parameters': {}, 'baseUrl': 'https://example.com'}, 'test'
+    monkeypatch.setattr('app.modules.model_services.bindings.resolve_bound', resolve)
+    calls = []
+    async def chat(settings, config, key, messages, *, on_event, **kwargs):
+        calls.append(messages)
+        await on_event('started')
+        verdict = {'allowed': True, 'quote': '待补对象下一步写发给客户', 'reason': '', 'resumeTask': True,
+            'taskItemId': saved['taskItemId'] if len(calls) == 1 else '', 'newTaskItem': False}
+        return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
+    monkeypatch.setattr('app.integrations.models.chat.chat', chat)
+    result = await execute(context, step=1, action='update_work', target_id=b['id'], expected_revision=1, changes={'nextStep': '发给客户'})
+    assert result['state'] == 'succeeded' and len(calls) == 2
+    assert '留空' in calls[1][-1]['content'] and '不是用户缺少授权' in calls[1][-1]['content']
+    async with sessions() as db:
+        job = await db.get(Job, context.job_id)
+        authorization = next(row for row in node_dtos(job) if row['kind'] == 'authorization')
+        assert authorization['state'] == 'succeeded' and authorization['retries'] == 1
+        assert (await db.get(WorkItem, a['id'])).revision == 2
+        assert (await db.get(WorkItem, b['id'])).revision == 2
+        assert result['taskItemId'] != saved['taskItemId']
+
+
+async def test_append_contract_rechecks_legacy_cached_authorization_and_repairs_missing_delta(setup, fast_nodes, monkeypatch):
+    from app.core.digests import digest
+    context, _ = await runtime(setup, '给报价方案的说明补充部署更新')
+    context.node_retry, context.intent_model = True, None
+    await node_execution.initialize(context, 'append-contract-upgrade')
+    proposal = {'action': 'update_work', 'changes': {'summary': '原有说明；部署文档已更新完成。'}, 'targetContent': {'summary': '原有说明。'}}
+    old = {'allowed': True, 'quote': '给报价方案的说明补充部署更新', 'reason': '', 'appendFields': ['summary']}
+    async def cached():
+        return old
+    # Simulate a process stopped after persisting the old authorization result.
+    await node_execution.execute_node(context, identity=digest(proposal), kind='authorization', label='核对操作授权中', operation=cached)
+    async def resolve(*args):
+        return {'model': 'controlled', 'parameters': {}, 'baseUrl': 'https://example.com'}, 'test'
+    monkeypatch.setattr('app.modules.model_services.bindings.resolve_bound', resolve)
+    calls = []
+    async def chat(settings, config, key, messages, *, on_event, **kwargs):
+        calls.append(messages)
+        await on_event('started')
+        verdict = old if len(calls) == 1 else {**old, 'appendValues': {'summary': '部署文档已更新完成。'}}
+        return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
+    monkeypatch.setattr('app.integrations.models.chat.chat', chat)
+    assert (await authorize_intent(context, proposal))[0]
+    assert len(calls) == 2 and '追加协议无效' in calls[1][-1]['content']
+    assert context.append_values[digest(proposal)] == {'summary': '部署文档已更新完成。'}
+    async with context.sessions() as db:
+        rows = [row for row in node_dtos(await db.get(Job, context.job_id)) if row['kind'] == 'authorization']
+        assert len(rows) == 2 and rows[-1]['retries'] == 1 and rows[-1]['state'] == 'succeeded'
+        assert await db.scalar(select(func.count()).select_from(BusinessAction).where(BusinessAction.owner_id == context.owner_id)) == 0
+
+
+async def test_invalid_review_fact_paths_retry_review_without_requesting_user_input(setup, fast_nodes, monkeypatch):
+    from app.agent.reply_review import review_reply
+    work = await create(setup[3]['employee'], '交付材料')
+    context, _ = await runtime(setup, '把下一步改成发给客户，说明实际修改了什么')
+    await read_work(context, work['id'])
+    saved = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'nextStep': '发给客户'})
+    context.node_retry = True
+    await node_execution.initialize(context, 'review-protocol')
+    async def resolve(*args):
+        return {'model': 'controlled', 'parameters': {}, 'baseUrl': 'https://example.com'}, 'test'
+    monkeypatch.setattr('app.modules.model_services.bindings.resolve_bound', resolve)
+    calls = []
+    async def chat(settings, config, key, messages, *, on_event, **kwargs):
+        calls.append(messages)
+        await on_event('started')
+        malformed = len(calls) == 1
+        verdict = {'segments': [{'index': 0, 'scope_reason': '解释真实修改字段', 'scope': 'answer', 'kind': 'operation_explanation', 'operationFacts': [
+            {'receiptId': saved['id'], 'field': 'details.nextStep' if malformed else 'nextStep', 'value': '发给客户'},
+            {'receiptId': saved['id'], 'field': 'changedFields', 'value': 'nextStep' if malformed else ['nextStep']},
+        ]}], 'taskContext': {'state': 'completed', 'remaining': []}}
+        return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
+    monkeypatch.setattr('app.integrations.models.chat.chat', chat)
+    checked = await review_reply(context, '仅把下一步改为发给客户。')
+    assert len(calls) == 2 and checked.verified and not checked.needs_response
+    assert checked.text == '仅把下一步改为发给客户。' and checked.task['state'] == 'completed'
+    assert '禁止 details.xxx' in calls[1][-1]['content']
+    async with context.sessions() as db:
+        job = await db.get(Job, context.job_id)
+        review = next(node for node in node_dtos(job) if node['kind'] == 'review')
+        assert review['state'] == 'succeeded' and review['retries'] == 1
+        assert (await db.get(WorkItem, work['id'])).revision == 2
+        assert not job.result.get('responseRepairComplete')

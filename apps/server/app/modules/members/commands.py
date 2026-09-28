@@ -42,7 +42,8 @@ async def delete_member_command(identifier, actor, db):
     # The colon is outside the allowed username alphabet, so this reserved
     # tombstone cannot conflict with an account created through the API.
     if not item.deleted:
-        from app.modules.conversations.models import ConversationContext
+        from app.modules.conversations.models import ConversationContext, ConversationTaskState
+        await db.execute(delete(ConversationTaskState).where(ConversationTaskState.owner_id == item.id, ConversationTaskState.company_id == actor.company_id))
         await db.execute(delete(ConversationContext).where(ConversationContext.owner_id == item.id, ConversationContext.company_id == actor.company_id))
         item.active, item.deleted, item.password_hash = False, True, None
         item.username = 'deleted:' + item.id

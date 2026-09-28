@@ -193,7 +193,7 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
             assert review['version'] == REVIEW_VERSION and review['toolEvidence'] == [] and review['currentActions'] == []
             if len(calls) == 3:
                 return httpx.Response(401, json={'error': {'message': 'controlled review failure'}})
-            message = {'role': 'assistant', 'content': json.dumps({'segments': [{'index': item['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for item in review['segments']], 'needs_action': False})}
+            message = {'role': 'assistant', 'content': json.dumps({'segments': [{'index': item['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for item in review['segments']], 'needs_action': False, 'taskContext': {'state': 'completed'}})}
         return httpx.Response(200, json={'choices': [{'message': message, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 100, 'completion_tokens': 20}})
     monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     job = await claim(sessions, users[role].id)

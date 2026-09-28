@@ -31,6 +31,10 @@ async def source_check(db, actor, row):
     conversation = await owned(db, Conversation, row.conversation_id, actor) if row.conversation_id else None
     if message.transcript_revision != row.params.get('sourceRevision', message.transcript_revision):
         problem(409, '原始材料已更正，请重新提出请求')
+    from app.modules.conversations.task_state import source_text
+    for source in row.params.get('taskSources', []):
+        if await source_text(db, actor, row.conversation_id, source) is None:
+            problem(409, '任务授权来源已变化，请重新提出请求')
     for aid, revision in row.params.get('documents', {}).items():
         attachment = await owned(db, Attachment, aid, actor)
         if attachment.extraction_revision != revision:

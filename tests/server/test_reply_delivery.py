@@ -125,3 +125,77 @@ async def test_legacy_receipt_with_newly_available_title_still_refreshes():
     row = SimpleNamespace(reply='生成报告：正在处理。')
     cards = [{'action': 'generate_report', 'label': '生成报告', 'state': 'succeeded', 'title': '2026-09-28 日报'}]
     assert current_reply(row, None, cards, []) == '生成报告《2026-09-28 日报》：已完成。'
+
+
+@pytest.mark.parametrize('saved', [False, True])
+async def test_required_clarification_is_an_independent_root_after_execution_prose_is_removed(saved):
+    parts = ['前项已处理。\n\n', '请选择材料汇总：\n- 第一批\n- 第二批\n\n', '确认后我会更新。']
+    evidence = [{'id': 8, 'tool': 'find_work_items', 'result': json.dumps({'items': [{'title': '材料汇总', 'summary': '第一批'}, {'title': '材料汇总', 'summary': '第二批'}]})}]
+    value = {'segments': [
+        {'index': 0, 'scope_reason': '执行声明', 'scope': 'answer', 'kind': 'execution'},
+        {'index': 1, 'scope_reason': '当前必须选择同名对象', 'scope': 'clarification', 'kind': 'query_fact', 'evidence': [8]},
+        {'index': 2, 'scope_reason': '将来执行承诺', 'scope': 'answer', 'kind': 'execution'},
+    ], 'taskContext': {'state': 'needs_input', 'remaining': ['选择材料汇总条目']}}
+    actions = [{'id': 'saved', 'state': 'succeeded', 'details': {'status': 'done'}}] if saved else []
+    checked = check_segments(parts, json.dumps(value), evidence, actions)
+    assert checked.text == parts[1].strip() and not checked.needs_response
+    # The former necessary->execution classification cannot silently drop the question.
+    value['segments'][1].update(scope='necessary', supports=[2])
+    dropped = check_segments(parts, json.dumps(value), evidence, actions)
+    assert not dropped.text and dropped.needs_response and '最小问题' in dropped.response_reason
+
+
+@pytest.mark.parametrize('kind,evidence_ids', [('query_fact', [999]), ('unsupported', [])])
+async def test_clarification_does_not_preserve_unsupported_candidates(kind, evidence_ids):
+    value = {'segments': [{'index': 0, 'scope_reason': '所需对象选择，但候选没有证据', 'scope': 'clarification', 'kind': kind, 'evidence': evidence_ids}],
+             'taskContext': {'state': 'needs_input', 'remaining': ['选择对象']}}
+    result = check_segments(['要选虚构的第一批还是第二批？'], json.dumps(value), [])
+    assert not result.text and result.needs_response
+
+
+@pytest.mark.parametrize('state', ['completed', 'needs_confirmation'])
+async def test_extra_invitation_and_existing_confirmation_do_not_require_new_input(state):
+    value = {'segments': [
+        {'index': 0, 'scope_reason': '所求分析', 'scope': 'answer', 'kind': 'information'},
+        {'index': 1, 'scope_reason': '额外邀请用户执行别的操作', 'scope': 'extra', 'kind': 'information'},
+    ], 'taskContext': {'state': state, 'remaining': []}}
+    result = check_segments(['这是分析。', '要不要继续创建三项工作？'], json.dumps(value), [])
+    assert result.text == '这是分析。' and not result.needs_response
+    value['segments'][1]['scope'] = 'clarification'
+    assert check_segments(['这是分析。', '请再打字确认。'], json.dumps(value), []).text == '这是分析。'
+
+
+async def test_filtered_required_question_is_repaired_once_without_repeating_saved_action(setup, monkeypatch):
+    from langchain_core.messages import AIMessage
+    from app.agent.tools.work import find_work_items
+    clients = setup[3]
+    await create(clients['employee'], '材料汇总', summary='第一批')
+    await create(clients['employee'], '材料汇总', summary='第二批')
+    question = '请选择材料汇总：\n- 第一批\n- 第二批'
+    original = '前项已处理。\n\n' + question + '\n\n确认后我会修改。'
+    calls = []
+    async def before(context):
+        await execute(context, step=1, action='create_work', changes={'title': '前项'})
+    async def graph(context, *args, **kwargs):
+        result = await find_work_items.coroutine('材料汇总', SimpleNamespace(context=context))
+        context.reply_evidence.append({'id': 8, 'tool': 'find_work_items', 'result': result})
+        return original
+    async def repair(context, answer, reason, *, model=None):
+        calls.append(reason)
+        return question
+    class Judge:
+        async def ainvoke(self, messages):
+            payload = json.loads(messages[-1].content)
+            evidence_id = next(item['id'] for item in payload['toolEvidence'] if item['tool'] == 'find_work_items')
+            if len(payload['segments']) == 1:
+                segments = [{'index': 0, 'scope_reason': '必要对象选择', 'scope': 'clarification', 'kind': 'query_fact', 'evidence': [evidence_id]}]
+            else:
+                segments = [{'index': 0, 'scope_reason': '执行声明', 'scope': 'answer', 'kind': 'execution'},
+                    {'index': 1, 'scope_reason': '依附将来执行的旧错误分类', 'scope': 'necessary', 'supports': [2], 'kind': 'query_fact', 'evidence': [evidence_id]},
+                    {'index': 2, 'scope_reason': '执行承诺', 'scope': 'answer', 'kind': 'execution'}]
+            return AIMessage(content=json.dumps({'segments': segments, 'taskContext': {'state': 'needs_input', 'remaining': ['选择材料汇总']}}))
+    monkeypatch.setattr('app.agent.response_repair.repair_response', repair)
+    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    result = await run_reply(setup, '创建前项，再修改材料汇总下一步', original, Judge(), before=before)
+    assert len(calls) == 1 and len(result['actions']) == 1
+    assert question in result['reply'] and result['job']['taskOutcome']['state'] == 'partial'

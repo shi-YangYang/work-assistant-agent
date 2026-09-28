@@ -43,6 +43,10 @@ async def cancel_job(db, actor, identifier, body):
     item.state, item.phase, item.error = 'cancelled', 'cancelled', '已中断'
     item.fence, item.lease_until, item.updated_at = item.fence + 1, None, now()
     item.result = {key: value for key, value in item.result.items() if key not in ('pendingReply', 'replyReviewError')}
+    from app.modules.conversations.task_state import cancel as cancel_task
+    await cancel_task(db, actor, item, message)
+    from app.tasks.outcomes import derive
+    item.result = {**item.result, 'taskOutcome': derive(item)}
     cancel_unfinished(item)
     update_feedback(item, text='')
     if item.result.get('contextUsage'):

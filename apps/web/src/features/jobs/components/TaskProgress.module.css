@@ -142,3 +142,11 @@
     transition: none;
   }
 }
+
+.outcome {
+  margin: 6px 0 0 23px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}

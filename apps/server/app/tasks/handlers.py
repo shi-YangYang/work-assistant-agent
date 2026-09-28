@@ -78,7 +78,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             if live.fence == context.fence and live.state == 'running':
                 await interrupt_usage(db, live)
                 update_feedback(live)
-                revoked = (isinstance(error, HTTPException) and isinstance(error.detail, dict) and error.detail.get('code') == 'business_access_changed') or (isinstance(error, ValueError) and str(error).startswith('账号权限已变化'))
+                revoked = (isinstance(error, HTTPException) and isinstance(error.detail, dict) and error.detail.get('code') in ('business_access_changed', 'task_superseded', 'task_source_changed', 'task_input_changed')) or (isinstance(error, ValueError) and str(error).startswith('账号权限已变化'))
                 live.state = 'cancelled' if revoked else 'awaiting_retry' if live.request_started else 'failed'
                 live.error, live.lease_until, live.updated_at = reason, None, now()
 
@@ -207,7 +207,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             message = await owned(db, Message, job.target_id, actor)
             actions = await message_actions(db, actor, message)
             draft = await db.scalar(select(ProgressDraft.id).where(ProgressDraft.message_id == message.id).limit(1))
-            repair = not draft and all(a['state'] in ('succeeded', 'pending', 'running') for a in actions) and not live.result.get('operationFeedback') and not live.result.get('completionRepairAttempted')
+            repair = not draft and all(a['state'] in ('succeeded', 'pending', 'running') for a in actions) and not live.result.get('operationFeedback') and not live.result.get('taskBarriers') and not any(item['category'] in ('missing_info', 'permission_denied', 'conflict', 'invalid_arguments') for item in live.result.get('toolOutcomes', [])) and not live.result.get('completionRepairAttempted')
             if repair:
                 live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True}
     if repair:
@@ -219,6 +219,17 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             live.phase = 'reply_review'
             update_feedback(live, 'reviewing', '')
         review = await review_reply(context, answer, model=reply_model or model)
+    if review.verified and review.needs_response:
+        async with sessions.begin() as db:
+            live, _ = await lease(db, context)
+            repair_text = not live.result.get('responseRepairComplete')
+        if repair_text:
+            from app.agent.response_repair import repair_response
+            answer = await repair_response(context, answer, review.response_reason, model=model)
+            async with sessions.begin() as db:
+                live, _ = await lease(db, context)
+                live.result = {**live.result, 'responseRepairComplete': True, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
+            review = await review_reply(context, answer, model=reply_model or model)
     async with sessions.begin() as db:
         live, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor, lock=True)
@@ -230,9 +241,11 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             fallback = await work_query_fallback(db, actor, context)
             if fallback:
                 review = replace(review, text='\n\n'.join(part for part in (fallback, review.text) if part))
-        drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.status != 'deleted').order_by(ProgressDraft.created_at))).all()
+        from app.modules.work.draft_receipts import message_drafts
+        drafts = await message_drafts(db, actor, message, live)
         for draft in drafts:
-            business_inherit(actor, draft, live)
+            if draft.message_id == message.id:
+                business_inherit(actor, draft, live)
             await business_require(db, actor, draft.access)
         from app.modules.deliverables.serializers import delivery_summary
         deliverable_reply = await delivery_summary(db, actor, message)
@@ -274,9 +287,14 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         if review.verified:
             live.result = {key: value for key, value in live.result.items() if key not in ('pendingReply', 'replyReviewError')}
             live.result = {**live.result, 'conversationReply': review.text}
-            incomplete = review.needs_action or any(card['state'] in ('failed', 'conflict', 'unavailable') for card in cards) or bool(live.result.get('operationFeedback'))
+            incomplete = review.needs_action or review.needs_response or any(card['state'] in ('failed', 'conflict', 'unavailable') for card in cards) or bool(live.result.get('operationFeedback'))
             live.state = 'succeeded' if not incomplete and (message.suggestions or has_actions or deliverable_reply) else 'awaiting_input'
-            live.result = {**live.result, 'incompleteTask': incomplete}
+            live.result = {**live.result, 'incompleteTask': incomplete, 'completionIssue': 'response' if review.needs_response else 'action' if review.needs_action else '', 'taskInterpretation': review.task or {}}
+            from app.tasks.outcomes import derive
+            outcome = derive(live, cards, drafts, interpretation=review.task)
+            live.result = {**live.result, 'taskOutcome': outcome}
+            from app.modules.conversations.task_state import finish
+            await finish(db, actor, live, message, review.task, outcome)
             live.phase, live.error = 'complete', ''
         else:
             live.result = {**live.result, 'replyReviewError': review.error_code or 'UnverifiedReply'}

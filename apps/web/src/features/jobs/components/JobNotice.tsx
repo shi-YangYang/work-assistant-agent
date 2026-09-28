@@ -114,6 +114,7 @@ function JobRetryNotice({
         error: '',
         nodes: [],
         operationFeedback: [],
+        taskOutcome: null,
       }
       // The parent echoes this optimistic snapshot before the retry request completes.
       onOptimistic(optimistic)
@@ -158,6 +159,28 @@ function JobRetryNotice({
         已中断
       </p>
     ) : null
+  if (
+    assistant &&
+    job.taskOutcome &&
+    !['queued', 'running', 'failed', 'awaiting_retry'].includes(job.state)
+  ) {
+    const labels = {
+      processing: '正在处理',
+      completed: '',
+      partial: '部分完成',
+      needs_input: '等待补充信息',
+      needs_confirmation: '等待你的确认',
+      blocked: '暂时无法继续',
+      cancelled: '已中断',
+    }
+    const label = labels[job.taskOutcome.state]
+    return label ? (
+      <p className={utilitiesStyles['muted']} role="status">
+        {label}
+        {job.taskOutcome.reason ? `：${job.taskOutcome.reason}` : ''}
+      </p>
+    ) : null
+  }
   if (job.state === 'succeeded') return null
   if (job.state === 'awaiting_input')
     return (

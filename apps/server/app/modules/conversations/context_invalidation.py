@@ -17,4 +17,6 @@ async def invalidate(db, *, conversation_id=None, owner_id=None, company_id=None
 
 
 async def remove(db, conversation_id):
+    from app.modules.conversations.models import ConversationTaskState
+    await db.execute(delete(ConversationTaskState).where(ConversationTaskState.conversation_id == conversation_id))
     await db.execute(delete(ConversationContext).where(ConversationContext.conversation_id == conversation_id))

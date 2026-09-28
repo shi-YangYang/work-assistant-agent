@@ -184,7 +184,22 @@ export interface ContextUsage {
   reason?: string | null
   updatedAt: string
 }
+export interface TaskOutcome {
+  state:
+    | 'processing'
+    | 'completed'
+    | 'partial'
+    | 'needs_input'
+    | 'needs_confirmation'
+    | 'blocked'
+    | 'cancelled'
+  completed: string[]
+  remaining: string[]
+  reason?: string
+  nextAction: 'none' | 'reply' | 'confirm' | 'retry'
+}
 export interface Job {
+  taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean
   nodes?: TaskNode[]
@@ -400,6 +415,7 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean
   nodes?: TaskNode[]

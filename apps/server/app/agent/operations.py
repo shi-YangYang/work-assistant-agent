@@ -35,6 +35,8 @@ async def execute(context, **arguments):
     """Keep operation feedback even if a later model/review request fails."""
     from app.tasks.lease import lease
     async def remember(result):
+        from app.agent.task_outcomes import remember as remember_outcome
+        await remember_outcome(context, arguments.get('action', ''), arguments, result)
         step = arguments.get('step')
         if not isinstance(step, int) or not 1 <= step <= 8:
             return
@@ -56,7 +58,7 @@ async def execute(context, **arguments):
     try:
         result = await _execute(context, **arguments)
     except HTTPException as error:
-        await remember({'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']})
+        await remember({'state': 'conflict' if error.status_code == 409 else 'failed', 'category': 'permission_denied' if error.status_code in (403, 404) else 'conflict' if error.status_code == 409 else 'invalid_arguments', 'message': error.detail['message']})
         raise
     except ValueError:
         await remember({'state': 'clarification', 'message': '请核对必要内容、日期和字段，操作未执行。'})
@@ -68,7 +70,7 @@ async def execute(context, **arguments):
         return result
 
 
-async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='daily', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1, deliverable_id='', deliverable_revision=0, item_id='', shared_attachment_ids=None):
+async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='daily', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1, deliverable_id='', deliverable_revision=0, item_id='', shared_attachment_ids=None, task_item_id=''):
     from app.tasks.lease import lease
     from app.agent.conversation_context import request_text
     if action not in ACTIONS or not 1 <= step <= 8 or requires_step is not None and not 1 <= requires_step < step:
@@ -129,7 +131,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             if context.read_versions.get(target.id) != expected_revision:
                 return {'state': 'conflict', 'message': '请先读取目标的最新版本，再决定修改'}
         if action == 'generate_report' and actor.role != 'employee':
-            return {'state': 'failed', 'message': '管理员不生成或代交员工报告'}
+            return {'state': 'failed', 'category': 'permission_denied', 'message': '管理员不生成或代交员工报告'}
         candidates = []
         if isinstance(target, WorkItem):
             same_name = (await db.scalars(select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id == actor.id, WorkItem.deleted.is_(False), WorkItem.title == target.title).limit(21))).all()
@@ -153,6 +155,10 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         attachments = await selected_attachments(db, actor, shared_attachment_ids or [], message.conversation_id)
         effect = 'prepare_confirmation' if action in CONFIRM else 'enqueue_report' if action == 'generate_report' else 'save'
         proposal = {'targetCandidates': candidates, 'action': action, 'effect': effect, 'target': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}' if target else '', **params}
+        if task_item_id:
+            proposal['taskItemId'] = task_item_id
+        if isinstance(target, WorkItem):
+            proposal['targetContent'] = target.content
         if selected:
             proposal['deliverableSelection'] = selected
         if attachments:
@@ -179,14 +185,27 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
     if not allowed:
         if digest(proposal) in context.unrequested_actions:
             return {'state': 'not_requested', 'message': reason or '本次未要求该操作，已跳过；继续回应原请求即可，无需要求用户授权多余操作。'}
-        return {'state': 'clarification', 'message': reason or '请明确要执行的操作和对象，业务尚未更改'}
+        return {'state': 'clarification', 'category': context.authorization_outcomes.get(digest(proposal), 'missing_info'), 'message': reason or '请明确要执行的操作和对象，业务尚未更改'}
+    if action == 'update_work':
+        merged = dict(changes)
+        for name, addition in context.append_values.get(digest(proposal), {}).items():
+            previous = str(proposal.get('targetContent', {}).get(name) or '')
+            separator = '\n' if previous and not previous.endswith('\n') else ''
+            merged[name] = previous + separator + addition
+        changes = merged
+        params = {**params, 'changes': changes}
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         prior = await db.scalar(select(BusinessAction).where(BusinessAction.message_id == job.target_id, ((BusinessAction.step == step) | (BusinessAction.intent_key == intent_key) | (BusinessAction.digest == fingerprint))))
         if prior:
             return await receipt(context, db, actor, job, prior) if prior.digest == fingerprint else {'state': 'conflict', 'message': '操作内容已变化'}
         message = await owned(db, Message, job.target_id, actor, lock=True)
-        row = BusinessAction(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, conversation_id=message.conversation_id, step=step, action=action, digest=fingerprint, intent_key=intent_key, params={**params, 'sourceRevision': message.transcript_revision, 'documents': context.document_versions}, access=job.access or business_scope(actor))
+        task_id = context.task_snapshot.get('taskId', message.id)
+        task_item_key = context.task_item_keys.get(digest(proposal), intent_key)
+        saved = await db.scalar(select(BusinessAction).where(BusinessAction.task_id == task_id, BusinessAction.task_item_key == task_item_key, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id))
+        if saved:
+            return await receipt(context, db, actor, job, saved)
+        row = BusinessAction(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, conversation_id=message.conversation_id, step=step, action=action, task_id=task_id, task_item_key=task_item_key, digest=fingerprint, intent_key=intent_key, params={**params, 'sourceRevision': message.transcript_revision, 'documents': context.document_versions, 'taskSources': [*context.task_snapshot.get('directives', []), *(context.task_snapshot.get('previousTask', {}).get('sources', []) if context.task_snapshot.get('relation') == 'continue' else [])]}, access=job.access or business_scope(actor))
         db.add(row)
         await db.flush()
         try:
@@ -205,4 +224,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         if step == 1 and digest(proposal) in context.receipt_candidates and row.state in ('succeeded', 'pending', 'running'):
             row.result = {**row.result, 'receiptOnly': True, 'receiptInput': digest({'text': request_text(message, job), 'sourceRevision': message.transcript_revision, 'documents': context.document_versions})}
         await db.flush()
-        return await receipt(context, db, actor, job, row)
+        result = await receipt(context, db, actor, job, row)
+        from app.tasks.items import record
+        record(job, task_item_key, result)
+        return result

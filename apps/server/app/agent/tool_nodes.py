@@ -30,6 +30,8 @@ def outcome(message):
         return ('failed', '工具未完成，请查看答复') if message.status == 'error' else ('awaiting_input', '请查看答复并补充信息')
     if isinstance(value, dict):
         state = value.get('state') or value.get('status')
+        if value.get('category') == 'permission_denied':
+            return 'failed', '当前权限无法执行'
         if state == 'not_requested':
             return 'cancelled', '本次未要求该操作'
         if 'error' in value or state in ('failed', 'conflict', 'unavailable', 'cancelled'):

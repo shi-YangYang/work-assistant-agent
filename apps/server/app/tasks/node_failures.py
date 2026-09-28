@@ -31,7 +31,7 @@ def classify(error):
                        '数据保存暂时冲突' if code in ('40001', '40P01') else '数据操作未完成，请核对后重试', code in ('40001', '40P01'))
     if isinstance(error, HTTPException):
         detail = error.detail if isinstance(error.detail, dict) else {}
-        revoked = detail.get('code') == 'business_access_changed'
+        revoked = detail.get('code') in ('business_access_changed', 'task_superseded', 'task_source_changed', 'task_input_changed')
         return Failure('permission' if error.status_code in (401, 403) else 'business',
                        detail.get('message', '操作未执行，请核对输入与权限'), cancelled=revoked)
     if isinstance(error, (ValueError, ValidationError)):

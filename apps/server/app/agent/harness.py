@@ -9,6 +9,7 @@ from app.agent.compaction import ContextCompaction
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.history import conversation_history
+from app.agent.task_context import TASK_POLICY
 from app.agent.middleware import ToolBoundary
 from app.agent.model import BoundedChatModel, approximate_tokens
 from app.agent.persona import persona_prompt
@@ -31,7 +32,7 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 

@@ -74,7 +74,11 @@ async def snapshot(sessions, token_hash, job_id):
         from app.modules.operations.receipts import message_actions
         actions = await message_actions(db, actor, message)
         from app.tasks.context_feedback import usage_dto
-        return {'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
+        from app.tasks.outcomes import refresh, dto as outcome_dto
+        from app.modules.work.draft_receipts import message_drafts
+        drafts = await message_drafts(db, actor, message, job)
+        refresh(job, actions, drafts)
+        return {'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
 async def events(sessions, token_hash, job_id):
@@ -88,7 +92,7 @@ async def events(sessions, token_hash, job_id):
             return
         # A target can become unavailable or a report can finish independently
         # of the assistant's next phase. Do not keep a stale card on screen.
-        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'],json.dumps(value['actions'], sort_keys=True))
+        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'],json.dumps([value['actions'], value['taskOutcome']], sort_keys=True))
         if stamp != previous:
             yield 'event: snapshot\nid: ' + ':'.join(map(str, stamp[:3])) + '\ndata: ' + json.dumps(value,ensure_ascii=False) + '\n\n'
             previous = stamp
