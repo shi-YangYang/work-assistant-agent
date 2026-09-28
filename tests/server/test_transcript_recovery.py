@@ -55,7 +55,9 @@ async def voice_message(setup):
         await db.flush()
     settings.media_dir.mkdir(parents=True, exist_ok=True)
     (settings.media_dir / attachment.id).write_bytes(raw)
-    result = await send(clients['employee'], '', [attachment.id])
+    # Uploaded speech is reference material. Creating a progress suggestion
+    # requires a separate, explicit user instruction.
+    result = await send(clients['employee'], '请根据语音内容整理一条待确认的工作进展建议。', [attachment.id])
     return result, attachment.id, raw
 
 
@@ -67,6 +69,13 @@ async def correct(client, message_id, revision):
 
 async def original_asr(context, attachment):
     return OLD
+
+
+def assert_corrected_reply(message):
+    assert message['job']['state'] == 'succeeded', message
+    prose, separator, receipt = message['reply'].partition('\n\n')
+    assert prose == CORRECTED and separator
+    assert '进展建议：已保存，等待你的确认' in receipt
 
 
 async def retry(client, sessions, actor, job_id):
@@ -117,7 +126,7 @@ async def test_corrected_transcript_restarts_old_checkpoint_and_reuses_new_compl
         assert revised_model.calls == 2
         assert all(CORRECTED in value and OLD not in value for value in revised_model.seen)
         message = (await client.get('/api/v1/messages/' + result['messageId'])).json()
-        assert message['job']['state'] == 'succeeded' and message['reply'] == CORRECTED
+        assert_corrected_reply(message)
         assert [d['content']['summary'] for d in message['drafts'] if d['status'] == 'pending'] == [CORRECTED]
         assert message['suggestions'][:len(original_suggestions)] == original_suggestions
         async with sessions() as db:
@@ -137,7 +146,8 @@ async def test_corrected_transcript_restarts_old_checkpoint_and_reuses_new_compl
         await process_job(job, sessions, settings, saver, model=unchanged)
         assert unchanged.calls == 0
         again = (await client.get('/api/v1/messages/' + result['messageId'])).json()
-        assert again['job']['state'] == 'succeeded' and again['suggestions'] == message['suggestions']
+        assert_corrected_reply(again)
+        assert again['reply'] == message['reply'] and again['suggestions'] == message['suggestions']
 
 
 async def test_unchanged_input_resumes_pending_tool_idempotently_before_and_after_correction(setup, monkeypatch):
@@ -211,7 +221,7 @@ async def test_correction_during_processing_blocks_late_writes_and_allows_retry(
         await process_job(await retry(client, sessions, actor, result['jobId']), sessions, settings, saver, model=revised)
         assert all(CORRECTED in value and OLD not in value for value in revised.seen)
         message = (await client.get('/api/v1/messages/' + result['messageId'])).json()
-        assert message['job']['state'] == 'succeeded' and message['reply'] == CORRECTED
+        assert_corrected_reply(message)
 
 
 async def test_correction_during_asr_binds_the_selected_text_and_revision(setup):
@@ -228,8 +238,8 @@ async def test_correction_during_asr_binds_the_selected_text_and_revision(setup)
         await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=selected, asr_provider=late_asr)
         assert all(CORRECTED in value and OLD not in value for value in selected.seen)
         message = (await client.get('/api/v1/messages/' + result['messageId'])).json()
-        assert message['job']['state'] == 'succeeded'
-        assert message['transcriptRevision'] == 1 and message['transcript'] == message['reply'] == CORRECTED
+        assert_corrected_reply(message)
+        assert message['transcriptRevision'] == 1 and message['transcript'] == CORRECTED
         async with sessions.begin() as db:
             (await db.get(Job, result['jobId'])).state = 'failed'
         unchanged = transcript_model(fail_once=True)
