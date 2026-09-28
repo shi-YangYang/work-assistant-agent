@@ -95,7 +95,6 @@ export function Sidebar({
         <Search size={17} /> <span className={styles['nav-label']}>查找页面与操作</span>
         <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
       </button>
-      <div className={`${styles['navigation-label']} ${styles['nav-label']}`}>日常工作</div>
       <nav aria-label="工作空间">
         {allowed.map((p) => (
           <NavLink
