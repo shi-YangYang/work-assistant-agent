@@ -1,4 +1,5 @@
 from app.core.personas import PersonaId
+from app.core.attachment_limits import MAX_ATTACHMENTS, MAX_AUDIO_ATTACHMENTS
 from app.core.schemas import Input
 from app.modules.deliverables.schemas import DeliverableReference
 from pydantic import Field, model_validator
@@ -9,8 +10,9 @@ class SendMessage(Input):
     personaId: PersonaId | None = None
     newConversation: bool = False
     text: str = Field(default='', max_length=8000)
-    attachmentIds: list[str] = Field(default_factory=list, max_length=4)
+    attachmentIds: list[str] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
     voiceCommandAttachmentId: str | None = None
+    voiceCommandAttachmentIds: list[str] | None = Field(default=None, max_length=MAX_AUDIO_ATTACHMENTS)
     replyTo: str | None = None
     deliverableReference: DeliverableReference | None = None
 
@@ -25,6 +27,9 @@ class SendMessage(Input):
             raise ValueError('请输入文字或添加文件、图片、语音')
         if len(set(self.attachmentIds)) != len(self.attachmentIds):
             raise ValueError('附件重复')
+        if self.voiceCommandAttachmentIds is not None:
+            if self.voiceCommandAttachmentId is not None or len(set(self.voiceCommandAttachmentIds)) != len(self.voiceCommandAttachmentIds):
+                raise ValueError('语音指令附件不能重复或同时使用两种标记')
         return self
 
 

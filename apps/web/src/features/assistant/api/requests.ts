@@ -70,6 +70,7 @@ export function sendMessage(
     text: string
     attachmentIds: string[]
     voiceCommandAttachmentId?: string
+    voiceCommandAttachmentIds?: string[]
     replyTo: string | null
     deliverableReference?: DeliverableReference
   },

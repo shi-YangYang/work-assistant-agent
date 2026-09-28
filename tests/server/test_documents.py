@@ -137,7 +137,7 @@ async def test_filename_and_upload_boundaries(setup):
     conv = await conversation(c['employee'])
     docs = [await upload(c['employee'], f'large{i}.txt', b'x' * (6 * 1024 * 1024)) for i in range(4)]
     result = await c['employee'].post('/api/v1/messages', json={'conversationId': conv['id'], 'attachmentIds': [d['id'] for d in docs]}, headers=keyed())
-    assert result.status_code == 422
+    assert result.status_code == 202, result.text
     assert len(list(settings.media_dir.iterdir())) == 5
     long_name = await upload(c['employee'], '长' * 190 + '.TXT', b'text', 'text/plain')
     assert long_name['name'].endswith('.TXT') and len(long_name['name']) == 180

@@ -1,4 +1,5 @@
 import json
+from app.modules.messages.audio import transcript_groups
 from app.modules.messages.models import Message
 from app.modules.messages.service import active_message
 from app.security.access import merge_access as business_merge_access, scope as business_scope, valid as business_valid
@@ -9,7 +10,7 @@ from sqlalchemy import select
 def request_text(message, job):
     # The API records this explicit client choice only for an attached audio.
     # Uploaded audio remains reference material; transcript corrections keep the choice.
-    voice = message.transcript if job and job.result.get('voiceCommandAttachmentId') else ''
+    voice, _ = transcript_groups(message.transcript, job.result if job else {})
     return '\n'.join(part for part in (message.text, voice) if part.strip())
 
 
@@ -23,7 +24,7 @@ async def message_reference(db, actor, message):
     reply = stored.get('conversationReply', '') if cards else message.reply
     return {
         'id': message.id, 'userText': request_text(message, job),
-        'materialTranscript': '' if stored.get('voiceCommandAttachmentId') else message.transcript,
+        'materialTranscript': transcript_groups(message.transcript, stored)[1],
         'assistantReference': reply,
         'currentActions': [{key: card[key] for key in ('id', 'action', 'state', 'objectId', 'objectRevision') if key in card} for card in cards],
     }

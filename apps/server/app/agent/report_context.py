@@ -75,8 +75,10 @@ async def load_materials(db, actor, job):
         if document.extraction_revision != revision or chunk is None:
             raise ValueError('报告引用的附件已变化，请使用最新材料重新生成')
         result.append({'name': document.name, 'location': chunk.location, 'text': chunk.text})
-    if message.transcript and not message_job.result.get('voiceCommandAttachmentId'):
+    from app.modules.messages.audio import transcript_groups
+    _, material_transcript = transcript_groups(message.transcript, message_job.result)
+    if material_transcript:
         if message.transcript_revision != source.get('transcriptRevision', message.transcript_revision):
             raise ValueError('报告引用的语音已更正，请使用最新材料重新生成')
-        result.append({'name': '当前上传语音的转写', 'text': message.transcript})
+        result.append({'name': '当前上传语音的转写', 'text': material_transcript})
     return result

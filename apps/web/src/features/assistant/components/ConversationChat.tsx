@@ -21,6 +21,10 @@ import { useMessageSubmission } from '@web/features/assistant/hooks/useMessageSu
 import { useRecording } from '@web/features/assistant/hooks/useRecording'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import {
+  MAX_ATTACHMENTS,
+  MAX_AUDIO_ATTACHMENTS,
+} from '@web/features/assistant/lib/attachment-limits'
+import {
   droppedFiles,
   fileKind,
   fileSelectionError,
@@ -164,17 +168,15 @@ export function ConversationChat({
   async function startRecording() {
     if (locked) return
     if (
-      composer.files.length >= 4 ||
-      composer.files.some((item) => fileKind(item.file) === 'audio') ||
-      composer.files.reduce((sum, item) => sum + item.file.size, 0) >= 20 * 1024 * 1024
+      composer.files.length >= MAX_ATTACHMENTS ||
+      composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
+        MAX_AUDIO_ATTACHMENTS
     ) {
-      setLimitError('每次最多 4 个附件、20 MiB，其中最多一段语音；请先移除一个附件')
+      setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
       return
     }
     setSendError('')
-    await capture.current?.start(
-      20 * 1024 * 1024 - composer.files.reduce((sum, item) => sum + item.file.size, 0),
-    )
+    await capture.current?.start()
   }
   const previewImages: PreviewImage[] = composer.files
     .filter((item) => fileKind(item.file) === 'image')

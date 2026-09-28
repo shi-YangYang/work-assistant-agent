@@ -1,5 +1,6 @@
 """Resolve the image being discussed without crossing conversation boundaries."""
 from sqlalchemy import select
+from app.core.attachment_limits import MAX_ATTACHMENTS
 
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
@@ -30,7 +31,7 @@ async def referenced_images(db, actor, job, current, attachments):
             Attachment.company_id == actor.company_id, Attachment.owner_id == actor.id,
             Attachment.message_id == parent.id, Attachment.deleted.is_(False),
             Attachment.kind == 'image',
-        ).order_by(Attachment.created_at, Attachment.id).limit(4))).all())
+        ).order_by(Attachment.created_at, Attachment.id).limit(MAX_ATTACHMENTS))).all())
         if images:
             inherit(actor, job, parent)
             return images

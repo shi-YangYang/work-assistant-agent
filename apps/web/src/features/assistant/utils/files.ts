@@ -1,5 +1,11 @@
 import type { DocumentCitation, PersonaId } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import {
+  MAX_ATTACHMENTS,
+  MAX_AUDIO_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  MAX_FILE_BYTES,
+} from '../lib/attachment-limits'
 
 const documents = new Set(['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx'])
 
@@ -30,12 +36,13 @@ export function fileSelectionError(files: File[]) {
   if (files.some((file) => !fileKind(file)))
     return '支持 PDF、DOCX、PPTX、XLSX、TXT、JSON、MD、CSV、图片和语音；旧版 Office 或含宏文件请先转换。'
   if (files.some((file) => !file.size)) return '不能添加空文件'
-  if (files.length > 4 || files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024)
-    return '每次最多 4 个附件，合计不超过 20 MiB'
-  if (files.filter((file) => fileKind(file) === 'audio').length > 1)
-    return '每次最多一段语音，最长 3 分钟'
-  if (files.some((file) => fileKind(file) === 'image' && file.size > 5 * 1024 * 1024))
-    return '每张图片不能超过 5 MiB'
+  if (files.length > MAX_ATTACHMENTS) return '每次最多 9 个附件'
+  if (files.filter((file) => fileKind(file) === 'audio').length > MAX_AUDIO_ATTACHMENTS)
+    return '每次最多 3 段语音，每段最长 3 分钟'
+  if (files.some((file) => fileKind(file) === 'image' && file.size > MAX_IMAGE_BYTES))
+    return '每张图片不能超过 30 MiB'
+  if (files.some((file) => fileKind(file) !== 'image' && file.size > MAX_FILE_BYTES))
+    return '单个文档或语音文件不能超过 20 MiB'
   return ''
 }
 
@@ -84,9 +91,9 @@ export function messageSubmission(
       }),
       ...(composer.files.some((file) => file.recorded && file.attachment?.kind === 'audio')
         ? {
-            voiceCommandAttachmentId: composer.files.find(
-              (file) => file.recorded && file.attachment?.kind === 'audio',
-            )!.attachment!.id,
+            voiceCommandAttachmentIds: composer.files
+              .filter((file) => file.recorded && file.attachment?.kind === 'audio')
+              .map((file) => file.attachment!.id),
           }
         : {}),
       replyTo: composer.replyTo ?? null,

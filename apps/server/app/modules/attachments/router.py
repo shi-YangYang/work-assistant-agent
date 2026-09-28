@@ -2,6 +2,7 @@ import hashlib
 from fastapi import APIRouter, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from app.core.errors import problem
+from app.core.attachment_limits import MAX_IMAGE_BYTES, MAX_FILE_BYTES
 from app.db.base import now
 from app.http.dependencies import AUTH, DB, SETTINGS
 from app.integrations.media import audio_mime, audio_wav, image_process, preview_path
@@ -39,8 +40,8 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
             path.chmod(0o600)
             while block := await file.read(65536):
                 size += len(block)
-                if size > (5 if kind == 'image' else 20) * 1024 * 1024:
-                    problem(413, '每张图片不能超过 5 MiB' if kind == 'image' else '文件不能超过 20 MiB')
+                if size > (MAX_IMAGE_BYTES if kind == 'image' else MAX_FILE_BYTES):
+                    problem(413, '每张图片不能超过 30 MiB' if kind == 'image' else '文件不能超过 20 MiB')
                 digest.update(block)
                 await run_in_threadpool(target.write, block)
         if not size:
