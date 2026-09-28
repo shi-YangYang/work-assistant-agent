@@ -66,7 +66,7 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         # Replace the failed response in place. Keep the source and operation
         # receipts so retrying cannot turn saved effects into a new request.
         message.reply, message.citations = '', []
-        item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'operationFeedback', 'operationFeedbackKeys')}
+        item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'replyReceipt', 'operationFeedback', 'operationFeedbackKeys')}
         item.result = {**item.result, 'refreshModelBinding': True}
     elif item.kind == 'report':
         # Resolve the latest settings when this run starts; unchanged settings

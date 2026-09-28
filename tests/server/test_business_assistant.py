@@ -546,6 +546,8 @@ async def test_raw_context_tool_inherits_authorization_and_denies_revoked_reply_
     async with sessions.begin() as db:
         actor = await db.get(Member, users['admin'].id)
         actor.role = 'employee'
+        completed = await db.get(Job, second.id)
+        completed.state, completed.lease_until = 'succeeded', None
     response = await clients['admin'].post('/api/v1/messages', json={'text': '继续', 'replyTo': sent['messageId']}, headers={'Idempotency-Key': str(uuid4())})
     assert response.status_code == 403
 

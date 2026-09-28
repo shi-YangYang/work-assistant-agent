@@ -185,6 +185,11 @@ it('registers acceptance before history refresh and keeps a new conversation loc
     jobId: 'job',
   })
   view('')
+  await act(async () => {
+    window.dispatchEvent(new Event('focus'))
+    window.dispatchEvent(new Event('online'))
+  })
+  expect(readActiveAssistantJob).not.toHaveBeenCalled()
   type('第一条')
   fireEvent.click(screen.getByRole('button', { name: '发送' }))
   await waitFor(() => expect(input().value).toBe(''))

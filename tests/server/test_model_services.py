@@ -205,10 +205,11 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     reply='请确认这条进展建议。'
     async def response(request):
         body=json.loads(request.content);calls.append((str(request.url),body))
+        verification = json.loads(body['messages'][-1]['content']) if not body.get('tools') else None
         assert request.headers['Authorization']=='Bearer '+SECRET
         assert body['stream']==streaming and body['max_tokens']<=4000
         if fast_review:
-            if len(calls) == 3:
+            if verification is not None:
                 assert body['enable_thinking'] is False and 'reasoning_effort' not in body
             else:
                 assert body['enable_thinking'] is True and body['reasoning_effort'] == 'low'
@@ -219,12 +220,16 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             assert changed.status_code==200,changed.text
             message={'role':'assistant','content':'','tool_calls':[{'id':'progress-test','type':'function','function':{'name':'propose_progress','arguments':json.dumps({'title':'真实预算路径','summary':'受控响应测试','status':'in_progress','blocker':'','next_step':'','work_id':None})}}]}
             finish='tool_calls'
-        elif len(calls)==2:
+        elif verification is not None and 'proposedOperation' in verification:
+            assert verification['proposedOperation']['action'] == 'propose_progress'
+            verdict={'allowed':True,'quote':verification['currentUserText'],'reason':''}
+            message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
+        elif body.get('tools'):
             message={'role':'assistant','content':reply};finish='stop'
         else:
-            # The independent reply review shares the job's frozen service and budget.
-            assert len(calls)==3 and not body.get('tools')
-            review=json.loads(body['messages'][-1]['content'])
+            # Both authorization and reply review use the frozen service.
+            assert len(calls)==4 and not body.get('tools')
+            review=verification
             assert review['task']=='business_reply_review'
             assert review['segments']==[{'index':0,'text':reply}]
             assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
@@ -239,20 +244,20 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             return httpx.Response(200,stream=Bytes(raw.encode()))
         return httpx.Response(200,json={'choices':[{'message':message,'finish_reason':finish}], 'usage':{'prompt_tokens':120,'completion_tokens':30,'total_tokens':150}})
     monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(response)))
-    sent=await send(c['employee'],'今天完成初稿')
+    sent=await send(c['employee'],'帮我整理待确认进展：今天完成初稿')
     job=await claim(sessions,users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(job,sessions,settings,saver)
     result=(await c['employee'].get('/api/v1/messages/'+sent['messageId'])).json()
     assert result['job']['state']=='succeeded',result['job']
     assert len(result['suggestions'])==1 and all(url==service['baseUrl']+'/chat/completions' for url,_ in calls)
-    assert result['reply']==reply
-    assert len(calls)==3
+    assert result['reply']==reply+'\n\n进展建议：已保存，等待你的确认。'
+    assert len(calls)==4
     # One initial phase and one per assistant call, no empty per-token writes.
     assert phases.count('generating') == 3
     async with sessions() as db:
         usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
-        assert len(usages)==3 and all(u.kind=='assistant' and u.status=='succeeded' and u.service_id==saved['id'] for u in usages)
+        assert len(usages)==4 and all(u.kind=='assistant' and u.status=='succeeded' and u.service_id==saved['id'] for u in usages)
         from sqlalchemy import text
         blobs=(await db.execute(text('SELECT blob FROM checkpoint_blobs WHERE thread_id LIKE :prefix'),{'prefix':job.company_id+':%'})).all()
         assert not any(SECRET.encode() in bytes(b[0]) for b in blobs if b[0] is not None)

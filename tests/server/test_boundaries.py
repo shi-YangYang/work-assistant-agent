@@ -27,7 +27,9 @@ pytestmark=pytest.mark.asyncio
 
 async def test_queue_serializes_owner_fences_old_worker_and_stops_uncertain_retry(setup):
     settings,sessions,users,c=setup
-    a=await send(c['employee'],'第一条'); b=await send(c['employee'],'第二条')
+    from test_management import conversation, message
+    a=await message(c['employee'],await conversation(c['employee']),'第一条')
+    b=await message(c['employee'],await conversation(c['employee']),'第二条')
     claimed=await claim(sessions, users['employee'].id)
     assert claimed.id==a['jobId'] and claimed.state=='running'
     assert await claim(sessions,users['employee'].id) is None
@@ -155,7 +157,9 @@ async def test_progress_confirmation_commits_before_success_response(setup, monk
         await db.flush()
     original_commit = AsyncSession.commit
     async def commit(db):
-        if fail_commit and any(isinstance(item, WorkItem) and item.id == work.id for item in db.dirty):
+        # Autoflush may already have emptied db.dirty; fail the actual write
+        # transaction, not only an implementation-specific pre-flush state.
+        if fail_commit and await db.scalar(select(WorkRevision.id).where(WorkRevision.work_id == work.id, WorkRevision.revision == 2)):
             raise SQLAlchemyError('controlled commit failure')
         await original_commit(db)
     monkeypatch.setattr(AsyncSession, 'commit', commit)

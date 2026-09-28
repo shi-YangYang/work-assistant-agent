@@ -50,10 +50,10 @@ def test_migration_preserves_history_and_separates_new_defaults(monkeypatch):
             owner_id = connection.execute(Member.__table__.insert().values(company_id=company_id, username='persona_migration', name='原有成员', password_hash='unchanged').returning(Member.id)).scalar_one()
             old_conversation = Table('company_conversation', MetaData(), autoload_with=connection)
             old_message = Table('company_message', MetaData(), autoload_with=connection)
-            conversation_values = {column.name: column.default.arg(None) if column.default.is_callable else column.default.arg for column in Conversation.__table__.columns if column.default and column.name != 'persona_id'}
+            conversation_values = {column.name: column.default.arg(None) if column.default.is_callable else column.default.arg for column in Conversation.__table__.columns if column.default and column.name in old_conversation.c}
             conversation_values.update(company_id=company_id, owner_id=owner_id, title='保留原会话')
             connection.execute(old_conversation.insert().values(**conversation_values))
-            message_values = {column.name: column.default.arg(None) if column.default.is_callable else column.default.arg for column in Message.__table__.columns if column.default and column.name != 'persona_id'}
+            message_values = {column.name: column.default.arg(None) if column.default.is_callable else column.default.arg for column in Message.__table__.columns if column.default and column.name in old_message.c}
             message_values.update(company_id=company_id, owner_id=owner_id, conversation_id=conversation_values['id'], text='旧消息', reply='原答复')
             connection.execute(old_message.insert().values(**message_values))
             before_conversation = dict(connection.execute(select(old_conversation)).mappings().one())
@@ -61,7 +61,7 @@ def test_migration_preserves_history_and_separates_new_defaults(monkeypatch):
         command.upgrade(config, 'head')
         with scoped.begin() as connection:
             assert dict(connection.execute(select(Conversation.__table__)).mappings().one()) == {**before_conversation, 'persona_id': 'professional'}
-            assert dict(connection.execute(select(Message.__table__)).mappings().one()) == {**before_message, 'persona_id': 'professional'}
+            assert dict(connection.execute(select(Message.__table__)).mappings().one()) == {**before_message, 'persona_id': 'professional', 'private_context': False, 'deliverable_reference': {}}
             # New application-created conversations differ from historical backfills.
             fresh = connection.execute(Conversation.__table__.insert().values(company_id=company_id, owner_id=owner_id).returning(Conversation.persona_id)).scalar_one()
             assert fresh == 'dabao'
@@ -127,8 +127,14 @@ async def test_message_snapshots_idempotency_and_default_conversation_entry(setu
     assert (await client.post('/api/v1/messages', json={**body, 'personaId': 'dabao'}, headers=headers)).status_code == 409
     await client.patch(path, json={'personaId': 'dabao', 'expectedRevision': conversation['revision']})
     assert (await client.post('/api/v1/messages', json=body, headers=headers)).json() == sent
+    async with sessions.begin() as db:
+        (await db.get(Job, sent['jobId'])).state = 'succeeded'
     omitted = await client.post('/api/v1/messages', json={'conversationId': sent['conversationId'], 'text': '沿用当前选择'}, headers=keyed())
+    assert omitted.status_code == 202, omitted.text
+    async with sessions.begin() as db:
+        (await db.get(Job, omitted.json()['jobId'])).state = 'succeeded'
     explicit = await client.post('/api/v1/messages', json={'conversationId': sent['conversationId'], 'personaId': 'professional', 'text': '冻结明确选择'}, headers=keyed())
+    assert explicit.status_code == 202, explicit.text
     assert (await client.get(path)).json()['personaId'] == 'dabao'
     async with sessions() as db:
         assert (await db.get(Message, sent['messageId'])).persona_id == 'professional'
@@ -433,6 +439,8 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
         return SimpleNamespace(values={'messages': [AIMessage(content='已有核对前答复')]}, next=())
     graph = SimpleNamespace(aget_state=saved_state, ainvoke=AsyncMock(side_effect=AssertionError('completed checkpoint must not regenerate')))
     monkeypatch.setattr('app.agent.harness.lease', AsyncMock(return_value=(job, actor)))
+    monkeypatch.setattr('app.tasks.lease.lease', AsyncMock(return_value=(job, actor)))
+    monkeypatch.setattr('app.agent.harness.conversation_history', AsyncMock(return_value=[]))
     monkeypatch.setattr('app.agent.harness.build_graph', lambda *args: graph)
     from langgraph.checkpoint.memory import InMemorySaver
     assert await invoke_harness(context, InMemorySaver(), blocks) == '已有核对前答复'

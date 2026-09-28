@@ -39,13 +39,17 @@ async def remove(client, kind, item):
     return await client.request('DELETE', f"/api/v1/{kind}/{item['id']}", json={'expectedRevision': item.get('managementRevision', item['revision'])})
 
 
-async def confirmed(setup):
+async def confirmed(setup, *, legacy_shared=False):
     settings, sessions, users, clients = setup
     client = clients['employee']
     conv = await conversation(client)
     raw = io.BytesIO(); Image.new('RGB', (2, 2)).save(raw, format='PNG')
     uploaded = (await client.post('/api/v1/uploads', files={'file':('sample.png',raw.getvalue(),'image/png')})).json()
     sent = await message(client, conv, attachments=[uploaded['id']])
+    if legacy_shared:
+        # Before private assistant chats, confirmed work retained raw messages.
+        async with sessions.begin() as db:
+            (await db.get(Message, sent['messageId'])).private_context = False
     await run_target(settings, sessions, users, sent)
     data = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
     draft = data['drafts'][0]
@@ -57,7 +61,7 @@ async def confirmed(setup):
 
 @pytest.mark.parametrize('role', ['admin', 'employee'])
 async def test_new_chat_creates_only_on_send_without_reusing_history(setup, role):
-    _, _, _, clients = setup
+    _, sessions, _, clients = setup
     client = clients[role]
     for _ in range(2):
         assert (await client.get('/api/v1/conversations')).json()['items'] == []
@@ -86,6 +90,8 @@ async def test_new_chat_creates_only_on_send_without_reusing_history(setup, role
         assert [m['id'] for m in messages] == [item['messageId']]
     conv = next(row for row in rows if row['id'] == sent['conversationId'])
     assert conv['title'] == '全新会话的第一条消息'
+    async with sessions.begin() as db:
+        (await db.get(Job, sent['jobId'])).state = 'succeeded'
     followup = await message(client, conv, '同一会话的后续消息')
     assert followup['conversationId'] == sent['conversationId']
 
@@ -102,9 +108,9 @@ async def test_conversation_crud_reply_scope_history_and_empty_delete(setup):
     client = clients['employee']
     first, second, empty = [await conversation(client, name) for name in ('客户甲', '客户乙', '空会话')]
     old = await message(client, first, '甲会话的私有闲聊')
-    current = await message(client, second, '乙会话的新消息')
     bad = await client.post('/api/v1/messages', json={'conversationId':second['id'], 'text':'伪造回复', 'replyTo':old['messageId']}, headers=keyed())
     assert bad.status_code == 422
+    current = await message(client, second, '乙会话的新消息')
     for viewer in ('peer', 'outsider', 'admin'):
         assert (await clients[viewer].get('/api/v1/conversations/' + first['id'])).status_code == 404
     assert (await client.get('/api/v1/conversations?q=客户甲')).json()['items'][0]['id'] == first['id']
@@ -124,7 +130,7 @@ async def test_conversation_crud_reply_scope_history_and_empty_delete(setup):
 
 async def test_report_delete_purges_actual_sources_and_preserves_shared_snapshots(setup):
     settings, sessions, users, clients = setup
-    conv, sent, uploaded, work = await confirmed(setup)
+    conv, sent, uploaded, work = await confirmed(setup, legacy_shared=True)
     actor = users['employee']
     async with sessions.begin() as db:
         source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
@@ -160,12 +166,13 @@ async def test_report_delete_purges_actual_sources_and_preserves_shared_snapshot
 
 async def test_candidate_sources_invalidate_open_delete_confirmation(setup):
     settings, sessions, users, clients = setup
-    conv, first, _, work = await confirmed(setup)
+    conv, first, _, work = await confirmed(setup, legacy_shared=True)
     raw = io.BytesIO(); Image.new('RGB', (2, 2)).save(raw, format='PNG')
     uploaded = (await clients['employee'].post('/api/v1/uploads', files={'file': ('source-b.png', raw.getvalue(), 'image/png')})).json()
     second = await message(clients['employee'], conv, '后来新增的来源 B', attachments=[uploaded['id']])
     actor = users['employee']
     async with sessions.begin() as db:
+        (await db.get(Message, second['messageId'])).private_context = False
         first_revision = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
         second_revision = WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work['id'], revision=2, content=first_revision.content, source_ids=[second['messageId']])
         db.add(second_revision); await db.flush()
@@ -193,7 +200,7 @@ async def test_candidate_sources_invalidate_open_delete_confirmation(setup):
 
 async def test_conversation_delete_retains_business_source_and_blocks_late_checkpoint(setup):
     settings, sessions, users, clients = setup
-    conv, sent, _, work = await confirmed(setup)
+    conv, sent, _, work = await confirmed(setup, legacy_shared=True)
     loose = await message(clients['employee'], conv, '没有确认的闲聊')
     async with sessions.begin() as db:
         job = await db.get(Job, loose['jobId'])

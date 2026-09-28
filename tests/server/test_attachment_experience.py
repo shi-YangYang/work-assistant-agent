@@ -31,7 +31,8 @@ from types import SimpleNamespace
 pytestmark = pytest.mark.asyncio
 
 
-async def test_recorded_webm_preview_has_duration_seeks_and_preserves_original(setup, monkeypatch):
+@pytest.mark.parametrize('legacy_shared', [False, True])
+async def test_recorded_webm_preview_has_duration_seeks_and_preserves_original(setup, monkeypatch, legacy_shared):
     settings, sessions, users, c = setup
     # Live WebM, like MediaRecorder output, has no container duration or seek cues.
     raw = subprocess.run([settings.ffmpeg, '-nostdin', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=2.4', '-c:a', 'libopus', '-f', 'webm', '-live', '1', 'pipe:1'], capture_output=True, check=True, timeout=15).stdout
@@ -51,8 +52,12 @@ async def test_recorded_webm_preview_has_duration_seeks_and_preserves_original(s
     monkeypatch.setattr('app.modules.attachments.router.audio_wav', should_not_decode)
     seek = await c['employee'].get(item['previewUrl'], headers={'Range': 'bytes=1000-1999'})
     assert seek.status_code == 206 and seek.content == preview.content[1000:2000]
-    conv = await conversation(c['employee'], '语音预览'); await message(c['employee'], conv, '', [item['id']])
-    assert (await c['admin'].get(item['previewUrl'])).status_code == 200
+    conv = await conversation(c['employee'], '语音预览')
+    sent = await message(c['employee'], conv, '', [item['id']])
+    if legacy_shared:
+        async with sessions.begin() as db:
+            (await db.get(Message, sent['messageId'])).private_context = False
+    assert (await c['admin'].get(item['previewUrl'])).status_code == (200 if legacy_shared else 404)
     assert (await remove(c['employee'], 'conversations', conv)).status_code == 200
     assert (await c['employee'].get(item['previewUrl'])).status_code == 404
     await maintenance(sessions, settings)
@@ -183,7 +188,8 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
 
 
 
-async def test_preview_auth_original_concurrency_delete_and_orphan_cleanup(setup, monkeypatch):
+@pytest.mark.parametrize('legacy_shared', [False, True])
+async def test_preview_auth_original_concurrency_delete_and_orphan_cleanup(setup, monkeypatch, legacy_shared):
     settings, sessions, users, c = setup
     raw = image_samples()['phone.heic']
     item = await upload(c['employee'], 'phone.heic', raw, 'image/heic')
@@ -195,8 +201,12 @@ async def test_preview_auth_original_concurrency_delete_and_orphan_cleanup(setup
     assert previews[0].content == previews[1].content
     assert previews[0].headers['cache-control'] == 'private, no-store'
     assert (await c['employee'].get(item['url'])).content == raw
-    conv = await conversation(c['employee'], '附件预览'); await message(c['employee'], conv, '', [item['id']])
-    assert (await c['admin'].get(item['previewUrl'])).status_code == 200
+    conv = await conversation(c['employee'], '附件预览')
+    sent = await message(c['employee'], conv, '', [item['id']])
+    if legacy_shared:
+        async with sessions.begin() as db:
+            (await db.get(Message, sent['messageId'])).private_context = False
+    assert (await c['admin'].get(item['previewUrl'])).status_code == (200 if legacy_shared else 404)
     assert (await remove(c['employee'], 'conversations', conv)).status_code == 200
     assert (await c['employee'].get(item['previewUrl'])).status_code == 404
     await maintenance(sessions, settings)

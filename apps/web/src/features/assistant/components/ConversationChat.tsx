@@ -231,9 +231,10 @@ export function ConversationChat({
       ? task.job
       : latestJob
   const context = useContextUsage(conversationId, contextJob)
+  const receiveContext = context.receive
   useEffect(() => {
-    if (task.job) context.receive(task.job, task.feedback)
-  }, [task.job, task.feedback, context.receive])
+    if (task.job) receiveContext(task.job, task.feedback)
+  }, [task.job, task.feedback, receiveContext])
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
   return (

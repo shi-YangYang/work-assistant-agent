@@ -252,17 +252,20 @@ async def test_source_deletion_purges_inflight_document_proposals(setup, deletio
     sent = await message(c['employee'], conv, '', [item['id']])
     original_context = await running_context(settings, sessions, owner, sent)
     await prepare_document(original_context, item['id'])
-    other_conv = await conversation(c['employee'])
-    followup = await message(c['employee'], other_conv if deletion == 'report' else conv, '从材料提取待确认工作')
-    unrelated = await message(c['employee'], other_conv, '无关待处理消息')
     async with sessions.begin() as db:
         original = await db.get(Job, sent['jobId'])
         original.state, original.lease_until = 'awaiting_input', None
+    other_conv = await conversation(c['employee'])
+    followup = await message(c['employee'], other_conv if deletion == 'report' else conv, '从材料提取待确认工作')
+    unrelated = await message(c['employee'], await conversation(c['employee']), '无关待处理消息')
+    async with sessions.begin() as db:
         work = WorkItem(company_id=owner.company_id, owner_id=owner.id, title='已确认来源', content={'summary': '保留确认摘要'})
         db.add(work); await db.flush()
         # Reports expose the original document across conversations. Conversation
         # deletion instead retains the follow-up as a confirmed business source.
         source = sent if deletion == 'report' else followup
+        # Exercise deletion of legacy shared sources, not private chat snapshots.
+        (await db.get(Message, source['messageId'])).private_context = False
         revision = WorkRevision(company_id=owner.company_id, owner_id=owner.id, work_id=work.id, revision=1, content=work.content, source_ids=[source['messageId']])
         db.add(revision); await db.flush()
         reports = []

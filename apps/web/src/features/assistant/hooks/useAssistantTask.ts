@@ -5,7 +5,7 @@ import { cancelJob } from '@web/features/jobs/api/requests'
 import { useJobFeedback } from '@web/hooks/useJobFeedback'
 import { identityScope } from '@web/lib/session-drafts'
 import { useWorkspace } from '@web/lib/workspace'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const activeJob = (job: Job | null) => !!job && ['queued', 'running'].includes(job.state)
 const activityKey = (owner: string, id: string) => `paa-assistant-task:${owner}:${id}`
@@ -66,34 +66,51 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
     },
     [valid],
   )
-  const refresh = useCallback(async () => {
+  const restore = useCallback(async () => {
     const current = valid()
     if (!current?.conversationId) return
     current.controller?.abort()
     const controller = new AbortController()
     current.controller = controller
     const revision = ++current.revision
-    update({ checking: true })
-    try {
-      const { job } = await readActiveAssistantJob(current.conversationId, controller.signal)
-      if (valid() !== current || controller.signal.aborted || current.revision !== revision) return
-      // Keep the last terminal snapshot until history catches up, but never a stale active one.
-      update({
-        job: job ?? (activeJob(current.value.job) ? null : current.value.job),
-        checking: false,
-        error: '',
-      })
-    } catch (error) {
-      if (valid() !== current || controller.signal.aborted || isCancelled(error)) return
-      update({ error: error instanceof Error ? error : '处理状态暂不可用，请重试。' })
-    }
+    current.value = { ...current.value, checking: true }
+    await readActiveAssistantJob(current.conversationId, controller.signal).then(
+      ({ job }) => {
+        if (valid() !== current || controller.signal.aborted || current.revision !== revision)
+          return
+        // Keep the last terminal snapshot until history catches up, but never a stale active one.
+        update({
+          job: job ?? (activeJob(current.value.job) ? null : current.value.job),
+          checking: false,
+          error: '',
+        })
+      },
+      (error: unknown) => {
+        if (
+          valid() !== current ||
+          controller.signal.aborted ||
+          current.revision !== revision ||
+          isCancelled(error)
+        )
+          return
+        update({
+          checking: true,
+          error: error instanceof Error ? error : '处理状态暂不可用，请重试。',
+        })
+      },
+    )
   }, [valid, update])
+  const refresh = useCallback(() => {
+    if (!valid()?.conversationId) return
+    update({ checking: true })
+    return restore()
+  }, [restore, update, valid])
   const historyActivity = messages
     .filter((message) => !message.businessUnavailable && activeJob(message.job))
     .map((message) => `${message.job!.id}:${message.job!.attempt}:${message.job!.fence}`)
     .join('|')
   useEffect(() => {
-    void refresh()
+    void restore()
     const recover = () => {
       if (!document.hidden) void refresh()
     }
@@ -110,29 +127,23 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
       window.removeEventListener('storage', changed)
       document.removeEventListener('visibilitychange', recover)
     }
-  }, [refresh, owner, conversationId, historyActivity])
+  }, [restore, refresh, owner, conversationId, historyActivity])
   const current = snapshot?.scope === scope ? snapshot : null
-  const job = current?.job ?? null
-  const live = useJobFeedback(job, true, refresh)
-  useEffect(() => {
+  const sourceJob = current?.job ?? null
+  const live = useJobFeedback(sourceJob, true, refresh)
+  const job = useMemo(
+    () =>
+      sourceJob && live.feedback
+        ? { ...sourceJob, ...live.feedback, id: live.feedback.jobId }
+        : sourceJob,
+    [sourceJob, live.feedback],
+  )
+  useLayoutEffect(() => {
     const state = valid()
-    const feedback = live.feedback
-    if (!state?.value.job || !feedback || feedback.jobId !== state.value.job.id) return
-    if (
-      feedback.attempt < (state.value.job.attempt ?? 0) ||
-      feedback.fence < (state.value.job.fence ?? 0)
-    )
-      return
-    if (
-      state.value.job.updatedAt === feedback.updatedAt &&
-      state.value.job.state === feedback.state &&
-      state.value.job.attempt === feedback.attempt &&
-      state.value.job.fence === feedback.fence
-    )
-      return
-    const next = { ...state.value.job, ...feedback, id: feedback.jobId }
-    update({ job: next })
-  }, [live.feedback, update, valid])
+    if (!state || !job || state.value.job?.id !== job.id) return
+    // Render directly from feedback; event guards use the same committed job.
+    state.value = { ...state.value, job }
+  }, [job, valid])
   const accepted = (sent: { conversationId: string; messageId: string; jobId: string }) => {
     const state = valid()
     if (!state) return

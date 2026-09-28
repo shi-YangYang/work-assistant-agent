@@ -82,7 +82,8 @@ async def test_team_period_metrics_and_drilldowns_use_history_and_same_people(se
         company.rules = {**company.rules,'timezone':'Asia/Shanghai'}
         inactive = await db.get(Member,users['peer'].id); inactive.active=False
         for actor in (users['employee'],users['peer'],users['admin']):
-            db.add(Message(company_id=actor.company_id,owner_id=actor.id,text='范围内上报',created_at=stamp))
+            db.add(Message(company_id=actor.company_id,owner_id=actor.id,text='范围内上报',created_at=stamp,private_context=False))
+        db.add(Message(company_id=users['employee'].company_id,owner_id=users['employee'].id,text='私聊不应计入上报',created_at=stamp))
         for index in range(105):
             item = await work(db,users['employee'],content('阻碍 '+str(index),'blocked','待材料'),stamp)
             if index == 0:

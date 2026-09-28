@@ -135,6 +135,7 @@ async def test_old_plan_survives_history_window_and_message_reference_is_idempot
         catalog = await deliverable_context(db, users['employee'], current)
         assert catalog['items'][0]['id'] == first['id']
     ref = {'id': first['id'], 'revision': 1, 'itemIds': [first['items'][0]['id']]}
+    await finish(context)
     body = {'conversationId': sent['conversationId'], 'text': '只改这一项', 'deliverableReference': ref}
     headers = keyed()
     once = await clients['employee'].post('/api/v1/messages', headers=headers, json=body)

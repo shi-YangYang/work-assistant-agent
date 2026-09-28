@@ -1,7 +1,8 @@
 from app.agent.intent import authorize_intent
+from app.agent.tools.common import referenced_record
 from app.core.digests import digest
 from app.modules.work.models import WorkItem
-from app.security.ownership import owned
+from app.security.access import require as business_require
 from app.tasks.lease import lease
 from sqlalchemy import select
 
@@ -9,7 +10,13 @@ from sqlalchemy import select
 async def authorize_suggestion(context, action, content, work_id=None, source_tokens=()):
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
-        target = await owned(db, WorkItem, work_id, actor) if work_id else None
+        target = await referenced_record(db, WorkItem, work_id, actor) if work_id else None
+        if work_id and target is None:
+            return {'state': 'invalid_reference', 'message': '工作记录不存在或无权查看。新工作请省略 work_id；关联已有工作请先查询并使用真实工作 ID。'}
+        if target:
+            await business_require(db, actor, target.access, retained=True)
+            if context.read_versions.get(target.id) != target.revision:
+                return {'state': 'invalid_reference', 'message': '工作记录尚未读取或已被员工更新，请重新读取并核对后提出建议。'}
         candidates = []
         if target:
             candidates = [{'id': row.id, 'title': row.title, 'summary': row.content.get('summary', '')} for row in (await db.scalars(select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id == actor.id, WorkItem.deleted.is_(False), WorkItem.title == target.title).limit(21))).all()]

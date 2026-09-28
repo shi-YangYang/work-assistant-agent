@@ -177,7 +177,8 @@ async def test_explicit_reference_keeps_late_instruction(setup):
     async with sessions.begin() as db:
         refs = await conversation_references(db, users['employee'], await db.get(Job, job.id), await db.get(Message, job.target_id))
     assert refs[0]['explicitReplyTarget'] and '海棠项目' in refs[0]['userText']
-    assert 'userText' not in refs[0]['truncatedFields']
+    assert refs[0]['userText'] == '甲' * 3500 + '具体要求：标题必须写成海棠项目。'
+    assert 'userText' not in refs[0].get('truncatedFields', [])
 
 
 async def test_report_list_is_bounded_and_full_content_is_retrievable(setup):
