@@ -2,6 +2,7 @@
 import os
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from app.core.config import Settings
 from app.db.base import now
 from app.modules.members.models import Company, Member
@@ -48,7 +49,7 @@ def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
         command.upgrade(config, 'head')
         with scoped.begin() as connection:
             assert 'must_change_password' not in {column['name'] for column in inspect(connection).get_columns('company_member')}
-            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0013_drop_password_change'
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == ScriptDirectory.from_config(config).get_current_head()
             after = list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings())
             assert after == [{key: value for key, value in row.items() if key != 'must_change_password'} for row in before]
             assert list(connection.execute(select(WorkItem.__table__)).mappings()) == work_before

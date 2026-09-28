@@ -56,6 +56,21 @@ describe('JSON Lines process boundary', () => {
     expect(await client.request('fast')).toMatchObject({ method: 'fast' })
   })
 
+  it.each([
+    'speaker_duration',
+    'speaker_busy',
+    'speakers_changed',
+    'invalid_speaker',
+    'invalid_name',
+    'invalid_segment',
+  ])('preserves reviewed speaker-domain errors: %s', async (code) => {
+    const { client } = createClient()
+    await expect(client.request(code)).rejects.toMatchObject({
+      code,
+      message: '说话人信息已更新，请重新打开后修改。',
+    })
+  })
+
   it('rejects all pending requests after process exit', async () => {
     const { client } = createClient()
     const requests = [client.request('hang'), client.request('exit')]

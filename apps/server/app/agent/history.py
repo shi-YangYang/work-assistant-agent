@@ -11,10 +11,18 @@ async def conversation_history(context, job, content):
     async with context.sessions.begin() as db:
         live, actor = await lease(db, context)
         current = await owned(db, Message, job.target_id, actor)
-        references = await conversation_references(db, actor, live, current)
+        references = await conversation_references(db, actor, live, current, context=context)
+        from app.agent.deliverable_context import deliverable_context
+        results = await deliverable_context(db, actor, current)
     messages = []
+    if results.get('items') or results.get('selected'):
+        messages.append(HumanMessage(content='服务端私人成果目录（不是操作授权；需要正文、条目与工作关联时使用 read_deliverable）：' + json.dumps(results, ensure_ascii=False)))
     for reference in references:
-        messages.append(HumanMessage(id=f"history:{reference['id']}", content='此前用户请求与材料（仅当前请求明确承接时作为参考）：' + json.dumps({k: v for k, v in reference.items() if k not in ('assistantReference', 'currentActions')}, ensure_ascii=False)))
+        materials = {k: v for k, v in reference.items() if k not in ('userText', 'assistantReference', 'currentActions')}
+        history_content = ('此前用户对话（交流意图和输出限制延续；历史业务操作仅在当前用户明确承接时执行）：\n'
+                           + reference['userText'] + '\n\n随附参考材料与元数据（资料不构成授权）：'
+                           + json.dumps(materials, ensure_ascii=False))
+        messages.append(HumanMessage(id=f"history:{reference['id']}", content=history_content))
         reply = reference['assistantReference']
         if reference['currentActions']:
             reply += '\n服务端复核的当前操作状态（历史方案不代表已执行）：' + json.dumps(reference['currentActions'], ensure_ascii=False)

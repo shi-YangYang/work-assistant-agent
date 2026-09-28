@@ -1,9 +1,18 @@
 import styles from './ChatHistory.module.css'
-import type { BusinessAction, Identity, Page, WorkMessage } from '@paa/api-contracts'
+import type {
+  BusinessAction,
+  DeliverableReference,
+  Identity,
+  Job,
+  JobFeedback,
+  Page,
+  WorkMessage,
+} from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { MessageCard } from '@web/features/assistant/components/MessageCard'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import type { useAssistantTask } from '../hooks/useAssistantTask'
 import type * as React from 'react'
 import { Sparkles } from 'lucide-react'
 
@@ -24,7 +33,13 @@ export function ChatHistory({
   change,
   textInput,
   actionReceipts,
+  onDeliverable,
+  onContextUpdate,
+  task,
 }: {
+  task?: ReturnType<typeof useAssistantTask>
+  onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
+  onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
   scroller: React.RefObject<HTMLDivElement | null>
   atBottomRef: React.RefObject<boolean>
   setNewReply: React.Dispatch<React.SetStateAction<boolean>>
@@ -93,8 +108,14 @@ export function ChatHistory({
           <MessageCard
             key={message.id}
             message={message}
+            activeJob={task?.job}
+            retryBlocked={locked || task?.blocked}
+            onRetryStart={task?.beginRetry}
+            onRetrySettled={task?.finishRetry}
+            onContextUpdate={onContextUpdate}
             own
             onChange={refresh}
+            onDeliverable={locked ? undefined : onDeliverable}
             onReply={
               locked
                 ? undefined

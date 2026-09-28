@@ -2,7 +2,7 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import styles from './Conversations.module.css'
-import type { Conversation, Page } from '@paa/api-contracts'
+import type { Conversation } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
@@ -10,14 +10,16 @@ import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import {
   conversationPath,
-  conversationsPath,
   deleteConversation,
   renameConversation,
 } from '@web/features/assistant/api/requests'
 import { restoreConversation } from '@web/features/assistant/api/restore-conversation'
 import { ConversationChat } from '@web/features/assistant/components/ConversationChat'
+import { PersonaPicker } from '@web/features/assistant/components/PersonaPicker'
+import { useConversationPersona } from '@web/features/assistant/hooks/useConversationPersona'
 import { ConversationPicker } from '@web/features/assistant/components/ConversationPicker'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import { useConversationSearch } from '@web/features/assistant/hooks/useConversationSearch'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { MessageSquare, SquarePen } from 'lucide-react'
@@ -34,7 +36,6 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [resumeError, setResumeError] = useState<Error | string>('')
   const [resumeRevision, setResumeRevision] = useState(0)
   const newDraft = !!drafts['composer:new']
-  const [search, setSearch] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const expanded = pickerOpen || showConversations
   const setExpanded = useCallback(
@@ -68,11 +69,10 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [titleError, setTitleError] = useState('')
   const [deleting, setDeleting] = useState<Conversation | null>(null)
   const [impact, setImpact] = useState<{ retainedSources: number } | null>(null)
-  const [older, setOlder] = useState<Conversation[]>([])
-  const [cursor, setCursor] = useState<string | null | undefined>()
   const [removed, setRemoved] = useState<string[]>([])
   const [renamed, setRenamed] = useState<Record<string, Conversation>>({})
-  const list = useResource<Page<Conversation>>(conversationsPath(search))
+  const list = useConversationSearch(expanded)
+  const { search, setSearch } = list
   const current = useResource<Conversation>(conversationPath(conversationId))
   const [chatSession, setChatSession] = useState({
     routeId: conversationId,
@@ -128,18 +128,19 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   useEffect(() => {
     if (current.data && current.data.id === conversationId) rememberConversation(current.data.id)
   }, [current.data, conversationId, rememberConversation])
-  const items = [...(list.data?.items ?? []), ...older]
+  const items = (list.data?.items ?? [])
     .filter(
       (item, i, all) =>
         !removed.includes(item.id) && all.findIndex((row) => row.id === item.id) === i,
     )
     .map((item) => (renamed[item.id]?.revision >= item.revision ? renamed[item.id] : item))
-  const nextCursor = cursor === undefined ? list.data?.nextCursor : cursor
+  const nextCursor = list.data?.nextCursor
   const updated = () => {
     list.refresh()
     current.refresh()
     window.dispatchEvent(new Event('paa-record-updated'))
   }
+  const persona = useConversationPersona(conversationId, current.data, updated)
   const stopBeforeAction = () => {
     if (!drafts.recording) return true
     notify('请先停止录音，再管理会话；录音会保留在当前会话。')
@@ -158,6 +159,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           <MessageSquare size={17} />
           <h2 title={current.data?.title}>{current.data?.title ?? '工作助手'}</h2>
           {!current.data && <span className={styles['conversation-caption']}>随时为你准备</span>}
+          <PersonaPicker
+            value={persona.selected}
+            disabled={persona.disabled || !!persona.interaction.busy}
+            onChange={(value) => void persona.choose(value)}
+          />
           <button
             className={`${controlsStyles['icon-button']} ${styles['new-conversation']}`}
             aria-label="新会话"
@@ -174,8 +180,8 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             expanded={expanded}
             search={search}
             setSearch={setSearch}
-            setOlder={setOlder}
-            setCursor={setCursor}
+            loadMore={list.loadMore}
+            loading={list.loading}
             list={list}
             items={items}
             conversationId={conversationId}
@@ -191,7 +197,9 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             nextCursor={nextCursor}
           />
         </header>
-        <ErrorNotice>{failure || (conversationId ? current.error : '')}</ErrorNotice>
+        <ErrorNotice>
+          {persona.error || failure || (conversationId ? current.error : '')}
+        </ErrorNotice>
         {!conversationId && !explicitNew && !newDraft && !createdHere && (
           <>
             <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
@@ -209,8 +217,11 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
           <ConversationChat
             key={chatSession.key}
             conversationId={conversationId}
-            onSent={(id) => {
+            personaId={persona.selected}
+            interaction={persona.interaction}
+            onSent={(id, sentPersona) => {
               if (!conversationId) {
+                persona.adoptCreated(id, sentPersona)
                 setChatSession((previous) => ({ ...previous, createdId: id }))
                 navigate(`/assistant/${id}`, { replace: true })
               }
@@ -294,7 +305,6 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
                     URL.revokeObjectURL(file.url),
                   )
                   setDraft(key, undefined)
-                  setOlder((rows) => rows.filter((row) => row.id !== deleting.id))
                   setRemoved((previous) => [...previous, deleting.id])
                   if (lastConversationId === deleting.id) rememberConversation(null)
                   if (conversationId === deleting.id) navigate('/assistant', { replace: true })

@@ -4,10 +4,11 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageCard.module.css'
 import attachmentsStyles from '../styles/attachments.module.css'
-import type { Draft, WorkMessage } from '@paa/api-contracts'
+import type { DeliverableReference, Draft, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import { Status } from '@web/components/Status'
 import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
+import { DeliverableEntry } from './Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { DocumentCard, DocumentCitations } from '@web/features/assistant/components/Documents'
 import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
@@ -30,13 +31,47 @@ export function MessageCard({
   own = false,
   onChange,
   onReply,
+  onDeliverable,
+  onContextUpdate,
+  activeJob,
+  retryBlocked,
+  onRetryStart,
+  onRetrySettled,
 }: {
   message: WorkMessage
+  activeJob?: Job | null
+  retryBlocked?: boolean
+  onRetryStart?: () => boolean
+  onRetrySettled?: (job: Job | null) => void
   own?: boolean
   onChange: () => void
   onReply?: () => void
+  onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
+  onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
 }) {
-  const live = useJobFeedback(message.job, own && !message.businessUnavailable, onChange)
+  const [retriedJob, setRetriedJob] = useState<Job | null>(null)
+  // Keep the new attempt visible while the message refresh is still in flight.
+  // Older SSE snapshots must not restore the response that was just replaced.
+  const replacing =
+    retriedJob?.id === message.job?.id && (retriedJob?.attempt ?? 0) > (message.job?.attempt ?? 0)
+  const sourceJob = replacing ? retriedJob : message.job
+  const job =
+    activeJob?.id === sourceJob?.id &&
+    (activeJob?.attempt ?? 0) >= (sourceJob?.attempt ?? 0) &&
+    (activeJob?.fence ?? 0) >= (sourceJob?.fence ?? 0) &&
+    ((activeJob?.attempt ?? 0) > (sourceJob?.attempt ?? 0) ||
+      (activeJob?.fence ?? 0) > (sourceJob?.fence ?? 0) ||
+      (sourceJob && ['queued', 'running'].includes(sourceJob.state)) ||
+      (activeJob && !['queued', 'running'].includes(activeJob.state)))
+      ? activeJob!
+      : sourceJob
+  const live = useJobFeedback(job, own && !message.businessUnavailable, onChange)
+  useEffect(() => {
+    if (own && !message.businessUnavailable && job) onContextUpdate?.(job, live.feedback)
+  }, [own, message.businessUnavailable, job, live.feedback, onContextUpdate])
+  const failed = ['failed', 'awaiting_retry', 'cancelled'].includes(
+    live.feedback?.state ?? job?.state ?? '',
+  )
   const location = useLocation()
   const [editing, setEditing] = useState<Draft | null>(null)
   const [gallery, setGallery] = useState<number | null>(null)
@@ -157,24 +192,34 @@ export function MessageCard({
           {message.businessUnavailable && (
             <p className={noticeStyles['notice']}>这条回答的关联资料或权限已变化，请重新提问。</p>
           )}
-          {message.job && (
+          {job && (
             <JobNotice
               job={{
-                ...message.job,
+                ...job,
                 ...(live.feedback
                   ? {
                       state: live.feedback.state,
+                      incompleteTask: live.feedback.incompleteTask ?? job.incompleteTask,
                       stage: live.feedback.stage,
                       error: live.feedback.error,
+                      nodes: live.feedback.nodes,
+                      attempt: live.feedback.attempt,
+                      fence: live.feedback.fence,
                     }
                   : {}),
               }}
               refresh={onChange}
+              onRetryJob={setRetriedJob}
+              retryBlocked={retryBlocked}
+              onRetryStart={onRetryStart}
+              onRetrySettled={onRetrySettled}
+              showNodes
             />
           )}
           {own &&
             !message.businessUnavailable &&
-            message.job?.operationFeedback?.map((item) => (
+            !failed &&
+            job?.operationFeedback?.map((item) => (
               <div className={noticeStyles['notice']} role="status" key={item.step}>
                 <strong>
                   {item.label} ·{' '}
@@ -187,7 +232,7 @@ export function MessageCard({
                 <p>{item.message}</p>
               </div>
             ))}
-          {live.error && (
+          {live.error && !replacing && (
             <p
               className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}
               role="status"
@@ -195,17 +240,20 @@ export function MessageCard({
               {live.error}
             </p>
           )}
-          {!message.reply && !message.businessUnavailable && live.feedback?.text && (
-            <div className={`${styles['assistant-reply']} ${styles['provisional-reply']}`}>
-              <small>
-                {['queued', 'running'].includes(live.feedback.state)
-                  ? '生成中，内容尚未完成'
-                  : '回复未完成'}
-              </small>
-              <p className={utilitiesStyles['preserve']}>{live.feedback.text}</p>
-            </div>
-          )}
-          {message.reply && (
+          {(!message.reply || replacing) &&
+            !failed &&
+            !message.businessUnavailable &&
+            live.feedback?.text && (
+              <div className={`${styles['assistant-reply']} ${styles['provisional-reply']}`}>
+                <small>
+                  {['queued', 'running'].includes(live.feedback.state)
+                    ? '生成中，内容尚未完成'
+                    : '回复未完成'}
+                </small>
+                <p className={utilitiesStyles['preserve']}>{live.feedback.text}</p>
+              </div>
+            )}
+          {message.reply && !replacing && !failed && (
             <div className={styles['assistant-reply']}>
               <BusinessReply
                 text={message.reply}
@@ -215,6 +263,15 @@ export function MessageCard({
               <DocumentCitations citations={message.citations ?? []} />
             </div>
           )}
+          {own &&
+            !message.businessUnavailable &&
+            message.deliverables?.map((item) => (
+              <DeliverableEntry
+                key={`${item.id}:${item.revision}`}
+                item={item}
+                onContinue={onDeliverable}
+              />
+            ))}
           {own &&
             !message.businessUnavailable &&
             (live.feedback?.actions ?? message.actions)?.map((action) => (

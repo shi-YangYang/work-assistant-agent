@@ -15,6 +15,7 @@ import {
   reportRulesPath,
   saveReportRules,
 } from '@web/features/settings/api/requests'
+import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useResource } from '@web/hooks/useResource'
 import { reportRuleErrors, revealRuleErrors } from '@web/features/settings/utils/rule-validation'
 import { useWorkspace } from '@web/lib/workspace'
@@ -25,7 +26,7 @@ export function RulesPage() {
   const { data, error, refresh } = useResource<Rules>(reportRulesPath())
   const { identity, drafts, setDraft, notify } = useWorkspace()
   const value = (drafts.rules as Rules | undefined) ?? data
-  const [busy, setBusy] = useState(false)
+  const { busy, submit } = useDraftSubmission('rules')
   const [failure, setFailure] = useState<Error | string>('')
   const [attempted, setAttempted] = useState(0)
   const form = useRef<HTMLFormElement>(null)
@@ -102,22 +103,20 @@ export function RulesPage() {
             setAttempted((previous) => previous + 1)
             setFailure('')
             if (Object.keys(reportRuleErrors(value)).length) return
-            setBusy(true)
-            try {
-              await saveReportRules({
-                timezone: value.timezone,
-                daily: value.daily,
-                weekly: value.weekly,
-                expectedRevision: value.revision,
-              })
-              setDraft('rules', undefined)
-              refresh()
-              notify('汇报规则已保存，从后续安排生效')
-            } catch (e) {
-              setFailure(e as Error)
-            } finally {
-              setBusy(false)
-            }
+            await submit(
+              () =>
+                saveReportRules({
+                  timezone: value.timezone,
+                  daily: value.daily,
+                  weekly: value.weekly,
+                  expectedRevision: value.revision,
+                }),
+              () => {
+                refresh()
+                notify('汇报规则已保存，从后续安排生效')
+              },
+              (error) => setFailure(error as Error),
+            )
           }}
         >
           <PanelSection title="时间设置" status={timezoneLabel(value.timezone)} defaultOpen>
@@ -125,7 +124,7 @@ export function RulesPage() {
               公司时区
               <select
                 value={value.timezone}
-                disabled={!canEdit}
+                disabled={!canEdit || busy}
                 onChange={(e) => setDraft('rules', { ...value, timezone: e.target.value })}
               >
                 {[...new Set([...companyTimezones, value.timezone])].map((zone) => (
@@ -151,6 +150,7 @@ export function RulesPage() {
               <div className={styles['schedule-panel']}>
                 <label className={`${layoutStyles['check']} ${styles['slot-check']}`}>
                   <input
+                    disabled={busy}
                     type="checkbox"
                     checked={value[kind].enabled}
                     onChange={(e) => update(kind, { ...value[kind], enabled: e.target.checked })}
@@ -161,6 +161,7 @@ export function RulesPage() {
                   {['一', '二', '三', '四', '五', '六', '日'].map((day, index) => (
                     <label key={day}>
                       <input
+                        disabled={busy}
                         type={kind === 'weekly' ? 'radio' : 'checkbox'}
                         name={kind}
                         checked={value[kind].days.includes(index)}
@@ -197,6 +198,7 @@ export function RulesPage() {
                   <label>
                     草稿生成时间
                     <TimeField
+                      disabled={busy}
                       required={value[kind].enabled}
                       error={fieldErrors[`${kind}.generateTime`]}
                       value={value[kind].generateTime}
@@ -206,6 +208,7 @@ export function RulesPage() {
                   <label>
                     提交截止时间
                     <TimeField
+                      disabled={busy}
                       required={value[kind].enabled}
                       error={fieldErrors[`${kind}.deadline`]}
                       value={value[kind].deadline}
@@ -216,6 +219,7 @@ export function RulesPage() {
                 <div className={styles['reminder-settings']}>
                   <label className={`${layoutStyles['check']} ${styles['slot-check']}`}>
                     <input
+                      disabled={busy}
                       type="checkbox"
                       checked={value[kind].reminders ?? true}
                       onChange={(e) =>
@@ -235,7 +239,7 @@ export function RulesPage() {
                       aria-describedby={
                         fieldErrors[`${kind}.beforeMinutes`] ? `${kind}-minutes-error` : undefined
                       }
-                      disabled={value[kind].reminders === false}
+                      disabled={busy || value[kind].reminders === false}
                       value={value[kind].beforeMinutes ?? 30}
                       onChange={(e) =>
                         update(kind, { ...value[kind], beforeMinutes: Number(e.target.value) })

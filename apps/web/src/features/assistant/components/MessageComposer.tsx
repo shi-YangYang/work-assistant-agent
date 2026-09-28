@@ -1,21 +1,14 @@
 import controlsStyles from '../../../styles/controls.module.css'
 import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageComposer.module.css'
+import { ContextUsage } from './ContextUsage'
+import type { ContextUsage as Usage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
-import {
-  CornerUpLeft,
-  Plus,
-  ImagePlus,
-  Mic,
-  Paperclip,
-  ArrowUp,
-  LoaderCircle,
-  Square,
-  X,
-} from 'lucide-react'
+import { CornerUpLeft, Plus, ImagePlus, Mic, Paperclip, ArrowUp, Square, X } from 'lucide-react'
+import type { useAssistantTask } from '../hooks/useAssistantTask'
 import type * as React from 'react'
 import { useId, useRef } from 'react'
 
@@ -31,12 +24,19 @@ export function MessageComposer({
   textInput,
   busy,
   previewUploading,
+  personaSaving = false,
   pending,
   sendError,
   recording,
   retryWait,
   children,
+  contextKey,
+  contextUsage = null,
+  contextUnavailable = false,
+  contextLoading = false,
+  task,
 }: {
+  task?: ReturnType<typeof useAssistantTask>
   containerRef: React.RefObject<HTMLDivElement | null>
   dragging?: boolean
   empty?: boolean
@@ -48,10 +48,15 @@ export function MessageComposer({
   textInput: React.RefObject<HTMLTextAreaElement | null>
   busy: boolean
   previewUploading: boolean
+  personaSaving?: boolean
   pending: boolean
   sendError: string | Error
   recording: { state: CaptureState; seconds: number; start: () => Promise<void>; stop: () => void }
   retryWait: number
+  contextKey?: string
+  contextUsage?: Usage | null
+  contextUnavailable?: boolean
+  contextLoading?: boolean
   children: React.ReactNode
 }) {
   const input = useRef<HTMLInputElement>(null)
@@ -60,9 +65,44 @@ export function MessageComposer({
   const attachmentMenu = useRef<HTMLDivElement>(null)
   const attachmentMenuId = useId()
   const capturing = recording.state !== 'idle'
+  const retryPending = pending && !busy
+  const interrupting = !pending && !!task?.running
+  const label = interrupting
+    ? task?.cancelling
+      ? '中断中'
+      : '中断'
+    : busy
+      ? '正在发送'
+      : retryWait
+        ? `${retryWait} 秒后再试`
+        : retryPending
+          ? '原样重试，确认结果'
+          : task?.blocked
+            ? '正在恢复处理状态'
+            : '发送'
   return (
     <div ref={containerRef} className={styles['composer-wrap']} data-empty={empty}>
       <div className={styles['composer']} data-dragging={dragging}>
+        {composer.deliverableReference && (
+          <div className={styles['replying']}>
+            <span>继续处理：{composer.deliverableTitle ?? '当前方案'}</span>
+            <button
+              type="button"
+              aria-label="取消成果关联"
+              disabled={locked}
+              onClick={() =>
+                change({
+                  ...composer,
+                  deliverableReference: undefined,
+                  deliverableTitle: undefined,
+                  key: '',
+                })
+              }
+            >
+              ×
+            </button>
+          </div>
+        )}
         {composer.replyTo && (
           <div className={styles['replying']}>
             <CornerUpLeft size={14} />
@@ -93,14 +133,19 @@ export function MessageComposer({
             event.preventDefault()
             void addFiles(images)
           }}
-          onKeyDown={(event) => submitOnEnter(event, () => void send())}
+          onKeyDown={(event) =>
+            submitOnEnter(event, () => {
+              if (pending || !task?.blocked) void send()
+            })
+          }
         />
-        {pending && !busy && (
+        {retryPending && (
           <p className={noticeStyles['notice']} role="status">
             原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
           </p>
         )}
         <ErrorNotice>{sendError}</ErrorNotice>
+        <ErrorNotice retry={task?.refresh}>{task?.error}</ErrorNotice>
         <div className={styles['composer-actions']}>
           <div>
             <input
@@ -204,34 +249,35 @@ export function MessageComposer({
               </button>
             )}
           </div>
-          <button
-            aria-label={
-              busy
-                ? '正在发送'
-                : retryWait
-                  ? `${retryWait} 秒后再试`
-                  : pending
-                    ? '原样重试，确认结果'
-                    : '发送'
-            }
-            aria-busy={busy}
-            title={busy ? '正在发送' : '发送'}
-            data-expanded={!!retryWait || pending}
-            className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
-            disabled={
-              busy ||
-              !!retryWait ||
-              previewUploading ||
-              capturing ||
-              (!composer.text.trim() && !composer.files.length)
-            }
-            onClick={send}
-          >
-            {busy ? <LoaderCircle size={18} /> : <ArrowUp size={18} />}
-            {retryWait || pending ? (
-              <span>{retryWait ? `${retryWait} 秒后再试` : '原样重试，确认结果'}</span>
-            ) : null}
-          </button>
+          <div className={styles['send-actions']}>
+            <ContextUsage
+              key={contextKey}
+              usage={contextUsage}
+              unavailable={contextUnavailable}
+              loading={contextLoading}
+            />
+            <button
+              data-expanded={false}
+              aria-label={label}
+              aria-busy={busy || task?.cancelling}
+              title={label}
+              className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
+              disabled={
+                interrupting
+                  ? task?.cancelling
+                  : busy ||
+                    !!retryWait ||
+                    previewUploading ||
+                    personaSaving ||
+                    capturing ||
+                    (!pending && task?.blocked) ||
+                    (!composer.text.trim() && !composer.files.length)
+              }
+              onClick={interrupting ? task?.interrupt : send}
+            >
+              {interrupting ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}
+            </button>
+          </div>
         </div>
       </div>
     </div>

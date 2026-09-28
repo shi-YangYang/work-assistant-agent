@@ -102,7 +102,7 @@ async def test_clarification_and_conflicts_survive_response_failure(setup):
     assert (await c['peer'].get('/api/v1/messages/' + sent['messageId'])).status_code == 404
 
 
-async def test_review_retry_never_reexecutes_business_even_with_current_config(setup, monkeypatch):
+async def test_retry_replaces_failed_response_in_place_without_repeating_business(setup, monkeypatch):
     settings, sessions, users, c = setup
     async def saved(context):
         await execute(context, step=1, action='create_work', changes={'title': '只创建一次'})
@@ -111,8 +111,14 @@ async def test_review_retry_never_reexecutes_business_even_with_current_config(s
     async with sessions() as db:
         job = await db.get(Job, result['job']['id'])
         assert job.result['replyReviewError'] == 'BudgetExceeded'
-    retry = await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={'useCurrentConfig': True})
+    retry = await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={})
     assert retry.status_code == 200
+    assert retry.json()['state'] == 'queued' and retry.json()['error'] == ''
+    queued = (await c['employee'].get('/api/v1/messages/' + result['id'])).json()
+    assert queued['text'] == result['text'] and queued['reply'] == ''
+    assert queued['citations'] == [] and queued['businessCitations'] == []
+    assert queued['actions'][0]['id'] == result['actions'][0]['id']
+    assert (await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={})).status_code == 409
     graph = AsyncMock(side_effect=AssertionError('review retry must not run the graph'))
     monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)
@@ -125,6 +131,7 @@ async def test_review_retry_never_reexecutes_business_even_with_current_config(s
     graph.assert_not_awaited()
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 1
+        assert await db.scalar(select(func.count()).select_from(Message).where(Message.owner_id == users['employee'].id)) == 1
         assert 'pendingReply' not in (await db.get(Job, job.id)).result
 
 

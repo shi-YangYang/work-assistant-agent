@@ -1,12 +1,11 @@
 from fastapi import HTTPException
 from app.core.errors import problem
-from app.db.base import now
 from app.modules.auth.sessions import passwords, revoke_member
 from app.modules.members.models import Company, Member
 from app.modules.members.serializers import member_dto
 from app.modules.members.service import visible_member
 from app.modules.reports.schedule import eligibility_changed as reporting_eligibility_changed
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from starlette.concurrency import run_in_threadpool
 
 
@@ -43,12 +42,16 @@ async def delete_member_command(identifier, actor, db):
     # The colon is outside the allowed username alphabet, so this reserved
     # tombstone cannot conflict with an account created through the API.
     if not item.deleted:
+        from app.modules.conversations.models import ConversationContext
+        await db.execute(delete(ConversationContext).where(ConversationContext.owner_id == item.id, ConversationContext.company_id == actor.company_id))
         item.active, item.deleted, item.password_hash = False, True, None
         item.username = 'deleted:' + item.id
         await reporting_eligibility_changed(db, item)
         await revoke_member(db, item.id)
         from app.modules.auth.models import DingTalkIdentity
-        from app.modules.voiceprints.models import Voiceprint
         await db.execute(delete(DingTalkIdentity).where(DingTalkIdentity.member_id == item.id, DingTalkIdentity.company_id == actor.company_id))
-        await db.execute(update(Voiceprint).where(Voiceprint.member_id == item.id, Voiceprint.state.in_(('queued', 'processing'))).values(state='failed', error='账号已删除，登记已停止', lease_until=None, revision=Voiceprint.revision + 1, updated_at=now()))
+    from app.modules.voiceprints.cleanup import remove_enrollment
+    from app.modules.voiceprints.models import Voiceprint
+    enrollment = await db.scalar(select(Voiceprint).where(Voiceprint.member_id == item.id, Voiceprint.company_id == actor.company_id).with_for_update())
+    await remove_enrollment(db, enrollment)
     return {'ok': True}

@@ -7,7 +7,9 @@ export function ProgressFields({
   value,
   change,
   errors = {},
+  disabled = false,
 }: {
+  disabled?: boolean
   value: Progress
   change: (value: Progress) => void
   errors?: Partial<Record<keyof Progress, string>>
@@ -15,6 +17,7 @@ export function ProgressFields({
   return (
     <>
       <FormField
+        disabled={disabled}
         label="工作事项"
         value={value.title}
         required
@@ -25,6 +28,7 @@ export function ProgressFields({
       <label>
         当前进展
         <AutoTextarea
+          disabled={disabled}
           rows={3}
           value={value.summary}
           maxLength={4000}
@@ -40,6 +44,7 @@ export function ProgressFields({
       <label>
         状态
         <select
+          disabled={disabled}
           value={value.status}
           aria-invalid={errors.status ? true : undefined}
           onChange={(e) => change({ ...value, status: e.target.value as Progress['status'] })}
@@ -57,6 +62,7 @@ export function ProgressFields({
       <label>
         截止日期（选填）
         <input
+          disabled={disabled}
           type="date"
           max="9999-12-31"
           aria-invalid={errors.dueDate ? true : undefined}
@@ -73,6 +79,7 @@ export function ProgressFields({
       <label>
         问题或阻碍
         <AutoTextarea
+          disabled={disabled}
           rows={2}
           value={value.blocker}
           maxLength={2000}
@@ -88,6 +95,7 @@ export function ProgressFields({
       <label>
         下一步
         <AutoTextarea
+          disabled={disabled}
           rows={2}
           value={value.nextStep}
           maxLength={2000}

@@ -30,9 +30,15 @@ async def perform(db, actor, row, job=None):
                 problem(403, '督办来源必须来自实际读取的工作或报告')
             await business_resolve(db, actor, evidence, latest=True)
             links.append({'token': token, 'evidence': evidence})
-        if row.access.get('team') and row.action == 'create_work' and not links:
-            problem(422, '团队督办需要明确关联的工作或已提交报告来源')
-        item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access)
+        # Access tracks every source the model saw, including older turns. It
+        # must not turn an unrelated personal task into a mandatory follow-up.
+        # Explicit links are still verified above and source access is retained.
+        from app.modules.operations.publication import snapshot, selected_attachments
+        await selected_attachments(db, actor, p.get('sharedAttachmentIds', []), row.conversation_id)
+        publication = snapshot(p['changes'], message_ids=[row.message_id], reference=p.get('deliverableReference'), attachments=p.get('sharedAttachmentIds', []))
+        item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access, publication=publication)
+        from app.modules.deliverables.service import link_work
+        await link_work(db, actor, p.get('deliverableReference'), row, item)
         row.result = {'objectType': 'work', 'objectId': item.id, 'revision': item.revision, 'changedFields': sorted(p['changes'])}
     elif row.action == 'generate_report':
         if p['kind'] not in ('daily', 'weekly'):
@@ -49,7 +55,18 @@ async def perform(db, actor, row, job=None):
             if obligation.period != day.isoformat() or obligation.kind != p['kind']:
                 problem(409, '报告周期与汇报待办不一致')
             timezone = obligation.timezone
-        item, report_job = await ensure_report(db, actor, p['kind'], day, report_timezone=timezone)
+        # Pass the authenticated request through the asynchronous handoff, not
+        # a brief invented by the tool-calling model.
+        from app.agent.conversation_context import request_text
+        from app.modules.messages.models import Message
+        message = await owned(db, Message, row.message_id, actor)
+        instructions = request_text(message, job) if job else message.text
+        from app.agent.report_context import capture_brief
+        source = await capture_brief(db, actor, message, job) if job else None
+        item, report_job = await ensure_report(db, actor, p['kind'], day, report_timezone=timezone, instructions=instructions, instruction_source=source)
+        if job:
+            from app.security.access import inherit
+            inherit(actor, report_job, job)
         row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision, 'jobId': report_job.id, 'submitAfter': p['submitAfter']}
         row.state = 'running'
         return

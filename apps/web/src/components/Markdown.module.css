@@ -40,3 +40,26 @@
   padding: 0;
   background: none;
 }
+
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+.table-scroll table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: inherit;
+}
+.table-scroll th,
+.table-scroll td {
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 12px;
+  vertical-align: top;
+  min-width: 100px;
+}
+.table-scroll th {
+  font-weight: 600;
+  background: var(--surface-soft, #fafafa);
+}

@@ -8,12 +8,11 @@ import { ErrorNotice } from '@web/components/ErrorNotice'
 import { readModelService } from '@web/features/model-services/api/requests'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import { cleanServiceDraft } from '@web/features/model-services/utils/service-drafts'
-import { ArrowLeft, ArrowRight, Cpu, Trash2 } from 'lucide-react'
+import { ArrowRight, Cpu, Trash2 } from 'lucide-react'
 import type * as React from 'react'
 
 export function ServiceEditor({
   busy,
-  select,
   dirty,
   draft,
   setRemoveOpen,
@@ -28,7 +27,6 @@ export function ServiceEditor({
   children,
 }: {
   busy: string
-  select: (id: string | null) => void
   dirty: boolean
   draft: ServiceDraft
   setRemoveOpen: (open: boolean) => void
@@ -62,15 +60,6 @@ export function ServiceEditor({
             {dirty ? '有未保存的更改' : '已保存'}
           </span>
           <button
-            className={controlsStyles['icon-button']}
-            aria-label="全部服务"
-            title="全部服务"
-            disabled={!!busy}
-            onClick={() => select(null)}
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <button
             className={`${controlsStyles['icon-button']} ${controlsStyles['danger']}`}
             aria-label={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
             title={draft.revision ? '删除当前模型服务' : '丢弃草稿'}
@@ -80,6 +69,17 @@ export function ServiceEditor({
             <Trash2 size={17} />
           </button>
         </header>
+        <ol className={modelServicesStyles['configuration-steps']} aria-label="配置步骤">
+          <li data-ready={connectionReady}>
+            <span>1</span>连接服务
+          </li>
+          <li data-ready={!!draft.models.length}>
+            <span>2</span>选择并测试模型
+          </li>
+          <li>
+            <span>3</span>分配用途
+          </li>
+        </ol>
         {children}
         <div className={modelServicesStyles['model-editor-feedback']}>
           <ErrorNotice>{error}</ErrorNotice>

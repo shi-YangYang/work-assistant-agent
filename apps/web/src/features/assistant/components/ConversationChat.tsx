@@ -1,7 +1,7 @@
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import styles from './ConversationChat.module.css'
-import type { BusinessAction, WorkMessage } from '@paa/api-contracts'
+import type { BusinessAction, PersonaId, WorkMessage } from '@paa/api-contracts'
 import { Modal } from '@web/components/Modal'
 import {
   conversationMessagesPath,
@@ -16,9 +16,16 @@ import type { PreviewImage } from '@web/features/assistant/components/ImageGalle
 import { ImageGallery } from '@web/features/assistant/components/ImageGallery'
 import { MessageComposer } from '@web/features/assistant/components/MessageComposer'
 import { PdfPreview } from '@web/features/assistant/components/PdfPreview'
+import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
+import { useAssistantTask } from '@web/features/assistant/hooks/useAssistantTask'
+import { useContextUsage } from '@web/features/assistant/hooks/useContextUsage'
 import { useMessageSubmission } from '@web/features/assistant/hooks/useMessageSubmission'
 import { useRecording } from '@web/features/assistant/hooks/useRecording'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import {
+  MAX_ATTACHMENTS,
+  MAX_AUDIO_ATTACHMENTS,
+} from '@web/features/assistant/lib/attachment-limits'
 import {
   droppedFiles,
   fileKind,
@@ -34,10 +41,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 export function ConversationChat({
   conversationId,
+  personaId,
+  interaction,
   onSent,
 }: {
   conversationId?: string
-  onSent: (conversationId: string) => void
+  personaId: PersonaId
+  interaction: PersonaInteraction
+  onSent: (conversationId: string, personaId: PersonaId) => void
 }) {
   const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
@@ -51,11 +62,17 @@ export function ConversationChat({
     'createdAt',
     2000,
   )
+  const messages = useMemo(
+    () => [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+    [data],
+  )
+  const task = useAssistantTask(conversationId, messages)
   const actionReceipts = useResource<{ items: BusinessAction[] }>(
     orphanActionsPath(conversationId),
     3000,
   )
-  const [previewUploading, setPreviewUploading] = useState(false)
+  const [previewBusy, setPreviewUploading] = useState(false)
+  const previewUploading = previewBusy || (!!composer.uploading && !composer.sending)
   const [gallery, setGallery] = useState<number | null>(null)
   const [pdf, setPdf] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -74,6 +91,8 @@ export function ConversationChat({
     composer,
     composerKey,
     conversationId,
+    personaId,
+    interaction,
     onSent,
     previewUploading,
     capturing,
@@ -82,8 +101,9 @@ export function ConversationChat({
     setSendError,
     retryWait,
     refresh,
+    task,
   })
-  const locked = busy || pending || previewUploading
+  const locked = busy || pending || previewUploading || interaction.busy === 'persona'
   const textInput = useRef<HTMLTextAreaElement>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const pageElement = useRef<HTMLDivElement>(null)
@@ -110,10 +130,16 @@ export function ConversationChat({
     composerRef.current = composer
   }, [composer])
   const change = (next: Composer) => {
+    next = { ...next, submissionPersonaId: undefined }
     composerRef.current = next
     setDraft(
       composerKey,
-      next.text || next.files.length || next.replyTo || next.pending
+      next.text ||
+        next.files.length ||
+        next.replyTo ||
+        next.pending ||
+        next.personaId ||
+        next.deliverableReference
         ? { ...next, key: next.key || crypto.randomUUID() }
         : undefined,
     )
@@ -150,17 +176,15 @@ export function ConversationChat({
   async function startRecording() {
     if (locked) return
     if (
-      composer.files.length >= 4 ||
-      composer.files.some((item) => fileKind(item.file) === 'audio') ||
-      composer.files.reduce((sum, item) => sum + item.file.size, 0) >= 20 * 1024 * 1024
+      composer.files.length >= MAX_ATTACHMENTS ||
+      composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
+        MAX_AUDIO_ATTACHMENTS
     ) {
-      setLimitError('每次最多 4 个附件、20 MiB，其中最多一段语音；请先移除一个附件')
+      setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
       return
     }
     setSendError('')
-    await capture.current?.start(
-      20 * 1024 * 1024 - composer.files.reduce((sum, item) => sum + item.file.size, 0),
-    )
+    await capture.current?.start()
   }
   const previewImages: PreviewImage[] = composer.files
     .filter((item) => fileKind(item.file) === 'image')
@@ -172,7 +196,11 @@ export function ConversationChat({
       warnings: item.attachment?.image?.warnings,
       prepare: async () => {
         if (locked || capturing || sendingRef.current) throw new Error('请等待当前操作结束后再预览')
+        if (!interaction.acquire('preview')) throw new Error('请等待人设保存后再预览')
         setPreviewUploading(true)
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, { uploading: item.id }),
+        )
         try {
           const form = new FormData()
           form.append('file', item.file)
@@ -187,11 +215,25 @@ export function ConversationChat({
           )
           return attachment.previewUrl ?? attachment.url
         } finally {
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, { uploading: undefined }),
+          )
+          interaction.release('preview')
           if (active.current) setPreviewUploading(false)
         }
       },
     }))
-  const messages = [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  const latestJob =
+    [...messages].reverse().find((message) => !message.businessUnavailable && message.job)?.job ??
+    null
+  const contextJob =
+    task.job && (task.running || !latestJob || task.job.updatedAt >= latestJob.updatedAt)
+      ? task.job
+      : latestJob
+  const context = useContextUsage(conversationId, contextJob)
+  useEffect(() => {
+    if (task.job) context.receive(task.job, task.feedback)
+  }, [task.job, task.feedback, context.receive])
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
   return (
@@ -254,6 +296,8 @@ export function ConversationChat({
         </button>
       )}
       <ChatHistory
+        onContextUpdate={context.receive}
+        task={task}
         scroller={scroller}
         atBottomRef={atBottomRef}
         setNewReply={setNewReply}
@@ -271,12 +315,31 @@ export function ConversationChat({
         change={change}
         textInput={textInput}
         actionReceipts={actionReceipts}
+        onDeliverable={(reference, title, text) => {
+          change({
+            ...composer,
+            deliverableReference: reference,
+            deliverableTitle: title,
+            text: text
+              ? composer.text.trim()
+                ? `${composer.text}\n${text}`
+                : text
+              : composer.text,
+            key: '',
+          })
+          textInput.current?.focus()
+        }}
       />
       <MessageComposer
+        contextKey={`context:${identity.company.id}:${identity.member.id}:${conversationId ?? 'new'}`}
+        contextUsage={context.usage}
+        contextUnavailable={context.unavailable}
+        contextLoading={context.loading}
         containerRef={composerElement}
         empty={empty}
         dragging={dragging}
         send={send}
+        task={task}
         addFiles={addFiles}
         composer={composer}
         locked={locked}
@@ -284,6 +347,7 @@ export function ConversationChat({
         textInput={textInput}
         busy={busy}
         previewUploading={previewUploading}
+        personaSaving={interaction.busy === 'persona'}
         pending={pending}
         sendError={sendError}
         retryWait={retryWait}

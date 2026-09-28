@@ -72,7 +72,7 @@ async def find_work_items(query: str, runtime: ToolRuntime[RunContext], status: 
         context.own_work_searched = True
         live.result = {**live.result, 'ownWorkSearched': True}
         next_cursor = cursor_encode(selected[-1].updated_at, selected[-1].id) if len(visible) > len(selected) else None
-        return json.dumps({'scope': 'self', 'filters': {'query': query[:120], 'status': status}, 'items': items, 'nextCursor': next_cursor}, ensure_ascii=False, default=str)
+        return json.dumps({'scope': 'self', 'filters': {'query': query[:120], 'status': status}, 'cursor': cursor, 'items': items, 'nextCursor': next_cursor}, ensure_ascii=False, default=str)
 
 
 @tool
@@ -85,12 +85,14 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext]) -> str:
             return '工作记录不存在或无权查看。请使用 find_work_items 返回的工作 ID，不要猜测 ID。'
         await business_require(db, actor, item.access, retained=True)
         runtime.context.read_versions[item.id] = item.revision
-        return clip(await business_work_for_model(db, actor, live, item))
+        return json.dumps(await business_work_for_model(db, actor, live, item), ensure_ascii=False, default=str)
 
 
 @tool
 async def propose_progress(title: str, summary: str, status: Literal['in_progress', 'blocked', 'done'], blocker: str, next_step: str, runtime: ToolRuntime[RunContext], work_id: str | None = None) -> str:
-    """Propose progress for employee confirmation; never confirms work.
+    """Save a progress suggestion ONLY when explicitly requested to record/report
+    progress or prepare a pending suggestion. Mere progress descriptions, advice
+    requests and plan writing do not authorize this. Never confirms work.
 
     Use blocked when a dependency prevents the next step, in_progress for ongoing
     work, and done only when the entire work is finished. For new work, work_id
@@ -105,12 +107,14 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
     if isinstance(work_id, str) and work_id.strip() in ('', 'null'):
         work_id = None
     context = runtime.context
+    from app.agent.suggestions import authorize_suggestion
+    rejected = await authorize_suggestion(context, 'propose_progress', content, work_id)
+    if rejected:
+        return clip(rejected)
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if job.kind != 'message':
             return '报告任务不能修改进展建议。'
-        if actor.role == 'admin' and job.access.get('team'):
-            return '团队查询请使用 propose_followup，并提供实际读取的业务关联；纯问答不要创建建议。'
         message = await owned(db, Message, job.target_id, actor, lock=True)
         if not message.text and await db.scalar(select(Attachment.id).where(Attachment.message_id == message.id, Attachment.kind == 'document', Attachment.deleted.is_(False)).limit(1)):
             return '员工仅发送文件，尚未说明处理意图。请先概览已读范围并询问，暂不提出工作进展。'

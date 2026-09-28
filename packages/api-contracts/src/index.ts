@@ -97,7 +97,9 @@ export interface Progress {
   blocker: string
   nextStep: string
 }
+export type PersonaId = 'dabao' | 'professional'
 export interface Conversation {
+  personaId: PersonaId
   id: string
   title: string
   revision: number
@@ -138,7 +140,54 @@ export interface OperationFeedback {
   state: 'failed' | 'conflict' | 'clarification' | 'waiting'
   message: string
 }
+export interface TaskNode {
+  id: string
+  parentId: string | null
+  kind: 'model' | 'tool' | 'authorization' | 'review' | 'compaction'
+  label: string
+  state:
+    | 'waiting'
+    | 'running'
+    | 'retry_wait'
+    | 'succeeded'
+    | 'failed'
+    | 'awaiting_confirmation'
+    | 'awaiting_input'
+    | 'cancelled'
+  attempts: number
+  maxAttempts: number
+  retries: number
+  totalRetries: number
+  round: number
+  nextRetryAt: string | null
+  errorCode: string
+  error: string
+  canRetry: boolean
+}
+export interface ContextUsage {
+  jobId: string
+  attempt: number
+  fence: number
+  seq: number
+  model: string
+  usedTokens: number
+  contextWindow: number | null
+  inputLimit: number | null
+  outputReserve: number
+  capacitySource: string
+  thresholdRatio: number
+  estimated: true
+  state: 'ready' | 'compacting' | 'retry_wait' | 'failed'
+  compactionId?: string | null
+  beforeTokens?: number | null
+  afterTokens?: number | null
+  reason?: string | null
+  updatedAt: string
+}
 export interface Job {
+  contextUsage?: ContextUsage | null
+  incompleteTask?: boolean
+  nodes?: TaskNode[]
   operationFeedback?: OperationFeedback[]
   stage?: string
   attempt?: number
@@ -158,7 +207,27 @@ export interface Job {
   error: string
   updatedAt: string
 }
+export interface DeliverableReference {
+  id: string
+  revision: number
+  itemIds: string[]
+}
+export interface DeliverableSummary {
+  id: string
+  revision: number
+  latestRevision: number
+  title: string
+  messageId: string
+  itemCount: number
+  updatedAt: string
+}
+export interface Deliverable extends DeliverableSummary {
+  body: string
+  items: { id: string; title: string; body: string }[]
+  links: { itemId: string; workId: string; sourceRevision: number; unavailable: boolean }[]
+}
 export interface WorkMessage {
+  deliverables?: DeliverableSummary[]
   actions?: BusinessAction[]
   conversationId: string | null
   id: string
@@ -267,7 +336,15 @@ export interface CompanyPreset {
   value: string
   parameters: Record<string, import('@paa/model-config').JsonValue>
 }
+export interface ContextCapability {
+  contextWindow: number | null
+  inputLimit: number | null
+  maxOutput: number | null
+  source: string
+}
 export interface CompanyModel {
+  contextWindow?: number | null
+  contextCapability?: ContextCapability
   id: string
   model: string
   protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
@@ -323,6 +400,9 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  contextUsage?: ContextUsage | null
+  incompleteTask?: boolean
+  nodes?: TaskNode[]
   jobId: string
   attempt: number
   fence: number
@@ -489,4 +569,15 @@ export interface TeamWorkspacePage<T> extends Page<T> {
   counts: Record<string, number>
   range: DateRange
   members: Member[]
+}
+
+export interface MemberDeletionImpact {
+  voiceprints: number
+  recordings: number
+}
+
+export interface VoiceprintCleanupSummary {
+  legacy: MemberDeletionImpact & { members: number }
+  pending: number
+  failed: number
 }

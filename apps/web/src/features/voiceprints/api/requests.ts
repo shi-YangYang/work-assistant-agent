@@ -1,3 +1,4 @@
+import type { VoiceprintCleanupSummary } from '@paa/api-contracts'
 import { api, write } from '@web/api/client'
 import type { Enrollment } from '@web/features/voiceprints/api/types'
 
@@ -20,4 +21,11 @@ export function manageVoiceprint(
     body,
     method,
   )
+}
+
+export function voiceprintCleanupPath() {
+  return '/settings/voiceprints/cleanup'
+}
+export function cleanupVoiceprints() {
+  return write<VoiceprintCleanupSummary>(voiceprintCleanupPath(), {})
 }

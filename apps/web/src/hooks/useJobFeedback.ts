@@ -1,10 +1,20 @@
 import type { Job, JobFeedback } from '@paa/api-contracts'
 import { acceptFeedback, subscribeJobFeedback, visibleFeedback } from '@web/api/job-feedback'
-import { useEffect, useRef, useState } from 'react'
+import { epoch } from '@web/api/client'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export function useJobFeedback(job: Job | null, enabled: boolean, refresh: () => void) {
-  const [value, setValue] = useState<JobFeedback | null>(null)
-  const [error, setError] = useState('')
+  const generation = epoch
+  const [snapshot, setSnapshot] = useState<{
+    generation: number
+    value: JobFeedback | null
+  } | null>(null)
+  const [failure, setFailure] = useState<{
+    generation: number
+    jobId: string
+    message: string
+  } | null>(null)
+  const value = snapshot?.generation === generation ? snapshot.value : null
   const refreshRef = useRef(refresh)
   useEffect(() => {
     refreshRef.current = refresh
@@ -21,17 +31,35 @@ export function useJobFeedback(job: Job | null, enabled: boolean, refresh: () =>
         attempt,
         fence,
         (incoming) =>
-          setValue((current) =>
-            incoming && jobId ? acceptFeedback(current, incoming, jobId) : null,
-          ),
-        setError,
+          setSnapshot((previous) => ({
+            generation,
+            value:
+              incoming && jobId
+                ? acceptFeedback(
+                    previous?.generation === generation ? previous.value : null,
+                    incoming,
+                    jobId,
+                  )
+                : null,
+          })),
+        (message) => setFailure(jobId ? { generation, jobId, message } : null),
         () => refreshRef.current(),
       ),
-    [jobId, attempt, fence, state],
+    [jobId, attempt, fence, state, generation],
   )
 
+  const feedback = useMemo(
+    () => (enabled ? visibleFeedback(job, value) : null),
+    [enabled, job, value],
+  )
   return {
-    feedback: enabled ? visibleFeedback(job, value) : null,
-    error: job && ['succeeded', 'awaiting_input', 'cancelled'].includes(job.state) ? '' : error,
+    feedback,
+    error:
+      job &&
+      !['succeeded', 'awaiting_input', 'cancelled'].includes(job.state) &&
+      failure?.generation === generation &&
+      failure.jobId === job.id
+        ? failure.message
+        : '',
   }
 }

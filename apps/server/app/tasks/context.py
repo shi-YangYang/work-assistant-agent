@@ -1,6 +1,7 @@
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from app.core.personas import LEGACY_PERSONA, PersonaId
 
 
 class BudgetExceeded(Exception):
@@ -24,13 +25,19 @@ class RunContext:
     fence: int
     sessions: Any
     settings: Any
+    persona_id: PersonaId = LEGACY_PERSONA
     source_revision: int | None = None
     document_snapshot: str = ''
     document_versions: dict[str, int] = field(default_factory=dict)
+    deliverable_reads: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)
+    image_sources: dict[str, str] = field(default_factory=dict)
     model_binding: dict | None = None
     model_purpose: str = 'assistant'
     config_attempt: int = 0
+    node_retry: bool = False
+    node_scope: str = ''
+    node_deadline: float = 0
     calls: int = 0
     tools: int = 0
     input_tokens: int = 0
@@ -43,4 +50,13 @@ class RunContext:
     feedback_at: float = 0
     intent_model: Any = None
     reply_evidence: list[dict] = field(default_factory=list)
+    conversation_references: list | None = None
+    context_sources: dict = field(default_factory=dict)
+    context_evidence: list[dict] = field(default_factory=list)
+    compaction_packet: dict | None = None
+    compaction_loaded: bool = False
+    published_compactions: set[str] = field(default_factory=set)
+    context_checkpoint: Any = None
+    context_checkpoint_config: dict = field(default_factory=dict)
     receipt_candidates: set[str] = field(default_factory=set)
+    unrequested_actions: set[str] = field(default_factory=set)

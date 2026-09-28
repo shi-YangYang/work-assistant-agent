@@ -14,13 +14,15 @@ class ReviewedFixtureModel(ChatOpenAI):
     Keep this request out of each scenario's graph step/call counters.
     """
     async def ainvoke(self, input, config=None, *, stop=None, **kwargs):
-        if isinstance(input, list) and len(input) == 2 and isinstance(input[-1], HumanMessage):
+        if isinstance(input, list) and input and isinstance(input[-1], HumanMessage):
             try:
                 payload = json.loads(input[-1].content)
             except (ValueError, TypeError):
                 payload = {}
             if payload.get('task') == 'business_reply_review':
-                return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'kind': 'information', 'evidence': []} for row in payload['segments']]}))
+                return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for row in payload['segments']]}))
+            if payload.get('proposedOperation'):
+                return AIMessage(content=json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '受控授权；语义边界由独立用例验证'}))
             if payload.get('task') == 'report_fact_review':
                 return AIMessage(content='{"valid":true}')
         return await super().ainvoke(input, config, stop=stop, **kwargs)

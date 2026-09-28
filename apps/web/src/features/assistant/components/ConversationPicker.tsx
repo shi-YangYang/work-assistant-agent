@@ -3,11 +3,7 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import styles from './ConversationPicker.module.css'
 import type { Conversation, Page } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/ErrorNotice'
-import {
-  readConversation,
-  readConversationDeletion,
-  readMoreConversations,
-} from '@web/features/assistant/api/requests'
+import { readConversation, readConversationDeletion } from '@web/features/assistant/api/requests'
 import { List, MessageSquare, Pencil, Search, Trash2, X } from 'lucide-react'
 import type * as React from 'react'
 import { Link } from 'react-router'
@@ -20,8 +16,8 @@ export function ConversationPicker({
   expanded,
   search,
   setSearch,
-  setOlder,
-  setCursor,
+  loadMore,
+  loading,
   list,
   items,
   conversationId,
@@ -39,8 +35,8 @@ export function ConversationPicker({
   expanded: boolean
   search: string
   setSearch: React.Dispatch<React.SetStateAction<string>>
-  setOlder: React.Dispatch<React.SetStateAction<Conversation[]>>
-  setCursor: React.Dispatch<React.SetStateAction<string | null | undefined>>
+  loadMore: () => Promise<void>
+  loading: boolean
   list: { data: Page<Conversation> | null; error: string | Error; refresh: () => void }
   items: Conversation[]
   conversationId: string | undefined
@@ -115,8 +111,6 @@ export function ConversationPicker({
               maxLength={120}
               onChange={(e) => {
                 setSearch(e.target.value)
-                setOlder([])
-                setCursor(undefined)
               }}
             />
           </label>
@@ -170,20 +164,11 @@ export function ConversationPicker({
             ))}
           </div>
           {nextCursor && (
-            <button
-              onClick={async () => {
-                try {
-                  const next = await readMoreConversations(search, nextCursor)
-                  setOlder((previous) => [...previous, ...next.items])
-                  setCursor(next.nextCursor)
-                } catch (e) {
-                  setFailure(e as Error)
-                }
-              }}
-            >
-              加载更多
+            <button disabled={loading} onClick={() => void loadMore()}>
+              {loading ? '正在加载…' : '加载更多'}
             </button>
           )}
+          {loading && !list.data && <p role="status">正在加载会话…</p>}
           {!items.length && list.data && (
             <p className={utilitiesStyles['muted']}>{search ? '没有匹配的会话' : '还没有会话'}</p>
           )}

@@ -22,7 +22,7 @@ async def db_dep(request: Request):
 DB = Depends(db_dep, scope='function')
 
 
-async def identity(request: Request, db=DB):
+async def authenticated(request: Request, db, *, shared=False):
     raw = request.cookies.get(COOKIE, '')
     if not raw:
         problem(401, '请先登录', 'login_required')
@@ -34,7 +34,7 @@ async def identity(request: Request, db=DB):
         long_operation = request.url.path in ('/api/v1/settings/model-services/models', '/api/v1/settings/model-services/test', '/api/v1/uploads') and request.method == 'POST'
         long_operation = long_operation or request.url.path.endswith(('/events', '/feedback')) or (request.url.path.startswith('/api/v1/uploads/') and request.url.path.endswith('/preview'))
         if not long_operation:
-            await business_company_lock(db, actor.company_id)
+            await business_company_lock(db, actor.company_id, shared=shared)
             session = await db.scalar(select(Session).where(Session.id == session.id, Session.expires_at > now()).execution_options(populate_existing=True))
         actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
     if actor is None or not actor.active or session is None:
@@ -44,7 +44,17 @@ async def identity(request: Request, db=DB):
     request.state.session = session
     return actor
 
+async def identity(request: Request, db=DB):
+    return await authenticated(request, db)
+
+
+async def read_identity(request: Request, db=DB):
+    # Opt-in at reviewed endpoints, never inferred from HTTP method.
+    return await authenticated(request, db, shared=True)
+
+
 AUTH = Depends(identity)
+READ_AUTH = Depends(read_identity)
 
 
 async def admin(actor=AUTH):
@@ -52,7 +62,14 @@ async def admin(actor=AUTH):
         problem(403, '仅老板／管理员可进行此操作')
     return actor
 
+async def read_admin(actor=READ_AUTH):
+    if actor.role != 'admin':
+        problem(403, '仅老板／管理员可进行此操作')
+    return actor
+
+
 ADMIN = Depends(admin)
+READ_ADMIN = Depends(read_admin)
 
 
 def get_settings(request: Request):

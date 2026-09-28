@@ -180,10 +180,7 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     prompt, source = received[-1]
     assert '纠正：现场检查尚未完成' in prompt and source['transcript'] in prompt
     assert next(item for item in source['attachments'] if item['kind'] == 'audio')['transcription']['revision'] == 2
-    second = await upload(c['employee'], 'second.mp3', original, 'audio/mpeg')
-    third = await upload(c['employee'], 'third.mp3', original, 'audio/mpeg')
-    rejected = await c['employee'].post('/api/v1/messages', json={'text': 'two voices', 'attachmentIds': [second['id'], third['id']]}, headers=keyed())
-    assert rejected.status_code == 422
+
 
 
 async def test_preview_auth_original_concurrency_delete_and_orphan_cleanup(setup, monkeypatch):

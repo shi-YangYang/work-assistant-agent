@@ -1,3 +1,4 @@
+from app.integrations.models.capabilities import capability
 from app.core.errors import problem
 from app.core.versions import version
 from app.db.base import now
@@ -13,7 +14,7 @@ EMPTY_CHOICES = {'assistant': None, 'report': 'follow', 'asr': None}
 
 
 def service_dto(row):
-    return {'id': row.id, 'name': row.name, 'baseUrl': row.base_url, 'models': row.models, 'revision': row.revision, 'hasKey': True, 'updatedAt': row.updated_at.isoformat()}
+    return {'id': row.id, 'name': row.name, 'baseUrl': row.base_url, 'models': [{**m, 'contextCapability': capability(row.base_url, m['model'], m.get('contextWindow'))} for m in row.models], 'revision': row.revision, 'hasKey': True, 'updatedAt': row.updated_at.isoformat()}
 
 
 async def get_service(db, company_id, identifier, *, lock=False):

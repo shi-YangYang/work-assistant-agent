@@ -1,6 +1,6 @@
 import json
 from app.integrations.models import transport
-from app.integrations.models.transport import ProviderError, normalize_url, status_error
+from app.integrations.models.transport import ProviderError, normalize_url, status_error, structured_error, retry_after
 
 
 def token_usage(value):
@@ -21,10 +21,19 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
         await on_event('started')
     async with transport.client(settings) as http:
         async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body) as response:
+            if response.is_error:
+                await response.aread()
             status_error(response)
             if not config['streaming']:
                 await response.aread()
-                result = response.json()
+                try:
+                    result = response.json()
+                except ValueError:
+                    raise ProviderError('invalid_response', '模型返回无法解析的内容') from None
+                if not isinstance(result, dict):
+                    raise ProviderError('invalid_response', '模型返回内容结构无效')
+                if result.get('error'):
+                    raise structured_error(result) or ProviderError('provider_error', '模型服务报告请求失败，请联系管理员查看服务调用记录')
                 if on_event:
                     await on_event('usage', result.get('usage'))
             else:
@@ -40,8 +49,10 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         part = json.loads(raw)
                     except ValueError:
                         raise ProviderError('invalid_response', '流式接口返回无效数据') from None
+                    if not isinstance(part, dict):
+                        raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if part.get('error'):
-                        raise ProviderError('protocol', '流式接口报告请求失败，请核对模型参数')
+                        raise structured_error(part, delay=retry_after(response)) or ProviderError('provider_error', '模型服务报告流式请求失败，请联系管理员查看服务调用记录')
                     if part.get('usage'):
                         usage = part['usage']
                         if on_event:
@@ -50,6 +61,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                     if not choices:
                         continue
                     item = choices[0]
+                    if item.get('finish_reason') == 'content_filter':
+                        raise structured_error({'code': 'content_filter'})
                     delta = item.get('delta', {})
                     fragment_text = delta.get('content') or ''
                     if not isinstance(fragment_text, str) or len(content) + len(fragment_text) > 32000:
@@ -72,6 +85,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                 result = {'choices': [{'message': {'role': 'assistant', 'content': content, 'tool_calls': [calls[i] for i in sorted(calls)]}, 'finish_reason': finish}], 'usage': usage or {}}
     try:
         choice = result['choices'][0]
+        if choice.get('finish_reason') == 'content_filter':
+            raise structured_error({'code': 'content_filter'})
         if choice.get('finish_reason') not in ('stop', 'tool_calls'):
             raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制')
         message = choice['message']

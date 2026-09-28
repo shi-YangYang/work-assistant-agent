@@ -25,6 +25,7 @@ class WorkRevision(Owned, Base):
     revision: Mapped[int] = mapped_column(Integer)
     content: Mapped[dict] = mapped_column(JSONB)
     source_ids: Mapped[list] = mapped_column(JSONB)
+    publication: Mapped[dict] = mapped_column(JSONB, default=dict, server_default='{}')
     __table_args__ = (UniqueConstraint('work_id', 'revision'),)
 
 

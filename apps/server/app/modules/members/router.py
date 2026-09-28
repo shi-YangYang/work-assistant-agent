@@ -1,7 +1,7 @@
 from .commands import add_member_command, change_member_command, delete_member_command
 from fastapi import APIRouter
 from app.core.errors import problem
-from app.http.dependencies import ADMIN, DB
+from app.http.dependencies import READ_ADMIN, ADMIN, DB, SESSIONS, SETTINGS
 from app.modules.auth.sessions import passwords, revoke_member
 from app.modules.members.models import Member
 from app.modules.members.schemas import MemberCreate, MemberPatch, ResetPassword
@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.get('/api/v1/members')
-async def members(actor=ADMIN, db=DB):
+async def members(actor=READ_ADMIN, db=DB):
     return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee', Member.deleted.is_(False)).order_by(Member.created_at))).all()]}
 
 
@@ -38,6 +38,17 @@ async def reset_password(identifier: str, body: ResetPassword, actor=ADMIN, db=D
     return {'ok': True}
 
 
+@router.get('/api/v1/members/{identifier}/deletion')
+async def deletion_preview(identifier: str, actor=READ_ADMIN, db=DB):
+    from app.modules.voiceprints.cleanup import member_impact
+    await visible_member(db, actor, identifier, employee_only=True)
+    return await member_impact(db, actor.company_id, identifier)
+
+
 @router.delete('/api/v1/members/{identifier}')
-async def delete_member(identifier: str, actor=ADMIN, db=DB):
-    return await delete_member_command(identifier, actor, db)
+async def delete_member(identifier: str, actor=ADMIN, db=DB, sessions=SESSIONS, settings=SETTINGS):
+    from app.modules.voiceprints.cleanup import drain, summary
+    await delete_member_command(identifier, actor, db)
+    await db.commit()
+    await drain(sessions, settings, company_id=actor.company_id)
+    return {'ok': True, 'cleanupPending': (await summary(db, actor.company_id))['pending']}

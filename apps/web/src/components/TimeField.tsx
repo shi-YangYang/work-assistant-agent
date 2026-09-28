@@ -11,10 +11,12 @@ export function TimeField({
   onChange,
   required,
   error,
+  disabled = false,
 }: {
   value: string
   onChange: (value: string) => void
   required?: boolean
+  disabled?: boolean
   error?: string
 }) {
   const errorId = useId()
@@ -28,6 +30,7 @@ export function TimeField({
     <span className={formFieldStyles['form-field']} style={{ margin: 0 }}>
       <span className={styles['time-field']}>
         <input
+          disabled={disabled}
           value={value}
           required={required}
           aria-invalid={error ? true : undefined}
@@ -45,6 +48,7 @@ export function TimeField({
           }}
         />
         <button
+          disabled={disabled}
           type="button"
           className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']}`}
           aria-label="选择时间"
@@ -58,7 +62,7 @@ export function TimeField({
           {error}
         </small>
       )}
-      {open && (
+      {open && !disabled && (
         <Modal title="选择时间" onClose={() => setOpen(false)}>
           <div className={styles['time-picker']}>
             <label>
@@ -87,6 +91,7 @@ export function TimeField({
           </div>
           <div className={layoutStyles['form-actions']}>
             <button
+              disabled={disabled}
               type="button"
               onClick={() => {
                 onChange('')
@@ -96,6 +101,7 @@ export function TimeField({
               清空
             </button>
             <button
+              disabled={disabled}
               type="button"
               className={controlsStyles['primary']}
               onClick={() => {

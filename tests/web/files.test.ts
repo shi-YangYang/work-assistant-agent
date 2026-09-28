@@ -13,20 +13,27 @@ import {
 const file = (name: string, size = 100, type = '') => ({ name, size, type }) as File
 
 describe('document composer', () => {
-  it('accepts all supported documents with mixed images and enforces aggregate boundaries', () => {
+  it('accepts all supported documents with mixed images and enforces per-file and per-message boundaries', () => {
     for (const extension of ['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx']) {
       expect(fileKind(file(`项目.${extension.toUpperCase()}`))).toBe('document')
       expect(fileSelectionError([file(`项目.${extension}`), file('photo.png')])).toBe('')
     }
-    expect(fileSelectionError(Array.from({ length: 5 }, (_, i) => file(`${i}.txt`)))).toContain(
-      '最多 4',
+    expect(fileSelectionError(Array.from({ length: 10 }, (_, i) => file(`${i}.txt`)))).toContain(
+      '最多 9',
     )
     expect(
       fileSelectionError([file('large.pdf', 16 * 1024 * 1024), file('image.png', 5 * 1024 * 1024)]),
-    ).toContain('20 MiB')
-    expect(fileSelectionError([file('image.jpg', 5 * 1024 * 1024 + 1)])).toContain('5 MiB')
+    ).toBe('')
+    expect(
+      fileSelectionError(Array.from({ length: 9 }, (_, i) => file(`${i}.jpg`, 30 * 1024 * 1024))),
+    ).toBe('')
+    expect(fileSelectionError([file('image.jpg', 30 * 1024 * 1024 + 1)])).toContain('30 MiB')
+    expect(fileSelectionError([file('large.pdf', 20 * 1024 * 1024 + 1)])).toContain('20 MiB')
     expect(fileSelectionError([file('audio.m4a'), file('text.txt'), file('photo.heic')])).toBe('')
-    expect(fileSelectionError([file('audio.m4a'), file('audio.mp3')])).toContain('一段语音')
+    expect(fileSelectionError([file('one.m4a'), file('two.mp3'), file('three.wav')])).toBe('')
+    expect(fileSelectionError(Array.from({ length: 4 }, (_, i) => file(`${i}.mp3`)))).toContain(
+      '3 段语音',
+    )
     expect(fileSelectionError([file('audio.wav', 20 * 1024 * 1024 + 1)])).toContain('20 MiB')
     expect(fileSelectionError([file('zero.txt', 0)])).toContain('空文件')
     for (const extension of ['doc', 'ppt', 'xls', 'docm', 'exe'])
@@ -110,8 +117,17 @@ it('marks directly recorded voice as an instruction and keeps uploaded audio as 
     },
   }
   const composer: Composer = { text: '', key: 'voice', files: [entry] }
-  expect(messageSubmission(composer).body).not.toHaveProperty('voiceCommandAttachmentId')
+  expect(messageSubmission(composer).body).not.toHaveProperty('voiceCommandAttachmentIds')
   const recorded = messageSubmission({ ...composer, files: [{ ...entry, recorded: true }] })
-  expect(recorded.body.voiceCommandAttachmentId).toBe('audio')
+  expect(recorded.body.voiceCommandAttachmentIds).toEqual(['audio'])
+  const mixed = messageSubmission({
+    ...composer,
+    files: [
+      { ...entry, recorded: true },
+      { ...entry, attachment: { ...entry.attachment!, id: 'uploaded' } },
+      { ...entry, recorded: true, attachment: { ...entry.attachment!, id: 'recorded-again' } },
+    ],
+  })
+  expect(mixed.body.voiceCommandAttachmentIds).toEqual(['audio', 'recorded-again'])
   expect(messageSubmission({ ...composer, pending: recorded })).toBe(recorded)
 })

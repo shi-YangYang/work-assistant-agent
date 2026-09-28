@@ -22,3 +22,13 @@ class Voiceprint(Record, Base):
     consent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class VoiceprintCleanup(Record, Base):
+    """Committed deletion intents survive file-system errors and worker restarts."""
+    __tablename__ = 'company_voiceprint_cleanup'
+    company_id: Mapped[str] = mapped_column(ForeignKey('company.id'), index=True)
+    member_id: Mapped[str] = mapped_column(ForeignKey('company_member.id'))
+    path: Mapped[str] = mapped_column(String(80), unique=True)
+    error: Mapped[str] = mapped_column(String(220), default='')
+    attempts: Mapped[int] = mapped_column(Integer, default=0)

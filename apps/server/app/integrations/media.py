@@ -4,6 +4,7 @@ import hashlib
 import tempfile
 import wave
 from app.core.errors import problem
+from app.core.attachment_limits import MAX_ATTACHMENTS
 from pathlib import Path
 from weakref import WeakKeyDictionary
 
@@ -13,13 +14,13 @@ IMAGE_PREVIEW_VERSION = 'image-v1'
 AUDIO_PREVIEW_VERSION = 'audio-v1.wav'
 
 
-MAX_MESSAGE_IMAGE_BLOCKS = 8
+MAX_MESSAGE_IMAGE_BLOCKS = MAX_ATTACHMENTS * 4
 
 
-MAX_MESSAGE_IMAGE_PIXELS = 16_000_000
+MAX_MESSAGE_IMAGE_PIXELS = MAX_ATTACHMENTS * 8_000_000
 
 
-MAX_MESSAGE_IMAGE_BYTES = 6 * 1024 * 1024
+MAX_MESSAGE_IMAGE_BYTES = MAX_ATTACHMENTS * 3 * 1024 * 1024
 
 
 async def image_process(path, mode='validate'):

@@ -2,7 +2,7 @@ import hashlib
 import json
 from fastapi import HTTPException
 from langchain.tools import ToolRuntime, tool
-from app.agent.tools.common import clip, explicit_followup, referenced_record
+from app.agent.tools.common import clip, referenced_record
 from app.modules.messages.models import Message
 from app.modules.team.agent_queries import find_members as business_find_members, query_business as business_query_business
 from app.modules.team.sources import canonical_token as business_canonical_token, read_source as business_read_source
@@ -17,14 +17,15 @@ from typing import Literal
 
 
 @tool
-async def find_team_members(query: str, runtime: ToolRuntime[RunContext]) -> str:
+async def find_team_members(query: str, runtime: ToolRuntime[RunContext], cursor: int = 0) -> str:
     """Match employee names within the administrator's company. Multiple matches
     require clarification; IDs returned here are filters, not write authority.
+    Pass nextCursor with unchanged query until null to list all matching members.
     """
     async with runtime.context.sessions.begin() as db:
         job, actor = await lease(db, runtime.context)
         try:
-            return json.dumps(await business_find_members(db, actor, job, query), ensure_ascii=False)
+            return json.dumps(await business_find_members(db, actor, job, query, cursor), ensure_ascii=False)
         except HTTPException as error:
             return json.dumps({'error': error.detail}, ensure_ascii=False)
 
@@ -86,14 +87,15 @@ async def propose_followup(title: str, summary: str, status: Literal['in_progres
     """
     content = Progress(title=title, summary=summary, status=status, blocker=blocker, nextStep=next_step).model_dump()
     context = runtime.context
+    from app.agent.suggestions import authorize_suggestion
+    rejected = await authorize_suggestion(context, 'propose_followup', content, work_id if work_id != 'null' else None, source_tokens)
+    if rejected:
+        return clip(rejected)
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if actor.role != 'admin' or job.kind != 'message':
             return '当前账号或任务不能创建督办建议。'
         message = await owned(db, Message, job.target_id, actor)
-        intent = message.text + '\n' + message.transcript
-        if not explicit_followup(intent):
-            return '用户尚未明确要求创建或更新本人督办；请只回答问题。'
         if not context.own_work_searched:
             return '请先查询本人已有工作，确认这是新增还是更新。'
         if not 1 <= len(source_tokens) <= 20:

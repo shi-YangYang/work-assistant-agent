@@ -3,6 +3,7 @@ import { AudioLines, ChevronLeft, ChevronRight, RefreshCw, Search, X } from 'luc
 import type { Meeting } from '../shared/contracts'
 import type { LibraryPage, MeetingHit } from '../shared/library-contracts'
 import { MeetingActions } from './MeetingActions'
+import { recordingStateLabel } from './meeting-processing-queue'
 import { MeetingProcessingState } from './MeetingProcessingState'
 import { audioTime } from './AudioPlayer'
 import {
@@ -226,15 +227,7 @@ export function MeetingLibraryList({
                 <span>{audioTime(meeting.durationMs / 1000)}</span>
                 <span className="row-state">
                   <span className={`meeting-state ${meeting.status}`}>
-                    {meeting.deleting
-                      ? '删除未完成'
-                      : meeting.status === 'completed'
-                        ? '已完成'
-                        : meeting.status === 'interrupted'
-                          ? '录制中断'
-                          : meeting.status === 'failed'
-                            ? '录制失败'
-                            : '录音中'}
+                    {meeting.deleting ? '删除未完成' : recordingStateLabel(meeting.status)}
                   </span>
                   {!meeting.deleting && (
                     <MeetingProcessingState

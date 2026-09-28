@@ -34,7 +34,11 @@ Electron renderer → 受限 preload → main → stdio → Python 本地核心
 - 模型不直接读写数据库，也不能靠参数改变身份。员工访问本人资料，管理员团队问答使用已确认业务及关联来源；撤权或删除后复核历史回答和待执行操作。
 - PostgreSQL 保存业务、修订、任务、附件分段和声纹；原件在私有卷。解析与声纹提取使用受管子进程，聊天、图片理解和语音转写调用外部服务。
 - 检索先授权再分页，看板与明细共用统计范围。处理反馈写入数据库有界快照，API 复核权限后经 SSE 交付；正式结果仍来自业务记录。
+- 用量与团队统计在 SQL 中聚合、分页；显式只读路径取得公司共享锁，写入和撤权使用同标识排他锁，禁止事务内锁升级。
+- 声纹文件清理先在业务事务中登记意图，再由请求或 worker 重试；历史遗留资料仅由管理员显式清理。
 - 模型用量保存真实返回值，缺失为未知。公司凭证由独立主密钥加密，API／worker 共用；数据库、附件、主密钥配对恢复。
+- 会话 JSONB 保存可重建的摘要、近期消息和来源版本；新任务补入增量，任务内复用内存上下文。业务表保留原始事实，checkpoint 负责执行恢复，任务用量快照仅用于展示。
+- 主助手按实际模型窗口估算完整请求，达到 90% 时压缩历史；摘要复用仍校验权限与来源，不能代替当前授权和独立事实核对。
 
 ## 公司服务端组织
 
@@ -90,6 +94,8 @@ styles/       本端基础 CSS、公共布局和控件 Module
 - 使用 `@web/` 别名和具体模块导入，不建立汇总整个应用的 barrel。
 - 页面不拼请求路径，业务 API 统一经过请求客户端处理身份、CSRF、超时、取消和错误。
 - 身份、跨页草稿、服务端数据、URL 筛选和局部弹窗各有明确状态所有者；Hook 负责完整流程，避免重复持有状态。
+- 通用提交 Hook 管理提交快照，会话分页与模型配置控制器分别归所属 feature；异步写回核对账号、记录及执行代次。
+- 路由延迟加载，加载与失败恢复留在路由区域，不重置整个应用。
 - 业务 TSX 超过约 350 个非空行时检查职责，不机械拆碎。
 
 ### Web 样式边界
@@ -115,19 +121,20 @@ styles/       本端基础 CSS、公共布局和控件 Module
 | `ui-web` | 品牌图片与 favicon，不导出 CSS |
 | `voiceprint-engine` | 登记和匹配共用的模型、预处理及模板协议 |
 
-共享包不导入应用，桌面 IPC 契约留在桌面。Node 使用 npm workspaces 和根锁文件；Python 核心与公司服务独立锁定依赖。测试集中在 `tests/`，按对象分区。
+共享包不导入应用，桌面 IPC 契约留在桌面。Node 使用 npm workspaces 和根锁文件；Python 核心与公司服务独立锁定依赖。测试集中在 `tests/`，按对象分区，React 交互回归放在 `tests/web/dom/`。
 
 ### 声纹引擎
 
 - `packages/voiceprint-engine` 使用固定 WeSpeaker 权重及 16 kHz 单声道 PCM；模板最多 12 个归一化 256 维向量，`MODEL_ID` 标记权重与预处理版本。相似度不是识别准确率。
 - 只加载本地权重并校验 SHA256，可用 `PAA_VOICEPRINT_MODEL` 指定路径；不在线下载。生产 CPU 依赖由 `scripts/company/install-voiceprints.py` 安装。
+- 固定公共权重统一保存在 `packages/voiceprint-engine/resources/models/speaker-community-1/`。桌面冻结核心打包完整说话人资源，公司 worker 仅打包声纹 embedding；API 和 Web 不携带推理权重。
 - 输入为 6 秒至 3 分钟规范 WAV，声音不足时拒绝生成；调用者负责上传校验、单人授权和进程资源限制。
 - 成功输出 JSON，失败返回 exit 2 和 `{error:{code,message}}`。员工录音、账号关联和模板属于私有业务数据，不入包或 Git；模型署名随权重保留。
 
 提取命令（Python 3.12，已安装引擎运行依赖）：
 
 ```sh
-python -m paa_voiceprints enrollment.wav --model apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin
+python -m paa_voiceprints enrollment.wav --model packages/voiceprint-engine/resources/models/speaker-community-1/embedding/pytorch_model.bin
 ```
 
 本地包可用 `pip install './packages/voiceprint-engine[runtime]'` 安装；公开语音验证入口为 `scripts/benchmarks/company-voiceprints.py`。

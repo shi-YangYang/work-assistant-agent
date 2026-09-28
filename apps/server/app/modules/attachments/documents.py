@@ -46,6 +46,11 @@ async def visible_attachment(db, identifier, actor, *, lock=False):
         if item.owner_id != actor.id:
             problem(404, '附件尚未发送或无权查看')
     else:
+        from app.modules.operations.publication import shared_attachment, published_attachment
+        if item.owner_id == actor.id and await published_attachment(db, item):
+            return item
+        if item.owner_id != actor.id and await shared_attachment(db, actor, item):
+            return item
         message = await owned(db, Message, item.message_id, actor, read=True)
         if message.owner_id != item.owner_id:
             problem(404, '附件来源不可用')
@@ -56,10 +61,11 @@ async def document_statement(db, actor, job):
     current = await owned(db, Message, job.target_id, actor) if job.kind == 'message' else None
     revisions = (await db.scalars(select(WorkRevision).join(WorkItem, WorkItem.id == WorkRevision.work_id).where(WorkItem.deleted.is_(False), WorkRevision.owner_id == actor.id, WorkRevision.company_id == actor.company_id, *([WorkRevision.id.in_(job.result.get('sourceIds', []))] if job.kind == 'report' else [])))).all()
     sources = {mid for revision in revisions for mid in revision.source_ids}
+    published = {aid for revision in revisions for aid in revision.publication.get('attachmentIds', [])}
     scope = Message.id.in_(sources)
     if current:
         scope = scope | (Message.conversation_id == current.conversation_id)
-    return select(Attachment).join(Message, Message.id == Attachment.message_id).where(Attachment.owner_id == actor.id, Attachment.company_id == actor.company_id, Attachment.deleted.is_(False), Attachment.kind == 'document', Message.deleted.is_(False), scope)
+    return select(Attachment).join(Message, Message.id == Attachment.message_id).where(Attachment.owner_id == actor.id, Attachment.company_id == actor.company_id, Attachment.deleted.is_(False), Attachment.kind == 'document', (Message.deleted.is_(False) & scope) | Attachment.id.in_(published))
 
 
 async def agent_attachment(db, identifier, actor, job):
@@ -67,6 +73,9 @@ async def agent_attachment(db, identifier, actor, job):
     item = await owned(db, Attachment, identifier, actor)
     if item.kind != 'document' or not item.message_id:
         problem(404, '文件不可用或尚未发送')
+    from app.modules.operations.publication import published_attachment
+    if await published_attachment(db, item, revision_ids=job.result.get('sourceIds', []) if job.kind == 'report' else None):
+        return item
     message = await owned(db, Message, item.message_id, actor)
     current = await owned(db, Message, job.target_id, actor) if job.kind == 'message' else None
     if not current or message.conversation_id != current.conversation_id:

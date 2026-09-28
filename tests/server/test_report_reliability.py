@@ -393,3 +393,38 @@ async def test_newest_rule_revision_wins_even_if_timezone_moves_effective_date_b
     async with sessions() as db:
         row=await db.scalar(select(ReportObligation).where(ReportObligation.owner_id==users['employee'].id,ReportObligation.period=='2027-04-04'))
         assert row.rule_revision==2 and row.deadline_at.hour==20
+
+
+async def test_manual_report_retry_uses_latest_binding_without_overwriting_edits(setup):
+    from app.modules.model_services.bindings import bind_job
+    from test_model_services import create, route
+    settings, sessions, users, c = setup
+    service = await create(c['admin'])
+    assert (await c['admin'].put('/api/v1/settings/model-routing', json=route(service))).status_code == 200
+    report, job, _ = await prepared(setup)
+    async with sessions.begin() as db:
+        live = await db.get(Job, job.id)
+        binding = await bind_job(db, live, settings)
+        old_revision = binding['report']['revision']
+        live.state = 'failed'
+        saved = await db.get(Report, report.id)
+        saved.content, saved.edited, saved.revision = {**CONTENT, 'completed': '人工编辑'}, True, 2
+    from test_model_services import payload
+    changed = payload()
+    changed['expectedRevision'] = 1
+    changed['name'] = '更新后的报告配置'
+    response = await c['admin'].patch('/api/v1/settings/model-services/' + service['id'], json=changed)
+    assert response.status_code == 200, response.text
+    for use_current in (False,):
+        result = await c['employee'].post('/api/v1/jobs/' + job.id + '/retry', json={'useCurrentConfig': use_current})
+        assert result.status_code == 200, result.text
+    assert (await c['employee'].post('/api/v1/jobs/' + job.id + '/retry', json={})).status_code == 409
+    async with sessions.begin() as db:
+        live = await db.get(Job, job.id)
+        assert live.result['refreshModelBinding']
+        binding = await bind_job(db, live, settings)
+        assert binding['report']['revision'] > old_revision
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=ReportModel())
+    async with sessions() as db:
+        saved = await db.get(Report, report.id)
+        assert saved.content['completed'] == '人工编辑' and saved.candidate['content'] == CONTENT

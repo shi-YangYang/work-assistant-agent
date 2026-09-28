@@ -90,6 +90,46 @@ export function Markdown({
       )
       continue
     }
+    const tableCells = (value: string) =>
+      value
+        .trim()
+        .replace(/^\||\|$/g, '')
+        .split('|')
+        .map((cell) => cell.trim())
+    if (
+      line.includes('|') &&
+      index + 1 < lines.length &&
+      /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1])
+    ) {
+      const headings = tableCells(line)
+      const rows: string[][] = []
+      index += 2
+      while (index < lines.length && lines[index].includes('|') && lines[index].trim())
+        rows.push(tableCells(lines[index++]))
+      blocks.push(
+        <div className={styles['table-scroll']} key={key}>
+          <table>
+            <thead>
+              <tr>
+                {headings.map((cell, column) => (
+                  <th key={column}>{inline(cell, 0, renderBusinessCitation)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, number) => (
+                <tr key={number}>
+                  {headings.map((_, column) => (
+                    <td key={column}>{inline(row[column] ?? '', 0, renderBusinessCitation)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      )
+      continue
+    }
     const heading = line.match(/^#{1,6}\s+(.+)$/)
     if (heading) {
       blocks.push(<h4 key={key}>{inline(heading[1], 0, renderBusinessCitation)}</h4>)

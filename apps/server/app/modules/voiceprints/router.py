@@ -4,7 +4,7 @@ from fastapi import APIRouter, Form, UploadFile
 from fastapi.responses import FileResponse
 from app.core.errors import problem
 from app.db.base import now
-from app.http.dependencies import ADMIN, DB, SETTINGS
+from app.http.dependencies import READ_ADMIN, ADMIN, DB, SESSIONS, SETTINGS
 from app.http.desktop_dependencies import DESKTOP
 from app.integrations.media import audio_mime
 from app.modules.attachments.documents import safe_name
@@ -19,10 +19,25 @@ router = APIRouter()
 
 
 @router.get('/api/v1/settings/voiceprints')
-async def listing(actor=ADMIN, db=DB):
+async def listing(actor=READ_ADMIN, db=DB):
     members = (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.deleted.is_(False)).order_by(Member.name).limit(501))).all()
     stored = {v.member_id: v for v in (await db.scalars(select(Voiceprint).where(Voiceprint.company_id == actor.company_id))).all()}
     return {'modelId': MODEL_ID, 'items': [dto(stored.get(m.id), m) for m in members], 'limit': 500}
+
+
+@router.get('/api/v1/settings/voiceprints/cleanup')
+async def cleanup_preview(actor=READ_ADMIN, db=DB):
+    from app.modules.voiceprints.cleanup import summary
+    return await summary(db, actor.company_id)
+
+
+@router.post('/api/v1/settings/voiceprints/cleanup')
+async def cleanup_legacy(actor=ADMIN, db=DB, sessions=SESSIONS, settings=SETTINGS):
+    from app.modules.voiceprints.cleanup import drain, schedule_legacy, summary
+    await schedule_legacy(db, actor.company_id)
+    await db.commit()
+    await drain(sessions, settings, company_id=actor.company_id)
+    return await summary(db, actor.company_id)
 
 
 @router.post('/api/v1/settings/voiceprints/{identifier}', status_code=202)
@@ -60,12 +75,13 @@ async def upload(identifier: str, file: UploadFile, consent: bool = Form(...), e
         item.pending_path, item.filename = path.name, filename
         item.state, item.error, item.lease_until = 'queued', '', None
         item.consent_by, item.consent_at, item.updated_at = actor.id, now(), now()
+        if old_pending:
+            from app.modules.voiceprints.cleanup import schedule_paths
+            await schedule_paths(db, actor.company_id, target.id, [old_pending])
         await db.commit()
     except BaseException:
         path.unlink(missing_ok=True)
         raise
-    if old_pending:
-        private_path(settings, old_pending).unlink(missing_ok=True)
     return dto(item, target)
 
 
@@ -80,7 +96,7 @@ async def retry(identifier: str, actor=ADMIN, db=DB):
 
 
 @router.get('/api/v1/settings/voiceprints/{identifier}/audio')
-async def original(identifier: str, actor=ADMIN, db=DB, settings=SETTINGS):
+async def original(identifier: str, actor=READ_ADMIN, db=DB, settings=SETTINGS):
     _, item = await enrollment(db, actor, identifier)
     path = private_path(settings, item.pending_path or item.ready_path) if item else None
     if not path or not path.is_file():
@@ -89,22 +105,20 @@ async def original(identifier: str, actor=ADMIN, db=DB, settings=SETTINGS):
 
 
 @router.delete('/api/v1/settings/voiceprints/{identifier}')
-async def remove(identifier: str, actor=ADMIN, db=DB, settings=SETTINGS):
+async def remove(identifier: str, actor=ADMIN, db=DB, settings=SETTINGS, sessions=SESSIONS):
+    from app.modules.voiceprints.cleanup import drain, remove_enrollment, summary
     _, item = await enrollment(db, actor, identifier)
-    if item:
-        paths = [p for p in (item.ready_path, item.pending_path) if p]
-        await db.delete(item)
-        await db.commit()
-        for path in paths:
-            private_path(settings, path).unlink(missing_ok=True)
-    return {'ok': True}
+    await remove_enrollment(db, item)
+    await db.commit()
+    await drain(sessions, settings, company_id=actor.company_id)
+    return {'ok': True, 'cleanupPending': (await summary(db, actor.company_id))['pending']}
 
 
 @router.get('/api/v1/desktop/voiceprints')
 async def snapshot(actor=DESKTOP, db=DB):
     if actor.role != 'admin':
         problem(403, '仅管理员可以同步公司声纹')
-    rows = (await db.execute(select(Voiceprint, Member).join(Member, Voiceprint.member_id == Member.id).where(Voiceprint.company_id == actor.company_id, Member.active.is_(True)).order_by(Member.id).limit(501))).all()
+    rows = (await db.execute(select(Voiceprint, Member).join(Member, Voiceprint.member_id == Member.id).where(Voiceprint.company_id == actor.company_id, Member.active.is_(True), Member.deleted.is_(False)).order_by(Member.id).limit(501))).all()
     if len(rows) > 500:
         problem(422, '公司声纹数量超过当前支持范围')
     if any(v.templates and (v.model_id != MODEL_ID or not valid_templates(v.templates)) for v, _ in rows):

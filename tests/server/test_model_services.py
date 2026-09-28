@@ -97,7 +97,7 @@ async def test_cross_company_csrf_secret_failure_and_environment_takeover(setup)
     assert (await c['admin'].get('/api/v1/settings/model-routing')).json()['source']=='database'
 
 
-async def test_bound_revision_survives_edit_and_retry_current_config_isolated(setup):
+async def test_bound_revision_survives_edit_and_manual_retry_uses_latest_config(setup):
     settings,sessions,users,c=setup
     first=await create(c['admin']);await c['admin'].put('/api/v1/settings/model-routing',json=route(first))
     sent=await send(c['employee'],'配置恢复样本')
@@ -113,17 +113,20 @@ async def test_bound_revision_survives_edit_and_retry_current_config_isolated(se
         await process_job(claimed,sessions,settings,saver,model=model('旧版本',fail_once=True))
         response=await c['employee'].post('/api/v1/jobs/'+claimed.id+'/retry',json={})
         assert response.status_code==200
+        # The selection is refreshed at execution time, not frozen at the click.
+        changed=await c['admin'].patch('/api/v1/settings/model-services/'+first['id'],json={**payload(url='https://third.example/v1'),'apiKey':'latest-test-key','expectedRevision':2})
+        assert changed.status_code==200
         retry=await claim(sessions,users['employee'].id)
         async with sessions() as db:
-            assert (await db.get(Job,retry.id)).model_binding==binding
-        await process_job(retry,sessions,settings,saver,model=model('仍旧版本',fail_once=True))
-        await c['employee'].post('/api/v1/jobs/'+claimed.id+'/retry',json={'useCurrentConfig':True})
-        retry=await claim(sessions,users['employee'].id)
+            assert (await db.get(Job,retry.id)).result['refreshModelBinding']
         await process_job(retry,sessions,settings,saver,model=model('新版本'))
         async with sessions() as db:
             live=await db.get(Job,retry.id)
             assert live.state=='succeeded' and live.config_attempt==1
-            assert live.model_binding['assistant']['revision']==2
+            assert live.model_binding['assistant']['revision']==3
+            assert 'refreshModelBinding' not in live.result
+            config,key=await resolve_bound(db,settings,users['employee'].company_id,live.model_binding,'assistant')
+            assert config['baseUrl']=='https://third.example/v1' and key=='latest-test-key'
             assert SECRET not in json.dumps(live.model_binding)
 
 
@@ -227,7 +230,7 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
             assert 'persistedOperations' not in review
             assert body['max_tokens'] == 2000
-            verdict={'segments':[{'index':0,'kind':'information','evidence':[]}]}
+            verdict={'segments':[{'index':0,'scope_reason':'受控范围判定','scope':'answer','kind':'information','evidence':[]}]}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         if streaming:
             delta=dict(message)
@@ -530,7 +533,9 @@ async def test_revocation_blocks_bound_call_and_new_company_does_not_inherit_env
     await c['admin'].put('/api/v1/settings/model-routing',json={'expectedRevision':1,'assistant':None,'report':None,'asr':None})
     assert (await c['admin'].request('DELETE','/api/v1/settings/model-services/'+saved['id'],json={'expectedRevision':1})).status_code==200
     async with sessions() as db:
-        with pytest.raises(ProviderError,match='撤销'):await resolve_bound(db,settings,job.company_id,binding,'assistant')
+        with pytest.raises(ProviderError) as error:
+            await resolve_bound(db,settings,job.company_id,binding,'assistant')
+        assert error.value.code == 'revoked'
     await send(c['outsider']);other=await claim(sessions,users['outsider'].id)
     async with sessions.begin() as db:
         live=await db.get(Job,other.id)
@@ -570,7 +575,8 @@ async def test_directory_token_plan_uses_openai_catalog(setup, monkeypatch):
         return httpx.Response(200, json={'data': [{'id': 'controlled-model'}], 'has_more': False})
     monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     result = await catalog(settings, endpoint.removesuffix('/models'), SECRET)
-    assert result == {'models': ['controlled-model'], 'source': endpoint, 'truncated': False}
+    assert result == {'models': ['controlled-model'], 'source': endpoint, 'truncated': False,
+                      'capabilities': {'controlled-model': {'contextWindow': None, 'inputLimit': None, 'maxOutput': None, 'source': 'unknown'}}}
     assert len(calls) == 1
 
 
@@ -609,7 +615,7 @@ async def test_failed_probe_does_not_claim_other_capabilities_or_reveal_remote_e
     assert SECRET not in result.text and len(requests)==1
 
 
-async def test_report_current_config_attempt_preserves_saved_draft_as_new_candidate(setup):
+async def test_report_retry_restores_committed_receipt_without_generating_again(setup):
     from app.modules.reports.models import Report
     from test_report_reliability import prepared, ReportModel, CONTENT
     settings,sessions,users,c=setup
@@ -622,10 +628,12 @@ async def test_report_current_config_attempt_preserves_saved_draft_as_new_candid
         # A legacy tool-flow receipt may predate the final worker success write.
         live.state='failed'
     assert (await c['employee'].post('/api/v1/jobs/'+job.id+'/retry',json={'useCurrentConfig':True})).status_code==200
-    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'新候选'})))
+    retry_model = ReportModel(json.dumps({**CONTENT, 'completed': '不能再生成'}))
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=retry_model)
+    assert retry_model.calls == 0
     async with sessions() as db:
         report=await db.get(Report,report.id)
-        assert report.content['completed']=='原报告' and report.candidate['content']['completed']=='新候选' and report.published_revision==0
+        assert report.content['completed']=='原报告' and report.candidate is None and report.published_revision==0
 
 
 async def test_company_probe_concurrency_is_bounded_without_daily_quota(setup,monkeypatch):

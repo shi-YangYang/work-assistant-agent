@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Users, Pencil } from 'lucide-react'
-import type { SpeakerRequest, SpeakerStatus } from '../shared/speaker-contracts'
+import {
+  validSpeakerName,
+  speakerNameLength,
+  normalizeSpeakerName,
+  SPEAKER_NAME_LIMIT,
+  type SpeakerRequest,
+  type SpeakerStatus,
+} from '../shared/speaker-contracts'
 import type { TranscriptSegment } from '../shared/contracts'
 
 export function SpeakerPanel({
@@ -60,20 +67,42 @@ export function SpeakerPanel({
   return (
     <div className="speaker-panel">
       <div className="speaker-toolbar">
-        <span className="speaker-title">
-          <Users size={15} />
-          说话人
-        </span>
-        {current.state === 'completed' ? (
-          <span className="speaker-device">
-            {current.speakers.length} 位 ·{' '}
-            {current.device === 'mps'
-              ? 'Apple GPU'
-              : current.device === 'cuda'
-                ? 'NVIDIA GPU'
-                : 'CPU'}
-          </span>
+        {current.speakers.length > 0 ? (
+          <details className="speaker-options">
+            <summary className="speaker-title">
+              <Users size={15} /> 说话人 · {current.speakers.length} 位 <span>编辑姓名</span>
+            </summary>
+            <p className="speaker-device">
+              识别设备：
+              {current.device === 'mps'
+                ? 'Apple GPU'
+                : current.device === 'cuda'
+                  ? 'NVIDIA GPU'
+                  : 'CPU'}
+            </p>
+            {!!current.speakers.length && (
+              <div className="speaker-chips" aria-label="本场会议说话人">
+                {current.speakers.map((speaker) => (
+                  <button
+                    key={speaker.id}
+                    disabled={!connected}
+                    onClick={() => rename(speaker.id, speaker.name)}
+                    title="修改本场会议中的姓名"
+                  >
+                    <span>{speaker.name}</span>
+                    <Pencil size={12} />
+                  </button>
+                ))}
+              </div>
+            )}
+          </details>
         ) : (
+          <span className="speaker-title">
+            <Users size={15} />
+            说话人
+          </span>
+        )}
+        {current.state !== 'completed' && (
           <span className="speaker-device" role="status">
             {running ? current.progress || '正在准备…' : current.state === 'paused' ? '已暂停' : ''}
           </span>
@@ -103,21 +132,6 @@ export function SpeakerPanel({
             ))}
         </div>
       </div>
-      {!!current.speakers.length && (
-        <div className="speaker-chips" aria-label="本场会议说话人">
-          {current.speakers.map((speaker) => (
-            <button
-              key={speaker.id}
-              disabled={!connected}
-              onClick={() => rename(speaker.id, speaker.name)}
-              title="修改本场会议中的姓名"
-            >
-              <span>{speaker.name}</span>
-              <Pencil size={12} />
-            </button>
-          ))}
-        </div>
-      )}
       {(error || current.error || current.model.error) && !mode && (
         <p className="audio-warning" role="alert">
           {error || current.error || current.model.error}
@@ -141,8 +155,15 @@ export function SpeakerPanel({
                 revision:
                   current.generation === generation.current ? current.revision : revision.current,
               }
+              if (mode === 'name' && !validSpeakerName(name)) {
+                setError('姓名须为 1～100 个字符，不能包含换行。')
+                return
+              }
               if (mode === 'name')
-                void request({ action: 'rename', ...base, speakerId, name }, true)
+                void request(
+                  { action: 'rename', ...base, speakerId, name: normalizeSpeakerName(name) },
+                  true,
+                )
               else if (mode === 'segment' && segment)
                 void request(
                   {
@@ -163,9 +184,17 @@ export function SpeakerPanel({
                   autoFocus
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  maxLength={100}
+                  aria-invalid={name.length > 0 && !validSpeakerName(name)}
+                  aria-describedby="speaker-name-help"
+                  disabled={busy}
                   required
                 />
+                <small
+                  id="speaker-name-help"
+                  className={name.length > 0 && !validSpeakerName(name) ? 'danger-text' : undefined}
+                >
+                  {speakerNameLength(name)} / {SPEAKER_NAME_LIMIT} 字符
+                </small>
               </label>
             ) : (
               <>
@@ -198,7 +227,7 @@ export function SpeakerPanel({
               </button>
               <button
                 className="primary-button"
-                disabled={busy || !connected || (mode === 'name' && !name.trim())}
+                disabled={busy || !connected || (mode === 'name' && !validSpeakerName(name))}
               >
                 保存
               </button>

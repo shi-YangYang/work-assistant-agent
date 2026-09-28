@@ -147,8 +147,27 @@ export function MeetingMinutes({
   const active = view?.task && ['waiting_speakers', 'queued', 'running'].includes(view.task.state)
   return (
     <section className="minutes-card" aria-label="会议纪要">
-      <div className="section-heading">
-        <h2>会议纪要</h2>
+      <div className="minutes-toolbar">
+        <h2 className="sr-only">会议纪要</h2>
+        <div className="minutes-input-options">
+          <label
+            title={
+              inputMode === 'speakers'
+                ? '姓名和对应文字将发送给已配置的纪要服务。'
+                : '仅发送文字记录；原话中的姓名会保留。'
+            }
+          >
+            生成依据
+            <select
+              value={inputMode}
+              onChange={(event) => setInputMode(event.target.value as SummaryInputMode)}
+              disabled={!!active || busy}
+            >
+              <option value="speakers">含发言人信息</option>
+              <option value="text">仅文字</option>
+            </select>
+          </label>
+        </div>
         <div className="minutes-heading-actions">
           <span role="status">{view?.task ? labels[view.task.state] : '尚未生成'}</span>
           <button
@@ -165,24 +184,6 @@ export function MeetingMinutes({
                   : '生成纪要'}
           </button>
         </div>
-      </div>
-      <div className="minutes-input-options">
-        <label>
-          生成依据
-          <select
-            value={inputMode}
-            onChange={(event) => setInputMode(event.target.value as SummaryInputMode)}
-            disabled={!!active || busy}
-          >
-            <option value="speakers">含发言人信息</option>
-            <option value="text">仅文字</option>
-          </select>
-        </label>
-        <small>
-          {inputMode === 'speakers'
-            ? '姓名和对应文字将发送给已配置的纪要服务。'
-            : '仅发送文字记录；原话中的姓名会保留。'}
-        </small>
       </div>
       {!content && !active && (
         <div className="minutes-empty">

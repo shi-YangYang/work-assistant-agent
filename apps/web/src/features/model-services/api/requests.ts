@@ -1,5 +1,6 @@
 import type {
   CompanyModel,
+  ContextCapability,
   CompanyService,
   ModelCheck,
   ModelRouting,
@@ -8,6 +9,7 @@ import type {
 import { api, write } from '@web/api/client'
 import type { Purpose } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
+import { writableModels } from '@web/features/model-services/utils/service-drafts'
 
 export function readModelRouting() {
   return api<ModelRouting>('/settings/model-routing')
@@ -43,7 +45,7 @@ export function saveModelService(
 ) {
   return write<CompanyService>(
     target.revision ? `/settings/model-services/${target.id}` : '/settings/model-services',
-    body,
+    { ...body, models: writableModels(body.models) },
     method,
   )
 }
@@ -63,8 +65,15 @@ export function checkServiceConfiguration(
   },
 ) {
   return write<
-    { models: string[]; source: string; truncated: boolean; draftVersion: string } | ModelCheck
-  >(`/settings/model-services/${kind}`, body)
+    | {
+        models: string[]
+        source: string
+        truncated: boolean
+        draftVersion: string
+        capabilities?: Record<string, ContextCapability>
+      }
+    | ModelCheck
+  >(`/settings/model-services/${kind}`, { ...body, models: writableModels(body.models) })
 }
 
 export function deleteModelService(draft: ServiceDraft, body: { expectedRevision: number }) {

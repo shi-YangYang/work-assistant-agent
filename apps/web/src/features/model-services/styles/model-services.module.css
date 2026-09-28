@@ -666,3 +666,42 @@
   padding: 0 5px;
   border-radius: 4px;
 }
+
+.configuration-steps {
+  list-style: none;
+  padding: 0 24px;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.configuration-steps li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 0;
+}
+.configuration-steps li > span {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--subtle);
+}
+.configuration-steps li[data-ready='true'] {
+  color: var(--text);
+}
+.configuration-steps li[data-ready='true'] > span {
+  background: var(--text);
+  color: var(--surface);
+}
+@media (max-width: 760px) {
+  .configuration-steps {
+    gap: 10px;
+    padding: 0 16px;
+    font-size: 11px;
+  }
+}

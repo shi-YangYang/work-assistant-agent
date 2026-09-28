@@ -1,8 +1,12 @@
 import type {
   Attachment,
+  DeliverableReference,
   BusinessAction,
   Conversation,
+  ContextUsage,
+  Job,
   Page,
+  PersonaId,
   WorkMessage,
 } from '@paa/api-contracts'
 import { api, write } from '@web/api/client'
@@ -64,14 +68,22 @@ export function sendMessage(
   body: {
     conversationId?: string
     newConversation?: boolean
+    personaId?: PersonaId
     text: string
     attachmentIds: string[]
     voiceCommandAttachmentId?: string
+    voiceCommandAttachmentIds?: string[]
     replyTo: string | null
+    deliverableReference?: DeliverableReference
   },
   key: string,
 ) {
-  return write<{ conversationId: string }>('/messages', body, 'POST', key)
+  return write<{ conversationId: string; messageId: string; jobId: string }>(
+    '/messages',
+    body,
+    'POST',
+    key,
+  )
 }
 
 export function conversationsPath(search: string) {
@@ -90,9 +102,14 @@ export function readConversationDeletion(item: Conversation) {
   return api<{ retainedSources: number }>(`/conversations/${item.id}/deletion`)
 }
 
-export function readMoreConversations(search: string, nextCursor: string) {
+export function readMoreConversations(
+  search: string,
+  nextCursor?: string | null,
+  signal?: AbortSignal,
+) {
   return api<Page<Conversation>>(
-    `/conversations?q=${encodeURIComponent(search)}&cursor=${nextCursor}`,
+    `${conversationsPath(search)}${nextCursor ? `&cursor=${encodeURIComponent(nextCursor)}` : ''}`,
+    { signal },
   )
 }
 
@@ -101,6 +118,13 @@ export function renameConversation(
   body: { title: string; expectedRevision: number },
 ) {
   return write<Conversation>(`/conversations/${editing.id}`, body, 'PATCH')
+}
+
+export function updateConversationPersona(
+  conversation: Conversation,
+  body: { personaId: PersonaId; expectedRevision: number },
+) {
+  return write<Conversation>(`/conversations/${conversation.id}`, body, 'PATCH')
 }
 
 export function deleteConversation(deleting: Conversation, body: { expectedRevision: number }) {
@@ -117,4 +141,15 @@ export function readConversationForBreadcrumb(id: string, options: RequestInit) 
 
 export function readMessageForBreadcrumb(id: string, options: RequestInit) {
   return api<WorkMessage>(`/messages/${id}`, options)
+}
+
+export function readConversationContext(conversationId: string, signal?: AbortSignal) {
+  return api<{ contextUsage: ContextUsage | null }>(
+    `/conversations/${conversationId}/context-usage`,
+    { signal },
+  )
+}
+
+export function readActiveAssistantJob(conversationId: string, signal?: AbortSignal) {
+  return api<{ job: Job | null }>(`/conversations/${conversationId}/active-job`, { signal })
 }

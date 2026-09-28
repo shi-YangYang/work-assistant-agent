@@ -3,3 +3,5 @@ package-lock.json
 **/node_modules/
 artifacts/
 .venv/
+# Fixed upstream model resources retain their original bytes and notices.
+packages/voiceprint-engine/resources/models/

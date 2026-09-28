@@ -23,17 +23,19 @@ async def report_inputs(db, report):
     return list(latest.values())
 
 
-async def report_fact_basis(db, actor, report):
+async def report_fact_basis(db, actor, report, *, full=False):
     """Bounded, immutable source revisions, never another member's private data."""
-    rows = (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(report.source_ids), WorkRevision.company_id == actor.company_id, WorkRevision.owner_id == actor.id).order_by(WorkRevision.id).limit(31))).all()
-    items, remaining = [], 6000
-    for row in rows[:30]:
+    statement = select(WorkRevision).where(WorkRevision.id.in_(report.source_ids), WorkRevision.company_id == actor.company_id, WorkRevision.owner_id == actor.id).order_by(WorkRevision.id)
+    rows = (await db.scalars(statement if full else statement.limit(31))).all()
+    items, remaining = [], None if full else 6000
+    for row in (rows if full else rows[:30]):
         if not await business_valid(db, actor, row.access, retained=True):
             continue
         item = {'id': row.id, 'content': row.content}
         size = len(json.dumps(item, ensure_ascii=False))
-        if size > remaining:
+        if remaining is not None and size > remaining:
             break
         items.append(item)
-        remaining -= size
+        if remaining is not None:
+            remaining -= size
     return {'items': items, 'complete': len(items) == len(report.source_ids)}

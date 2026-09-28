@@ -50,7 +50,7 @@ def next_cursor(job, fingerprint, offset):
     return token
 
 
-async def find_members(db, actor, job, query):
+async def find_members(db, actor, job, query, cursor=0):
     if actor.role != 'admin':
         problem(403, '当前账号不能查询团队业务')
     stmt = select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee')
@@ -60,11 +60,14 @@ async def find_members(db, actor, job, query):
     all_members = (await db.scalars(stmt.order_by(Member.name, Member.id).limit(501))).all()
     if len(all_members) > 500:
         problem(422, '匹配员工超过 500 人，请补充姓名后查询')
-    members = all_members[:20]
+    if not isinstance(cursor, int) or not 0 <= cursor <= 500:
+        problem(422, '员工分页位置无效')
+    members = all_members[cursor:cursor + 20]
     job.access = {**(job.access or scope(actor)), 'team': True}
     for member in all_members:
         remember(job, actor, receipt('member', member))
-    return {'items': [{'id': m.id, 'name': m.name, 'active': m.active} for m in members], 'total': count, 'hasMore': count > 20, 'clarificationRequired': len(members) > 1 and bool(query)}
+    more = cursor + len(members) < count
+    return {'items': [{'id': m.id, 'name': m.name, 'active': m.active} for m in members], 'total': count, 'hasMore': more, 'nextCursor': cursor + len(members) if more else None, 'clarificationRequired': count > 1 and bool(query)}
 
 
 async def query_business(db, actor, job, *, kind='work', employee_ids=None, query='', status='', period='current', start='', end='', cursor=''):

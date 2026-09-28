@@ -57,23 +57,31 @@ export function WorkDetail({
               <h2>{data.title}</h2>
             </div>
             {data.ownerId === identity.member.id && !data.historical && (
-              <Actions label="管理工作">
-                <button role="menuitem" onClick={() => setEditing(true)}>
-                  编辑工作
-                </button>
-                <button
-                  role="menuitem"
-                  className={controlsStyles['danger']}
-                  onClick={() => setDeleting(true)}
-                >
-                  删除工作
-                </button>
-              </Actions>
+              <div className={layoutStyles['inline']}>
+                <button onClick={() => setEditing(true)}>编辑工作</button>
+                <Actions label="管理工作">
+                  <button
+                    role="menuitem"
+                    className={controlsStyles['danger']}
+                    onClick={() => setDeleting(true)}
+                  >
+                    删除工作
+                  </button>
+                </Actions>
+              </div>
             )}
           </div>
           <div className={`${layoutStyles['panel']} ${recordDetailStyles['panel']}`}>
             {data.dueDate && <p>截止日期：{data.dueDate}</p>}
-            <p className={utilitiesStyles['preserve']}>{data.summary}</p>
+            {data.summary && <p className={utilitiesStyles['preserve']}>{data.summary}</p>}
+            {!data.summary && !data.blocker && !data.nextStep && (
+              <div className={styles['empty-content']}>
+                <p>这项工作还没有填写具体内容</p>
+                {data.ownerId === identity.member.id && !data.historical && (
+                  <button onClick={() => setEditing(true)}>补充工作内容</button>
+                )}
+              </div>
+            )}
             {data.blocker && <p className={utilitiesStyles['error-text']}>阻碍：{data.blocker}</p>}
             {data.nextStep && <p>下一步：{data.nextStep}</p>}
             <small>

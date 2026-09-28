@@ -41,13 +41,22 @@
   gap: 16px;
 }
 @media (max-width: 760px) {
-  .breadcrumbs .breadcrumb-middle {
+  .breadcrumbs {
+    gap: 4px;
+  }
+  .breadcrumbs .breadcrumb-parent,
+  .breadcrumb-current > svg {
     display: none;
   }
   .breadcrumb-overflow {
     display: inline-flex;
+    order: 3;
+    flex-shrink: 0;
   }
-  .breadcrumbs > span:last-of-type {
+  .breadcrumb-current {
     order: 2;
+  }
+  .breadcrumbs > a {
+    flex-shrink: 0;
   }
 }

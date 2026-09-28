@@ -159,7 +159,9 @@ export function Breadcrumbs() {
       {points.map((point, index) => (
         <span
           key={`${index}:${point.path}`}
-          className={index > 0 && index < points.length - 1 ? styles['breadcrumb-middle'] : ''}
+          className={
+            index < points.length - 1 ? styles['breadcrumb-parent'] : styles['breadcrumb-current']
+          }
         >
           {index > 0 && <ChevronRight size={13} aria-hidden="true" />}
           {index === points.length - 1 ? (
@@ -173,7 +175,7 @@ export function Breadcrumbs() {
           )}
         </span>
       ))}
-      {points.length > 2 && (
+      {points.length > 1 && (
         <button
           className={`${controlsStyles['icon-button']} ${styles['breadcrumb-overflow']}`}
           aria-label="查看完整页面路径"

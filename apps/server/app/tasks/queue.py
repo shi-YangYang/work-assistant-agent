@@ -14,6 +14,9 @@ from sqlalchemy.orm import aliased
 async def interrupted_state(db, job):
     if job.result.get('reportSaved'):
         return 'queued'
+    if job.kind == 'message' and job.result.get('nodeExecution'):
+        # The node journal owns retries and retains spent attempts across fences.
+        return 'queued'
     rows = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == job.id, ModelUsage.job_attempt == job.attempt, ModelUsage.job_fence == job.fence))).all()
     # A reservation is not a sent request. Old jobs without request records use
     # their conservative legacy marker; never silently repeat an unknown call.

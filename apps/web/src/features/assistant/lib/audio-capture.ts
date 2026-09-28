@@ -1,4 +1,5 @@
-import type { Attachment } from '@paa/api-contracts'
+import type { Attachment, DeliverableReference, PersonaId } from '@paa/api-contracts'
+import { MAX_FILE_BYTES } from './attachment-limits'
 
 type PendingFile = {
   id: string
@@ -13,18 +14,25 @@ export type Composer = {
   text: string
   files: PendingFile[]
   key: string
+  deliverableReference?: DeliverableReference
+  deliverableTitle?: string
   replyTo?: string
   sending?: boolean
+  personaId?: PersonaId
+  submissionPersonaId?: PersonaId
   uploading?: string
   pending?: {
     key: string
     body: {
       conversationId?: string
       newConversation?: boolean
+      personaId?: PersonaId
       text: string
       attachmentIds: string[]
       voiceCommandAttachmentId?: string
+      voiceCommandAttachmentIds?: string[]
       replyTo: string | null
+      deliverableReference?: DeliverableReference
     }
   }
 }
@@ -34,6 +42,7 @@ export function appendRecordedFile(previous: Composer | undefined, file: File): 
   return {
     ...current,
     key: crypto.randomUUID(),
+    submissionPersonaId: undefined,
     files: [
       ...current.files,
       { id: crypto.randomUUID(), file, url: URL.createObjectURL(file), recorded: true },
@@ -67,7 +76,7 @@ export class AudioCapture {
 
   constructor(private callbacks: CaptureCallbacks) {}
 
-  async start(maxBytes = 20 * 1024 * 1024) {
+  async start(maxBytes = MAX_FILE_BYTES) {
     if (this.disposed || this.pending || this.session) return
     const generation = ++this.generation
     if (typeof window !== 'undefined' && window.isSecureContext === false) {

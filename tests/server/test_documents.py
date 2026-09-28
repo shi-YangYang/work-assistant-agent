@@ -71,7 +71,7 @@ async def test_upload_parsing_without_key_per_file_failure_and_model_retry_reuse
     assert states[good['id']]['status'] == 'ready'
     assert states[bad['id']]['status'] == 'failed' and 'JSON' in states[bad['id']]['error']
     assert data['job']['state'] == 'failed' and '模型' in data['job']['error']
-    for client, expected in ((c['admin'], 200), (c['peer'], 404), (c['outsider'], 404)):
+    for client, expected in ((c['admin'], 404), (c['peer'], 404), (c['outsider'], 404)):
         assert (await client.get(good['url'])).status_code == expected
         assert (await client.get('/api/v1/uploads/' + good['id'] + '/extraction')).status_code == expected
     assert (await c['employee'].get(good['url'])).content == samples()['演示项目.txt']
@@ -137,7 +137,7 @@ async def test_filename_and_upload_boundaries(setup):
     conv = await conversation(c['employee'])
     docs = [await upload(c['employee'], f'large{i}.txt', b'x' * (6 * 1024 * 1024)) for i in range(4)]
     result = await c['employee'].post('/api/v1/messages', json={'conversationId': conv['id'], 'attachmentIds': [d['id'] for d in docs]}, headers=keyed())
-    assert result.status_code == 422
+    assert result.status_code == 202, result.text
     assert len(list(settings.media_dir.iterdir())) == 5
     long_name = await upload(c['employee'], '长' * 190 + '.TXT', b'text', 'text/plain')
     assert long_name['name'].endswith('.TXT') and len(long_name['name']) == 180
@@ -275,6 +275,8 @@ async def test_source_deletion_purges_inflight_document_proposals(setup, deletio
     runtime = SimpleNamespace(context=context)
     result = await read_document.coroutine(attachment_id=item['id'], start=3, runtime=runtime)
     assert '后半部分标记' in result
+    from test_business_actions import Judge
+    context.intent_model = Judge()
     await propose_progress.coroutine(title='来自原文件', summary='后半部分标记', status='in_progress', blocker='', next_step='', runtime=runtime)
     before = (await c['employee'].get('/api/v1/messages/' + followup['messageId'])).json()
     assert len(before['drafts']) == 1 and before['drafts'][0]['status'] == 'pending'
@@ -327,7 +329,7 @@ async def test_cancelled_parse_is_retryable_and_file_only_cannot_propose(setup, 
         assert document.extraction_status == 'failed' and '中断' in document.extraction_info['error']
     from app.agent.tools.work import propose_progress
     result = await propose_progress.coroutine(title='自动完成', summary='文件不代表工作', status='done', blocker='', next_step='', runtime=SimpleNamespace(context=context))
-    assert '询问' in result
+    assert json.loads(result)['state'] == 'clarification'
     async with sessions() as db:
         assert (await db.get(Message, sent['messageId'])).suggestions == []
 

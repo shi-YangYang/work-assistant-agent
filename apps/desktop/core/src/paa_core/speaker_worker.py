@@ -28,7 +28,7 @@ FILES = {
 def bundled_model_path():
     if getattr(sys, 'frozen', False):
         return Path(sys._MEIPASS) / 'models' / 'speaker-community-1'
-    return Path(__file__).resolve().parents[3] / 'resources' / 'models' / 'speaker-community-1'
+    return Path(__file__).resolve().parents[5] / 'packages/voiceprint-engine/resources/models/speaker-community-1'
 
 
 def verified(path):

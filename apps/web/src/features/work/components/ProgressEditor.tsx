@@ -16,6 +16,7 @@ import { ProgressFields } from '@web/features/work/components/ProgressFields'
 import type { ProgressEdit } from '@web/features/work/utils/progress-edit'
 import { progressEditValue, progressTitleError } from '@web/features/work/utils/progress-edit'
 import { useResource } from '@web/hooks/useResource'
+import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
 
@@ -34,7 +35,7 @@ export function ProgressEditor({
   const edited = progressEditValue(draft, stored)
   const { content: value, workId, revision } = edited
   const { data } = useResource<Page<Work>>(availableWorkPath())
-  const [busy, setBusy] = useState(false)
+  const { busy, submit } = useDraftSubmission(key)
   const [error, setError] = useState<Error | string>('')
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Progress, string>>>({})
   const change = (content: Progress, nextWork = workId) => {
@@ -50,22 +51,23 @@ export function ProgressEditor({
           setFieldErrors({ title })
           if (title) return
           setError('')
-          setBusy(true)
-          try {
-            await updateProgressDraft(draft, { ...value, workId, expectedRevision: revision })
-            setDraft(key, undefined)
-            onSaved()
-          } catch (e) {
-            setFieldErrors(progressFieldErrors(e))
-            setError(e as Error)
-          } finally {
-            setBusy(false)
-          }
+          await submit(
+            () => updateProgressDraft(draft, { ...value, workId, expectedRevision: revision }),
+            onSaved,
+            (error) => {
+              setFieldErrors(progressFieldErrors(error))
+              setError(error as Error)
+            },
+          )
         }}
       >
         <label>
           关联工作
-          <select value={workId ?? ''} onChange={(e) => change(value, e.target.value || null)}>
+          <select
+            disabled={busy}
+            value={workId ?? ''}
+            onChange={(e) => change(value, e.target.value || null)}
+          >
             <option value="">新建工作事项</option>
             {data?.items.map((w) => (
               <option key={w.id} value={w.id}>
@@ -74,7 +76,7 @@ export function ProgressEditor({
             ))}
           </select>
         </label>
-        <ProgressFields value={value} change={change} errors={fieldErrors} />
+        <ProgressFields disabled={busy} value={value} change={change} errors={fieldErrors} />
         <ErrorNotice>{error}</ErrorNotice>
         {error instanceof ApiError && error.status === 409 && (
           <ConflictRecovery<Draft>

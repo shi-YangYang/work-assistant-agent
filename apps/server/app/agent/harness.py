@@ -5,24 +5,22 @@ import time
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.profiles import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
-from langchain.agents.middleware import SummarizationMiddleware
+from app.agent.compaction import ContextCompaction
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.history import conversation_history
 from app.agent.middleware import ToolBoundary
 from app.agent.model import BoundedChatModel, approximate_tokens
+from app.agent.persona import persona_prompt
 from app.agent.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
 from app.agent.tools.registry import BUSINESS_TOOLS
 from app.agent.tools.team import TEAM_TOOLS
+from app.core.personas import LEGACY_PERSONA
 from app.db.base import now
 from app.modules.messages.models import Message
 from app.security.access import scope as business_scope
 from app.tasks.context import RunContext
 from app.tasks.lease import lease
-
-
-class BusinessSummary(SummarizationMiddleware):
-    pass
 
 
 register_harness_profile('openai', HarnessProfile(excluded_tools=EXCLUDED_TOOLS, excluded_middleware=frozenset({'SummarizationMiddleware'}), general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)))
@@ -33,7 +31,7 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + getattr(context, 'request_clock', ''), middleware=[BusinessSummary(model, trigger=('tokens', 12000), keep=('messages', 6), token_counter=approximate_tokens), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -44,6 +42,9 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         if not live.access:
             live.access = business_scope(actor)
         context.role = actor.role
+        from app.modules.model_services.bindings import freeze_capacities
+        if context.model_binding:
+            await freeze_capacities(db, context.model_binding)
     from app.modules.members.models import Company
     from zoneinfo import ZoneInfo
     async with context.sessions() as db:
@@ -58,6 +59,8 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         # Checkpoints include pending executable tools. Never share them between jobs,
         # even for the same employee or report; history below contains business data only.
         thread = f'{actor.company_id}:{actor.id}:job:{job.id}'
+        if context.node_retry:
+            thread += ':scope:' + context.node_scope
         if context.model_binding is not None:
             config_digest = hashlib.sha256(json.dumps(context.model_binding, sort_keys=True).encode()).hexdigest()
             thread += f':config:{context.config_attempt}:{config_digest}'
@@ -65,25 +68,37 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             if context.source_revision is None:
                 raise ValueError('消息输入版本缺失，无法恢复处理')
             digest = hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            if context.persona_id != LEGACY_PERSONA:
+                thread += f':persona:{context.persona_id}'
             thread += f':input:{context.source_revision}:{digest}'
             if context.document_snapshot:
                 thread += ':files:' + context.document_snapshot
+    context.compaction_packet, context.compaction_loaded = None, False
+    context.context_checkpoint = GuardedSaver(checkpointer, context)
+    context.context_checkpoint_config = {'configurable': {'thread_id': thread + ':context', 'checkpoint_ns': ''}}
+    history = await conversation_history(context, job, content) if job.kind == 'message' else []
     config = {'configurable': {'thread_id': thread}, 'recursion_limit': 36, 'callbacks': []}
     with tracing_context(enabled=False):
         state = await graph.aget_state(config)
+        # Completed graphs bypass middleware. Recover compacted evidence as well
+        # as the final prose before independent review, including a fresh worker.
+        from app.agent.compaction import saved_packet, publish_packet
+        packet = await saved_packet(context)
+        if packet:
+            await publish_packet(context, packet)
+            context.context_evidence = packet.get('evidence', [])
         repair_id = f'completion-repair:{job.id}'
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
-            instruction = '服务端核对：用户明确要求的操作尚无工具回执，上一条仅写了文字。回看原用户请求与本轮已读材料；信息足够时调用 execute_business_action。用户委托挑选单条删除对象并确认时，应调用工具准备确认卡，不是再用文字询问。管理员明确要求新建本人督办时直接保存本人工作并关联已有真实 source_tokens。不得扩展范围，不改员工工作，不实际删除或提交；有歧义则明确说明。'
-            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, 180 - (time.monotonic() - context.started)))
+            instruction = '服务端核对：原用户请求还有遗漏的操作。先 get_business_actions 读取当前回执，逐项对照原请求，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。'
+            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         elif state.values:
             # The worker already checked retry authorization and lease. Resume this
             # job's unchanged input; a completed graph needs no second external request.
-            result = await asyncio.wait_for(graph.ainvoke(None, config, context=context), timeout=max(0.01, 180 - (time.monotonic() - context.started))) if state.next else state.values
+            result = await asyncio.wait_for(graph.ainvoke(None, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started))) if state.next else state.values
         else:
-            history = await conversation_history(context, job, content) if job.kind == 'message' else []
             inputs = {'messages': [*history, HumanMessage(id=f'job:{job.id}', content=content)]}
-            result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, 180 - (time.monotonic() - context.started)))
+            result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     messages = result.get('messages', [])
     answer = next((m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None)
     if answer is None:
@@ -92,9 +107,10 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
-    context.reply_evidence = [
+    context.reply_evidence = [*context.context_evidence, *[
         {'id': index, 'tool': message.name, 'result': message.content}
         for index, message in enumerate(messages)
         if isinstance(message, ToolMessage) and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
-    ]
+    ]]
+    context.reply_evidence = [{**row, 'id': index} for index, row in enumerate(context.reply_evidence)]
     return answer.text[:16000]

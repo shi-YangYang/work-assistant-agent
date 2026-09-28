@@ -31,6 +31,14 @@ async def lease(db, context):
     if job.access and job.access.get('role') != actor.role:
         raise ValueError('账号权限已变化，请重新提问；旧处理已停止')
     await business_require(db, actor, job.access)
+    if context.context_sources:
+        from app.modules.conversations.models import ConversationContext
+        source = await db.get(Message, job.target_id) if job.kind == 'message' else None
+        epoch = await db.scalar(select(ConversationContext.invalidation_version).where(
+            ConversationContext.conversation_id == source.conversation_id,
+            ConversationContext.owner_id == actor.id, ConversationContext.company_id == actor.company_id)) if source and source.conversation_id else None
+        if epoch is None or epoch != context.context_sources['invalidationVersion']:
+            raise InputChanged()
     context.access = job.access or business_scope(actor)
     context.role = actor.role
     context.own_work_searched = job.result.get('ownWorkSearched', False)
@@ -53,4 +61,10 @@ async def lease(db, context):
         attachment = await owned(db, Attachment, identifier, actor)
         if attachment.extraction_revision != revision:
             raise InputChanged(document=True)
+    for identifier, message_id in context.image_sources.items():
+        attachment = await owned(db, Attachment, identifier, actor)
+        parent = await active_message(db, message_id, actor)
+        if attachment.message_id != parent.id or attachment.kind != 'image':
+            raise ValueError('引用的图片已不可用，请重新发送')
+        await business_require(db, actor, parent.access)
     return job, actor

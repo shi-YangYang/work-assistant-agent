@@ -35,6 +35,19 @@ lines.on('line', (line) => {
           '\n',
       )
       break
+    case 'speaker_duration':
+    case 'speaker_busy':
+    case 'speakers_changed':
+    case 'invalid_speaker':
+    case 'invalid_name':
+    case 'invalid_segment':
+      process.stdout.write(
+        JSON.stringify({
+          id: request.id,
+          error: { code: request.method, message: '说话人信息已更新，请重新打开后修改。' },
+        }) + '\n',
+      )
+      break
     case 'exit':
       process.exit(4)
       break

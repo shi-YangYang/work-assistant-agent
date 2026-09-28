@@ -324,3 +324,60 @@ button.team-record-content {
     padding-right: 10px;
   }
 }
+
+.advanced-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.filter-toggle,
+.mobile-status {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .filter-toggle {
+    display: inline-flex;
+    gap: 6px;
+  }
+  .advanced-filters {
+    display: none;
+    flex-basis: 100%;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+  .advanced-filters[data-open='true'] {
+    display: flex;
+  }
+  .advanced-filters select {
+    flex-basis: calc(50% - 10px);
+  }
+  .mobile-status {
+    display: block;
+  }
+  .team-toolbar .slot-work-search {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+  .team-counts {
+    padding: 14px 0;
+    margin-bottom: 12px;
+  }
+  .team-counts[data-view='reports'] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .team-counts button[data-secondary='true'] {
+    display: none;
+  }
+  .team-counts[data-view='reports'] button:nth-child(3) {
+    border-left: 0;
+  }
+  .team-counts[data-view='reports'] button:nth-child(4) {
+    border-left: 1px solid var(--control);
+  }
+  .team-counts button strong {
+    font-size: 26px;
+    line-height: 1.25;
+  }
+}

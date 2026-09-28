@@ -4,6 +4,7 @@ import logging
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
 from app.core.errors import problem
+from app.core.attachment_limits import MAX_UPLOAD_BODY_BYTES
 from app.http.errors import http_error
 from app.modules.auth.desktop import NATIVE_WRITES
 from sqlalchemy.exc import SQLAlchemyError
@@ -86,7 +87,7 @@ class BodyLimit:
             nonlocal size
             message = await receive()
             size += len(message.get('body', b''))
-            if size > 25 * 1024 * 1024:
-                problem(413, '上传总大小不能超过 25 MiB')
+            if size > MAX_UPLOAD_BODY_BYTES:
+                problem(413, '单次上传请求不能超过 32 MiB')
             return message
         await self.app(scope, bounded, send)

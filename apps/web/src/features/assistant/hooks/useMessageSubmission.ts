@@ -1,3 +1,5 @@
+import type { PersonaId } from '@paa/api-contracts'
+import type { PersonaInteraction } from './useConversationPersona'
 import { ApiError, isCancelled } from '@web/api/client'
 import { sendMessage, uploadAttachment } from '@web/features/assistant/api/requests'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -14,6 +16,8 @@ export function useMessageSubmission({
   composer,
   composerKey,
   conversationId,
+  personaId,
+  interaction,
   onSent,
   previewUploading,
   capturing,
@@ -22,11 +26,14 @@ export function useMessageSubmission({
   setSendError,
   retryWait,
   refresh,
+  task,
 }: {
   composer: Composer
   composerKey: string
   conversationId?: string
-  onSent: (id: string) => void
+  personaId: PersonaId
+  interaction?: PersonaInteraction
+  onSent: (id: string, personaId: PersonaId) => void
   previewUploading: boolean
   capturing: boolean
   active: RefObject<boolean>
@@ -34,13 +41,19 @@ export function useMessageSubmission({
   setSendError: (error: Error | string) => void
   retryWait: number
   refresh: () => void
+  task?: {
+    canSubmit: () => boolean
+    accepted: (sent: { conversationId: string; messageId: string; jobId: string }) => void
+    refresh: () => Promise<void>
+  }
 }) {
-  const { setDraft } = useWorkspace()
+  const { setDraft, rememberConversation } = useWorkspace()
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
   async function send() {
     if (
+      (!composer.pending && task && !task.canSubmit()) ||
       sendingRef.current ||
       retryWait ||
       busy ||
@@ -54,10 +67,15 @@ export function useMessageSubmission({
       setLimitError(selectionError)
       return
     }
+    if (interaction && !interaction.acquire('message')) return
     sendingRef.current = true
     setBusy(true)
     setSendError('')
-    let current = { ...composer, files: composer.files.map((file) => ({ ...file })) }
+    let current = {
+      ...composer,
+      submissionPersonaId: composer.submissionPersonaId ?? personaId,
+      files: composer.files.map((file) => ({ ...file })),
+    }
     let uploading: string | undefined
     setDraft(composerKey, { ...current, sending: true })
     try {
@@ -86,19 +104,21 @@ export function useMessageSubmission({
           )
         }
         uploading = undefined
-        current.pending = messageSubmission(current, conversationId)
+        current.pending = messageSubmission(current, conversationId, personaId)
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: current.pending }),
         )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
+      task?.accepted(sent)
+      rememberConversation(sent.conversationId)
       current.files.forEach((file) => URL.revokeObjectURL(file.url))
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, null),
       )
       if (active.current) {
         refresh()
-        onSent(sent.conversationId)
+        onSent(sent.conversationId, current.pending.body.personaId ?? current.submissionPersonaId)
       }
     } catch (e) {
       if (uploading) {
@@ -112,11 +132,15 @@ export function useMessageSubmission({
       }
       // A structured 4xx rejection is definite, except authentication interruption
       // and an idempotency conflict. Network/5xx/invalid replies remain uncertain.
-      if (e instanceof ApiError && [400, 403, 404, 413, 415, 422, 429].includes(e.status)) {
+      if (
+        e instanceof ApiError &&
+        ([400, 403, 404, 413, 415, 422, 429].includes(e.status) || e.code === 'conversation_busy')
+      ) {
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: undefined }),
         )
       }
+      if (e instanceof ApiError && e.code === 'conversation_busy') void task?.refresh()
       if (active.current && !isCancelled(e)) {
         if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
           setLimitError(e.message)
@@ -126,6 +150,7 @@ export function useMessageSubmission({
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, { sending: false, uploading: undefined }),
       )
+      interaction?.release('message')
       sendingRef.current = false
       if (active.current) setBusy(false)
     }

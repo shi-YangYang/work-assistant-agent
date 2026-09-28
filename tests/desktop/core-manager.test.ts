@@ -262,3 +262,46 @@ it(
   },
   coreLifecycleTimeout,
 )
+
+it('reads existing long speaker names and rejects over-limit or unsafe names at the transcript boundary', async () => {
+  const manager = createManager()
+  const transport = manager as unknown as { request: (method: string) => Promise<unknown> }
+  const response = vi.spyOn(transport, 'request')
+  const meetingId = '64450a04-4d7d-4efa-a827-e63ea374f437'
+  for (const [name, accepted] of [
+    ['中'.repeat(40), true],
+    ['中'.repeat(41), true],
+    ['a'.repeat(100), true],
+    ['😀'.repeat(100), true],
+    ['\ufeff', true],
+    ['\ufeff' + '中'.repeat(99), true],
+    ['\ufeff' + '中'.repeat(100), false],
+    ['😀'.repeat(101), false],
+    ['unsafe\nname', false],
+  ] as const) {
+    response.mockResolvedValue({
+      publication: 'legacy',
+      segments: [
+        {
+          id: 'segment1',
+          chunkId: 'chunk1',
+          meetingId,
+          sequence: 0,
+          startMs: 0,
+          endMs: 1000,
+          text: '原始文字不变',
+          speaker: 'speaker_00',
+          speakerName: name,
+          confidence: null,
+        },
+      ],
+      nextCursor: 0,
+      hasMore: false,
+    })
+    const result = await manager.transcript(meetingId, -1, 'legacy')
+    expect(result.ok).toBe(accepted)
+    if (result.ok)
+      expect(result.value.segments[0]).toMatchObject({ speakerName: name, text: '原始文字不变' })
+    else expect(result.code).toBe('invalid_transcript')
+  }
+})

@@ -10,8 +10,11 @@ from uuid import uuid4
 
 
 async def bind_job(db, job, settings):
-    if job.model_binding is not None:
-        return job.model_binding
+    refresh = job.kind in ('message', 'report') and job.result.get('refreshModelBinding', False)
+    previous = job.model_binding
+    if previous is not None and not refresh:
+        await freeze_capacities(db, previous)
+        return previous
     routing = await db.get(ModelRouting, job.company_id)
     company = await db.get(Company, job.company_id)
     purpose = 'report' if job.kind == 'report' else 'assistant'
@@ -59,6 +62,15 @@ async def bind_job(db, job, settings):
             binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': 1, 'name': rev.name, 'modelId': 'legacy', 'model': name, 'protocol': model['protocol'], 'presetId': None, 'streaming': False, 'environmentSnapshot': True}
         else:
             binding[use] = None
+    await freeze_capacities(db, binding)
+    if refresh:
+        # Manual retries use the latest configuration when the worker starts.
+        # Unchanged settings keep the checkpoint and completed node results.
+        comparable = lambda value: {k: v for k, v in (value or {}).items() if k != 'attempt'}
+        if comparable(previous) != comparable(binding):
+            job.config_attempt += 1
+            binding['attempt'] = job.config_attempt
+        job.result = {k: v for k, v in job.result.items() if k != 'refreshModelBinding'}
     job.model_binding = binding
     return binding
 
@@ -69,12 +81,23 @@ async def resolve_bound(db, settings, company_id, binding, purpose):
         raise ProviderError('not_configured', {'assistant': '工作助手', 'report': '报告模型', 'asr': '语音转写'}[purpose] + '尚未配置，请联系管理员；原始材料已保留')
     service = await db.scalar(select(ModelService).where(ModelService.id == choice['serviceId'], ModelService.company_id == company_id, ModelService.revoked.is_(False)))
     if not service:
-        raise ProviderError('revoked', '原模型配置已撤销，请选择使用当前配置重新处理')
+        raise ProviderError('revoked', '模型配置已更新，请重试')
     rev = await db.scalar(select(ModelServiceRevision).where(ModelServiceRevision.id == choice['revisionId'], ModelServiceRevision.service_id == service.id, ModelServiceRevision.company_id == company_id))
     if not rev or not rev.credential:
-        raise ProviderError('revoked', '原模型配置已撤销，请选择使用当前配置重新处理')
+        raise ProviderError('revoked', '模型配置已更新，请重试')
     model = next(m for m in rev.models if m['id'] == choice['modelId'])
     chosen = dict(model, selectedPresetId=choice.get('presetId'))
     config = {'baseUrl': rev.base_url, 'model': model['model'], 'protocol': model['protocol'], 'parameters': parameters(model['legacyParameters']) if 'legacyParameters' in model else request_options(chosen), 'streaming': choice['streaming'], 'language': model.get('language', '')}
     key = decrypt(settings.model_key_file, rev.credential, company_id, service.id, rev.revision)
     return config, key
+
+
+async def freeze_capacities(db, binding):
+    from app.integrations.models.capabilities import capability
+    for use in ('assistant', 'report', 'asr'):
+        choice = binding.get(use)
+        if choice and 'contextCapability' not in choice and choice.get('revisionId'):
+            revision = await db.get(ModelServiceRevision, choice['revisionId'])
+            if revision:
+                selected = next(m for m in revision.models if m['id'] == choice['modelId'])
+                choice['contextCapability'] = capability(revision.base_url, selected['model'], selected.get('contextWindow'))

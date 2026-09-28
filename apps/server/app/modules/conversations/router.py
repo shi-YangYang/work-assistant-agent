@@ -22,7 +22,7 @@ async def conversations(q: str = Query('', max_length=120), cursor: str | None =
 async def add_conversation(body: ConversationCreate, actor=AUTH, db=DB):
     if not body.title.strip():
         problem(422, '请输入会话名称')
-    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip())
+    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId)
     db.add(item)
     await db.flush()
     return conversation_dto(item)
@@ -37,9 +37,11 @@ async def get_conversation(identifier: str, actor=AUTH, db=DB):
 async def rename_conversation(identifier: str, body: ConversationEdit, actor=AUTH, db=DB):
     item = await owned(db, Conversation, identifier, actor, lock=True)
     version(item, body.expectedRevision)
-    if not body.title.strip():
-        problem(422, '请输入会话名称')
-    item.title, item.revision = body.title.strip(), item.revision + 1
+    if 'title' in body.model_fields_set:
+        item.title = body.title
+    if 'personaId' in body.model_fields_set:
+        item.persona_id = body.personaId
+    item.revision += 1
     return conversation_dto(item)
 
 
@@ -57,3 +59,17 @@ async def delete_conversation(identifier: str, body: Revision, actor=AUTH, db=DB
     item = await target(db, Conversation, identifier, actor, body.expectedRevision)
     await remove_conversation(db, item)
     return await finish_deletion(db, item.owner_id, settings)
+
+
+@router.get('/api/v1/conversations/{identifier}/context-usage')
+async def get_context_usage(identifier: str, actor=AUTH, db=DB):
+    from app.modules.conversations.context_usage import latest_usage
+    return await latest_usage(db, actor, identifier)
+
+
+@router.get('/api/v1/conversations/{identifier}/active-job')
+async def get_active_job(identifier: str, actor=AUTH, db=DB):
+    from app.tasks.conversation_activity import current_job
+    from app.tasks.serializers import job_dto
+    item = await current_job(db, actor, identifier)
+    return {'job': job_dto(item) if item else None}

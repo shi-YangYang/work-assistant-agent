@@ -1,3 +1,37 @@
+export const SPEAKER_NAME_LIMIT = 100
+
+// Preserve the legacy Python str.strip() set, including U+001C–001F/U+0085 but not
+// U+FEFF. Keep this list aligned with speaker_store.py; native JS trim differs.
+const SPEAKER_NAME_WHITESPACE = new Set(
+  '\t\n\v\f\r\u001c\u001d\u001e\u001f \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000',
+)
+
+export function normalizeSpeakerName(value: string): string {
+  let start = 0
+  let end = value.length
+  while (start < end && SPEAKER_NAME_WHITESPACE.has(value[start])) start += 1
+  while (end > start && SPEAKER_NAME_WHITESPACE.has(value[end - 1])) end -= 1
+  return value.slice(start, end)
+}
+
+/** Count the normalized name in Unicode code points, rather than UTF-16 units. */
+export function speakerNameLength(value: string): number {
+  return Array.from(normalizeSpeakerName(value)).length
+}
+
+export function validSpeakerName(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const length = speakerNameLength(value)
+  return (
+    length > 0 &&
+    length <= SPEAKER_NAME_LIMIT &&
+    !Array.from(value).some((char) => {
+      const code = char.codePointAt(0)!
+      return code < 32 || (code >= 127 && code < 160) || code === 0x2028 || code === 0x2029
+    })
+  )
+}
+
 export type SpeakerStatus = {
   meetingId: string
   generation: string
@@ -66,16 +100,7 @@ export function validSpeakerRequest(input: unknown): input is SpeakerRequest {
     (typeof value.speakerId !== 'string' || !/^speaker_\d{1,3}$/.test(value.speakerId))
   )
     return false
-  if (value.action === 'rename')
-    return (
-      typeof value.name === 'string' &&
-      value.name.trim().length > 0 &&
-      value.name.length <= 100 &&
-      !Array.from(value.name).some((char) => {
-        const code = char.charCodeAt(0)
-        return code < 32 || (code >= 127 && code < 160) || code === 0x2028 || code === 0x2029
-      })
-    )
+  if (value.action === 'rename') return validSpeakerName(value.name)
   if (value.action === 'assign')
     return typeof value.segmentId === 'string' && value.segmentId.length <= 64
   return true
@@ -99,8 +124,7 @@ export function isSpeakerStatus(input: unknown): input is SpeakerStatus {
         !!speaker &&
         typeof speaker === 'object' &&
         /^speaker_\d{1,3}$/.test(speaker.id) &&
-        typeof speaker.name === 'string' &&
-        speaker.name.length <= 100,
+        validSpeakerName(speaker.name),
     ) &&
     !!value.model &&
     ['missing', 'ready'].includes(value.model.state) &&

@@ -12,6 +12,7 @@ from app.modules.reports.models import Report
 from app.security.access import require as business_require
 from app.security.ownership import owned
 from app.tasks.models import Job
+from app.tasks.cancellation import CancelJob, cancel_job
 from app.tasks.serializers import job_dto
 
 router = APIRouter()
@@ -42,25 +43,48 @@ async def job_events(identifier: str, request: Request, actor=AUTH, settings=SET
 
 @router.post('/api/v1/jobs/{identifier}/retry')
 async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
+    from app.security.locks import company_lock
+    await company_lock(db, actor.company_id)
     item = await owned(db, Job, identifier, actor, lock=True)
     if item.kind == 'document':
         document = await owned(db, Attachment, item.target_id, actor)
         await active_message(db, document.message_id, actor)
+    elif item.kind == 'message':
+        message = await active_message(db, item.target_id, actor)
     else:
-        await active_message(db, item.target_id, actor) if item.kind == 'message' else await owned(db, Report, item.target_id, actor)
+        await owned(db, Report, item.target_id, actor)
     if item.state not in ('failed', 'awaiting_retry'):
         problem(409, '当前任务不需要重试')
     await business_require(db, actor, item.access)
     if item.access and item.access.get('role') != actor.role:
         problem(403, '账号权限已变化，请重新提问')
+    if item.kind == 'message':
+        from app.tasks.conversation_activity import require_idle
+        await require_idle(db, actor, message.conversation_id)
     item.state, item.error, item.request_started = 'queued', '', False
-    if body.useCurrentConfig:
+    if item.kind == 'message':
+        # Replace the failed response in place. Keep the source and operation
+        # receipts so retrying cannot turn saved effects into a new request.
+        message.reply, message.citations = '', []
+        item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'operationFeedback', 'operationFeedbackKeys')}
+        item.result = {**item.result, 'refreshModelBinding': True}
+    elif item.kind == 'report':
+        # Resolve the latest settings when this run starts; unchanged settings
+        # retain correction checkpoints and committed report receipts.
+        item.result = {**item.result, 'refreshModelBinding': True}
+    elif body.useCurrentConfig:
         item.model_binding = None
         item.config_attempt += 1
-        if item.kind == 'report':
-            item.result = {k: v for k, v in item.result.items() if k != 'reportSaved'}
+    if item.kind == 'message' and item.result.get('nodeExecution'):
+        from app.tasks.node_state import reopen_failed
+        reopen_failed(item)
     item.attempt += 1
     from app.tasks.feedback_state import update_feedback
     update_feedback(item, 'queued', '')
     item.updated_at = now()
     return job_dto(item)
+
+
+@router.post('/api/v1/jobs/{identifier}/cancel')
+async def cancel(identifier: str, body: CancelJob, actor=AUTH, db=DB):
+    return job_dto(await cancel_job(db, actor, identifier, body))

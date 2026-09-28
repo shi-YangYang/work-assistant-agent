@@ -7,6 +7,12 @@
 | [026](spec-026-web-design-refresh/spec.md) | Web 黑白灰设计、助手交互与响应式 | 已实施；[验收 PASS](spec-026-web-design-refresh/acceptance.md) |
 | [027](spec-027-desktop-design-refresh/spec.md) | Electron 黑白灰设计、全屏画布与会议交互 | 已实施；[macOS 验收 PASS，Windows 未实测](spec-027-desktop-design-refresh/acceptance.md) |
 | [028](spec-028-company-backend-architecture/spec.md) | 公司后端迁入 apps/server，拆分业务模块与 harness | [验收 PASS](spec-028-company-backend-architecture/acceptance.md) |
+| [029](spec-029-task-retry-progress/spec.md) | 工作助手 Agent 节点重试与执行进度展示 | [验收 PASS](spec-029-task-retry-progress/acceptance.md) |
+| [030](spec-030-project-quality-repair/spec.md) | 功能代码、UI 设计、流程设计、目录结构四维修复 | [验收 PASS](spec-030-project-quality-repair/acceptance.md) |
+| [031](spec-031-assistant-persona/spec.md) | 工作助手可切换“大包／专业”人设 | [验收 PASS](spec-031-assistant-persona/acceptance.md) |
+| [032](spec-032-work-assistant-task-delivery/spec.md) | 工作助手任务协助、连续修改、轻量联网与自主汇报 | [验收 PASS](spec-032-work-assistant-task-delivery/acceptance.md) |
+| [033](spec-033-assistant-context-usage/spec.md) | 会话 JSONB 上下文、模型窗口用量与 90% 自动压缩 | [验收 PASS](spec-033-assistant-context-usage/acceptance.md) |
+| [034](spec-034-assistant-interrupt-progress/spec.md) | 工作助手单会话发送限制、中断与任务执行光带 | [验收 PASS](spec-034-assistant-interrupt-progress/acceptance.md) |
 
 ## 文档分工
 
@@ -17,4 +23,4 @@
 
 ## 生命周期
 
-新 Spec 从 **029** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **035** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

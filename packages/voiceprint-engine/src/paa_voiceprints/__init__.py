@@ -109,7 +109,7 @@ def isolated_turns(turns):
 def model_file(path=None):
     value = path or os.environ.get('PAA_VOICEPRINT_MODEL')
     if value is None:
-        value = Path(__file__).resolve().parents[4] / 'apps/desktop/resources/models/speaker-community-1/embedding/pytorch_model.bin'
+        value = Path(__file__).resolve().parents[2] / 'resources/models/speaker-community-1/embedding/pytorch_model.bin'
     value = Path(value)
     try:
         if value.is_symlink() or not value.is_file() or value.stat().st_size > 50_000_000:

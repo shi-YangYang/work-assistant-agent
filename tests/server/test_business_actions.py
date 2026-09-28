@@ -1,5 +1,6 @@
 """Real transactions and API boundaries; fixed judge avoids paid model calls."""
 import json
+from zoneinfo import ZoneInfo
 import pytest
 from datetime import timedelta
 from fastapi import HTTPException
@@ -85,7 +86,7 @@ async def test_manual_create_date_source_and_edit_compatibility(setup):
     assert removed.json()['dueDate'] is None
     assert (await c['peer'].get('/api/v1/work-items/' + work['id'])).status_code == 404
     assert (await c['admin'].post('/api/v1/work-items/' + work['id'] + '/progress', json=patch)).status_code == 404
-    report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().date().isoformat()}, headers=keyed())
+    report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}, headers=keyed())
     async with sessions() as db:
         job = await db.get(Job, report.json()['jobId'])
         assert len(job.result['sourceIds']) == 1
@@ -200,7 +201,7 @@ async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     settings, sessions, users, c = setup
     await create(c['employee'], status='done', summary='完成报价')
     context, sent = await runtime(setup, '生成今天日报')
-    result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat())
+    result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert result['state'] == 'running'
     intent = context.intent_model.inputs[0]
     assert intent['proposedOperation']['effect'] == 'enqueue_report'
@@ -286,7 +287,7 @@ async def test_generate_and_submit_waits_for_real_report_then_exact_preview(setu
     settings, sessions, users, c = setup
     await create(c['employee'], summary='完成方案', status='done')
     context, sent = await runtime(setup, '生成今天日报并提交')
-    result = await execute(context, step=1, action='generate_report', report_date=now().date().isoformat(), submit_after=True)
+    result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(), submit_after=True)
     assert result['state'] == 'running' and not result.get('canConfirm')
     await finish(context)
     job = await claim(sessions, users['employee'].id)
@@ -387,8 +388,10 @@ async def test_final_completion_sentences_are_replaced_with_actual_receipts(stat
 
 
 class ReplyJudge:
-    def __init__(self, kinds, *, fail=False, forged_evidence=False):
+    def __init__(self, kinds, *, scopes=None, fail=False, forged_evidence=False):
         self.kinds, self.fail, self.forged_evidence, self.inputs = kinds, fail, forged_evidence, []
+        self.scopes = scopes if scopes is not None else ['answer'] * len(kinds)
+        assert len(self.scopes) == len(kinds)
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
         self.inputs.append(payload)
@@ -397,7 +400,7 @@ class ReplyJudge:
             raise BudgetExceeded('existing call budget exhausted')
         assert len(payload['segments']) == len(self.kinds)
         proof = [payload['toolEvidence'][0]['id']] if payload['toolEvidence'] else []
-        return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'kind': kind, 'evidence': [99999] if self.forged_evidence else proof if kind == 'query_fact' else []} for row, kind in zip(payload['segments'], self.kinds)]}))
+        return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': scope, 'kind': kind, 'evidence': [99999] if self.forged_evidence else proof if kind == 'query_fact' else []} for row, kind, scope in zip(payload['segments'], self.kinds, self.scopes)]}))
 
 
 async def run_reply(setup, text, answer, judge, *, read_report=False, before=None):
@@ -452,7 +455,7 @@ async def test_worker_keeps_verified_existing_report_state_and_clarification(set
 
 async def test_worker_removes_unissued_business_markers_without_team_queries(setup):
     answer = '请补充你要查看的事项。[[business:work/3e3b3f56-738c-4380-858a-49052fb034c6]]'
-    result = await run_reply(setup, '查看工作', answer, ReplyJudge(['information', 'information']))
+    result = await run_reply(setup, '查看工作', answer, ReplyJudge(['information']))
     assert result['reply'] == '请补充你要查看的事项。'
     assert not result['businessCitations']
 
@@ -469,7 +472,7 @@ async def test_worker_mixed_claims_keep_query_facts_and_partial_receipts(setup):
     result = await run_reply(setup, '创建报价方案并删除它，同时查日报。', answer, ReplyJudge(['query_fact', 'execution', 'information']), read_report=True, before=partial)
     assert '你今天的日报已提交' in result['reply'] and '要查看报告详情' in result['reply']
     assert 'I created' not in result['reply']
-    assert '创建工作：已完成' in result['reply'] and '删除工作：等待你的确认' in result['reply']
+    assert '创建工作《报价方案》：已完成' in result['reply'] and '删除工作：等待你的确认' in result['reply']
     assert [row['state'] for row in result['actions']] == ['succeeded', 'pending']
 
 
@@ -482,23 +485,23 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
     if forged_evidence:
         # Reject the unsupported block, not the already completed operation.
         assert result['job']['state'] == 'succeeded'
-        assert result['reply'] == '创建工作：已完成。'
+        assert result['reply'] == '创建工作《报价方案》：已完成。'
     else:
         assert result['job']['state'] == 'awaiting_retry'
         assert result['job']['phase'] == 'reply_review'
         assert result['job']['stage'] == 'reviewing'
         assert '核对' in result['reply']
     assert result['actions'][0]['state'] == 'succeeded'
-    assert '创建工作：已完成' in result['reply']
+    assert '创建工作《报价方案》：已完成' in result['reply']
     assert 'submitted' not in result['reply']
 
 
 async def test_reply_review_validates_partition_and_reuses_exact_verified_result(setup):
     from app.agent.reply_review import check_segments, review_reply
     with pytest.raises(ValueError):
-        check_segments(['a', 'b'], '{"segments":[{"index":0,"kind":"information"}]}', [])
-    assert check_segments(['a'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[]}]}', []).text == ''
-    assert check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}]).text == ''
+        check_segments(['a', 'b'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"}]}', [])
+    assert check_segments(['a'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"query_fact","evidence":[]}]}', []).text == ''
+    assert check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}]).text == ''
     context, _ = await runtime(setup, '只是讨论，不执行。')
     judge = ReplyJudge(['information'])
     first = await review_reply(context, '需要讨论哪部分？', model=judge)
@@ -508,12 +511,14 @@ async def test_reply_review_validates_partition_and_reuses_exact_verified_result
 
 async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):
     from app.agent.reply_review import review_reply
+    from test_assistant_execution import ReceiptJudge
     context, _ = await runtime(setup)
+    context.intent_model = ReceiptJudge()
     saved = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     judge = ReplyJudge([], fail=True)
     reviewed = await review_reply(context, '', model=judge)
     assert reviewed.verified and not judge.inputs
-    assert receipt_reply(reviewed, [saved]) == '创建工作：已完成。'
+    assert receipt_reply(reviewed, [saved]) == '创建工作《报价方案》：已完成。'
 
 
 async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blank_lines():
@@ -521,7 +526,7 @@ async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blan
     answer = '\n你好！\n\n请确认具体事项。\n  '
     parts = reply_segments(answer)
     assert len(parts) == 2 and all(part.strip() for part in parts)
-    verdict = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(2)]})
+    verdict = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'} for i in range(2)]})
     assert check_segments(parts, verdict, []).text == answer.strip()
     assert reply_segments('\n \t') == []
 
@@ -548,7 +553,29 @@ async def test_history_replaces_stale_confirmation_text_with_persisted_state(set
 async def test_review_removes_empty_table_shell_without_damaging_retained_table():
     from app.agent.reply_review import check_segments
     parts = ['| 字段 | 更新后 |\n', '|---|---|\n', '| 标题 | 已改为测试 |\n', '还有哪些要讨论？']
-    verdict = json.dumps({'segments': [{'index': i, 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
+    verdict = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
     assert check_segments(parts, verdict, []).text == '还有哪些要讨论？'
-    keep = json.dumps({'segments': [{'index': i, 'kind': 'information'} for i in range(4)]})
+    keep = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'} for i in range(4)]})
     assert check_segments(parts, keep, []).text == ''.join(parts)
+
+
+async def test_admin_explicit_draft_deletion_metadata_never_reveals_content(setup):
+    _, sessions, users, c = setup
+    async with sessions.begin() as db:
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-17', period_end='2026-09-17', timezone='Asia/Shanghai', content={'completed': 'PRIVATE-UNSUBMITTED'}, published_revision=0)
+        db.add(report)
+        await db.flush()
+    context, _ = await runtime(setup, '删除这份报告 /reports/' + report.id, 'admin')
+    data = await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id)
+    assert 'PRIVATE-UNSUBMITTED' not in data
+    metadata = json.loads(data)['items'][0]
+    assert metadata['managementOnly'] and metadata['revision'] == 1
+    assert (await c['admin'].get('/api/v1/reports/' + report.id)).status_code == 404
+    impact = await c['admin'].get('/api/v1/reports/' + report.id + '/deletion')
+    assert impact.status_code == 200 and impact.json()['revision'] == metadata['revision']
+    row = await execute(context, step=1, action='delete_report', target_id=report.id, expected_revision=1)
+    assert row['state'] == 'pending' and 'PRIVATE-UNSUBMITTED' not in json.dumps(row)
+    result = await c['admin'].post(f"/api/v1/business-actions/{row['id']}/confirm", json={'expectedRevision': row['revision']})
+    assert result.json()['state'] == 'succeeded'
+    again = await c['admin'].post(f"/api/v1/business-actions/{row['id']}/confirm", json={'expectedRevision': row['revision']})
+    assert again.json()['state'] == 'succeeded'

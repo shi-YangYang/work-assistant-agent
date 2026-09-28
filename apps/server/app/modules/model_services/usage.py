@@ -8,7 +8,7 @@ from app.integrations.models.chat import token_usage
 from app.integrations.models.transport import safe_error
 from app.modules.members.models import Company
 from app.modules.model_services.models import ModelUsage
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, select, tuple_
 
 
 def usage_fields(choice=None, *, attempt=None, fence=None):
@@ -50,7 +50,7 @@ class RequestRecord:
             failure = safe_error(error) if error is not None else None
             # Address validation without an HTTP status rejects before sending;
             # redirects carry a status and remain actual, failed requests.
-            if failure and failure.code == 'address' and failure.status is None:
+            if failure and (failure.sent is False or failure.code == 'address' and failure.status is None):
                 row.started_at = None
             row.elapsed_ms = max(0, round((row.finished_at - row.started_at).total_seconds() * 1000)) if row.started_at else None
             if error is None:
@@ -75,21 +75,35 @@ def dto(row):
 async def usage_page(db, actor, *, period='this_week', start=None, end=None, service='', model='', purpose='', cursor=None, limit=20):
     company = await db.get(Company, actor.company_id)
     lower, upper, date_range = period_range(company, period, start, end)
-    query = select(ModelUsage).where(ModelUsage.company_id == actor.company_id, ModelUsage.created_at >= lower, ModelUsage.created_at < upper)
-    all_rows = list((await db.scalars(query.order_by(ModelUsage.created_at.desc(), ModelUsage.id.desc()))).all())
-    services = {row.service_id: row.service_name for row in reversed(all_rows) if row.service_id}
-    models = sorted({row.model_name for row in all_rows if row.model_name and (not service or row.service_id == service)})
-    rows = [row for row in all_rows if (not service or row.service_id == service) and (not model or row.model_name == model) and (not purpose or row.kind == purpose)]
-    def effective(row):
-        # A dead API probe cannot be recovered by a job lease. Its 60s request
-        # limit has elapsed; report unknown without inventing a failure/result.
-        return 'unknown' if row.status == 'running' and row.started_at and row.started_at < now() - timedelta(minutes=2) else row.status
-    states = {key: sum(effective(row) == key for row in rows) for key in ('reserved','running','succeeded','failed','unknown','legacy','not_sent')}
-    actual = [row for row in rows if row.started_at is not None]
-    resolved = states['succeeded'] + states['failed']
-    elapsed = [row.elapsed_ms for row in actual if row.elapsed_ms is not None]
-    summary = {'calls': len(actual), 'successRate': states['succeeded'] / resolved if resolved else None, 'states': states, 'averageMs': round(sum(elapsed) / len(elapsed)) if elapsed else None, 'durationKnown':len(elapsed), 'inputTokens':sum(row.actual_input_tokens for row in actual if row.actual_input_tokens is not None), 'outputTokens':sum(row.actual_output_tokens for row in actual if row.actual_output_tokens is not None), 'inputKnown':sum(row.actual_input_tokens is not None for row in actual), 'outputKnown':sum(row.actual_output_tokens is not None for row in actual)}
+    base = select(ModelUsage).where(ModelUsage.company_id == actor.company_id, ModelUsage.created_at >= lower, ModelUsage.created_at < upper)
+    services = (await db.execute(base.with_only_columns(ModelUsage.service_id, ModelUsage.service_name).where(ModelUsage.service_id.is_not(None)).distinct(ModelUsage.service_id).order_by(ModelUsage.service_id, ModelUsage.created_at.desc(), ModelUsage.id.desc()))).all()
+    model_query = base.with_only_columns(ModelUsage.model_name).where(ModelUsage.model_name.is_not(None), ModelUsage.model_name != '')
+    if service:
+        model_query = model_query.where(ModelUsage.service_id == service)
+    models = list((await db.scalars(model_query.distinct().order_by(ModelUsage.model_name))).all())
+    query = base
+    for column, value in ((ModelUsage.service_id, service), (ModelUsage.model_name, model), (ModelUsage.kind, purpose)):
+        if value:
+            query = query.where(column == value)
+    cutoff = now() - timedelta(minutes=2)
+    effective = case((and_(ModelUsage.status == 'running', ModelUsage.started_at < cutoff), 'unknown'), else_=ModelUsage.status)
+    started = ModelUsage.started_at.is_not(None)
+    states = ('reserved', 'running', 'succeeded', 'failed', 'unknown', 'legacy', 'not_sent')
+    counts = [func.count().filter(effective == state).label(state) for state in states]
+    aggregates = [
+        func.count().filter(started).label('calls'),
+        func.avg(ModelUsage.elapsed_ms).filter(started).label('average'),
+        func.count(ModelUsage.elapsed_ms).filter(started).label('durationKnown'),
+        func.coalesce(func.sum(ModelUsage.actual_input_tokens).filter(started), 0).label('inputTokens'),
+        func.coalesce(func.sum(ModelUsage.actual_output_tokens).filter(started), 0).label('outputTokens'),
+        func.count(ModelUsage.actual_input_tokens).filter(started).label('inputKnown'),
+        func.count(ModelUsage.actual_output_tokens).filter(started).label('outputKnown'),
+    ]
+    values = (await db.execute(query.with_only_columns(*counts, *aggregates))).one()._mapping
+    resolved = values['succeeded'] + values['failed']
+    summary = {key: values[key] for key in ('calls', 'durationKnown', 'inputTokens', 'outputTokens', 'inputKnown', 'outputKnown')}
+    summary.update(states={state: values[state] for state in states}, successRate=values['succeeded'] / resolved if resolved else None, averageMs=round(values['average']) if values['average'] is not None else None)
     if cursor:
-        boundary = cursor_decode(cursor)
-        rows = [row for row in rows if (row.created_at, row.id) < boundary]
-    return {'range':date_range, 'summary':summary, 'services':[{'id':key,'name':value} for key,value in services.items()], 'models':models, 'items':[{**dto(row), 'state':effective(row)} for row in rows[:limit]], 'nextCursor':cursor_encode(rows[limit-1].created_at,rows[limit-1].id) if len(rows)>limit else None}
+        query = query.where(tuple_(ModelUsage.created_at, ModelUsage.id) < cursor_decode(cursor))
+    rows = (await db.execute(query.add_columns(effective.label('effective')).order_by(ModelUsage.created_at.desc(), ModelUsage.id.desc()).limit(limit + 1))).all()
+    return {'range': date_range, 'summary': summary, 'services': [{'id': key, 'name': name} for key, name in services], 'models': models, 'items': [{**dto(row), 'state': state} for row, state in rows[:limit]], 'nextCursor': cursor_encode(rows[limit - 1][0].created_at, rows[limit - 1][0].id) if len(rows) > limit else None}

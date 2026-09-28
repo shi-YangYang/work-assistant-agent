@@ -11,7 +11,7 @@ from app.tasks.models import Job
 from sqlalchemy import select
 
 
-async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezone=None):
+async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezone=None, instructions='', instruction_source=None):
     if actor.role != 'employee':
         problem(403, '管理员不生成个人报告')
     company = await db.get(Company, actor.company_id)
@@ -30,9 +30,12 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezon
         problem(409, '该周期报告已删除，不能重新生成')
     existing = await db.scalar(select(Job).where(Job.owner_id == actor.id, Job.kind == 'report', Job.target_id == report.id).order_by(Job.created_at.desc()).limit(1))
     if existing is not None and (scheduled or existing.state in ('queued', 'running')):
+        prior_source = existing.result.get('instructionSource') or {}
+        if instructions and (instructions != existing.result.get('instructions', '') or (instruction_source or {}).get('references', []) != prior_source.get('references', [])):
+            problem(409, '该报告正在生成，新的写作要求尚未应用，请完成后再修改或重新生成')
         return report, existing
     inputs = await report_inputs(db, report)
-    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued' if inputs else 'succeeded', phase='saved' if inputs else 'empty', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2})
+    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued' if inputs else 'succeeded', phase='saved' if inputs else 'empty', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2, **({'instructions': instructions} if instructions else {}), **({'instructionSource': instruction_source} if instruction_source else {})})
     db.add(job)
     await db.flush()
     return report, job
