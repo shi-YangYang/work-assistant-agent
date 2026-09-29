@@ -108,6 +108,7 @@ export function PersonaPicker({
               }}
               role="menuitemradio"
               aria-checked={value === persona.id}
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 close()
                 onChange(persona.id)

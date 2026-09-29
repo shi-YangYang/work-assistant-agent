@@ -1,11 +1,12 @@
 """Opt-in single-slot fairness and queue cancellation against a disposable control."""
 import asyncio
 import json
-from pathlib import Path
 from real_execution import Runner
+from recovery_execution import isolated_control, report_path
 
 
 async def main():
+    isolated_control()
     runner = Runner()
     assert (await runner.client.get('/health')).json()['concurrency'] == 1
     bodies = []
@@ -31,7 +32,7 @@ async def main():
         assert set(owner for _,owner in order[:4]) == {'a','b','c'}, order
         assert (await runner.wait(cancelled['id']))['state'] == 'cancelled'
         result = {'pass': True, 'concurrency':maximum, 'completedOwnerOrder':[owner for _,owner in order], 'queuedCancel':'never executed'}
-        Path('artifacts/spec042/sandbox-serial.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
+        report_path('artifacts/spec042/sandbox-serial.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
     finally:
         for identifier in runner.ids:await runner.client.delete('/executions/'+identifier)
         await runner.client.aclose()

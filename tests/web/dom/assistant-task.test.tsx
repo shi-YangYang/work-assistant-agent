@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Identity, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
+import type { BusinessAction, Identity, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -388,6 +388,46 @@ it('does not replace a persisted terminal card with a stale active snapshot from
   expect(screen.queryByText('正在生成回复…')).toBeNull()
   expect(sources).toHaveLength(0)
 })
+
+it.each([true, false])(
+  'shows one confirmation through continued messages and live feedback when the origin is loaded: %s',
+  async (originLoaded) => {
+    const action: BusinessAction = {
+      id: 'delete-selection',
+      messageId: 'original',
+      action: 'delete_work',
+      label: '删除工作',
+      confirmLabel: '确认删除工作',
+      state: 'pending',
+      revision: 1,
+      createdAt: running.updatedAt,
+      canConfirm: true,
+      preview: { title: '选择验证乙', revision: 1 },
+    }
+    const terminal = (id: string): WorkMessage => ({
+      ...message({ ...running, id: `job-${id}`, targetId: id, state: 'succeeded' }),
+      actions: [action],
+    })
+    history = [
+      ...(originLoaded ? [terminal('original')] : []),
+      terminal('continued'),
+      { ...message(running), actions: [action] },
+    ]
+    view()
+    await screen.findByRole('button', { name: '确认删除工作' })
+    expect(screen.getAllByRole('button', { name: '确认删除工作' })).toHaveLength(1)
+    expect(screen.getAllByText('选择验证乙')).toHaveLength(1)
+    await waitFor(() => expect(sources).toHaveLength(1))
+    await act(async () =>
+      sources[0].dispatchEvent(
+        new MessageEvent('snapshot', {
+          data: JSON.stringify(feedback({ seq: 10, actions: [action] })),
+        }),
+      ),
+    )
+    expect(screen.getAllByRole('button', { name: '确认删除工作' })).toHaveLength(1)
+  },
+)
 
 it('adopts the newer context when another tab finishes a subsequent job before activity is observed', async () => {
   vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: running })

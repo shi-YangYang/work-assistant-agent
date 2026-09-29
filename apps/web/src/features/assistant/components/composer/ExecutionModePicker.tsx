@@ -137,6 +137,7 @@ export function ExecutionModePicker({
                 role="menuitemradio"
                 data-mode={mode.id}
                 aria-checked={value === mode.id}
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   close()
                   if (mode.id === 'full' && !acknowledged) setConfirm(true)

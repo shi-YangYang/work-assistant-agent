@@ -13,8 +13,11 @@ class LostLease(Exception):
 
 
 class InputChanged(ValueError):
-    def __init__(self, *, document=False):
-        super().__init__('文件提取版本已变化，本次旧内容处理已停止；请重试以使用最新材料' if document else '语音文字已被纠正，本次旧内容处理已停止；请重试以使用新文字')
+    def __init__(self, *, document=False, context=False):
+        message = '文件提取版本已变化，本次旧内容处理已停止；请重试以使用最新材料' if document else '语音文字已被纠正，本次旧内容处理已停止；请重试以使用新文字'
+        if context:
+            message = '对话引用的资料已变化，本次旧内容处理已停止；请重试以使用最新资料'
+        super().__init__(message)
 
 
 @dataclass
@@ -49,6 +52,7 @@ class RunContext:
     own_work_searched: bool = False
     feedback_at: float = 0
     intent_model: Any = None
+    work_change_model: Any = None
     delivery: dict | None = None
     reply_evidence: list[dict] = field(default_factory=list)
     conversation_references: list | None = None

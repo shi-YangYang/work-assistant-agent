@@ -41,12 +41,14 @@ export function MessageCard({
   onDeliverable,
   onContextUpdate,
   onContinuation,
+  hiddenActionMessageIds,
   activeJob,
   retryBlocked,
   onRetryStart,
   onRetrySettled,
 }: {
   onContinuation?: (continuation?: TaskContinuation) => void
+  hiddenActionMessageIds?: ReadonlySet<string>
   message: WorkMessage
   activeJob?: Job | null
   retryBlocked?: boolean
@@ -281,14 +283,16 @@ export function MessageCard({
             ))}
           {own &&
             !message.businessUnavailable &&
-            (live.feedback?.actions ?? message.actions)?.map((action) => (
-              <BusinessActionCard
-                key={action.id}
-                action={action}
-                refresh={onChange}
-                onContinuation={onContinuation}
-              />
-            ))}
+            (live.feedback?.actions ?? message.actions)
+              ?.filter((action) => !hiddenActionMessageIds?.has(action.messageId))
+              .map((action) => (
+                <BusinessActionCard
+                  key={action.id}
+                  action={action}
+                  refresh={onChange}
+                  onContinuation={onContinuation}
+                />
+              ))}
           {own &&
             !message.businessUnavailable &&
             (message.interactions ?? []).map((item) => (

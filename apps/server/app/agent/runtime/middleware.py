@@ -1,10 +1,15 @@
 import json
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelResponse
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from app.agent.prompts.policies import ALLOWED_TOOLS, TEAM_TOOL_NAMES
 from app.tasks.context import BudgetExceeded
 from app.tasks.lease import lease
+
+
+def repairing_delivery(messages, job_id):
+    latest = next((message for message in reversed(messages) if isinstance(message, HumanMessage)), None)
+    return latest is not None and latest.id == f'delivery-repair:{job_id}'
 
 
 class ToolBoundary(AgentMiddleware):
@@ -33,9 +38,11 @@ class ToolBoundary(AgentMiddleware):
         visible = [t for t in request.tools if (t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name'))) in allowed]
         if not allowed.issubset(names):
             raise RuntimeError('Business tool set is incomplete')
-        if finish_only:
+        protocol_repair = repairing_delivery(request.messages, context.job_id)
+        if finish_only or protocol_repair:
             terminal = [tool for tool in visible if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) == 'finish_task']
-            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n本轮探索额度已接近上限。立即使用 finish_task 交付已有结果、实际来源及未完成范围，不再读取或执行工具。不能编造缺失内容，不能把尚未完成的事项标为完成。')
+            reason = '本轮仅修复收尾协议，不得重做工具或业务操作。' if protocol_repair else '本轮探索额度已接近上限。'
+            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n' + reason + '立即使用 finish_task 交付已有结果、实际来源及未完成范围，不再读取或执行工具。不能编造缺失内容，不能把尚未完成的事项标为完成。')
             return await handler(request.override(tools=terminal, system_message=system, tool_choice={'type': 'function', 'function': {'name': 'finish_task'}}))
         return await handler(request.override(tools=visible))
 
@@ -48,11 +55,17 @@ class ToolBoundary(AgentMiddleware):
             allowed = allowed - {'run_python'}
         if request.tool_call['name'] not in allowed:
             raise RuntimeError('Tool is not allowed')
+        if repairing_delivery(request.state.get('messages', []), context.job_id) and request.tool_call['name'] != 'finish_task':
+            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content='本轮仅修复收尾协议，此工具未执行。请单独调用 finish_task 交付已有结果。', status='error')
         batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
         if batch and len(batch.tool_calls) > 1 and any(call['name'] == 'finish_task' for call in batch.tool_calls):
             return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content='收尾必须单独调用；本批工具均未执行。先执行所需工具，观察结果后再 finish_task。', status='error')
         if request.tool_call['name'] == 'finish_task':
             # A completion is metadata, not a business tool/node or a new model call.
+            from app.agent.completion.delivery import completion_reference_error
+            error = await completion_reference_error(context, request.tool_call['args'].get('operation_ids'))
+            if error:
+                return ToolMessage(tool_call_id=request.tool_call['id'], name='finish_task', content=error, status='error')
             return await handler(request)
         if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')):
             from app.tasks.feedback.feedback import publish

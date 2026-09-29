@@ -6,7 +6,8 @@ from app.modules.messages.models import Message
 from app.modules.operations.mutations.writes import deletion_impact as writes_deletion_impact
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem
-from app.security.access import require as business_require
+from app.security.access import require as business_require, resolve as business_resolve
+from app.modules.team.sources import canonical_token
 from app.security.ownership import owned
 
 
@@ -24,7 +25,31 @@ async def read_target(db, actor, action, identifier):
 
 
 async def source_check(db, actor, row):
-    await business_require(db, actor, row.access, latest=True)
+    # Access retains every source seen in the conversation. Historical reads
+    # must remain authorized, but only this operation's dependencies must be
+    # current; an unrelated old query cannot block a new personal work edit.
+    await business_require(db, actor, row.access)
+    selected = set()
+    for raw in row.params.get('sourceTokens', []):
+        evidence = row.access.get('reads', {}).get(canonical_token(raw))
+        if not evidence or evidence.get('type') not in ('work', 'report'):
+            problem(403, '督办来源必须来自实际读取的工作或报告')
+        await business_resolve(db, actor, evidence, latest=True)
+        selected.add((evidence['type'], evidence['id'], evidence['ownerId']))
+    if row.action == 'update_work':
+        target = await read_target(db, actor, row.action, row.params['targetId'])
+        # Persisted links are also dependencies: omitting sourceTokens must not
+        # bypass freshness. Links retain old revisions, so check the newest
+        # saved revision unless this action explicitly selects its replacement.
+        linked = {}
+        for link in target.business_links:
+            evidence = link['evidence']
+            key = (evidence['type'], evidence['id'], evidence['ownerId'])
+            if key not in linked or evidence.get('version', 0) > linked[key].get('version', 0):
+                linked[key] = evidence
+        for key, evidence in linked.items():
+            if key not in selected:
+                await business_resolve(db, actor, evidence, latest=True)
     message = await db.get(Message, row.message_id)
     if not message or message.deleted or message.owner_id != actor.id or message.company_id != actor.company_id:
         problem(409, '发起操作的消息已删除，请重新提出请求')

@@ -22,6 +22,7 @@
 | [041](spec-041-web-session-lifetime/spec.md) | Web 登录闲置续期与 30 天最长有效期 | [验收 PASS](spec-041-web-session-lifetime/acceptance.md) |
 | [042](spec-042-general-assistant-sandbox/spec.md) | 通用问答、隔离代码执行与文件成果交付 | 已完成 |
 | [043](spec-043-project-directory-organization/spec.md) | Web、公司后端与 Electron 代码按职责归组 | [验收 PASS](spec-043-project-directory-organization/acceptance.md) |
+| [044](spec-044-web-full-system-testing/spec.md) | Web 全功能、真实 Agent 多轮与破坏性测试 | 部分修复，2 类技术问答未通过 |
 
 ## 文档分工
 
@@ -32,4 +33,4 @@
 
 ## 生命周期
 
-新 Spec 从 **044** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **045** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

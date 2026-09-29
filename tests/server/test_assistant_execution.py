@@ -25,15 +25,19 @@ pytestmark = pytest.mark.asyncio
 
 
 class ReceiptJudge(Judge):
-    def __init__(self, *, receipt=True, allowed=True):
+    def __init__(self, *, receipt=True, allowed=True, required_fields=(), requested_changes=()):
         super().__init__(allowed)
         self.receipt = receipt
+        self.required_fields = required_fields
+        self.requested_changes = requested_changes
 
     async def ainvoke(self, messages):
         response = await super().ainvoke(messages)
         verdict = json.loads(response.content)
         if 'allowed' in verdict:
             verdict['receiptOnly'] = self.receipt
+            verdict['requiredFields'] = list(self.required_fields)
+            verdict['requestedChanges'] = list(self.requested_changes)
         return AIMessage(content=json.dumps(verdict))
 
 
@@ -98,6 +102,30 @@ async def test_failed_intent_never_activates_shortcut(setup):
     assert not await receipt_completion(context, returned(card))
 
 
+@pytest.mark.parametrize('missing', [('status', 'summary'), ('blocker',), ('nextStep',)])
+async def test_partial_update_cannot_write_or_shortcut_before_all_requested_fields_are_present(setup, missing):
+    _, sessions, _, clients = setup
+    work = await create(clients['employee'], '客户培训', summary='准备培训材料')
+    context, sent = await runtime(setup, '客户培训改为有阻碍，说明补充8人名单已确认，阻碍是讲师时间未定，下一步联系讲师。')
+    changes = {'status': 'blocked', 'summary': '准备培训材料\n8人名单已确认', 'blocker': '讲师时间未定', 'nextStep': '联系讲师'}
+    context.intent_model = ReceiptJudge(required_fields=changes)
+    await read_work(context, work['id'])
+    args = {'step': 1, 'action': 'update_work', 'target_id': work['id'], 'expected_revision': 1}
+    rejected = await execute(context, **args, changes={key: value for key, value in changes.items() if key not in missing})
+    assert rejected['state'] == 'clarification' and rejected['category'] == 'invalid_arguments'
+    assert all(field in rejected['message'] for field in missing)
+    assert not context.receipt_candidates
+    before = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert before['revision'] == 1 and before['status'] == 'in_progress' and before['summary'] == '准备培训材料'
+    assert not (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()['actions']
+    saved = await execute(context, **args, changes=changes)
+    assert saved['state'] == 'succeeded' and await receipt_completion(context, returned(saved))
+    after = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert after['revision'] == 2 and all(after[key] == value for key, value in changes.items())
+    assert await execute(context, **args, changes=changes) == saved
+    assert len(context.intent_model.inputs) == 2
+
+
 async def test_corrected_input_cannot_reuse_prior_completion_decision(setup):
     _, sessions, _, _ = setup
     context, sent = await runtime(setup)
@@ -112,6 +140,41 @@ async def test_corrected_input_cannot_reuse_prior_completion_decision(setup):
     from app.tasks.context import InputChanged
     with pytest.raises(InputChanged):
         await receipt_completion(context, returned(card))
+
+
+async def test_original_progress_fact_blocks_partial_update_even_if_field_summary_omits_it(setup):
+    _, _, _, clients = setup
+    work = await create(clients['employee'], '验收交付', summary='准备验收')
+    context, sent = await runtime(setup, '更新验收交付：联调已通过，但客户验收时间未定，记为有阻碍，下一步联系客户。')
+    context.intent_model = ReceiptJudge(required_fields=['status', 'blocker', 'nextStep'], requested_changes=[
+        {'quote': '联调已通过', 'field': 'summary'},
+        {'quote': '客户验收时间未定', 'field': 'blocker'},
+        {'quote': '记为有阻碍', 'field': 'status'},
+        {'quote': '下一步联系客户', 'field': 'nextStep'},
+    ])
+    await read_work(context, work['id'])
+    args = {'step': 1, 'action': 'update_work', 'target_id': work['id'], 'expected_revision': 1}
+    changes = {'status': 'blocked', 'blocker': '客户验收时间未定', 'nextStep': '联系客户'}
+    refused = await execute(context, **args, changes=changes)
+    assert refused['category'] == 'invalid_arguments' and 'summary' in refused['message']
+    unchanged = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert unchanged['revision'] == 1 and unchanged['summary'] == '准备验收' and unchanged['status'] == 'in_progress'
+    assert not (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()['actions']
+    assert not context.receipt_candidates
+    saved = await execute(context, **args, changes={**changes, 'summary': '准备验收；联调已通过'})
+    after = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert saved['state'] == 'succeeded' and after['revision'] == 2
+    assert after['summary'] == '准备验收；联调已通过' and after['status'] == 'blocked'
+    assert after['blocker'] == changes['blocker'] and after['nextStep'] == changes['nextStep']
+
+
+async def test_coverage_quotes_cannot_invent_progress_or_borrow_unrelated_history():
+    from app.agent.actions.intent import IntentVerdict, requested_change_contract
+    verdict = IntentVerdict(allowed=True, quote='更新验收', reason='', requestedChanges=[{'quote': '联调已通过', 'field': 'summary'}])
+    task = {'previousTask': {'userSources': [{'userText': '联调已通过'}]}}
+    assert not requested_change_contract(verdict, '更新验收：联系客户', task)
+    assert requested_change_contract(verdict, '更新验收：联调已通过', task)
+    assert requested_change_contract(verdict.model_copy(update={'resumeTask': True}), '继续上次更新', task)
 
 
 async def test_live_receipts_arrive_before_completion_and_revalidate_confirmation(setup):

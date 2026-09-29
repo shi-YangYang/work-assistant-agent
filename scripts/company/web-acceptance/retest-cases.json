@@ -1,0 +1,65 @@
+[
+  {
+    "id": "F02-retest",
+    "baseline": "browser/F02 turn 4",
+    "role": "realApiEmployee",
+    "mode": "auto",
+    "turns": [
+      "请在我的工作里创建一项“回归044-十月新人入职培训”：为8名新员工准备入职培训，目前进行中，名单和讲师时间待确认，下一步收集名单并联系讲师，截止2026年10月9日。",
+      "更新一下这项培训：8个人的名单都确认了，但讲师时间还没定，请记成有阻碍，下一步是找讲师确认时间。"
+    ],
+    "goal": "同一工作最终status=blocked，summary包含8人名单已确认，blocker为讲师时间未定，nextStep为联系讲师确认时间，dueDate仍为2026-10-09；无重复工作。"
+  },
+  {
+    "id": "Q02-retest",
+    "baseline": "http/Q02 turn 2",
+    "role": "realApiEmployee",
+    "mode": "full",
+    "turns": [
+      "帮我写一封“回归044-培训通知”，周五下午3点培训，地点会议室B，语气自然。",
+      "改成面对客户，更礼貌一点，时间地点不能改变。"
+    ],
+    "goal": "两轮完整交付文本，无awaiting_retry或核对失败；客户版保留周五下午3点和会议室B，无工作/报告写入。"
+  },
+  {
+    "id": "R04-retest",
+    "baseline": "http/R04 turn 2",
+    "role": "realApiEmployee",
+    "mode": "auto",
+    "turns": [
+      "帮我生成“回归044-十月发布沟通计划”，先只在聊天里写。",
+      "把它改成发给老板的简短汇报，不要假设老板已批准。不保存报告，只输出最终文本。"
+    ],
+    "goal": "完整交付计划和未获批准的老板汇报，收尾完成，无工作/报告写入。"
+  },
+  {
+    "id": "C02-retest",
+    "baseline": "http/C02 turn 2",
+    "role": "realApiEmployee",
+    "mode": "full",
+    "turns": [
+      "生成一个可下载的TXT备忘录，标题“回归044-发布检查”，包含测试、备份、回滚三项。",
+      "把备份改成“验证备份可恢复”，生成更新版。",
+      "再给一份Markdown文件，内容一致，不要创建工作。"
+    ],
+    "goal": "TXT首版及更新版和Markdown实际可下载，更新内容为验证备份可恢复，测试/回滚保留，三轮都完成；无工作/报告写入或伪造业务回执。"
+  },
+  {
+    "id": "A04-retest",
+    "baseline": "http/A04 turn 1",
+    "role": "realApiEmployee",
+    "mode": "full",
+    "turns": ["回归044：计算销售额合计、退款合计和净额。"],
+    "attachments": ["artifacts/spec044/agent/materials/sales.xlsx"],
+    "goal": "销售额300、退款50、净额250；程序材料范围与文字读取/代码输入回执一致，不以0文字分段否认原文件代码输入，不重复尾注；无业务写入。"
+  },
+  {
+    "id": "A06-retest",
+    "baseline": "http/A06 turn 1",
+    "role": "realApiEmployee",
+    "mode": "full",
+    "turns": ["回归044：核算销售净额，写出算式，不要保存工作。"],
+    "attachments": ["artifacts/spec044/agent/materials/sales.csv"],
+    "goal": "算式300-50=250；材料范围与实际工具回执一致且无重复尾注；无工作/报告写入。"
+  }
+]

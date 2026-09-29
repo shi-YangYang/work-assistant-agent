@@ -213,9 +213,16 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         message = await owned(db, Message, job.target_id, actor, lock=True)
         task_id = context.task_snapshot.get('taskId', message.id)
         task_item_key = context.task_item_keys.get(digest(proposal), intent_key)
-        saved = await db.scalar(select(BusinessAction).where(BusinessAction.task_id == task_id, BusinessAction.task_item_key == task_item_key, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id))
+        saved = await db.scalar(select(BusinessAction).where(BusinessAction.task_id == task_id, BusinessAction.task_item_key == task_item_key, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).with_for_update())
         if saved:
-            return await receipt(context, db, actor, job, saved)
+            if saved.message_id == message.id or saved.state not in ('failed', 'conflict'):
+                return await receipt(context, db, actor, job, saved)
+            # A new authorized user turn may retry an attempt that never wrote.
+            # Keep its historical receipt, but release the unique execution slot
+            # after fresh target reads and intent authorization have passed.
+            saved.result = {**saved.result, 'originalTaskItemId': saved.task_item_key}
+            saved.task_item_key = None
+            await db.flush()
         from app.modules.operations.policy.execution_policy import mode_for, decide
         mode = await mode_for(db, job, message.conversation_id)
         decision = decide(mode, action, explicitly_confirm=digest(proposal) in context.explicit_confirmations)

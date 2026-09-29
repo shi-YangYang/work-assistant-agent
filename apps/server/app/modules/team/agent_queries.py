@@ -157,3 +157,14 @@ async def query_summary(db, queries):
         at = datetime.fromisoformat(q['queriedAt']).astimezone(ZoneInfo(q['timezone'])).strftime('%Y-%m-%d %H:%M')
         lines.append(f'- {kind} · {people} · {period}{filters}：共 {q["total"]} 条，{covered}。查询于 {at}（{q["timezone"]}）。')
     return '\n\n查询依据：\n' + '\n'.join(lines) if lines else ''
+
+
+def append_query_summary(answer, summary):
+    """Replace only terminal, recognizable query metadata; preserve real prose."""
+    if not summary:
+        return answer
+    import re
+    footer = re.compile(r'(?:\n\n|\A)(?:\*\*)?查询依据[：:](?:\*\*)?\s*\n(?:- (?:工作|已提交报告) · [^\n]+(?:\n|$))+\s*\Z')
+    while match := footer.search(answer):
+        answer = answer[:match.start()].rstrip()
+    return answer.rstrip() + summary

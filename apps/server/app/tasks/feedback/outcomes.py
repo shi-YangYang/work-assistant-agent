@@ -31,12 +31,14 @@ def derive(job, cards=(), drafts=(), *, interpretation=None):
     value = interpretation or job.result.get('taskInterpretation', {})
     completed = []
     remaining = list(value.get('remaining', [])) if value.get('state') not in ('needs_confirmation', 'processing') else []
-    pending = running = generation_failed = generation_cancelled = False
+    pending = running = cancelled = generation_failed = generation_cancelled = False
     for card in cards:
         state = card['state']
         label = card.get('label', '业务操作') + (f"《{card['title']}》" if card.get('title') else '')
         if state == 'succeeded':
             completed.append(label)
+        elif state == 'cancelled':
+            cancelled = True
         elif state == 'pending':
             pending = True
             remaining.append(label + '等待确认')
@@ -61,7 +63,8 @@ def derive(job, cards=(), drafts=(), *, interpretation=None):
         remaining.append('还有请求的事项尚未完成')
     reason = next((item['message'] for item in failures if item['message']), '')
     response_incomplete = job.result.get('completionIssue') == 'response'
-    cannot_resolve_by_reply = response_incomplete or value.get('state') == 'blocked' or any(item['category'] == 'permission_denied' for item in failures)
+    answerable_remaining = value.get('state') == 'needs_input' and bool(value.get('remaining'))
+    cannot_resolve_by_reply = response_incomplete or value.get('state') == 'blocked' or (not answerable_remaining and any(item['category'] == 'permission_denied' for item in failures))
     if cannot_resolve_by_reply and not reason:
         reason = '必要答复尚未完成核对，已保存的操作结果会保留。' if response_incomplete else next(iter(remaining), '当前权限或条件无法完成此任务。')
     if job.state in ('queued', 'running'):
@@ -82,6 +85,8 @@ def derive(job, cards=(), drafts=(), *, interpretation=None):
         state, next_action = 'processing', 'none'
     elif value.get('state') == 'blocked':
         state, next_action = ('partial' if completed else 'blocked'), 'none'
+    elif cancelled and not completed:
+        state, next_action = 'cancelled', 'none'
     else:
         state, next_action = 'completed', 'none'
     return {'state': state, 'completed': list(dict.fromkeys(completed)),

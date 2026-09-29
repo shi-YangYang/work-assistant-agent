@@ -51,6 +51,7 @@ class BoundedChatModel(ChatOpenAI):
     _verification: bool = PrivateAttr(default=False)
     _verification_reasoning: bool = PrivateAttr(default=False)
     _response_validator: object = PrivateAttr(default=None)
+    _completion_validator: object = PrivateAttr(default=None)
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         from app.tasks.nodes.node_execution import active_node, execute_node
@@ -92,6 +93,9 @@ class BoundedChatModel(ChatOpenAI):
             if self._verification:
                 from app.modules.model_services.parameters import reply_review_config
                 config = reply_review_config(config, reasoning=self._verification_reasoning)
+            elif context.model_purpose == 'report':
+                from app.modules.model_services.parameters import report_model_config
+                config = report_model_config(config, (context.model_binding or {}).get('report') or {})
             elif is_reply:
                 from app.modules.model_services.parameters import business_model_config
                 config = business_model_config(config, (context.model_binding or {}).get('assistant') or {})
@@ -104,6 +108,10 @@ class BoundedChatModel(ChatOpenAI):
                 result = self._create_chat_result(response)
                 if any(g.message.invalid_tool_calls for g in result.generations):
                     raise ValueError('Incomplete tool call')
+                required_completion = payload.get('tool_choice') == {'type': 'function', 'function': {'name': 'finish_task'}}
+                if self._completion_validator:
+                    for generation in result.generations:
+                        self._completion_validator(generation.message, required=required_completion)
             except (ValueError, TypeError, KeyError):
                 from app.integrations.models.transport import ProviderError
                 raise ProviderError('invalid_response', '模型未返回完整有效的工具参数') from None

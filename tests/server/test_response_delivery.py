@@ -24,11 +24,13 @@ class DeliveryModel(ReviewedFixtureModel):
     verification_requested: bool = False
     verification_quote: str = ''
     task: dict = Field(default_factory=lambda: {'state': 'completed'})
+    requests: list = Field(default_factory=list)
     async def ainvoke(self, input, config=None, *, stop=None, **kwargs):
         # This fixture deliberately exercises raw protocol replies as well.
         return await super(ReviewedFixtureModel, self).ainvoke(input, config, stop=stop, **kwargs)
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls += 1
+        self.requests.append({'tools': [tool['function']['name'] for tool in kwargs.get('tools', [])], 'tool_choice': kwargs.get('tool_choice')})
         if self.invalid or self.raw_first and self.calls == 1:
             result = AIMessage(content=self.answer)
         else:
@@ -73,6 +75,7 @@ async def test_plain_text_is_recovered_once_into_completion_without_business_rep
     assert result['reply'] == fake.answer and fake.calls == 2, result
     assert stored['deliveryRepairs'] == ['protocol']
     assert result['job']['taskOutcome']['state'] == 'completed'
+    assert fake.requests[1] == {'tools': ['finish_task'], 'tool_choice': {'type': 'function', 'function': {'name': 'finish_task'}}}
 
 
 async def test_missing_completion_protocol_fails_boundedly_instead_of_false_success(setup):
@@ -252,6 +255,30 @@ class RoutingModel(DeliveryModel):
         return await super().ainvoke(messages, *args, **kwargs)
 
 
+class PageDeliveryModel(RoutingModel):
+    async def _agenerate(self, messages, *args, **kwargs):
+        if not self.calls:
+            self.calls += 1
+            reply = AIMessage(content='', tool_calls=[{'name': 'web_fetch', 'id': 'reference', 'args': {'url': 'https://example.org/reference'}}])
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+        return await super()._agenerate(messages, *args, **kwargs)
+
+
+@pytest.mark.parametrize('verify', [False, True])
+async def test_reading_technical_source_does_not_add_review_unless_user_requests_verification(setup, monkeypatch, verify):
+    async def fetch(url, **kwargs):
+        return {'url': url, 'title': 'API reference', 'text': 'Widget.run() returns its result when finished.',
+                'evidenceType': 'page_text', 'offset': 0, 'truncated': False, 'nextOffset': None}
+    monkeypatch.setattr('app.integrations.web_research.web_fetch', fetch)
+    fake = PageDeliveryModel(model='controlled', api_key='unused', answer='`Widget.run()` 完成后返回结果。',
+                             verification_requested=verify, verification_quote='核验这个方法的行为' if verify else '')
+    result, stored = await run(setup, fake, '核验这个方法的行为' if verify else '阅读文档并解释这个方法')
+    assert result['reply'] == fake.answer and result['job']['taskOutcome']['state'] == 'completed'
+    assert fake.calls == 2 and fake.reviews == int(verify)
+    assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == int(verify)
+    assert stored['webSources']['https://example.org/reference']['fetchState'] == 'read'
+
+
 @pytest.mark.parametrize('verify,quote,count,state', [
     (False, '', 0, 'awaiting_input'),
     (True, '核验这份材料的结论', 1, 'awaiting_input'),
@@ -380,3 +407,121 @@ async def test_known_response_issue_merges_without_overriding_targeted_review_st
     result = await assess(context, context.delivery['answer'])
     expected = replace(reviewed, response_reason='核对发现事实冲突；缺少分析说明') if verified else reviewed
     assert result == expected
+
+
+class FileReceiptModel(DeliveryModel):
+    repeat_invalid: bool = False
+    file_receipt: dict = Field(default_factory=dict)
+    repair_errors: list = Field(default_factory=list)
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            result = AIMessage(content='', tool_calls=[{'id': 'generate-file-once', 'name': 'run_python',
+                'args': {'code': 'print(3)', 'title': '计算结果', 'step': 1}}])
+        else:
+            output = next(message for message in reversed(messages) if isinstance(message, ToolMessage) and message.name == 'run_python')
+            self.file_receipt = json.loads(output.content)
+            if self.calls == 3:
+                assert [tool['function']['name'] for tool in kwargs['tools']] == ['finish_task']
+                assert kwargs['tool_choice'] == {'type': 'function', 'function': {'name': 'finish_task'}}
+                errors = [message.content for message in messages if isinstance(message, ToolMessage) and message.name == 'finish_task' and message.status == 'error']
+                assert len(errors) == 1 and '私人成果' in errors[0]
+                self.repair_errors = errors
+            invalid = self.calls == 2 or self.repeat_invalid
+            result = completion('CSV 文件已生成，可在本轮成果中下载。', business=invalid,
+                operation_ids=[self.file_receipt['delivery']['id']] if invalid else [])
+        return ChatResult(generations=[ChatGeneration(message=result)])
+
+
+@pytest.mark.parametrize('repeat_invalid', [False, True])
+async def test_file_id_in_business_receipts_repairs_metadata_once_without_reexecuting_file(setup, monkeypatch, repeat_invalid):
+    from dataclasses import replace
+    from sqlalchemy import func, select
+    from app.modules.deliverables.models import DeliverableRevision
+    from app.modules.executions.models import SandboxExecution
+    from app.modules.work.models import WorkItem
+    from test_sandbox_execution import ReceiptClient
+    settings, sessions, users, clients = setup
+    settings = replace(settings, sandbox_url='http://controlled-sandbox', sandbox_token='controlled')
+    ReceiptClient.runs, ReceiptClient.count = {}, 0
+    monkeypatch.setattr('app.modules.executions.service.SandboxClient', ReceiptClient)
+    fake = FileReceiptModel(model='controlled', api_key='controlled', repeat_invalid=repeat_invalid)
+    result, stored = await run((settings, sessions, users, clients), fake, '生成 CSV 文件，不要创建工作')
+    assert fake.calls == 3 and fake.repair_errors
+    assert stored['deliveryRepairs'] == ['protocol'] and not stored.get('responseRepairComplete')
+    assert not any(node['kind'] == 'review' for node in result['job']['nodes'])
+    assert ReceiptClient.count == 1 and len(result['deliverables']) == 1
+    file = result['deliverables'][0]['files'][0]
+    assert (await clients['employee'].get(file['url'])).content == ReceiptClient.data
+    async with sessions() as db:
+        for model_type in (SandboxExecution, DeliverableRevision):
+            assert await db.scalar(select(func.count()).select_from(model_type).where(model_type.owner_id == users['employee'].id)) == 1
+        assert not await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id))
+    if repeat_invalid:
+        assert result['job']['state'] == 'failed'
+        assert '有效收尾' in result['job']['error']
+    else:
+        assert result['job']['state'] == 'succeeded' and result['job']['taskOutcome']['state'] == 'completed'
+        assert result['reply'] == 'CSV 文件已生成，可在本轮成果中下载。'
+
+
+class ProtocolThenActionModel(DeliveryModel):
+    reviews: int = 0
+
+    async def ainvoke(self, messages, *args, **kwargs):
+        try:
+            payload = json.loads(messages[-1].content)
+        except (ValueError, TypeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        if payload.get('proposedOperation'):
+            return AIMessage(content=json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': ''}))
+        if payload.get('task') == 'business_reply_review':
+            self.reviews += 1
+            issues = [{'kind': 'missing_action', 'reason': '还缺已授权的第二项工作'}] if len(payload['currentActions']) == 1 else []
+            return AIMessage(content=json.dumps({'issues': issues}))
+        return await super().ainvoke(messages, *args, **kwargs)
+
+    async def _agenerate(self, messages, *args, **kwargs):
+        self.calls += 1
+        if self.calls in (1, 5):
+            step = 1 if self.calls == 1 else 2
+            result = AIMessage(content='', tool_calls=[{'name': 'execute_business_action', 'id': 'create-' + str(step),
+                'args': {'step': step, 'action': 'create_work', 'changes': {'title': '工作' + str(step)}}}])
+        elif self.calls == 2:
+            result = AIMessage(content='已保存第一项，第二项还未保存。')
+        elif self.calls == 4:
+            result = AIMessage(content='', tool_calls=[{'name': 'get_business_actions', 'id': 'receipts', 'args': {}}])
+        else:
+            receipts = [json.loads(item.content)['id'] for item in messages if isinstance(item, ToolMessage) and item.name == 'execute_business_action']
+            result = completion('已保存第一项，第二项还未保存。' if self.calls == 3 else '两项工作均已保存。',
+                                business=True, operation_ids=receipts)
+        return ChatResult(generations=[ChatGeneration(message=result)])
+
+
+async def test_protocol_repair_does_not_consume_missing_action_repair_or_replay_receipts(setup):
+    fake = ProtocolThenActionModel(model='controlled', api_key='unused')
+    result, stored = await run(setup, fake, '创建工作1和工作2')
+    assert fake.calls == 6 and fake.reviews == 2
+    assert stored['deliveryRepairs'] == ['protocol', 'action']
+    assert len(result['actions']) == 2 and all(item['state'] == 'succeeded' for item in result['actions'])
+    works = (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
+    assert sorted(item['title'] for item in works) == ['工作1', '工作2']
+    assert all(item['revision'] == 1 for item in works)
+    assert result['job']['taskOutcome']['state'] == 'completed'
+
+
+async def test_protocol_and_semantic_repairs_have_separate_persistent_budgets(setup):
+    from app.agent.completion.delivery import take_repair
+    from test_business_actions import runtime
+    context, _ = await runtime(setup)
+    assert await take_repair(context, 'protocol')
+    assert not await take_repair(context, 'protocol')
+    assert await take_repair(context, 'response')
+    assert not await take_repair(context, 'action')
+    assert not await take_repair(context, 'response')
+    assert await take_repair(context, 'response', resume=True)
+    async with context.sessions() as db:
+        assert (await db.get(Job, context.job_id)).result['deliveryRepairs'] == ['protocol', 'response']

@@ -225,9 +225,9 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             draft = await db.scalar(select(ProgressDraft.id).where(ProgressDraft.message_id == message.id).limit(1))
             repair = not draft and all(a['state'] in ('succeeded', 'pending', 'running') for a in actions) and not live.result.get('operationFeedback') and not live.result.get('taskBarriers') and not any(item['category'] in ('missing_info', 'permission_denied', 'conflict', 'invalid_arguments') for item in live.result.get('toolOutcomes', [])) and not live.result.get('completionRepairAttempted')
             if repair:
-                repair = not live.result.get('deliveryRepairs')
+                repair = not any(kind != 'protocol' for kind in live.result.get('deliveryRepairs', []))
             if repair:
-                live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True, 'deliveryRepairs': ['action']}
+                live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True, 'deliveryRepairs': [*live.result.get('deliveryRepairs', []), 'action']}
     if repair:
         await publish(context, 'generating', force=True)
         answer = await invoke_harness(context, checkpointer, blocks, model, repair_missing_action=True)
@@ -287,21 +287,14 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         receipt_end = len(prefix) + len(summary)
         live.result = {key: value for key, value in live.result.items() if key != 'replyReceipt'}
         if live.access.get('team'):
-            message.reply += await business_query_summary(db, live.result.get('businessQueries', []))
+            from app.modules.team.agent_queries import append_query_summary
+            message.reply = append_query_summary(message.reply, await business_query_summary(db, live.result.get('businessQueries', [])))
         source_ids = set(context.document_versions) | {row['id'] for row in documents}
         if source_ids:
             source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
-            coverage = []
-            for document in source_documents:
-                read = len({entry[2] for entry in context.document_reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
-                if document.extraction_status == 'failed':
-                    detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
-                else:
-                    detail = f"实际读取 {read}/{document.extraction_info.get('chunks', 0)} 个文字分段"
-                    if document.extraction_status == 'partial':
-                        detail += '；文件仅部分可读'
-                coverage.append(document.name + '：' + detail)
-            message.reply += '\n\n材料范围：\n' + '\n'.join(coverage)
+            from app.modules.attachments.documents import material_coverage, append_material_coverage
+            coverage, legacy = await material_coverage(db, actor, live, source_documents, context.document_reads)
+            message.reply = append_material_coverage(message.reply, coverage, legacy)
         image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
         if image_warnings:
             message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)

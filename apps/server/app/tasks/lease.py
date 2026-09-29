@@ -38,7 +38,7 @@ async def lease(db, context):
             ConversationContext.conversation_id == source.conversation_id,
             ConversationContext.owner_id == actor.id, ConversationContext.company_id == actor.company_id)) if source and source.conversation_id else None
         if epoch is None or epoch != context.context_sources['invalidationVersion']:
-            raise InputChanged()
+            raise InputChanged(context=True)
     if job.result.get('sandboxSources'):
         from app.modules.executions.sources import check_sources
         await check_sources(db, actor, job.result['sandboxSources'])

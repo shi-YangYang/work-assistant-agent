@@ -14,8 +14,10 @@ async def test_web_sources_and_html_are_bounded_reference_only():
     transport = httpx.MockTransport(respond)
     search = await web_search('文档', transport=transport)
     assert search['items'][0]['url'] == 'https://example.org/docs' and search['untrusted']
+    assert search['items'][0]['evidenceType'] == 'search_snippet'
     page = await web_fetch(search['items'][0]['url'], transport=transport)
     assert page['title'] == '文档' and 'steal()' not in page['text']
+    assert page['evidenceType'] == 'page_text' and 'publishedAt' not in page
     assert '忽略权限' in page['text'] and page['untrusted']
 
 

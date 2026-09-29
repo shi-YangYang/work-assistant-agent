@@ -103,11 +103,12 @@ async def recover_receipt(db, context, job, actor, row):
 
 async def execute_node(context, *, identity, kind, label, operation, encode=lambda x: x,
                        decode=lambda x: x, outcome=None, safe_replay=True, restore=None,
-                       receipt_output=lambda x: x):
+                       receipt_output=lambda x: x, on_failure=None):
     if not context.node_retry:
         return await operation()
     parent = active_node.get()
     identifier = digest({'scope': context.node_scope, 'parent': parent[0] if parent else None, 'kind': kind, 'identity': identity})
+    prior_failure = None
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         await validate_config(db, context)
@@ -135,7 +136,10 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             context.read_versions.update(state.get('readVersions', {}))
             return decode(row['output'])
         if row['state'] in ('failed', 'cancelled') and not row.get('receiptId'):
-            raise NodeFailed(Failure(row.get('errorCode', 'failed'), row.get('error', '此步骤未完成')), identifier)
+            prior_failure = NodeFailed(Failure(row.get('errorCode', 'failed'), row.get('error', '此步骤未完成'),
+                                               cancelled=row['state'] == 'cancelled'), identifier)
+            if on_failure is None:
+                raise prior_failure
         attempt = Attempt(row['attempts'], row.get('nextAt'))
         if row['state'] == 'running':
             if not safe_replay and not row.get('receiptId'):
@@ -167,16 +171,31 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             save(job, state)
 
     try:
-        result = await run(operation, classify=classify, before=lambda: check(context), emit=emit,
-                           attempt=attempt, deadline=context.node_deadline, jitter=lambda: random.uniform(0, .2),
-                           recover=recover if kind == 'tool' else None)
+        final_failure = None
+        try:
+            if prior_failure:
+                await check(context)
+                raise prior_failure
+            result = await run(operation, classify=classify, before=lambda: check(context), emit=emit,
+                               attempt=attempt, deadline=context.node_deadline, jitter=lambda: random.uniform(0, .2),
+                               recover=recover if kind == 'tool' else None)
+        except NodeFailed as error:
+            if on_failure is None:
+                raise
+            # An optional tool may return a typed unavailable result after its
+            # retries. The adapter must reject cancellation/permission/budget
+            # failures, and the durable node must still show the real failure.
+            result = await on_failure(error)
+            final_failure = error.failure
         encoded = encode(result)
         status, detail = outcome(result) if outcome else ('succeeded', '')
         async with context.sessions.begin() as db:
             job, _ = await lease(db, context)
             state = execution(job)
             row = next(item for item in state['nodes'] if item['id'] == identifier)
-            row.update(state=status, nextAt=None, error=detail[:240], errorCode='business' if detail else '', resumable=False)
+            row.update(state='failed' if final_failure else status, nextAt=None,
+                       error=(final_failure.message if final_failure else detail)[:240],
+                       errorCode=final_failure.code if final_failure else 'business' if detail else '', resumable=False)
             # Normalized graph messages / validated verdicts only; no request
             # arguments, credentials, provider wire response or reasoning fields.
             row['output'] = encoded

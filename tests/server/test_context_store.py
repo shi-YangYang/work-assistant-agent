@@ -87,7 +87,7 @@ async def test_invalidated_summary_cannot_publish_and_original_remains(setup):
         sources = await capture_sources(db, actor, current)
     async with sessions.begin() as db:
         await invalidate(db, conversation_id=first['conversationId'])
-    with pytest.raises(InputChanged):
+    with pytest.raises(InputChanged, match='对话引用的资料已变化'):
         await publish_summary(context, {'id': 'old', 'summary': '失效摘要', 'covered': [], 'sources': sources})
     async with sessions() as db:
         assert (await db.get(Message, first['messageId'])).text == '原始问题'
@@ -269,3 +269,54 @@ async def test_inaccessible_unselected_history_does_not_block_new_summary(setup)
         'covered': [available.id], 'sources': context.context_sources, 'access': context.access})
     async with sessions() as db:
         assert (await db.get(ConversationContext, current.conversation_id)).payload['summary'] == '自己的文档整理计划'
+
+
+async def test_other_employee_deletion_does_not_interrupt_private_file_generation(setup, monkeypatch):
+    from dataclasses import replace
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from fakes import ReviewedFixtureModel, completion
+    from app.modules.work.models import WorkItem
+    from app.tasks.processing.handlers import process_job
+    from app.tasks.models import Job
+    from test_business_assistant import facts
+    from test_sandbox_execution import ReceiptClient
+    settings, sessions, users, clients = setup
+    settings = replace(settings, sandbox_url='http://controlled-sandbox', sandbox_token='controlled')
+    work, _, _ = await facts(sessions, users['employee'])
+    ReceiptClient.runs, ReceiptClient.count = {}, 0
+    monkeypatch.setattr('app.modules.executions.service.SandboxClient', ReceiptClient)
+    message = await sent(clients['peer'], '生成我自己的文件')
+    epochs = []
+
+    class FileModel(ReviewedFixtureModel):
+        calls: int = 0
+        async def _agenerate(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                answer = AIMessage(content='', tool_calls=[{'id': 'file-once', 'name': 'run_python', 'args': {'code': 'print(3)', 'title': '私人成果'}}])
+            else:
+                assert self.calls == 2
+                async with sessions() as db:
+                    epochs.append((await db.get(ConversationContext, message['conversationId'])).invalidation_version)
+                response = await clients['employee'].request('DELETE', '/api/v1/work-items/' + work.id, json={'expectedRevision': 1})
+                assert response.status_code == 200, response.text
+                async with sessions() as db:
+                    epochs.append((await db.get(ConversationContext, message['conversationId'])).invalidation_version)
+                answer = completion('私人成果已生成。')
+            return ChatResult(generations=[ChatGeneration(message=answer)])
+
+    job = await claim(sessions, users['peer'].id)
+    fake = FileModel(model='controlled', api_key='controlled')
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(job, sessions, settings, saver, model=fake)
+    result = (await clients['peer'].get('/api/v1/messages/' + message['messageId'])).json()
+    assert result['job']['state'] == 'succeeded' and result['reply'] == '私人成果已生成。', result
+    assert epochs == [0, 0] and fake.calls == 2 and ReceiptClient.count == 1
+    assert len(result['deliverables']) == 1
+    assert (await clients['peer'].get(result['deliverables'][0]['files'][0]['url'])).content == ReceiptClient.data
+    async with sessions() as db:
+        assert (await db.get(WorkItem, work.id)).deleted
+        saved = await db.get(Job, job.id)
+        assert not saved.error and not saved.access.get('team')

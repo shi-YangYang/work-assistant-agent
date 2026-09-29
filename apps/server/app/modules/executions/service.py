@@ -71,7 +71,8 @@ async def execute(context, *, code, title, references, identifier='', revision=0
             if result is None:
                 raise ValueError('执行回执丢失，已停止自动重放，请重新发起任务')
         clean = {'state': result['state'], 'stdout': str(result.get('stdout', ''))[:16000], 'stderr': str(result.get('stderr', ''))[:8000],
-                 'exitCode': result.get('exitCode'), 'message': result.get('error', ''), 'inputFiles': [item['name'] for item in inputs]}
+                 'exitCode': result.get('exitCode'), 'message': result.get('error', ''), 'inputFiles': [item['name'] for item in inputs],
+                 'inputRefs': references}
         outputs = result.get('files', [])
         if len(outputs) > 12 or sum(validate_metadata(item)['size'] for item in outputs) > 32 * 1024 * 1024:
             raise ValueError('生成文件超过导出限制')

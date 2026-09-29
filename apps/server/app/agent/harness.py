@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.context.history import conversation_history
 from app.agent.context.task_context import TASK_POLICY
-from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, take_repair
+from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, take_repair, validate_completion_response
 from app.agent.runtime.middleware import ToolBoundary
 from app.agent.runtime.model import BoundedChatModel, approximate_tokens
 from app.agent.prompts.persona import persona_prompt
@@ -33,6 +33,8 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
+    if isinstance(model, BoundedChatModel):
+        model._completion_validator = validate_completion_response
     from app.agent.prompts.execution_mode import mode_prompt
     graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name != 'run_python' or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
@@ -52,12 +54,12 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         if context.model_binding:
             await freeze_capacities(db, context.model_binding)
     from app.modules.members.models import Company
-    from zoneinfo import ZoneInfo
     async with context.sessions() as db:
         company = await db.get(Company, context.company_id)
         message = await db.get(Message, live.target_id) if live.kind == 'message' else None
         clock = message.created_at if message else now()
-        clock_note = f"当前请求时间：{clock.astimezone(ZoneInfo(company.rules['timezone'])).isoformat()}；公司时区：{company.rules['timezone']}。相对日期以此为准；日期回复需写具体年月日。"
+        from app.agent.context.request_clock import instruction as clock_instruction
+        clock_note = clock_instruction(clock, company.rules['timezone'])
     context.request_clock = clock_note
     graph = build_graph(context.settings, GuardedSaver(checkpointer, context), context, model)
     async with context.sessions() as db:

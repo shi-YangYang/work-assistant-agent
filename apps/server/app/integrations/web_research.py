@@ -14,7 +14,9 @@ USER_AGENT = 'work-assistant-agent/0.1'
 
 
 class WebResearchError(ValueError):
-    pass
+    def __init__(self, message, *, code='unavailable'):
+        super().__init__(message)
+        self.code = code
 
 
 class WebTemporaryError(WebResearchError):
@@ -31,7 +33,7 @@ def public_url(value):
             raise ValueError()
         return url.copy_with(fragment=None)
     except (ValueError, httpx.InvalidURL) as error:
-        raise WebResearchError('仅支持公开的 HTTP(S) 网页地址') from error
+        raise WebResearchError('仅支持公开的 HTTP(S) 网页地址', code='blocked_url') from error
 
 
 async def public_addresses(host, port):
@@ -45,7 +47,7 @@ async def public_addresses(host, port):
         raise WebResearchError('网页域名无法解析') from error
     addresses = list(dict.fromkeys(row[4][0] for row in rows))
     if not addresses or any(not ipaddress.ip_address(value).is_global for value in addresses):
-        raise WebResearchError('不能访问本机、内网或非公开地址')
+        raise WebResearchError('不能访问本机、内网或非公开地址', code='blocked_url')
     return addresses
 
 
@@ -77,7 +79,7 @@ async def fetch_html(url, *, transport=None, xml=False):
                         if response.status_code in (408, 429, 500, 502, 503, 504):
                             raise WebTemporaryError(f'公开网页服务暂时不可用（HTTP {response.status_code}）')
                         if response.status_code != 200:
-                            raise WebResearchError(f'网页暂不可访问（HTTP {response.status_code}）')
+                            raise WebResearchError(f'网页暂不可访问（HTTP {response.status_code}）', code=f'http_{response.status_code}')
                         mime = response.headers.get('content-type', '').split(';')[0].strip().lower()
                         if mime not in (('text/xml', 'application/xml', 'application/rss+xml', 'text/html') if xml else ('text/html', 'application/xhtml+xml', 'text/plain')):
                             raise WebResearchError('该地址不是可读取的文字网页')
@@ -160,7 +162,7 @@ async def web_fetch(url, *, offset=0, transport=None):
     if offset >= len(text):
         raise WebResearchError('网页阅读位置已超出正文范围，请从头读取')
     end = offset + PAGE_CHARS
-    return {'url': final, 'title': title or urlsplit(final).hostname, 'text': text[offset:end], 'offset': offset, 'nextOffset': end if end < len(text) else None, 'truncated': offset > 0 or end < len(text), 'sourceType': 'public_web', 'untrusted': True}
+    return {'url': final, 'title': title or urlsplit(final).hostname, 'text': text[offset:end], 'offset': offset, 'nextOffset': end if end < len(text) else None, 'truncated': offset > 0 or end < len(text), 'sourceType': 'public_web', 'evidenceType': 'page_text', 'untrusted': True}
 
 
 async def web_search(query, *, transport=None):
@@ -182,10 +184,10 @@ async def web_search(query, *, transport=None):
             target = str(public_url(item.findtext('link', '')))
         except WebResearchError:
             continue
-        entry = {'title': ' '.join(item.findtext('title', '').split())[:200], 'url': target, 'snippet': extract_page(item.findtext('description', ''))[1][:400]}
+        entry = {'title': ' '.join(item.findtext('title', '').split())[:200], 'url': target, 'snippet': extract_page(item.findtext('description', ''))[1][:400], 'evidenceType': 'search_snippet'}
         if len(json.dumps([*results, entry], ensure_ascii=False)) > 4000:
             break
         results.append(entry)
         if len(results) >= 5:
             break
-    return {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要；需要正文时读取对应网页', 'untrusted': True}
+    return {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要，未读取正文；仅需要链接时可直接提供实际检索所得网址。摘要日期不能单独证明文章发布日期。', 'untrusted': True}

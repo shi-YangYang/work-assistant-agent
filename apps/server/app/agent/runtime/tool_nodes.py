@@ -60,9 +60,18 @@ async def tool_node(context, request, operation):
             row = await owned(db, BusinessAction, result['id'], actor)
             return {**value, 'content': json.dumps(await action_dto(db, actor, row), ensure_ascii=False)}
         return value
+    async def unavailable_web(error):
+        if error.failure.code != 'web_network' or error.failure.cancelled:
+            raise error
+        from app.agent.tools.web import unavailable
+        value = call.get('args', {}).get('url' if call['name'] == 'web_fetch' else 'query', '')
+        content = await unavailable(context, value, error.failure.message,
+                                    is_fetch=call['name'] == 'web_fetch', code=error.failure.code)
+        return ToolMessage(content=content, tool_call_id=call['id'], name=call['name'])
     return await execute_node(context, identity=identity, kind='tool', label=label, operation=operation,
                               outcome=outcome, encode=lambda m: {'content': m.content, 'tool_call_id': m.tool_call_id, 'name': m.name, 'status': m.status, 'id': m.id},
                               decode=lambda data: ToolMessage(**data),
                               safe_replay=call['name'] in LABELS or call['name'] == 'execute_business_action',
                               restore=restore_receipt if call['name'] == 'execute_business_action' else None,
+                              on_failure=unavailable_web if call['name'] in ('web_search', 'web_fetch') else None,
                               receipt_output=lambda result: ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=call['id'], name=call['name']))

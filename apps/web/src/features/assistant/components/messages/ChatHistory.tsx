@@ -68,6 +68,10 @@ export function ChatHistory({
     refresh: () => void
   }
 }) {
+  const visibleMessageIds = new Set(messages.map((message) => message.id))
+  const standaloneActions =
+    actionReceipts.data?.items.filter((action) => !visibleMessageIds.has(action.messageId)) ?? []
+  const coveredOrigins = new Set(standaloneActions.map((action) => action.messageId))
   return (
     <div
       className={styles['chat-scroll']}
@@ -104,40 +108,44 @@ export function ChatHistory({
             <p>从一个想法、一份材料，或手头的工作开始。</p>
           </div>
         )}
-        {actionReceipts.data?.items
-          .filter((action) => !messages.some((message) => message.id === action.messageId))
-          .map((action) => (
-            <BusinessActionCard
-              key={action.id}
-              action={action}
-              refresh={actionReceipts.refresh}
-              onContinuation={onContinuation}
-            />
-          ))}
-        {messages.map((message) => (
-          <MessageCard
-            key={message.id}
-            message={message}
-            activeJob={task?.job}
-            retryBlocked={locked || task?.blocked}
-            onRetryStart={task?.beginRetry}
-            onRetrySettled={task?.finishRetry}
-            onContextUpdate={onContextUpdate}
+        {standaloneActions.map((action) => (
+          <BusinessActionCard
+            key={action.id}
+            action={action}
+            refresh={actionReceipts.refresh}
             onContinuation={onContinuation}
-            own
-            onChange={invalidate ?? refresh}
-            onFeedback={onFeedback ?? refresh}
-            onDeliverable={locked ? undefined : onDeliverable}
-            onReply={
-              locked
-                ? undefined
-                : () => {
-                    change({ ...composer, replyTo: message.id, key: '' })
-                    textInput.current?.focus()
-                  }
-            }
           />
         ))}
+        {messages.map((message) => {
+          const hiddenActionMessageIds = new Set([...visibleMessageIds, ...coveredOrigins])
+          hiddenActionMessageIds.delete(message.id)
+          message.actions?.forEach((action) => coveredOrigins.add(action.messageId))
+          return (
+            <MessageCard
+              key={message.id}
+              message={message}
+              hiddenActionMessageIds={hiddenActionMessageIds}
+              activeJob={task?.job}
+              retryBlocked={locked || task?.blocked}
+              onRetryStart={task?.beginRetry}
+              onRetrySettled={task?.finishRetry}
+              onContextUpdate={onContextUpdate}
+              onContinuation={onContinuation}
+              own
+              onChange={invalidate ?? refresh}
+              onFeedback={onFeedback ?? refresh}
+              onDeliverable={locked ? undefined : onDeliverable}
+              onReply={
+                locked
+                  ? undefined
+                  : () => {
+                      change({ ...composer, replyTo: message.id, key: '' })
+                      textInput.current?.focus()
+                    }
+              }
+            />
+          )
+        })}
       </div>
     </div>
   )

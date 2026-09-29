@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F02-facts-retest",
+    "role": "realApiEmployee",
+    "mode": "auto",
+    "seedWork": {
+      "title": "回归044-新人培训事实覆盖",
+      "summary": "为8名新员工准备入职培训。",
+      "status": "in_progress",
+      "blocker": "名单和讲师时间待确认",
+      "nextStep": "收集名单并联系讲师",
+      "dueDate": "2026-10-09"
+    },
+    "turns": [
+      "更新“回归044-新人培训事实覆盖”：8个人的名单都确认了，但讲师时间还没定，请记成有阻碍，下一步是找讲师确认时间。"
+    ]
+  }
+]

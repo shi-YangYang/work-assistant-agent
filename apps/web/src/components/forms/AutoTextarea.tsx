@@ -30,14 +30,19 @@ export function AutoTextarea({
     const node = ref.current
     if (!node) return
     let width = node.clientWidth
+    let frame = 0
     const observer = new ResizeObserver(() => {
       if (node.clientWidth !== width) {
         width = node.clientWidth
-        resizeTextarea(node)
+        cancelAnimationFrame(frame)
+        frame = requestAnimationFrame(() => resizeTextarea(node))
       }
     })
     observer.observe(node)
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+    }
   }, [ref])
   return (
     <textarea

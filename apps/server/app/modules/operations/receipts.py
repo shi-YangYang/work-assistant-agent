@@ -9,6 +9,7 @@ from app.modules.work.models import WorkItem, WorkRevision
 from app.security.access import require as business_require, valid as business_valid
 from app.security.ownership import owned
 from app.tasks.models import Job
+from app.tasks.feedback.items import collect
 from app.tasks.serializers import job_dto
 from sqlalchemy import select
 
@@ -46,7 +47,7 @@ async def refresh_generation(db, actor, row):
 async def action_dto(db, actor, row):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
-    base = {'confirmLabel': '确认' + LABELS[row.action], 'executionMode': row.execution_mode, 'continuation': row.continuation or None, 'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key, 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
+    base = {'confirmLabel': '确认' + LABELS[row.action], 'executionMode': row.execution_mode, 'continuation': row.continuation or None, 'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key or row.result.get('originalTaskItemId'), 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
     if row.action.startswith('delete_') and row.state == 'succeeded' and row.access.get('role') == actor.role:
         return {**base, 'message': '记录已删除'}
     if row.access.get('role') != actor.role or not await business_valid(db, actor, row.access):
@@ -86,10 +87,10 @@ async def message_actions(db, actor, message):
     if message.owner_id != actor.id:
         return []
     job = await db.scalar(select(Job).where(Job.kind == 'message', Job.target_id == message.id, Job.owner_id == actor.id))
-    snapshot = (job.result if job else {}).get('taskSnapshot', {})
+    references = {item['receiptId'] for item in collect(job) if item.get('receiptId')} if job else set()
     association = BusinessAction.message_id == message.id
-    if snapshot.get('relation') == 'continue':
-        association = association | (BusinessAction.task_id == snapshot['taskId'])
+    # A continuation can carry earlier receipts, never actions added by future turns.
+    association = association | (BusinessAction.id.in_(references) & (BusinessAction.conversation_id == message.conversation_id))
     rows = (await db.scalars(select(BusinessAction).where(association, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).order_by(BusinessAction.step))).all()
     return [await action_dto(db, actor, row) for row in rows]
 

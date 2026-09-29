@@ -193,12 +193,12 @@ async def publish_summary(context, packet):
         stamps = await manifest(db, actor, current.conversation_id)
         expected = packet['sources']
         if store.invalidation_version != expected['invalidationVersion']:
-            raise InputChanged()
+            raise InputChanged(context=True)
         if store.payload.get('summaryThrough', {}).get('createdAt', '') > expected.get('through', {}).get('createdAt', ''):
-            raise InputChanged()
+            raise InputChanged(context=True)
         for identifier, stamp in expected['sources'].items():
             if identifier not in stamps or stamp['source'] != stamps[identifier]['source'] or not await valid(db, actor, stamps[identifier]['access']):
-                raise InputChanged()
+                raise InputChanged(context=True)
         dependencies = {'summaryAccess': packet.get('access', {}), 'summaryDependencies': packet.get('dependencies', {})}
         from app.security.versions import receipt_advanced_versions
         try:
@@ -208,11 +208,11 @@ async def publish_summary(context, packet):
             from app.integrations.models.transport import ProviderError
             from fastapi import HTTPException
             if isinstance(error, (ProviderError, HTTPException)):
-                raise InputChanged() from error
+                raise InputChanged(context=True) from error
             raise
         dependencies['summaryDependencies'] = {**dependencies['summaryDependencies'], 'business': rebased}
         if not await summary_dependencies_valid(db, actor, dependencies):
-            raise InputChanged()
+            raise InputChanged(context=True)
         context.read_versions.update(rebased)
         if store.payload.get('compactionId') == packet['id']:
             if store.payload.get('summaryDependencies') != dependencies['summaryDependencies']:
@@ -224,7 +224,7 @@ async def publish_summary(context, packet):
         covered = {identifier: stamps[identifier] for identifier in packet['covered'] if identifier in stamps}
         older = store.payload.get('summarySources', {})
         if any(identifier not in covered for identifier in older):
-            raise InputChanged()  # A newer summary cannot be overwritten by an older view.
+            raise InputChanged(context=True)  # A newer summary cannot be overwritten by an older view.
         # Keep identifiers outside generated prose: summarization must not lose
         # the selected object or cache its mutable business content.
         referenced = (await db.execute(select(Message.id, Message.work_reference).where(
