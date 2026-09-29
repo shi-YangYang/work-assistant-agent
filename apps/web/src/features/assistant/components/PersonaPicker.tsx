@@ -4,8 +4,16 @@ import { useEffect, useId, useRef, useState } from 'react'
 import styles from './PersonaPicker.module.css'
 
 const personas: { id: PersonaId; name: string; description: string }[] = [
-  { id: 'dabao', name: '大包人设', description: '自然幽默，接得住话，也办得好事。' },
-  { id: 'professional', name: '专业人设', description: '冷静务实，结论清楚，直接解决问题。' },
+  {
+    id: 'dabao',
+    name: 'Noria人设',
+    description: '亲切幽默，善于交流，认真办事。',
+  },
+  {
+    id: 'professional',
+    name: '专业人设',
+    description: '冷静务实，结论清晰，建议具体。',
+  },
 ]
 
 export function PersonaPicker({

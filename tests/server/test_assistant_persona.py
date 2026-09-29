@@ -174,7 +174,7 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
     other = 'professional' if persona == 'dabao' else 'dabao'
     await client.patch(path, json={'personaId': other, 'expectedRevision': conversation['revision']})
     calls = []
-    marker = '当前聊天风格是“大包人设”' if persona == 'dabao' else '当前聊天风格是“专业人设”'
+    marker = '当前聊天风格是“Noria人设”' if persona == 'dabao' else '当前聊天风格是“专业人设”'
     answer = '脑内标签页开太多了。先说最卡的一件，我们一件件拆。' if persona == 'dabao' else '先处理最卡的一件。现在是哪项任务？'
     async def response(request):
         body = json.loads(request.content)

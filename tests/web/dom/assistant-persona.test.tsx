@@ -99,9 +99,9 @@ it('supports keyboard selection, checked state, Escape, outside close and focus 
     return <PersonaPicker value={value} disabled={false} onChange={setValue} />
   }
   render(<Picker />)
-  const trigger = screen.getByRole('button', { name: '选择人设：大包人设' })
+  const trigger = screen.getByRole('button', { name: '选择人设：Noria人设' })
   fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-  const dabao = screen.getByRole('menuitemradio', { name: /大包人设/ })
+  const dabao = screen.getByRole('menuitemradio', { name: /Noria人设/ })
   const professional = screen.getByRole('menuitemradio', { name: /专业人设/ })
   expect(dabao.getAttribute('aria-checked')).toBe('true')
   expect(document.activeElement).toBe(dabao)
@@ -147,13 +147,13 @@ it('restores a confirmed choice after save failure, preserves text/files and pre
   vi.mocked(updateConversationPersona).mockReturnValue(request.promise)
   render(assistantView(vault, '/assistant/first'))
   await screen.findByRole('textbox', { name: '工作消息' })
-  choose('大包人设')
+  choose('Noria人设')
   expect(updateConversationPersona).toHaveBeenCalledWith(conversation, {
     personaId: 'dabao',
     expectedRevision: 1,
   })
   expect(
-    (screen.getByRole('button', { name: '选择人设：大包人设' }) as HTMLButtonElement).disabled,
+    (screen.getByRole('button', { name: '选择人设：Noria人设' }) as HTMLButtonElement).disabled,
   ).toBe(true)
   expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
   fireEvent.keyDown(screen.getByRole('textbox', { name: '工作消息' }), { key: 'Enter' })
@@ -175,14 +175,14 @@ it('reloads the current revision on conflict, then saves against that version', 
       <HookPage value={conversation} />
     </TestWorkspace>,
   )
-  choose('大包人设')
+  choose('Noria人设')
   await screen.findByRole('alert')
   await waitFor(() =>
     expect((screen.getByRole('button', { name: /^选择人设/ }) as HTMLButtonElement).disabled).toBe(
       false,
     ),
   )
-  choose('大包人设')
+  choose('Noria人设')
   await waitFor(() =>
     expect(updateConversationPersona).toHaveBeenLastCalledWith(
       { ...conversation, revision: 2 },
@@ -204,7 +204,7 @@ it.each(['conversation', 'account'] as const)(
       </TestWorkspace>
     )
     const mounted = render(view())
-    choose('大包人设')
+    choose('Noria人设')
     const account =
       change === 'account'
         ? { ...identity, member: { ...identity.member, id: 'another' } }
@@ -231,7 +231,7 @@ it('does not overwrite a newer record response with an older save response', asy
     </TestWorkspace>
   )
   const mounted = render(view(conversation))
-  choose('大包人设')
+  choose('Noria人设')
   mounted.rerender(view({ ...conversation, revision: 3 }))
   await act(async () => request.resolve({ ...conversation, personaId: 'dabao', revision: 2 }))
   expect(screen.getByRole('button', { name: '选择人设：专业人设' })).toBeTruthy()
@@ -296,7 +296,7 @@ it('freezes the persona before upload and reuses the same pending body after a l
   expect(
     screen.getByRole('button', { name: '原样重试，确认结果' }).getAttribute('data-expanded'),
   ).toBe('false')
-  choose('大包人设')
+  choose('Noria人设')
   expect((vault.getSnapshot()['composer:new'] as Composer).pending?.body.personaId).toBe(
     'professional',
   )
@@ -320,9 +320,9 @@ it('isolates an empty draft choice between accounts and restores a persisted ser
   const other = { ...identity, member: { ...identity.member, id: 'another' } }
   act(() => vault.resume(other))
   mounted.rerender(view(other))
-  expect(screen.getByRole('button', { name: '选择人设：大包人设' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '选择人设：Noria人设' })).toBeTruthy()
   mounted.rerender(view(other, { ...conversation, personaId: 'dabao' }))
-  expect(screen.getByRole('button', { name: '选择人设：大包人设' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '选择人设：Noria人设' })).toBeTruthy()
   expect(updateConversationPersona).not.toHaveBeenCalled()
 })
 
