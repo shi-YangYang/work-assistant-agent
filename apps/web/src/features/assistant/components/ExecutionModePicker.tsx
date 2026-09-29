@@ -1,5 +1,5 @@
 import type { ExecutionMode } from '@paa/api-contracts'
-import { Check, ChevronDown, ShieldCheck } from 'lucide-react'
+import { Check, ChevronDown, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Modal } from '@web/components/Modal'
@@ -83,7 +83,11 @@ export function ExecutionModePicker({
           }
         }}
       >
-        <ShieldCheck size={16} aria-hidden="true" />
+        {value === 'full' ? (
+          <ShieldAlert size={16} aria-hidden="true" />
+        ) : (
+          <ShieldCheck size={16} aria-hidden="true" />
+        )}
         <span>{name}</span>
         <ChevronDown size={12} aria-hidden="true" />
       </button>
@@ -131,6 +135,7 @@ export function ExecutionModePicker({
                 }}
                 type="button"
                 role="menuitemradio"
+                data-mode={mode.id}
                 aria-checked={value === mode.id}
                 onClick={() => {
                   close()

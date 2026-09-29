@@ -18,11 +18,14 @@
   background: var(--hover);
   color: var(--text);
 }
-.trigger[data-mode='full'] > span {
-  color: #c2410c;
+.trigger > span,
+.trigger > svg:first-child {
+  color: var(--positive);
 }
-:global(:root[data-theme='dark']) .trigger[data-mode='full'] > span {
-  color: #ff9569;
+.trigger[data-mode='full'] > span,
+.trigger[data-mode='full'] > svg:first-child,
+.menu button[data-mode='full'] > span {
+  color: var(--danger);
 }
 .menu {
   position: fixed;
