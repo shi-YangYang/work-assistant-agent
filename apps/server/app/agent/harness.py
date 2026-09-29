@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.history import conversation_history
 from app.agent.task_context import TASK_POLICY
+from app.agent.delivery import COMPLETION_POLICY, from_messages, take_repair
 from app.agent.middleware import ToolBoundary
 from app.agent.model import BoundedChatModel, approximate_tokens
 from app.agent.persona import persona_prompt
@@ -33,7 +34,7 @@ def build_graph(settings, checkpointer, context, model=None):
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
     from app.agent.execution_mode import mode_prompt
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -109,8 +110,20 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     messages = result.get('messages', [])
     answer = next((m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None)
-    if answer is None:
-        raise ValueError('模型未返回可用答复')
+    delivery = from_messages(messages)
+    shortcut = answer and (answer.id or '').startswith(('receipt-completion:', 'interaction-wait:'))
+    if delivery is None and not shortcut:
+        # Old checkpoints and providers returning plain text get one bounded
+        # protocol repair. This is not a universal second-pass answer review.
+        if await take_repair(context, 'protocol'):
+            instruction = '请使用 finish_task 单独交付刚才的完整答复和本轮任务摘要，不重做工具或业务操作。若上一工具参数无效，修正结构；保持真实未完成项。' + COMPLETION_POLICY
+            with tracing_context(enabled=False):
+                result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+            messages = result.get('messages', [])
+            delivery = from_messages(messages)
+    context.delivery = delivery.model_dump() if delivery else None
+    if delivery is None and answer is None:
+        raise ValueError('模型未返回有效收尾，请重试；已保存操作不会重复执行')
     async with context.sessions() as db:
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
@@ -119,7 +132,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
     context.reply_evidence = [*reference_evidence(context), *context.context_evidence, *[
         {'id': index, 'tool': message.name, 'result': message.content}
         for index, message in enumerate(messages)
-        if isinstance(message, ToolMessage) and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
+        if isinstance(message, ToolMessage) and message.name != 'finish_task' and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
     ]]
     context.reply_evidence = [{**row, 'id': index} for index, row in enumerate(context.reply_evidence)]
-    return answer.text[:16000]
+    return delivery.answer if delivery else answer.text[:16000]

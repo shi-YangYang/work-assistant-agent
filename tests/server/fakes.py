@@ -6,7 +6,6 @@ from langchain_openai import ChatOpenAI
 from pydantic import Field
 
 
-
 class ReviewedFixtureModel(ChatOpenAI):
     """Fixed benign fixtures supply a separate review response, not network IO.
 
@@ -20,12 +19,17 @@ class ReviewedFixtureModel(ChatOpenAI):
             except (ValueError, TypeError):
                 payload = {}
             if payload.get('task') == 'business_reply_review':
-                return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for row in payload['segments']]}))
+                return AIMessage(content=json.dumps({'issues': []}))
             if payload.get('proposedOperation'):
                 return AIMessage(content=json.dumps({'allowed': True, 'requireConfirmation': payload['proposedOperation']['action'] in ('propose_progress', 'propose_followup'), 'quote': payload['currentUserText'], 'reason': '受控待确认建议；自动执行与语义边界由独立用例验证'}))
             if payload.get('task') == 'report_fact_review':
                 return AIMessage(content='{"valid":true}')
-        return await super().ainvoke(input, config, stop=stop, **kwargs)
+        result = await super().ainvoke(input, config, stop=stop, **kwargs)
+        # Preserve scenario prose while supplying the current terminal protocol.
+        names = {tool.get('function', {}).get('name') for tool in kwargs.get('tools', [])}
+        if 'finish_task' in names and not result.tool_calls:
+            result = completion(result.text)
+        return result
 
 
 class ControlledModel(ReviewedFixtureModel):
@@ -70,3 +74,27 @@ class ControlledModel(ReviewedFixtureModel):
 
 def controlled_model(scenario='progress'):
     return ControlledModel(model='controlled-test', api_key='test-no-network', base_url='http://127.0.0.1:1', max_retries=0, scenario=scenario)
+
+
+def completion(answer, *, task=None, business=False, **extra):
+    return AIMessage(content='', tool_calls=[{'name': 'finish_task', 'id': 'fixture-completion',
+        'args': {'answer': answer, 'task': task or {'state': 'completed'}, 'business_requested': business, 'verification_requested': False, **extra}}])
+
+
+async def set_delivery(context, answer, *, task=None, business=False):
+    from app.modules.messages.models import Message
+    from app.modules.operations.receipts import message_actions
+    from app.tasks.lease import lease
+    async with context.sessions.begin() as db:
+        job, actor = await lease(db, context)
+        message = await db.get(Message, job.target_id)
+        cards = await message_actions(db, actor, message)
+    context.delivery = {'version': 1, 'answer': answer, 'task': task or {'state': 'completed'},
+        'business_requested': business, 'verification_requested': False,
+        'operation_ids': [card['id'] for card in cards], 'response_complete': True, 'response_issue': ''}
+
+
+def wire_completion(answer, *, task=None, business=False, **extra):
+    call = completion(answer, task=task, business=business, **extra).tool_calls[0]
+    return {'role': 'assistant', 'content': '', 'tool_calls': [{'type': 'function', 'id': call['id'],
+        'function': {'name': call['name'], 'arguments': json.dumps(call['args'], ensure_ascii=False)}}]}

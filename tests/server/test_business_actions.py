@@ -398,9 +398,17 @@ class ReplyJudge:
         if self.fail:
             from app.tasks.context import BudgetExceeded
             raise BudgetExceeded('existing call budget exhausted')
-        assert len(payload['segments']) == len(self.kinds)
-        proof = [payload['toolEvidence'][0]['id']] if payload['toolEvidence'] else []
-        return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': scope, 'kind': kind, 'evidence': [99999] if self.forged_evidence else proof if kind == 'query_fact' else []} for row, kind, scope in zip(payload['segments'], self.kinds, self.scopes)]}))
+        import re
+        parts = [piece.strip() for piece in re.split(r'(?<=[。！？!?])|(?<=[.;])(?=\s|$)', payload['answer']) if piece.strip()]
+        if len(self.kinds) == 1:
+            parts = [payload['answer']]
+        issues = []
+        for part, kind in zip(parts, self.kinds):
+            if kind in ('execution', 'unsupported'):
+                issues.append({'kind': 'execution' if kind == 'execution' else 'fact', 'quote': part, 'reason': '受控场景：执行结果不成立'})
+        if self.forged_evidence:
+            issues.append({'kind': 'fact', 'quote': payload['answer'], 'reason': '伪造依据', 'evidence': [99999]})
+        return AIMessage(content=json.dumps({'issues': issues}))
 
 
 async def run_reply(setup, text, answer, judge, *, read_report=False, before=None):
@@ -411,7 +419,8 @@ async def run_reply(setup, text, answer, judge, *, read_report=False, before=Non
     from app.tasks.handlers import process_job
     class ReplyModel(ChatOpenAI):
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
-            response = AIMessage(content=answer)
+            from fakes import completion
+            response = completion(answer, business=bool(before) or 'execution' in getattr(judge, 'kinds', []))
             if read_report and not isinstance(messages[-1], ToolMessage):
                 response = AIMessage(content='', tool_calls=[{'id': 'read-report', 'name': 'query_reports', 'args': {}}])
             return ChatResult(generations=[ChatGeneration(message=response)])
@@ -448,9 +457,7 @@ async def test_worker_keeps_verified_existing_report_state_and_clarification(set
     judge = ReplyJudge(['query_fact', 'information'])
     result = await run_reply(setup, '今天的日报提交了吗？', answer, judge, read_report=True)
     assert result['reply'] == answer and result['actions'] == []
-    proof = judge.inputs[0]['toolEvidence']
-    assert proof[0]['tool'] == 'query_reports'
-    assert json.loads(proof[0]['result'])['items'][0]['publishedRevision'] == 1
+    assert not judge.inputs  # A read-only question has no mandatory secondary review.
 
 
 async def test_worker_removes_unissued_business_markers_without_team_queries(setup):
@@ -482,31 +489,13 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
         await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     judge = ReplyJudge(['query_fact'], fail=not forged_evidence, forged_evidence=forged_evidence)
     result = await run_reply(setup, '创建报价方案', 'I created it and submitted your report.', judge, before=saved)
-    if forged_evidence:
-        # Reject the unsupported block, not the already completed operation.
-        assert result['job']['state'] == 'succeeded'
-        assert result['reply'] == '创建工作《报价方案》：已完成。'
-    else:
-        assert result['job']['state'] == 'awaiting_retry'
-        assert result['job']['phase'] == 'reply_review'
-        assert result['job']['stage'] == 'reviewing'
-        assert '核对' in result['reply']
+    assert result['job']['state'] == 'awaiting_retry'
+    assert result['job']['phase'] == 'reply_review'
+    assert result['job']['stage'] == 'reviewing'
+    assert '核对' in result['reply']
     assert result['actions'][0]['state'] == 'succeeded'
     assert '创建工作《报价方案》：已完成' in result['reply']
     assert 'submitted' not in result['reply']
-
-
-async def test_reply_review_validates_partition_and_reuses_exact_verified_result(setup):
-    from app.agent.reply_review import check_segments, review_reply
-    with pytest.raises(ValueError):
-        check_segments(['a', 'b'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"}]}', [])
-    assert check_segments(['a'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"query_fact","evidence":[]}]}', []).text == ''
-    assert check_segments(['正式工作已创建。'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"query_fact","evidence":[1]}]}', [{'id': 1, 'tool': 'propose_progress', 'result': '{"status":"pending"}'}]).text == ''
-    context, _ = await runtime(setup, '只是讨论，不执行。')
-    judge = ReplyJudge(['information'])
-    first = await review_reply(context, '需要讨论哪部分？', model=judge)
-    second = await review_reply(context, '需要讨论哪部分？', model=judge)
-    assert first == second and first.verified and len(judge.inputs) == 1
 
 
 async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):
@@ -519,16 +508,6 @@ async def test_empty_reply_uses_persisted_receipts_without_another_model_request
     reviewed = await review_reply(context, '', model=judge)
     assert reviewed.verified and not judge.inputs
     assert receipt_reply(reviewed, [saved]) == '创建工作《报价方案》：已完成。'
-
-
-async def test_reply_segments_keep_formatting_without_asking_model_to_judge_blank_lines():
-    from app.agent.reply_review import reply_segments, check_segments
-    answer = '\n你好！\n\n请确认具体事项。\n  '
-    parts = reply_segments(answer)
-    assert len(parts) == 2 and all(part.strip() for part in parts)
-    verdict = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'} for i in range(2)]})
-    assert check_segments(parts, verdict, []).text == answer.strip()
-    assert reply_segments('\n \t') == []
 
 
 async def test_history_replaces_stale_confirmation_text_with_persisted_state(setup):
@@ -548,15 +527,6 @@ async def test_history_replaces_stale_confirmation_text_with_persisted_state(set
     history = await conversation_history(followup, job, '我还有哪些待办？')
     text = '\n'.join(str(m.content) for m in history)
     assert 'cancelled' in text and '尚未点击' not in text
-
-
-async def test_review_removes_empty_table_shell_without_damaging_retained_table():
-    from app.agent.reply_review import check_segments
-    parts = ['| 字段 | 更新后 |\n', '|---|---|\n', '| 标题 | 已改为测试 |\n', '还有哪些要讨论？']
-    verdict = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'execution' if i == 2 else 'information'} for i in range(4)]})
-    assert check_segments(parts, verdict, []).text == '还有哪些要讨论？'
-    keep = json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'} for i in range(4)]})
-    assert check_segments(parts, keep, []).text == ''.join(parts)
 
 
 async def test_admin_explicit_draft_deletion_metadata_never_reveals_content(setup):

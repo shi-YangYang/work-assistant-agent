@@ -423,25 +423,14 @@ async def test_required_response_is_repaired_once_without_repeating_saved_operat
     class Judge:
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            fixed = payload['segments'][0]['text'] == '按计划推进仍在进行中。'
-            return AIMessage(content=json.dumps({'segments': [{'index': 0, 'scope_reason': '用户要求解释实际状态', 'scope': 'answer', 'kind': 'operation_explanation' if fixed else 'unsupported', 'operationFacts': [{'receiptId': payload['currentActions'][0]['id'], 'field': 'status', 'value': 'in_progress'}] if fixed else []}], 'needs_response': not fixed, 'responseReason': '' if fixed else '不能把创建工作当作工作完成', 'taskContext': {'state': 'completed' if fixed else 'blocked', 'remaining': [] if fixed else ['补充真实状态说明']}}))
+            fixed = payload['answer'] == '按计划推进仍在进行中。'
+            return AIMessage(content=json.dumps({'issues': [] if fixed else [{'kind': 'fact', 'quote': payload['answer'], 'reason': '不能把创建工作当作工作完成', 'receipt_ids': [payload['currentActions'][0]['id']]}]}))
     monkeypatch.setattr('app.agent.response_repair.repair_response', repair)
     data = await run_reply(setup, '创建一个进行中的任务并解释状态', '已经做完了。', Judge(), before=saved)
     assert len(calls) == 1 and len(data['actions']) == 1
     assert '仍在进行中' in data['reply'] and '已经做完了' not in data['reply']
     assert data['job']['taskOutcome']['state'] == 'completed'
     assert data['job']['state'] == 'succeeded' and not data['job']['incompleteTask']
-
-
-async def test_required_operation_prose_checks_each_actual_field():
-    from app.agent.reply_review import check_segments
-    card = {'id': 'saved', 'state': 'succeeded', 'details': {'status': 'in_progress', 'nextStep': '确认方案'}}
-    verdict = {'segments': [{'index': 0, 'scope_reason': '必要修改说明', 'scope': 'answer', 'kind': 'operation_explanation', 'operationFacts': [{'receiptId': 'saved', 'field': 'status', 'value': 'done'}]}]}
-    rejected = check_segments(['工作已完成。'], json.dumps(verdict), [], [card])
-    assert not rejected.text and rejected.needs_response
-    verdict['segments'][0]['operationFacts'][0]['value'] = 'in_progress'
-    kept = check_segments(['工作仍在进行中。'], json.dumps(verdict), [], [card])
-    assert kept.text == '工作仍在进行中。' and not kept.needs_response
 
 
 @pytest.mark.parametrize('state,remaining', [('completed', ['还要生成报告']), ('needs_input', []), ('needs_input', [' '])])

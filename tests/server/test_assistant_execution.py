@@ -3,6 +3,7 @@ import json
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+from fakes import completion
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.agent.completion import receipt_completion
@@ -42,7 +43,7 @@ class SingleOperation(ChatOpenAI):
     async def _agenerate(self, messages, **kwargs):
         self.calls.append(True)
         if isinstance(messages[-1], ToolMessage):
-            answer = AIMessage(content='操作之外仍需要回答的问题。')
+            answer = completion('操作之外仍需要回答的问题。', business=True)
         else:
             answer = AIMessage(content='', tool_calls=[{'name': 'execute_business_action', 'id': 'save', 'args': {'step': 1, 'action': 'create_work', 'changes': {'title': '报价方案'}}}])
         return ChatResult(generations=[ChatGeneration(message=answer)])
@@ -108,7 +109,9 @@ async def test_corrected_input_cannot_reuse_prior_completion_decision(setup):
         message.transcript_revision = 1
         message.transcript = '还需要说明报价依据'
     context.source_revision = 1
-    assert not await receipt_completion(context, returned(card))
+    from app.tasks.context import InputChanged
+    with pytest.raises(InputChanged):
+        await receipt_completion(context, returned(card))
 
 
 async def test_live_receipts_arrive_before_completion_and_revalidate_confirmation(setup):

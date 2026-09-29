@@ -111,19 +111,21 @@ def receipt_summary(cards, drafts=()):
 
 
 def receipt_reply(review, cards, drafts=(), deliverables=''):
-    """Only independently checked prose plus database-authenticated outcomes."""
+    """Delivered prose plus database-authenticated outcomes."""
     summary = receipt_summary(cards, drafts)
     parts = [review.text] if review.text else [deliverables] if deliverables and review.verified else []
     if summary:
         parts.append(summary)
     if review.verified and review.needs_action:
-        parts.append('本次请求仍有操作未完成；已保存的结果会保留，请继续说明要处理的剩余事项。')
+        parts.append('本次请求仍有操作未完成；已保存的结果会保留。')
+    if review.verified and review.needs_response:
+        parts.append('所需答复尚未完成核对，暂时无法提供完整结果。')
     if not review.verified:
         parts.append('答复说明暂未完成核对；已保存的操作结果以上方记录为准。' if cards else '答复暂未完成核对，请重试答复核对；业务操作结果会保留。')
     elif review.execution_claims and not cards and not drafts and not deliverables:
         parts.append('本次没有保存新的业务操作结果，未执行创建、修改、提交或删除。')
     elif not parts:
-        parts.append('暂时缺少足够依据回答，请补充具体事项。')
+        parts.append('本次暂未交付所需结果，请重试；已保存的操作不会重复执行。')
     return '\n\n'.join(parts)
 
 

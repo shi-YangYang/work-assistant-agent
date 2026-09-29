@@ -1,3 +1,4 @@
+from zoneinfo import ZoneInfo
 """User interruption, admission races and resource cleanup on the dedicated test DB."""
 import asyncio
 import hashlib
@@ -159,7 +160,7 @@ async def test_cancel_preserves_committed_actions_independent_report_and_context
     from app.modules.conversations.context_store import publish_summary
     context, sent = await runtime(setup, '帮我创建工作报价方案，再生成日报')
     work = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
-    report = await execute(context, step=2, action='generate_report', report_date=now().date().isoformat())
+    report = await execute(context, step=2, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert work['state'] == 'succeeded' and report['state'] == 'running'
     async with context.sessions.begin() as db:
         store = await db.get(ConversationContext, sent['conversationId'])
@@ -197,6 +198,8 @@ async def test_running_pipeline_cancels_wait_and_cannot_finish(setup, monkeypatc
             cleaned.set()
     async def harness(context, *args, **kwargs):
         if stage == 'review':
+            from fakes import set_delivery
+            await set_delivery(context, '等待核对的答案', business=True)
             return '等待核对的答案'
         if stage == 'retry_wait':
             async def transient():

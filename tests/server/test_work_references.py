@@ -131,7 +131,7 @@ async def test_latest_facts_shared_by_history_intent_review_and_metadata_only_ca
     class Reviewer:
         async def ainvoke(self, messages):
             self.payload = json.loads(messages[-1].content)
-            return AIMessage(content=json.dumps({'segments': [{'index': 0, 'scope_reason': '回答引用内容', 'scope': 'answer', 'supports': [], 'kind': 'query_fact', 'evidence': [0]}]}))
+            return AIMessage(content=json.dumps({'issues': []}))
     reviewer = Reviewer()
     context.reply_evidence = [{**reference_evidence(context)[0], 'id': 0}]
     result = await review_reply(context, '工作说明是新的工作事实。', model=reviewer)
@@ -266,6 +266,8 @@ async def test_retry_after_own_delete_recovers_reply_without_repeating_delete(se
         receipt = await execute(context, step=1, action='delete_work', target_id=work['id'], expected_revision=1)
         assert receipt['state'] == 'succeeded'
         receipts.append(receipt['id'])
+        from fakes import set_delivery
+        await set_delivery(context, '之后可以整理其他工作。', business=True)
         return '之后可以整理其他工作。'
     monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)

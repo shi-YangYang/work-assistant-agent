@@ -341,7 +341,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
             payload = json.loads(messages[-1]['content'])
             if payload.get('task') == 'business_reply_review':
                 counts['review'] += 1
-                content = json.dumps({'segments': [{'index': p['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []} for p in payload['segments']], 'taskContext': {'state': 'completed'}})
+                content = json.dumps({'issues': []})
             else:
                 counts['intent'] += 1
                 content = json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '', 'receiptOnly': False})
@@ -350,7 +350,8 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
             counts['final'] += 1
             if not recovery[0]:
                 raise ProviderError('timeout', '模型暂未响应')
-            message, finish = {'role': 'assistant', 'content': '可继续补充工作信息。'}, 'stop'
+            from fakes import wire_completion
+            message, finish = wire_completion('可继续补充工作信息。', business=True), 'tool_calls'
         else:
             counts['initial'] += 1
             message, finish = {'role': 'assistant', 'content': '', 'tool_calls': [{'id': 'create-1', 'type': 'function', 'function': {'name': 'execute_business_action', 'arguments': json.dumps({'step': 1, 'action': 'create_work', 'changes': {'title': '报价方案'}})}}]}, 'tool_calls'
@@ -556,16 +557,13 @@ async def test_invalid_review_fact_paths_retry_review_without_requesting_user_in
         calls.append(messages)
         await on_event('started')
         malformed = len(calls) == 1
-        verdict = {'segments': [{'index': 0, 'scope_reason': '解释真实修改字段', 'scope': 'answer', 'kind': 'operation_explanation', 'operationFacts': [
-            {'receiptId': saved['id'], 'field': 'details.nextStep' if malformed else 'nextStep', 'value': '发给客户'},
-            {'receiptId': saved['id'], 'field': 'changedFields', 'value': 'nextStep' if malformed else ['nextStep']},
-        ]}], 'taskContext': {'state': 'completed', 'remaining': []}}
+        verdict = {'issues': [{'kind': 'invalid_kind', 'reason': 'invalid schema'}]} if malformed else {'issues': []}
         return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     checked = await review_reply(context, '仅把下一步改为发给客户。')
     assert len(calls) == 2 and checked.verified and not checked.needs_response
-    assert checked.text == '仅把下一步改为发给客户。' and checked.task['state'] == 'completed'
-    assert '禁止 details.xxx' in calls[1][-1]['content']
+    assert checked.text == '仅把下一步改为发给客户。' and not checked.needs_action
+    assert '问题契约' in calls[1][-1]['content']
     async with context.sessions() as db:
         job = await db.get(Job, context.job_id)
         review = next(node for node in node_dtos(job) if node['kind'] == 'review')

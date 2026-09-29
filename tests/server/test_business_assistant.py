@@ -2,7 +2,7 @@
 import json
 import pytest
 from datetime import date, timedelta
-from fakes import ReviewedFixtureModel
+from fakes import ReviewedFixtureModel, completion, set_delivery
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -295,14 +295,24 @@ class MissingFollowupModel(TeamModel):
     repair_succeeds: bool = True
     correction_seen: bool = False
 
+    async def ainvoke(self, messages, *args, **kwargs):
+        try:
+            payload = json.loads(messages[-1].content)
+        except (ValueError, TypeError):
+            payload = {}
+        if payload.get('task') == 'business_reply_review':
+            issues = [] if payload['currentDrafts'] else [{'kind': 'execution', 'quote': payload['answer'], 'reason': '没有实际保存建议'}]
+            return AIMessage(content=json.dumps({'issues': issues}))
+        return await super().ainvoke(messages, *args, **kwargs)
+
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         if self.step in (3, 4):
             self.inputs.append(str([m.content for m in messages]))
-            self.correction_seen = self.correction_seen or '服务端核对：本次尚无已保存的待确认建议' in str(messages[0].content)
+            self.correction_seen = self.correction_seen or '服务端核对：原用户请求还有遗漏的操作' in str([message.content for message in messages])
             if self.step == 4 and self.repair_succeeds:
                 reply = AIMessage(content='', tool_calls=[{'id': 'repair-followup', 'name': 'propose_followup', 'args': {'title': '跟进采购报价', 'summary': '核对报价进度', 'status': 'in_progress', 'blocker': '', 'next_step': '明天询问', 'source_tokens': [self.token]}}])
             else:
-                reply = AIMessage(content='以下是为您提出的待确认建议，确认后才生效。')
+                reply = completion('以下是为您提出的待确认建议，确认后才生效。', business=True)
             self.step += 1
             return ChatResult(generations=[ChatGeneration(message=reply)])
         return await super()._agenerate(messages, stop=stop, run_manager=run_manager, **kwargs)
@@ -324,42 +334,37 @@ async def test_followup_text_promise_requires_real_draft_with_one_repair(setup, 
     if repair_succeeds:
         assert response['drafts'][0]['businessLinks'][0]['objectId'] == work.id
     else:
-        assert '尚未生成可确认的督办建议' in response['reply']
+        assert '未执行' in response['reply'] and response['job']['taskOutcome']['state'] != 'completed'
     async with sessions() as db:
         live = await db.get(Job, job.id)
-        assert live.result['followupCorrectionAttempted']
+        assert live.result['deliveryRepairs'] == ['action']
         assert not (await db.scalars(select(WorkItem).where(WorkItem.owner_id == users['admin'].id))).all()
         assert (await db.get(WorkItem, work.id)).revision == 1
 
 
 @pytest.mark.parametrize('kind', ['clarification', 'query', 'budget'])
 async def test_followup_guard_preserves_clarification_query_and_existing_budget(setup, kind):
-    from langchain.agents.middleware.types import ModelResponse
     from app.tasks.context import BudgetExceeded
-    from app.agent.middleware import ToolBoundary
+    from app.agent.delivery import assess
     from app.agent.model import reserve_call
     _, sessions, users, _ = setup
     await facts(sessions, users['employee'])
     rt, job, sent = await runtime(setup, text='团队有哪些要跟进的事项？' if kind == 'query' else '帮我跟进张晨的采购报价')
     await query_team_business.coroutine(runtime=rt)
     await find_work_items.coroutine(query='', runtime=rt)
-    answer = '有两位名叫张晨的员工：张晨（采购）、张晨（交付）。请确认你指的是哪位。' if kind == 'clarification' else '以下是待确认建议。'
-    response = ModelResponse(result=[AIMessage(content=answer)])
-    calls = []
-    request = SimpleNamespace(runtime=rt, system_message=None)
-    request.override = lambda **kwargs: request
-    async def handler(_):
-        calls.append(True)
-        await reserve_call(rt.context, 'assistant')
-        return response
+    answer = '有两位名叫张晨的员工：张晨（采购）、张晨（交付）。请确认你指的是哪位。' if kind == 'clarification' else '可以考虑先了解采购的下一步。'
+    await set_delivery(rt.context, answer)
+    class UnexpectedReview:
+        async def ainvoke(self, *args):
+            pytest.fail('Read-only discussion must not be reviewed or rewritten')
     if kind == 'budget':
         rt.context.calls = 8
         with pytest.raises(BudgetExceeded):
-            await ToolBoundary().ensure_followup_result(request, response, handler)
-        assert calls == [True] and rt.context.calls == 8
+            await reserve_call(rt.context, 'assistant')
+        assert rt.context.calls == 8
     else:
-        actual = await ToolBoundary().ensure_followup_result(request, response, handler)
-        assert actual.result[0].text == answer and calls == []
+        actual = await assess(rt.context, answer, model=UnexpectedReview())
+        assert actual.text == answer and actual.verified
     async with sessions() as db:
         assert not (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == sent['messageId']))).all()
         assert not (await db.scalars(select(WorkItem).where(WorkItem.owner_id == users['admin'].id))).all()

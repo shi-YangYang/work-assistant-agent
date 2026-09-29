@@ -5,35 +5,35 @@ from app.db.base import now
 from types import SimpleNamespace
 
 import pytest
-from app.agent.reply_review import check_segments, reply_segments
 from app.modules.operations.receipts import current_reply
 from app.modules.team.sources import citations, current_source_tokens
 from app.modules.work.models import ProgressDraft
 from app.tasks.models import Job
 from test_business_actions import ReplyJudge, create, execute, run_reply, runtime
-from test_freeform_actions import verdict
 from test_business_assistant import facts
 from app.agent.tools.team import query_team_business
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.parametrize('marker', ['[[file:attachment:1:3]]', '[[business:123456789012345678901234]]'])
-async def test_trailing_citation_stays_with_retained_or_removed_sentence(marker):
-    answer = f'原话：「周五核对范围。」 {marker}\n\n额外内容。'
-    parts = reply_segments(answer)
-    assert len(parts) == 2 and ''.join(parts) == answer
-    assert check_segments(parts, verdict(['information', 'unsupported']), []).text == answer.split('\n\n')[0]
-    assert check_segments(parts, verdict(['unsupported', 'information']), []).text == '额外内容。'
-
-
-async def test_authorized_original_source_is_fact_evidence_but_tool_error_is_not():
-    parts = ['员工原话：等待审批。[[business:original]]']
-    evidence = [{'id': 7, 'tool': 'read_team_source', 'result': json.dumps({'kind': 'business', 'objectType': 'message', 'content': {'text': '等待审批。'}})}]
-    assert check_segments(parts, verdict(['query_fact'], [7]), evidence).text == parts[0]
-    for result in ['{"error":"无权查看"}', '读取失败']:
-        evidence[0]['result'] = result
-        assert check_segments(parts, verdict(['query_fact'], [7]), evidence).text == ''
+@pytest.mark.parametrize('available', [True, False])
+async def test_worker_delivers_public_results_or_honest_limitation_without_review(setup, monkeypatch, available):
+    from fakes import set_delivery
+    news = '城市书展今日开幕，地点在城市公园。'
+    answer = news + '\n\n来源：[城市新闻](https://example.org/news)' if available else '网页暂时无法读取，未能核实今天的新闻。'
+    async def graph(context, *args, **kwargs):
+        result = {'url': 'https://example.org/news', 'text': news} if available else {'state': 'unavailable', 'message': '网页无法读取'}
+        context.reply_evidence = [{'id': 7, 'tool': 'web_fetch', 'result': json.dumps(result)}]
+        await set_delivery(context, answer, task={'goal': '查询城市新闻', 'state': 'completed' if available else 'blocked', 'remaining': [] if available else ['网页读取失败，无法核实当日新闻']})
+        return answer
+    class Judge:
+        async def ainvoke(self, messages):
+            raise AssertionError('Ordinary search must not invoke a reviewer')
+    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    result = await run_reply(setup, '联网搜索城市新闻，结果呢？', answer, Judge())
+    assert result['reply'] == answer
+    assert result['job']['taskOutcome']['state'] == ('completed' if available else 'blocked')
+    assert '请补充具体事项' not in result['reply']
 
 
 async def test_current_read_fallback_does_not_inherit_previous_turn_sources(setup):
@@ -127,45 +127,7 @@ async def test_legacy_receipt_with_newly_available_title_still_refreshes():
     assert current_reply(row, None, cards, []) == '生成报告《2026-09-28 日报》：已完成。'
 
 
-@pytest.mark.parametrize('saved', [False, True])
-async def test_required_clarification_is_an_independent_root_after_execution_prose_is_removed(saved):
-    parts = ['前项已处理。\n\n', '请选择材料汇总：\n- 第一批\n- 第二批\n\n', '确认后我会更新。']
-    evidence = [{'id': 8, 'tool': 'find_work_items', 'result': json.dumps({'items': [{'title': '材料汇总', 'summary': '第一批'}, {'title': '材料汇总', 'summary': '第二批'}]})}]
-    value = {'segments': [
-        {'index': 0, 'scope_reason': '执行声明', 'scope': 'answer', 'kind': 'execution'},
-        {'index': 1, 'scope_reason': '当前必须选择同名对象', 'scope': 'clarification', 'kind': 'query_fact', 'evidence': [8]},
-        {'index': 2, 'scope_reason': '将来执行承诺', 'scope': 'answer', 'kind': 'execution'},
-    ], 'taskContext': {'state': 'needs_input', 'remaining': ['选择材料汇总条目']}}
-    actions = [{'id': 'saved', 'state': 'succeeded', 'details': {'status': 'done'}}] if saved else []
-    checked = check_segments(parts, json.dumps(value), evidence, actions)
-    assert checked.text == parts[1].strip() and not checked.needs_response
-    # The former necessary->execution classification cannot silently drop the question.
-    value['segments'][1].update(scope='necessary', supports=[2])
-    dropped = check_segments(parts, json.dumps(value), evidence, actions)
-    assert not dropped.text and dropped.needs_response and '最小问题' in dropped.response_reason
-
-
-@pytest.mark.parametrize('kind,evidence_ids', [('query_fact', [999]), ('unsupported', [])])
-async def test_clarification_does_not_preserve_unsupported_candidates(kind, evidence_ids):
-    value = {'segments': [{'index': 0, 'scope_reason': '所需对象选择，但候选没有证据', 'scope': 'clarification', 'kind': kind, 'evidence': evidence_ids}],
-             'taskContext': {'state': 'needs_input', 'remaining': ['选择对象']}}
-    result = check_segments(['要选虚构的第一批还是第二批？'], json.dumps(value), [])
-    assert not result.text and result.needs_response
-
-
-@pytest.mark.parametrize('state', ['completed', 'needs_confirmation'])
-async def test_extra_invitation_and_existing_confirmation_do_not_require_new_input(state):
-    value = {'segments': [
-        {'index': 0, 'scope_reason': '所求分析', 'scope': 'answer', 'kind': 'information'},
-        {'index': 1, 'scope_reason': '额外邀请用户执行别的操作', 'scope': 'extra', 'kind': 'information'},
-    ], 'taskContext': {'state': state, 'remaining': []}}
-    result = check_segments(['这是分析。', '要不要继续创建三项工作？'], json.dumps(value), [])
-    assert result.text == '这是分析。' and not result.needs_response
-    value['segments'][1]['scope'] = 'clarification'
-    assert check_segments(['这是分析。', '请再打字确认。'], json.dumps(value), []).text == '这是分析。'
-
-
-async def test_filtered_required_question_is_repaired_once_without_repeating_saved_action(setup, monkeypatch):
+async def test_required_question_is_preserved_without_repair_or_repeating_saved_action(setup, monkeypatch):
     from langchain_core.messages import AIMessage
     from app.agent.tools.work import find_work_items
     clients = setup[3]
@@ -179,6 +141,8 @@ async def test_filtered_required_question_is_repaired_once_without_repeating_sav
     async def graph(context, *args, **kwargs):
         result = await find_work_items.coroutine('材料汇总', SimpleNamespace(context=context))
         context.reply_evidence.append({'id': 8, 'tool': 'find_work_items', 'result': result})
+        from fakes import set_delivery
+        await set_delivery(context, original, business=True, task={'state': 'needs_input', 'remaining': ['选择材料汇总']})
         return original
     async def repair(context, answer, reason, *, model=None):
         calls.append(reason)
@@ -186,16 +150,11 @@ async def test_filtered_required_question_is_repaired_once_without_repeating_sav
     class Judge:
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            evidence_id = next(item['id'] for item in payload['toolEvidence'] if item['tool'] == 'find_work_items')
-            if len(payload['segments']) == 1:
-                segments = [{'index': 0, 'scope_reason': '必要对象选择', 'scope': 'clarification', 'kind': 'query_fact', 'evidence': [evidence_id]}]
-            else:
-                segments = [{'index': 0, 'scope_reason': '执行声明', 'scope': 'answer', 'kind': 'execution'},
-                    {'index': 1, 'scope_reason': '依附将来执行的旧错误分类', 'scope': 'necessary', 'supports': [2], 'kind': 'query_fact', 'evidence': [evidence_id]},
-                    {'index': 2, 'scope_reason': '执行承诺', 'scope': 'answer', 'kind': 'execution'}]
-            return AIMessage(content=json.dumps({'segments': segments, 'taskContext': {'state': 'needs_input', 'remaining': ['选择材料汇总']}}))
+            return AIMessage(content=json.dumps({'issues': [
+                {'kind': 'execution', 'quote': '前项已处理。', 'reason': '执行结果由真实回执说明'},
+                {'kind': 'execution', 'quote': '确认后我会修改。', 'reason': '尚未修改'}]}))
     monkeypatch.setattr('app.agent.response_repair.repair_response', repair)
     monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
     result = await run_reply(setup, '创建前项，再修改材料汇总下一步', original, Judge(), before=before)
-    assert len(calls) == 1 and len(result['actions']) == 1
+    assert len(calls) == 0 and len(result['actions']) == 1
     assert question in result['reply'] and result['job']['taskOutcome']['state'] == 'partial'

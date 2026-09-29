@@ -49,6 +49,7 @@ class RunContext:
     own_work_searched: bool = False
     feedback_at: float = 0
     intent_model: Any = None
+    delivery: dict | None = None
     reply_evidence: list[dict] = field(default_factory=list)
     conversation_references: list | None = None
     context_sources: dict = field(default_factory=dict)

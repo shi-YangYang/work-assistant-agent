@@ -25,8 +25,6 @@ from test_company import send
 from test_model_services import create, route
 
 
-
-
 pytestmark = pytest.mark.asyncio
 
 
@@ -143,7 +141,9 @@ class GatedStream(httpx.AsyncByteStream):
         if self.tools:
             part={'choices':[{'delta':{'tool_calls':[{'index':0,'id':'call_1','function':{'name':'find_work_items','arguments':'{"query":"secret argument"}'}}]},'finish_reason':'tool_calls'}]}
         else:
-            part={'choices':[{'delta':{'content':'world'},'finish_reason':'stop'}]}
+            from fakes import wire_completion
+            call = wire_completion('Hello world')['tool_calls'][0]
+            part={'choices':[{'delta':{'tool_calls':[{'index': 0, **call}]},'finish_reason':'tool_calls'}]}
         yield ('data: '+json.dumps(part)+'\n\n').encode()
         yield b'data: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\n'
         if not self.interrupted:
@@ -151,7 +151,7 @@ class GatedStream(httpx.AsyncByteStream):
 
 
 @pytest.mark.parametrize('role,interrupted,tools', [('employee',False,False),('admin',False,False),('employee',True,False),('employee',False,True)])
-async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,monkeypatch,role,interrupted,tools):
+async def test_stage_feedback_precedes_completed_reply_and_preserves_usage(setup,monkeypatch,role,interrupted,tools):
     settings,sessions,users,c=setup
     saved=await create(c['admin'])
     assert (await c['admin'].put('/api/v1/settings/model-routing',json=route(saved))).status_code==200
@@ -162,12 +162,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
     def handler(request):
         calls.append(request)
         payload = json.loads(request.content)
-        if not payload.get('tools'):
-            # Independent presentation request is counted like every provider call.
-            verdict = json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []}]})
-            event = {'choices': [{'delta': {'content': verdict}, 'finish_reason': 'stop'}]}
-            wire = 'data: ' + json.dumps(event) + '\n\ndata: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\ndata: [DONE]\n\n'
-            return httpx.Response(200, text=wire, headers={'content-type': 'text/event-stream'})
+        assert payload.get('tools'), 'Ordinary chat must not create a second reviewer call'
         return httpx.Response(200,stream=GatedStream(seen,release,interrupted=interrupted,tools=tools and len(calls)==1))
     monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
@@ -216,7 +211,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
         assert data['job']['state']=='awaiting_input' and data['reply']=='Hello world'
         assert (await c[role].get(f"/api/v1/jobs/{job.id}/feedback")).json()['text']==''
     usage=(await c['admin'].get('/api/v1/settings/model-usage')).json()
-    expected_calls=4 if interrupted else (2 if tools else 1) + 1
+    expected_calls=4 if interrupted else (2 if tools else 1)
     if interrupted:
         assert data['job']['nodes'][0]['attempts']==4 and data['job']['nodes'][0]['retries']==3
     assert usage['summary']['calls']==expected_calls and usage['summary']['inputTokens']==0 and usage['summary']['inputKnown']==expected_calls

@@ -25,7 +25,6 @@ from test_company import send
 from test_recovery import model
 
 
-
 pytestmark = pytest.mark.asyncio
 SECRET='controlled-key-not-real'
 
@@ -225,17 +224,18 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             verdict={'allowed':True,'requireConfirmation':True,'quote':verification['currentUserText'],'reason':''}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         elif body.get('tools'):
-            message={'role':'assistant','content':reply};finish='stop'
+            from fakes import wire_completion
+            message=wire_completion(reply, task={'state': 'needs_confirmation'}, business=True);finish='tool_calls'
         else:
             # Both authorization and reply review use the frozen service.
             assert len(calls)==4 and not body.get('tools')
             review=verification
             assert review['task']=='business_reply_review'
-            assert review['segments']==[{'index':0,'text':reply}]
+            assert review['answer']==reply
             assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
             assert 'persistedOperations' not in review
             assert body['max_tokens'] == 2000
-            verdict={'segments':[{'index':0,'scope_reason':'受控范围判定','scope':'answer','kind':'information','evidence':[]}], 'taskContext': {'state': 'needs_confirmation'}}
+            verdict={'issues': []}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         if streaming:
             delta=dict(message)

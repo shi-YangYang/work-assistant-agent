@@ -1,4 +1,4 @@
-ALLOWED_TOOLS = frozenset({'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'})
+ALLOWED_TOOLS = frozenset({'finish_task', 'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'})
 
 
 TEAM_TOOL_NAMES = frozenset({'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})

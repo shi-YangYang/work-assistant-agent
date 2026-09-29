@@ -6,7 +6,6 @@ from langchain_core.messages import AIMessage
 from app.agent.intent import authorize_intent
 from app.agent.middleware import ToolBoundary
 from app.agent.operations import execute
-from app.agent.reply_review import check_segments, reply_segments
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkRevision
 from app.tasks.models import Job
@@ -14,7 +13,6 @@ from sqlalchemy import select
 from test_business_actions import Judge, create, read_work, run_reply, runtime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-
 
 
 pytestmark = pytest.mark.asyncio
@@ -48,52 +46,7 @@ async def test_business_planning_default_preserves_explicit_reasoning_and_unknow
         assert business_model_config(unknown, {}) is unknown
 
 
-def verdict(kinds, proof=()):
-    return json.dumps({'segments': [{'index': i, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': kind, 'evidence': list(proof) if kind == 'query_fact' else []} for i, kind in enumerate(kinds)]})
-
-
-async def test_numbered_list_and_its_count_are_an_atomic_review_block():
-    answer = '目前有三项：\n1. 名单已改回进行中。\n2. 脚本仍在准备。\n3. 反馈收集有阻碍。\n\n需要讨论哪部分？'
-    parts = reply_segments(answer)
-    assert len(parts) == 2
-    assert parts[0].startswith('目前有三项：\n1. ') and '3. 反馈' in parts[0]
-    removed = check_segments(parts, verdict(['execution', 'information']), [])
-    assert removed.text == '需要讨论哪部分？'
-    evidence = [{'id': 42, 'tool': 'find_work_items', 'result': '{"items":[]}'}]
-    kept = check_segments(parts, verdict(['query_fact', 'information'], [42]), evidence)
-    assert kept.text == answer
-
-
-async def test_table_introduction_and_orphan_heading_are_removed_together():
-    parts = reply_segments('本轮修改：\n\n| 字段 | 值 |\n|---|---|\n| 标题 | 测试 |\n\n可以继续补充。')
-    assert len(parts) == 2 and parts[0].startswith('本轮修改：')
-    assert check_segments(parts, verdict(['execution', 'information']), []).text == '可以继续补充。'
-    parts = reply_segments('## 修改结果\n\n已更新工作。\n\n## 建议\n\n建议先确认参与人。')
-    assert len(parts) == 4
-    assert check_segments(parts, verdict(['information', 'execution', 'information', 'information']), []).text == '## 建议\n\n建议先确认参与人。'
-
-
-@pytest.mark.parametrize('proof', [[], [999], [8]])
-async def test_invalid_query_proof_is_dropped_without_retaining_false_claim(proof):
-    evidence = [{'id': 8, 'tool': 'execute_business_action', 'result': '{"state":"pending"}'}]
-    result = check_segments(['报告已经提交。', '要查看哪一天？'], verdict(['query_fact', 'information'], proof), evidence)
-    assert result.verified and result.text == '要查看哪一天？'
-    with pytest.raises(ValueError):
-        check_segments(['a', 'b'], '{"segments":[{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"},{"index":0,"scope_reason":"controlled scope","scope":"answer","kind":"information"}]}', [])
-
-
-async def test_current_fields_can_use_saved_snapshot_but_not_pending_or_execution_claims():
-    snapshot = {'state': 'succeeded', 'objectId': 'work-a', 'objectRevision': 2, 'details': {'title': '反馈', 'status': 'blocked'}}
-    evidence = [{'id': 8, 'tool': 'execute_business_action', 'result': json.dumps(snapshot)}]
-    parts = ['当前未完成：\n1. 反馈：有阻碍。', '已帮你修改。']
-    result = check_segments(parts, verdict(['query_fact', 'execution'], [8]), evidence)
-    assert result.text == parts[0]
-    for invalid in [{**snapshot, 'state': 'pending'}, {'state': 'succeeded'}]:
-        evidence[0]['result'] = json.dumps(invalid)
-        assert check_segments(parts, verdict(['query_fact', 'execution'], [8]), evidence).text == ''
-
-
-async def test_equivalent_success_resolves_old_feedback_even_if_model_changes_step(setup):
+async def test_rejected_action_cannot_bypass_barrier_by_changing_step(setup):
     _, _, _, c = setup
     work = await create(c['employee'])
     context, sent = await runtime(setup, '完成这项工作，并修改标题', allowed=False)
@@ -102,10 +55,11 @@ async def test_equivalent_success_resolves_old_feedback_even_if_model_changes_st
     await execute(context, step=1, **args)
     await execute(context, step=2, **{**args, 'changes': {'title': '新标题'}})
     context.intent_model = Judge()
-    assert (await execute(context, step=3, **args))['state'] == 'succeeded'
+    assert (await execute(context, step=3, **args))['state'] == 'clarification'
     detail = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-    assert [item['step'] for item in detail['job']['operationFeedback']] == [2]
-    assert len(detail['actions']) == 1
+    assert detail['job']['operationFeedback']
+    assert not detail['actions']
+    assert (await c['employee'].get('/api/v1/work-items/' + work['id'])).json()['status'] == 'in_progress'
 
 
 async def test_incomplete_intent_model_response_is_not_reported_as_bad_user_fields(setup):
@@ -131,11 +85,13 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
         context.intent_model = Judge()
         if mode == 'repair' and options.get('repair_missing_action'):
             await execute(context, step=1, action='create_work', changes={'title': '只补建一次'})
+        from fakes import set_delivery
+        await set_delivery(context, '已创建工作。', business=True)
         return '已创建工作。'
     class CompletionJudge:
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            return AIMessage(content=json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'execution', 'evidence': []}], 'needs_action': not payload['currentActions']}))
+            return AIMessage(content=json.dumps({'issues': [{'kind': 'execution', 'quote': payload['answer'], 'reason': '执行说明使用真实回执'}] + ([{'kind': 'missing_action', 'reason': '用户要求创建尚未执行'}] if not payload['currentActions'] else [])}))
     async def before(context):
         context.intent_model = Judge(mode != 'rejected')
         await execute(context, step=1, action='create_work', changes={'title': '已有一次操作'})
@@ -146,7 +102,12 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
         assert calls[1] == {'repair_missing_action': True}
     assert len(data['actions']) == (1 if mode in ('repair', 'already_saved') else 0)
     if not data['actions']:
-        assert '未执行' in data['reply']
+        assert '已创建工作' not in data['reply']
+        assert data['job']['taskOutcome']['state'] != 'completed'
+        if mode == 'rejected':
+            assert data['job']['operationFeedback']
+        else:
+            assert '未执行' in data['reply']
 
 
 async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected_milestone(setup):

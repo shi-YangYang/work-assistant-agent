@@ -278,8 +278,8 @@ async def test_source_deletion_purges_inflight_document_proposals(setup, deletio
     runtime = SimpleNamespace(context=context)
     result = await read_document.coroutine(attachment_id=item['id'], start=3, runtime=runtime)
     assert '后半部分标记' in result
-    from test_business_actions import Judge
-    context.intent_model = Judge()
+    from test_assistant_write_scope import ScopeJudge
+    context.intent_model = ScopeJudge(True, preview=True)
     await propose_progress.coroutine(title='来自原文件', summary='后半部分标记', status='in_progress', blocker='', next_step='', runtime=runtime)
     before = (await c['employee'].get('/api/v1/messages/' + followup['messageId'])).json()
     assert len(before['drafts']) == 1 and before['drafts'][0]['status'] == 'pending'

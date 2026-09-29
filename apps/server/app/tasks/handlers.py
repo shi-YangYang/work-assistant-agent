@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import json
 import logging
+from dataclasses import replace
 from fastapi import HTTPException
 from app.agent.harness import invoke_harness
 from app.db.base import now
@@ -193,23 +194,25 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         answer = pending['answer']
         context.reply_evidence = pending['evidence']
         context.request_clock = pending.get('requestClock', '')
+        context.delivery = pending.get('delivery') if pending.get('deliveryVersion') == 1 else None
+        if context.delivery is None:
+            # Old cached prose must acquire the new summary without replaying writes.
+            answer = await invoke_harness(context, checkpointer, blocks, model)
     else:
         await publish(context, 'generating', force=True)
         repair_options = {'repair_missing_action': True} if live.result.get('completionRepairAttempted') else {}
         answer = await invoke_harness(context, checkpointer, blocks, model, **repair_options)
-        async with sessions.begin() as db:
-            live, _ = await lease(db, context)
-            live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
+    # Persist the upgraded completion as well as newly generated responses.
+    async with sessions.begin() as db:
+        live, _ = await lease(db, context)
+        live.result = {**live.result, 'pendingReply': {'safeReply': pending.get('safeReply', '') if pending.get('input') == review_input else '', 'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': 1, 'delivery': context.delivery}}
     from app.agent.interactions import finish_waiting
     if await finish_waiting(context, answer):
         return
-    async with sessions.begin() as db:
-        live, _ = await lease(db, context)
-        live.phase = 'reply_review'
-        update_feedback(live, 'reviewing', '')
-
-    from app.agent.reply_review import review_reply
-    review = await review_reply(context, answer, model=reply_model or model)
+    from app.agent.delivery import assess, take_repair
+    review = await assess(context, answer, model=reply_model or model)
+    if not review.verified and pending.get('safeReply'):
+        review = replace(review, text=pending['safeReply'])
     # Repair omitted steps once. Existing receipts remain authoritative;
     # the graph must skip saved steps and never confirm pending cards.
     repair = False
@@ -222,38 +225,46 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             draft = await db.scalar(select(ProgressDraft.id).where(ProgressDraft.message_id == message.id).limit(1))
             repair = not draft and all(a['state'] in ('succeeded', 'pending', 'running') for a in actions) and not live.result.get('operationFeedback') and not live.result.get('taskBarriers') and not any(item['category'] in ('missing_info', 'permission_denied', 'conflict', 'invalid_arguments') for item in live.result.get('toolOutcomes', [])) and not live.result.get('completionRepairAttempted')
             if repair:
-                live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True}
+                repair = not live.result.get('deliveryRepairs')
+            if repair:
+                live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True, 'deliveryRepairs': ['action']}
     if repair:
         await publish(context, 'generating', force=True)
         answer = await invoke_harness(context, checkpointer, blocks, model, repair_missing_action=True)
         async with sessions.begin() as db:
             live, _ = await lease(db, context)
-            live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
-            live.phase = 'reply_review'
-            update_feedback(live, 'reviewing', '')
-        review = await review_reply(context, answer, model=reply_model or model)
+            live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': 1, 'delivery': context.delivery}}
+        review = await assess(context, answer, model=reply_model or model)
     if review.verified and review.needs_response:
         async with sessions.begin() as db:
             live, _ = await lease(db, context)
             repair_text = not live.result.get('responseRepairComplete')
-        if repair_text:
+        if repair_text and await take_repair(context, 'response', resume=True):
             from app.agent.response_repair import repair_response
-            answer = await repair_response(context, answer, review.response_reason, model=model)
+            from app.tasks.retry import NodeFailed
             async with sessions.begin() as db:
                 live, _ = await lease(db, context)
-                live.result = {**live.result, 'responseRepairComplete': True, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', '')}}
-            review = await review_reply(context, answer, model=reply_model or model)
+                live.result = {**live.result, 'pendingReply': {**live.result['pendingReply'], 'safeReply': review.text}}
+            try:
+                answer = await repair_response(context, answer, review.response_reason, model=model)
+            except (NodeFailed, BudgetExceeded) as error:
+                # The issue review has already identified the safe remainder.
+                # Keep it and real receipts even when the one correction fails.
+                log.info('job=%s response_repair_incomplete', context.job_id)
+                review = replace(review, verified=False, error_code=type(error).__name__, error_message=str(error))
+            else:
+                if context.delivery:
+                    context.delivery = {**context.delivery, 'answer': answer, 'response_complete': True, 'response_issue': ''}
+                async with sessions.begin() as db:
+                    live, _ = await lease(db, context)
+                    live.result = {**live.result, 'responseRepairComplete': True, 'pendingReply': {'safeReply': review.text, 'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': 1, 'delivery': context.delivery}}
+                corrected = await assess(context, answer, model=reply_model or model)
+                review = corrected if corrected.verified else replace(corrected, text=review.text)
     async with sessions.begin() as db:
         live, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor, lock=True)
         from app.modules.operations.receipts import message_actions, receipt_reply, receipt_summary
         cards = await message_actions(db, actor, message)
-        if review.verified and review.dropped_query and not review.needs_action and not cards:
-            from dataclasses import replace
-            from app.agent.query_fallback import work_query_fallback
-            fallback = await work_query_fallback(db, actor, context)
-            if fallback:
-                review = replace(review, text='\n\n'.join(part for part in (fallback, review.text) if part))
         from app.modules.work.draft_receipts import message_drafts
         drafts = await message_drafts(db, actor, message, live)
         for draft in drafts:
@@ -316,7 +327,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         else:
             live.result = {**live.result, 'replyReviewError': review.error_code or 'UnverifiedReply'}
             live.state, live.phase = 'awaiting_retry', 'reply_review'
-            live.error = '答复核对暂时失败。可重试核对，已保存的业务操作不会重复执行。'
+            live.error = review.error_message or '答复核对暂时失败。可重试核对，已保存的业务操作不会重复执行。'
         if review.verified:
             from app.modules.conversations.context_store import references
             await db.flush()

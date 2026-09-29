@@ -17,7 +17,6 @@ from test_business_actions import create, finish, runtime
 from test_report_reliability import CONTENT, ReportModel, prepared
 from types import SimpleNamespace
 from app.agent.query_fallback import work_query_fallback
-from app.agent.reply_review import check_segments
 from app.agent.tools.work import find_work_items
 from app.agent.tools.actions import query_reports
 from app.modules.work.models import WorkItem
@@ -94,10 +93,6 @@ async def test_dropped_query_uses_actual_rows_not_rejected_prose(setup):
     result = await find_work_items.coroutine('', SimpleNamespace(context=context), status='blocked')
     evidence = [{'id': 2, 'tool': 'find_work_items', 'result': result}]
     context.reply_evidence = evidence
-    parts = ['编造的查询结论。', '未做任何修改。']
-    verdict = json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'unsupported'}, {'index': 1, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information'}]})
-    reviewed = check_segments(parts, verdict, evidence)
-    assert reviewed.verified and reviewed.dropped_query and reviewed.text == parts[1]
     async with sessions() as db:
         fallback = await work_query_fallback(db, users['employee'], context)
         assert '客户回访' in fallback and '等待验收' in fallback
