@@ -276,6 +276,20 @@
   border: 1px solid #ffffff1a;
   pointer-events: none;
 }
+.book-login .cover-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.book-login .cover-logo {
+  display: block;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 50%;
+  background: #fff;
+}
 .book-login .cover-edition {
   font-size: 8px;
   letter-spacing: 3px;
@@ -287,7 +301,7 @@
     'Times New Roman',
     serif;
   letter-spacing: -2.5px;
-  margin-top: 65px;
+  margin-top: 40px;
   text-shadow: 0 1px #0b0b0b99;
 }
 .book-login .cover-title em {
@@ -462,9 +476,9 @@
   height: 66px;
   margin: 0 56px;
   border-top: 1px solid var(--line);
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 22px;
   font-size: 8px;
   letter-spacing: 1.8px;
@@ -472,6 +486,7 @@
   flex-shrink: 0;
 }
 .book-login .stage-indicator {
+  justify-self: center;
   display: flex;
   align-items: center;
   gap: 15px;
@@ -487,6 +502,7 @@
   color: var(--text);
 }
 .book-login .project-label {
+  justify-self: end;
   font-size: 8px;
 }
 .book-login[data-open='true'] .book {
@@ -533,7 +549,7 @@
     padding-top: 60px;
   }
   .book-login .cover-title {
-    margin-top: 78px;
+    margin-top: 54px;
   }
 }
 @media (max-width: 1000px) {
@@ -585,7 +601,7 @@
     height: 560px;
   }
   .book-login .cover-title {
-    margin-top: 48px;
+    margin-top: 30px;
     font-size: 54px;
   }
   .book-login .cover-front {
@@ -691,7 +707,7 @@
   }
   .book-login .cover-title {
     font-size: 55px;
-    margin-top: 65px;
+    margin-top: 40px;
   }
   .book-login .cover-back {
     padding-left: 30px;
@@ -726,11 +742,11 @@
   .book-login .site-footer {
     height: 58px;
     margin: 0 24px;
-    justify-content: space-between;
+    grid-template-columns: 1fr;
     font-size: 6px;
     letter-spacing: 0.7px;
   }
-  .book-login .project-label {
+  .book-login .site-footer > span {
     display: none;
   }
   .book-login .stage-indicator {
@@ -896,8 +912,12 @@
     padding: 30px 28px 22px;
   }
   .book-login .cover-title {
-    margin-top: 18px;
+    margin-top: 12px;
     font-size: 40px;
+  }
+  .book-login .cover-logo {
+    width: 32px;
+    height: 32px;
   }
   .book-login .cover-rule,
   .book-login .cover-subtitle {

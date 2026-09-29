@@ -65,12 +65,6 @@ export function Login({
         if (touched[field])
           setErrors((current) => ({ ...current, [field]: validate(field, value) }))
       },
-      onBlur: () => {
-        setTouched((current) => ({ ...current, [field]: true }))
-        setErrors((current) =>
-          current[field] ? current : { ...current, [field]: validate(field, values[field]) },
-        )
-      },
     }
   }
 

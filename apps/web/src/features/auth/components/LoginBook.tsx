@@ -1,3 +1,4 @@
+import brandMark from '@paa/ui-web/mark.png'
 import styles from './LoginBook.module.css'
 import { useBookOpening } from '@web/features/auth/hooks/useBookOpening'
 import type { ReactNode } from 'react'
@@ -95,7 +96,10 @@ export function LoginBook({
                 onClick={() => open()}
               >
                 <span className={styles['cover-border']} aria-hidden="true" />
-                <span className={styles['cover-edition']}>YOUR PERSONAL ARK</span>
+                <span className={styles['cover-brand']}>
+                  <img src={brandMark} className={styles['cover-logo']} alt="" aria-hidden="true" />
+                  <span className={styles['cover-edition']}>YOUR PERSONAL ARK</span>
+                </span>
                 <span className={styles['cover-title']}>
                   A little ark
                   <br />

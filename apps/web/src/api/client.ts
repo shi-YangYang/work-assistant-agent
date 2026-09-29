@@ -58,7 +58,8 @@ export class ApiError extends Error {
 export const cancelledRequest = () => new ApiError(0, 'cancelled', '', 'cancelled')
 
 export const isCancelled = (error: unknown) =>
-  error instanceof ApiError && error.category === 'cancelled'
+  (error instanceof ApiError && error.category === 'cancelled') ||
+  (error instanceof DOMException && error.name === 'AbortError')
 
 export const requestBudget = (path: string) =>
   path === '/uploads' || path.startsWith('/settings/voiceprints/')

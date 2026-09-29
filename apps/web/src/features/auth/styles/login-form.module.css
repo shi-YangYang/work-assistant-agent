@@ -101,14 +101,16 @@
 }
 .book-form .book-form__password input,
 .book-form .book-form__password input[aria-invalid='true'] {
-  padding-right: 47px;
+  padding-right: 56px;
 }
 .book-form .book-form__visibility {
   position: absolute;
-  right: 0;
-  top: 18px;
-  width: 43px;
-  height: 42px;
+  right: 8px;
+  top: 22px;
+  width: 40px;
+  height: 32px;
+  display: flex;
+  align-items: center;
   min-height: 0;
   padding: 0;
   border: 0;
@@ -117,7 +119,7 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 400;
-  justify-content: flex-end;
+  justify-content: center;
 }
 .book-form .book-form__visibility:hover {
   color: var(--accent);
