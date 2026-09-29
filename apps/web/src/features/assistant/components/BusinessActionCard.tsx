@@ -164,6 +164,11 @@ export function BusinessActionCard({
         </p>
       )}
       <div className={`${layoutStyles['card-actions']} ${styles['slot-card-actions']}`}>
+        {current.state === 'running' && (
+          <button className={controlsStyles['text-button']} onClick={refresh}>
+            刷新状态
+          </button>
+        )}
         {current.objectId && (
           <Link
             className={`${controlsStyles['text-button']}`}

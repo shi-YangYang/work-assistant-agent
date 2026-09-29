@@ -18,7 +18,7 @@ export function WorkReferencePicker({
   onSelect: (work: Work) => void
 }) {
   const [query, setQuery] = useState('')
-  const list = usePagedResource<Work>(referenceWorksPath(query), 'updatedAt', 30000)
+  const list = usePagedResource<Work>(referenceWorksPath(query), 'updatedAt')
   return (
     <Modal title="引用工作" className={styles.picker} onClose={onClose}>
       <label className={styles.search}>

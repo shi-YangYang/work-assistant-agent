@@ -25,12 +25,20 @@ type Snapshot = {
   error: Error | string
 }
 
-export function useAssistantTask(conversationId: string | undefined, messages: WorkMessage[]) {
+export function useAssistantTask(
+  conversationId: string | undefined,
+  messages: WorkMessage[],
+  onSync?: () => void,
+) {
   const { identity } = useWorkspace()
   const owner = identityScope(identity)
   const generation = epoch
   const scope = `${owner}:${generation}:${conversationId ?? 'new'}`
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const syncRef = useRef(onSync)
+  useEffect(() => {
+    syncRef.current = onSync
+  }, [onSync])
   const committed = useRef<{
     scope: string
     conversationId?: string
@@ -130,7 +138,10 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
   }, [restore, refresh, owner, conversationId, historyActivity])
   const current = snapshot?.scope === scope ? snapshot : null
   const sourceJob = current?.job ?? null
-  const live = useJobFeedback(sourceJob, true, refresh)
+  const live = useJobFeedback(sourceJob, true, () => {
+    void refresh()
+    syncRef.current?.()
+  })
   const job = useMemo(
     () =>
       sourceJob && live.feedback
@@ -226,6 +237,9 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
     beginRetry,
     finishRetry,
     interrupt,
-    refresh,
+    refresh: async () => {
+      await Promise.all([refresh(), live.reconnect()])
+      syncRef.current?.()
+    },
   }
 }

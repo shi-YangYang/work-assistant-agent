@@ -72,17 +72,16 @@ export function ConversationChat({
   const { data, error, refresh, loadMore, loading } = usePagedResource<WorkMessage>(
     conversationMessagesPath(conversationId),
     'createdAt',
-    2000,
   )
   const messages = useMemo(
     () => [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [data],
   )
-  const task = useAssistantTask(conversationId, messages)
-  const actionReceipts = useResource<{ items: BusinessAction[] }>(
-    orphanActionsPath(conversationId),
-    3000,
-  )
+  const actionReceipts = useResource<{ items: BusinessAction[] }>(orphanActionsPath(conversationId))
+  const task = useAssistantTask(conversationId, messages, () => {
+    void refresh()
+    actionReceipts.refresh()
+  })
   const incomingQuestions = useMemo(
     () => [
       ...messages.flatMap((message) =>
@@ -345,6 +344,7 @@ export function ConversationChat({
           if (continuation) task.accepted(continuation)
           else void task.refresh()
           questions.refresh()
+          actionReceipts.refresh()
           void refresh()
         }}
         scroller={scroller}

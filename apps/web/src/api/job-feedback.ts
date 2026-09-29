@@ -73,90 +73,83 @@ export const stageNames: Record<string, string> = {
   complete: '已完成',
 }
 
+export const feedbackDisconnected = '连接已断开，任务可能仍在后台处理。'
+
 function connectJobFeedback(
-  jobId: string | null,
-  state: string | undefined,
+  jobId: string,
   attempt: number,
   fence: number,
   receiveValue: (value: JobFeedback | null) => void,
   setError: (message: string) => void,
   refresh: () => void,
 ) {
-  if (!jobId || state === 'succeeded' || state === 'awaiting_input' || state === 'cancelled') return
   let closed = false
-  let polling = false
   let completed = false
+  let recovering = false
   let retryAt = 0
+  let previousStage: string | undefined
   let source: EventSource | undefined
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const controller = new AbortController()
+  let request: AbortController | undefined
+  const closeSource = () => {
+    source?.close()
+    source = undefined
+  }
   const receive = (incoming: JobFeedback) => {
-    if (closed || completed || incoming.attempt < attempt || incoming.fence < fence) return
+    if (
+      closed ||
+      completed ||
+      incoming.jobId !== jobId ||
+      incoming.attempt < attempt ||
+      incoming.fence < fence
+    )
+      return
+    const stageChanged = previousStage !== undefined && previousStage !== incoming.stage
+    previousStage = incoming.stage
     receiveValue(incoming)
     setError('')
     if (terminalJob(incoming.state)) {
       completed = true
-      source?.close()
-      clearTimeout(timer)
+      closeSource()
+      refresh()
+    } else if (stageChanged) {
+      // Pull complete transcripts/attachments on stage changes, not on each token.
       refresh()
     }
   }
   const stop = (message: string, status?: number) => {
     if (closed) return
     closed = true
-    controller.abort()
-    source?.close()
-    clearTimeout(timer)
+    request?.abort()
+    closeSource()
     receiveValue(null)
     setError(message)
     if (status === 401) expireSession()
     else if (status === 403 || status === 404) refresh()
   }
-  const poll = async () => {
-    if (closed || polling || completed || document.hidden) return
-    const remaining = retryAt - Date.now()
-    if (remaining > 0) {
-      clearTimeout(timer)
-      timer = setTimeout(poll, remaining)
+  const disconnect = () => {
+    if (closed || completed) return
+    request?.abort()
+    closeSource()
+    setError(feedbackDisconnected)
+  }
+  const connect = () => {
+    if (closed || completed || source) return
+    if (navigator.onLine === false) {
+      setError(feedbackDisconnected)
       return
     }
-    clearTimeout(timer)
-    polling = true
-    try {
-      const incoming = await api<JobFeedback>(`/jobs/${jobId}/feedback`, {
-        signal: controller.signal,
-      })
-      if (closed) return
-      retryAt = 0
-      receive(incoming)
-      if (!terminalJob(incoming.state)) timer = setTimeout(poll, 5000)
-    } catch (failure) {
-      if (closed || isCancelled(failure)) return
-      if (failure instanceof ApiError && [401, 403, 404].includes(failure.status)) {
-        stop(failure.message, failure.status)
-        return
-      }
-      setError('连接中断，正在恢复处理状态…')
-      retryAt =
-        failure instanceof ApiError && (failure.status === 429 || failure.retryAfter)
-          ? failure.retryAt || Date.now() + 5000
-          : 0
-      timer = setTimeout(poll, retryAt ? Math.max(0, retryAt - Date.now()) : 5000)
-    } finally {
-      polling = false
-    }
-  }
-  if (state && terminalJob(state)) void poll()
-  else {
-    source = new EventSource(`/api/v1/jobs/${jobId}/events`)
-    source.addEventListener('snapshot', (event) => {
+    const opened = new EventSource(`/api/v1/jobs/${jobId}/events`)
+    source = opened
+    opened.addEventListener('snapshot', (event) => {
+      if (source !== opened || closed || completed) return
       try {
         receive(JSON.parse((event as MessageEvent).data) as JobFeedback)
       } catch {
-        setError('实时状态读取失败，正在恢复…')
+        disconnect()
       }
     })
-    source.addEventListener('unavailable', (event) => {
+    opened.addEventListener('unavailable', (event) => {
+      if (source !== opened || closed || completed) return
       try {
         const failure = JSON.parse((event as MessageEvent).data) as { status: number }
         stop(
@@ -164,37 +157,57 @@ function connectJobFeedback(
           failure.status,
         )
       } catch {
-        source?.close()
-        void poll()
+        disconnect()
       }
     })
-    source.onopen = () => {
-      if (!closed) {
-        setError('')
-        clearTimeout(timer)
+    opened.onopen = () => {
+      if (source === opened && !closed && !completed) setError('')
+    }
+    // Explicitly close to suppress EventSource's built-in automatic reconnect.
+    opened.onerror = () => {
+      if (source === opened) disconnect()
+    }
+  }
+  const recover = async () => {
+    if (closed || completed || recovering || source || navigator.onLine === false) return
+    if (Date.now() < retryAt) return
+    recovering = true
+    const controller = new AbortController()
+    request = controller
+    try {
+      const incoming = await api<JobFeedback>(`/jobs/${jobId}/feedback`, {
+        signal: controller.signal,
+      })
+      if (closed || controller.signal.aborted) return
+      retryAt = 0
+      receive(incoming)
+      if (!terminalJob(incoming.state)) connect()
+    } catch (failure) {
+      if (closed || controller.signal.aborted || isCancelled(failure)) return
+      if (failure instanceof ApiError && [401, 403, 404].includes(failure.status)) {
+        stop(failure.message, failure.status)
+        return
       }
-    }
-    source.onerror = () => {
-      if (closed || completed) return
-      source?.close()
-      source = undefined
-      setError(navigator.onLine ? '实时连接中断，正在恢复…' : '网络已断开，联网后恢复处理状态。')
-      clearTimeout(timer)
-      timer = setTimeout(poll, 1000)
+      retryAt = failure instanceof ApiError ? failure.retryAt : 0
+      setError(retryAt ? (failure as ApiError).message : feedbackDisconnected)
+    } finally {
+      if (request === controller) request = undefined
+      recovering = false
     }
   }
-  const recover = () => {
-    if (!document.hidden && !source) void poll()
-  }
-  window.addEventListener('online', recover)
-  document.addEventListener('visibilitychange', recover)
-  return () => {
-    window.removeEventListener('online', recover)
-    document.removeEventListener('visibilitychange', recover)
-    closed = true
-    controller.abort()
-    source?.close()
-    clearTimeout(timer)
+  const online = () => void recover()
+  window.addEventListener('online', online)
+  window.addEventListener('offline', disconnect)
+  connect()
+  return {
+    recover,
+    dispose: () => {
+      window.removeEventListener('online', online)
+      window.removeEventListener('offline', disconnect)
+      closed = true
+      request?.abort()
+      closeSource()
+    },
   }
 }
 
@@ -212,10 +225,11 @@ type FeedbackConnection = {
   error: string
   listeners: Set<FeedbackListener>
   dispose?: () => void
+  recover?: () => Promise<void>
 }
 const connections = new Map<string, FeedbackConnection>()
 
-// Message cards and the composer share one connection, including fallback polling.
+// Message cards and the composer share one stream and explicit recovery request.
 export function subscribeJobFeedback(
   jobId: string | null,
   state: string | undefined,
@@ -225,10 +239,19 @@ export function subscribeJobFeedback(
   error: FeedbackListener['error'],
   refresh: FeedbackListener['refresh'],
 ) {
-  if (!jobId || ['succeeded', 'awaiting_input', 'cancelled'].includes(state ?? '')) return
+  if (!jobId) return
   const generation = epoch
   const key = `${generation}:${jobId}`
   let connection = connections.get(key)
+  if (state && terminalJob(state)) {
+    if (connection && attempt >= connection.attempt && fence >= connection.fence) {
+      connection.dispose?.()
+      connection.error = ''
+      connection.listeners.forEach((item) => item.error(''))
+    }
+    error('')
+    return
+  }
   const listener = { attempt, fence, receive, error, refresh }
   const restart = !connection || attempt > connection.attempt || fence > connection.fence
   if (!connection) {
@@ -242,9 +265,8 @@ export function subscribeJobFeedback(
     shared.attempt = attempt
     shared.fence = fence
     shared.value = null
-    shared.dispose = connectJobFeedback(
+    const transport = connectJobFeedback(
       jobId,
-      state,
       attempt,
       fence,
       (incoming) => {
@@ -266,6 +288,8 @@ export function subscribeJobFeedback(
         if (epoch === generation) shared.listeners.forEach((item) => item.refresh())
       },
     )
+    shared.dispose = transport.dispose
+    shared.recover = transport.recover
   }
   if (shared.value && shared.value.attempt >= attempt && shared.value.fence >= fence)
     receive(shared.value)
@@ -277,4 +301,8 @@ export function subscribeJobFeedback(
       if (connections.get(key) === shared) connections.delete(key)
     }
   }
+}
+
+export function reconnectJobFeedback(jobId: string | null) {
+  return jobId ? connections.get(`${epoch}:${jobId}`)?.recover?.() : undefined
 }

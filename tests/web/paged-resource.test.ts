@@ -162,3 +162,26 @@ describe('loaded page refresh', () => {
     expect(current.getSnapshot().data?.items).toEqual([row(9)])
   })
 })
+
+it('coalesces completion invalidations during an in-flight read into one fresh read', async () => {
+  let resolve!: (value: Page<Row>) => void
+  const read = vi
+    .fn()
+    .mockReturnValueOnce(
+      new Promise<Page<Row>>((done) => {
+        resolve = done
+      }),
+    )
+    .mockResolvedValue({ items: [row(2)], nextCursor: null })
+  const resource = new PagedResource<Row>('/messages', 'createdAt', read)
+  const initial = resource.refresh()
+  resource.refresh()
+  resource.refresh()
+  expect(read).toHaveBeenCalledTimes(1)
+  resolve({ items: [row(1)], nextCursor: null })
+  await initial
+  await Promise.resolve()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(resource.getSnapshot().data?.items).toEqual([row(2)])
+  resource.dispose()
+})

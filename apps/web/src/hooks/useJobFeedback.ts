@@ -1,5 +1,10 @@
 import type { Job, JobFeedback } from '@paa/api-contracts'
-import { acceptFeedback, subscribeJobFeedback, visibleFeedback } from '@web/api/job-feedback'
+import {
+  acceptFeedback,
+  reconnectJobFeedback,
+  subscribeJobFeedback,
+  visibleFeedback,
+} from '@web/api/job-feedback'
 import { epoch } from '@web/api/client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
@@ -42,7 +47,16 @@ export function useJobFeedback(job: Job | null, enabled: boolean, refresh: () =>
                   )
                 : null,
           })),
-        (message) => setFailure(jobId ? { generation, jobId, message } : null),
+        (message) =>
+          setFailure((previous) =>
+            previous?.generation === generation &&
+            previous.jobId === jobId &&
+            previous.message === message
+              ? previous
+              : jobId
+                ? { generation, jobId, message }
+                : null,
+          ),
         () => refreshRef.current(),
       ),
     [jobId, attempt, fence, state, generation],
@@ -54,9 +68,10 @@ export function useJobFeedback(job: Job | null, enabled: boolean, refresh: () =>
   )
   return {
     feedback,
+    reconnect: () => reconnectJobFeedback(jobId),
     error:
       job &&
-      !['succeeded', 'awaiting_input', 'cancelled'].includes(job.state) &&
+      ['queued', 'running'].includes(feedback?.state ?? job.state) &&
       failure?.generation === generation &&
       failure.jobId === job.id
         ? failure.message

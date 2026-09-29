@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 import time
+from itertools import count
 from .feedback_state import update_feedback
 from datetime import timedelta
 from fastapi import HTTPException
@@ -85,7 +86,9 @@ async def snapshot(sessions, token_hash, job_id):
 
 async def events(sessions, token_hash, job_id):
     previous = None
-    for index in range(120):  # Browser reconnects read-only; no indefinitely held request.
+    # Each snapshot releases its connection before yielding or waiting. Keep the
+    # stream until completion/disconnect instead of forcing browser reconnects.
+    for index in count():
         try:
             value = await snapshot(sessions, token_hash, job_id)
         except HTTPException as error:

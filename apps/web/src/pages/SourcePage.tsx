@@ -11,7 +11,7 @@ import { useLocation, useParams } from 'react-router'
 export function SourcePage() {
   const { id } = useParams()
   const { identity } = useWorkspace()
-  const { data, error, refresh } = useResource<WorkMessage>(messagePath(id), 2000)
+  const { data, error, refresh } = useResource<WorkMessage>(messagePath(id))
   const location = useLocation()
   const context = detailReturn(location.pathname, location.state)
   return (

@@ -36,13 +36,13 @@ it('shows an ordinary error without diagnostic controls by default, including ou
   }
 })
 
-it('keeps diagnostic details and feedback available when the assistant page enables them', () => {
+it('shows only retry and feedback actions without a visible request ID or copy control', () => {
   const error = new ApiError(500, 'unavailable', '服务暂时不可用', 'server', 'request-123')
-  const html = render(error, true)
-  expect(html).toContain('请求编号：request-123')
-  expect(html).toContain('复制诊断摘要')
+  const html = render(error, true, () => undefined)
+  expect(html).toContain('重试')
+  expect(html).not.toMatch(/请求编号|request-123|复制诊断摘要/)
   expect(html).toContain('href="/settings/support"')
-  expect(render('发送失败，请重试。', true)).toContain('复制诊断摘要')
+  expect(render('发送失败，请重试。', true)).toContain('问题反馈')
 })
 
 it('preserves retry limits and permission/cancellation handling in both display modes', () => {

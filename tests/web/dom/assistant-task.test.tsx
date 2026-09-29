@@ -424,3 +424,57 @@ it('adopts the newer context when another tab finishes a subsequent job before a
   await act(async () => window.dispatchEvent(new Event('online')))
   await screen.findByRole('button', { name: '上下文使用情况：约 30%' })
 })
+
+it('stays quiet while idle, then refreshes the final reply from SSE without polling', async () => {
+  history = [message(running)]
+  vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: running })
+  view()
+  await screen.findByText('原消息')
+  await screen.findByRole('button', { name: '中断' })
+  await waitFor(() => expect(sources).toHaveLength(1))
+  vi.useFakeTimers()
+  try {
+    const calls = vi.mocked(fetch).mock.calls.length
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000)
+    })
+    expect(fetch).toHaveBeenCalledTimes(calls)
+    history = [{ ...message({ ...running, state: 'succeeded' }), reply: '任务已经处理完成' }]
+    vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: null })
+    await act(async () => {
+      sources[0].dispatchEvent(
+        new MessageEvent('snapshot', {
+          data: JSON.stringify(feedback({ seq: 9, state: 'succeeded', stage: 'complete' })),
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('任务已经处理完成')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '发送' })).toBeTruthy()
+    const completedCalls = vi.mocked(fetch).mock.calls.length
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000)
+    })
+    expect(fetch).toHaveBeenCalledTimes(completedCalls)
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(retryJob).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('preserves an uncertain send across offline/online without automatically posting again', async () => {
+  vi.mocked(sendMessage).mockRejectedValueOnce(new Error('连接中断'))
+  view()
+  await screen.findByRole('button', { name: '发送' })
+  type('断网时的原消息')
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  await screen.findByRole('button', { name: '原样重试，确认结果' })
+  await act(async () => {
+    window.dispatchEvent(new Event('offline'))
+    window.dispatchEvent(new Event('online'))
+  })
+  expect(sendMessage).toHaveBeenCalledTimes(1)
+  expect(retryJob).not.toHaveBeenCalled()
+  expect(input().value).toBe('断网时的原消息')
+})

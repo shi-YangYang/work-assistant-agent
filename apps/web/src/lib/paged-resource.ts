@@ -13,6 +13,7 @@ export class PagedResource<T extends { id: string }> {
   private through: Boundary | null = null
   private retryAt = 0
   private unavailable = false
+  private refreshPending = false
   private controller: AbortController | null = null
   private listeners = new Set<() => void>()
 
@@ -34,9 +35,16 @@ export class PagedResource<T extends { id: string }> {
   private boundary(item: T): Boundary {
     return [String(item[this.order]), item.id]
   }
-  refresh = () => this.load(false)
+  refresh = async () => {
+    if (this.controller) {
+      this.refreshPending = true
+      return
+    }
+    return this.load(false)
+  }
   loadMore = () => this.load(true)
   dispose = () => {
+    this.refreshPending = false
     this.controller?.abort()
     this.controller = null
   }
@@ -100,7 +108,13 @@ export class PagedResource<T extends { id: string }> {
         loading: false,
       })
     } finally {
-      if (this.controller === controller) this.controller = null
+      if (this.controller === controller) {
+        this.controller = null
+        if (this.refreshPending) {
+          this.refreshPending = false
+          void this.load(false)
+        }
+      }
     }
   }
 }

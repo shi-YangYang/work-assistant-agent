@@ -23,7 +23,6 @@ export function useAssistantInteraction(
   const scope = `${identityScope(identity)}:${generation}:${conversationId ?? 'new'}`
   const resource = useResource<{ items: AssistantInteraction[] }>(
     conversationInteractionsPath(conversationId),
-    2000,
   )
   const committed = useRef<object | null>(null)
   useLayoutEffect(() => {

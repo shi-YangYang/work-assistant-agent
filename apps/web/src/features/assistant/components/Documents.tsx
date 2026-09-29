@@ -69,6 +69,11 @@ export function DocumentCard({
           <Download size={14} />
           下载原文件
         </a>
+        {['pending', 'processing'].includes(extraction?.status ?? '') && (
+          <button className={controlsStyles['text-button']} onClick={refresh}>
+            刷新状态
+          </button>
+        )}
         {own && extraction?.status === 'failed' && (
           <BusyButton
             busy={busy}
@@ -127,7 +132,6 @@ function DocumentPreview({
   const start = starts[starts.length - 1]
   const { data, error, refresh } = useResource<ExtractionPage>(
     documentExtractionPath(attachmentId, start, revision),
-    2000,
   )
   return (
     <Modal title={name} onClose={onClose}>

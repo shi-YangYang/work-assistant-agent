@@ -30,13 +30,15 @@ async def get_job(identifier: str, actor=AUTH, db=DB):
 
 
 @router.get('/api/v1/jobs/{identifier}/feedback')
-async def job_feedback(identifier: str, request: Request, actor=AUTH, sessions=SESSIONS):
+async def job_feedback(identifier: str, request: Request, sessions=SESSIONS):
     from app.tasks.feedback import snapshot
+    # snapshot authenticates and checks ownership in its own short transaction.
+    # Do not hold an AUTH connection while borrowing another from the same pool.
     return await snapshot(sessions, hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest(), identifier)
 
 
 @router.get('/api/v1/jobs/{identifier}/events')
-async def job_events(identifier: str, request: Request, actor=AUTH, settings=SETTINGS, sessions=SESSIONS):
+async def job_events(identifier: str, request: Request, settings=SETTINGS, sessions=SESSIONS):
     from app.tasks.feedback import snapshot, events
     if request.headers.get('origin') not in (None, settings.web_origin) or request.headers.get('sec-fetch-site') == 'cross-site':
         problem(403, '请求来源不被允许')

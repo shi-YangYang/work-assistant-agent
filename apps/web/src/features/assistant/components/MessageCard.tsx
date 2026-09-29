@@ -239,13 +239,8 @@ export function MessageCard({
                 <p>{item.message}</p>
               </div>
             ))}
-          {live.error && !replacing && (
-            <p
-              className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}
-              role="status"
-            >
-              {live.error}
-            </p>
+          {live.error && !replacing && activeJob?.id !== job?.id && (
+            <ErrorNotice retry={() => void live.reconnect()}>{live.error}</ErrorNotice>
           )}
           {(!message.reply || replacing) &&
             !failed &&

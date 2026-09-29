@@ -4,7 +4,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 export function usePagedResource<T extends { id: string }>(
   path: string | null,
   order: keyof T,
-  interval: number,
+  interval = 0,
 ) {
   const resource = useMemo(() => new PagedResource<T>(path, order), [path, order])
   const snapshot = useSyncExternalStore(resource.subscribe, resource.getSnapshot)
@@ -18,7 +18,7 @@ export function usePagedResource<T extends { id: string }>(
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       await resource.refresh()
-      if (!disposed)
+      if (!disposed && interval > 0)
         timer = setTimeout(poll, document.hidden ? Math.max(interval, 30000) : interval)
     }
     void poll()
