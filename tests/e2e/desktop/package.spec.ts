@@ -1,9 +1,21 @@
 import { test, expect, _electron as electron } from '@playwright/test'
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+
+const { productName } = JSON.parse(
+  readFileSync(resolve(__dirname, '../../../apps/desktop/electron-builder.json'), 'utf8'),
+)
 
 test('installed package starts its bundled core without Python, Node or source cwd', async () => {
   test.skip(
@@ -51,15 +63,18 @@ test('installed package starts its bundled core without Python, Node or source c
         mount,
       ])
       mounted = true
-      run('/usr/bin/ditto', [join(mount, '桌面会议助手.app'), join(install, '桌面会议助手.app')])
+      run('/usr/bin/ditto', [
+        join(mount, `${productName}.app`),
+        join(install, `${productName}.app`),
+      ])
       run('/usr/bin/hdiutil', ['detach', mount])
       mounted = false
-      executable = join(install, '桌面会议助手.app/Contents/MacOS/桌面会议助手')
+      executable = join(install, `${productName}.app/Contents/MacOS/${productName}`)
     } else {
       // NSIS's /D argument must be last and unquoted; this CI-generated path has no spaces.
       const windowsInstall = join(root, 'installed')
       run(join(directory, artifact), ['/S', `/D=${windowsInstall}`])
-      executable = join(windowsInstall, '桌面会议助手.exe')
+      executable = join(windowsInstall, `${productName}.exe`)
     }
     expect(existsSync(executable)).toBe(true)
     const env = Object.fromEntries(
@@ -144,7 +159,7 @@ test('installed package starts its bundled core without Python, Node or source c
     await cleanup(() => {
       if (process.platform !== 'win32') return
       const windowsInstall = join(root, 'installed')
-      const uninstall = join(windowsInstall, 'Uninstall 桌面会议助手.exe')
+      const uninstall = join(windowsInstall, `Uninstall ${productName}.exe`)
       if (!existsSync(uninstall)) return
       // NSIS otherwise starts a temporary copy and returns before uninstall completes.
       // Run our own copy outside the install directory; _?= must be last and unquoted.

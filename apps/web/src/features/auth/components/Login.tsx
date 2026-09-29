@@ -140,7 +140,7 @@ export function Login({
       <section className={loginStyles['book-form']} aria-labelledby="login-title">
         <header className={loginStyles['book-form__header']}>
           <p className={loginStyles['book-form__eyebrow']}>WELCOME BACK</p>
-          <h1 id="login-title">登录工作助手</h1>
+          <h1 id="login-title">登录 Noria</h1>
         </header>
         <form
           className={loginStyles['book-form__form']}
@@ -205,7 +205,7 @@ export function Login({
             {error}
           </ErrorNotice>
         </div>
-        <small className={loginStyles['book-form__help']}>尚无账号？请联系公司管理员</small>
+        <small className={loginStyles['book-form__help']}>尚无账号？请联系管理员</small>
       </section>
     </LoginBook>
   )

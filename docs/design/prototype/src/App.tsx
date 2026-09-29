@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom'
 import { Avatar, Button, Icon, Modal, Tool } from './components'
 import { Assistant, WorkPage, TeamPage, ModelsPage, ReportsPage } from './pages'
 import { initialWork, nav, type Work } from './data'
-import mark from '../../../../packages/ui-web/brand/logo.svg'
+import mark from '../../../../packages/ui-web/brand/mark.png'
 
 export default function App() {
   const [page, setPage] = useState('assistant')
@@ -103,10 +103,10 @@ export default function App() {
         className={`sidebar ${mobileOpen ? 'mobile-open' : ''}`}
         inert={isMobile && !mobileOpen}
       >
-        <button className="brand" onClick={() => navigate('assistant')} aria-label="公司工作助手">
+        <button className="brand" onClick={() => navigate('assistant')} aria-label="Noria">
           <img src={mark} alt="" />
           <span>
-            公司工作助手<small>团队的每一步，都在这里</small>
+            Noria<small>你的AI伙伴</small>
           </span>
         </button>
         <button
@@ -320,7 +320,7 @@ export default function App() {
       {notes && (
         <Modal title="让工作，自然地向前。" onClose={() => setNotes(false)}>
           <div className="prototype-notes">
-            <p>这是公司工作助手的临时设计原型，使用示例数据，不连接现有业务接口。</p>
+            <p>这是Noria的临时设计原型，使用示例数据，不连接现有业务接口。</p>
             <div>
               <Icon name="Palette" />
               <section>

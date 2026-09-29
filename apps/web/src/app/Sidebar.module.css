@@ -38,9 +38,9 @@
   flex: 0 0 40px;
   width: 40px;
   height: 40px;
-  background: var(--text);
-  -webkit-mask: url('@paa/ui-web/logo.svg') center / contain no-repeat;
-  mask: url('@paa/ui-web/logo.svg') center / contain no-repeat;
+  object-fit: contain;
+  border-radius: 50%;
+  background: #fff;
 }
 .navigation-label {
   font-size: 12px;

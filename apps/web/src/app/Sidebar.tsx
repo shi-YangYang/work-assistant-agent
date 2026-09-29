@@ -1,3 +1,4 @@
+import brandMark from '@paa/ui-web/mark.png'
 import controlsStyles from '../styles/controls.module.css'
 import layoutStyles from '../styles/layout.module.css'
 import styles from './Sidebar.module.css'
@@ -80,10 +81,11 @@ export function Sidebar({
       <Link
         to={identity.member.role === 'admin' ? '/team' : '/assistant'}
         className={styles['brand']}
+        aria-label="Noria 首页"
       >
-        <span className={styles['brand-mark']} aria-hidden="true" />
+        <img src={brandMark} className={styles['brand-mark']} alt="" aria-hidden="true" />
         <span className={styles['nav-label']}>
-          工作助手<small>团队的每一步，都在这里</small>
+          Noria<small>你的AI伙伴</small>
         </span>
       </Link>
       <button

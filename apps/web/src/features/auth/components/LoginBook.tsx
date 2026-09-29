@@ -39,9 +39,9 @@ export function LoginBook({
     >
       <header className={styles['masthead']}>
         <button className={styles['wordmark']} type="button" onClick={close} disabled={busy}>
-          工作助手
+          Noria
           <span className={styles['wordmark-line']} aria-hidden="true" />
-          <span className={styles['wordmark-en']}>WORK ASSISTANT</span>
+          <span className={styles['wordmark-en']}>YOUR AI COMPANION</span>
         </button>
         <button
           className={styles['quiet-button']}
@@ -65,16 +65,16 @@ export function LoginBook({
       <main className={styles['book-main']}>
         <div className={styles['top-note']} aria-hidden="true">
           <span className={styles['chapter-dot']} />
-          <span>{opened ? 'YOUR WORK, IN FOCUS' : 'A NEW CHAPTER BEGINS'}</span>
+          <span>{opened ? 'WELCOME ABOARD' : 'A NEW CHAPTER BEGINS'}</span>
         </div>
-        <section className={styles['scene']} aria-label="工作助手登录">
+        <section className={styles['scene']} aria-label="Noria 登录">
           <div className={styles['book-shadow']} aria-hidden="true" />
           <div className={styles['book']}>
             <div className={styles['back-board']} aria-hidden="true" />
             <div className={styles['page-stack']} aria-hidden="true" />
             <section className={styles['right-page']} aria-label="登录书页" inert={!ready}>
               <div className={styles['page-running-head']} aria-hidden="true">
-                <span>工作助手</span>
+                <span>Noria</span>
                 <span>YOUR NEXT CHAPTER</span>
               </div>
               <div className={styles['login-host']} id="book-login-form" ref={hostRef}>
@@ -95,43 +95,43 @@ export function LoginBook({
                 onClick={() => open()}
               >
                 <span className={styles['cover-border']} aria-hidden="true" />
-                <span className={styles['cover-edition']}>THE WORK EDITION</span>
+                <span className={styles['cover-edition']}>YOUR PERSONAL ARK</span>
                 <span className={styles['cover-title']}>
-                  Good work
+                  A little ark
                   <br />
-                  begins with
+                  for your
                   <br />
-                  <em>you.</em>
+                  <em>ideas.</em>
                 </span>
                 <span className={styles['cover-rule']} aria-hidden="true" />
-                <span className={styles['cover-subtitle']}>让每一份工作，都有回应。</span>
+                <span className={styles['cover-subtitle']}>载着想法，陪你向前。</span>
                 <span className={styles['cover-bottom']}>
-                  <span>工作助手</span>
+                  <span>Noria</span>
                   <span>VOL. 01</span>
                 </span>
               </button>
               <section className={styles['cover-back']} aria-label="欢迎书页" inert={!ready}>
                 <span className={styles['inside-eyebrow']}>A NOTE TO YOU</span>
                 <div className={styles['welcome-copy']}>
-                  <span className={styles['welcome-pretitle']}>翻开工作的新一页。</span>
+                  <span className={styles['welcome-pretitle']}>欢迎登上你的方舟。</span>
                   <h2 className={styles['welcome-title']}>
                     让想法，
                     <br />
-                    成为清晰的
+                    有处安放，
                     <br />
-                    <em>下一步。</em>
+                    <em>有人同行。</em>
                   </h2>
                   <p>
-                    欢迎回来。
+                    我是 Noria，你的 AI 伙伴。
                     <br />
-                    记录进展，梳理工作，
+                    帮你理清思路，接住灵感，
                     <br />
-                    和团队一起，把事情做好。
+                    一起把想法变成行动。
                   </p>
                 </div>
                 <div className={styles['inside-signoff']}>
-                  <span>From ideas to progress.</span>
-                  <span className={styles['signature']}>Work Assistant</span>
+                  <span>Your ideas, our journey.</span>
+                  <span className={styles['signature']}>Noria</span>
                 </div>
               </section>
             </div>
@@ -149,7 +149,7 @@ export function LoginBook({
             <span className={styles['book-icon']} aria-hidden="true">
               ⌑
             </span>
-            翻开，开启新一章{' '}
+            翻开，和 Noria 一起出发{' '}
             <span className={styles['open-arrow']} aria-hidden="true">
               ↗
             </span>
@@ -158,12 +158,12 @@ export function LoginBook({
             也可以轻触封面
           </p>
           <p className={styles['open-hint']} hidden={!ready}>
-            每次回来，都是新的开始。
+            你的下一程，有我同行。
           </p>
         </div>
       </main>
       <footer className={styles['site-footer']}>
-        <span>YOUR WORK, IN FOCUS.</span>
+        <span>YOUR IDEAS, OUR JOURNEY.</span>
         <div
           className={styles['stage-indicator']}
           aria-label={opened ? '当前步骤：登录' : '当前步骤：封面'}
@@ -172,7 +172,7 @@ export function LoginBook({
           <i aria-hidden="true" />
           <span data-active={opened}>02 登录</span>
         </div>
-        <span className={styles['project-label']}>WORK-ASSISTANT-AGENT</span>
+        <span className={styles['project-label']}>NORIA</span>
       </footer>
       <p className={'sr-only'} role="status" aria-live="polite">
         {ready

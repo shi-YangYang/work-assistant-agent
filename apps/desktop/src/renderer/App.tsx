@@ -1,3 +1,4 @@
+import brandMark from '@paa/ui-web/mark.png'
 import { CompanySettings, guestCompany } from './CompanySettings'
 import { MeetingLibraryList } from './MeetingLibraryList'
 import type { MeetingHit } from '../shared/library-contracts'
@@ -418,8 +419,8 @@ export function App(): React.JSX.Element {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <strong>桌面会议助手</strong>
+          <img src={brandMark} className="brand-mark" alt="" aria-hidden="true" />
+          <strong>Noria</strong>
         </div>
         <button className="command-trigger" onClick={() => setCommandOpen(true)}>
           <Command size={16} />

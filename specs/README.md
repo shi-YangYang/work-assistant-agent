@@ -18,6 +18,7 @@
 | [037](spec-037-assistant-work-reference/spec.md)        | 从工作或输入框引用工作，复用最近聊天并读取最新内容 | 已完成                                                                                   |
 | [038](spec-038-assistant-response-delivery/spec.md)     | 开放式任务直接交付、结构化收尾与按需核对           | 已完成，验收通过                                                                         |
 | [039](spec-039-assistant-request-efficiency/spec.md)   | 工作助手读请求共享、刷新去重与身份隔离             | 已完成；[验收通过](spec-039-assistant-request-efficiency/acceptance.md) |
+| [040](spec-040-company-cloud-assistant-brand/spec.md) | Noria 产品定义与 Web／Electron 全端品牌更新        | [验收 PASS，含实测范围与限制](spec-040-company-cloud-assistant-brand/acceptance.md) |
 
 ## 文档分工
 
@@ -28,4 +29,4 @@
 
 ## 生命周期
 
-新 Spec 从 **040** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **041** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

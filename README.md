@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="packages/ui-web/brand/desktop/app-icon.png" alt="work-assistant-agent Logo" width="120" height="120" />
+  <img src="packages/ui-web/brand/logo.png" alt="Noria 小熊 Logo" width="160" height="160" />
 </p>
 
-<h1 align="center">work-assistant-agent</h1>
+<h1 align="center">Noria</h1>
 
-<p align="center">让 AI 参与工作记录、团队汇报与会议整理。</p>
+<p align="center">面向公司的云端工作助手。</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/React-20232A?style=flat-square&amp;logo=react&amp;logoColor=61DAFB" alt="React" />
@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker" />
 </p>
 
-work-assistant-agent 是一个开源 AI 工作助手，包含面向团队协作的 **公司 Web** 和面向本地会议的 **Electron 桌面端**。员工通过对话记录工作，AI 整理进展与报告；会议录音经过本地转写，生成可回溯的纪要与行动项。
+Noria 是一个开源的公司云端助手，名称灵感来自诺亚方舟。通过 **Web** 理解材料、查询资料、制定方案并持续修改成果；由你决定是否写入工作和报告。**Electron 桌面端** 专注会议录音、本地转写与 AI 纪要。公司服务可部署在自己的云服务器或内网，仓库名为 `work-assistant-agent`。
 
 ## 目录
 
@@ -28,9 +28,10 @@ work-assistant-agent 是一个开源 AI 工作助手，包含面向团队协作�
 
 ### 公司 Web
 
-- **对话式工作记录**：多会话聊天，支持文字、图片、网页录音与语音文件；可粘贴截图、拖入附件、预览图片和 PDF，修正语音转写。
+- **任务协助**：多会话聊天，结合材料与联网查询整理计划、分析和文稿，支持连续修改；按会话设置选择执行权限。
+- **多种输入**：支持文字、图片、网页录音与语音文件；可粘贴截图、拖入附件、预览图片和 PDF，修正语音转写。
 - **文档理解**：解析 PDF、Word（DOCX）、PowerPoint（PPTX）、Excel（XLSX）、TXT、Markdown、CSV 和 JSON，结合材料处理工作。
-- **工作与报告**：手动创建工作，或让助手创建、修改工作与报告草稿；支持日报、周报和汇报提醒，提交与删除前确认。
+- **工作与报告**：手动管理，或明确让助手创建、修改工作与报告；支持日报、周报和汇报提醒，业务操作遵循所选执行权限与账号权限。
 - **团队看板与问答**：管理员查看团队进度、阻碍和汇报情况，也可直接向助手提问；员工查询范围限定为本人资料。
 - **模型服务管理**：配置多家服务，为工作助手、报告生成和语音转写分配模型，测试连通性并查看调用用量。
 - **公司管理**：账号密码或钉钉登录；管理员管理成员、汇报规则，并登记成员声纹供桌面端使用。

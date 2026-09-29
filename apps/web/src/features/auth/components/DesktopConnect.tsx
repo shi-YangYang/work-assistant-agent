@@ -40,7 +40,7 @@ export function DesktopConnect({
     try {
       await resolveDesktopAuthorization(id, { approve: value })
       clearDesktopRequest()
-      setResult(value ? '已授权，请返回桌面会议助手继续。' : '已取消此次连接。')
+      setResult(value ? '已授权，请返回 Noria 桌面端继续。' : '已取消此次连接。')
     } catch (e) {
       setError(e as Error)
     } finally {
@@ -54,11 +54,11 @@ export function DesktopConnect({
         <span className={styles['desktop-connect-mark']}>
           {result ? <CheckCircle2 size={30} /> : <Monitor size={30} />}
         </span>
-        <h1>连接桌面会议助手</h1>
+        <h1>连接 Noria 桌面端</h1>
         {result ? (
           <>
             <p role="status">{result}</p>
-            <Link to="/">返回公司工作助手</Link>
+            <Link to="/">返回 Noria</Link>
           </>
         ) : (
           <>

@@ -1,6 +1,6 @@
 # 安装与部署指南
 
-员工使用公司已部署的 Web，只需浏览器和管理员提供的账号。
+员工使用公司已部署的 Noria Web，只需浏览器和管理员提供的账号。
 
 源码运行需要 Node.js 24、npm 11、Python 3.12，先获取代码并执行 `npm ci`。下列命令默认在仓库根目录执行。
 
@@ -268,11 +268,13 @@ node scripts/desktop/install-build-python.mjs
 npm run package
 ```
 
-产物位于 `dist/desktop/`：macOS ARM64 为 DMG，Windows x64 为 NSIS。安装包内置 Python、录音与转写依赖；模型仍由用户在应用内下载。`npm run package:dir` 只生成应用目录。
+产物位于 `dist/desktop/`，以 Noria 命名：macOS ARM64 为 DMG，Windows x64 为 NSIS。安装包内置 Python、录音与转写依赖；模型仍由用户在应用内下载。`npm run package:dir` 只生成应用目录。
 
 尚无正式签名、公证和自动更新。macOS 切换开发版／安装版或重建后可能请求钥匙串授权；安装和卸载保留用户资料。
 
 ## 数据存放
+
+Noria 桌面端沿用旧内部名称对应的目录和密钥身份，品牌更新不会迁移或清空已有资料。
 
 | 内容 | 位置 |
 | --- | --- |

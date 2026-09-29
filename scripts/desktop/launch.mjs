@@ -20,13 +20,16 @@ const env = { ...process.env }
 if (process.platform === 'darwin') {
   const executable = require('electron')
   const { version } = require('electron/package.json')
-  const { productName } = JSON.parse(readFileSync(join(desktop, 'electron-builder.json'), 'utf8'))
+  const { productName, mac } = JSON.parse(
+    readFileSync(join(desktop, 'electron-builder.json'), 'utf8'),
+  )
+  const icon = readFileSync(join(desktop, '../..', mac.icon))
   const cache = fileURLToPath(
     new URL(`../../node_modules/.cache/paa-electron/${version}-${process.arch}/`, import.meta.url),
   )
   const bundle = join(cache, `${productName}.app`)
   const marker = join(cache, 'prepared')
-  const identity = `${productName}:${createHash('sha256').update(readFileSync(executable)).digest('hex')}`
+  const identity = `${productName}:${createHash('sha256').update(readFileSync(executable)).update(icon).digest('hex')}`
   const target = join(bundle, 'Contents/MacOS/Electron')
   if (!existsSync(target) || !existsSync(marker) || readFileSync(marker, 'utf8') !== identity) {
     mkdirSync(cache, { recursive: true })
@@ -41,6 +44,8 @@ if (process.platform === 'darwin') {
     const plist = join(bundle, 'Contents/Info.plist')
     for (const key of ['CFBundleName', 'CFBundleDisplayName'])
       execFileSync('/usr/bin/plutil', ['-replace', key, '-string', productName, plist])
+    writeFileSync(join(bundle, 'Contents/Resources/app.icns'), icon)
+    execFileSync('/usr/bin/plutil', ['-replace', 'CFBundleIconFile', '-string', 'app.icns', plist])
     writeFileSync(marker, identity)
   }
   env.ELECTRON_EXEC_PATH = target

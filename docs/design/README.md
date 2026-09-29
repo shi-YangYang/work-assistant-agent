@@ -69,12 +69,19 @@ node_modules/.bin/vite --config docs/design/prototype/vite.config.mjs
 
 | 文件 | 用途 |
 | --- | --- |
-| `logo.svg` | 唯一标志源文件，黑色透明底的相扣 W |
+| `logo.png` | Noria 小熊白底圆形头像，保留奶白毛绒、浅蓝围巾与指南针 |
+| `mark.png` | 同源缩略头像，用于侧栏与加载标志 |
 | `web/favicon-16.png`、`favicon-32.png` | 浏览器标签页 |
 | `web/apple-touch-icon.png` | 手机网页图标 |
-| `desktop/app-icon.png` | 窗口、Dock、README，浅底黑标 |
+| `desktop/app-icon.png` | 窗口与 Dock 图标 |
 | `desktop/app.icns`、`app.ico` | macOS／Windows 安装图标 |
 
-界面导入 `@paa/ui-web/logo.svg`，由各端 CSS 适配明暗主题；旁边已有名称时图标设 `aria-hidden`。更新源图后导出对应尺寸，不改变应用名、appId 或用户数据位置。
+品牌名为 **Noria**，名称灵感来自诺亚方舟；Web 定位为面向公司的云端工作助手，桌面端专注会议录音、本地转写与 AI 纪要。
+
+界面导入 `@paa/ui-web/mark.png`，统一使用白底圆形头像，深色模式也保留白底与小熊原色，不使用单色 mask 或反色。紧凑位置保证头部轮廓完整；旁边已有名称时图片设为空替代文本。README 使用同源大图。Logo 的颜色不改变应用的黑白灰配色。
+
+侧栏副标题为“你的AI伙伴”；登录页以方舟、个人陪伴和想法付诸行动表达品牌。
+
+各端显示名与安装包品牌为 Noria；内部包名、appId、协议、用户目录和密钥存储身份保持兼容。资源从同一原图导出，不在各应用散放副本。
 
 视觉检查覆盖浅／深色、桌面／窄屏，以及空数据、有数据、加载和错误状态。本目录只维护一个设计基准，历史版本交给 Git。

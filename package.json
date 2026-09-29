@@ -2,7 +2,7 @@
   "name": "personal-agent-assistant-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "面向 macOS 和 Windows 的个人工作助手",
+  "description": "Noria：面向公司的云端工作助手，支持任务协助、工作汇报与桌面会议",
   "license": "MIT",
   "engines": {
     "node": ">=24 <25",

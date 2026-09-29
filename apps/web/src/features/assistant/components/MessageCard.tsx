@@ -195,7 +195,7 @@ export function MessageCard({
         <div className={styles['assistant-turn']}>
           <h3 className={styles['assistant-identity']}>
             <Sparkles size={16} />
-            工作助手
+            Noria
           </h3>
           {message.businessUnavailable && (
             <p className={noticeStyles['notice']}>这条回答的关联资料或权限已变化，请重新提问。</p>
