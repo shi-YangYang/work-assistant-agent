@@ -8,7 +8,6 @@ import type {
   Page,
   WorkMessage,
 } from '@paa/api-contracts'
-import { ErrorNotice } from '@web/components/ErrorNotice'
 import { BusinessActionCard } from '@web/features/assistant/components/BusinessActionCard'
 import { MessageCard } from '@web/features/assistant/components/MessageCard'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -83,7 +82,6 @@ export function ChatHistory({
       }}
     >
       <div className={styles['chat-content']} data-chat-content>
-        <ErrorNotice retry={refresh}>{error}</ErrorNotice>
         {nextCursor && (
           <button className={styles['load-more']} disabled={loading} onClick={loadMore}>
             加载更早消息

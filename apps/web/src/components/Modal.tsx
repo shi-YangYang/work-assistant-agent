@@ -3,6 +3,7 @@ import styles from './Modal.module.css'
 import { X } from 'lucide-react'
 import type { KeyboardEventHandler, ReactNode } from 'react'
 import { useEffect, useRef } from 'react'
+import { ErrorNoticeOutlet, ErrorNoticeScope } from './ErrorNoticeScope'
 
 export function Modal({
   title,
@@ -32,33 +33,38 @@ export function Modal({
     }
   }, [])
   return (
-    <dialog
-      aria-label={title}
-      className={`${styles['dialog']} ${variant === 'media' ? styles['media-dialog'] : variant === 'drawer' ? styles['team-detail-drawer'] : ''} ${className}`}
-      ref={ref}
-      onKeyDown={onKeyDown}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className={styles['dialog-content']}>
-        <header>
-          <h2>{title}</h2>
-          <button
-            type="button"
-            aria-label="关闭"
-            className={controlsStyles['icon-button']}
-            onClick={onClose}
-          >
-            <X size={18} />
-          </button>
-        </header>
-        <div className={`${styles['dialog-body']} ${bodyClassName}`}>{children}</div>
-      </div>
-    </dialog>
+    <ErrorNoticeScope priority={100} isolate>
+      <dialog
+        aria-label={title}
+        className={`${styles['dialog']} ${variant === 'media' ? styles['media-dialog'] : variant === 'drawer' ? styles['team-detail-drawer'] : ''} ${className}`}
+        ref={ref}
+        onKeyDown={onKeyDown}
+        onCancel={(event) => {
+          event.preventDefault()
+          onClose()
+        }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose()
+        }}
+      >
+        <div className={styles['dialog-content']}>
+          <header>
+            <h2>{title}</h2>
+            <button
+              type="button"
+              aria-label="关闭"
+              className={controlsStyles['icon-button']}
+              onClick={onClose}
+            >
+              <X size={18} />
+            </button>
+          </header>
+          <div className={`${styles['dialog-body']} ${bodyClassName}`}>
+            <ErrorNoticeOutlet label={`${title}提示`} className={styles['dialog-notice']} />
+            {children}
+          </div>
+        </div>
+      </dialog>
+    </ErrorNoticeScope>
   )
 }

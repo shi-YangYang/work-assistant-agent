@@ -9,6 +9,7 @@ import type {
   WorkMessage,
 } from '@paa/api-contracts'
 import { Modal } from '@web/components/Modal'
+import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
 import {
   conversationMessagesPath,
   orphanActionsPath,
@@ -63,6 +64,7 @@ export function ConversationChat({
   execution,
   onSent,
   registerRefresh,
+  pageNotice,
 }: {
   conversationId?: string
   personaId: PersonaId
@@ -70,6 +72,7 @@ export function ConversationChat({
   execution: ReturnType<typeof useExecutionMode>
   onSent: (conversationId: string, personaId: PersonaId) => void
   registerRefresh?: RegisterConversationRefresh
+  pageNotice?: AssistantNoticeData
 }) {
   const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
@@ -312,214 +315,227 @@ export function ConversationChat({
       ? task.job
       : latestJob
   const context = useContextUsage(conversationId, contextJob, true)
-  useConversationRefresh(
-    conversationId,
-    () => {
-      void refresh()
-      void actionReceipts.refresh()
-      questions.refresh()
-      void context.refresh()
-      void task.synchronize()
-      void assistantQuery(`/conversations/${conversationId}`, identityScope(identity))?.refresh()
-    },
-    registerRefresh,
-  )
+  const refreshChat = () => {
+    void refresh()
+    void actionReceipts.refresh()
+    questions.refresh()
+    void context.refresh()
+    void task.synchronize()
+    void assistantQuery(`/conversations/${conversationId}`, identityScope(identity))?.refresh()
+  }
+  useConversationRefresh(conversationId, refreshChat, registerRefresh)
   const receiveContext = context.receive
   useEffect(() => {
     if (task.job) receiveContext(task.job, task.feedback)
   }, [task.job, task.feedback, receiveContext])
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
+  const notice = (
+    [
+      { error: sendError || execution.error },
+      { error: workReference.error ?? '', retry: workReference.retry },
+      {
+        error:
+          task.error ||
+          error ||
+          actionReceipts.error ||
+          (!questions.waiting ? questions.error : ''),
+        retry: refreshChat,
+      },
+      ...(pageNotice ? [pageNotice] : []),
+    ] satisfies AssistantNoticeData[]
+  ).find((item) => item.error)
   return (
-    <div
-      ref={pageElement}
-      className={styles['assistant-page']}
-      data-empty={empty}
-      onDragEnter={(event) => {
-        if (!event.dataTransfer.types.includes('Files')) return
-        event.preventDefault()
-        dragDepth.current++
-        if (!locked && !capturing) setDragging(true)
-      }}
-      onDragOver={(event) => {
-        if (event.dataTransfer.types.includes('Files')) {
+    <>
+      <AssistantNotice notice={notice} pending={pending && !busy} />
+      <div
+        ref={pageElement}
+        className={styles['assistant-page']}
+        data-empty={empty}
+        onDragEnter={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
-          event.dataTransfer.dropEffect = locked || capturing ? 'none' : 'copy'
-        }
-      }}
-      onDragLeave={() => {
-        dragDepth.current = Math.max(0, dragDepth.current - 1)
-        if (!dragDepth.current) setDragging(false)
-      }}
-      onDrop={(event) => {
-        if (!event.dataTransfer.types.includes('Files')) return
-        event.preventDefault()
-        dragDepth.current = 0
-        setDragging(false)
-        if (locked || capturing) return
-        const selected = droppedFiles(event.dataTransfer)
-        if (selected.error) setLimitError(selected.error)
-        else void addFiles(selected.files)
-      }}
-    >
-      {gallery !== null && previewImages[gallery] && (
-        <ImageGallery images={previewImages} initial={gallery} onClose={() => setGallery(null)} />
-      )}
-      {pdf && <PdfPreview name={pdf.name} file={pdf} onClose={() => setPdf(null)} />}
-      {dragging && <div className={styles['file-drop-hint']}>松开以添加附件</div>}
-      {limitError && (
-        <Modal title="无法添加附件" onClose={() => setLimitError('')}>
-          <p>{limitError}</p>
-          <div className={layoutStyles['form-actions']}>
-            <button className={controlsStyles['primary']} onClick={() => setLimitError('')}>
-              知道了
-            </button>
-          </div>
-        </Modal>
-      )}
-      {newReply && (
-        <button
-          className={styles['new-reply']}
-          onClick={() => {
-            if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
-            atBottomRef.current = true
-            setNewReply(false)
-          }}
-        >
-          有新回复 · 回到最新
-        </button>
-      )}
-      <ChatHistory
-        onContextUpdate={context.receive}
-        task={task}
-        onContinuation={(continuation) => {
-          if (continuation) task.accepted(continuation)
-          else void task.refresh()
-          questions.refresh()
-          void actionReceipts.invalidate()
-          void invalidate()
+          dragDepth.current++
+          if (!locked && !capturing) setDragging(true)
         }}
-        scroller={scroller}
-        atBottomRef={atBottomRef}
-        setNewReply={setNewReply}
-        refresh={refresh}
-        invalidate={invalidate}
-        onFeedback={synchronizeResult}
-        error={error}
-        nextCursor={nextCursor}
-        loading={loading}
-        loadMore={loadMore}
-        messages={messages.map((message) => ({
-          ...message,
-          interactions: questions.unavailable
-            ? []
-            : (questionsByMessage.get(message.id) ?? message.interactions),
-        }))}
-        conversationId={conversationId}
-        data={data}
-        identity={identity}
-        locked={locked}
-        composer={composer}
-        change={change}
-        textInput={textInput}
-        actionReceipts={actionReceipts}
-        onDeliverable={(reference, title, text) => {
-          change({
-            ...composer,
-            deliverableReference: reference,
-            deliverableTitle: title,
-            text: text
-              ? composer.text.trim()
-                ? `${composer.text}\n${text}`
-                : text
-              : composer.text,
-            key: '',
-          })
-          textInput.current?.focus()
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes('Files')) {
+            event.preventDefault()
+            event.dataTransfer.dropEffect = locked || capturing ? 'none' : 'copy'
+          }
         }}
-      />
-      <MessageComposer
-        workReference={workReference}
-        contextKey={`context:${identity.company.id}:${identity.member.id}:${conversationId ?? 'new'}`}
-        contextUsage={context.usage}
-        contextUnavailable={context.unavailable}
-        contextLoading={context.loading}
-        containerRef={composerElement}
-        empty={empty}
-        dragging={dragging}
-        send={send}
-        task={task}
-        addFiles={addFiles}
-        composer={composer}
-        locked={locked}
-        change={change}
-        textInput={textInput}
-        busy={busy}
-        previewUploading={previewUploading}
-        personaSaving={interaction.busy === 'persona' || execution.saving}
-        executionControl={
-          <ExecutionModePicker
-            value={execution.selected}
-            acknowledged={execution.acknowledged}
-            disabled={execution.disabled || task.blocked || locked || capturing}
-            onChange={(mode, acknowledged) => void execution.choose(mode, acknowledged)}
-          />
-        }
-        executionError={execution.error}
-        questionPanel={
-          questions.waiting && (
-            <QuestionPanel
-              key={`${questions.waiting.id}:${questions.waiting.revision}`}
-              item={questions.waiting}
-              busy={!!questions.busy}
-              disabled={busy || task.blocked || execution.saving}
-              error={questions.error}
-              onAnswer={(answers) => {
-                if (interaction.acquire('message'))
-                  void questions
-                    .respond(questions.waiting!, answers)
-                    .finally(() => interaction.release('message'))
-              }}
-              onCancel={() => {
-                if (interaction.acquire('message'))
-                  void questions
-                    .respond(questions.waiting!)
-                    .finally(() => interaction.release('message'))
-              }}
-            />
-          )
-        }
-        pending={pending}
-        sendError={sendError}
-        retryWait={retryWait}
-        recording={{
-          state: captureState,
-          seconds,
-          start: startRecording,
-          stop: () => capture.current?.stop(),
+        onDragLeave={() => {
+          dragDepth.current = Math.max(0, dragDepth.current - 1)
+          if (!dragDepth.current) setDragging(false)
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.types.includes('Files')) return
+          event.preventDefault()
+          dragDepth.current = 0
+          setDragging(false)
+          if (locked || capturing) return
+          const selected = droppedFiles(event.dataTransfer)
+          if (selected.error) setLimitError(selected.error)
+          else void addFiles(selected.files)
         }}
       >
-        <ComposerAttachments
-          composer={composer}
+        {gallery !== null && previewImages[gallery] && (
+          <ImageGallery images={previewImages} initial={gallery} onClose={() => setGallery(null)} />
+        )}
+        {pdf && <PdfPreview name={pdf.name} file={pdf} onClose={() => setPdf(null)} />}
+        {dragging && <div className={styles['file-drop-hint']}>松开以添加附件</div>}
+        {limitError && (
+          <Modal title="无法添加附件" onClose={() => setLimitError('')}>
+            <p>{limitError}</p>
+            <div className={layoutStyles['form-actions']}>
+              <button className={controlsStyles['primary']} onClick={() => setLimitError('')}>
+                知道了
+              </button>
+            </div>
+          </Modal>
+        )}
+        {newReply && (
+          <button
+            className={styles['new-reply']}
+            onClick={() => {
+              if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight
+              atBottomRef.current = true
+              setNewReply(false)
+            }}
+          >
+            有新回复 · 回到最新
+          </button>
+        )}
+        <ChatHistory
+          onContextUpdate={context.receive}
+          task={task}
+          onContinuation={(continuation) => {
+            if (continuation) task.accepted(continuation)
+            else void task.refresh()
+            questions.refresh()
+            void actionReceipts.invalidate()
+            void invalidate()
+          }}
+          scroller={scroller}
+          atBottomRef={atBottomRef}
+          setNewReply={setNewReply}
+          refresh={refresh}
+          invalidate={invalidate}
+          onFeedback={synchronizeResult}
+          error={error}
+          nextCursor={nextCursor}
+          loading={loading}
+          loadMore={loadMore}
+          messages={messages.map((message) => ({
+            ...message,
+            interactions: questions.unavailable
+              ? []
+              : (questionsByMessage.get(message.id) ?? message.interactions),
+          }))}
+          conversationId={conversationId}
+          data={data}
+          identity={identity}
           locked={locked}
-          setGallery={setGallery}
-          previewImages={previewImages}
-          setPdf={setPdf}
+          composer={composer}
           change={change}
-        />
-      </MessageComposer>
-      {empty && (
-        <AssistantSuggestions
-          admin={identity.member.role === 'admin'}
-          disabled={locked}
-          onChoose={(text) => {
-            const next = exampleText(composer.text, text)
-            if (next === composer.text) notify('输入框已有内容，请继续编辑；示例没有覆盖它。')
-            else change({ ...composer, text: next, key: '' })
+          textInput={textInput}
+          actionReceipts={actionReceipts}
+          onDeliverable={(reference, title, text) => {
+            change({
+              ...composer,
+              deliverableReference: reference,
+              deliverableTitle: title,
+              text: text
+                ? composer.text.trim()
+                  ? `${composer.text}\n${text}`
+                  : text
+                : composer.text,
+              key: '',
+            })
             textInput.current?.focus()
           }}
         />
-      )}
-    </div>
+        <MessageComposer
+          workReference={workReference}
+          contextKey={`context:${identity.company.id}:${identity.member.id}:${conversationId ?? 'new'}`}
+          contextUsage={context.usage}
+          contextUnavailable={context.unavailable}
+          contextLoading={context.loading}
+          containerRef={composerElement}
+          empty={empty}
+          dragging={dragging}
+          send={send}
+          task={task}
+          addFiles={addFiles}
+          composer={composer}
+          locked={locked}
+          change={change}
+          textInput={textInput}
+          busy={busy}
+          previewUploading={previewUploading}
+          personaSaving={interaction.busy === 'persona' || execution.saving}
+          executionControl={
+            <ExecutionModePicker
+              value={execution.selected}
+              acknowledged={execution.acknowledged}
+              disabled={execution.disabled || task.blocked || locked || capturing}
+              onChange={(mode, acknowledged) => void execution.choose(mode, acknowledged)}
+            />
+          }
+          questionPanel={
+            questions.waiting && (
+              <QuestionPanel
+                key={`${questions.waiting.id}:${questions.waiting.revision}`}
+                item={questions.waiting}
+                busy={!!questions.busy}
+                disabled={busy || task.blocked || execution.saving}
+                error={questions.error}
+                onAnswer={(answers) => {
+                  if (interaction.acquire('message'))
+                    void questions
+                      .respond(questions.waiting!, answers)
+                      .finally(() => interaction.release('message'))
+                }}
+                onCancel={() => {
+                  if (interaction.acquire('message'))
+                    void questions
+                      .respond(questions.waiting!)
+                      .finally(() => interaction.release('message'))
+                }}
+              />
+            )
+          }
+          pending={pending}
+          retryWait={retryWait}
+          recording={{
+            state: captureState,
+            seconds,
+            start: startRecording,
+            stop: () => capture.current?.stop(),
+          }}
+        >
+          <ComposerAttachments
+            composer={composer}
+            locked={locked}
+            setGallery={setGallery}
+            previewImages={previewImages}
+            setPdf={setPdf}
+            change={change}
+          />
+        </MessageComposer>
+        {empty && (
+          <AssistantSuggestions
+            admin={identity.member.role === 'admin'}
+            disabled={locked}
+            onChoose={(text) => {
+              const next = exampleText(composer.text, text)
+              if (next === composer.text) notify('输入框已有内容，请继续编辑；示例没有覆盖它。')
+              else change({ ...composer, text: next, key: '' })
+              textInput.current?.focus()
+            }}
+          />
+        )}
+      </div>
+    </>
   )
 }

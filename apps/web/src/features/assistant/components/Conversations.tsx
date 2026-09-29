@@ -6,6 +6,8 @@ import type { Conversation } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/BusyButton'
 import { ErrorNotice } from '@web/components/ErrorNotice'
+import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
+import { ErrorNoticeScope } from '@web/components/ErrorNoticeScope'
 import { FormField } from '@web/components/FormField'
 import { Modal } from '@web/components/Modal'
 import {
@@ -34,6 +36,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 
 export function Assistant({ conversationId }: { conversationId?: string }) {
+  return (
+    <ErrorNoticeScope priority={10}>
+      <AssistantContent conversationId={conversationId} />
+    </ErrorNoticeScope>
+  )
+}
+
+function AssistantContent({ conversationId }: { conversationId?: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const { identity, drafts, setDraft, notify, lastConversationId, rememberConversation } =
@@ -204,6 +214,26 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     navigate('/assistant?new=1')
     setFailure('')
   }
+  const restoring =
+    !conversationId && (needsWorkRestore || (!explicitNew && !newDraft && !createdHere))
+  const showChat =
+    !needsWorkRestore &&
+    !!(
+      current.data ||
+      createdHere ||
+      (!conversationId &&
+        (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))
+    )
+  const pageNotice = (
+    [
+      { error: persona.error || (!editing && !deleting ? failure : '') },
+      {
+        error: conversationId ? current.error : '',
+        retry: current.refresh,
+      },
+      { error: restoring ? resumeError : '', retry: () => setResumeRevision((value) => value + 1) },
+    ] satisfies AssistantNoticeData[]
+  ).find((notice) => notice.error)
   return (
     <div className={styles['assistant-workspace']}>
       <section className={styles['conversation-main']}>
@@ -249,47 +279,38 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             nextCursor={nextCursor}
           />
         </header>
-        <ErrorNotice>{persona.error || failure}</ErrorNotice>
-        <ErrorNotice retry={() => void current.refresh()}>
-          {conversationId ? current.error : ''}
-        </ErrorNotice>
-        {!conversationId && (needsWorkRestore || (!explicitNew && !newDraft && !createdHere)) && (
+        {!showChat && <AssistantNotice notice={pageNotice} />}
+        {restoring && (
           <>
-            <ErrorNotice retry={() => setResumeRevision((value) => value + 1)}>
-              {resumeError}
-            </ErrorNotice>
             {(needsWorkRestore || !resumed || lastConversationId) && !resumeError && (
               <p className={utilitiesStyles['muted']}>正在打开上次会话…</p>
             )}
           </>
         )}
-        {!needsWorkRestore &&
-          (current.data ||
-            createdHere ||
-            (!conversationId &&
-              (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))) && (
-            <ConversationChat
-              key={chatSession.key}
-              conversationId={conversationId}
-              personaId={persona.selected}
-              interaction={persona.interaction}
-              execution={execution}
-              registerRefresh={registerRefresh}
-              onSent={(id, sentPersona) => {
-                if (!conversationId) {
-                  persona.adoptCreated(id, sentPersona)
-                  execution.adoptCreated(id)
-                  setChatSession((previous) => ({ ...previous, createdId: id }))
-                  navigate(
-                    `/assistant/${id}${workEntry ? `?workId=${encodeURIComponent(workEntry)}` : ''}`,
-                    { replace: true },
-                  )
-                }
-                rememberConversation(id)
-                updated()
-              }}
-            />
-          )}
+        {showChat && (
+          <ConversationChat
+            key={chatSession.key}
+            conversationId={conversationId}
+            personaId={persona.selected}
+            interaction={persona.interaction}
+            execution={execution}
+            registerRefresh={registerRefresh}
+            pageNotice={pageNotice}
+            onSent={(id, sentPersona) => {
+              if (!conversationId) {
+                persona.adoptCreated(id, sentPersona)
+                execution.adoptCreated(id)
+                setChatSession((previous) => ({ ...previous, createdId: id }))
+                navigate(
+                  `/assistant/${id}${workEntry ? `?workId=${encodeURIComponent(workEntry)}` : ''}`,
+                  { replace: true },
+                )
+              }
+              rememberConversation(id)
+              updated()
+            }}
+          />
+        )}
       </section>
       {editing && (
         <Modal title="重命名会话" onClose={() => !busy && setEditing(null)}>

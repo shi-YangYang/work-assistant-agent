@@ -133,3 +133,6 @@
   --form-actions-background: var(--surface);
   --form-actions-z-index: 2;
 }
+.dialog-notice {
+  margin: 0 0 12px;
+}

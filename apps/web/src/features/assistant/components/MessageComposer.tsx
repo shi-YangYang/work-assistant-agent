@@ -1,12 +1,10 @@
 import controlsStyles from '../../../styles/controls.module.css'
-import noticeStyles from '../../../components/Notice.module.css'
 import styles from './MessageComposer.module.css'
 import { WorkReferenceChip } from './WorkReferenceChip'
 import { WorkReferencePicker } from './WorkReferencePicker'
 import type { useWorkReference } from '../hooks/useWorkReference'
 import { ContextUsage } from './ContextUsage'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
-import { ErrorNotice } from '@web/components/ErrorNotice'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
@@ -39,13 +37,11 @@ export function MessageComposer({
   previewUploading,
   personaSaving = false,
   pending,
-  sendError,
   recording,
   retryWait,
   children,
   workReference,
   executionControl,
-  executionError,
   questionPanel,
   contextKey,
   contextUsage = null,
@@ -55,7 +51,6 @@ export function MessageComposer({
 }: {
   workReference?: ReturnType<typeof useWorkReference>
   executionControl?: React.ReactNode
-  executionError?: Error | string
   questionPanel?: React.ReactNode
   task?: ReturnType<typeof useAssistantTask>
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -71,7 +66,6 @@ export function MessageComposer({
   previewUploading: boolean
   personaSaving?: boolean
   pending: boolean
-  sendError: string | Error
   recording: { state: CaptureState; seconds: number; start: () => Promise<void>; stop: () => void }
   retryWait: number
   contextKey?: string
@@ -125,7 +119,6 @@ export function MessageComposer({
           />
         )}
         {workReference?.loading && <small role="status">正在引用工作…</small>}
-        <ErrorNotice retry={workReference?.retry}>{workReference?.error}</ErrorNotice>
         {composer.deliverableReference && (
           <div className={styles['replying']}>
             <span>继续处理：{composer.deliverableTitle ?? '当前方案'}</span>
@@ -182,13 +175,6 @@ export function MessageComposer({
             })
           }
         />
-        {retryPending && (
-          <p className={noticeStyles['notice']} role="status">
-            原消息的提交结果尚未确认。请原样重试以确认结果，不会重复创建消息；确认前暂不修改内容。
-          </p>
-        )}
-        <ErrorNotice>{sendError || executionError}</ErrorNotice>
-        <ErrorNotice retry={task?.refresh}>{task?.error}</ErrorNotice>
         <div className={styles['composer-actions']}>
           <div>
             <input

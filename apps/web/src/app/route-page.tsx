@@ -1,6 +1,6 @@
 import { Component, useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { PageLoading } from '@web/components/PageLoading'
-import styles from './AppRoutes.module.css'
+import { ErrorNotice } from '@web/components/ErrorNotice'
 
 const MIN_VISIBLE_DURATION = 300
 
@@ -20,10 +20,9 @@ class RouteFailure extends Component<
   }
   render() {
     return this.state.failed ? (
-      <div className={styles['route-state']} role="alert">
-        <p>页面未能加载，请检查网络后重试。</p>
-        <button onClick={this.props.retry}>重新加载页面</button>
-      </div>
+      <ErrorNotice retry={this.props.retry} retryLabel="重新加载页面">
+        页面未能加载，请检查网络后重试。
+      </ErrorNotice>
     ) : (
       this.props.children
     )

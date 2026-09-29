@@ -257,8 +257,10 @@ export function ReportsPage() {
                 </div>
               ))}
             </>
+          ) : rules.error ? (
+            <ErrorNotice retry={rules.refresh}>{rules.error}</ErrorNotice>
           ) : (
-            <ErrorNotice>{rules.error || '正在读取…'}</ErrorNotice>
+            <p className={utilitiesStyles['muted']}>正在读取…</p>
           )}
         </Modal>
       )}
