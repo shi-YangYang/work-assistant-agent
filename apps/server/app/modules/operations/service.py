@@ -5,11 +5,12 @@ from app.core.versions import version
 from app.db.base import now
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.receipts import action_dto
+from app.modules.operations.report_completion import submit_action
 from app.modules.operations.rules import CONFIRM
 from app.modules.operations.targets import preview, source_check
 from app.modules.operations.writes import remove_record as writes_remove_record
 from app.modules.reports.models import ReportObligation
-from app.modules.reports.service import edit_report as writes_edit_report, ensure_report, submit_report as writes_submit_report
+from app.modules.reports.service import edit_report as writes_edit_report, ensure_report
 from app.modules.team.sources import canonical_token as business_canonical_token
 from app.modules.work.service import save_work as writes_save_work
 from app.security.access import resolve as business_resolve
@@ -77,8 +78,8 @@ async def perform(db, actor, row, job=None, *, confirmed=False):
         item = await writes_edit_report(db, actor, p['targetId'], p['expectedRevision'], p['changes'])
         row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision}
     elif row.action == 'submit_report':
-        item = await writes_submit_report(db, actor, p['targetId'], p['expectedRevision'])
-        row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision}
+        await submit_action(db, actor, row)
+        return
     else:
         kind = 'work' if row.action == 'delete_work' else 'report'
         if job:

@@ -1,11 +1,11 @@
 """Targeted business/verification issues, never a general prose editor."""
 import json
 import logging
+from dataclasses import dataclass
 from typing import Literal
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
-from app.agent.delivery import ReviewedReply
 from app.agent.model import BoundedChatModel, approximate_tokens
 from app.core.digests import digest
 from app.integrations.models.transport import ProviderError
@@ -17,6 +17,19 @@ from app.tasks.lease import lease
 log = logging.getLogger('paa.company')
 REVIEW_TASK = 'business_reply_review'
 REVIEW_VERSION = 30
+
+
+@dataclass(frozen=True)
+class ReviewedReply:
+    text: str = ''
+    execution_claims: bool = False
+    verified: bool = False
+    error_code: str = ''
+    error_message: str = ''
+    needs_action: bool = False
+    needs_response: bool = False
+    response_reason: str = ''
+    task: dict | None = None
 
 
 class ReviewIssue(BaseModel):

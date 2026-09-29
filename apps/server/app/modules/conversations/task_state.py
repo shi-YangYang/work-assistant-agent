@@ -203,7 +203,7 @@ async def invalidate_sources(db, message_ids):
     """Remove only grants/tasks depending on corrected or removed user input."""
     if not message_ids:
         return
-    from app.modules.interactions.service import expire
+    from app.modules.interactions.lifecycle import expire
     await expire(db, message_ids=message_ids)
     messages = (await db.scalars(select(Message).where(Message.id.in_(message_ids)))).all()
     for message in messages:

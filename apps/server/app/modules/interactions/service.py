@@ -1,4 +1,3 @@
-from app.core.digests import digest
 from app.core.errors import problem
 from app.core.versions import version
 from app.db.base import now
@@ -7,7 +6,6 @@ from app.modules.interactions.models import AssistantInteraction
 from app.modules.interactions.queries import validate
 from app.modules.interactions.serializers import interaction_dto
 from app.security.ownership import owned
-from sqlalchemy import select
 
 
 def checked_answers(questions, answers):
@@ -79,23 +77,3 @@ async def cancel(db, actor, identifier, expected):
     from app.tasks.waiting import settle
     await settle(db, actor, row.message_id)
     return {'interaction': await interaction_dto(db, actor, row)}
-
-
-async def expire(db, *, message_ids=(), conversation_id=None, owner_id=None):
-    filters = [AssistantInteraction.state == 'waiting']
-    if message_ids:
-        filters.append(AssistantInteraction.message_id.in_(message_ids))
-    elif conversation_id:
-        filters.append(AssistantInteraction.conversation_id == conversation_id)
-    elif owner_id:
-        filters.append(AssistantInteraction.owner_id == owner_id)
-    else:
-        return
-    for row in (await db.scalars(select(AssistantInteraction).where(*filters).with_for_update())).all():
-        row.state, row.updated_at = 'expired', now()
-        row.revision += 1
-        from app.modules.members.models import Member
-        from app.tasks.waiting import settle
-        actor = await db.get(Member, row.owner_id)
-        if actor:
-            await settle(db, actor, row.message_id)

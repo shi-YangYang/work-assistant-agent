@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import select, func
-from app.agent.interactions import ask, finish_waiting, settle_natural_reply
+from app.agent.interactions import ask, finish_waiting
+from app.modules.interactions.lifecycle import settle_natural_reply
 from app.agent.task_context import load
 from app.modules.interactions.models import AssistantInteraction
 from app.modules.messages.models import Message
@@ -266,7 +267,7 @@ async def test_resolved_question_converges_source_job_http_and_sse(setup, decisi
 
 async def test_expired_question_closes_waiting_node_without_reviving_sources(setup):
     import json
-    from app.modules.interactions.service import expire
+    from app.modules.interactions.lifecycle import expire
     _, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'auto', '确认材料')
     question = await ask(context, [{'id': 'source', 'prompt': '用哪份材料？', 'type': 'text'}])

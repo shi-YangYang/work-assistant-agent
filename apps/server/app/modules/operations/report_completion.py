@@ -1,10 +1,18 @@
 """Complete approved report handoffs in a write transaction, never a GET."""
 from fastapi import HTTPException
 from sqlalchemy import select
+from app.db.base import now
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.execution_policy import effective, decide
 from app.modules.operations.receipts import refresh_generation
 from app.modules.operations.targets import source_check
+from app.modules.reports.service import submit_report
+
+
+async def submit_action(db, actor, row):
+    item = await submit_report(db, actor, row.params['targetId'], row.params['expectedRevision'])
+    row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision}
+    row.state, row.params, row.updated_at = 'succeeded', {}, now()
 
 
 async def complete_action(db, actor, row):
@@ -18,9 +26,8 @@ async def complete_action(db, actor, row):
         return
     try:
         async with db.begin_nested():
-            from app.modules.operations.service import perform
             await source_check(db, actor, row)
-            await perform(db, actor, row)
+            await submit_action(db, actor, row)
             row.revision += 1
     except HTTPException as error:
         row.state = 'conflict'

@@ -1,8 +1,9 @@
 """Versioned model completion; semantic summaries never grant business access."""
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.conversations.task_schemas import TaskInterpretation
+from app.agent.reply_review import ReviewedReply
 
 DELIVERY_VERSION = 1
 
@@ -28,19 +29,6 @@ class Delivery(BaseModel):
         if not self.response_complete and not self.response_issue.strip():
             raise ValueError('Name the concrete missing response')
         return self
-
-
-@dataclass(frozen=True)
-class ReviewedReply:
-    text: str = ''
-    execution_claims: bool = False
-    verified: bool = False
-    error_code: str = ''
-    error_message: str = ''
-    needs_action: bool = False
-    needs_response: bool = False
-    response_reason: str = ''
-    task: dict | None = None
 
 
 COMPLETION_POLICY = '''完成当前任务时，最后单独调用 finish_task，answer 填写给用户的完整自然答复，task 填本轮目标、new/continue 承接关系、状态、具体未完成项及持续指令变化。工具会直接交付，不会再让你复述。不能与读取或写入工具同批调用。

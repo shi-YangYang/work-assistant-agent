@@ -2,7 +2,7 @@
 
 ## Result
 
-FAIL。返工后的独立复验确认上一轮三项 P2 回归已消除，未发现本次改动仍需返工的具体缺陷；但 Spec 要求的全量通过门槛尚未满足：Web 两项、公司 API 三项既存失败仍未解决。实现复验通过不等于 Spec 整体验收通过。
+PASS。请求精简已通过独立复验。后续五项既存失败由协调 Agent 按用户要求直接修复，Web／API 全量复测通过；这五项修复未另作独立 Agent 验收。
 
 ## Spec Coverage
 
@@ -23,26 +23,25 @@ FAIL。返工后的独立复验确认上一轮三项 P2 回归已消除，未发
 
 - 返工相关最终覆盖为 54 项通过：从 [rework-tests.json](../../artifacts/spec039/rework-tests.json) 采用资源、分页、恢复 API 和独立聊天的 43 项通过结果；页面恢复与预算采用最终 [rework-recovery-tests.json](../../artifacts/spec039/rework-recovery-tests.json) 的 11 项通过。前一个日志原始结果为 53 通过、1 失败，其重复 fresh 问题已修复并由后一日志覆盖，不能称该原始日志全绿。
 - [浏览器恢复记录](../../artifacts/spec039/browser-recovery.json)的 remembered-retry、detail-online、detail-retry 三项均通过；已核对脚本实际断言恢复输入框和详情 GET 增量，未出现页面异常。
-- Web 全量原始结果为 **461 通过、3 失败**。工作引用一项保留精确路由断言、等待导航提交后，相关文件 9 项定向通过；仍保留下列两项既存失败。没有重跑整套并宣称最终源码全量全绿。
-- 公司 API 全量为 **652 通过、3 失败**；新增端点用例在另一独立 schema 中 **4 项通过**。见[完整服务端结果](../../artifacts/spec039/server-tests.xml)和[新增端点结果](../../artifacts/spec039/server-request-contracts.xml)。未重跑全量。
+- 修复后的 Web 全量：**475 项通过**，见[Web 测试日志](../../artifacts/spec039/five-fixes-web.log)。Web 源码此后未再修改。
+- 修复后的公司 API 全量：**659 项通过**，见[API 测试日志](../../artifacts/spec039/five-fixes-server-final.log)和[结构化结果](../../artifacts/spec039/five-fixes-server-final.xml)。使用专用测试数据库的独立 schema，结束后清理；未使用业务数据或真实模型密钥。
 - 已核对此前 Web 类型／构建、86 项助手回归、129 项资源／请求契约日志；最终返工源码的类型和改动文件 ESLint／Prettier／diff 检查通过见[实施报告](implementation.md)。构建通过证据来自返工前，返工未重复构建；本次没有新增检查结果冒充既有结果。
-- 未 commit／push，未触发或查询本次提交的远端 CI，不能声明 CI 通过。
+- 上述为本地验证，未推送或查询远端 CI，不能声明 CI 通过。
 
 ## Issues
 
-本次实现没有待返工问题。全量门槛仍被以下五项失败阻断，相关源码／原用例与 HEAD 一致的证据见[Web 既存失败记录](../../artifacts/spec039/web-existing-failures.json)及[请求清单的服务端失败说明](../../artifacts/spec039/request-coverage.md)：
+五项既存失败均已解决：
 
-- Web `architecture.test.ts`：纯工具目录依赖规则不接受已有 `attachment-limits.ts` 位置。
-- Web `component-composition.test.ts`：录音组件仍断言旧的停止录音文案。
-- API `test_architecture.py`：既有静态依赖环。
-- API `test_attachment_experience.py`：旧转写 fixture 与当前业务行为不一致。
-- API `test_management.py`：仍假设会话 history 为空，当前任务投影使该断言失败。
+- Web `architecture.test.ts`：附件限制常量移至纯工具层，保留依赖边界检查。
+- Web `component-composition.test.ts`：核对实际录音按钮的可访问名称、录音状态和时长。
+- API `test_architecture.py`：解除问题过期、任务续接、报告提交和答复核对的四组依赖环；复用原处理逻辑，不放宽架构规则。
+- API `test_attachment_experience.py`：通过修正、重试接口和任务领取处理转写，验证新输入版本、历史保留及不重复 ASR。
+- API `test_management.py`：允许当前会话任务投影，明确断言不包含其他会话的内容、消息 ID 或授权来源。
 
 ## Regression Risks
 
 - 真实模型／钉钉／ASR 供应商、浏览器原生媒体播放／下载及真实设备未执行；受控证据不替代这些环境验收。
-- 五项既存失败继续保留，不以重复执行、降低有效断言或顺手修改无关业务换取全绿。
 
 ## Required Rework
 
-三项本次引入的问题已完成返工。当前无需追加本次业务修复或重复整套验证；需由协调 Agent 向用户明确说明全量门槛未满足，并决定另行处理既存失败，或明确接受这些已知问题。未经接受，不把本 Spec 标记为 PASS。
+无。

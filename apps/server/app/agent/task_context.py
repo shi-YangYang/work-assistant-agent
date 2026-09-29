@@ -73,7 +73,7 @@ async def select_continuation(context, requested):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         context.task_snapshot = await resume(db, actor, job, message, requested=True)
-        from app.agent.interactions import settle_natural_reply
+        from app.modules.interactions.lifecycle import settle_natural_reply
         await settle_natural_reply(db, actor, job, {'relation': 'continue'})
 
 

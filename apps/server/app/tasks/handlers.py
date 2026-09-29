@@ -319,7 +319,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             live.result = {**live.result, 'taskOutcome': outcome}
             from app.modules.conversations.task_state import finish
             await finish(db, actor, live, message, review.task, outcome)
-            from app.agent.interactions import settle_natural_reply
+            from app.modules.interactions.lifecycle import settle_natural_reply
             await settle_natural_reply(db, actor, live, review.task or {})
             live.phase, live.error = 'awaiting_confirmation' if any(card['state'] == 'pending' for card in cards) else 'complete', ''
             if live.phase == 'awaiting_confirmation':

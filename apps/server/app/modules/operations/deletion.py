@@ -166,7 +166,7 @@ async def conversation_impact(db, item):
 
 
 async def remove_conversation(db, item):
-    from app.modules.interactions.service import expire
+    from app.modules.interactions.lifecycle import expire
     await expire(db, conversation_id=item.id)
     if item.deleted:
         return

@@ -45,7 +45,7 @@ async def cancel_job(db, actor, identifier, body):
     item.result = {key: value for key, value in item.result.items() if key not in ('pendingReply', 'replyReviewError')}
     from app.modules.conversations.task_state import cancel as cancel_task
     await cancel_task(db, actor, item, message)
-    from app.modules.interactions.service import expire
+    from app.modules.interactions.lifecycle import expire
     await expire(db, conversation_id=message.conversation_id)
     from app.tasks.outcomes import derive
     item.result = {**item.result, 'taskOutcome': derive(item)}

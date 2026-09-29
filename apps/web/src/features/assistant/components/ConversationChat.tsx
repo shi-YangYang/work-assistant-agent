@@ -36,7 +36,7 @@ import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import {
   MAX_ATTACHMENTS,
   MAX_AUDIO_ATTACHMENTS,
-} from '@web/features/assistant/lib/attachment-limits'
+} from '@web/features/assistant/utils/attachment-limits'
 import {
   droppedFiles,
   fileKind,

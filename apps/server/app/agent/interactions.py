@@ -3,6 +3,7 @@ from app.core.digests import digest
 from app.core.errors import problem
 from app.db.base import now
 from app.modules.interactions.models import AssistantInteraction
+from app.modules.interactions.lifecycle import settle_natural_reply
 from app.modules.interactions.schemas import Question
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
@@ -61,7 +62,7 @@ async def ask(context, raw_questions, *, continue_task=False):
         prior = await db.scalar(select(AssistantInteraction).where(AssistantInteraction.task_id == snapshot['taskId'], AssistantInteraction.key == key))
         if prior:
             return {'state': 'waiting' if prior.state == 'waiting' else prior.state, 'interactionId': prior.id, 'message': '等待用户回答' if prior.state == 'waiting' else '这个问题已经处理，使用已有答案，不要再次提问'}
-        from app.modules.interactions.service import expire
+        from app.modules.interactions.lifecycle import expire
         await expire(db, conversation_id=source.conversation_id)
         row = AssistantInteraction(company_id=actor.company_id, owner_id=actor.id, conversation_id=source.conversation_id,
             message_id=source.id, job_id=job.id, task_id=snapshot['taskId'], key=key, source_revision=source.transcript_revision,
@@ -111,22 +112,3 @@ async def finish_waiting(context, answer=None):
         from app.tasks.feedback_state import update_feedback
         update_feedback(job, job.phase, '')
         return True
-
-
-async def settle_natural_reply(db, actor, job, interpretation):
-    candidate = job.result.get('questionCandidate')
-    if not candidate:
-        return
-    row = await db.get(AssistantInteraction, candidate)
-    if not row or row.state != 'waiting':
-        return
-    message = await owned(db, Message, job.target_id, actor)
-    if interpretation.get('relation') == 'continue':
-        row.state, row.answers = 'answered', [{'questionId': question['id'], 'optionIds': [], 'text': message.text} for question in row.questions]
-        row.continuation = {'messageId': message.id, 'jobId': job.id, 'conversationId': message.conversation_id}
-    else:
-        row.state = 'expired'
-    row.revision += 1
-    row.updated_at = now()
-    from app.tasks.waiting import settle
-    await settle(db, actor, row.message_id)

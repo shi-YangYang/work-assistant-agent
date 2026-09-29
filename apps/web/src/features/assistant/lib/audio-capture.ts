@@ -6,7 +6,7 @@ import type {
   WorkReference,
   WorkReferenceView,
 } from '@paa/api-contracts'
-import { MAX_FILE_BYTES } from './attachment-limits'
+import { MAX_FILE_BYTES } from '../utils/attachment-limits'
 
 type PendingFile = {
   id: string
