@@ -10,8 +10,8 @@ import {
   sendMessage,
 } from '../../../apps/web/src/features/assistant/api/requests'
 import { cancelJob, retryJob } from '../../../apps/web/src/features/jobs/api/requests'
-import { MessageCard } from '../../../apps/web/src/features/assistant/components/MessageCard'
-import { ConversationChat } from '../../../apps/web/src/features/assistant/components/ConversationChat'
+import { MessageCard } from '../../../apps/web/src/features/assistant/components/messages/MessageCard'
+import { ConversationChat } from '../../../apps/web/src/features/assistant/components/conversation/ConversationChat'
 import { useAssistantTask } from '../../../apps/web/src/features/assistant/hooks/useAssistantTask'
 import { useExecutionMode } from '../../../apps/web/src/features/assistant/hooks/useExecutionMode'
 import { useConversationPersona } from '../../../apps/web/src/features/assistant/hooks/useConversationPersona'

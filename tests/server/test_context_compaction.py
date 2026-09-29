@@ -6,7 +6,7 @@ from app.modules.conversations.models import ConversationContext
 from app.modules.messages.models import Message
 from app.tasks.context import RunContext
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from fakes import controlled_model
 from test_company import send
 
@@ -14,7 +14,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_real_graph_compacts_durably_and_next_task_reuses_snapshot(setup):
-    from app.agent.operations import execute
+    from app.agent.actions.operations import execute
     from app.tasks.context import InputChanged
     from test_business_actions import create, read_work, Judge
     settings, sessions, users, clients = setup
@@ -45,7 +45,7 @@ async def test_real_graph_compacts_durably_and_next_task_reuses_snapshot(setup):
             assert usage['afterTokens'] < 64000 * .9
         # A completed graph restore must not repeat model calls or summary work.
         count = len(model.summaries)
-        from app.agent.compaction import saved_packet, save_packet
+        from app.agent.context.compaction import saved_packet, save_packet
         packet = await saved_packet(context)
         packet['evidence'] = [{'key': 'controlled-call', 'tool': 'find_work_items', 'result': '{"items": []}'}]
         await save_packet(context, packet)
@@ -87,9 +87,9 @@ async def test_unknown_window_does_not_invent_compaction(setup):
 
 
 async def test_summary_can_cross_report_boundary_and_invalidates_with_source(setup):
-    from app.agent.report_context import capture_brief, load_brief
-    from app.modules.conversations.context_store import references, capture_sources, publish_summary
-    from app.modules.conversations.context_invalidation import invalidate
+    from app.agent.context.report_context import capture_brief, load_brief
+    from app.modules.conversations.context.context_store import references, capture_sources, publish_summary
+    from app.modules.conversations.context.context_invalidation import invalidate
     from app.tasks.context import InputChanged
     from uuid import uuid4
     settings, sessions, users, clients = setup

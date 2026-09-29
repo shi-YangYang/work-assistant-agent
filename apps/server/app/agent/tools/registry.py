@@ -2,7 +2,7 @@ from app.agent.tools.execution import run_python
 from app.agent.tools.completion import finish_task
 from app.agent.tools.questions import request_user_input
 from app.agent.tools.actions import ACTION_TOOLS
-from app.agent.policies import ALLOWED_TOOLS
+from app.agent.prompts.policies import ALLOWED_TOOLS
 from app.agent.tools.documents import find_documents
 from app.agent.tools.work import find_work_items
 from app.agent.tools.messages import get_message_context

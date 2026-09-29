@@ -29,7 +29,7 @@ async def test_worker_delivers_public_results_or_honest_limitation_without_revie
     class Judge:
         async def ainvoke(self, messages):
             raise AssertionError('Ordinary search must not invoke a reviewer')
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     result = await run_reply(setup, '联网搜索城市新闻，结果呢？', answer, Judge())
     assert result['reply'] == answer
     assert result['job']['taskOutcome']['state'] == ('completed' if available else 'blocked')
@@ -153,8 +153,8 @@ async def test_required_question_is_preserved_without_repair_or_repeating_saved_
             return AIMessage(content=json.dumps({'issues': [
                 {'kind': 'execution', 'quote': '前项已处理。', 'reason': '执行结果由真实回执说明'},
                 {'kind': 'execution', 'quote': '确认后我会修改。', 'reason': '尚未修改'}]}))
-    monkeypatch.setattr('app.agent.response_repair.repair_response', repair)
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.agent.completion.response_repair.repair_response', repair)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     result = await run_reply(setup, '创建前项，再修改材料汇总下一步', original, Judge(), before=before)
     assert len(calls) == 0 and len(result['actions']) == 1
     assert question in result['reply'] and result['job']['taskOutcome']['state'] == 'partial'

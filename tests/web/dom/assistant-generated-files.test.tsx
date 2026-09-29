@@ -3,8 +3,8 @@ import type { Deliverable, DeliverableFile, DeliverableSummary } from '@paa/api-
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setCsrf } from '../../../apps/web/src/api/client'
-import { DeliverableEntry } from '../../../apps/web/src/features/assistant/components/Deliverable'
-import { GeneratedFiles } from '../../../apps/web/src/features/assistant/components/GeneratedFiles'
+import { DeliverableEntry } from '../../../apps/web/src/features/assistant/components/deliverables/Deliverable'
+import { GeneratedFiles } from '../../../apps/web/src/features/assistant/components/deliverables/GeneratedFiles'
 import { deferred, dialogs } from './helpers'
 
 const summary: DeliverableSummary = {

@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage
 from sqlalchemy import func, select
 from app.agent.tools.work import propose_progress, find_work_items
 from app.agent.tools.team import propose_followup, query_team_business
-from app.agent.operations import execute
+from app.agent.actions.operations import execute
 from app.modules.work.models import WorkItem, WorkRevision, ProgressDraft
 from app.modules.messages.models import Message
 from app.tasks.context import RunContext

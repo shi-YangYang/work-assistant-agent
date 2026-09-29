@@ -1,6 +1,6 @@
 import { Component, useEffect, useState, type ComponentType, type ReactNode } from 'react'
-import { PageLoading } from '@web/components/PageLoading'
-import { ErrorNotice } from '@web/components/ErrorNotice'
+import { PageLoading } from '@web/components/feedback/PageLoading'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 
 const MIN_VISIBLE_DURATION = 300
 

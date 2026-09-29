@@ -5,9 +5,9 @@ import pytest
 from datetime import timedelta
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
-from app.agent.history import conversation_history
-from app.agent.intent import authorize_intent
-from app.agent.operations import execute
+from app.agent.context.history import conversation_history
+from app.agent.actions.intent import authorize_intent
+from app.agent.actions.operations import execute
 from app.agent.tools.actions import query_report_obligations, query_reports
 from app.agent.tools.team import query_team_business
 from app.agent.tools.work import find_work_items, get_work_item
@@ -19,7 +19,7 @@ from app.modules.work.models import WorkItem
 from app.security.access import receipt as business_receipt, remember as business_remember
 from app.tasks.context import RunContext
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from sqlalchemy import func, select
 from test_business_assistant import facts
 from test_company import keyed, send
@@ -379,7 +379,7 @@ async def test_query_then_create_has_verified_reads_without_fake_write_predecess
 
 @pytest.mark.parametrize('state', ['pending', 'running', 'failed', 'succeeded'])
 async def test_final_completion_sentences_are_replaced_with_actual_receipts(state):
-    from app.agent.reply_review import ReviewedReply
+    from app.agent.completion.reply_review import ReviewedReply
     card = {'label': '提交报告', 'action': 'submit_report', 'state': state}
     review = ReviewedReply('还有两项待办。', execution_claims=True, verified=True)
     answer = receipt_reply(review, [card])
@@ -416,7 +416,7 @@ async def run_reply(setup, text, answer, judge, *, read_report=False, before=Non
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langchain_openai import ChatOpenAI
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from app.tasks.handlers import process_job
+    from app.tasks.processing.handlers import process_job
     class ReplyModel(ChatOpenAI):
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
             from fakes import completion
@@ -499,7 +499,7 @@ async def test_reply_review_failure_preserves_saved_success_without_false_prose(
 
 
 async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):
-    from app.agent.reply_review import review_reply
+    from app.agent.completion.reply_review import review_reply
     from test_assistant_execution import ReceiptJudge
     context, _ = await runtime(setup)
     context.intent_model = ReceiptJudge()

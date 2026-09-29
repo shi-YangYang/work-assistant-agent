@@ -3,7 +3,7 @@ import base64
 import io
 import json
 import app.modules.attachments.router as api_module
-import app.tasks.handlers as worker
+import app.tasks.processing.handlers as worker
 import pytest
 import subprocess
 import wave
@@ -19,10 +19,10 @@ from app.integrations.media import audio_mime, audio_wav, image_process, image_p
 from app.integrations.parsing.process import parse_process
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
-from app.tasks.handlers import process_job
-from app.tasks.maintenance import maintenance
+from app.tasks.processing.handlers import process_job
+from app.tasks.maintenance.maintenance import maintenance
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from pathlib import Path
 from test_company import keyed
 from test_documents import upload

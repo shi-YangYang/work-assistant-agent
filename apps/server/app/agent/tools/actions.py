@@ -2,7 +2,7 @@ import json
 from datetime import date
 from fastapi import HTTPException
 from langchain.tools import ToolRuntime, tool
-from app.agent.operations import execute as actions_execute
+from app.agent.actions.operations import execute as actions_execute
 from app.modules.members.models import Company
 from app.modules.messages.models import Message
 from app.modules.operations.receipts import message_actions as actions_message_actions
@@ -128,8 +128,8 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
                 if actor.id != report.owner_id:
                     evidence = next((e for e in job.access.get('reads', {}).values() if e.get('type') == 'report' and e['id'] == report.id), None)
                     if not evidence:
-                        from app.agent.conversation_context import request_text
-                        from app.modules.operations.writes import deletion_impact
+                        from app.agent.context.conversation_context import request_text
+                        from app.modules.operations.mutations.writes import deletion_impact
                         message = await owned(db, Message, job.target_id, actor)
                         if not report_id or report.id not in request_text(message, job):
                             return '请先通过团队业务查询定位已提交报告，或提供要删除报告的准确链接；不能猜测未提交报告。'
@@ -159,7 +159,7 @@ async def query_report_obligations(runtime: ToolRuntime[RunContext], kind: Liter
     submission status. Pure read: never marks notifications read or sends reminders.
     Pass an employee obligation ID, kind and period to generate_report to prepare.
     """
-    from app.modules.reports.schedule import obligation_page
+    from app.modules.reports.scheduling.schedule import obligation_page
     from zoneinfo import ZoneInfo
     async with runtime.context.sessions.begin() as db:
         job, actor = await lease(db, runtime.context)

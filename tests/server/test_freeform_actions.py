@@ -3,9 +3,9 @@ import httpx
 import json
 import pytest
 from langchain_core.messages import AIMessage
-from app.agent.intent import authorize_intent
-from app.agent.middleware import ToolBoundary
-from app.agent.operations import execute
+from app.agent.actions.intent import authorize_intent
+from app.agent.runtime.middleware import ToolBoundary
+from app.agent.actions.operations import execute
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkRevision
 from app.tasks.models import Job
@@ -63,7 +63,7 @@ async def test_rejected_action_cannot_bypass_barrier_by_changing_step(setup):
 
 
 async def test_incomplete_intent_model_response_is_not_reported_as_bad_user_fields(setup):
-    from app.agent.intent import IntentCheckFailed
+    from app.agent.actions.intent import IntentCheckFailed
     from app.integrations.models.transport import ProviderError
     _, _, _, c = setup
     work = await create(c['employee'])
@@ -95,7 +95,7 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
     async def before(context):
         context.intent_model = Judge(mode != 'rejected')
         await execute(context, step=1, action='create_work', changes={'title': '已有一次操作'})
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     data = await run_reply(setup, '帮我创建一项工作', '', CompletionJudge(), before=before if mode in ('already_saved', 'rejected') else None)
     assert len(calls) == (1 if mode in ('already_saved', 'rejected') else 2)
     if len(calls) == 2:

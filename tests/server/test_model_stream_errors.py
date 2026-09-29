@@ -10,9 +10,9 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.integrations.models.chat import chat
 from app.integrations.models.transport import ProviderError
 from app.modules.model_services.models import ModelUsage
-from app.tasks.handlers import process_job
-from app.tasks.node_failures import classify
-from app.tasks.queue import claim
+from app.tasks.processing.handlers import process_job
+from app.tasks.nodes.node_failures import classify
+from app.tasks.runtime.queue import claim
 from app.tasks.retry import NodeFailed, run
 from test_company import send
 from test_model_services import create, route, SECRET

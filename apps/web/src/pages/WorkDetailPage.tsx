@@ -1,4 +1,4 @@
-import { WorkDetail } from '@web/features/work/components/WorkDetail'
+import { WorkDetail } from '@web/features/work/components/detail/WorkDetail'
 import { useLocation, useParams } from 'react-router'
 
 export function WorkDetailPage() {

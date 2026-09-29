@@ -6,20 +6,20 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from langchain_core.messages import AIMessage
-from app.agent.model import reserve_call
+from app.agent.runtime.model import reserve_call
 from app.db.base import now
 from app.modules.members.models import Company, Member
 from app.modules.model_services.models import ModelUsage
 from app.modules.reports.models import Report, ReportNotification, ReportObligation, ReportSchedule
-from app.modules.reports.schedule import eligibility_changed, save_schedule
+from app.modules.reports.scheduling.schedule import eligibility_changed, save_schedule
 from app.modules.reports.service import ensure_report
 from app.modules.work.models import WorkItem, WorkRevision
 from app.tasks.context import RunContext
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
-from app.tasks.runner import run_slots
-from app.tasks.scheduling import schedule_company
+from app.tasks.runtime.queue import claim
+from app.tasks.runtime.runner import run_slots
+from app.tasks.maintenance.scheduling import schedule_company
 from sqlalchemy import func, select
 from test_company import keyed
 from uuid import uuid4
@@ -152,7 +152,7 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
     settings, sessions, users, _ = setup
     company = users['employee'].company_id
     from functools import partial
-    monkeypatch.setattr('app.tasks.runner.claim',partial(claim,company_id=company))
+    monkeypatch.setattr('app.tasks.runtime.runner.claim',partial(claim,company_id=company))
     owners = []
     async with sessions.begin() as db:
         for index in range(30):
@@ -226,7 +226,7 @@ async def test_todos_no_work_reminders_read_submission_permissions_and_delete(se
     settings,sessions,users,c=setup
     instant=datetime(2027,1,4,17,0,tzinfo=timezone.utc)
     await arrange(setup,instant)
-    monkeypatch.setattr('app.modules.reports.schedule.now',lambda:instant)
+    monkeypatch.setattr('app.modules.reports.scheduling.schedule.now',lambda:instant)
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     data=(await c['employee'].get('/api/v1/report-obligations')).json()
     assert len(data['items'])==1 and data['items'][0]['job']['phase']=='empty'
@@ -357,7 +357,7 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
 
 
 async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(setup):
-    from app.modules.reports.schedule import draft_ready
+    from app.modules.reports.scheduling.schedule import draft_ready
     settings,sessions,users,c=setup
     instant=datetime(2027,3,1,17,tzinfo=timezone.utc)
     await arrange(setup,instant)

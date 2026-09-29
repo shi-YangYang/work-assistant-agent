@@ -15,13 +15,13 @@ from functools import partial
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.audio_store import AudioWriter
-from paa_core.asr_worker import ASRWorker, DEFAULT_CONFIG, InferenceToken
-from paa_core.model_manager import ModelManager, MODEL_ID, REVISION, verify_files
+from paa_core.audio.audio_store import AudioWriter
+from paa_core.asr.asr_worker import ASRWorker, DEFAULT_CONFIG, InferenceToken
+from paa_core.models.model_manager import ModelManager, MODEL_ID, REVISION, verify_files
 from paa_core.repository import Repository, DomainError
-from paa_core.recorder import Recorder
-from paa_core.transcript_store import TranscriptStore
-from paa_core.transcription import Transcription, owned_segments, choose_boundary
+from paa_core.audio.recorder import Recorder
+from paa_core.asr.transcript_store import TranscriptStore
+from paa_core.asr.transcription import Transcription, owned_segments, choose_boundary
 from test_recording import FakeInput, wait_for
 
 
@@ -229,7 +229,7 @@ class TranscriptionTests(unittest.TestCase):
         def broken(db):
             db.execute('CREATE TABLE partial_migration (id TEXT)')
             raise sqlite3.OperationalError('Injected DDL failure')
-        with patch('paa_core.transcript_store.migrate', broken), self.assertRaises(sqlite3.OperationalError):
+        with patch('paa_core.asr.transcript_store.migrate', broken), self.assertRaises(sqlite3.OperationalError):
             Repository(self.root)
         with self.repo.connect() as db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 1)
@@ -330,7 +330,7 @@ class TranscriptionTests(unittest.TestCase):
                 worker.connection.poll.side_effect = [False, True]
                 worker.connection.recv.return_value = {'ok': True}
                 worker.timeout = override
-                with patch('paa_core.asr_worker.time.monotonic', side_effect=[0, elapsed]), patch.object(worker, 'reset') as reset:
+                with patch('paa_core.asr.asr_worker.time.monotonic', side_effect=[0, elapsed]), patch.object(worker, 'reset') as reset:
                     if succeeds:
                         self.assertEqual(worker._request({'op': operation}), {'ok': True})
                         reset.assert_not_called()
@@ -497,7 +497,7 @@ class TranscriptionTests(unittest.TestCase):
         finally:
             release.release()
 
-    @patch('paa_core.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
+    @patch('paa_core.models.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
     def test_corrupt_model_is_not_ready_and_download_cancel_and_retry_are_atomic(self, _hardware):
         import hashlib
         import shutil
@@ -509,7 +509,7 @@ class TranscriptionTests(unittest.TestCase):
         restarted=None
         reading, release_read = threading.Event(), threading.Event()
         cleaning, release_cleanup = threading.Event(), threading.Event()
-        with patch('paa_core.model_manager.FILES',files), patch('paa_core.model_manager.urllib.request.build_opener',return_value=Opener()):
+        with patch('paa_core.models.model_manager.FILES',files), patch('paa_core.models.model_manager.urllib.request.build_opener',return_value=Opener()):
             try:
                 model.download();wait_for(lambda:model.status()['state']=='ready',describe=model.status)
                 self.assertFalse(model.staging.exists())
@@ -533,7 +533,7 @@ class TranscriptionTests(unittest.TestCase):
                         cleaning.set()
                         if not release_cleanup.wait(3): raise AssertionError('Model cleanup was not released')
                     return remove(path,*args,**kwargs)
-                with patch('paa_core.model_manager.urllib.request.build_opener',return_value=HeldOpener()), patch('paa_core.model_manager.shutil.rmtree',side_effect=hold_cleanup):
+                with patch('paa_core.models.model_manager.urllib.request.build_opener',return_value=HeldOpener()), patch('paa_core.models.model_manager.shutil.rmtree',side_effect=hold_cleanup):
                     try:
                         restarted.download()
                         self.assertTrue(reading.wait(3),restarted.status())

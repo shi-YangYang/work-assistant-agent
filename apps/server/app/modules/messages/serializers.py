@@ -19,7 +19,7 @@ async def message_dto(db, item, actor):
     visible_drafts = await message_drafts(db, actor, item, job)
     outcome_allowed = allowed and actor.id == item.owner_id and job and (not job.access or job.access.get('role') == actor.role) and await business_valid(db, actor, job.access)
     if outcome_allowed:
-        from app.tasks.outcomes import refresh
+        from app.tasks.feedback.outcomes import refresh
         refresh(job, cards, visible_drafts)
     job_value = job_dto(job) if job else None
     if job_value and not outcome_allowed:

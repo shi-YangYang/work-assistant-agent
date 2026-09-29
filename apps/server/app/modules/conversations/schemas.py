@@ -1,6 +1,6 @@
 from app.core.personas import DEFAULT_PERSONA, PersonaId
 from app.core.schemas import Input
-from app.modules.operations.execution_policy import ExecutionMode
+from app.modules.operations.policy.execution_policy import ExecutionMode
 from pydantic import Field, field_validator, model_validator
 
 

@@ -1,9 +1,9 @@
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import type { Member } from '@paa/api-contracts'
-import { BusyButton } from '@web/components/BusyButton'
-import { ErrorNotice } from '@web/components/ErrorNotice'
-import { Modal } from '@web/components/Modal'
+import { BusyButton } from '@web/components/actions/BusyButton'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { Modal } from '@web/components/overlays/Modal'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import {

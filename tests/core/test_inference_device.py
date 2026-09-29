@@ -8,10 +8,10 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.asr_worker import DEFAULT_CONFIG, WhisperProvider, config_for_mode
-from paa_core.inference_device import apply_device, hardware
-from paa_core.model_catalog import CATALOG, MLX_CATALOG
-from paa_core.model_manager import ModelManager
+from paa_core.asr.asr_worker import DEFAULT_CONFIG, WhisperProvider, config_for_mode
+from paa_core.models.inference_device import apply_device, hardware
+from paa_core.models.model_catalog import CATALOG, MLX_CATALOG
+from paa_core.models.model_manager import ModelManager
 from paa_core.repository import DomainError
 
 
@@ -29,19 +29,19 @@ class DeviceTests(unittest.TestCase):
         info = json.dumps({'cpu': ['Intel Core i7'], 'gpu': ['Intel Graphics', 'NVIDIA RTX']})
         ct2 = SimpleNamespace(get_cuda_device_count=lambda: 1,
                               get_supported_compute_types=lambda _: {'float16'})
-        with patch('paa_core.inference_device.sys.platform', 'win32'), \
-             patch('paa_core.inference_device.command', side_effect=[info, 'NVIDIA RTX']), \
+        with patch('paa_core.models.inference_device.sys.platform', 'win32'), \
+             patch('paa_core.models.inference_device.command', side_effect=[info, 'NVIDIA RTX']), \
              patch.dict('sys.modules', {'ctranslate2': ct2}), \
-             patch('paa_core.inference_device.ctypes.WinDLL', create=True) as load:
+             patch('paa_core.models.inference_device.ctypes.WinDLL', create=True) as load:
             hardware.cache_clear(); value = hardware()
             self.assertEqual(value['cpuName'], 'Intel Core i7')
             self.assertEqual(value['gpuName'], 'NVIDIA RTX')
             self.assertEqual(value['gpuBackend'], 'cuda')
             self.assertEqual(load.call_count, 2)
-        with patch('paa_core.inference_device.sys.platform', 'win32'), \
-             patch('paa_core.inference_device.command', return_value=info), \
+        with patch('paa_core.models.inference_device.sys.platform', 'win32'), \
+             patch('paa_core.models.inference_device.command', return_value=info), \
              patch.dict('sys.modules', {'ctranslate2': ct2}), \
-             patch('paa_core.inference_device.ctypes.WinDLL', create=True, side_effect=OSError):
+             patch('paa_core.models.inference_device.ctypes.WinDLL', create=True, side_effect=OSError):
             hardware.cache_clear(); value = hardware()
             self.assertFalse(value['gpuAvailable'])
             self.assertIn('cuDNN', value['gpuReason'])

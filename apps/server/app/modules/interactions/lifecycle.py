@@ -5,7 +5,7 @@ from app.modules.interactions.models import AssistantInteraction
 from app.modules.members.models import Member
 from app.modules.messages.models import Message
 from app.security.ownership import owned
-from app.tasks.waiting import settle
+from app.tasks.runtime.waiting import settle
 
 
 async def expire(db, *, message_ids=(), conversation_id=None, owner_id=None):

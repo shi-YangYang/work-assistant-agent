@@ -19,7 +19,7 @@ async def request_user_input(questions: list[Question], runtime: ToolRuntime[Run
     Set continue_task=true when this input answers the previous task's question
     and you still need other information; false for a genuinely unrelated task.
     """
-    from app.agent.interactions import ask
+    from app.agent.actions.interactions import ask
     try:
         return json.dumps(await ask(runtime.context, [q.model_dump() for q in questions], continue_task=continue_task), ensure_ascii=False)
     except (ValueError, HTTPException) as error:

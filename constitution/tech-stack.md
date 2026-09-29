@@ -37,6 +37,8 @@
 - 公司配置放 `apps/server/.env.web`；桌面配置放 `apps/desktop/.env.electron`，各有同目录示例。真实配置不入 Git。
 - 应用配置就近维护；根目录保留 workspace、统一检查和公共 TypeScript 配置。
 - 构建输出在各应用的 `out/`；桌面发行包在 `dist/desktop/`，冻结核心在 `dist/core/`。
+- 拥挤目录按功能归组：Web 布局归 `app/layout/`，组件与私有 CSS 就近，跨组件共享 CSS 归 `styles/patterns/`；桌面 renderer 按会议／设置组织，本地核心按录音／转写／说话人／模型／纪要组织。
+- 后端在 `agent/`、`tasks/` 和业务模块内部按职责划分子包，保留应用入口、ORM、公共任务上下文及租约路径；不创建旧路径转发层。完整目录与依赖见[技术架构](../docs/architecture.md)。
 
 ## 工程命令
 

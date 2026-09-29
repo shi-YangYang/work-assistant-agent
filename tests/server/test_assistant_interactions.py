@@ -1,8 +1,8 @@
 import pytest
 from sqlalchemy import select, func
-from app.agent.interactions import ask, finish_waiting
+from app.agent.actions.interactions import ask, finish_waiting
 from app.modules.interactions.lifecycle import settle_natural_reply
-from app.agent.task_context import load
+from app.agent.context.task_context import load
 from app.modules.interactions.models import AssistantInteraction
 from app.modules.messages.models import Message
 from app.tasks.models import Job
@@ -89,9 +89,9 @@ async def test_object_options_use_real_read_labels_and_recheck_deletion(setup):
 
 
 async def test_structured_answer_binds_same_name_object_id_and_task(setup):
-    from app.tasks.queue import claim
+    from app.tasks.runtime.queue import claim
     from app.tasks.context import RunContext
-    from app.agent.task_context import projection
+    from app.agent.context.task_context import projection
     _, sessions, users, clients = setup
     first = await create(clients['employee'], '同名', summary='第一个')
     second = await create(clients['employee'], '同名', summary='第二个')
@@ -113,8 +113,8 @@ async def test_structured_answer_binds_same_name_object_id_and_task(setup):
 
 @pytest.mark.parametrize('relation,state', [('continue', 'answered'), ('new', 'expired')])
 async def test_normal_message_consumes_answer_only_after_semantic_continuation(setup, relation, state):
-    from app.tasks.queue import claim
-    from app.modules.conversations.task_state import finish
+    from app.tasks.runtime.queue import claim
+    from app.modules.conversations.task.task_state import finish
     _, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'auto', '安排截止日期')
     result = await ask(context, [{'id': 'date', 'prompt': '哪一天', 'type': 'text'}])
@@ -135,7 +135,7 @@ async def test_harness_questions_stop_before_parallel_write_or_second_model_call
     from langchain_core.messages import AIMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from app.tasks.handlers import process_job
+    from app.tasks.processing.handlers import process_job
     from app.modules.work.models import WorkItem
     from pydantic import Field
     class AskingModel(ChatOpenAI):
@@ -161,8 +161,8 @@ async def test_harness_questions_stop_before_parallel_write_or_second_model_call
 
 
 async def test_answered_choice_keeps_own_task_changes_but_rejects_external_edits(setup):
-    from app.agent.operations import execute
-    from app.tasks.queue import claim
+    from app.agent.actions.operations import execute
+    from app.tasks.runtime.queue import claim
     from app.tasks.context import RunContext
     from test_business_actions import Judge
     settings, sessions, users, clients = setup
@@ -191,7 +191,7 @@ async def test_answered_choice_keeps_own_task_changes_but_rejects_external_edits
 
 
 async def test_same_question_id_can_request_different_missing_information(setup):
-    from app.tasks.queue import claim
+    from app.tasks.runtime.queue import claim
     from app.tasks.context import RunContext
     settings, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'auto', '先确认项目名称，再确认交付要求')
@@ -211,9 +211,9 @@ async def test_same_question_id_can_request_different_missing_information(setup)
 async def test_natural_answer_is_consumed_before_next_waiting_stage(setup, next_stage):
     import json
     from langchain_core.messages import AIMessage
-    from app.agent.operations import execute
+    from app.agent.actions.operations import execute
     from app.tasks.context import RunContext
-    from app.tasks.queue import claim
+    from app.tasks.runtime.queue import claim
     from test_business_actions import Judge
     settings, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'ask', '问我项目名称，再创建工作')

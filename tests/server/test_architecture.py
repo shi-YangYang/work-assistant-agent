@@ -69,7 +69,7 @@ def assert_dependency_boundaries(graph):
         if in_package(name, 'app.modules') and not name.endswith(('_router', '.router')):
             assert not any(target.endswith(('_router', '.router', '.harness')) or target == 'app.http.dependencies' for target in targets), name
         if name == 'app.tasks.lease':
-            assert not targets & {'app.tasks.handlers', 'app.tasks.runner', 'app.agent.harness'}, name
+            assert not targets & {'app.tasks.processing.handlers', 'app.tasks.runtime.runner', 'app.agent.harness'}, name
 
 
 def test_dependencies_are_acyclic_and_do_not_import_entrypoints():
@@ -88,8 +88,8 @@ def source_dependencies(tmp_path, sources):
     ('core/config.py', 'import app.main as entry', 'main.py'),
     ('core/config.py', 'from app import main as entry', 'main.py'),
     ('modules/work/commands.py', 'from app.agent import harness', 'agent/harness.py'),
-    ('tasks/lease.py', 'from app.tasks import runner', 'tasks/runner.py'),
-    ('tasks/lease.py', 'from . import runner as run', 'tasks/runner.py'),
+    ('tasks/lease.py', 'from app.tasks.runtime import runner', 'tasks/runtime/runner.py'),
+    ('tasks/lease.py', 'from .runtime import runner as run', 'tasks/runtime/runner.py'),
     ('core/__init__.py', 'from ..agent import harness', 'agent/harness.py'),
     ('__init__.py', 'from . import main', 'main.py'),
 ])

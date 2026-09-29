@@ -15,9 +15,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.audio_store import AudioWriter
+from paa_core.audio.audio_store import AudioWriter
 from paa_core.protocol import CoreService, handle
-from paa_core.recorder import Recorder
+from paa_core.audio.recorder import Recorder
 from paa_core.repository import DomainError, Repository
 
 
@@ -223,7 +223,7 @@ class RecordingTests(unittest.TestCase):
 
     def test_bounded_queue_overflow_is_explicit(self):
         self.recorder = Recorder(self.repo, FakeInput(), queue_size=1)
-        from paa_core.recorder import Session
+        from paa_core.audio.recorder import Session
         import queue
         session = Session(str(uuid.uuid4()), chunks=queue.Queue(maxsize=1))
         self.recorder.callback(session, b'\0\0' * 256, 256, None, False)

@@ -6,10 +6,10 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from fakes import ReviewedFixtureModel, completion
-from app.tasks.handlers import process_job
-from app.tasks.queue import claim
+from app.tasks.processing.handlers import process_job
+from app.tasks.runtime.queue import claim
 from app.tasks.models import Job
-from app.agent.delivery import Delivery
+from app.agent.completion.delivery import Delivery
 from test_company import send
 
 pytestmark = pytest.mark.asyncio
@@ -130,8 +130,8 @@ async def test_parallel_tool_batch_exhaustion_still_delivers_without_raising_bud
 
 @pytest.mark.parametrize('legacy', [True, False])
 async def test_pending_completion_upgrade_and_correction_survive_review_retry(setup, monkeypatch, legacy):
-    from app.agent.delivery import ReviewedReply
-    from app.tasks.node_execution import initialize
+    from app.agent.completion.delivery import ReviewedReply
+    from app.tasks.nodes.node_execution import initialize
     from fakes import set_delivery
     from test_company import keyed
     calls, assessments = [], []
@@ -166,10 +166,10 @@ async def test_pending_completion_upgrade_and_correction_survive_review_retry(se
     async def correct(*args, **kwargs):
         return '完整方案正文'
 
-    monkeypatch.setattr('app.tasks.node_execution.initialize', with_old_cache)
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
-    monkeypatch.setattr('app.agent.delivery.assess', assess)
-    monkeypatch.setattr('app.agent.response_repair.repair_response', correct)
+    monkeypatch.setattr('app.tasks.nodes.node_execution.initialize', with_old_cache)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.agent.completion.delivery.assess', assess)
+    monkeypatch.setattr('app.agent.completion.response_repair.repair_response', correct)
     result, stored = await run(setup, object())
     expected = '升级后的答复' if legacy else '完整方案正文'
     assert result['job']['state'] == 'awaiting_retry'
@@ -194,8 +194,8 @@ async def test_execution_only_issue_cannot_finish_as_completed_without_receipt(s
 
 
 async def test_failed_correction_keeps_safe_prose_and_resumes_the_same_node(setup, monkeypatch):
-    from app.agent.delivery import ReviewedReply
-    from app.tasks.node_execution import execute_node
+    from app.agent.completion.delivery import ReviewedReply
+    from app.tasks.nodes.node_execution import execute_node
     from app.integrations.models.transport import ProviderError
     from fakes import set_delivery
     graph_calls, repair_calls = [], []
@@ -219,9 +219,9 @@ async def test_failed_correction_keeps_safe_prose_and_resumes_the_same_node(setu
             return '已核实部分。完整解释。'
         return await execute_node(context, identity='same-correction', kind='model', label='完善答复中', operation=operation)
 
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
-    monkeypatch.setattr('app.agent.delivery.assess', assess)
-    monkeypatch.setattr('app.agent.response_repair.repair_response', correct)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.agent.completion.delivery.assess', assess)
+    monkeypatch.setattr('app.agent.completion.response_repair.repair_response', correct)
     result, stored = await run(setup, object())
     assert result['job']['state'] == 'awaiting_retry', result
     assert '已核实部分。' in result['reply'] and '尚缺解释' not in result['reply']
@@ -280,7 +280,7 @@ async def test_readonly_metadata_cannot_hide_actual_suggestion_or_failed_attempt
         answer = '建议等待确认。' if suggestion else '这次未执行，缺少明确操作授权。'
         await set_delivery(context, answer, business=False, task={'state': 'needs_confirmation' if suggestion else 'blocked'})
         return answer
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     fake = RoutingModel(model='controlled', api_key='controlled')
     result, stored = await run(setup, fake, '先为工作甲准备待确认建议')
     assert fake.reviews == 1
@@ -365,7 +365,7 @@ async def test_known_incomplete_response_survives_empty_targeted_review_and_repa
 @pytest.mark.parametrize('verified', [True, False])
 async def test_known_response_issue_merges_without_overriding_targeted_review_state(setup, monkeypatch, verified):
     from dataclasses import replace
-    from app.agent.delivery import ReviewedReply, assess
+    from app.agent.completion.delivery import ReviewedReply, assess
     from fakes import set_delivery
     from test_business_actions import runtime
     context, _ = await runtime(setup, '核验这份材料的结论')
@@ -376,7 +376,7 @@ async def test_known_response_issue_merges_without_overriding_targeted_review_st
         error_message='' if verified else '专项核对失败', task={'state': 'blocked'})
     async def review(*args, **kwargs):
         return reviewed
-    monkeypatch.setattr('app.agent.reply_review.review_reply', review)
+    monkeypatch.setattr('app.agent.completion.reply_review.review_reply', review)
     result = await assess(context, context.delivery['answer'])
     expected = replace(reviewed, response_reason='核对发现事实冲突；缺少分析说明') if verified else reviewed
     assert result == expected

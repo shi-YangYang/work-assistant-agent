@@ -3,12 +3,12 @@ import type { AssistantInteraction, Conversation, ExecutionMode } from '@paa/api
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createRef, useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { ExecutionModePicker } from '../../../apps/web/src/features/assistant/components/ExecutionModePicker'
+import { ExecutionModePicker } from '../../../apps/web/src/features/assistant/components/composer/ExecutionModePicker'
 import {
   QuestionPanel,
   QuestionHistory,
-} from '../../../apps/web/src/features/assistant/components/QuestionPanel'
-import { MessageComposer } from '../../../apps/web/src/features/assistant/components/MessageComposer'
+} from '../../../apps/web/src/features/assistant/components/interactions/QuestionPanel'
+import { MessageComposer } from '../../../apps/web/src/features/assistant/components/composer/MessageComposer'
 import { useExecutionMode } from '../../../apps/web/src/features/assistant/hooks/useExecutionMode'
 import { useConversationPersona } from '../../../apps/web/src/features/assistant/hooks/useConversationPersona'
 import { useAssistantInteraction } from '../../../apps/web/src/features/assistant/hooks/useAssistantInteraction'

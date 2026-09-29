@@ -39,7 +39,7 @@ async def save_work(db, actor, patch, *, identifier=None, expected=None, sources
         work.revision += 1
     work.content, work.title, work.updated_at = content, content['title'], now()
     if publication is None and private_sources:
-        from app.modules.operations.publication import snapshot
+        from app.modules.operations.mutations.publication import snapshot
         publication = snapshot(content, message_ids=private_sources)
     if publication is not None:
         publication = {**publication, 'content': content}

@@ -198,10 +198,10 @@ def result_path(model, mode, backend):
 
 def run(model, mode, cache, backend='cpu'):
     sys.path.insert(0, str(ROOT / 'apps/desktop/core/src'))
-    from paa_core.asr_worker import WhisperProvider, config_for_mode
-    from paa_core.model_catalog import CATALOG, MLX_CATALOG
-    from paa_core.transcription import choose_boundary, owned_segments
-    provider_start_sha = digest((ROOT / 'apps/desktop/core/src/paa_core/asr_worker.py').read_bytes())
+    from paa_core.asr.asr_worker import WhisperProvider, config_for_mode
+    from paa_core.models.model_catalog import CATALOG, MLX_CATALOG
+    from paa_core.asr.transcription import choose_boundary, owned_segments
+    provider_start_sha = digest((ROOT / 'apps/desktop/core/src/paa_core/asr/asr_worker.py').read_bytes())
     manifest_path = ARTIFACTS / 'dataset-manifest.json'
     manifest = json.loads(manifest_path.read_text())
     spec, group = (MLX_CATALOG if backend == 'mlx' else CATALOG)[model], manifest['groups'][mode]
@@ -216,8 +216,8 @@ def run(model, mode, cache, backend='cpu'):
     config = config_for_mode(mode)
     gpu_memory = None
     if backend != 'cpu':
-        from paa_core.inference_device import apply_device
-        from paa_core.model_manager import verify_files
+        from paa_core.models.inference_device import apply_device
+        from paa_core.models.model_manager import verify_files
         config = apply_device(config, 'gpu')
         if config['backend'] != backend:
             raise RuntimeError('Requested GPU backend is not available on this machine')
@@ -267,7 +267,7 @@ def run(model, mode, cache, backend='cpu'):
               'benchmarkSha256': digest(Path(__file__).read_bytes()),
               'measuredAt': datetime.now(timezone.utc).isoformat(), 'datasetManifestSha256': digest(manifest_path.read_bytes()),
               'providerStartSha256': provider_start_sha,
-              'providerSha256': digest((ROOT / 'apps/desktop/core/src/paa_core/asr_worker.py').read_bytes()),
+              'providerSha256': digest((ROOT / 'apps/desktop/core/src/paa_core/asr/asr_worker.py').read_bytes()),
               'platform': platform.platform(), 'peakRssBytes': rss if sys.platform == 'darwin' else rss * 1024,
               'loadSeconds': load_seconds, 'inferenceSeconds': sum(c['seconds'] for c in chunks),
               'score': score, 'hypothesis': text, 'chunks': chunks, 'silenceWords': silence}

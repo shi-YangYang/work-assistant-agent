@@ -10,7 +10,7 @@ from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from .audio_store import inspect_audio, inspect_recoverable_audio, recover_audio
+from .audio.audio_store import inspect_audio, inspect_recoverable_audio, recover_audio
 
 ID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')
 ACTIVE = ('starting', 'recording', 'pausing', 'paused', 'resuming', 'stopping')
@@ -53,10 +53,10 @@ class Repository:
                     sampleWidth INTEGER NOT NULL DEFAULT 2, frames INTEGER NOT NULL DEFAULT 0,
                     bytes INTEGER NOT NULL DEFAULT 0, audioPath TEXT)''')
             if version < 2:
-                from .transcript_store import migrate
+                from .asr.transcript_store import migrate
                 migrate(db)
             if version < 3:
-                from .summary_store import migrate as migrate_summary
+                from .minutes.summary_store import migrate as migrate_summary
                 migrate_summary(db)
             if version < 4:
                 # New persisted active states require newer recovery semantics.
@@ -65,19 +65,19 @@ class Repository:
                 db.execute('CREATE TABLE meeting_deletions (meetingId TEXT PRIMARY KEY REFERENCES meetings(id), error TEXT)')
                 db.execute('PRAGMA user_version=5')
             if version < 6:
-                from .transcript_store import migrate_library
+                from .asr.transcript_store import migrate_library
                 migrate_library(db)
                 db.execute('PRAGMA user_version=6')
             if version < 7:
-                from .speaker_store import migrate as migrate_speakers
+                from .speakers.speaker_store import migrate as migrate_speakers
                 migrate_speakers(db)
                 db.execute('PRAGMA user_version=7')
             if version < 8:
-                from .speaker_store import migrate_voiceprints
+                from .speakers.speaker_store import migrate_voiceprints
                 migrate_voiceprints(db)
                 db.execute('PRAGMA user_version=8')
             if version < 9:
-                from .summary_store import migrate_speaker_minutes
+                from .minutes.summary_store import migrate_speaker_minutes
                 migrate_speaker_minutes(db)
                 db.execute('PRAGMA user_version=9')
         self.recover_deletions()

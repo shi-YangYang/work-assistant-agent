@@ -12,8 +12,8 @@ import {
   updateConversationPersona,
   uploadAttachment,
 } from '../../../apps/web/src/features/assistant/api/requests'
-import { Assistant } from '../../../apps/web/src/features/assistant/components/Conversations'
-import { PersonaPicker } from '../../../apps/web/src/features/assistant/components/PersonaPicker'
+import { Assistant } from '../../../apps/web/src/features/assistant/components/conversation/Conversations'
+import { PersonaPicker } from '../../../apps/web/src/features/assistant/components/conversation/PersonaPicker'
 import { useConversationPersona } from '../../../apps/web/src/features/assistant/hooks/useConversationPersona'
 import type { Composer } from '../../../apps/web/src/features/assistant/lib/audio-capture'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'

@@ -1,6 +1,6 @@
 import type { InputHTMLAttributes, ReactElement } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { SearchInput } from '../../apps/web/src/components/SearchInput'
+import { SearchInput } from '../../apps/web/src/components/forms/SearchInput'
 
 // Exercise the component's real event handlers/effects with deterministic clocks.
 // Like use-resource.test.ts, this needs no browser or extra DOM dependency.

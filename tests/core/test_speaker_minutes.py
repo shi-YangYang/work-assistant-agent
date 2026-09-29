@@ -10,11 +10,11 @@ from unittest.mock import patch
 import test_summary as summary_fixtures
 from test_summary import content, seed, settings
 from test_recording import wait_for
-from paa_core.meeting_summary import IDENTITY_NOTE, MeetingSummary, model_input, validate
+from paa_core.minutes.meeting_summary import IDENTITY_NOTE, MeetingSummary, model_input, validate
 from paa_core.meeting_library import document_lines, search
 from paa_core.repository import DomainError, Repository
-from paa_core.speaker_store import SpeakerStore
-from paa_core.voiceprints import Voiceprints
+from paa_core.speakers.speaker_store import SpeakerStore
+from paa_core.speakers.voiceprints import Voiceprints
 
 
 class SpeakerMinutesTests(unittest.TestCase):
@@ -343,7 +343,7 @@ class SpeakerMinutesTests(unittest.TestCase):
                 for column in ('inputMode', 'speakerIncomplete', 'publication', 'inputSnapshot'):
                     db.execute(f'ALTER TABLE {table} DROP COLUMN {column}')
             db.execute('PRAGMA user_version=8')
-        with patch('paa_core.summary_store.migrate_speaker_minutes', side_effect=sqlite3.OperationalError('test ddl failure')):
+        with patch('paa_core.minutes.summary_store.migrate_speaker_minutes', side_effect=sqlite3.OperationalError('test ddl failure')):
             with self.assertRaises(sqlite3.OperationalError):
                 Repository(self.repo.root)
         self.assertTrue((self.repo.root / 'meetings.schema8.backup.sqlite3').exists())

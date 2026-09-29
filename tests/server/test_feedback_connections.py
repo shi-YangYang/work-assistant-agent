@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import delete
 
 from app.modules.auth.models import Session
-from app.tasks import feedback
+from app.tasks.feedback import feedback
 from app.tasks.models import Job
 from test_company import send
 

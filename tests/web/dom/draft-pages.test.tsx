@@ -4,8 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api, write } from '../../../apps/web/src/api/client'
-import { ReportDetail } from '../../../apps/web/src/features/reports/components/ReportDetail'
-import { RulesPage } from '../../../apps/web/src/features/settings/components/RulesPage'
+import { ReportDetail } from '../../../apps/web/src/features/reports/components/detail/ReportDetail'
+import { RulesPage } from '../../../apps/web/src/features/settings/components/rules/RulesPage'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
 
 vi.mock('@web/api/client', async (load) => ({

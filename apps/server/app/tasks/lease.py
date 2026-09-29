@@ -58,7 +58,7 @@ async def lease(db, context):
         # Hold this lock through each write, so a transcript PATCH cannot commit
         # between validating its revision and saving a tool result or final reply.
         message = await owned(db, Message, job.target_id, actor, lock=True)
-        from app.modules.conversations.task_state import assert_current
+        from app.modules.conversations.task.task_state import assert_current
         await assert_current(db, actor, job, message)
         if message.transcript_revision != context.source_revision:
             raise InputChanged()

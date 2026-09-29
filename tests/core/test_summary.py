@@ -14,11 +14,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.llm_provider import Provider, Limits, _StreamReply, config, parameters
-from paa_core.meeting_summary import MeetingSummary, validate
+from paa_core.minutes.llm_provider import Provider, Limits, _StreamReply, config, parameters
+from paa_core.minutes.meeting_summary import MeetingSummary, validate
 from paa_core.repository import Repository, DomainError
 from paa_core.protocol import CoreService, handle
-from paa_core.transcript_store import TranscriptStore
+from paa_core.asr.transcript_store import TranscriptStore
 from test_recording import wait_for, FakeInput
 
 
@@ -211,7 +211,7 @@ class SummaryTests(unittest.TestCase):
             for table in ('meeting_summaries', 'summary_jobs', 'summary_attempts'): db.execute('DROP TABLE ' + table)
             db.execute('DROP TABLE meeting_deletions')
             db.execute('PRAGMA user_version=2')
-        with patch('paa_core.summary_store.migrate', side_effect=sqlite3.OperationalError('test failure')):
+        with patch('paa_core.minutes.summary_store.migrate', side_effect=sqlite3.OperationalError('test failure')):
             with self.assertRaises(sqlite3.OperationalError): Repository(self.repo.root)
         with self.repo.connect() as db:
             self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 2)

@@ -16,9 +16,9 @@ from app.modules.model_services.parameters import reply_review_config, request_o
 from app.modules.model_services.probes import reserve_probe as model_services_reserve_probe
 from app.modules.model_services.schemas import ServiceInput, parameters
 from app.security.secrets import SecretUnavailable, decrypt, initialize_key
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from pathlib import Path
 from sqlalchemy import select
 from test_company import send
@@ -194,13 +194,13 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     saved=await create(c['admin'], service); routing=route(saved);routing['assistant']['streaming']=streaming
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
-    from app.tasks.feedback import publish
+    from app.tasks.feedback.feedback import publish
     phases = []
     async def track_phase(context, stage, *args, **kwargs):
         phases.append(stage)
         return await publish(context, stage, *args, **kwargs)
-    monkeypatch.setattr('app.tasks.feedback.publish', track_phase)
-    monkeypatch.setattr('app.tasks.handlers.publish', track_phase)
+    monkeypatch.setattr('app.tasks.feedback.feedback.publish', track_phase)
+    monkeypatch.setattr('app.tasks.processing.handlers.publish', track_phase)
     reply='请确认这条进展建议。'
     async def response(request):
         body=json.loads(request.content);calls.append((str(request.url),body))

@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from app.agent.context_usage import compression_reason, estimate_request, ensure_input
+from app.agent.context.context_usage import compression_reason, estimate_request, ensure_input
 from app.integrations.models.capabilities import capability
 from app.modules.model_services.schemas import ServiceModel
 from app.tasks.context import BudgetExceeded

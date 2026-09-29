@@ -1,5 +1,5 @@
-import noticeStyles from '../../../components/Notice.module.css'
-import { ErrorNotice } from '@web/components/ErrorNotice'
+import noticeStyles from '../../../styles/patterns/Notice.module.css'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { dingtalkResult } from '@web/features/auth/utils/dingtalk-flow'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'

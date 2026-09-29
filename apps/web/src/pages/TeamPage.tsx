@@ -1,5 +1,5 @@
-import { ReportDetail } from '@web/features/reports/components/ReportDetail'
-import { WorkDetail } from '@web/features/work/components/WorkDetail'
+import { ReportDetail } from '@web/features/reports/components/detail/ReportDetail'
+import { WorkDetail } from '@web/features/work/components/detail/WorkDetail'
 import { Navigate, useLocation, useParams } from 'react-router'
 
 import { TeamWorkspace as Workspace } from '@web/features/team/components/TeamWorkspace'

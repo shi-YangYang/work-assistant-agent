@@ -46,12 +46,12 @@ async def answer(db, actor, identifier, body, key):
     if row.state != 'waiting':
         problem(409, '该问题已失效，不能再回答')
     source = await validate(db, actor, row, current=True)
-    from app.tasks.interactions import continue_task
+    from app.tasks.runtime.interactions import continue_task
     continuation = await continue_task(db, actor, source, text, reference={'interactionId': row.id}, task_id=row.task_id)
     row.state, row.answers, row.continuation = 'answered', answers, continuation
     row.revision += 1
     row.updated_at = now()
-    from app.tasks.waiting import settle
+    from app.tasks.runtime.waiting import settle
     await settle(db, actor, row.message_id)
     value = {'interaction': await interaction_dto(db, actor, row), 'continuation': continuation}
     return idem_save(db, actor, 'interaction-answer:' + identifier, key, request_digest, value)
@@ -66,14 +66,14 @@ async def cancel(db, actor, identifier, expected):
         problem(409, '此问题已经回答')
     source = await validate(db, actor, row, current=True)
     from app.tasks.models import Job
-    from app.modules.conversations.task_state import cancel as cancel_task
+    from app.modules.conversations.task.task_state import cancel as cancel_task
     job = await db.get(Job, row.job_id)
     await cancel_task(db, actor, job, source)
     row.state, row.updated_at = 'cancelled', now()
     row.revision += 1
     job.state, job.phase = 'cancelled', 'cancelled'
-    from app.tasks.outcomes import derive
+    from app.tasks.feedback.outcomes import derive
     job.result = {**job.result, 'taskOutcome': derive(job)}
-    from app.tasks.waiting import settle
+    from app.tasks.runtime.waiting import settle
     await settle(db, actor, row.message_id)
     return {'interaction': await interaction_dto(db, actor, row)}

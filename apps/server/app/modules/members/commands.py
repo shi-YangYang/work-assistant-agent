@@ -4,7 +4,7 @@ from app.modules.auth.sessions import passwords, revoke_member
 from app.modules.members.models import Company, Member
 from app.modules.members.serializers import member_dto
 from app.modules.members.service import visible_member
-from app.modules.reports.schedule import eligibility_changed as reporting_eligibility_changed
+from app.modules.reports.scheduling.schedule import eligibility_changed as reporting_eligibility_changed
 from sqlalchemy import delete, select
 from starlette.concurrency import run_in_threadpool
 

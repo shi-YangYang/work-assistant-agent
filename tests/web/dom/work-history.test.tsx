@@ -3,7 +3,7 @@ import type { Work } from '@paa/api-contracts'
 import { render, screen, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it } from 'vitest'
-import { WorkHistory } from '../../../apps/web/src/features/work/components/WorkHistory'
+import { WorkHistory } from '../../../apps/web/src/features/work/components/detail/WorkHistory'
 import { historyChanges, historyOrigin } from '../../../apps/web/src/features/work/utils/history'
 
 afterEach(cleanup)

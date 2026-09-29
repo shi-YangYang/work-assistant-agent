@@ -46,7 +46,7 @@ async def visible_attachment(db, identifier, actor, *, lock=False):
         if item.owner_id != actor.id:
             problem(404, '附件尚未发送或无权查看')
     else:
-        from app.modules.operations.publication import shared_attachment, published_attachment
+        from app.modules.operations.mutations.publication import shared_attachment, published_attachment
         if item.owner_id == actor.id and await published_attachment(db, item):
             return item
         if item.owner_id != actor.id and await shared_attachment(db, actor, item):
@@ -73,7 +73,7 @@ async def agent_attachment(db, identifier, actor, job):
     item = await owned(db, Attachment, identifier, actor)
     if item.kind != 'document' or not item.message_id:
         problem(404, '文件不可用或尚未发送')
-    from app.modules.operations.publication import published_attachment
+    from app.modules.operations.mutations.publication import published_attachment
     if await published_attachment(db, item, revision_ids=job.result.get('sourceIds', []) if job.kind == 'report' else None):
         return item
     message = await owned(db, Message, item.message_id, actor)

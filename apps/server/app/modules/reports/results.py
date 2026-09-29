@@ -2,7 +2,7 @@ from app.db.base import now
 from app.modules.reports.models import Report
 from app.modules.reports.sources import sources_for
 from app.security.ownership import owned
-from app.tasks.feedback_state import update_feedback
+from app.tasks.feedback.feedback_state import update_feedback
 from app.tasks.lease import lease
 
 
@@ -26,8 +26,8 @@ async def save_candidate(db, context, content):
     job.result = {**job.result, 'reportSaved': True, 'reportFlow': 2, 'savedRevision': report.revision}
     job.state, job.phase, job.error, job.lease_until, job.updated_at = 'succeeded', 'complete', '', None, now()
     update_feedback(job, 'complete', '')
-    from app.modules.reports.schedule import draft_ready
+    from app.modules.reports.scheduling.schedule import draft_ready
     await draft_ready(db, report)
 
-    from app.modules.operations.report_completion import complete_report
+    from app.modules.operations.mutations.report_completion import complete_report
     await complete_report(db, actor, job)

@@ -12,14 +12,14 @@ from app.modules.auth.models import Session
 from app.modules.members.models import Company, Member
 from app.modules.messages.models import Message
 from app.modules.model_services.models import ModelUsage
-from app.modules.model_services.usage import RequestRecord, usage_fields
+from app.modules.model_services.usage.usage import RequestRecord, usage_fields
 from app.modules.reports.models import Report, ReportRevision
 from app.modules.work.models import WorkItem, WorkRevision
 from app.security.access import scope as business_scope
-from app.tasks.feedback import events, update_feedback
-from app.tasks.handlers import process_job
+from app.tasks.feedback.feedback import events, update_feedback
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from sqlalchemy import delete
 from test_company import send
 from test_model_services import create, route
@@ -227,7 +227,7 @@ async def test_stage_feedback_precedes_completed_reply_and_preserves_usage(setup
 async def test_feedback_live_authorization_and_stale_writer(setup):
     settings,sessions,users,c=setup
     from app.tasks.context import RunContext, LostLease
-    from app.tasks.feedback import publish
+    from app.tasks.feedback.feedback import publish
     sent=await send(c['admin'],'查询')
     job=await claim(sessions,users['admin'].id)
     context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings)
@@ -335,7 +335,7 @@ async def test_usage_address_rejection_not_sent_but_http_redirect_is_failed(setu
 
 async def test_document_stage_follows_actual_parse_and_feedback_expires(setup):
     from app.tasks.context import RunContext
-    from app.tasks.documents import prepare_document
+    from app.tasks.processing.documents import prepare_document
     settings,sessions,users,c=setup
     uploaded=await c['employee'].post('/api/v1/uploads',files={'file':('note.txt',b'Plain document','text/plain')})
     assert uploaded.status_code==201,uploaded.text

@@ -100,8 +100,8 @@ async def test_temporary_web_failure_uses_shared_node_retry_and_visible_state(se
     import json
     from app.agent.tools.web import research
     from app.integrations.web_research import WebTemporaryError
-    from app.tasks.node_execution import execute_node, initialize
-    from app.tasks.node_state import execution
+    from app.tasks.nodes.node_execution import execute_node, initialize
+    from app.tasks.nodes.node_state import execution
     from app.tasks.models import Job
     from test_business_actions import runtime
     context, _ = await runtime(setup, '搜索公开资料')

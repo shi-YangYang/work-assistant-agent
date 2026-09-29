@@ -2,7 +2,7 @@
 from app.modules.messages.models import Message
 from app.modules.work.models import ProgressDraft
 from app.security.access import valid
-from app.tasks.items import collect
+from app.tasks.feedback.items import collect
 from sqlalchemy import select
 
 

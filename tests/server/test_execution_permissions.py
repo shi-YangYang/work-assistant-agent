@@ -4,14 +4,14 @@ from itertools import product
 import pytest
 from langchain_core.messages import AIMessage
 from sqlalchemy import func, select
-from app.agent.operations import execute
-from app.agent.interactions import finish_waiting
-from app.modules.operations.execution_policy import decide, effective
+from app.agent.actions.operations import execute
+from app.agent.actions.interactions import finish_waiting
+from app.modules.operations.policy.execution_policy import decide, effective
 from app.modules.work.models import WorkItem
 from app.modules.operations.models import BusinessAction
 from app.tasks.models import Job
 from app.tasks.context import RunContext
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from test_business_actions import Judge, create, read_work
 from test_company import keyed
 
@@ -91,7 +91,7 @@ async def test_mode_switch_blocked_while_running_and_no_retry_escalation(setup):
         job.state, job.lease_until = 'awaiting_retry', None
     changed = await clients['employee'].patch('/api/v1/conversations/' + sent['conversationId'], json={'expectedRevision': conversation['revision'], 'executionMode': 'full', 'fullAccessConfirmed': True})
     assert changed.status_code == 200
-    from app.modules.operations.execution_policy import mode_for
+    from app.modules.operations.policy.execution_policy import mode_for
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         assert await mode_for(db, job, sent['conversationId']) == 'auto'
@@ -163,7 +163,7 @@ async def test_report_generation_handoff_follows_confirmation_policy(setup, mode
         report.revision += 1
         child = await db.get(Job, row.result['jobId'])
         child.state, child.phase = 'succeeded', 'complete'
-        from app.modules.operations.report_completion import complete_report
+        from app.modules.operations.mutations.report_completion import complete_report
         await complete_report(db, users['employee'], child)
         assert bool(report.published_revision) == (expected == 'succeeded'), 'Submission must not depend on any GET/DTO projection'
         value = await action_dto(db, users['employee'], row)
@@ -228,7 +228,7 @@ async def test_full_admin_deletion_keeps_its_lease_but_fences_other_readers(setu
 
 
 async def test_interrupt_closes_pending_approval_and_cannot_revive_task(setup):
-    from app.tasks.cancellation import cancel_job, CancelJob
+    from app.tasks.runtime.cancellation import cancel_job, CancelJob
     _, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'ask', '创建工作：待确认')
     action = await execute(context, step=1, action='create_work', changes={'title': '待确认'})

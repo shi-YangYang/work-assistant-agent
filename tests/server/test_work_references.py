@@ -6,21 +6,21 @@ import pytest
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
 from sqlalchemy import func, select
-from app.agent.history import conversation_history
-from app.agent.intent import authorize_intent
-from app.agent.operations import execute
-from app.agent.reply_review import review_reply
-from app.agent.task_context import projection
-from app.agent.work_context import reference_evidence
+from app.agent.context.history import conversation_history
+from app.agent.actions.intent import authorize_intent
+from app.agent.actions.operations import execute
+from app.agent.completion.reply_review import review_reply
+from app.agent.context.task_context import projection
+from app.agent.context.work_context import reference_evidence
 from app.db.base import now
-from app.modules.conversations.context_store import references, capture_sources, publish_summary
+from app.modules.conversations.context.context_store import references, capture_sources, publish_summary
 from app.modules.conversations.models import Conversation, ConversationContext
 from app.modules.messages.models import Message
 from app.modules.work.models import WorkItem
 from app.tasks.context import RunContext
-from app.tasks.handlers import message_input_digest, process_job
+from app.tasks.processing.handlers import message_input_digest, process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from test_business_actions import Judge, ReplyJudge, create
 from test_company import keyed
 
@@ -269,7 +269,7 @@ async def test_retry_after_own_delete_recovers_reply_without_repeating_delete(se
         from fakes import set_delivery
         await set_delivery(context, '之后可以整理其他工作。', business=True)
         return '之后可以整理其他工作。'
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information'], fail=True))

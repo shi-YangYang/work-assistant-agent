@@ -2,7 +2,7 @@ from fastapi import HTTPException
 from app.core.digests import digest
 from app.core.errors import problem
 from app.modules.operations.models import BusinessAction
-from app.modules.operations.rules import LABELS
+from app.modules.operations.policy.rules import LABELS
 from app.modules.operations.targets import preview, source_check
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem, WorkRevision

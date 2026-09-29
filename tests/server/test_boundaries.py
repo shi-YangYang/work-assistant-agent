@@ -8,16 +8,16 @@ from dataclasses import replace
 from datetime import timedelta
 from fakes import controlled_model
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.model import reserve_call
+from app.agent.runtime.model import reserve_call
 from app.db.base import now
 from app.modules.messages.models import Message
 from app.modules.model_services.models import ModelUsage
 from app.modules.work.models import WorkItem
 from app.tasks.context import BudgetExceeded, LostLease, RunContext
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.lease import lease
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from sqlalchemy import select
 from test_company import send
 from uuid import uuid4

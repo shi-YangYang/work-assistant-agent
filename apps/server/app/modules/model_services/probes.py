@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 async def reserve_probe(sessions, settings, actor, choice=None):
     async with sessions.begin() as db:
-        from app.modules.model_services.usage import usage_fields
+        from app.modules.model_services.usage.usage import usage_fields
         usage = ModelUsage(company_id=actor.company_id, owner_id=actor.id, job_id=None, kind='admin_test', **usage_fields(choice))
         db.add(usage)
         await db.flush()
@@ -47,7 +47,7 @@ async def probe(request_db, sessions, settings, actor, body, config, key, finger
         saved_key = decrypt(settings.model_key_file, credential, actor.company_id, body.serviceId, body.expectedRevision)
         return key if body.apiKey else saved_key
 
-    from app.modules.model_services.usage import RequestRecord
+    from app.modules.model_services.usage.usage import RequestRecord
     choice = {'serviceId':body.serviceId, 'name':body.name or '未保存配置', 'model':config['model'] if config else None}
     async def request(messages, **kw):
         nonlocal known_usage

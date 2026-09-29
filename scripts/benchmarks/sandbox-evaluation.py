@@ -25,8 +25,8 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.tasks.handlers import process_job
-from app.tasks.queue import claim
+from app.tasks.processing.handlers import process_job
+from app.tasks.runtime.queue import claim
 from app.modules.work.models import WorkItem
 from app.modules.deliverables.models import DeliverableRevision
 from app.modules.executions.models import SandboxExecution

@@ -11,7 +11,7 @@ from app.modules.auth.models import DingTalkAuthorization, DingTalkIdentity, Ses
 from app.modules.auth.session_policy import ABSOLUTE_LIFETIME
 from app.modules.auth.sessions import COOKIE, digest, issue_session, revoke_member
 from app.modules.members.models import Member
-from app.modules.reports.schedule import eligibility_changed as reporting_eligibility_changed
+from app.modules.reports.scheduling.schedule import eligibility_changed as reporting_eligibility_changed
 from app.security.locks import company_lock as business_company_lock
 from app.security.secrets import SecretUnavailable, decrypt
 from sqlalchemy import delete, or_, select, update

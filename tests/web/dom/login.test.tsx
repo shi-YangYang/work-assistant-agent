@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setCsrf } from '../../../apps/web/src/api/client'
 import { App } from '../../../apps/web/src/app/App'
 
-vi.mock('../../../apps/web/src/app/Shell', () => ({ Shell: () => null }))
+vi.mock('../../../apps/web/src/app/layout/Shell', () => ({ Shell: () => null }))
 
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
 

@@ -33,9 +33,9 @@ from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem
 from app.modules.model_services.models import ModelUsage
 from app.tasks.models import Job
-from app.tasks.node_state import node_dtos
-from app.tasks.queue import claim
-from app.tasks.handlers import process_job
+from app.tasks.nodes.node_state import node_dtos
+from app.tasks.runtime.queue import claim
+from app.tasks.processing.handlers import process_job
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import select
 from sqlalchemy.engine import make_url

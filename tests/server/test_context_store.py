@@ -1,14 +1,14 @@
 import pytest
 from uuid import uuid4
 from sqlalchemy import event, select
-from app.agent.conversation_context import conversation_references
+from app.agent.context.conversation_context import conversation_references
 from app.db.base import now
-from app.modules.conversations.context_store import publish_summary
-from app.modules.conversations.context_invalidation import invalidate
+from app.modules.conversations.context.context_store import publish_summary
+from app.modules.conversations.context.context_invalidation import invalidate
 from app.modules.conversations.models import ConversationContext
 from app.modules.messages.models import Message
 from app.tasks.context import RunContext, InputChanged
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 
 pytestmark = pytest.mark.asyncio
 
@@ -76,7 +76,7 @@ async def test_late_reply_revision_replaces_cached_reference(setup):
 
 
 async def test_invalidated_summary_cannot_publish_and_original_remains(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     settings, sessions, users, clients = setup
     first = await sent(clients['employee'], '原始问题')
     actor = users['employee']; job = await claim(sessions, actor.id)
@@ -95,7 +95,7 @@ async def test_invalidated_summary_cannot_publish_and_original_remains(setup):
 
 
 async def test_tool_summary_keeps_its_own_access_after_failed_job(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     from app.modules.members.models import Member
     from app.security.access import scope
     from app.tasks.models import Job
@@ -125,7 +125,7 @@ async def test_tool_summary_keeps_its_own_access_after_failed_job(setup):
 
 
 async def test_newer_tool_summary_is_not_visible_to_older_task(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '较早问题')
     second = await legacy_message(sessions, users['employee'], '较晚的工具查询', first['conversationId'])
@@ -143,7 +143,7 @@ async def test_newer_tool_summary_is_not_visible_to_older_task(setup):
 
 
 async def test_lease_selects_epoch_without_context_payload(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     from app.tasks.lease import lease
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '查询')
@@ -167,9 +167,9 @@ async def test_lease_selects_epoch_without_context_payload(setup):
 
 
 async def test_checkpoint_publication_recovers_once_without_overwriting_newer_summary(setup, monkeypatch):
-    from app.agent.checkpoints import GuardedSaver
-    from app.agent.compaction import save_packet, saved_packet, publish_packet
-    from app.modules.conversations.context_store import capture_sources
+    from app.agent.context.checkpoints import GuardedSaver
+    from app.agent.context.compaction import save_packet, saved_packet, publish_packet
+    from app.modules.conversations.context.context_store import capture_sources
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '需要保留的请求')
@@ -188,7 +188,7 @@ async def test_checkpoint_publication_recovers_once_without_overwriting_newer_su
         if len(calls) == 1:
             raise RuntimeError('controlled publication interruption')
         return await real_publish(context, value)
-    monkeypatch.setattr('app.agent.compaction.publish_summary', interrupted)
+    monkeypatch.setattr('app.agent.context.compaction.publish_summary', interrupted)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         context.context_checkpoint, context.context_checkpoint_config = GuardedSaver(saver, context), config
         await save_packet(context, packet)

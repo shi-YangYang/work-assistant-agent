@@ -3,7 +3,7 @@ import type { BusinessAction } from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it, vi } from 'vitest'
-import { BusinessActionCard } from '../../../apps/web/src/features/assistant/components/BusinessActionCard'
+import { BusinessActionCard } from '../../../apps/web/src/features/assistant/components/interactions/BusinessActionCard'
 import { resolveBusinessAction } from '../../../apps/web/src/features/assistant/api/requests'
 import { deferred } from './helpers'
 vi.mock('@web/features/assistant/api/requests', () => ({ resolveBusinessAction: vi.fn() }))

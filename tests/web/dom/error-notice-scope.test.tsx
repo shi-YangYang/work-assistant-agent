@@ -4,14 +4,14 @@ import { StrictMode, useState } from 'react'
 import { createMemoryRouter, MemoryRouter, RouterProvider, useNavigate } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../apps/web/src/api/client'
-import { Shell } from '../../../apps/web/src/app/Shell'
-import { ErrorNotice } from '../../../apps/web/src/components/ErrorNotice'
+import { Shell } from '../../../apps/web/src/app/layout/Shell'
+import { ErrorNotice } from '../../../apps/web/src/components/feedback/ErrorNotice'
 import {
   ErrorNoticeOutlet,
   ErrorNoticeScope,
-} from '../../../apps/web/src/components/ErrorNoticeScope'
-import { FormField } from '../../../apps/web/src/components/FormField'
-import { Modal } from '../../../apps/web/src/components/Modal'
+} from '../../../apps/web/src/components/feedback/ErrorNoticeScope'
+import { FormField } from '../../../apps/web/src/components/forms/FormField'
+import { Modal } from '../../../apps/web/src/components/overlays/Modal'
 import { ErrorDiagnostics, SupportLink } from '../../../apps/web/src/lib/support-link'
 import { createVault, dialogs, identity } from './helpers'
 

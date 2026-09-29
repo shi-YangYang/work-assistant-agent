@@ -5,16 +5,16 @@ import time
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.profiles import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
-from app.agent.compaction import ContextCompaction
+from app.agent.context.compaction import ContextCompaction
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
-from app.agent.history import conversation_history
-from app.agent.task_context import TASK_POLICY
-from app.agent.delivery import COMPLETION_POLICY, from_messages, take_repair
-from app.agent.middleware import ToolBoundary
-from app.agent.model import BoundedChatModel, approximate_tokens
-from app.agent.persona import persona_prompt
-from app.agent.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
+from app.agent.context.history import conversation_history
+from app.agent.context.task_context import TASK_POLICY
+from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, take_repair
+from app.agent.runtime.middleware import ToolBoundary
+from app.agent.runtime.model import BoundedChatModel, approximate_tokens
+from app.agent.prompts.persona import persona_prompt
+from app.agent.prompts.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
 from app.agent.tools.registry import BUSINESS_TOOLS
 from app.agent.tools.team import TEAM_TOOLS
 from app.core.personas import LEGACY_PERSONA
@@ -33,19 +33,19 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    from app.agent.execution_mode import mode_prompt
+    from app.agent.prompts.execution_mode import mode_prompt
     graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name != 'run_python' or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
 async def invoke_harness(context, checkpointer, content, model=None, *, repair_missing_action=False):
-    from app.agent.checkpoints import GuardedSaver
+    from app.agent.context.checkpoints import GuardedSaver
     async with context.sessions.begin() as db:
         live, actor = await lease(db, context)
         if not live.access:
             live.access = business_scope(actor)
         context.role = actor.role
-        from app.modules.operations.execution_policy import mode_for
+        from app.modules.operations.policy.execution_policy import mode_for
         source = await db.get(Message, live.target_id) if live.kind == 'message' else None
         context.execution_mode = await mode_for(db, live, source.conversation_id if source else None)
         from app.modules.model_services.bindings import freeze_capacities
@@ -91,7 +91,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         state = await graph.aget_state(config)
         # Completed graphs bypass middleware. Recover compacted evidence as well
         # as the final prose before independent review, including a fresh worker.
-        from app.agent.compaction import saved_packet, publish_packet
+        from app.agent.context.compaction import saved_packet, publish_packet
         packet = await saved_packet(context)
         if packet:
             await publish_packet(context, packet)
@@ -128,7 +128,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
-    from app.agent.work_context import reference_evidence
+    from app.agent.context.work_context import reference_evidence
     context.reply_evidence = [*reference_evidence(context), *context.context_evidence, *[
         {'id': index, 'tool': message.name, 'result': message.content}
         for index, message in enumerate(messages)

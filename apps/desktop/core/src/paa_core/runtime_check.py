@@ -14,8 +14,8 @@ import uuid
 import wave
 from pathlib import Path
 
-from .asr_worker import ASRWorker, config_for_mode, WhisperProvider
-from .recorder import NativeInput, Recorder
+from .asr.asr_worker import ASRWorker, config_for_mode, WhisperProvider
+from .audio.recorder import NativeInput, Recorder
 from .repository import Repository
 
 SPEECH_URL = 'https://raw.githubusercontent.com/wenet-e2e/wenet/d17059667d6afe0680d19b3a4948ab825ef25105/test/resources/aishell-BAC009S0724W0121.wav'
@@ -84,7 +84,7 @@ def check(model_path, audio_path, device='cpu'):
     with wave.open(str(audio_path), 'rb') as source:
         pcm, rate = source.readframes(source.getnframes()), source.getframerate()
     worker = ASRWorker(OfflineProvider)
-    from .inference_device import apply_device
+    from .models.inference_device import apply_device
     config = apply_device(config_for_mode('zh'), device)
     started = time.monotonic()
     try:

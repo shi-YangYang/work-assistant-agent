@@ -2,7 +2,7 @@ import type { Schedule } from '@paa/api-contracts'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
-import { TimeField } from '../../apps/web/src/components/TimeField'
+import { TimeField } from '../../apps/web/src/components/forms/TimeField'
 import { loginConfigurationErrors } from '../../apps/web/src/features/auth/utils/login-configuration'
 import {
   reportRuleErrors,

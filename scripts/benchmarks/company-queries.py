@@ -26,7 +26,7 @@ from app.db.session import database
 from app.modules.members.models import Company, Member
 from app.modules.messages.models import Message
 from app.modules.model_services.models import ModelUsage
-from app.modules.model_services.usage import usage_page
+from app.modules.model_services.usage.usage import usage_page
 from app.modules.team.metrics import team_data
 from app.modules.work.models import WorkItem, WorkRevision
 from app.security.locks import company_lock
@@ -34,10 +34,19 @@ from app.security.locks import company_lock
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def baseline(path, function, revision):
-    source = subprocess.check_output(['git', 'show', revision + ':' + path], cwd=ROOT, text=True)
+def baseline(path, function, revision, *, previous_paths=()):
+    resolved = subprocess.run(['git', 'rev-parse', '--verify', '--end-of-options', revision + '^{commit}'], cwd=ROOT, capture_output=True, text=True)
+    if resolved.returncode:
+        raise ValueError(f'Invalid baseline revision: {revision}')
+    commit = resolved.stdout.strip()
+    paths = (path, *previous_paths)
+    available = subprocess.check_output(['git', 'ls-tree', '-r', '--name-only', commit, '--', *paths], cwd=ROOT, text=True).splitlines()
+    selected = next((candidate for candidate in paths if candidate in available), None)
+    if selected is None:
+        raise FileNotFoundError(f'Baseline revision {revision} contains none of: {", ".join(paths)}')
+    source = subprocess.check_output(['git', 'show', commit + ':' + selected], cwd=ROOT, text=True)
     namespace = {'__name__': '_query_baseline'}
-    exec(compile(source, path, 'exec'), namespace)
+    exec(compile(source, selected, 'exec'), namespace)
     return namespace[function]
 
 
@@ -94,7 +103,11 @@ async def main(revision):
             for table in ('company_member', 'company_message', 'company_work_item', 'company_work_revision', 'company_model_usage'):
                 await connection.execute(text('ANALYZE ' + table))
         measurements['plannerStatistics'] = 'ANALYZE after deterministic seed'
-        cases = [('usage', baseline('apps/server/app/modules/model_services/usage.py', 'usage_page', revision), usage_page), ('team', baseline('apps/server/app/modules/team/metrics.py', 'team_data', revision), team_data)]
+        cases = [
+            ('usage', baseline('apps/server/app/modules/model_services/usage/usage.py', 'usage_page', revision,
+                               previous_paths=('apps/server/app/modules/model_services/usage.py',)), usage_page),
+            ('team', baseline('apps/server/app/modules/team/metrics.py', 'team_data', revision), team_data),
+        ]
         for name, before, after in cases:
             outputs = []
             for label, implementation in [('before', before), ('after', after)]:

@@ -87,7 +87,7 @@ async def propose_followup(title: str, summary: str, status: Literal['in_progres
     """
     content = Progress(title=title, summary=summary, status=status, blocker=blocker, nextStep=next_step).model_dump(mode='json', exclude_unset=True)
     context = runtime.context
-    from app.agent.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt, settle_suggestion
+    from app.agent.actions.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt, settle_suggestion
     rejected = await authorize_suggestion(context, 'propose_followup', content, work_id if work_id != 'null' else None, source_tokens)
     if rejected:
         return clip(rejected)

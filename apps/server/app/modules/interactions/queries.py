@@ -15,7 +15,7 @@ async def validate(db, actor, row, *, current=False):
         problem(409, '账号权限已变化，请重新提问')
     if message.transcript_revision != row.source_revision:
         problem(409, '问题所依据的材料已变化，请重新提问')
-    from app.modules.conversations.task_state import source_text
+    from app.modules.conversations.task.task_state import source_text
     for source in row.sources:
         if await source_text(db, actor, row.conversation_id, source) is None:
             problem(409, '任务来源已变化，该问题已失效')

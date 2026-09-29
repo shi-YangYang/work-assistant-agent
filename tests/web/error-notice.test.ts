@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router'
 import { expect, it } from 'vitest'
 import { ApiError } from '../../apps/web/src/api/client'
-import { ErrorNotice } from '../../apps/web/src/components/ErrorNotice'
+import { ErrorNotice } from '../../apps/web/src/components/feedback/ErrorNotice'
 import { ErrorDiagnostics, SupportLink } from '../../apps/web/src/lib/support-link'
 
 function render(error: Error | string, diagnostics = false, retry?: () => void) {

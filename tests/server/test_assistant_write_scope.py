@@ -7,8 +7,8 @@ from app.agent.tools.work import propose_progress
 from app.agent.tools.team import propose_followup
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
 from app.modules.messages.models import Message
-from app.modules.operations.publication import shared_attachment
-from app.agent.operations import execute
+from app.modules.operations.mutations.publication import shared_attachment
+from app.agent.actions.operations import execute
 from test_business_actions import runtime, finish
 from test_company import keyed
 
@@ -81,7 +81,7 @@ async def test_selected_material_survives_private_conversation_deletion(setup):
     from app.agent.tools.team import query_team_business, read_team_source
     from app.agent.tools.documents import read_document
     from app.modules.attachments.models import Attachment, DocumentChunk
-    from app.tasks.documents import prepare_document
+    from app.tasks.processing.documents import prepare_document
     _, sessions, users, c = setup
     context, sent = await runtime(setup, '创建需求核对工作，仅附带公开材料')
     files = []

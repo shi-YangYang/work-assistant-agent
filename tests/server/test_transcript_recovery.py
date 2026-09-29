@@ -1,18 +1,18 @@
 """Corrected voice inputs through the real API, graph and PostgreSQL checkpoint."""
 import hashlib
-import app.tasks.handlers as worker
+import app.tasks.processing.handlers as worker
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.agent.harness import invoke_harness as worker_invoke_harness
-from app.agent.middleware import ToolBoundary
+from app.agent.runtime.middleware import ToolBoundary
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from sqlalchemy import select
 from test_company import keyed, send
 from test_recovery import RecoveryModel

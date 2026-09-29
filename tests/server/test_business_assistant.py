@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.agent.harness import invoke_harness
-from app.agent.history import conversation_history
+from app.agent.context.history import conversation_history
 from app.agent.tools.team import propose_followup, query_team_business, read_team_source
 from app.agent.tools.work import find_work_items
 from app.db.base import now
@@ -18,10 +18,10 @@ from app.modules.team.agent_queries import date_range as business_date_range, fi
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
 from app.security.access import receipt as business_receipt, scope as business_scope
 from app.tasks.context import RunContext
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.lease import lease
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from pydantic import Field
 from sqlalchemy import select
 from test_company import send
@@ -345,8 +345,8 @@ async def test_followup_text_promise_requires_real_draft_with_one_repair(setup, 
 @pytest.mark.parametrize('kind', ['clarification', 'query', 'budget'])
 async def test_followup_guard_preserves_clarification_query_and_existing_budget(setup, kind):
     from app.tasks.context import BudgetExceeded
-    from app.agent.delivery import assess
-    from app.agent.model import reserve_call
+    from app.agent.completion.delivery import assess
+    from app.agent.runtime.model import reserve_call
     _, sessions, users, _ = setup
     await facts(sessions, users['employee'])
     rt, job, sent = await runtime(setup, text='团队有哪些要跟进的事项？' if kind == 'query' else '帮我跟进张晨的采购报价')

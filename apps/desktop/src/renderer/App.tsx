@@ -1,12 +1,18 @@
 import brandMark from '@paa/ui-web/mark.png'
-import { CompanySettings, guestCompany } from './CompanySettings'
-import { MeetingLibraryList } from './MeetingLibraryList'
+import { CompanySettings, guestCompany } from './features/settings/company/CompanySettings'
+import { MeetingLibraryList } from './features/meetings/library/MeetingLibraryList'
 import type { MeetingHit } from '../shared/library-contracts'
-import { Appearance, CommandPalette, pageLabels, useTheme, type Page } from './Navigation'
-import { MeetingWorkspace } from './MeetingWorkspace'
-import { type AudioPlayerHandle } from './AudioPlayer'
-import { ApiModelSettings } from './ModelSettings'
-import { ModelSettings, Transcript } from './Transcription'
+import {
+  Appearance,
+  CommandPalette,
+  pageLabels,
+  useTheme,
+  type Page,
+} from './components/navigation/Navigation'
+import { MeetingWorkspace } from './features/meetings/workspace/MeetingWorkspace'
+import { type AudioPlayerHandle } from './features/meetings/playback/AudioPlayer'
+import { ApiModelSettings } from './features/settings/models/ModelSettings'
+import { ModelSettings, Transcript } from './features/meetings/transcript/Transcription'
 import type { ModelState } from '../shared/contracts'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {

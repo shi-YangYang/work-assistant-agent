@@ -12,7 +12,7 @@ from app.core.config import Settings
 from app.modules.members.models import Member
 from app.modules.voiceprints.cleanup import drain, remove_enrollment
 from app.modules.voiceprints.models import Voiceprint, VoiceprintCleanup
-from app.tasks.voiceprints import extract, process_once
+from app.tasks.processing.voiceprints import extract, process_once
 from paa_voiceprints import MODEL_ID
 from test_desktop_voiceprints import enroll, fake_extract, wav_bytes
 
@@ -34,8 +34,8 @@ async def test_chunked_extraction_reads_eof_and_bounds_total(tmp_path, monkeypat
         children.append(child)
         return child
     async def audio(*args): return wav_bytes(), 72
-    monkeypatch.setattr('app.tasks.voiceprints.asyncio.create_subprocess_exec', fake_spawn)
-    monkeypatch.setattr('app.tasks.voiceprints.audio_wav', audio)
+    monkeypatch.setattr('app.tasks.processing.voiceprints.asyncio.create_subprocess_exec', fake_spawn)
+    monkeypatch.setattr('app.tasks.processing.voiceprints.audio_wav', audio)
     if oversize:
         with pytest.raises(ValueError, match='结果异常'):
             await extract(tmp_path / 'audio', Settings())

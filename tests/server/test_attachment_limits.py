@@ -8,13 +8,13 @@ import pytest
 from PIL import Image
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from app.agent.conversation_context import message_reference, request_text
-from app.agent.report_context import load_materials
+from app.agent.context.conversation_context import message_reference, request_text
+from app.agent.context.report_context import load_materials
 from app.modules.messages.audio import joined_transcript, transcript_groups
 from app.modules.messages.models import Message
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from fakes import controlled_model
 from test_company import keyed
 from test_documents import run, upload
@@ -112,7 +112,7 @@ async def test_three_audio_order_partial_retry_and_separate_instruction_sources(
     async def inspect(context, saver, blocks, model):
         prompts.append(json.loads(blocks[0]['text'].split('语音内容来源：', 1)[1].split('\n', 1)[0]))
         return await invoke_harness(context, saver, blocks, model)
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', inspect)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', inspect)
     async def execute():
         job = await claim(sessions, actor.id)
         assert job.id == sent['jobId']

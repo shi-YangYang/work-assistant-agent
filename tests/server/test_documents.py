@@ -1,8 +1,8 @@
 import asyncio
 import io
 import json
-import app.tasks.documents as documents
-import app.tasks.handlers as worker
+import app.tasks.processing.documents as documents
+import app.tasks.processing.handlers as worker
 import pytest
 from PIL import Image
 from datetime import timedelta
@@ -21,8 +21,8 @@ from app.modules.model_services.models import ModelUsage
 from app.modules.reports.models import Report, ReportRevision
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
 from app.tasks.context import InputChanged, LostLease, RunContext
-from app.tasks.documents import prepare_document
-from app.tasks.handlers import process_job
+from app.tasks.processing.documents import prepare_document
+from app.tasks.processing.handlers import process_job
 from app.tasks.lease import lease
 from app.tasks.models import Job
 from sqlalchemy import func, select, text

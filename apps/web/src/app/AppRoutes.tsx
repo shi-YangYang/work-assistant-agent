@@ -4,7 +4,7 @@ import { routePage } from './route-page'
 import { Navigate, Route, Routes } from 'react-router'
 
 const LoginMethods = routePage(async () => ({
-  default: (await import('@web/features/auth/components/LoginMethods')).LoginMethods,
+  default: (await import('@web/features/auth/components/configuration/LoginMethods')).LoginMethods,
 }))
 const SupportPage = routePage(async () => ({
   default: (await import('@web/features/feedback/components/SupportPage')).SupportPage,
@@ -16,16 +16,19 @@ const ModelServices = routePage(async () => ({
   default: (await import('@web/features/model-services/components/ModelServices')).ModelServices,
 }))
 const ModelUsagePage = routePage(async () => ({
-  default: (await import('@web/features/model-services/components/ModelUsagePage')).ModelUsagePage,
+  default: (await import('@web/features/model-services/components/usage/ModelUsagePage'))
+    .ModelUsagePage,
 }))
 const AccountPage = routePage(async () => ({
-  default: (await import('@web/features/settings/components/AccountPage')).DingTalkAccountPage,
+  default: (await import('@web/features/settings/components/account/AccountPage'))
+    .DingTalkAccountPage,
 }))
 const AppearancePage = routePage(async () => ({
-  default: (await import('@web/features/settings/components/AppearancePage')).AppearancePage,
+  default: (await import('@web/features/settings/components/appearance/AppearancePage'))
+    .AppearancePage,
 }))
 const RulesPage = routePage(async () => ({
-  default: (await import('@web/features/settings/components/RulesPage')).RulesPage,
+  default: (await import('@web/features/settings/components/rules/RulesPage')).RulesPage,
 }))
 const VoiceprintsPage = routePage(async () => ({
   default: (await import('@web/features/voiceprints/components/VoiceprintsPage')).VoiceprintsPage,

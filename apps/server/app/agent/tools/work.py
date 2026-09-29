@@ -107,7 +107,7 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
     if isinstance(work_id, str) and work_id.strip() in ('', 'null'):
         work_id = None
     context = runtime.context
-    from app.agent.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt, settle_suggestion
+    from app.agent.actions.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt, settle_suggestion
     rejected = await authorize_suggestion(context, 'propose_progress', content, work_id)
     if rejected:
         return clip(rejected)

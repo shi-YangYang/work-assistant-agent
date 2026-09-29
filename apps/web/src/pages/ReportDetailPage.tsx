@@ -1,4 +1,4 @@
-import { ReportDetail } from '@web/features/reports/components/ReportDetail'
+import { ReportDetail } from '@web/features/reports/components/detail/ReportDetail'
 import { useLocation, useParams } from 'react-router'
 
 export function ReportDetailPage() {

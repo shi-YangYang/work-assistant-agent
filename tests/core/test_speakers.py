@@ -12,12 +12,12 @@ import uuid
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.audio_store import AudioWriter
+from paa_core.audio.audio_store import AudioWriter
 from paa_core.repository import Repository, DomainError
-from paa_core.transcript_store import TranscriptStore
-from paa_core.speaker_store import SpeakerStore, assign_speaker, normalize_speaker_name, SPEAKER_NAME_WHITESPACE
-from paa_core.speakers import Speakers
-from paa_core.speaker_worker import run_worker, bundled_model_path, verified
+from paa_core.asr.transcript_store import TranscriptStore
+from paa_core.speakers.speaker_store import SpeakerStore, assign_speaker, normalize_speaker_name, SPEAKER_NAME_WHITESPACE
+from paa_core.speakers.speakers import Speakers
+from paa_core.speakers.speaker_worker import run_worker, bundled_model_path, verified
 from paa_core.meeting_library import document_lines
 
 
@@ -44,7 +44,7 @@ class SpeakerTests(unittest.TestCase):
             self.assertEqual(model_file(), expected / 'embedding/pytorch_model.bin')
         with patch.dict(os.environ, {'PAA_VOICEPRINT_MODEL': str(expected / 'embedding/pytorch_model.bin')}):
             self.assertEqual(model_file(), expected / 'embedding/pytorch_model.bin')
-        with patch('paa_core.speaker_worker.sys.frozen', True, create=True), patch('paa_core.speaker_worker.sys._MEIPASS', str(self.root), create=True):
+        with patch('paa_core.speakers.speaker_worker.sys.frozen', True, create=True), patch('paa_core.speakers.speaker_worker.sys._MEIPASS', str(self.root), create=True):
             self.assertEqual(bundled_model_path(), self.root/'models'/'speaker-community-1')
         self.assertFalse(verified(self.root))
 
@@ -160,7 +160,7 @@ class SpeakerTests(unittest.TestCase):
         mid = self.meeting(); before = self.transcripts.page(mid)
         transcription = Mock(); transcription.activity.return_value={'active':False}; transcription.model.status.return_value={'device':'gpu'}
         def failed(*args): raise RuntimeError('private details')
-        with patch('paa_core.speakers.verified',return_value=True):
+        with patch('paa_core.speakers.speakers.verified',return_value=True):
             service=Speakers(self.repo,transcription,runner=failed)
             service.start(mid); service.thread.join(3)
             self.assertEqual(service.status(mid)['state'],'failed')

@@ -28,6 +28,8 @@ Electron renderer → 受限 preload → main → stdio → Python 本地核心
 - 自动纪要有界等待会后说话人处理，不因识别稍后完成重复付费生成；仅姓名变化不影响纯文本纪要。
 - main 加密保存公司凭证及声纹，renderer 不接触令牌或向量；会后校正保留人工修改，缓存按服务／公司／账号隔离。
 
+渲染层在 `features/meetings/` 按列表、详情、转写、纪要、播放归组；设置在 `features/settings/`，导航在 `components/navigation/`。本地核心在 `paa_core/{audio,asr,speakers,models,minutes}/` 按能力组织，协议入口、公共仓储和会议查询保留在包根目录。
+
 ## 公司业务与 Harness
 
 - API 负责身份、权限、输入校验和业务事务；worker 执行可恢复任务；harness 管理业务工具、来源、checkpoint 与人工确认。
@@ -70,11 +72,32 @@ migrations/ / assets/       数据库迁移、包内资源
 - Python 入口为 `app.main:app`、`python -m app.worker`、`python -m app.cli`，模块根为 `apps/server`。
 - 单文件超过约 400 个非空行时检查职责，不靠压缩代码或空层达标。
 
+较大的目录按职责归组：
+
+```text
+agent/
+├── context/       历史、上下文、压缩和 checkpoint
+├── runtime/       模型调用、中间件与工具节点
+├── prompts/       人设、角色与执行模式提示词
+├── actions/       授权、业务操作与临时交互
+├── completion/    结果核对、交付和修正
+└── tools/         按领域定义的工具
+tasks/
+├── runtime/       队列、worker、中断与续接
+├── processing/    消息、语音、文档与声纹处理
+├── feedback/      SSE、用量与结果状态
+├── nodes/         节点执行、状态与失败分类
+├── maintenance/   定期调度与清理
+└── retry/         独立重试策略
+```
+
+`tasks/context.py`、`lease.py`、`models.py` 保留公共契约和租约边界。业务子域就近组织，例如 `conversations/context/`、`reports/scheduling/`、`operations/{mutations,policy}/` 和 `model_services/usage/`；已清晰的小目录不强行拆层。Python 子包不建立汇总整个业务的导出入口。
+
 发送消息的服务端路径：
 
 1. `modules/messages/router.py` → `commands.py:submit_message`，校验幂等键、会话和附件，保存消息与 Job。
 2. `http/dependencies.py` 提交请求事务，失败回滚。
-3. `tasks/queue.py` 领取任务，`tasks/handlers.py:process_job` 调用 `agent/harness.py`。
+3. `tasks/runtime/queue.py` 领取任务，`tasks/processing/handlers.py:process_job` 调用 `agent/harness.py`。
 4. `agent/tools/` 调用授权业务服务；工作进展确认进入 `modules/work/progress.py:confirm_drafts`，检查版本后保存。
 
 `tests/server/test_architecture.py` 检查反向依赖、循环、ORM 登记和应用实例隔离。
@@ -106,18 +129,19 @@ styles/       本端基础 CSS、公共布局和控件 Module
 - 通用提交 Hook 管理提交快照，会话分页与模型配置控制器分别归所属 feature；异步写回核对账号、记录及执行代次。
 - 路由延迟加载，加载与失败恢复留在路由区域，不重置整个应用。
 - 业务 TSX 超过约 350 个非空行时检查职责，不机械拆碎。
+- 应用布局归 `app/layout/`；公共组件按 `actions`、`forms`、`feedback`、`overlays`、`content` 分组。拥挤的业务组件目录按功能分组，例如助手的 `conversation/`、`composer/`、`messages/`，私有样式与组件同目录，文件保留明确名称。
 
 ### Web 样式边界
 
 - 组件样式放在就近的 `*.module.css`；同业务组合样式放 `features/*/styles/`，断点和状态一起维护，不强制创建空样式文件。
 - `styles/index.css` 仅导入 `theme.css`、`select.css`、`base.css`；全局类仅保留 `sr-only`、`keyboard-open`，不放页面布局。
-- 公共布局与控件使用 `styles/{layout,controls,utilities}.module.css`；工作／报告呈现由 `components/RecordLayout.module.css`、`RecordDetail.module.css` 维护。
+- 公共布局与控件使用 `styles/{layout,controls,utilities}.module.css`；跨组件共享 Module 归 `styles/patterns/`，包括工作／报告呈现的 `RecordLayout.module.css`、`RecordDetail.module.css`。共享样式不因迁移而复制到各组件目录。
 - 组件通过 className 插槽、变体或限定用途的变量提供定制；调用者不依赖内层私有选择器，业务不互相导入私有 CSS。
 - 不用跨文件 `@value`／`composes`；显式组合 Module 类，基础 CSS 先加载，公共 Module 先于局部 Module 导入。
 - 交互状态使用 ARIA／`data-*`；保留 `data-scroll-container`、`data-chat-content`，不在 JS 拼生成类名。`:global(.keyboard-open)` 仅用于手机键盘避让。
 - Web 与 Electron 各自维护主题和样式，共享品牌图片。路由切换不得改变层叠结果。
 
-发送消息的前端路径：`app/AppRoutes.tsx` → `features/assistant/components/Conversations.tsx` → `ConversationChat.tsx`／`MessageComposer.tsx` → `hooks/useMessageSubmission.ts` → `api/requests.ts` → `apps/web/src/api/client.ts`。消息和反馈由 `ChatHistory.tsx`／`MessageCard.tsx` 展示，录音由 `hooks/useRecording.ts` 管理。
+发送消息的前端路径：`app/AppRoutes.tsx` → `features/assistant/components/conversation/Conversations.tsx`／`ConversationChat.tsx` → `components/composer/MessageComposer.tsx` → `hooks/useMessageSubmission.ts` → `api/requests.ts` → `apps/web/src/api/client.ts`。其中助手相对路径以 `features/assistant/` 为根；消息由 `components/messages/ChatHistory.tsx`／`MessageCard.tsx` 展示，录音由 `hooks/useRecording.ts` 管理。
 
 `lib/session-drafts.ts` 管理账号代次，聊天 feature 的 `lib/composer-drafts.ts` 管理附件清理。`tests/web/architecture.test.ts` 检查依赖方向、请求入口、循环和 CSS 归属。
 

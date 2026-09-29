@@ -26,7 +26,7 @@ pytestmark = pytest.mark.asyncio
 def freeze(monkeypatch, instant):
     for module in ('app.modules.auth.sessions', 'app.http.session_renewal',
                    'app.http.dependencies', 'app.modules.auth.desktop_router',
-                   'app.tasks.feedback'):
+                   'app.tasks.feedback.feedback'):
         monkeypatch.setattr(module + '.now', lambda: instant)
 
 

@@ -15,8 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 from .repository import ACTIVE, DomainError
-from .meeting_summary import IDENTITY_NOTE
-from .summary_store import is_stale
+from .minutes.meeting_summary import IDENTITY_NOTE
+from .minutes.summary_store import is_stale
 
 PAGE_SIZE = 10
 

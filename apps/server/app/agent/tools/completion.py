@@ -1,7 +1,7 @@
 """A terminal tool: no extra provider request after delivering the answer."""
 from langchain.tools import tool
-from app.agent.delivery import Delivery
-from app.modules.conversations.task_schemas import TaskInterpretation
+from app.agent.completion.delivery import Delivery
+from app.modules.conversations.task.task_schemas import TaskInterpretation
 
 
 @tool(return_direct=True)

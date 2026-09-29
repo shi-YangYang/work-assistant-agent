@@ -10,11 +10,11 @@ from app.modules.interactions.router import router as interactions_router
 from app.modules.members.router import router as members_router
 from app.modules.messages.router import router as messages_router
 from app.modules.model_services.router import router as model_services_router
-from app.modules.model_services.usage_router import router as model_services_usage_router
+from app.modules.model_services.usage.usage_router import router as model_services_usage_router
 from app.modules.operations.router import router as operations_router
-from app.modules.reports.obligations_router import router as reports_obligations_router
+from app.modules.reports.scheduling.obligations_router import router as reports_obligations_router
 from app.modules.reports.router import router as reports_router
-from app.modules.reports.rules_router import router as reports_rules_router
+from app.modules.reports.scheduling.rules_router import router as reports_rules_router
 from app.modules.support.router import router as support_router
 from app.modules.team.router import router as team_router
 from app.modules.team.source_router import router as team_source_router

@@ -15,11 +15,13 @@ from app.modules.messages.models import Message
 from app.modules.model_services.models import ModelUsage
 from app.modules.operations.models import BusinessAction
 from app.modules.work.models import WorkItem
-from app.tasks import cancellation, handlers, node_execution
+from app.tasks.runtime import cancellation
+from app.tasks.processing import handlers
+from app.tasks.nodes import node_execution
 from app.tasks.context import LostLease, RunContext
 from app.tasks.lease import lease
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from test_business_actions import runtime
 from test_company import keyed, send
 
@@ -156,8 +158,8 @@ async def test_legacy_queue_selects_running_then_keeps_waiting_messages(setup):
 
 
 async def test_cancel_preserves_committed_actions_independent_report_and_context(setup):
-    from app.agent.operations import execute
-    from app.modules.conversations.context_store import publish_summary
+    from app.agent.actions.operations import execute
+    from app.modules.conversations.context.context_store import publish_summary
     context, sent = await runtime(setup, '帮我创建工作报价方案，再生成日报')
     work = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     report = await execute(context, step=2, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
@@ -220,7 +222,7 @@ async def test_running_pipeline_cancels_wait_and_cannot_finish(setup, monkeypatc
     async def review(*args, **kwargs):
         await blocked()
     monkeypatch.setattr(handlers, 'invoke_harness', harness)
-    monkeypatch.setattr('app.agent.reply_review.review_reply', review)
+    monkeypatch.setattr('app.agent.completion.reply_review.review_reply', review)
     sent = await send(clients['employee'])
     job = await claim(sessions, users['employee'].id)
     task = asyncio.create_task(handlers.process_job(job, sessions, settings, None, model=object()))
@@ -304,7 +306,7 @@ async def test_parsing_cancel_reaps_child_and_clears_attachment_processing(setup
     async def parser(path, suffix):
         return await parse_process(path, suffix, entrypoint=script)
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', tracked)
-    monkeypatch.setattr('app.tasks.documents.parse_process', parser)
+    monkeypatch.setattr('app.tasks.processing.documents.parse_process', parser)
     sent = await send(clients['employee'], attachments=[identifier])
     job = await claim(sessions, users['employee'].id)
     task = asyncio.create_task(handlers.process_job(job, sessions, settings, None, model=object()))

@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.audio_store import AudioWriter
+from paa_core.audio.audio_store import AudioWriter
 from paa_core.protocol import CoreService, serve
 from test_recording import FakeInput
 

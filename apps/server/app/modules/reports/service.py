@@ -22,7 +22,7 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezon
         report = Report(company_id=actor.company_id, owner_id=actor.id, kind=kind, period=start.isoformat(), period_end=end.isoformat(), timezone=report_timezone or company.rules['timezone'], content={'completed': '', 'ongoing': '', 'blockers': '', 'next': ''})
         db.add(report)
         await db.flush()
-    from app.modules.reports.schedule import link_report
+    from app.modules.reports.scheduling.schedule import link_report
     await link_report(db, report)
     if report.deleted:
         if scheduled:
@@ -64,6 +64,6 @@ async def submit_report(db, actor, identifier, expected):
         problem(422, '请先填写报告内容')
     db.add(ReportRevision(company_id=actor.company_id, owner_id=actor.id, report_id=report.id, revision=report.revision, content=report.content, source_ids=report.source_ids))
     report.published_revision, report.updated_at = report.revision, now()
-    from app.modules.reports.schedule import link_report
+    from app.modules.reports.scheduling.schedule import link_report
     await link_report(db, report, submitted=True)
     return report

@@ -1,11 +1,11 @@
 import { Children, createElement, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
-import { FormField } from '../../apps/web/src/components/FormField'
-import { MessageComposer } from '../../apps/web/src/features/assistant/components/MessageComposer'
-import { ServiceConnectionFields } from '../../apps/web/src/features/model-services/components/ServiceConnectionFields'
-import { ServiceEditor } from '../../apps/web/src/features/model-services/components/ServiceEditor'
-import { ServiceModelLibrary } from '../../apps/web/src/features/model-services/components/ServiceModelLibrary'
+import { FormField } from '../../apps/web/src/components/forms/FormField'
+import { MessageComposer } from '../../apps/web/src/features/assistant/components/composer/MessageComposer'
+import { ServiceConnectionFields } from '../../apps/web/src/features/model-services/components/service/ServiceConnectionFields'
+import { ServiceEditor } from '../../apps/web/src/features/model-services/components/service/ServiceEditor'
+import { ServiceModelLibrary } from '../../apps/web/src/features/model-services/components/service/ServiceModelLibrary'
 import {
   newModel,
   type ServiceDraft,

@@ -5,17 +5,17 @@ from fakes import ReviewedFixtureModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.history import conversation_history
-from app.agent.middleware import ToolBoundary
+from app.agent.context.history import conversation_history
+from app.agent.runtime.middleware import ToolBoundary
 from app.db.base import now
 from app.modules.messages.models import Message
 from app.modules.reports.models import Report
 from app.modules.work.models import ProgressDraft
 from app.security.access import scope as business_scope
 from app.tasks.context import RunContext
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from pydantic import Field
 from sqlalchemy import select
 from test_company import send
@@ -141,7 +141,7 @@ async def test_history_keeps_explicit_clarification_and_excludes_future_or_other
     assert '另一个员工的机密' not in text and '后发的 B' not in text
     # History is complete; the request boundary uses the actual model capability,
     # including image envelopes and the task projection, rather than a 20k cap.
-    from app.agent.context_usage import ensure_input, estimate_request
+    from app.agent.context.context_usage import ensure_input, estimate_request
     from app.tasks.context import BudgetExceeded
     from langchain_core.messages import HumanMessage
     used = estimate_request([*history, HumanMessage(content=content)])

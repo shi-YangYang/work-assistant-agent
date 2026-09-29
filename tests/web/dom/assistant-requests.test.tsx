@@ -4,8 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { Breadcrumbs } from '../../../apps/web/src/app/Breadcrumbs'
-import { Assistant } from '../../../apps/web/src/features/assistant/components/Conversations'
+import { Breadcrumbs } from '../../../apps/web/src/app/layout/Breadcrumbs'
+import { Assistant } from '../../../apps/web/src/features/assistant/components/conversation/Conversations'
 import { assistantQuery } from '../../../apps/web/src/features/assistant/api/queries'
 import { createVault, deferred, dialogs, TestWorkspace } from './helpers'
 

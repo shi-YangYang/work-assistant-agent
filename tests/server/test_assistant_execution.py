@@ -6,9 +6,9 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from fakes import completion
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.completion import receipt_completion
+from app.agent.completion.completion import receipt_completion
 from app.agent.harness import invoke_harness
-from app.agent.operations import execute
+from app.agent.actions.operations import execute
 from app.agent.tools.team import query_team_business
 from app.core.digests import digest
 from app.modules.members.models import Member

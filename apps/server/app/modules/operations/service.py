@@ -5,10 +5,10 @@ from app.core.versions import version
 from app.db.base import now
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.receipts import action_dto
-from app.modules.operations.report_completion import submit_action
-from app.modules.operations.rules import CONFIRM
+from app.modules.operations.mutations.report_completion import submit_action
+from app.modules.operations.policy.rules import CONFIRM
 from app.modules.operations.targets import preview, source_check
-from app.modules.operations.writes import remove_record as writes_remove_record
+from app.modules.operations.mutations.writes import remove_record as writes_remove_record
 from app.modules.reports.models import ReportObligation
 from app.modules.reports.service import edit_report as writes_edit_report, ensure_report
 from app.modules.team.sources import canonical_token as business_canonical_token
@@ -34,7 +34,7 @@ async def perform(db, actor, row, job=None, *, confirmed=False):
         # Access tracks every source the model saw, including older turns. It
         # must not turn an unrelated personal task into a mandatory follow-up.
         # Explicit links are still verified above and source access is retained.
-        from app.modules.operations.publication import snapshot, selected_attachments
+        from app.modules.operations.mutations.publication import snapshot, selected_attachments
         await selected_attachments(db, actor, p.get('sharedAttachmentIds', []), row.conversation_id)
         publication = snapshot(p['changes'], message_ids=[row.message_id], reference=p.get('deliverableReference'), attachments=p.get('sharedAttachmentIds', []))
         item = await writes_save_work(db, actor, p['changes'], identifier=p['targetId'] if row.action == 'update_work' else None, expected=p['expectedRevision'], sources=[row.message_id], origin='assistant', links=links, access=row.access, publication=publication, revision_origin='assistant_confirmed' if confirmed else 'assistant')
@@ -58,11 +58,11 @@ async def perform(db, actor, row, job=None, *, confirmed=False):
             timezone = obligation.timezone
         # Pass the authenticated request through the asynchronous handoff, not
         # a brief invented by the tool-calling model.
-        from app.agent.conversation_context import request_text
+        from app.agent.context.conversation_context import request_text
         from app.modules.messages.models import Message
         message = await owned(db, Message, row.message_id, actor)
         instructions = request_text(message, job) if job else message.text
-        from app.agent.report_context import capture_brief
+        from app.agent.context.report_context import capture_brief
         source = await capture_brief(db, actor, message, job) if job else None
         item, report_job = await ensure_report(db, actor, p['kind'], day, report_timezone=timezone, instructions=instructions, instruction_source=source)
         if job:
@@ -71,7 +71,7 @@ async def perform(db, actor, row, job=None, *, confirmed=False):
         row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision, 'jobId': report_job.id, 'submitAfter': p['submitAfter']}
         row.state = 'running'
         if report_job.state == 'succeeded':
-            from app.modules.operations.report_completion import complete_action
+            from app.modules.operations.mutations.report_completion import complete_action
             await complete_action(db, actor, row)
         return
     elif row.action == 'edit_report':
@@ -84,7 +84,7 @@ async def perform(db, actor, row, job=None, *, confirmed=False):
         kind = 'work' if row.action == 'delete_work' else 'report'
         if job:
             from app.modules.operations.targets import read_target
-            from app.modules.operations.writes import deletion_impact
+            from app.modules.operations.mutations.writes import deletion_impact
             target = await read_target(db, actor, row.action, p['targetId'])
             impact = await deletion_impact(db, target, actor)
             removed_ids = {target.id, *impact.get('messageIds', []), *impact.get('attachmentIds', [])}
@@ -111,7 +111,7 @@ async def confirm(db, actor, identifier, expected, *, cancel=False):
         return await action_dto(db, actor, row)
     if row.state != 'pending':
         problem(409, '此操作当前不能确认')
-    from app.tasks.conversation_activity import active_job
+    from app.tasks.runtime.conversation_activity import active_job
     active = await active_job(db, actor, row.conversation_id)
     if active and active.target_id != row.message_id:
         problem(409, '当前会话正在处理后续请求，请完成后再确认', 'conversation_busy')

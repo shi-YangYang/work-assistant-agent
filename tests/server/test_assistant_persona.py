@@ -16,15 +16,15 @@ from sqlalchemy import MetaData, Table, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
 
-from app.agent.reply_review import REVIEW_VERSION
+from app.agent.completion.reply_review import REVIEW_VERSION
 from app.core.config import Settings
 from app.db.idempotency import Idempotency
 from app.modules.conversations.models import Conversation
 from app.modules.members.models import Company, Member
 from app.modules.messages.models import Message
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from test_company import keyed
 from test_model_services import create, payload, route
 from test_task_retry import fast_nodes
@@ -221,7 +221,7 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
 
 @pytest.mark.asyncio
 async def test_reply_scope_selection_rejects_old_cache_and_preserves_original_text(setup):
-    from app.agent.reply_review import review_reply
+    from app.agent.completion.reply_review import review_reply
     from app.core.digests import digest
     from test_business_actions import ReplyJudge, runtime
     context, _ = await runtime(setup, '只想把这件事说出来，不需要建议。')
@@ -251,7 +251,7 @@ async def test_reply_scope_selection_rejects_old_cache_and_preserves_original_te
 @pytest.mark.asyncio
 async def test_persona_stays_out_of_authorization_and_report_generation(setup):
     from langchain_core.messages import AIMessage
-    from app.agent.operations import execute
+    from app.agent.actions.operations import execute
     from app.tasks.context import RunContext
     from test_business_actions import Judge, create as create_work, finish
     settings, sessions, users, clients = setup
@@ -297,7 +297,7 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     from app.core.digests import digest
     from app.db.base import now
     from app.tasks.context import RunContext
-    from app.tasks.handlers import message_input_digest
+    from app.tasks.processing.handlers import message_input_digest
 
     class Database:
         async def get(self, model, identifier):

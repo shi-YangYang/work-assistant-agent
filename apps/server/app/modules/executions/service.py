@@ -54,8 +54,8 @@ async def execute(context, *, code, title, references, identifier='', revision=0
                 if row.state != result['state']:
                     row.state = result['state']
             if result['state'] != previous:
-                from app.tasks.node_execution import active_node
-                from app.tasks.node_state import execution, save as save_nodes
+                from app.tasks.nodes.node_execution import active_node
+                from app.tasks.nodes.node_state import execution, save as save_nodes
                 node = active_node.get()
                 if node:
                     async with context.sessions.begin() as db:

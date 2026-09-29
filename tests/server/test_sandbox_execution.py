@@ -189,7 +189,7 @@ async def test_missing_input_wrong_version_and_storage_quota_fail_without_public
 
 async def test_enabled_sandbox_is_visible_to_model_without_weakening_tool_boundary(setup):
     from test_company import run_target, send
-    from app.agent.policies import ALLOWED_TOOLS
+    from app.agent.prompts.policies import ALLOWED_TOOLS
     settings, sessions, users, clients = setup
     settings = replace(settings, sandbox_url='http://sandbox:8010', sandbox_token='isolated-test-not-a-real-credential')
     sent = await send(clients['employee'])

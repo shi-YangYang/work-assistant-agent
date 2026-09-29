@@ -5,17 +5,17 @@ import pytest
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage
 from sqlalchemy import func, select
-from app.agent.intent import authorize_intent
-from app.agent.operations import execute
-from app.agent.task_context import load, projection
+from app.agent.actions.intent import authorize_intent
+from app.agent.actions.operations import execute
+from app.agent.context.task_context import load, projection
 from app.agent.tools.work import propose_progress
 from app.modules.conversations.models import ConversationTaskState
-from app.modules.conversations.task_state import finish as save_task, invalidate_sources
+from app.modules.conversations.task.task_state import finish as save_task, invalidate_sources
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.modules.work.models import WorkItem
 from app.tasks.models import Job
-from app.tasks.outcomes import derive
+from app.tasks.feedback.outcomes import derive
 from app.tasks.lease import lease
 from test_business_actions import create, finish, read_work, runtime
 from test_company import keyed
@@ -66,7 +66,7 @@ async def test_continuing_instruction_survives_new_worker_and_context_rebuild_an
     first, sent = await runtime(setup, '接下来我发的进展关联到上线web，只补充说明，保留其他字段', 'admin')
     quote = '接下来我发的进展关联到上线web，只补充说明，保留其他字段'
     await close_task(first, quote=quote, scope='上线web.summary 追加，其他字段不变')
-    from app.modules.conversations.context_invalidation import invalidate
+    from app.modules.conversations.context.context_invalidation import invalidate
     async with sessions.begin() as db:
         await invalidate(db, owner_id=users['admin'].id)
     context, _ = await runtime(setup, '仓库 https://example.org/repo，今天有多次提交', 'admin')
@@ -129,7 +129,7 @@ async def test_append_delta_preserves_original_and_repeated_new_events_while_rep
     (['summary'], {'summary': '新增事实'}, 'create_work', False),
 ])
 async def test_append_contract_requires_exact_complete_field_mapping(fields, values, action, valid):
-    from app.agent.intent import IntentVerdict, append_contract
+    from app.agent.actions.intent import IntentVerdict, append_contract
     verdict = IntentVerdict(allowed=True, quote='补充', reason='', appendFields=fields, appendValues=values)
     proposal = {'action': action, 'changes': {'summary': '原文；新增事实', 'nextStep': '联系客户'}}
     assert append_contract(verdict, proposal) is valid
@@ -425,7 +425,7 @@ async def test_required_response_is_repaired_once_without_repeating_saved_operat
             payload = json.loads(messages[-1].content)
             fixed = payload['answer'] == '按计划推进仍在进行中。'
             return AIMessage(content=json.dumps({'issues': [] if fixed else [{'kind': 'fact', 'quote': payload['answer'], 'reason': '不能把创建工作当作工作完成', 'receipt_ids': [payload['currentActions'][0]['id']]}]}))
-    monkeypatch.setattr('app.agent.response_repair.repair_response', repair)
+    monkeypatch.setattr('app.agent.completion.response_repair.repair_response', repair)
     data = await run_reply(setup, '创建一个进行中的任务并解释状态', '已经做完了。', Judge(), before=saved)
     assert len(calls) == 1 and len(data['actions']) == 1
     assert '仍在进行中' in data['reply'] and '已经做完了' not in data['reply']
@@ -435,7 +435,7 @@ async def test_required_response_is_repaired_once_without_repeating_saved_operat
 
 @pytest.mark.parametrize('state,remaining', [('completed', ['还要生成报告']), ('needs_input', []), ('needs_input', [' '])])
 async def test_task_interpretation_rejects_inconsistent_completion(state, remaining):
-    from app.modules.conversations.task_schemas import TaskInterpretation
+    from app.modules.conversations.task.task_schemas import TaskInterpretation
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         TaskInterpretation(state=state, remaining=remaining)

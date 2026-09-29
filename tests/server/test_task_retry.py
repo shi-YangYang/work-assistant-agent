@@ -10,10 +10,10 @@ import pytest
 from fastapi import HTTPException
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from sqlalchemy import func, select
-from app.agent.intent import authorize_intent
-from app.agent.model import BoundedChatModel
-from app.agent.operations import execute
-from app.agent.tool_nodes import outcome, tool_node
+from app.agent.actions.intent import authorize_intent
+from app.agent.runtime.model import BoundedChatModel
+from app.agent.actions.operations import execute
+from app.agent.runtime.tool_nodes import outcome, tool_node
 from app.db.base import now
 from app.integrations.models.transport import ProviderError, status_error
 from app.modules.members.models import Member
@@ -21,12 +21,12 @@ from app.modules.messages.models import Message
 from app.modules.model_services.models import ModelUsage
 from app.modules.operations.models import BusinessAction
 from app.modules.work.models import WorkItem
-from app.tasks import node_execution
+from app.tasks.nodes import node_execution
 from app.tasks.context import InputChanged, LostLease, RunContext
 from app.tasks.models import Job
-from app.tasks.node_failures import classify
-from app.tasks.node_state import execution, node_dtos, reopen_failed, save
-from app.tasks.queue import claim
+from app.tasks.nodes.node_failures import classify
+from app.tasks.nodes.node_state import execution, node_dtos, reopen_failed, save
+from app.tasks.runtime.queue import claim
 from app.tasks.retry import Attempt, Failure, NodeFailed, run
 from test_business_actions import create, read_work, runtime
 
@@ -327,7 +327,7 @@ async def test_parallel_identical_tools_have_distinct_nodes_and_structured_refus
 
 async def test_harness_manual_resume_only_retries_failed_model_after_committed_tool(setup, fast_nodes, monkeypatch):
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from app.tasks.handlers import process_job
+    from app.tasks.processing.handlers import process_job
     from test_model_services import create as service_create, route
     from test_company import send
     settings, sessions, users, clients = setup
@@ -542,7 +542,7 @@ async def test_append_contract_rechecks_legacy_cached_authorization_and_repairs_
 
 
 async def test_invalid_review_fact_paths_retry_review_without_requesting_user_input(setup, fast_nodes, monkeypatch):
-    from app.agent.reply_review import review_reply
+    from app.agent.completion.reply_review import review_reply
     work = await create(setup[3]['employee'], '交付材料')
     context, _ = await runtime(setup, '把下一步改成发给客户，说明实际修改了什么')
     await read_work(context, work['id'])

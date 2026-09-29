@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { Shell } from '../../../apps/web/src/app/Shell'
+import { Shell } from '../../../apps/web/src/app/layout/Shell'
 import { createVault, dialogs, identity } from './helpers'
 
 const conversation = {

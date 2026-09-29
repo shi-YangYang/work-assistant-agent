@@ -1,4 +1,4 @@
-import { Assistant } from '@web/features/assistant/components/Conversations'
+import { Assistant } from '@web/features/assistant/components/conversation/Conversations'
 import { ErrorDiagnostics } from '@web/lib/support-link'
 import { useParams } from 'react-router'
 

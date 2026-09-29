@@ -1,7 +1,7 @@
 from app.core.personas import PersonaId
 from app.core.attachment_limits import MAX_ATTACHMENTS, MAX_AUDIO_ATTACHMENTS
 from app.core.schemas import Input
-from app.modules.operations.execution_policy import ExecutionMode
+from app.modules.operations.policy.execution_policy import ExecutionMode
 from app.modules.deliverables.schemas import DeliverableReference
 from pydantic import Field, model_validator
 

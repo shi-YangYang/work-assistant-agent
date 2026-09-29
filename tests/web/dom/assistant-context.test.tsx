@@ -15,8 +15,8 @@ import { readConversationContext } from '../../../apps/web/src/features/assistan
 import {
   ContextUsage,
   contextUsageLabel,
-} from '../../../apps/web/src/features/assistant/components/ContextUsage'
-import { MessageCard } from '../../../apps/web/src/features/assistant/components/MessageCard'
+} from '../../../apps/web/src/features/assistant/components/composer/ContextUsage'
+import { MessageCard } from '../../../apps/web/src/features/assistant/components/messages/MessageCard'
 import { useContextUsage } from '../../../apps/web/src/features/assistant/hooks/useContextUsage'
 import { createVault, deferred, identity, TestWorkspace } from './helpers'
 

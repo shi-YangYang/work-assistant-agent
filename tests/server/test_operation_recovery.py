@@ -2,18 +2,18 @@
 import json
 import pytest
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.history import conversation_history
-from app.agent.intent import authorize_intent
-from app.agent.operations import execute
-from app.agent.policies import action_policy
+from app.agent.context.history import conversation_history
+from app.agent.actions.intent import authorize_intent
+from app.agent.actions.operations import execute
+from app.agent.prompts.policies import action_policy
 from app.agent.tools.messages import get_message_context
 from app.agent.tools.work import find_work_items
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
 from app.modules.work.models import WorkItem
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from sqlalchemy import func, select
 from test_business_actions import Judge, ReplyJudge, create, finish, read_work, run_reply, runtime
 from test_company import keyed
@@ -120,7 +120,7 @@ async def test_retry_replaces_failed_response_in_place_without_repeating_busines
     assert queued['actions'][0]['id'] == result['actions'][0]['id']
     assert (await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={})).status_code == 409
     graph = AsyncMock(side_effect=AssertionError('review retry must not run the graph'))
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information']))

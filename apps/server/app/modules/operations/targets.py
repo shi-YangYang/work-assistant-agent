@@ -3,7 +3,7 @@ from app.core.versions import version
 from app.modules.attachments.models import Attachment
 from app.modules.conversations.models import Conversation
 from app.modules.messages.models import Message
-from app.modules.operations.writes import deletion_impact as writes_deletion_impact
+from app.modules.operations.mutations.writes import deletion_impact as writes_deletion_impact
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem
 from app.security.access import require as business_require
@@ -38,7 +38,7 @@ async def source_check(db, actor, row):
             problem(409, '任务已被后续请求替换，本次操作不再有效')
     if message.transcript_revision != row.params.get('sourceRevision', message.transcript_revision):
         problem(409, '原始材料已更正，请重新提出请求')
-    from app.modules.conversations.task_state import source_text
+    from app.modules.conversations.task.task_state import source_text
     for source in row.params.get('taskSources', []):
         if await source_text(db, actor, row.conversation_id, source) is None:
             problem(409, '任务授权来源已变化，请重新提出请求')

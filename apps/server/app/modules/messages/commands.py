@@ -12,7 +12,7 @@ from app.modules.messages.service import active_message
 from app.security.access import require as business_require, scope as business_scope
 from app.security.ownership import owned
 from app.tasks.models import Job
-from app.tasks.conversation_activity import require_idle
+from app.tasks.runtime.conversation_activity import require_idle
 from sqlalchemy import select
 
 
@@ -75,7 +75,7 @@ async def submit_message(db, actor, body, idempotency_key):
     item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo, work_reference=body.workReference.model_dump() if body.workReference else {}, deliverable_reference=body.deliverableReference.model_dump() if body.deliverableReference else {})
     db.add(item)
     await db.flush()
-    from app.modules.conversations.task_state import begin_input
+    from app.modules.conversations.task.task_state import begin_input
     await begin_input(db, actor, item)
     conversation.updated_at = now()
     if conversation.title == '新会话':
@@ -110,8 +110,8 @@ async def correct_transcript(db, actor, identifier, body):
         problem(422, str(error))
     item.transcript_history = [*item.transcript_history, {'revision': item.transcript_revision, 'text': item.transcript, 'at': now().isoformat()}]
     item.transcript, item.transcript_revision = body.text, item.transcript_revision + 1
-    from app.modules.conversations.task_state import invalidate_sources
+    from app.modules.conversations.task.task_state import invalidate_sources
     await invalidate_sources(db, {item.id})
-    from app.modules.conversations.context_invalidation import invalidate
+    from app.modules.conversations.context.context_invalidation import invalidate
     await invalidate(db, conversation_id=item.conversation_id, owner_id=item.owner_id)
     return await message_dto(db, item, actor)

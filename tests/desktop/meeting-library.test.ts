@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   processingLabel,
   recordingStateLabel,
-} from '../../apps/desktop/src/renderer/meeting-processing-queue'
+} from '../../apps/desktop/src/renderer/features/meetings/lib/meeting-processing-queue'
 import type { TranscriptionStatus } from '../../apps/desktop/src/shared/contracts'
 import type { SummaryView } from '../../apps/desktop/src/shared/summary-contracts'
 import { CoreManager } from '../../apps/desktop/src/main/core-manager'
@@ -19,7 +19,7 @@ import {
   highlightedParts,
   meetingQuery,
   QueryGeneration,
-} from '../../apps/desktop/src/renderer/meeting-library-query'
+} from '../../apps/desktop/src/renderer/features/meetings/library/meeting-library-query'
 const id = 'e40feee8-7aac-403a-8f45-4ae1018109bf'
 const roots: string[] = []
 afterEach(async () => {

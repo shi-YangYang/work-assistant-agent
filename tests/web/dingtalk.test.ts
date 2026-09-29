@@ -9,7 +9,7 @@ import {
   dingtalkResult,
   officialDingTalkUrl,
 } from '../../apps/web/src/features/auth/utils/dingtalk-flow'
-import { DingTalkAccountPage } from '../../apps/web/src/features/settings/components/AccountPage'
+import { DingTalkAccountPage } from '../../apps/web/src/features/settings/components/account/AccountPage'
 import { SessionDrafts } from '../../apps/web/src/lib/session-drafts'
 
 it('only accepts the fixed official authorization page before leaving the app', () => {
