@@ -9,6 +9,7 @@ from app.integrations.media import audio_mime, audio_wav, image_process, preview
 from app.modules.attachments.documents import attachment_dto, chunk_page, document_type, safe_name, visible_attachment
 from app.modules.attachments.models import Attachment
 from app.modules.auth.models import Session
+from app.modules.auth.sessions import live_session
 from app.modules.members.models import Member
 from app.modules.messages.service import active_message
 from app.security.locks import company_lock as business_company_lock
@@ -110,7 +111,7 @@ async def media_preview(identifier: str, request: Request, actor=AUTH, db=DB, se
     # publication with deletion/permission changes only after it finishes.
     await business_company_lock(db, initial_company)
     current = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
-    session_live = await db.scalar(select(Session.id).where(Session.id == request.state.session.id, Session.expires_at > now()))
+    session_live = await db.scalar(select(Session.id).where(Session.id == request.state.session.id, *live_session(now())))
     if not session_live:
         problem(401, '登录已过期，请重新登录', 'login_required')
     if not current.active or current.company_id != initial_company or current.role != initial_role:

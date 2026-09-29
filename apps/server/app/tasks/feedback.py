@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from app.core.errors import problem
 from app.db.base import now
 from app.modules.auth.models import Session
+from app.modules.auth.sessions import live_session
 from app.modules.conversations.models import Conversation
 from app.modules.members.models import Member
 from app.modules.messages.models import Message
@@ -49,13 +50,13 @@ def presentation_text(text):
 async def snapshot(sessions, token_hash, job_id):
     # Short transactions only: no connection/row/advisory lock across SSE yield.
     async with sessions.begin() as db:
-        session = await db.scalar(select(Session).where(Session.token_hash == token_hash, Session.expires_at > now()))
+        session = await db.scalar(select(Session).where(Session.token_hash == token_hash, *live_session(now())))
         actor = await db.get(Member, session.member_id) if session else None
         if not actor or not actor.active:
             problem(401, '登录已过期，请重新登录', 'login_required')
         await business_company_lock(db, actor.company_id)
         await db.refresh(actor)
-        session = await db.scalar(select(Session).where(Session.token_hash == token_hash, Session.member_id == actor.id, Session.expires_at > now()))
+        session = await db.scalar(select(Session).where(Session.token_hash == token_hash, Session.member_id == actor.id, *live_session(now())))
         if not actor.active or not session:
             problem(401, '登录已过期，请重新登录', 'login_required')
         job = await db.scalar(select(Job).where(Job.id == job_id, Job.company_id == actor.company_id, Job.owner_id == actor.id, Job.kind == 'message'))

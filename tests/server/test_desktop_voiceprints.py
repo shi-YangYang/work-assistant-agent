@@ -8,8 +8,8 @@ import secrets
 import wave
 from datetime import timedelta
 from app.db.base import now
-from app.modules.auth.models import DesktopAuthorization, DesktopSession
-from app.modules.auth.sessions import digest, revoke_member
+from app.modules.auth.models import DesktopAuthorization, DesktopSession, Session
+from app.modules.auth.sessions import COOKIE, digest, revoke_member
 from app.modules.members.models import Member
 from app.modules.voiceprints.models import Voiceprint
 from app.tasks.voiceprints import process_once
@@ -105,6 +105,26 @@ async def test_desktop_authorization_needs_no_password_change_step(setup):
     result = await c['admin'].get('/api/v1/desktop/me', headers=headers)
     assert result.status_code == 200 and result.json()['member']['id'] == users['admin'].id
     assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)).status_code == 200
+
+
+@pytest.mark.parametrize('remaining', [timedelta(days=7), timedelta(hours=2)])
+async def test_new_desktop_expiry_is_bounded_by_eight_hours_and_parent(setup, monkeypatch, remaining):
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    instant = now()
+    monkeypatch.setattr('app.modules.auth.desktop_router.now', lambda: instant)
+    async with sessions.begin() as db:
+        parent = await db.scalar(select(Session).where(Session.token_hash == digest(client.cookies.get(COOKIE))))
+        parent.expires_at = instant + remaining
+    raw = await token(client)
+    async with sessions() as db:
+        desktop = await db.scalar(select(DesktopSession).where(DesktopSession.token_hash == digest(raw)))
+        assert desktop.expires_at == instant + min(timedelta(hours=8), remaining)
+        desktop_expiry = desktop.expires_at
+    # Ordinary Web activity may upgrade/renew the parent, never its desktop token.
+    assert (await client.get('/api/v1/auth/me')).status_code == 200
+    async with sessions() as db:
+        assert (await db.get(DesktopSession, desktop.id)).expires_at == desktop_expiry
 
 
 async def test_grant_expiry_denial_and_origin_boundaries(setup):

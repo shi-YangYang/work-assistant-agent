@@ -4,7 +4,7 @@ from fastapi import Depends, Request
 from app.core.errors import problem
 from app.db.base import now
 from app.modules.auth.models import Session
-from app.modules.auth.sessions import COOKIE
+from app.modules.auth.sessions import COOKIE, live_session
 from app.modules.members.models import Member
 from app.security.locks import company_lock as business_company_lock
 from sqlalchemy import select
@@ -26,7 +26,7 @@ async def authenticated(request: Request, db, *, shared=False):
     raw = request.cookies.get(COOKIE, '')
     if not raw:
         problem(401, '请先登录', 'login_required')
-    session = await db.scalar(select(Session).where(Session.token_hash == hashlib.sha256(raw.encode()).hexdigest(), Session.expires_at > now()))
+    session = await db.scalar(select(Session).where(Session.token_hash == hashlib.sha256(raw.encode()).hexdigest(), *live_session(now())))
     actor = await db.get(Member, session.member_id) if session else None
     if actor is not None:
         # Model probes and uploads can wait on network/decoders; they use
@@ -35,7 +35,7 @@ async def authenticated(request: Request, db, *, shared=False):
         long_operation = long_operation or request.url.path.endswith(('/events', '/feedback')) or (request.url.path.startswith('/api/v1/uploads/') and request.url.path.endswith('/preview'))
         if not long_operation:
             await business_company_lock(db, actor.company_id, shared=shared)
-            session = await db.scalar(select(Session).where(Session.id == session.id, Session.expires_at > now()).execution_options(populate_existing=True))
+            session = await db.scalar(select(Session).where(Session.id == session.id, *live_session(now())).execution_options(populate_existing=True))
         actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
     if actor is None or not actor.active or session is None:
         problem(401, '登录已过期，请重新登录', 'login_required')

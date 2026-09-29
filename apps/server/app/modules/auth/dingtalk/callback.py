@@ -8,6 +8,7 @@ from app.db.base import now
 from app.integrations.dingtalk import DingTalkError
 from app.modules.auth.dingtalk.service import BROWSER_COOKIE, PROOF_COOKIE, auth_log, available, configuration
 from app.modules.auth.models import DingTalkAuthorization, DingTalkIdentity, Session
+from app.modules.auth.session_policy import ABSOLUTE_LIFETIME
 from app.modules.auth.sessions import COOKIE, digest, issue_session, revoke_member
 from app.modules.members.models import Member
 from app.modules.reports.schedule import eligibility_changed as reporting_eligibility_changed
@@ -68,7 +69,7 @@ async def complete_callback(request: Request):
             if purpose != 'login':
                 actor = await db.get(Member, grant.member_id)
                 session = await db.get(Session, grant.session_id)
-                if not actor or not actor.active or actor.company_id != company_id or not session or session.expires_at <= now() or session.member_id != actor.id or session.token_hash != digest(request.cookies.get(COOKIE, '')):
+                if not actor or not actor.active or actor.company_id != company_id or not session or min(session.expires_at, session.created_at + ABSOLUTE_LIFETIME) <= now() or session.member_id != actor.id or session.token_hash != digest(request.cookies.get(COOKIE, '')):
                     return result(request, purpose, reason='expired')
                 if purpose == 'probe' and actor.role != 'admin':
                     return result(request, purpose, reason='denied')
