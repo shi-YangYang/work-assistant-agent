@@ -2,7 +2,7 @@ import json
 from fastapi import HTTPException
 from langchain.tools import ToolRuntime, tool
 from pydantic import ValidationError
-from app.modules.deliverables.queries import conversation_deliverables, get_deliverable
+from app.modules.deliverables.queries import conversation_deliverables, get_deliverable, available_revision
 from app.modules.deliverables.serializers import detail, summary
 from app.modules.deliverables.service import save
 from app.modules.messages.models import Message
@@ -70,11 +70,14 @@ async def read_deliverable(runtime: ToolRuntime[RunContext], deliverable_id: str
                 from app.security.access import valid
                 for row in rows[:20]:
                     if await valid(db, actor, row.access):
-                        _, record = await get_deliverable(db, actor, row.id)
-                        results.append(summary(row, record))
+                        record = await available_revision(db, actor, row.id)
+                        if record:
+                            results.append(summary(row, record))
                 return json.dumps({'items': results, 'nextOffset': offset + 20 if len(rows) > 20 else None}, ensure_ascii=False)
             item, record = await get_deliverable(db, actor, deliverable_id, revision or None, conversation_id=message.conversation_id)
             result = await detail(db, actor, item, record)
+            from app.modules.executions.sources import remember_sources
+            remember_sources(job, context, [source for file in record.files or [] for source in file.get('sources', [])])
             context.deliverable_reads[item.id] = record.revision
             job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision}}
             result = model_page(result, offset)

@@ -270,6 +270,13 @@ export interface DeliverableReference {
   revision: number
   itemIds: string[]
 }
+export interface DeliverableFile {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  url: string
+}
 export interface DeliverableSummary {
   id: string
   revision: number
@@ -278,6 +285,7 @@ export interface DeliverableSummary {
   messageId: string
   itemCount: number
   updatedAt: string
+  files?: DeliverableFile[]
 }
 export interface Deliverable extends DeliverableSummary {
   body: string

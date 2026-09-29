@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { delimiter, dirname, join, resolve } from 'node:path'
+import { startLocalSandbox } from './sandbox-local.mjs'
 const root = resolve(import.meta.dirname, '../..')
 const webRequire = createRequire(join(root, 'apps/web/package.json'))
 const python =
@@ -34,14 +35,32 @@ function launch(command, args) {
   return child
 }
 let stopping = false
+let sandbox = null
+const startup = new AbortController()
 function stop(code) {
   if (stopping) return
   stopping = true
+  startup.abort()
   for (const child of children) child.kill('SIGTERM')
   process.exitCode = code
+  if (sandbox)
+    void sandbox.stop().catch((error) => {
+      console.error(error.message)
+      process.exitCode = 1
+    })
 }
 process.on('SIGINT', () => stop(0))
 process.on('SIGTERM', () => stop(0))
+if (action === 'all') {
+  try {
+    sandbox = await startLocalSandbox({ signal: startup.signal })
+  } catch (error) {
+    if (!stopping) console.error(error.message)
+    process.exitCode = stopping ? process.exitCode : 1
+    stopping = true
+  }
+  if (stopping) process.exit(process.exitCode ?? 0)
+}
 if (action === 'all' || action === 'api')
   launch(python, [
     '-m',
@@ -67,12 +86,7 @@ if (action === 'all')
 if (action === 'migrate' || action === 'bootstrap-admin' || action === 'model-key')
   launch(python, ['-m', 'app.cli', action])
 if (action === 'test')
-  launch(python, [
-    '-m',
-    'pytest',
-    '-q',
-    ...(process.argv.length > 3 ? process.argv.slice(3) : ['tests/server']),
-  ])
+  launch(python, [join(root, 'scripts/company/test-server.py'), ...process.argv.slice(3)])
 if (!['all', 'api', 'worker', 'migrate', 'bootstrap-admin', 'model-key', 'test'].includes(action)) {
   console.error('Unknown company command')
   process.exitCode = 1

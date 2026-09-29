@@ -26,6 +26,8 @@ class ToolBoundary(AgentMiddleware):
             # for operation-only requests; no success prose needs generating.
             return ModelResponse(result=[AIMessage(id=f'receipt-completion:{context.job_id}', content='')])
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
+        if not getattr(context.settings, 'sandbox_url', '') or not getattr(context.settings, 'sandbox_token', ''):
+            allowed = allowed - {'run_python'}
         names = {t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name')) for t in request.tools}
         # Profiles tune model visibility; this middleware is the security boundary.
         visible = [t for t in request.tools if (t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name'))) in allowed]
@@ -42,6 +44,8 @@ class ToolBoundary(AgentMiddleware):
         async with context.sessions() as db:
             await lease(db, context)
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
+        if not getattr(context.settings, 'sandbox_url', '') or not getattr(context.settings, 'sandbox_token', ''):
+            allowed = allowed - {'run_python'}
         if request.tool_call['name'] not in allowed:
             raise RuntimeError('Tool is not allowed')
         batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)

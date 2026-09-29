@@ -1,0 +1,26 @@
+FROM python:3.12.14-slim-bookworm AS runner
+ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com
+ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+RUN sed -i "s|http://deb.debian.org|${DEBIAN_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk libreoffice-writer libreoffice-impress poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/sandbox/runner/requirements.txt /runner/requirements.txt
+RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r /runner/requirements.txt
+RUN apt-get update && apt-get install -y --no-install-recommends poppler-data fonts-wqy-microhei \
+    && rm -rf /var/lib/apt/lists/*
+COPY apps/sandbox/runner/entrypoint.py /runner/entrypoint.py
+USER 65532:65532
+WORKDIR /work
+CMD ["sleep", "120"]
+
+FROM python:3.12.14-slim-bookworm AS control
+ARG DEBIAN_MIRROR=https://mirrors.cloud.tencent.com
+ARG PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple
+COPY --from=docker:28.5.2-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY apps/sandbox/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r /app/requirements.txt
+COPY apps/sandbox/app /app/sandbox_app
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1 SANDBOX_STATE_DIR=/state
+CMD ["python", "-m", "uvicorn", "sandbox_app.main:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]

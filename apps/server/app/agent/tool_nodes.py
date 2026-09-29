@@ -4,6 +4,7 @@ from langchain_core.messages import ToolMessage
 from app.tasks.node_execution import execute_node
 
 LABELS = {
+    'run_python': '运行代码与生成文件',
     'request_user_input': '等待用户回答',
     'find_work_items': '查找工作', 'get_work_item': '读取工作',
     'get_message_context': '读取消息', 'get_business_actions': '读取操作结果',

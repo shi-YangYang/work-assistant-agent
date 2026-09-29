@@ -94,7 +94,7 @@ async def purge_messages(db, ids, *, retain_publications=False):
     if attachment_ids:
         owners = {item.owner_id for item in attachments}
         jobs = (await db.scalars(select(Job).where(Job.owner_id.in_(owners), Job.kind == 'message'))).all()
-        dependent_ids = {job.target_id for job in jobs if any(evidence[0] in attachment_ids for evidence in job.result.get('documentReads', {}).values())}
+        dependent_ids = {job.target_id for job in jobs if any(evidence[0] in attachment_ids for evidence in job.result.get('documentReads', {}).values()) or any(source['id'] in attachment_ids for source in job.result.get('sandboxSources', []))}
         others = (await db.scalars(select(Message).where(Message.owner_id.in_(owners), Message.deleted.is_(False)))).all()
         for other in others:
             if other.id not in dependent_ids and not any(citation.get('attachmentId') in attachment_ids for citation in other.citations):

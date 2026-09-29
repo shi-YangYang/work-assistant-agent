@@ -16,7 +16,7 @@ from app.tasks.lease import lease
 
 log = logging.getLogger('paa.company')
 REVIEW_TASK = 'business_reply_review'
-REVIEW_VERSION = 30
+REVIEW_VERSION = 31
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,7 @@ async def review_reply(context, answer, *, model=None):
     prompt = [SystemMessage(content=TASK_POLICY + '\n' + REPORT_WRITING_POLICY + '''
 你只核对具体业务执行和用户明确要求核实的事实。返回 JSON {"issues":[]}，无问题即空数组，不为普通建议、人设、比喻、解释长度或“额外内容”编辑正文，不逐段分类。不要改写任务目标或新增授权。
 问题结构 {"kind":"execution|fact|missing_action|missing_response","reason":"具体冲突或遗漏","quote":"有问题的原文完整片段","evidence":[],"receipt_ids":[]}。引用必须是当前工具证据 ID 或回执 ID；不能编造。execution/fact 必须给出逐字原文 quote，其余 quote 留空。仅指出有依据的具体问题，无来源的推断不能推翻真实回执。
-execution：原文声称本轮已保存/删除/提交但回执不成立，或把入队、待确认、保存成功说成工作完成。只是回答已有报告是否提交，或虚构样例、计划和比喻不是本轮执行声明。当前工作状态、实际改动字段以 currentActions.details/changedFields 为准。
+execution：原文声称本轮已保存/删除/提交但回执不成立，或把入队、待确认、保存成功说成工作完成。只是回答已有报告是否提交，或虚构样例、计划和比喻不是本轮执行声明。私人成果与生成文件不是公司业务操作：run_python 的 succeeded、stdout 和 delivery/files 就是实际计算和文件交付证据，不要求 currentActions 中另有业务回执。当前工作状态、实际改动字段以 currentActions.details/changedFields 为准。
 fact：业务变更说明与真实字段不符，或用户明确要求核验的事实与本轮来源矛盾。标明已知假设和未核实部分不是错误，不因未联网就否定一般知识、分析或建议。
 missing_action：对照原用户请求，有明确已授权且信息足够的操作完全没调用工具，即使其余操作已完成也指出。明确失败、缺信息、权限拒绝、确认卡或报告处理中不是漏调用，不重新触发同一阻碍。
 missing_response：用户还要求的解释/分析等实质内容缺失，仅有道歉、承诺或工具回执不能替代。确需用户补充、权限拒绝或处理中可如实说明；不要求额外建议。保留其它无争议内容。不要把系统问题归咎于用户没说清楚。

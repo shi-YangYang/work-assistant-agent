@@ -5,6 +5,7 @@ import { Modal } from '@web/components/Modal'
 import { Check, Copy, MessageSquare, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useDeliverable } from '../hooks/useDeliverable'
+import { GeneratedFiles } from './GeneratedFiles'
 import controls from '@web/styles/controls.module.css'
 import styles from './Deliverable.module.css'
 
@@ -97,6 +98,11 @@ export function DeliverablePanel({
           </div>
           <ErrorNotice>{copyError}</ErrorNotice>
           {current.body && <Markdown text={current.body} />}
+          <GeneratedFiles
+            deliverableId={current.id}
+            revision={current.revision}
+            files={current.files}
+          />
           {current.items.length > 0 && (
             <ol className={styles.items}>
               {current.items.map((entry) => (

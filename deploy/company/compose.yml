@@ -56,6 +56,31 @@ services:
         bind: { create_host_path: false }
     depends_on: { migrate: { condition: service_completed_successfully } }
     restart: unless-stopped
+  sandbox:
+    profiles: [sandbox]
+    build: { context: ../.., dockerfile: deploy/company/Dockerfile.sandbox, target: control }
+    environment:
+      SANDBOX_TOKEN: ${PAA_SANDBOX_TOKEN:-}
+      SANDBOX_IMAGE: ${PAA_SANDBOX_RUNNER_IMAGE:-noria-sandbox-runner:local}
+      SANDBOX_CONCURRENCY: ${SANDBOX_CONCURRENCY:-1}
+      SANDBOX_MEMORY_MIB: ${SANDBOX_MEMORY_MIB:-1024}
+      SANDBOX_CPUS: ${SANDBOX_CPUS:-1}
+      SANDBOX_TIMEOUT_SECONDS: ${SANDBOX_TIMEOUT_SECONDS:-60}
+    cpus: 0.5
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp:size=32m]
+    volumes:
+      - sandbox_state:/state
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ['CMD', 'python', '-c', 'import os,urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8010/health",headers={"Authorization":"Bearer "+os.environ["SANDBOX_TOKEN"]}),timeout=5)']
+      interval: 15s
+      timeout: 8s
+      retries: 3
+    restart: unless-stopped
   web:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: web }
     environment: { PAA_DOMAIN: '${PAA_DOMAIN:?Set public domain or IP}' }
@@ -64,6 +89,7 @@ services:
     depends_on: [api]
     restart: unless-stopped
 volumes:
+  sandbox_state:
   pgdata:
   media:
   caddy_data:

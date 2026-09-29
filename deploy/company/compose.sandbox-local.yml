@@ -1,0 +1,71 @@
+services:
+  runtime:
+    image: ${LOCAL_SANDBOX_PROJECT}-runtime:dev
+    build:
+      context: ../..
+      dockerfile: deploy/company/Dockerfile.sandbox-local
+    privileged: true
+    cpus: 2
+    mem_limit: 3g
+    memswap_limit: 3g
+    pids_limit: 512
+    volumes:
+      - engine-data:/var/lib/docker
+      - engine-socket:/var/run
+    healthcheck:
+      test: [CMD, docker, info]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  control:
+    image: ${LOCAL_SANDBOX_PROJECT}-control:dev
+    build:
+      context: ../..
+      dockerfile: deploy/company/Dockerfile.sandbox
+      target: control
+    depends_on:
+      runtime:
+        condition: service_healthy
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      SANDBOX_TOKEN: ${PAA_SANDBOX_TOKEN:?Run npm run sandbox:setup first}
+      SANDBOX_IMAGE: ${LOCAL_SANDBOX_PROJECT}-runner:dev
+      SANDBOX_CONCURRENCY: 1
+      SANDBOX_MEMORY_MIB: 1024
+      SANDBOX_CPUS: 1
+      SANDBOX_TIMEOUT_SECONDS: 60
+    ports:
+      - 127.0.0.1:${PAA_SANDBOX_LOCAL_PORT:-8011}:8010
+    cpus: 0.5
+    mem_limit: 1g
+    pids_limit: 64
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    volumes:
+      - engine-socket:/var/run
+      - control-state:/state
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8010/health', headers={'Authorization': 'Bearer ' + os.environ['SANDBOX_TOKEN']}), timeout=5)"
+      interval: 2s
+      timeout: 6s
+      retries: 30
+    stop_grace_period: 15s
+  runner-image:
+    profiles: [build]
+    image: ${LOCAL_SANDBOX_PROJECT}-runner:dev
+    build:
+      context: ../..
+      dockerfile: deploy/company/Dockerfile.sandbox
+      target: runner
+      args:
+        DEBIAN_MIRROR: https://deb.debian.org
+
+volumes:
+  engine-data:
+  engine-socket:
+  control-state:

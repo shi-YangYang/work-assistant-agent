@@ -1,0 +1,15 @@
+FROM docker:28.5.2-dind
+ARG TARGETARCH
+ARG GVISOR_VERSION=20260921.0
+RUN apk add --no-cache curl tar zstd \
+    && case "$TARGETARCH" in arm64) arch=aarch64 ;; amd64) arch=x86_64 ;; *) exit 1 ;; esac \
+    && url="https://storage.googleapis.com/gvisor/releases/release/${GVISOR_VERSION}/${arch}" \
+    && cd /tmp \
+    && curl -fL --retry 5 "$url/gvisor.tar.zstd" -o gvisor.tar.zstd \
+    && curl -fL --retry 5 "$url/gvisor.tar.zstd.sha512" -o gvisor.tar.zstd.sha512 \
+    && sha512sum -c gvisor.tar.zstd.sha512 \
+    && tar --zstd -xf gvisor.tar.zstd -C /usr/local/bin \
+    && runsc install \
+    && rm gvisor.tar.zstd gvisor.tar.zstd.sha512
+# Only the private volume socket is exposed, never an unauthenticated TCP daemon.
+CMD ["dockerd", "--host=unix:///var/run/docker.sock"]

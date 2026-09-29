@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 
 def summary(item, record):
-    return {'id': item.id, 'revision': record.revision, 'latestRevision': item.revision, 'title': record.title, 'messageId': record.message_id, 'itemCount': len(record.items), 'updatedAt': record.created_at.isoformat()}
+    return {'id': item.id, 'revision': record.revision, 'latestRevision': item.revision, 'title': record.title, 'messageId': record.message_id, 'itemCount': len(record.items), 'files': [{'id': entry['id'], 'name': entry['name'], 'mimeType': entry['mimeType'], 'size': entry['size'], 'url': f"/api/v1/deliverables/{item.id}/files/{entry['id']}?revision={record.revision}"} for entry in record.files or []], 'updatedAt': record.created_at.isoformat()}
 
 
 async def detail(db, actor, item, record):
@@ -19,11 +19,11 @@ async def message_deliverables(db, actor, message):
     if actor.id != message.owner_id:
         return []
     from app.modules.deliverables.models import Deliverable
-    from app.security.access import valid
+    from app.modules.deliverables.queries import available_revision
     rows = (await db.execute(select(Deliverable, DeliverableRevision).join(DeliverableRevision, DeliverableRevision.deliverable_id == Deliverable.id).where(DeliverableRevision.message_id == message.id, Deliverable.owner_id == actor.id).order_by(DeliverableRevision.step))).all()
     latest = {}
     for item, record in rows:
-        if await valid(db, actor, item.access) and (item.id not in latest or record.revision > latest[item.id]['revision']):
+        if await available_revision(db, actor, item.id, record.revision) and (item.id not in latest or record.revision > latest[item.id]['revision']):
             latest[item.id] = summary(item, record)
     return list(latest.values())
 

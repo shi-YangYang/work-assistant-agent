@@ -50,7 +50,7 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     model = await run_target(settings, sessions, users, result)
     message = (await employee.get('/api/v1/messages/' + result['messageId'])).json()
     assert message['job']['state'] == 'succeeded', message
-    assert set(model.seen_tools) == ALLOWED_TOOLS
+    assert set(model.seen_tools) == ALLOWED_TOOLS - {'run_python'}
     assert not (await employee.get('/api/v1/work-items')).json()['items']
     assert (await peer.get('/api/v1/messages/' + result['messageId'])).status_code == 404
     assert (await outsider.get('/api/v1/messages/' + result['messageId'])).status_code == 404

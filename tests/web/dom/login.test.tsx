@@ -53,7 +53,7 @@ it('keeps anonymous startup and untouched fields quiet, then validates on submis
   expect(screen.queryByText('请输入密码')).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
 
-  fireEvent.click(screen.getByRole('button', { name: '登录', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: '登录' }))
   expect(screen.getByText('请输入账号')).toBeTruthy()
   expect(screen.getByText('请输入密码')).toBeTruthy()
   expect(document.activeElement).toBe(username)
@@ -62,7 +62,7 @@ it('keeps anonymous startup and untouched fields quiet, then validates on submis
   fireEvent.change(password, { target: { value: 'incorrect' } })
   expect(screen.queryByText('请输入账号')).toBeNull()
   expect(screen.queryByText('请输入密码')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '登录', exact: true }))
+  fireEvent.click(screen.getByRole('button', { name: '登录' }))
   expect(await screen.findByText('账号或密码不正确，请重新输入。')).toBeTruthy()
   expect(screen.queryByText('Aborted')).toBeNull()
   expect(fetch.mock.calls.filter(([path]) => path === '/api/v1/auth/me')).toHaveLength(1)

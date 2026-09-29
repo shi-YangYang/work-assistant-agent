@@ -12,6 +12,10 @@ services:
     build: !reset null
     image: ${PAA_WORKER_IMAGE:?Missing worker image ID}
     pull_policy: never
+  sandbox:
+    build: !reset null
+    image: ${PAA_SANDBOX_CONTROL_IMAGE:-noria-sandbox-control:local}
+    pull_policy: never
   web:
     build: !reset null
     image: ${PAA_WEB_IMAGE:?Missing web image ID}

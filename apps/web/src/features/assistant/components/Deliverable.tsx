@@ -2,6 +2,7 @@ import type { DeliverableReference, DeliverableSummary } from '@paa/api-contract
 import { FileText, ArrowUpRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { DeliverablePanel } from './DeliverablePanel'
+import { GeneratedFiles } from './GeneratedFiles'
 import styles from './Deliverable.module.css'
 
 export function DeliverableEntry({
@@ -23,6 +24,7 @@ export function DeliverableEntry({
   }, [open, onContinue])
   return (
     <>
+      <GeneratedFiles deliverableId={item.id} revision={item.revision} files={item.files} />
       <button className={styles.entry} onClick={() => setOpen(true)}>
         <FileText size={16} aria-hidden="true" />
         <span>查看{item.title}</span>

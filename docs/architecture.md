@@ -147,3 +147,13 @@ python -m paa_voiceprints enrollment.wav --model packages/voiceprint-engine/reso
 ```
 
 本地包可用 `pip install './packages/voiceprint-engine[runtime]'` 安装；公开语音验证入口为 `scripts/benchmarks/company-voiceprints.py`。
+
+## 私有代码执行与文件成果
+
+`apps/sandbox` 是独立控制服务，业务 worker 通过私有认证协议提交 `run_python`。控制服务只管理执行环境；生成代码只在全新的 gVisor/runsc 容器运行，无网络、宿主挂载、Docker socket、数据库或模型凭据。CPU、内存、PID、运行时间和临时磁盘均受限，缺少隔离运行时拒绝启动。
+
+执行绑定公司、用户、会话、消息及代码／输入摘要。重复请求恢复原回执；相同错误代码不会盲目重跑，模型修改代码后才是新执行。中断、租约失效和账号失效阻止成果发布并回收容器。
+
+生成文件复用 `DeliverableRevision.files`，二进制保存到媒体目录的 `generated/`；URL 绑定不可变版本，下载与再次输入执行器均重新鉴权及核对来源。临时环境销毁后可用旧成果继续处理。每用户成果额度默认 512 MiB，单次输入 40 MiB、输出总计 32 MiB；删除会话／账号后清理索引并回收文件。
+
+普通问答、联网和业务工具不进入执行队列。沙盒关闭时上述能力保持可用，历史成果仍可下载。

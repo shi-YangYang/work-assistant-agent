@@ -34,7 +34,7 @@ def build_graph(settings, checkpointer, context, model=None):
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
     from app.agent.execution_mode import mode_prompt
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name != 'run_python' or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 

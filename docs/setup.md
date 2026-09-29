@@ -45,6 +45,14 @@ npm run dev:web
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令启动 Web、API、worker；Python 修改后需重启。`Ctrl+C` 停止应用，数据库继续运行；下次启动前用 Compose 确认数据库就绪。
 
+### 本地代码执行与文件生成
+
+Docker 启动后，执行一次 `npm run sandbox:setup`。首次下载并构建镜像，自动向已有 `apps/server/.env.web` 写入本地地址和随机沙盒密钥，保留其他配置。升级代码后先执行 `npm run db:company`。
+
+之后 `npm run dev:web` 会一起启动沙盒，`Ctrl+C` 停止本次启动的沙盒服务，保留镜像和缓存。沙盒使用独立 Docker 引擎和 gVisor，不修改系统 Docker 配置；接口仅监听本机 `127.0.0.1:8011`，默认同时执行 1 个任务。
+
+分开调试时可用 `npm run sandbox:start`、`npm run sandbox:status`、`npm run sandbox:stop`。已手动启动的沙盒不会随 `dev:web` 退出而停止。仅需普通聊天时，将 `PAA_SANDBOX_LOCAL=false` 并清空 `PAA_SANDBOX_URL` 后重启。
+
 ### 发送与查看附件
 
 工作助手支持选择、粘贴、拖入附件，可混发图片、文档和语音。每条最多 9 个附件，其中语音最多 3 段；单图最多 30 MiB／2,000 万像素，文档和语音每个最多 20 MiB，每段语音最长 3 分钟。支持 MP3、HEIC／HEIF；HEIC 预览会上传转换，发送时复用，不创建聊天消息。
@@ -210,6 +218,49 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 `current/` 指向本次尝试，`previous/` 保留旧版本，结果在 `deployment-status`。构建／配置检查失败不停止旧服务，备份失败尝试恢复旧服务；迁移或上线检查失败则停用应用并保留数据，不自动启动旧代码。schema 变化须按备份恢复，不能只切旧镜像。排障命令：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh logs --tail=100 api worker migrate`。
 
 旧手工部署接入 CD 时沿用部署根目录、`.env.company`、主密钥和 `paa-company` 数据卷；发布脚本将旧配置链接到新版本 `apps/server/.env.web`。续期 cron 和日常备份改用 `current/deploy/company/` 下的脚本。
+
+### 自部署代码沙盒
+
+沙盒用于运行 Python、分析文件和生成 Excel、Word、PDF、PPT；普通问答不依赖沙盒。每次执行使用独立环境，生成文件随会话保留。
+
+Linux 执行主机先按 [gVisor 安装说明](https://gvisor.dev/docs/user_guide/install/)安装 `runsc` 并注册到 Docker。安装或调整 Docker 配置安排在维护时段；CD 只检查运行时，不自动安装。使用完整发行包及其校验文件，保留 `runsc` 同目录的 `gvisor-bin/`，不能只复制单个可执行文件。
+
+确认隔离运行时可用：
+
+```sh
+docker run --rm --runtime=runsc --network=none --read-only --cap-drop=ALL \
+  --security-opt=no-new-privileges --user=65532:65532 \
+  --memory=1g --memory-swap=1g --cpus=1 busybox:1.37 uname -r
+```
+
+输出应包含 `gvisor`。在已有 `apps/server/.env.web` 补充以下配置，控制令牌使用至少 32 字节随机值，不提交 Git：
+
+```dotenv
+COMPOSE_PROFILES=sandbox
+PAA_SANDBOX_URL=http://sandbox:8010
+PAA_SANDBOX_TOKEN=替换为随机控制令牌
+SANDBOX_CONCURRENCY=1
+SANDBOX_MEMORY_MIB=1024
+SANDBOX_CPUS=1
+SANDBOX_TIMEOUT_SECONDS=60
+PAA_GENERATED_QUOTA_MB=512
+PAA_GENERATED_TOTAL_QUOTA_MB=4096
+```
+
+先构建执行镜像，再按原域名／IP Compose 或 CD 流程发布：
+
+```sh
+docker build -f deploy/company/Dockerfile.sandbox --target runner \
+  -t noria-sandbox-runner:local .
+```
+
+CD 启用此配置后会构建并固定控制服务与执行镜像版本。并发 `1` 是资源测试起点，达到上限才排队；提高前需测量整机内存、文档渲染与业务 API 响应。控制服务只在内网提供接口；Docker 控制 socket 仅供可信管理服务使用，不挂入生成代码的环境。
+
+生成文件默认每人最多 512 MiB、全站最多 4 GiB；达到配额时停止新增，不删除已交付文件。调整上限前确认媒体卷的可用空间。
+
+本地真实执行同样需要支持 `runsc` 的 Docker daemon，可用 `DOCKER_HOST` 指向独立测试环境。默认 Docker Desktop 未注册 `runsc` 时不能直接启用，不回退为宿主 Python。未配置沙盒时，其余助手能力照常使用。
+
+关闭功能时清空 `PAA_SANDBOX_URL`，停用沙盒 profile 并重启应用；保留数据库及媒体数据卷，历史成果仍可下载。
 
 ### 钉钉登录配置
 
