@@ -12,6 +12,7 @@ import type {
   Work,
   WorkReference,
 } from '@paa/api-contracts'
+import { assistantQuery } from './queries'
 import { api, write } from '@web/api/client'
 
 export function resolveBusinessAction(
@@ -143,8 +144,10 @@ export function messagePath(id: string | undefined) {
   return `/messages/${id}`
 }
 
-export function readConversationForBreadcrumb(id: string, options: RequestInit) {
-  return api<Conversation>(`/conversations/${id}`, options)
+export function readConversationForBreadcrumb(id: string, options: RequestInit, owner?: string) {
+  return assistantQuery<Conversation>(`/conversations/${id}`, owner)!.get(
+    options.signal ?? undefined,
+  )
 }
 
 export function readMessageForBreadcrumb(id: string, options: RequestInit) {

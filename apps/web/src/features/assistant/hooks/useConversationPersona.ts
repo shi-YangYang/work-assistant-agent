@@ -25,7 +25,7 @@ type Selection = {
 export function useConversationPersona(
   conversationId: string | undefined,
   conversation: Conversation | null,
-  onSaved: () => void,
+  onSaved: (conversation: Conversation) => void,
 ) {
   const { identity, drafts, setDraft } = useWorkspace()
   const ownerScope = `${identityScope(identity)}:${epoch}`
@@ -105,7 +105,7 @@ export function useConversationPersona(
       })
       if (!valid()) return
       setSelection({ session, scope, confirmed: saved })
-      onSaved()
+      onSaved(saved)
     } catch (error) {
       if (!valid() || isCancelled(error)) return
       setSelection({ session, scope, confirmed: previous, error: error as Error })
@@ -114,7 +114,7 @@ export function useConversationPersona(
           const latest = await readConversation(previous)
           if (valid()) {
             setSelection({ session, scope, confirmed: latest, error })
-            onSaved()
+            onSaved(latest)
           }
         } catch {
           // Keep the confirmed choice and original conflict visible; a later retry rechecks it.

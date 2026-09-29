@@ -12,7 +12,7 @@ export function useExecutionMode(
   conversationId: string | undefined,
   conversation: Conversation | null,
   interaction: PersonaInteraction,
-  onSaved: () => void,
+  onSaved: (conversation: Conversation) => void,
 ) {
   const { identity, drafts, setDraft } = useWorkspace()
   const generation = epoch
@@ -62,7 +62,7 @@ export function useExecutionMode(
       const result = await updateExecutionMode(current!, mode, fullAccessConfirmed)
       if (!valid()) return
       setSaved({ scope, conversation: result })
-      onSaved()
+      onSaved(result)
     } catch (error) {
       if (!valid() || isCancelled(error)) return
       setError({ scope, value: error as Error })
@@ -71,7 +71,7 @@ export function useExecutionMode(
           const latest = await readConversation(current)
           if (valid()) {
             setSaved({ scope, conversation: latest })
-            onSaved()
+            onSaved(latest)
           }
         } catch {
           /* Keep the original conflict until the next reload. */

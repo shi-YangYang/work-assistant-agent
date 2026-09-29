@@ -79,9 +79,10 @@ function connectJobFeedback(
   jobId: string,
   attempt: number,
   fence: number,
-  receiveValue: (value: JobFeedback | null) => void,
+  receiveValue: (value: JobFeedback | null) => boolean | void,
   setError: (message: string) => void,
-  refresh: () => void,
+  refresh: (feedback?: JobFeedback) => void,
+  active: () => boolean,
 ) {
   let closed = false
   let completed = false
@@ -96,6 +97,7 @@ function connectJobFeedback(
   }
   const receive = (incoming: JobFeedback) => {
     if (
+      !active() ||
       closed ||
       completed ||
       incoming.jobId !== jobId ||
@@ -103,17 +105,19 @@ function connectJobFeedback(
       incoming.fence < fence
     )
       return
+    if (receiveValue(incoming) === false) return
     const stageChanged = previousStage !== undefined && previousStage !== incoming.stage
+    const completedMedia = previousStage === 'parsing' || previousStage === 'transcribing'
     previousStage = incoming.stage
-    receiveValue(incoming)
     setError('')
     if (terminalJob(incoming.state)) {
       completed = true
       closeSource()
-      refresh()
-    } else if (stageChanged) {
-      // Pull complete transcripts/attachments on stage changes, not on each token.
-      refresh()
+      refresh(incoming)
+    } else if (stageChanged && completedMedia) {
+      // Only media completion needs persisted transcript/extraction data. Search,
+      // generation, operations and review are already represented by the stream.
+      refresh(incoming)
     }
   }
   const stop = (message: string, status?: number) => {
@@ -141,7 +145,7 @@ function connectJobFeedback(
     const opened = new EventSource(`/api/v1/jobs/${jobId}/events`)
     source = opened
     opened.addEventListener('snapshot', (event) => {
-      if (source !== opened || closed || completed) return
+      if (!active() || source !== opened || closed || completed) return
       try {
         receive(JSON.parse((event as MessageEvent).data) as JobFeedback)
       } catch {
@@ -149,7 +153,7 @@ function connectJobFeedback(
       }
     })
     opened.addEventListener('unavailable', (event) => {
-      if (source !== opened || closed || completed) return
+      if (!active() || source !== opened || closed || completed) return
       try {
         const failure = JSON.parse((event as MessageEvent).data) as { status: number }
         stop(
@@ -161,11 +165,11 @@ function connectJobFeedback(
       }
     })
     opened.onopen = () => {
-      if (source === opened && !closed && !completed) setError('')
+      if (active() && source === opened && !closed && !completed) setError('')
     }
     // Explicitly close to suppress EventSource's built-in automatic reconnect.
     opened.onerror = () => {
-      if (source === opened) disconnect()
+      if (active() && source === opened) disconnect()
     }
   }
   const recover = async () => {
@@ -216,7 +220,7 @@ type FeedbackListener = {
   fence: number
   receive: (value: JobFeedback | null) => void
   error: (message: string) => void
-  refresh: () => void
+  refresh: (feedback?: JobFeedback) => void
 }
 type FeedbackConnection = {
   attempt: number
@@ -270,23 +274,25 @@ export function subscribeJobFeedback(
       attempt,
       fence,
       (incoming) => {
-        if (epoch !== generation) return
+        if (epoch !== generation) return false
         const next = incoming ? acceptFeedback(shared.value, incoming, jobId) : null
-        if (next === shared.value && incoming) return
+        if (next === shared.value && incoming) return false
         shared.value = next
         shared.listeners.forEach((item) => {
           if (!next || (next.attempt >= item.attempt && next.fence >= item.fence))
             item.receive(next)
         })
+        return true
       },
       (message) => {
         if (epoch !== generation) return
         shared.error = message
         shared.listeners.forEach((item) => item.error(message))
       },
-      () => {
-        if (epoch === generation) shared.listeners.forEach((item) => item.refresh())
+      (feedback) => {
+        if (epoch === generation) shared.listeners.forEach((item) => item.refresh(feedback))
       },
+      () => epoch === generation && shared.listeners.size > 0,
     )
     shared.dispose = transport.dispose
     shared.recover = transport.recover
@@ -297,8 +303,11 @@ export function subscribeJobFeedback(
   return () => {
     shared.listeners.delete(listener)
     if (!shared.listeners.size) {
-      shared.dispose?.()
-      if (connections.get(key) === shared) connections.delete(key)
+      queueMicrotask(() => {
+        if (shared.listeners.size) return
+        shared.dispose?.()
+        if (connections.get(key) === shared) connections.delete(key)
+      })
     }
   }
 }

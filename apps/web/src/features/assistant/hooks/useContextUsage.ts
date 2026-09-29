@@ -1,5 +1,6 @@
 import type { ContextUsage, Job, JobFeedback } from '@paa/api-contracts'
 import { ApiError, epoch, isCancelled } from '@web/api/client'
+import { assistantQuery } from '../api/queries'
 import { readConversationContext } from '@web/features/assistant/api/requests'
 import { identityScope } from '@web/lib/session-drafts'
 import { useWorkspace } from '@web/lib/workspace'
@@ -23,13 +24,26 @@ type Snapshot = {
   unavailable: boolean
 }
 
-export function useContextUsage(conversationId: string | undefined, latestJob: Job | null) {
+export function useContextUsage(
+  conversationId: string | undefined,
+  latestJob: Job | null,
+  managed = false,
+) {
   const { identity } = useWorkspace()
   const scope = `${identityScope(identity)}:${epoch}:${conversationId ?? 'new'}`
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [restoredScope, setRestoredScope] = useState<string | null>(null)
   const activeScope = useRef(scope)
   const latestId = latestJob?.id ?? null
+  const latestRef = useRef(latestId)
+  useLayoutEffect(() => {
+    latestRef.current = latestId
+  }, [latestId])
+  const resource = assistantQuery<{ contextUsage: ContextUsage | null }>(
+    conversationId ? `/conversations/${conversationId}/context-usage` : null,
+    identityScope(identity),
+    (signal) => readConversationContext(conversationId!, signal),
+  )
   const receivedUpdates = useRef(0)
   useLayoutEffect(() => {
     activeScope.current = scope
@@ -75,16 +89,17 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
   )
 
   useEffect(() => {
-    if (!conversationId) return
+    if (!conversationId || !resource) return
     let active = true
     let controller: AbortController | undefined
     const restore = async () => {
+      const latestId = latestRef.current
       controller?.abort()
       const request = new AbortController()
       controller = request
       const receivedAtStart = receivedUpdates.current
       try {
-        const { contextUsage } = await readConversationContext(conversationId, request.signal)
+        const { contextUsage } = await resource.get(request.signal)
         if (!active || request.signal.aborted) return
         setSnapshot((previous) => {
           const current = previous?.scope === scope ? previous : null
@@ -143,14 +158,19 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
         if (active && !request.signal.aborted) setRestoredScope(scope)
       }
     }
+    const unsubscribe = resource.subscribe(() => {
+      if (!resource.getSnapshot().loading) void restore()
+    })
+    const refresh = () => void resource.refresh()
     void restore()
-    window.addEventListener('online', restore)
+    if (!managed) window.addEventListener('online', refresh)
     return () => {
       active = false
       controller?.abort()
-      window.removeEventListener('online', restore)
+      unsubscribe()
+      window.removeEventListener('online', refresh)
     }
-  }, [scope, conversationId, latestId])
+  }, [scope, conversationId, resource, managed])
 
   const visible = snapshot?.scope === scope ? snapshot : null
   const usage = visible?.usage ?? null
@@ -168,5 +188,6 @@ export function useContextUsage(conversationId: string | undefined, latestJob: J
     loading: !!conversationId && !current && !visible?.unavailable && restoredScope !== scope,
     unavailable: visible?.unavailable ?? false,
     receive,
+    refresh: resource?.refresh ?? (() => Promise.resolve()),
   }
 }

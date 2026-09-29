@@ -33,6 +33,7 @@ export function MessageCard({
   message,
   own = false,
   onChange,
+  onFeedback,
   onReply,
   onDeliverable,
   onContextUpdate,
@@ -50,6 +51,7 @@ export function MessageCard({
   onRetrySettled?: (job: Job | null) => void
   own?: boolean
   onChange: () => void
+  onFeedback?: (feedback?: JobFeedback) => void
   onReply?: () => void
   onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
   onDeliverable?: (reference: DeliverableReference, title: string, text?: string) => void
@@ -70,7 +72,7 @@ export function MessageCard({
       (activeJob && !['queued', 'running'].includes(activeJob.state)))
       ? activeJob!
       : sourceJob
-  const live = useJobFeedback(job, own && !message.businessUnavailable, onChange)
+  const live = useJobFeedback(job, own && !message.businessUnavailable, onFeedback ?? onChange)
   useEffect(() => {
     if (own && !message.businessUnavailable && job) onContextUpdate?.(job, live.feedback)
   }, [own, message.businessUnavailable, job, live.feedback, onContextUpdate])

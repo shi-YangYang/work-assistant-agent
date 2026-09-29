@@ -247,3 +247,36 @@ it('loads the final status once after disconnect without opening another stream'
     dispose()
   }
 })
+
+it('ignores an older terminal event without closing the healthy stream or refetching results', () => {
+  vi.stubGlobal('window', new EventTarget())
+  vi.stubGlobal('navigator', { onLine: true, userAgent: '' })
+  vi.stubGlobal('EventSource', Source)
+  const receive = vi.fn(),
+    refresh = vi.fn()
+  const dispose = subscribeJobFeedback('ordered', 'running', 1, 1, receive, vi.fn(), refresh)!
+  const source = Source.current
+  const emit = (seq: number, state: string) =>
+    source.dispatchEvent(
+      new MessageEvent('snapshot', {
+        data: JSON.stringify({
+          jobId: 'ordered',
+          attempt: 1,
+          fence: 1,
+          seq,
+          state,
+          stage: 'generating',
+          updatedAt: '2026-09-29',
+        }),
+      }),
+    )
+  emit(10, 'running')
+  emit(5, 'failed')
+  expect(source.close).not.toHaveBeenCalled()
+  expect(refresh).not.toHaveBeenCalled()
+  expect(receive).toHaveBeenCalledTimes(1)
+  emit(11, 'succeeded')
+  expect(source.close).toHaveBeenCalledTimes(1)
+  expect(refresh).toHaveBeenCalledTimes(1)
+  dispose()
+})

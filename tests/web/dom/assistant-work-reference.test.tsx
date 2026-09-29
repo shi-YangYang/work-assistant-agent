@@ -125,7 +125,11 @@ it('opens last messaged chat, preserves its text/files/result reference and cons
   expect(draft.files).toEqual([file])
   expect(draft.deliverableReference?.id).toBe('result')
   expect(draft.workReference?.workId).toBe(work.id)
-  expect(screen.getByLabelText('路由').textContent).toBe(`/assistant/${convo.id}`)
+  // Applying the draft and React Router committing the consumed query parameter
+  // are separate updates; wait for navigation rather than only the visible chip.
+  await waitFor(() =>
+    expect(screen.getByLabelText('路由').textContent).toBe(`/assistant/${convo.id}`),
+  )
   fireEvent.click(screen.getByRole('button', { name: '移除工作引用' }))
   expect(screen.queryByText('上线 Web')).toBeNull()
   expect(vault.getSnapshot()['composer:new']).toEqual({ text: '另一个草稿', files: [], key: 'new' })

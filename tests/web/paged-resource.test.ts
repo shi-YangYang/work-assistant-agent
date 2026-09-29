@@ -175,10 +175,52 @@ it('coalesces completion invalidations during an in-flight read into one fresh r
     .mockResolvedValue({ items: [row(2)], nextCursor: null })
   const resource = new PagedResource<Row>('/messages', 'createdAt', read)
   const initial = resource.refresh()
-  resource.refresh()
-  resource.refresh()
+  resource.invalidate()
+  resource.invalidate()
   expect(read).toHaveBeenCalledTimes(1)
   resolve({ items: [row(1)], nextCursor: null })
+  await initial
+  await Promise.resolve()
+  expect(read).toHaveBeenCalledTimes(2)
+  expect(resource.getSnapshot().data?.items).toEqual([row(2)])
+  resource.dispose()
+})
+
+it('joins repeated passive refreshes without queueing a second page read', async () => {
+  let resolve!: (value: Page<Row>) => void
+  const read = vi.fn(
+    () =>
+      new Promise<Page<Row>>((done) => {
+        resolve = done
+      }),
+  )
+  const resource = new PagedResource<Row>('/messages', 'createdAt', read, vi.fn())
+  const initial = resource.refresh()
+  void resource.refresh()
+  void resource.refresh()
+  resolve({ items: [row(1)], nextCursor: null })
+  await initial
+  expect(read).toHaveBeenCalledTimes(1)
+  expect(resource.getSnapshot().data?.items).toEqual([row(1)])
+  resource.dispose()
+})
+
+it('keeps one follow-up read after a write during a non-shared report refresh', async () => {
+  let resolve!: (value: Page<Row>) => void
+  const read = vi
+    .fn()
+    .mockReturnValueOnce(
+      new Promise<Page<Row>>((done) => {
+        resolve = done
+      }),
+    )
+    .mockResolvedValue({ items: [row(2)], nextCursor: null })
+  const resource = new PagedResource<Row>('/reports?kind=daily', 'period', read)
+  const initial = resource.refresh()
+  // Existing report mutation callbacks still call refresh without opting into sharing.
+  void resource.refresh()
+  void resource.refresh()
+  resolve({ items: [], nextCursor: null })
   await initial
   await Promise.resolve()
   expect(read).toHaveBeenCalledTimes(2)

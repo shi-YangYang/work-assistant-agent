@@ -4,6 +4,7 @@ import styles from './ConversationChat.module.css'
 import type {
   AssistantInteraction,
   BusinessAction,
+  JobFeedback,
   PersonaId,
   WorkMessage,
 } from '@paa/api-contracts'
@@ -44,7 +45,13 @@ import {
   updateSendingDraft,
 } from '@web/features/assistant/utils/files'
 import { usePagedResource } from '@web/hooks/usePagedResource'
-import { useResource } from '@web/hooks/useResource'
+import { useQueryResource } from '@web/hooks/useQueryResource'
+import { identityScope } from '@web/lib/session-drafts'
+import { assistantQuery } from '../api/queries'
+import {
+  type RegisterConversationRefresh,
+  useConversationRefresh,
+} from '../hooks/useConversationRefresh'
 import { useRetryWait } from '@web/hooks/useRetryWait'
 import { useWorkspace } from '@web/lib/workspace'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -55,12 +62,14 @@ export function ConversationChat({
   interaction,
   execution,
   onSent,
+  registerRefresh,
 }: {
   conversationId?: string
   personaId: PersonaId
   interaction: PersonaInteraction
   execution: ReturnType<typeof useExecutionMode>
   onSent: (conversationId: string, personaId: PersonaId) => void
+  registerRefresh?: RegisterConversationRefresh
 }) {
   const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
@@ -69,19 +78,45 @@ export function ConversationChat({
     () => storedComposer ?? { text: '', files: [], key: '' },
     [storedComposer],
   )
-  const { data, error, refresh, loadMore, loading } = usePagedResource<WorkMessage>(
+  const { data, error, refresh, invalidate, loadMore, loading } = usePagedResource<WorkMessage>(
     conversationMessagesPath(conversationId),
     'createdAt',
+    0,
+    { scope: identityScope(identity) },
   )
   const messages = useMemo(
     () => [...(data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
     [data],
   )
-  const actionReceipts = useResource<{ items: BusinessAction[] }>(orphanActionsPath(conversationId))
-  const task = useAssistantTask(conversationId, messages, () => {
-    void refresh()
-    actionReceipts.refresh()
-  })
+  const actionReceipts = useQueryResource(
+    assistantQuery<{ items: BusinessAction[] }>(
+      orphanActionsPath(conversationId),
+      identityScope(identity),
+    ),
+  )
+  const synchronizedFeedback = useRef('')
+  const synchronizeResult = (feedback?: JobFeedback) => {
+    if (feedback) {
+      const key = JSON.stringify([
+        feedback.jobId,
+        feedback.attempt,
+        feedback.fence,
+        feedback.seq,
+        feedback.state,
+        feedback.stage,
+      ])
+      if (synchronizedFeedback.current === key) return
+      synchronizedFeedback.current = key
+    }
+    void invalidate()
+    if (feedback && ['queued', 'running'].includes(feedback.state)) return
+    void actionReceipts.invalidate()
+    void assistantQuery<{ items: AssistantInteraction[] }>(
+      conversationId ? `/conversations/${conversationId}/interactions` : null,
+      identityScope(identity),
+    )?.invalidate()
+  }
+  const task = useAssistantTask(conversationId, messages, synchronizeResult, true)
   const incomingQuestions = useMemo(
     () => [
       ...messages.flatMap((message) =>
@@ -91,12 +126,17 @@ export function ConversationChat({
     ],
     [messages, task.feedback?.interactions],
   )
-  const questions = useAssistantInteraction(conversationId, incomingQuestions, (continuation) => {
-    if (continuation) task.accepted(continuation)
-    else void task.refresh()
-    void refresh()
-    actionReceipts.refresh()
-  })
+  const questions = useAssistantInteraction(
+    conversationId,
+    incomingQuestions,
+    (continuation) => {
+      if (continuation) task.accepted(continuation)
+      else void task.refresh()
+      void invalidate()
+      void actionReceipts.invalidate()
+    },
+    true,
+  )
   const questionsByMessage = new Map<string, AssistantInteraction[]>()
   for (const question of questions.items)
     questionsByMessage.set(question.messageId, [
@@ -132,7 +172,7 @@ export function ConversationChat({
     setLimitError,
     setSendError,
     retryWait,
-    refresh,
+    refresh: invalidate,
     task,
   })
   const locked =
@@ -271,7 +311,19 @@ export function ConversationChat({
     task.job && (task.running || !latestJob || task.job.updatedAt >= latestJob.updatedAt)
       ? task.job
       : latestJob
-  const context = useContextUsage(conversationId, contextJob)
+  const context = useContextUsage(conversationId, contextJob, true)
+  useConversationRefresh(
+    conversationId,
+    () => {
+      void refresh()
+      void actionReceipts.refresh()
+      questions.refresh()
+      void context.refresh()
+      void task.synchronize()
+      void assistantQuery(`/conversations/${conversationId}`, identityScope(identity))?.refresh()
+    },
+    registerRefresh,
+  )
   const receiveContext = context.receive
   useEffect(() => {
     if (task.job) receiveContext(task.job, task.feedback)
@@ -344,13 +396,15 @@ export function ConversationChat({
           if (continuation) task.accepted(continuation)
           else void task.refresh()
           questions.refresh()
-          actionReceipts.refresh()
-          void refresh()
+          void actionReceipts.invalidate()
+          void invalidate()
         }}
         scroller={scroller}
         atBottomRef={atBottomRef}
         setNewReply={setNewReply}
         refresh={refresh}
+        invalidate={invalidate}
+        onFeedback={synchronizeResult}
         error={error}
         nextCursor={nextCursor}
         loading={loading}

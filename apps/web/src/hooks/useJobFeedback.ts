@@ -8,7 +8,11 @@ import {
 import { epoch } from '@web/api/client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-export function useJobFeedback(job: Job | null, enabled: boolean, refresh: () => void) {
+export function useJobFeedback(
+  job: Job | null,
+  enabled: boolean,
+  refresh: (feedback?: JobFeedback) => void,
+) {
   const generation = epoch
   const [snapshot, setSnapshot] = useState<{
     generation: number
@@ -57,7 +61,7 @@ export function useJobFeedback(job: Job | null, enabled: boolean, refresh: () =>
                 ? { generation, jobId, message }
                 : null,
           ),
-        () => refreshRef.current(),
+        (feedback) => refreshRef.current(feedback),
       ),
     [jobId, attempt, fence, state, generation],
   )

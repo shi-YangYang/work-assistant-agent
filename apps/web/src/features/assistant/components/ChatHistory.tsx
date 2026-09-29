@@ -22,6 +22,8 @@ export function ChatHistory({
   atBottomRef,
   setNewReply,
   refresh,
+  invalidate,
+  onFeedback,
   error,
   nextCursor,
   loading,
@@ -47,6 +49,8 @@ export function ChatHistory({
   atBottomRef: React.RefObject<boolean>
   setNewReply: React.Dispatch<React.SetStateAction<boolean>>
   refresh: () => Promise<void>
+  invalidate?: () => Promise<void>
+  onFeedback?: (feedback?: JobFeedback) => void
   error: string | Error
   nextCursor: string | null | undefined
   loading: boolean
@@ -123,7 +127,8 @@ export function ChatHistory({
             onContextUpdate={onContextUpdate}
             onContinuation={onContinuation}
             own
-            onChange={refresh}
+            onChange={invalidate ?? refresh}
+            onFeedback={onFeedback ?? refresh}
             onDeliverable={locked ? undefined : onDeliverable}
             onReply={
               locked

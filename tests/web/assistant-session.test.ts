@@ -1,7 +1,12 @@
 import type { KeyboardEvent } from 'react'
 import { expect, it, vi } from 'vitest'
 import { ApiError } from '../../apps/web/src/api/client'
-import { resumeConversation } from '../../apps/web/src/features/assistant/api/restore-conversation'
+import {
+  latestChat,
+  restoreConversation,
+  resumeConversation,
+} from '../../apps/web/src/features/assistant/api/restore-conversation'
+import { assistantQuery } from '../../apps/web/src/features/assistant/api/queries'
 import { exampleText, submitOnEnter } from '../../apps/web/src/features/assistant/utils/session'
 
 it('restores a remembered conversation even outside the first list page, using reads only', async () => {
@@ -38,6 +43,35 @@ it('leaves a genuinely empty account blank without creating a conversation or hi
   await expect(resumeConversation('remembered', read)).rejects.toThrow('连接失败')
   expect(calls).toBe(1)
 })
+
+it.each(['remembered', 'default', 'latest'] as const)(
+  'explicitly retries a failed %s conversation restore without changing ordinary reads',
+  async (entry) => {
+    const path =
+      entry === 'remembered'
+        ? '/conversations/chat'
+        : entry === 'latest'
+          ? '/conversations?order=last_message'
+          : '/conversations'
+    const read = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError(503, 'unavailable', '暂时不可用'))
+      .mockResolvedValue(entry === 'remembered' ? { id: 'chat' } : { items: [{ id: 'chat' }] })
+    assistantQuery(path, 'restore-test', read)
+    const signal = new AbortController().signal
+    const restore = (fresh = false) =>
+      entry === 'latest'
+        ? latestChat(signal, 'restore-test', { fresh })
+        : restoreConversation(entry === 'remembered' ? 'chat' : null, signal, 'restore-test', {
+            fresh,
+          })
+    await expect(restore()).rejects.toThrow('暂时不可用')
+    await expect(restore()).rejects.toThrow('暂时不可用')
+    expect(read).toHaveBeenCalledTimes(1)
+    await expect(restore(true)).resolves.toBe('chat')
+    expect(read).toHaveBeenCalledTimes(2)
+  },
+)
 
 it('Enter sends once; Shift+Enter and IME confirmation keep editing', () => {
   const send = vi.fn()

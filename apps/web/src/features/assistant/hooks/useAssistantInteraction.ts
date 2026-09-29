@@ -1,7 +1,9 @@
 import type { AssistantInteraction } from '@paa/api-contracts'
 import { epoch, isCancelled, ApiError } from '@web/api/client'
 import { mergeInteractions } from '../utils/interactions'
-import { useResource } from '@web/hooks/useResource'
+import { useQueryResource } from '@web/hooks/useQueryResource'
+import { assistantQuery } from '../api/queries'
+import { useConversationRefresh } from './useConversationRefresh'
 import { useWorkspace } from '@web/lib/workspace'
 import { identityScope } from '@web/lib/session-drafts'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -17,13 +19,17 @@ export function useAssistantInteraction(
   conversationId: string | undefined,
   incoming: AssistantInteraction[],
   onContinue: (value?: TaskContinuation) => void,
+  managed = false,
 ) {
   const { identity, drafts, setDraft } = useWorkspace()
   const generation = epoch
   const scope = `${identityScope(identity)}:${generation}:${conversationId ?? 'new'}`
-  const resource = useResource<{ items: AssistantInteraction[] }>(
+  const query = assistantQuery<{ items: AssistantInteraction[] }>(
     conversationInteractionsPath(conversationId),
+    identityScope(identity),
   )
+  const resource = useQueryResource(query)
+  useConversationRefresh(managed ? undefined : conversationId, resource.refresh)
   const committed = useRef<object | null>(null)
   useLayoutEffect(() => {
     const current = {}
@@ -89,7 +95,9 @@ export function useAssistantInteraction(
             result.interaction,
           ],
         }))
-        refresh()
+        query?.set((previous) => ({
+          items: mergeInteractions(previous?.items, [result.interaction]),
+        }))
         onContinue(result.continuation)
       } catch (error) {
         if (!valid() || isCancelled(error)) return
@@ -103,7 +111,7 @@ export function useAssistantInteraction(
         if (lock.current === session) lock.current = null
       }
     },
-    [generation, scope, refresh, onContinue, setDraft],
+    [generation, scope, refresh, onContinue, setDraft, query],
   )
   return {
     items,
@@ -113,5 +121,6 @@ export function useAssistantInteraction(
     error: current?.error || resource.error,
     respond,
     refresh,
+    invalidate: resource.invalidate,
   }
 }

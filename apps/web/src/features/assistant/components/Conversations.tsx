@@ -18,10 +18,16 @@ import { ConversationChat } from '@web/features/assistant/components/Conversatio
 import { PersonaPicker } from '@web/features/assistant/components/PersonaPicker'
 import { useExecutionMode } from '../hooks/useExecutionMode'
 import { useConversationPersona } from '@web/features/assistant/hooks/useConversationPersona'
+import {
+  type RegisterConversationRefresh,
+  useConversationRefresh,
+} from '../hooks/useConversationRefresh'
 import { ConversationPicker } from '@web/features/assistant/components/ConversationPicker'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { useConversationSearch } from '@web/features/assistant/hooks/useConversationSearch'
-import { useResource } from '@web/hooks/useResource'
+import { useQueryResource } from '@web/hooks/useQueryResource'
+import { identityScope } from '@web/lib/session-drafts'
+import { assistantQuery, saveConversationQuery } from '../api/queries'
 import { useWorkspace } from '@web/lib/workspace'
 import { MessageSquare, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -30,7 +36,8 @@ import { useNavigate, useSearchParams } from 'react-router'
 export function Assistant({ conversationId }: { conversationId?: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
-  const { drafts, setDraft, notify, lastConversationId, rememberConversation } = useWorkspace()
+  const { identity, drafts, setDraft, notify, lastConversationId, rememberConversation } =
+    useWorkspace()
   const workEntry = params.get('workId') || undefined
   const [resolvedWorkEntry, setResolvedWorkEntry] = useState<string | undefined>()
   const needsWorkRestore = !!workEntry && !conversationId && resolvedWorkEntry !== workEntry
@@ -39,6 +46,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [resumed, setResumed] = useState(false)
   const [resumeError, setResumeError] = useState<Error | string>('')
   const [resumeRevision, setResumeRevision] = useState(0)
+  const attemptedResumeRevision = useRef(0)
   const newDraft = !!drafts['composer:new']
   const [pickerOpen, setPickerOpen] = useState(false)
   const expanded = pickerOpen || showConversations
@@ -77,7 +85,22 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   const [renamed, setRenamed] = useState<Record<string, Conversation>>({})
   const list = useConversationSearch(expanded)
   const { search, setSearch } = list
-  const current = useResource<Conversation>(conversationPath(conversationId))
+  const query = assistantQuery<Conversation>(
+    conversationPath(conversationId),
+    identityScope(identity),
+  )
+  const current = useQueryResource(query)
+  const chatRefresh = useRef<(() => void) | null>(null)
+  const registerRefresh = useCallback<RegisterConversationRefresh>((refresh) => {
+    chatRefresh.current = refresh
+    return () => {
+      if (chatRefresh.current === refresh) chatRefresh.current = null
+    }
+  }, [])
+  useConversationRefresh(conversationId, () => {
+    if (chatRefresh.current) chatRefresh.current()
+    else void current.refresh()
+  })
   const [chatSession, setChatSession] = useState({
     routeId: conversationId,
     createdId: undefined as string | undefined,
@@ -108,10 +131,14 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
       return
     let active = true
     const controller = new AbortController()
+    const fresh = resumeRevision !== attemptedResumeRevision.current
+    attemptedResumeRevision.current = resumeRevision
     void (
       needsWorkRestore
-        ? latestChat(controller.signal)
-        : restoreConversation(lastConversationId, controller.signal)
+        ? latestChat(controller.signal, identityScope(identity), { fresh })
+        : restoreConversation(lastConversationId, controller.signal, identityScope(identity), {
+            fresh,
+          })
     )
       .then((id) => {
         if (!active) return
@@ -147,6 +174,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     needsWorkRestore,
     workEntry,
     resolvedWorkEntry,
+    identity,
   ])
   useEffect(() => {
     if (current.data && current.data.id === conversationId) rememberConversation(current.data.id)
@@ -158,10 +186,10 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
     )
     .map((item) => (renamed[item.id]?.revision >= item.revision ? renamed[item.id] : item))
   const nextCursor = list.data?.nextCursor
-  const updated = () => {
-    list.refresh()
-    current.refresh()
-    window.dispatchEvent(new Event('paa-record-updated'))
+  const updated = (saved?: Conversation) => {
+    if (saved) saveConversationQuery(saved, identityScope(identity))
+    else void current.invalidate()
+    if (expanded) list.refresh()
   }
   const persona = useConversationPersona(conversationId, current.data, updated)
   const execution = useExecutionMode(conversationId, current.data, persona.interaction, updated)
@@ -221,8 +249,9 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
             nextCursor={nextCursor}
           />
         </header>
-        <ErrorNotice>
-          {persona.error || failure || (conversationId ? current.error : '')}
+        <ErrorNotice>{persona.error || failure}</ErrorNotice>
+        <ErrorNotice retry={() => void current.refresh()}>
+          {conversationId ? current.error : ''}
         </ErrorNotice>
         {!conversationId && (needsWorkRestore || (!explicitNew && !newDraft && !createdHere)) && (
           <>
@@ -245,6 +274,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
               personaId={persona.selected}
               interaction={persona.interaction}
               execution={execution}
+              registerRefresh={registerRefresh}
               onSent={(id, sentPersona) => {
                 if (!conversationId) {
                   persona.adoptCreated(id, sentPersona)
@@ -281,7 +311,7 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
                 })
                 setRenamed((previous) => ({ ...previous, [saved.id]: saved }))
                 setEditing(null)
-                updated()
+                updated(saved)
               } catch (e) {
                 if (e instanceof ApiError) setTitleError(e.fieldErrors.title || '')
                 setFailure(e as Error)

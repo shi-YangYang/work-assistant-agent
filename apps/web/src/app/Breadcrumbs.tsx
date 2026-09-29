@@ -9,6 +9,10 @@ import { readReportForBreadcrumb } from '@web/features/reports/api/requests'
 import { readMemberForBreadcrumb } from '@web/features/team/api/requests'
 import { readWorkForBreadcrumb } from '@web/features/work/api/requests'
 
+import type { Conversation } from '@paa/api-contracts'
+import { assistantQuery } from '@web/features/assistant/api/queries'
+import { useQueryResource } from '@web/hooks/useQueryResource'
+import { identityScope } from '@web/lib/session-drafts'
 import { useWorkspace } from '@web/lib/workspace'
 import type { ReturnPoint } from '@web/utils/navigation'
 import { breadcrumbPoints, pageName } from '@web/utils/navigation'
@@ -23,11 +27,20 @@ export function Breadcrumbs() {
   const [expanded, setExpanded] = useState(false)
   const [revision, setRevision] = useState(0)
   const path = location.pathname + location.search
+  const conversationId = location.pathname.match(/^\/assistant\/([^/]+)$/)?.[1]
+  const conversation = useQueryResource(
+    assistantQuery<Conversation>(
+      conversationId ? `/conversations/${conversationId}` : null,
+      identityScope(identity),
+    ),
+  )
   useEffect(() => {
-    const refresh = () => setRevision((value) => value + 1)
+    const refresh = () => {
+      if (!conversationId) setRevision((value) => value + 1)
+    }
     window.addEventListener('paa-record-updated', refresh)
     return () => window.removeEventListener('paa-record-updated', refresh)
-  }, [])
+  }, [conversationId])
   useEffect(() => {
     const controller = new AbortController()
     const resolve = async (point: ReturnPoint) => {
@@ -38,7 +51,13 @@ export function Breadcrumbs() {
       if (id && !['details', 'reports'].includes(id) && section === 'team')
         label = (await readMemberForBreadcrumb(id, { signal: controller.signal })).member.name
       if (id && section === 'assistant')
-        label = (await readConversationForBreadcrumb(id, { signal: controller.signal })).title
+        label = (
+          await readConversationForBreadcrumb(
+            id,
+            { signal: controller.signal },
+            identityScope(identity),
+          )
+        ).title
       if (id && section === 'work') {
         const item = await readWorkForBreadcrumb(id, { signal: controller.signal })
         label = item.title
@@ -140,7 +159,16 @@ export function Breadcrumbs() {
       if (!controller.signal.aborted) setLoaded({ path, points })
     })()
     return () => controller.abort()
-  }, [path, location.pathname, location.state, identity.member.id, identity.member.role, revision])
+  }, [
+    path,
+    location.pathname,
+    location.state,
+    identity.member.id,
+    identity.member.role,
+    revision,
+    conversation.data?.revision,
+    identity,
+  ])
   const points =
     loaded?.path === path ? loaded.points : [{ path, state: null, label: pageName(path) }]
   return (

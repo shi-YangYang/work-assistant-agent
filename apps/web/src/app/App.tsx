@@ -25,7 +25,7 @@ export function App() {
     void readIdentity({ signal: controller.signal })
       .then((value) => {
         if (controller.signal.aborted) return
-        setCsrf(value.csrf)
+        setCsrf(value.csrf, identityScope(value))
         vault.resume(value)
         verified.current = identityScope(value)
         setIdentity(value)
@@ -71,7 +71,7 @@ export function App() {
         initialError={loadError}
         onLogin={async (value) => {
           const changedAccount = verified.current && verified.current !== identityScope(value)
-          setCsrf(value.csrf)
+          setCsrf(value.csrf, identityScope(value))
           vault.resume(value)
           if (changedAccount && location.pathname !== '/desktop/connect')
             await navigate('/', { replace: true })
