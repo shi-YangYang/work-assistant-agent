@@ -18,7 +18,7 @@
   <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker" />
 </p>
 
-Noria 是一个开源的公司云端助手，名称灵感来自诺亚方舟。通过 **Web** 理解材料、查询资料、制定方案并持续修改成果；由你决定是否写入工作和报告。**Electron 桌面端** 专注会议录音、本地转写与 AI 纪要。公司服务可部署在自己的云服务器或内网，仓库名为 `work-assistant-agent`。
+Noria 是一个开源的公司云端助手，名称灵感来自诺亚方舟。通过 **Web** 进行通用问答、理解材料、查询资料、制定方案；启用沙盒后，还可分析数据、生成文件并持续修改成果。是否写入工作和报告，由你决定。**Electron 桌面端** 专注会议录音、本地转写与 AI 纪要。公司服务可部署在自己的云服务器或内网。
 
 ## 目录
 
@@ -31,6 +31,7 @@ Noria 是一个开源的公司云端助手，名称灵感来自诺亚方舟。�
 - **任务协助**：多会话聊天，结合材料与联网查询整理计划、分析和文稿，支持连续修改；按会话设置选择执行权限。
 - **多种输入**：支持文字、图片、网页录音与语音文件；可粘贴截图、拖入附件、预览图片和 PDF，修正语音转写。
 - **文档理解**：解析 PDF、Word（DOCX）、PowerPoint（PPTX）、Excel（XLSX）、TXT、Markdown、CSV 和 JSON，结合材料处理工作。
+- **数据分析与文件生成**：启用自部署沙盒后，可运行 Python、检查和导出表格、绘制图表、生成 Word／PDF／PPT。内置工具处理常见操作，每次执行使用独立隔离环境。
 - **工作与报告**：手动管理，或明确让助手创建、修改工作与报告；支持日报、周报和汇报提醒，业务操作遵循所选执行权限与账号权限。
 - **团队看板与问答**：管理员查看团队进度、阻碍和汇报情况，也可直接向助手提问；员工查询范围限定为本人资料。
 - **模型服务管理**：配置多家服务，为工作助手、报告生成和语音转写分配模型，测试连通性并查看调用用量。
@@ -78,6 +79,8 @@ npm run dev:web
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。管理员配置模型服务、添加成员后即可使用。
 
+需要代码执行和文件生成时，先启动 Docker，执行一次 `npm run sandbox:setup`，再启动 `npm run dev:web`。开发命令会管理本地沙盒的启动和停止；未启用沙盒也可使用普通聊天与业务功能。见[本地沙盒配置](docs/setup.md#公司-web)。
+
 ### Electron 桌面端
 
 ```sh
@@ -96,6 +99,7 @@ npm run dev:electron
 | 桌面应用 | Electron、electron-vite |
 | 服务端 | Python、FastAPI、Uvicorn |
 | Agent | Deep Agents、LangGraph；通过 harness 管理工具权限、任务恢复与人工确认 |
+| 代码执行 | 自部署 Python 沙盒、gVisor/runsc；内置表格、图表和文档生成工具 |
 | 数据存储 | PostgreSQL、SQLAlchemy、Alembic；桌面使用 SQLite |
 | 语音处理 | faster-whisper／CTranslate2、MLX Whisper、sounddevice、FFmpeg |
 | 说话人与声纹 | pyannote Community-1、WeSpeaker、PyTorch |
@@ -109,6 +113,7 @@ apps/
   web/              公司 Web
   desktop/          Electron 应用与本地 Python 核心
   server/           公司 API、后台任务与 Agent
+  sandbox/          沙盒控制服务、Python 执行镜像与内置工具
 packages/           共享类型、模型参数、品牌资源与声纹引擎
 scripts/            开发与构建脚本
 tests/              各模块测试
@@ -121,8 +126,11 @@ docs/               安装指南与技术架构
 ## 部署与打包
 
 - **公司 Web**：使用 Docker Compose 部署到 Linux，通过 HTTPS 提供访问；聊天与转写调用外部 API，声纹登记由后台 CPU 提取。见 [Web 部署与备份](docs/setup.md#web-部署)。
-- **更新发布**：支持在 GitHub Actions 手动触发 Web 部署，在服务器构建并更新服务。见[发布配置](docs/setup.md#github-手动发布)。
+- **更新发布**：在 GitHub Actions 手动运行 `Deploy Company Web`，分支选 `main`，按访问方式选择 `domain` 或 `ip`。CD 在服务器构建 Web、API、Worker，自动备份、迁移并更新服务，保留业务数据与服务器配置；不打包 Electron。见[发布配置](docs/setup.md#github-手动发布)。
+- **可选沙盒**：首次启用需在 Linux 服务器安装并注册 `gVisor/runsc`，配置 `sandbox` profile、内部服务地址和独立令牌；之后 CD 会一起构建和更新沙盒。普通聊天不依赖沙盒，本地初始化不会配置生产服务器。见[沙盒部署](docs/setup.md#自部署代码沙盒)。
 - **桌面端**：在对应系统构建 macOS DMG 或 Windows 安装程序，打包内置 Python 核心。见[桌面打包](docs/setup.md#桌面打包)。目前尚未接入正式签名、公证和自动更新。
+
+`SANDBOX_CONCURRENCY` 控制同时执行的沙盒任务数，默认 `1`，超出时排队；设为 `2` 可同时执行两个任务。每个任务默认最多使用 1 核 CPU、1 GiB 内存，配置变更在重新创建沙盒服务后生效，CD 会应用新配置。此设置只控制沙盒执行并发。
 
 ## 贡献
 
