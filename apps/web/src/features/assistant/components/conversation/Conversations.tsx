@@ -387,10 +387,13 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
                   )
                   setDraft(key, undefined)
                   setRemoved((previous) => [...previous, deleting.id])
+                  // Restoration must read a fresh list, not reopen the deleted conversation.
+                  for (const path of ['/conversations', '/conversations?order=last_message'])
+                    void assistantQuery(path, identityScope(identity))?.invalidate()
                   if (lastConversationId === deleting.id) rememberConversation(null)
                   if (conversationId === deleting.id) navigate('/assistant', { replace: true })
                   setDeleting(null)
-                  updated()
+                  if (expanded) list.refresh()
                   notify('会话已删除')
                 } catch (e) {
                   setFailure(e as Error)

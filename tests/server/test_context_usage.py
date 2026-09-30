@@ -12,7 +12,11 @@ def context(window=1000000, input_limit=None):
 
 
 def test_provider_scoped_capacity_and_override():
-    assert capability('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'deepseek-v4.1-flash')['contextWindow'] == 1000000
+    for name in ('deepseek-v4.1-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-0731'):
+        url = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
+        assert capability(url, name) == {'contextWindow': 1000000, 'inputLimit': 1000000, 'maxOutput': 393216, 'source': f'official:aliyun/{name}'}
+        assert capability(url, name, 65536)['contextWindow'] == 65536
+        assert capability('https://unknown.invalid/v1', name)['contextWindow'] is None
     assert capability('https://dashscope.aliyuncs.com/compatible-mode/v1', 'vanchin/deepseek-v4.1-flash')['contextWindow'] == 1048576
     assert capability('https://unknown.invalid/v1', 'deepseek-v4.1-flash')['contextWindow'] is None
     assert capability('https://unknown.invalid/v1', 'alias', 65536)['source'] == 'override'

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Breadcrumbs } from '../../../apps/web/src/app/layout/Breadcrumbs'
 import { Assistant } from '../../../apps/web/src/features/assistant/components/conversation/Conversations'
 import { assistantQuery } from '../../../apps/web/src/features/assistant/api/queries'
+import { latestChat } from '../../../apps/web/src/features/assistant/api/restore-conversation'
 import { createVault, deferred, dialogs, TestWorkspace } from './helpers'
 
 const conversation = {
@@ -219,6 +220,57 @@ it('updates heading and breadcrumb from a complete saved conversation without re
   expect(screen.getByText('修改后的标题', { selector: 'strong' })).toBeTruthy()
   expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 1])))
 })
+
+it.each(['current', 'last', 'other'] as const)(
+  'deletes the %s conversation without reloading deleted details or restoring a stale list',
+  async (entry) => {
+    const other = { ...conversation, id: 'other', title: '另一段会话' }
+    const target = entry === 'other' ? other : conversation
+    let items = entry === 'last' ? [conversation] : [conversation, other]
+    let deleted = false
+    const staleReads: string[] = []
+    const normal = vi.mocked(fetch).getMockImplementation()!
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      const path = String(url).replace('/api/v1', '')
+      if (path === `/conversations/${target.id}` && options?.method === 'DELETE') {
+        deleted = true
+        items = items.filter((item) => item.id !== target.id)
+        return new Response('{}')
+      }
+      if (
+        deleted &&
+        (path === `/conversations/${target.id}` || path.startsWith(`/conversations/${target.id}/`))
+      ) {
+        staleReads.push(path)
+        return new Response(JSON.stringify({ error: { message: '记录不存在或无权查看' } }), {
+          status: 404,
+        })
+      }
+      if (path === '/conversations' || path.startsWith('/conversations?'))
+        return new Response(JSON.stringify({ items, nextCursor: null }))
+      if (path.endsWith('/deletion')) return new Response(JSON.stringify({ retainedSources: 0 }))
+      if (path === '/conversations/other') return new Response(JSON.stringify(other))
+      return normal(url, options)
+    })
+    const owner = 'company:owner:employee'
+    await latestChat(new AbortController().signal, owner)
+    view('/assistant')
+    await screen.findByRole('heading', { name: conversation.title })
+    await screen.findByRole('button', { name: '发送' })
+    fireEvent.click(screen.getByRole('button', { name: '会话列表' }))
+    fireEvent.click(await screen.findByRole('button', { name: `删除会话：${target.title}` }))
+    fireEvent.click(await screen.findByRole('button', { name: '确认删除' }))
+    await waitFor(() => expect(deleted).toBe(true))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '删除会话' })).toBeNull())
+    await screen.findByRole('heading', {
+      name: entry === 'last' ? '工作助手' : entry === 'other' ? conversation.title : other.title,
+    })
+    await screen.findByRole('button', { name: '发送' })
+    expect(staleReads).toEqual([])
+    expect(screen.queryByText('记录不存在或无权查看')).toBeNull()
+    expect(await latestChat(new AbortController().signal, owner)).toBe(items[0]?.id ?? null)
+  },
+)
 
 it('uses one shared SSE and reconciles one final result even when both consumers observe completion', async () => {
   active = running
