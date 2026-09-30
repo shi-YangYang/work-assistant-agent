@@ -42,6 +42,9 @@
 .user-turn > div {
   width: min(100%, 680px);
 }
+.user-attachments > div {
+  justify-content: flex-end;
+}
 .assistant-turn {
   min-width: 0;
 }

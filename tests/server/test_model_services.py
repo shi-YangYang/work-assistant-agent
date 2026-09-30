@@ -479,6 +479,31 @@ async def test_dashscope_asr_rejects_invalid_text_without_retry(monkeypatch, res
     assert len(calls) == 1
 
 
+@pytest.mark.parametrize(('status', 'response_body', 'expected_code'), [
+    (400, {}, 'audio_rejected'),
+    (400, {'code': 'InvalidParameter'}, 'protocol'),
+    (400, {'code': 'DataInspectionFailed'}, 'content_filter'),
+    (401, {}, 'authentication'),
+    (429, {'code': 'Throttling'}, 'rate_limit'),
+])
+async def test_asr_empty_rejection_does_not_blame_configuration(monkeypatch, status, response_body, expected_code):
+    from app.core.config import Settings
+    calls = []
+
+    def response(request):
+        calls.append(request)
+        return httpx.Response(status, json=response_body)
+
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    with pytest.raises(ProviderError) as error:
+        await transcribe(Settings(), {'baseUrl': 'https://example.com/api/v1', 'model': 'asr', 'protocol': 'dashscope-asr'}, SECRET, b'RIFF')
+    assert error.value.code == expected_code
+    assert error.value.status == status
+    if expected_code == 'audio_rejected':
+        assert str(error.value) == '未识别到任何文字，请重新录音或输入文字。'
+    assert len(calls) == 1
+
+
 async def test_dashscope_asr_saved_routing_and_real_audio_probe(setup, monkeypatch):
     settings, sessions, users, clients = setup
     body = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1')

@@ -153,7 +153,7 @@ export function MessageCard({
             {message.text}
           </p>
         )}
-        <div>
+        <div className={styles['user-attachments']}>
           {(['audio', 'image', 'document'] as const).map((kind) => {
             const items = message.attachments.filter((a) => a.kind === kind)
             return (

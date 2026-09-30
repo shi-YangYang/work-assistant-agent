@@ -30,6 +30,19 @@ def dashscope_asr_text(data):
     return None
 
 
+def asr_status_error(response):
+    # Some ASR gateways reject audio (including silence) with an empty 400.
+    # No provider error code means we cannot attribute it to model configuration.
+    if response.status_code == 400:
+        try:
+            detail = response.json()
+        except ValueError:
+            detail = None
+        if detail == {}:
+            raise ProviderError('audio_rejected', '未识别到任何文字，请重新录音或输入文字。', 400)
+    status_error(response)
+
+
 async def transcribe(settings, config, key, wav, *, on_event=None):
     if len(wav) > 6 * 1024 * 1024:
         raise ProviderError('limit', '规范化语音超过上传限制，请缩短语音')
@@ -65,8 +78,10 @@ async def transcribe(settings, config, key, wav, *, on_event=None):
             response = await http.post(base + '/chat/completions', headers=headers, json=body)
         else:
             raise ProviderError('protocol', '请选择支持的语音转写协议')
-        status_error(response)
+        asr_status_error(response)
         data = response.json()
+        if not isinstance(data, dict):
+            raise ProviderError('invalid_response', '语音接口没有返回有效文字')
         if on_event:
             await on_event('usage', data.get('usage'))
         if config['protocol'] == 'dashscope-asr':
