@@ -9,9 +9,13 @@
   overflow-y: auto;
   flex-shrink: 0;
 }
+.composer-wrap:not([data-question='true']) {
+  max-height: none;
+}
 .composer {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   border: 1px solid transparent;
   border-radius: 24px;
   background: var(--subtle);
@@ -70,6 +74,9 @@
   color: var(--muted);
 }
 .composer-wrap[data-empty='true'] {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   max-width: 862px;
   padding-bottom: 0;
 }
