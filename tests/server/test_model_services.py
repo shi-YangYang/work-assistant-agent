@@ -129,6 +129,56 @@ async def test_bound_revision_survives_edit_and_manual_retry_uses_latest_config(
             assert SECRET not in json.dumps(live.model_binding)
 
 
+@pytest.mark.parametrize('follow_report', [True, False])
+async def test_readding_same_models_keeps_saved_purpose_bindings(setup, follow_report):
+    settings, sessions, users, clients = setup
+    saved = await create(clients['admin'])
+    routing = route(saved)
+    if not follow_report:
+        routing['report'] = dict(routing['assistant'])
+    assigned = (await clients['admin'].put('/api/v1/settings/model-routing', json=routing)).json()
+    # The catalog creates fresh IDs when models are removed and added again.
+    body = {**payload(), 'apiKey': '', 'expectedRevision': saved['revision']}
+    body['models'] = [{**model, 'id': 'readded-' + model['id']} for model in reversed(body['models'])]
+    response = await clients['admin'].patch('/api/v1/settings/model-services/' + saved['id'], json=body)
+    assert response.status_code == 200, response.text
+    assert {m['model']: m['id'] for m in response.json()['models']} == {m['model']: m['id'] for m in saved['models']}
+    assert response.json()['revision'] == saved['revision'] + 1
+    assert (await clients['admin'].get('/api/v1/settings/model-routing')).json() == assigned
+    async with sessions() as db:
+        revisions = (await db.scalars(select(ModelServiceRevision).where(ModelServiceRevision.service_id == saved['id']).order_by(ModelServiceRevision.revision))).all()
+        assert len(revisions) == 2
+        assert revisions[0].models == [{k: v for k, v in m.items() if k != 'contextCapability'} for m in saved['models']]
+        assert all({m['id'] for m in rev.models} == {'chat', 'audio'} for rev in revisions)
+
+
+@pytest.mark.parametrize('change', ['remove', 'replace', 'protocol'])
+async def test_saved_purpose_still_blocks_removing_or_incompatible_model(setup, change):
+    _, _, _, clients = setup
+    saved = await create(clients['admin'])
+    assert (await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))).status_code == 200
+    body = {**payload(), 'apiKey': '', 'expectedRevision': saved['revision']}
+    if change == 'remove':
+        body['models'] = body['models'][1:]
+    elif change == 'replace':
+        body['models'][0].update(id='different', model='different-chat')
+    else:
+        body['models'][0]['protocol'] = 'transcriptions'
+    response = await clients['admin'].patch('/api/v1/settings/model-services/' + saved['id'], json=body)
+    assert response.status_code == 422
+    if change != 'protocol':
+        assert '用途分配' in response.text and '工作助手' in response.text
+    assert (await clients['admin'].get('/api/v1/settings/model-services/' + saved['id'])).json() == saved
+
+
+async def test_readding_model_does_not_reuse_an_id_still_in_the_draft():
+    from app.modules.model_services.schemas import ServiceModel
+    from app.modules.model_services.service import retain_model_ids
+    previous = [{'id': 'original', 'model': 'first-chat', 'protocol': 'chat'}]
+    models = [ServiceModel(id='original', model='renamed-chat'), ServiceModel(id='new', model='first-chat')]
+    assert [m.id for m in retain_model_ids(models, previous)] == ['original', 'new']
+
+
 async def test_parameter_and_network_boundaries(setup,monkeypatch):
     settings,*_=setup
     for url in ('http://example.com/v1','https://u:p@example.com/v1','https://example.com/v1?x=1','https://example.com/#frag','https://example.com/\n'):

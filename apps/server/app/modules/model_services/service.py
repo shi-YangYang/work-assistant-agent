@@ -38,13 +38,30 @@ async def validate_master_key(db, settings):
         decrypt(settings.model_key_file, witness.credential, witness.company_id, witness.service_id, witness.revision)
 
 
+def retain_model_ids(models, previous):
+    # Removing and re-adding the same model in an unsaved draft must not
+    # replace its durable identity and orphan existing purpose selections.
+    identities = {(m['model'], m['protocol']): m['id'] for m in previous}
+    previous_ids = set(identities.values())
+    submitted_ids = {m.id for m in models}
+    result = []
+    for model in models:
+        previous_id = identities.get((model.model, model.protocol))
+        if previous_id and model.id not in previous_ids and previous_id not in submitted_ids:
+            model = model.model_copy(update={'id': previous_id})
+        result.append(model)
+    return result
+
+
 async def save_service(db, settings, actor, body, identifier=None):
     await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
     url = normalize_url(body.baseUrl, settings)
     await validate_master_key(db, settings)
     row = await get_service(db, actor.company_id, identifier, lock=True) if identifier else None
+    models = body.models
     if row:
         version(row, body.expectedRevision)
+        models = retain_model_ids(models, row.models)
         old = await current_revision(db, row)
         if not body.apiKey and url != row.base_url:
             problem(422, '更换地址后必须重新输入密钥')
@@ -54,7 +71,10 @@ async def save_service(db, settings, actor, body, identifier=None):
             choices = routing.choices
             for purpose, choice in choices.items():
                 if isinstance(choice, dict) and choice['serviceId'] == row.id:
-                    validate_choice(body.models, choice, purpose)
+                    if not any(model.id == choice['modelId'] for model in models):
+                        label = {'assistant': '工作助手', 'report': '报告生成', 'asr': '语音转写'}[purpose]
+                        problem(422, f'模型仍用于{label}，请先在“用途分配”中更换或解除绑定，再移除此模型。')
+                    validate_choice(models, choice, purpose)
         row.revision += 1
     else:
         if body.expectedRevision != 0:
@@ -67,7 +87,7 @@ async def save_service(db, settings, actor, body, identifier=None):
         key = body.apiKey
         row = ModelService(id=str(uuid4()), company_id=actor.company_id, revision=1)
         db.add(row)
-    row.name, row.base_url, row.models, row.updated_at = body.name.strip(), url, [m.model_dump() for m in body.models], now()
+    row.name, row.base_url, row.models, row.updated_at = body.name.strip(), url, [m.model_dump() for m in models], now()
     await db.flush()
     db.add(ModelServiceRevision(company_id=actor.company_id, service_id=row.id, revision=row.revision, name=row.name, base_url=url, models=row.models, credential=encrypt(settings.model_key_file, key, actor.company_id, row.id, row.revision)))
     await db.flush()
