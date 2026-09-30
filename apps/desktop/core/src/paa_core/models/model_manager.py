@@ -5,6 +5,7 @@ import hashlib
 import json
 import shutil
 import ssl
+import stat
 import certifi
 import threading
 import urllib.parse
@@ -42,6 +43,23 @@ def verify_files(path, cancelled=lambda: False, files=None):
                 digest.update(data)
         if digest.hexdigest() != checksum:
             raise OSError('Model checksum mismatch')
+
+
+def occupied_bytes(path):
+    """Best-effort size while a download replaces the cache directory."""
+    try:
+        if path.is_symlink(): return 0
+        children = list(path.iterdir())
+    except (FileNotFoundError, NotADirectoryError):
+        return 0
+    total = 0
+    for child in children:
+        try:
+            info = child.lstat()
+        except (FileNotFoundError, NotADirectoryError):
+            continue
+        if stat.S_ISREG(info.st_mode): total += info.st_size
+    return total
 
 
 class ModelManager:
@@ -115,7 +133,7 @@ class ModelManager:
         entry = self.entry(id)
         total = sum(item[0] for item in self.files(id).values())
         path = self.path_for(id)
-        occupied = sum(p.stat().st_size for p in path.iterdir() if p.is_file() and not p.is_symlink()) if path.is_dir() and not path.is_symlink() else 0
+        occupied = occupied_bytes(path)
         reason = '请先选择其他默认模型。' if id == self.default_id else '模型正在准备。' if id == self.preparing else '尚未完成的转写任务需要此模型，请先完成任务或取消重新转写。' if self.references(entry['modelId'], entry['revision']) else None
         return {'id': id, 'name': 'Whisper ' + id, 'modelId': entry['modelId'], 'revision': entry['revision'],
                 **self.states_by_backend[self.backend][id], 'totalBytes': total, 'requiredBytes': total * 2 + 50_000_000,

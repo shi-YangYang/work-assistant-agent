@@ -279,7 +279,10 @@ async def test_each_approval_only_settles_its_own_node_then_finishes_source_stag
     after = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()['job']
     assert [row['state'] for row in after['nodes']] == ['failed', 'succeeded', 'cancelled']
     assert after['state'] == 'succeeded' and after['phase'] == 'complete'
-    # Cancellation is retained as an actual unresolved business result, not success.
-    assert after['taskOutcome']['state'] == 'partial'
+    # Declining B resolves the human decision; only A was executed successfully.
+    assert after['taskOutcome']['state'] == 'completed'
+    assert after['taskOutcome']['remaining'] == [] and after['taskOutcome']['nextAction'] == 'none'
+    works = (await clients['employee'].get('/api/v1/work-items')).json()['items']
+    assert [work['title'] for work in works] == ['A']
     feedback = (await clients['employee'].get('/api/v1/jobs/' + sent['jobId'] + '/feedback')).json()
     assert feedback['nodes'] == after['nodes']

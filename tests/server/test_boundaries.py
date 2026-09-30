@@ -117,6 +117,10 @@ async def test_long_conversation_is_summarized_before_hard_context_limit(setup):
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         answer=await invoke_harness(context,saver,'今天继续方案。'*700,model)
         assert answer and model.summaries
+        async with sessions() as db:
+            usage = (await db.get(Job, job.id)).result['contextUsage']
+            assert usage['afterTokens'] < usage['beforeTokens']
+            assert usage['afterTokens'] < 64000 * .9
         await saver.adelete_thread(f'{job.company_id}:{job.owner_id}:job:{job.id}')
 
 

@@ -212,7 +212,10 @@ async def test_correction_during_processing_blocks_late_writes_and_allows_retry(
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=transcript_model(), asr_provider=original_asr)
         message = (await client.get('/api/v1/messages/' + result['messageId'])).json()
-        assert message['job']['state'] == 'failed' and '已被纠正' in message['job']['error']
+        # Either the conversation snapshot or transcript revision guard can
+        # detect the correction first; both must stop stale writes and allow retry.
+        assert message['job']['state'] == 'failed' and '本次旧内容处理已停止' in message['job']['error']
+        assert message['transcript'] == CORRECTED and message['transcriptRevision'] == 2
         assert not message['reply']
         assert len(message['drafts']) == (1 if point == 'reply_write' else 0)
         monkeypatch.setattr(ToolBoundary, 'awrap_tool_call', original_boundary)

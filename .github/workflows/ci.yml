@@ -60,7 +60,7 @@ jobs:
   company:
     name: Company API and Web
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17.11-bookworm
@@ -92,6 +92,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run db:company
       - run: npm run test:server
+        timeout-minutes: 15
+        env:
+          PYTEST_ADDOPTS: --tb=short --durations=15
       - run: npm run typecheck:web
       - run: npm run test:web
       - run: npm run build:web

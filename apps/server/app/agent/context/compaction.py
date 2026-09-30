@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, RemoveMessage, Syst
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.checkpoint.base import empty_checkpoint
 from langgraph.types import Command
-from app.agent.context.context_usage import capacity, compression_reason, ensure_input, estimate_request, input_budget, output_reserve
+from app.agent.context.context_usage import THRESHOLD, capacity, compression_reason, ensure_input, estimate_request, input_budget, output_reserve
 from app.core.digests import digest
 from app.modules.conversations.context.context_store import publish_summary
 from app.tasks.context import BudgetExceeded
@@ -143,6 +143,11 @@ class ContextCompaction(AgentMiddleware):
             if overhead >= target:
                 removed, retained = removable(messages, context, keep_recent=False)
                 overhead = estimate_request(retained, schemas, system)
+                # The 70% target is headroom, not the model's hard limit. Large
+                # required tool schemas can exceed it while a summary still fits.
+                window = capacity(context).get('contextWindow')
+                limit = min(budget, int(window * THRESHOLD) - 1) if window else budget
+                target = min(limit, max(target, (overhead + limit) // 2))
             if not removed or overhead >= target:
                 await publish_usage(context, used, state='failed', output_reserve=output, reason='当前要求或必要工具本身过长，无法继续压缩')
                 raise BudgetExceeded('当前要求或必要工具超出可用上下文，无法继续压缩；请缩短本次内容或选择更大窗口模型')

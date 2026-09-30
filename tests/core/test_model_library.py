@@ -102,6 +102,33 @@ class ModelLibraryTests(unittest.TestCase):
         wait_for(lambda: self.service.status(next_id)['state'] == 'completed')
         self.assertEqual(self.service.status(next_id)['published']['language'], 'en')
 
+    def test_status_tolerates_model_directory_and_file_disappearing(self):
+        path = self.manager.path
+        path.mkdir(parents=True)
+        (path / 'stable.bin').write_bytes(b'kept')
+        retired = path.with_name(path.name + '.retired')
+        iterate = Path.iterdir
+
+        def replace_directory(current):
+            if current == path:
+                path.rename(retired)
+            return iterate(current)
+
+        with patch.object(Path, 'iterdir', replace_directory):
+            self.assertEqual(self.manager.status('small')['occupiedBytes'], 0)
+        retired.rename(path)
+        disappearing = path / 'model.bin'
+        disappearing.write_bytes(b'replaced')
+        file_stat = Path.lstat
+
+        def remove_file(current):
+            if current == disappearing:
+                disappearing.unlink()
+            return file_stat(current)
+
+        with patch.object(Path, 'lstat', remove_file):
+            self.assertEqual(self.manager.status('small')['occupiedBytes'], 4)
+
     def test_candidate_failure_cancel_and_late_result_preserve_published_version(self):
         mid = self.audio(); before = self.publish(mid); summary, original = self.summary(mid)
         candidate = self.candidate(mid)

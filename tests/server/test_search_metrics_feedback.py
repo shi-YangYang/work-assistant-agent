@@ -139,7 +139,7 @@ class GatedStream(httpx.AsyncByteStream):
         self.seen.set()
         await self.release.wait()
         if self.tools:
-            part={'choices':[{'delta':{'tool_calls':[{'index':0,'id':'call_1','function':{'name':'find_work_items','arguments':'{"query":"secret argument"}'}}]},'finish_reason':'tool_calls'}]}
+            part={'choices':[{'delta':{'tool_calls':[{'index':0,'id':'call_1','function':{'name':'find_work_items','arguments':'{"query":"上线 Web","status":"blocked"}'}}]},'finish_reason':'tool_calls'}]}
         else:
             from fakes import wire_completion
             call = wire_completion('Hello world')['tool_calls'][0]
@@ -196,7 +196,7 @@ async def test_stage_feedback_precedes_completed_reply_and_preserves_usage(setup
             subscription=asyncio.create_task(c[role]._transport.app(scope,receive,capture))
             try:
                 await asyncio.wait_for(delivered.wait(),5)
-                assert not task.done() and b'secret argument' not in b''.join(bodies) and b'Hello' not in b''.join(bodies)
+                assert not task.done() and '上线 Web'.encode() not in b''.join(bodies) and b'Hello' not in b''.join(bodies)
             finally:
                 subscription.cancel()
                 await asyncio.gather(subscription,return_exceptions=True)
@@ -221,7 +221,12 @@ async def test_stage_feedback_precedes_completed_reply_and_preserves_usage(setup
     assert len(calls)==expected_calls
     wire=await c[role].get(f'/api/v1/jobs/{job.id}/events')
     assert wire.status_code==200 and 'no-transform' in wire.headers['cache-control']
-    assert 'secret argument' not in wire.text
+    # The approved display projection includes the query, never raw tool arguments.
+    assert '"arguments"' not in wire.text and '"query"' not in wire.text and '"tool_calls"' not in wire.text
+    if tools:
+        search = next(node for node in data['job']['nodes'] if node['label'] == '查找工作')
+        assert search['presentation'] == {'type': 'operation', 'subject': '上线 Web'}
+        assert '上线 Web' in wire.text
 
 
 async def test_feedback_live_authorization_and_stale_writer(setup):

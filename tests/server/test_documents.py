@@ -398,7 +398,7 @@ async def test_scope_distinguishes_original_code_input_from_inherited_document_s
 
 @pytest.mark.parametrize('separator', ['', '\n'])
 async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup, monkeypatch, separator):
-    from fakes import set_delivery
+    from fakes import controlled_model, set_delivery
     settings, sessions, users, clients = setup
     conv = await conversation(clients['employee'])
     attachment = await upload(clients['employee'], 'sales.csv', b'project,sales,refund\nA,100,10\nB,200,40\n')
@@ -409,7 +409,8 @@ async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup,
         return answer
     monkeypatch.setattr(worker, 'invoke_harness', read)
     sent = await message(clients['employee'], conv, '核对销售额', [attachment['id']])
-    await run(settings, sessions, users, sent, object())
+    # The numeric answer takes the real review path before scope-note deduplication.
+    await run(settings, sessions, users, sent, controlled_model())
     result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert result['job']['state'] == 'awaiting_input', result
     assert result['reply'].count('材料范围：') == 1
