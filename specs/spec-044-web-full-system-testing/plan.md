@@ -45,16 +45,20 @@ apps/
     │   ├── actions/{intent,operations}.py   [修改] 字段完整性与失败执行槽恢复
     │   ├── actions/work_change_plan.py      [新增] 独立六字段变更计划
     │   ├── completion/{delivery,reply_review}.py [修改] 收尾及按需核对
+    │   ├── completion/fact_review.py        [新增] 精简事实核验及正文缺失检查
+    │   ├── context/history.py              [修改] 有界历史执行目录
     │   ├── completion/quantitative_review.py [新增] 数值关系一致性
     │   ├── context/request_clock.py         [新增] 本地日期与星期依据
     │   ├── harness.py                      [修改] 收尾协议验证
     │   ├── prompts/policies.py             [修改] 口径、条件与来源表达
-    │   ├── tools/web.py                    [修改] 失败降级与来源等级
+    │   ├── tools/web.py                    [修改] 失败降级、来源等级及关键词定位
+    │   ├── tools/{execution,registry}.py   [修改] 历史执行读取工具
     │   ├── reports.py                      [修改] 区分进行中职责与完成事实，旧审核恢复
     │   └── runtime/{model,middleware,tool_nodes}.py [修改] 有限修复、缓存及网页失败恢复
-    ├── integrations/web_research.py        [修改] 有界读取及错误分类
+    ├── integrations/web_research.py        [修改] 有界读取、错误分类与关键词定位
     ├── modules/attachments/documents.py     [修改] 材料使用范围准确表达
-    ├── modules/executions/service.py        [修改] 记录实际代码输入来源
+    ├── modules/executions/service.py        [修改] 记录实际代码输入来源及回执标识
+    ├── modules/executions/queries.py        [新增] 私有执行回执分页与权限检查
     ├── modules/model_services/parameters.py [修改] 保留显式模型推理配置
     ├── modules/conversations/context/context_store.py [修改] 精确失效依赖
     ├── modules/operations/{receipts,targets}.py [修改] 来源版本与旧失败记录
@@ -81,6 +85,8 @@ tests/
 │   ├── test_task_receipt_projection.py      [新增] 历史卡片/取消终态/截止日期
 │   ├── test_{answer_quality,work_change_plan}.py [新增] 状态、字段及缓存边界
 │   ├── test_web_research_recovery.py        [新增] 网页失败、来源及重试恢复
+│   ├── test_execution_evidence.py           [新增] 历史执行读取与隔离
+│   ├── test_fact_review.py                  [新增] 核验范围、推理配置及重试
 │   ├── test_quantitative_review.py       [新增] 按需核对及纠正边界
 │   └── test_{assistant_execution,response_delivery,task_retry,documents,
 │             context_store,report_reliability}.py [修改] 明确缺陷回归

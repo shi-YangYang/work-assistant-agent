@@ -149,3 +149,24 @@ async def test_failed_followup_read_and_later_search_preserve_successful_excerpt
         assert source['evidenceType'] == 'page_text' and source['truncated']
         assert source['offset'] == 0 and source['nextOffset'] == 3000
         assert source['fetchState'] == 'unavailable' and source['fetchError'] == 'http_403'
+
+
+async def test_missing_page_match_never_creates_or_overwrites_read_evidence(setup):
+    context = await enabled(setup)
+    url = 'https://example.org/product'
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'text/plain'}, text='The plan may change.'))
+    async def read(query):
+        return await research(context, lambda value: web_research.web_fetch(value, find=query, transport=transport), url, is_fetch=True)
+    missing = json.loads(await read('unrelated'))
+    assert missing['state'] == 'not_found' and 'text' not in missing
+    async with context.sessions() as db:
+        assert not (await db.get(Job, context.job_id)).result.get('webSources')
+    found = json.loads(await read('plan'))
+    assert found['text'] == 'The plan may change.'
+    async with context.sessions() as db:
+        previous = (await db.get(Job, context.job_id)).result['webSources'][url]
+    await read('unrelated')
+    async with context.sessions() as db:
+        source = (await db.get(Job, context.job_id)).result['webSources'][url]
+        assert source == previous and source['evidenceType'] == 'page_text'
+        assert source['fetchState'] == 'read' and source['endOffset'] == len(found['text'])

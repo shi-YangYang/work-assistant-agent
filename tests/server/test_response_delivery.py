@@ -282,14 +282,16 @@ async def test_reading_technical_source_does_not_add_review_unless_user_requests
 @pytest.mark.parametrize('verify,quote,count,state', [
     (False, '', 0, 'awaiting_input'),
     (True, '核验这份材料的结论', 1, 'awaiting_input'),
-    (True, '用户从没说过的核验要求', 0, 'awaiting_retry'),
+    (True, '用户从没说过的核验要求', 0, 'failed'),
 ])
 async def test_only_explicit_fact_verification_with_current_user_quote_routes_to_review(setup, verify, quote, count, state):
     fake = RoutingModel(model='controlled', api_key='controlled', verification_requested=verify, verification_quote=quote)
     result, _ = await run(setup, fake, '请核验这份材料的结论' if verify else '查公开资料并附来源')
-    assert fake.reviews == count and fake.calls == 1
+    assert fake.reviews == count and fake.calls == (2 if state == 'failed' else 1)
     assert len([node for node in result['job']['nodes'] if node['kind'] == 'review']) == count
     assert result['job']['state'] == state, result
+    if state == 'failed':
+        assert '有效收尾' in result['job']['error'] and fake.answer not in result['reply']
     if count:
         assert any(node['label'] == '核验事实中' for node in result['job']['nodes'])
 
@@ -330,7 +332,8 @@ class IncompleteResponseModel(ReviewedFixtureModel):
         if payload.get('task') == 'business_reply_review':
             self.reviews.append(payload)
             issues = []
-            if payload['delivery']['response_complete'] and self.correction == 'incomplete':
+            completeness = payload.get('delivery', payload.get('responseCompleteness', {}))
+            if completeness['response_complete'] and self.correction == 'incomplete':
                 issues = [{'kind': 'missing_response', 'reason': '仍未提供必要分析说明'}]
             return AIMessage(content=json.dumps({'issues': issues}, ensure_ascii=False))
         if 'correction' in payload:
@@ -361,7 +364,7 @@ async def test_known_incomplete_response_survives_empty_targeted_review_and_repa
     result, stored = await run(setup, fake, text)
     assert fake.calls == (2 if business else 1)
     assert len(fake.corrections) == 1 and len(fake.reviews) == (1 if correction == 'failure' else 2)
-    assert not fake.reviews[0]['delivery']['response_complete']
+    assert not fake.reviews[0]['delivery' if business else 'responseCompleteness']['response_complete']
     assert fake.corrections[0]['correction'] == '还未提供用户要求的分析说明'
     assert stored['deliveryRepairs'] == ['response']
     assert (result['job']['taskOutcome']['state'] == 'completed') is (correction == 'complete'), result

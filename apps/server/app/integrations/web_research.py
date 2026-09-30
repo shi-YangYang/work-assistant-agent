@@ -152,17 +152,64 @@ def extract_page(html):
     return ' '.join(''.join(page.title).split())[:300], text
 
 
-async def web_fetch(url, *, offset=0, transport=None):
-    if not isinstance(offset, int) or offset < 0:
+def literal_match(text, query, index):
+    """Return case-insensitive literal matches in original-text coordinates."""
+    folded, needle = text.casefold(), query.casefold()
+    count = folded.count(needle)
+    if index >= count:
+        return count, None, None
+    cursor = 0
+    for _ in range(index + 1):
+        start = folded.find(needle, cursor)
+        cursor = start + len(needle)
+    end = cursor
+    if len(folded) == len(text):
+        return count, start, end
+    # Unicode case folding can expand a character (e.g. ß -> ss). Keep the
+    # returned range on the original page, without allocating a per-byte map.
+    cursor, original_start = 0, None
+    for position, character in enumerate(text):
+        cursor += len(character.casefold())
+        if original_start is None and cursor > start:
+            original_start = position
+        if cursor >= end:
+            return count, original_start, position + 1
+
+
+async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
+    if type(offset) is not int or offset < 0:
         raise WebResearchError('网页阅读位置无效')
+    if not isinstance(find, str) or len(find) > 200 or (find and not find.strip()):
+        raise WebResearchError('网页查找词需为 1～200 个字符')
+    if type(match_index) is not int or match_index < 0 or (match_index and not find):
+        raise WebResearchError('网页匹配序号无效；从 0 开始，需同时提供查找词')
+    if find and offset:
+        raise WebResearchError('查找词与阅读位置不能同时指定；查找下一处请使用 match_index')
     final, raw, mime = await fetch_html(url, transport=transport)
     title, text = extract_page(raw) if mime != 'text/plain' else ('', raw)
     if not text.strip():
         raise WebResearchError('网页没有可读取正文，可能需要登录或 JavaScript')
+    source = {'url': final, 'title': title or urlsplit(final).hostname,
+              'sourceType': 'public_web', 'untrusted': True}
+    if httpx.URL(url).fragment:
+        source['requestedUrl'] = str(httpx.URL(url))
+    match = {}
+    if find:
+        count, start, end = literal_match(text, find, match_index)
+        match = {'find': find, 'matchIndex': match_index, 'matchCount': count,
+                 'nextMatchIndex': match_index + 1 if match_index + 1 < count else None}
+        if start is None:
+            return {**source, **match, 'state': 'not_found', 'evidenceType': 'page_search',
+                    'totalChars': len(text), 'message': '提取的正文中未找到该词。' if count == 0 else '指定匹配序号不存在。',
+                    'coverage': '本次未返回正文片段，不能据此确认或否定网页中的观点。请换用原文关键词，或不带 find 从头阅读。'}
+        offset = max(0, min(start - PAGE_CHARS // 3, len(text) - PAGE_CHARS))
+        match.update(matchStart=start, matchEnd=end)
     if offset >= len(text):
         raise WebResearchError('网页阅读位置已超出正文范围，请从头读取')
-    end = offset + PAGE_CHARS
-    return {'url': final, 'title': title or urlsplit(final).hostname, 'text': text[offset:end], 'offset': offset, 'nextOffset': end if end < len(text) else None, 'truncated': offset > 0 or end < len(text), 'sourceType': 'public_web', 'evidenceType': 'page_text', 'untrusted': True}
+    end = min(offset + PAGE_CHARS, len(text))
+    return {**source, **match, 'text': text[offset:end], 'offset': offset, 'endOffset': end,
+            'totalChars': len(text), 'nextOffset': end if end < len(text) else None,
+            'truncated': offset > 0 or end < len(text), 'evidenceType': 'page_text'}
 
 
 async def web_search(query, *, transport=None):

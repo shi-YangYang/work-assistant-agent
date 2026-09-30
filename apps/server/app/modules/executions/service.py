@@ -70,7 +70,7 @@ async def execute(context, *, code, title, references, identifier='', revision=0
             result = await client.read(key)
             if result is None:
                 raise ValueError('执行回执丢失，已停止自动重放，请重新发起任务')
-        clean = {'state': result['state'], 'stdout': str(result.get('stdout', ''))[:16000], 'stderr': str(result.get('stderr', ''))[:8000],
+        clean = {'executionId': row.id, 'title': title, 'state': result['state'], 'stdout': str(result.get('stdout', ''))[:16000], 'stderr': str(result.get('stderr', ''))[:8000],
                  'exitCode': result.get('exitCode'), 'message': result.get('error', ''), 'inputFiles': [item['name'] for item in inputs],
                  'inputRefs': references}
         outputs = result.get('files', [])

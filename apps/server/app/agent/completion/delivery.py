@@ -66,9 +66,9 @@ def validate_completion_response(message, *, required=False):
             Delivery.model_validate({**arguments, 'operation_ids': arguments.get('operation_ids') or []})
 
 
-async def completion_reference_error(context, operation_ids):
+async def completion_reference_error(context, operation_ids, *, verification_requested=False, verification_quote=''):
     """Reject wrong receipt metadata while the bounded protocol repair can fix it."""
-    if not operation_ids:
+    if not operation_ids and not verification_requested:
         return None
     from app.tasks.lease import lease
     from app.modules.messages.models import Message
@@ -78,10 +78,16 @@ async def completion_reference_error(context, operation_ids):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         known = {card['id'] for card in await message_actions(db, actor, message)}
-    if set(operation_ids) - known:
+        from app.modules.messages.input_text import request_text
+        current_request = request_text(message, job)
+    if set(operation_ids or []) - known:
         return ('operation_ids 引用了本轮业务回执以外的 ID。私人成果、生成文件和沙盒执行 ID 都不是业务回执；'
                 '仅交付文件时 business_requested=false、operation_ids=[]。保留已生成文件和答复，不要重新执行工具。'
                 '本轮可用业务回执 ID：' + ', '.join(sorted(known)))
+    if verification_requested and (not isinstance(verification_quote, str) or not verification_quote.strip() or verification_quote not in current_request):
+        return ('verification_quote 不是当前用户请求的逐字原文，不能沿用以前消息或助手改写。'
+                '当前确有核验要求时，保留 verification_requested=true 并引用当前原话；'
+                '否则改为 false 并清空 verification_quote。只修正收尾字段，保留已有正文和实测证据，不重做工具或业务操作。')
     return None
 
 
@@ -140,7 +146,7 @@ async def assess(context, answer, *, model=None):
         if not requested and not value.verification_requested and not quantitative:
             return ReviewedReply(answer, verified=True, needs_response=not value.response_complete, response_reason=value.response_issue, task=task)
     from app.agent.completion.reply_review import review_reply
-    result = await review_reply(context, answer, model=model, quantitative=quantitative, business=requested or value.verification_requested)
+    result = await review_reply(context, answer, model=model, quantitative=quantitative, business=requested)
     if result.verified and not value.response_complete:
         result = replace(result, needs_response=True, response_reason='；'.join(filter(None, [result.response_reason, value.response_issue])))
     if result.verified and missing_execution and (result.task or {}).get('state') != 'blocked':

@@ -63,7 +63,10 @@ class ToolBoundary(AgentMiddleware):
         if request.tool_call['name'] == 'finish_task':
             # A completion is metadata, not a business tool/node or a new model call.
             from app.agent.completion.delivery import completion_reference_error
-            error = await completion_reference_error(context, request.tool_call['args'].get('operation_ids'))
+            args = request.tool_call['args']
+            error = await completion_reference_error(context, args.get('operation_ids'),
+                                                     verification_requested=args.get('verification_requested', False),
+                                                     verification_quote=args.get('verification_quote', ''))
             if error:
                 return ToolMessage(tool_call_id=request.tool_call['id'], name='finish_task', content=error, status='error')
             return await handler(request)

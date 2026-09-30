@@ -11,6 +11,8 @@ async def find_documents(query: str, runtime: ToolRuntime[RunContext], attachmen
     """List authorized current-conversation/confirmed-source documents. To search a
     document's full extracted text, pass its real attachment_id and query; returns
     at most 3 matching located chunks. start paginates by ordinal or directory offset.
+    Directory metadata is not document text; matching chunks support only what
+    they say. Read surrounding chunks when a claim depends on missing context.
     """
     from app.modules.attachments.documents import agent_attachment, attachment_dto, chunk_page, document_statement
     context = runtime.context
@@ -44,7 +46,9 @@ def document_tool_result(context, item, result, job):
 @tool
 async def read_document(attachment_id: str, start: int, runtime: ToolRuntime[RunContext]) -> str:
     """Read up to 3 real document chunks, starting at a zero-based ordinal. Use
-    nextCursor until null for complete coverage; cite only returned citation tokens.
+    nextCursor until null when full coverage is needed, otherwise read only the
+    relevant parts and state that scope. Keep each claim's original conditions
+    and qualifiers; distinguish inference. Cite only returned citation tokens.
     """
     from app.modules.attachments.documents import agent_attachment, chunk_page
     context = runtime.context

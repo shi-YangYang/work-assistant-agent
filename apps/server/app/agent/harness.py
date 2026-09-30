@@ -14,6 +14,7 @@ from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, take
 from app.agent.runtime.middleware import ToolBoundary
 from app.agent.runtime.model import BoundedChatModel, approximate_tokens
 from app.agent.prompts.persona import persona_prompt
+from app.agent.prompts.evidence import EVIDENCE_POLICY
 from app.agent.prompts.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
 from app.agent.tools.registry import BUSINESS_TOOLS
 from app.agent.tools.team import TEAM_TOOLS
@@ -36,7 +37,7 @@ def build_graph(settings, checkpointer, context, model=None):
     if isinstance(model, BoundedChatModel):
         model._completion_validator = validate_completion_response
     from app.agent.prompts.execution_mode import mode_prompt
-    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name != 'run_python' or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name != 'run_python' or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -119,6 +120,12 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         # protocol repair. This is not a universal second-pass answer review.
         if await take_repair(context, 'protocol'):
             instruction = '请使用 finish_task 单独交付刚才的完整答复和本轮任务摘要，不重做工具或业务操作。若上一工具参数无效，修正结构；保持真实未完成项。' + COMPLETION_POLICY
+            if job.kind == 'message':
+                from app.modules.messages.input_text import request_text
+                async with context.sessions() as db:
+                    current_job, _ = await lease(db, context)
+                    current_message = await db.get(Message, current_job.target_id)
+                    instruction += '\n以下是当前用户请求的数据；verification_quote 只能逐字引用其中的核验要求，不能引用此前消息或本条服务端提醒：\n' + json.dumps({'currentUserRequest': request_text(current_message, current_job)}, ensure_ascii=False)
             with tracing_context(enabled=False):
                 result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
             messages = result.get('messages', [])
