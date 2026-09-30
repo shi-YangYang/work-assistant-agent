@@ -9,6 +9,7 @@ import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { retryJob } from '@web/features/jobs/api/requests'
 import { TaskProgress } from './TaskProgress'
+import { isConversationalClarification } from '../utils/progress'
 import { LoaderCircle } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 
@@ -153,6 +154,7 @@ function JobRetryNotice({
   const confirmRetry = (mode: 'original' | 'current') => {
     update({ error: '', confirmation: mode })
   }
+  if (assistant && isConversationalClarification(job)) return null
   if (progress || (assistant && ['failed', 'awaiting_retry'].includes(job.state)))
     return (
       <TaskProgress

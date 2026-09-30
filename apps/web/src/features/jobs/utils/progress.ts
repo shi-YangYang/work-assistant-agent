@@ -52,6 +52,20 @@ export function progressView(job: Job) {
   return { nodes, rows, active, current, completed, retries, parallel: leafActive.length > 1 }
 }
 
+export function isConversationalClarification(job: Job) {
+  // The reply itself asks the question; only real task activity needs a separate status.
+  return (
+    job.kind === 'message' &&
+    job.phase === 'complete' &&
+    ['succeeded', 'awaiting_input'].includes(job.state) &&
+    job.taskOutcome?.state === 'needs_input' &&
+    !job.taskOutcome.completed.length &&
+    !job.incompleteTask &&
+    !job.error &&
+    !progressView(job).rows.length
+  )
+}
+
 export function completionSummary(job: Job, completed: number, retries: number) {
   const names = {
     processing: '正在处理',
