@@ -18,7 +18,7 @@ async def continue_task(db, actor, source, text, *, reference, task_id):
     await db.flush()
     from app.modules.conversations.task.task_state import begin_input
     await begin_input(db, actor, message)
-    result = {'executionMode': conversation.execution_mode, 'modeRevision': conversation.mode_revision, 'continuation': {'sourceMessageId': source.id, 'taskId': task_id, **reference}}
+    result = {'executionMode': actor.execution_mode, 'modeRevision': actor.mode_revision, 'continuation': {'sourceMessageId': source.id, 'taskId': task_id, **reference}}
     job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=message.id, access=scope(actor), result=result)
     db.add(job)
     conversation.updated_at = now()

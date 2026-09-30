@@ -85,11 +85,13 @@ beforeEach(() => {
       async (url: string) =>
         new Response(
           JSON.stringify(
-            url.includes('/messages?')
-              ? { items: history, nextCursor: null }
-              : url.includes('/context-usage')
-                ? { contextUsage: history.at(-1)?.job?.contextUsage ?? null }
-                : { items: [], nextCursor: null },
+            url.includes('/assistant/execution-settings')
+              ? { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
+              : url.includes('/messages?')
+                ? { items: history, nextCursor: null }
+                : url.includes('/context-usage')
+                  ? { contextUsage: history.at(-1)?.job?.contextUsage ?? null }
+                  : { items: [], nextCursor: null },
           ),
         ),
     ),
@@ -104,7 +106,7 @@ afterEach(() => {
 function Chat({ initial = 'first' }: { initial?: string }) {
   const [id, setId] = useState(initial || undefined)
   const persona = useConversationPersona(id, null, vi.fn())
-  const execution = useExecutionMode(id, null, persona.interaction, vi.fn())
+  const execution = useExecutionMode(persona.interaction)
   return (
     <ConversationChat
       conversationId={id}

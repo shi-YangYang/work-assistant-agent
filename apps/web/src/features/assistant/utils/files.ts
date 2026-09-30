@@ -1,4 +1,4 @@
-import type { DocumentCitation, PersonaId } from '@paa/api-contracts'
+import type { DocumentCitation, ExecutionMode, PersonaId } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import {
   MAX_ATTACHMENTS,
@@ -76,6 +76,7 @@ export function messageSubmission(
   composer: Composer,
   conversationId?: string,
   personaId?: PersonaId,
+  executionMode?: ExecutionMode,
 ): NonNullable<Composer['pending']> {
   if (composer.pending) return composer.pending
   return {
@@ -83,13 +84,8 @@ export function messageSubmission(
     body: {
       conversationId,
       personaId: composer.submissionPersonaId ?? personaId,
-      ...(!conversationId
-        ? {
-            newConversation: true,
-            executionMode: composer.executionMode ?? 'auto',
-            fullAccessConfirmed: !!composer.fullAccessConfirmed,
-          }
-        : {}),
+      ...(!conversationId ? { newConversation: true } : {}),
+      ...(executionMode ? { executionMode } : {}),
       text: composer.text,
       attachmentIds: composer.files.map((file) => {
         if (!file.attachment) throw new Error('附件尚未上传完成')

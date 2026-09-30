@@ -168,6 +168,7 @@ export function ConversationChat({
     conversationId,
     personaId,
     interaction,
+    execution,
     onSent,
     previewUploading,
     capturing,
@@ -221,7 +222,6 @@ export function ConversationChat({
         next.replyTo ||
         next.pending ||
         next.personaId ||
-        next.executionMode ||
         next.deliverableReference ||
         next.workReference
         ? { ...next, key: next.key || crypto.randomUUID() }
@@ -316,6 +316,7 @@ export function ConversationChat({
       : latestJob
   const context = useContextUsage(conversationId, contextJob, true)
   const refreshChat = () => {
+    if (!conversationId) return
     void refresh()
     void actionReceipts.refresh()
     questions.refresh()
@@ -330,9 +331,16 @@ export function ConversationChat({
   }, [task.job, task.feedback, receiveContext])
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
+  const retryPage = () => {
+    void execution.refresh()
+    refreshChat()
+  }
   const notice = (
     [
-      { error: sendError || execution.error },
+      {
+        error: sendError || execution.error,
+        retry: execution.error ? retryPage : undefined,
+      },
       { error: workReference.error ?? '', retry: workReference.retry },
       {
         error:
@@ -340,7 +348,7 @@ export function ConversationChat({
           error ||
           actionReceipts.error ||
           (!questions.waiting ? questions.error : ''),
-        retry: refreshChat,
+        retry: retryPage,
       },
       ...(pageNotice ? [pageNotice] : []),
     ] satisfies AssistantNoticeData[]
@@ -473,7 +481,7 @@ export function ConversationChat({
           textInput={textInput}
           busy={busy}
           previewUploading={previewUploading}
-          personaSaving={interaction.busy === 'persona' || execution.saving}
+          personaSaving={interaction.busy === 'persona' || execution.saving || !execution.ready}
           executionControl={
             <ExecutionModePicker
               value={execution.selected}

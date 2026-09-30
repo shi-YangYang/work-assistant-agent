@@ -60,7 +60,7 @@ def test_migration_preserves_history_and_separates_new_defaults(monkeypatch):
             before_message = dict(connection.execute(select(old_message)).mappings().one())
         command.upgrade(config, 'head')
         with scoped.begin() as connection:
-            assert dict(connection.execute(select(Conversation.__table__)).mappings().one()) == {**before_conversation, 'persona_id': 'professional', 'execution_mode': 'auto', 'mode_revision': 1, 'full_access_confirmed': False}
+            assert dict(connection.execute(select(Conversation.__table__)).mappings().one()) == {**before_conversation, 'persona_id': 'professional'}
             assert dict(connection.execute(select(Message.__table__)).mappings().one()) == {**before_message, 'persona_id': 'professional', 'private_context': False, 'deliverable_reference': {}, 'work_reference': {}}
             # New application-created conversations differ from historical backfills.
             fresh = connection.execute(Conversation.__table__.insert().values(company_id=company_id, owner_id=owner_id).returning(Conversation.persona_id)).scalar_one()
@@ -300,6 +300,8 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     from app.tasks.processing.handlers import message_input_digest
 
     class Database:
+        async def scalar(self, statement):
+            return 'auto'
         async def get(self, model, identifier):
             return SimpleNamespace(rules={'timezone': 'Asia/Shanghai'}) if model is Company else SimpleNamespace(created_at=now(), conversation_id=None)
     @asynccontextmanager
@@ -308,7 +310,7 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     class Sessions:
         begin = staticmethod(session)
         __call__ = staticmethod(session)
-    job = SimpleNamespace(id='saved-job', kind='message', target_id='saved-message', access={'owner': 'member'}, result={})
+    job = SimpleNamespace(id='saved-job', owner_id='member', company_id='company', kind='message', target_id='saved-message', access={'owner': 'member'}, result={})
     actor = SimpleNamespace(id='member', company_id='company', role='employee')
     blocks = [{'type': 'text', 'text': '旧输入'}]
     context = RunContext(actor.id, actor.company_id, job.id, 1, Sessions(), None, persona_id=persona, source_revision=3, document_snapshot='saved-files', node_retry=True)

@@ -70,6 +70,11 @@ export interface ExtractionPage {
   nextCursor: number | null
 }
 export type ExecutionMode = 'ask' | 'auto' | 'full'
+export interface ExecutionSettings {
+  executionMode: ExecutionMode
+  fullAccessConfirmed: boolean
+  modeRevision: number
+}
 export interface AssistantContinuation {
   messageId: string
   jobId: string

@@ -81,7 +81,7 @@ async def test_independent_plan_blocks_missing_and_wrong_status_then_appends_onc
 
 async def test_plan_does_not_bypass_explicit_confirmation_or_stale_target(setup):
     from test_assistant_execution import ReceiptJudge
-    from app.modules.conversations.models import Conversation
+    from app.modules.members.models import Member
     context, sent = await runtime(setup, '仅把期限改为2026-10-11，先给我确认')
     work = await create(setup[3]['employee'], '待审工作', summary='保留说明', dueDate='2026-10-09')
     await read_work(context, work['id'])
@@ -90,8 +90,8 @@ async def test_plan_does_not_bypass_explicit_confirmation_or_stale_target(setup)
     async with context.sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         job.result = {**job.result, 'executionMode': 'ask'}
-        conversation = await db.get(Conversation, sent['conversationId'])
-        conversation.execution_mode = 'ask'
+        member = await db.get(Member, context.owner_id)
+        member.execution_mode = 'ask'
     args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1)
     wrong = await execute(context, **args, changes={'dueDate': '2026-10-10'})
     assert wrong['category'] == 'invalid_arguments'

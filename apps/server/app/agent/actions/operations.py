@@ -163,7 +163,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         from app.modules.operations.mutations.publication import selected_attachments
         attachments = await selected_attachments(db, actor, shared_attachment_ids or [], message.conversation_id)
         from app.modules.operations.policy.execution_policy import mode_for, decide
-        mode = await mode_for(db, job, message.conversation_id)
+        mode = await mode_for(db, job)
         effect = 'prepare_confirmation' if decide(mode, action).outcome == 'ask' else 'enqueue_report' if action == 'generate_report' else 'save'
         proposal = {'targetCandidates': candidates, 'action': action, 'effect': effect, 'target': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}' if target else '', **params}
         if task_item_id:
@@ -224,7 +224,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             saved.task_item_key = None
             await db.flush()
         from app.modules.operations.policy.execution_policy import mode_for, decide
-        mode = await mode_for(db, job, message.conversation_id)
+        mode = await mode_for(db, job)
         decision = decide(mode, action, explicitly_confirm=digest(proposal) in context.explicit_confirmations)
         row = BusinessAction(execution_mode=mode, mode_revision=job.result.get('modeRevision', 1), approval_reason=decision.reason, company_id=actor.company_id, owner_id=actor.id, message_id=message.id, conversation_id=message.conversation_id, step=step, action=action, task_id=task_id, task_item_key=task_item_key, digest=fingerprint, intent_key=intent_key, params={**params, 'explicitConfirmation': digest(proposal) in context.explicit_confirmations, 'sourceRevision': message.transcript_revision, 'documents': context.document_versions, 'taskSources': [*context.task_snapshot.get('directives', []), *(context.task_snapshot.get('previousTask', {}).get('sources', []) if context.task_snapshot.get('relation') == 'continue' else [])]}, access=job.access or business_scope(actor))
         db.add(row)

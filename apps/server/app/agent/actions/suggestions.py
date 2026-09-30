@@ -40,7 +40,7 @@ async def _authorize_suggestion(context, action, content, work_id=None, source_t
         if target:
             candidates = [{'id': row.id, 'title': row.title, 'summary': row.content.get('summary', '')} for row in (await db.scalars(select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id == actor.id, WorkItem.deleted.is_(False), WorkItem.title == target.title).limit(21))).all()]
         message = await owned(db, Message, job.target_id, actor)
-        mode = await mode_for(db, job, message.conversation_id)
+        mode = await mode_for(db, job)
         operation = 'update_work' if target else 'create_work'
         changes = {key: value for key, value in content.items() if not target or target.content.get(key) != value}
         proposal = {'action': action, 'operation': operation, 'effect': 'prepare_confirmation' if decide(mode, operation).outcome == 'ask' else 'save', 'changes': changes, 'targetId': work_id or '', 'target': target.title if target else '', 'targetCandidates': candidates, 'sourceTokens': list(source_tokens)}
@@ -77,7 +77,7 @@ async def settle_suggestion(context, db, job, actor, message, draft, action, con
     """Tool naming does not decide approval; the active policy and user do."""
     options = context.suggestion_options[digest([action, content, work_id, sorted(source_tokens)])]
     draft.content = options['changes']
-    mode = await mode_for(db, job, message.conversation_id)
+    mode = await mode_for(db, job)
     decision = decide(mode, 'update_work' if work_id else 'create_work', explicitly_confirm=options['explicitConfirmation'])
     if decision.outcome == 'allow':
         from app.modules.work.progress import apply_draft

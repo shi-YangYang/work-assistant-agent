@@ -50,8 +50,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             live.access = business_scope(actor)
         context.role = actor.role
         from app.modules.operations.policy.execution_policy import mode_for
-        source = await db.get(Message, live.target_id) if live.kind == 'message' else None
-        context.execution_mode = await mode_for(db, live, source.conversation_id if source else None)
+        context.execution_mode = await mode_for(db, live)
         from app.modules.model_services.bindings import freeze_capacities
         if context.model_binding:
             await freeze_capacities(db, context.model_binding)

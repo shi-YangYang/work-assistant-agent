@@ -1,21 +1,23 @@
-import type { AssistantInteraction, Conversation, ExecutionMode } from '@paa/api-contracts'
+import type { AssistantInteraction, ExecutionSettings, ExecutionMode } from '@paa/api-contracts'
 import { write } from '@web/api/client'
 
 export function conversationInteractionsPath(conversationId?: string) {
   return conversationId ? `/conversations/${conversationId}/interactions` : null
 }
 
+export const executionSettingsPath = '/assistant/execution-settings'
+
 export function updateExecutionMode(
-  conversation: Conversation,
+  settings: ExecutionSettings,
   executionMode: ExecutionMode,
   fullAccessConfirmed: boolean,
 ) {
-  return write<Conversation>(
-    `/conversations/${conversation.id}`,
+  return write<ExecutionSettings>(
+    executionSettingsPath,
     {
       executionMode,
       fullAccessConfirmed,
-      expectedRevision: conversation.revision,
+      expectedRevision: settings.modeRevision,
     },
     'PATCH',
   )

@@ -39,13 +39,14 @@ const counts = () => {
     result[String(url)] = (result[String(url)] ?? 0) + 1
   return result
 }
-const six = [
+const resources = [
   '/conversations/chat',
   '/messages?conversationId=chat',
   '/business-actions?conversationId=chat&orphanOnly=true',
   '/conversations/chat/active-job',
   '/conversations/chat/interactions',
   '/conversations/chat/context-usage',
+  '/assistant/execution-settings',
 ].map((path) => '/api/v1' + path)
 const sources: Source[] = []
 class Source extends EventTarget {
@@ -91,15 +92,17 @@ beforeEach(() => {
       const path = String(url).replace('/api/v1', '')
       if (path.startsWith('/messages?') && delayMessages) return delayMessages
       const data =
-        path === '/conversations/chat'
-          ? conversation
-          : path.endsWith('/active-job')
-            ? { job: active }
-            : path.endsWith('/context-usage')
-              ? { contextUsage: null }
-              : path.startsWith('/messages?')
-                ? { items: messages, nextCursor: null }
-                : { items: [], nextCursor: null }
+        path === '/assistant/execution-settings'
+          ? { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
+          : path === '/conversations/chat'
+            ? conversation
+            : path.endsWith('/active-job')
+              ? { job: active }
+              : path.endsWith('/context-usage')
+                ? { contextUsage: null }
+                : path.startsWith('/messages?')
+                  ? { items: messages, nextCursor: null }
+                  : { items: [], nextCursor: null }
       return new Response(JSON.stringify(data))
     }),
   )
@@ -112,19 +115,19 @@ afterEach(() => {
 })
 async function ready() {
   await screen.findByRole('button', { name: '发送' })
-  await waitFor(() => expect(Object.keys(counts())).toHaveLength(6))
+  await waitFor(() => expect(Object.keys(counts())).toHaveLength(7))
 }
 
-it('shares six initial resources between breadcrumbs and StrictMode-mounted assistant and stays idle', async () => {
+it('shares account settings and six conversation resources between breadcrumbs and StrictMode-mounted assistant and stays idle', async () => {
   view()
   await ready()
-  expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 1])))
+  expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
   vi.useFakeTimers()
   await act(async () => {
     for (let index = 0; index < 10; index++) window.dispatchEvent(new Event('focus'))
     await vi.advanceTimersByTimeAsync(60000)
   })
-  expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 1])))
+  expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
 })
 
 it('merges online, visibility and repeated focus events including neighboring event-loop turns', async () => {
@@ -136,8 +139,8 @@ it('merges online, visibility and repeated focus events including neighboring ev
     document.dispatchEvent(new Event('visibilitychange'))
     window.dispatchEvent(new Event('focus'))
   })
-  await waitFor(() => expect(counts()[six[1]]).toBe(2))
-  expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 2])))
+  await waitFor(() => expect(counts()[resources[1]]).toBe(2))
+  expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 2])))
 })
 
 it.each([
@@ -163,7 +166,7 @@ it.each([
   await screen.findByRole('heading', { name: conversation.title })
   await screen.findByRole('button', { name: '发送' })
   expect(counts()[restorePath]).toBe(2)
-  expect(counts()[six[0]]).toBe(1)
+  expect(counts()[resources[0]]).toBe(1)
 })
 
 it.each(['online', 'manual'] as const)(
@@ -172,12 +175,12 @@ it.each(['online', 'manual'] as const)(
     const normal = vi.mocked(fetch).getMockImplementation()!
     let available = false
     vi.mocked(fetch).mockImplementation(async (...args) => {
-      if (String(args[0]) === six[0] && !available) return new Response('{}', { status: 503 })
+      if (String(args[0]) === resources[0] && !available) return new Response('{}', { status: 503 })
       return normal(...args)
     })
     view()
     await screen.findByText('服务暂时不可用，请稍后重试。')
-    expect(counts()).toEqual({ [six[0]]: 1 })
+    expect(counts()).toEqual({ [resources[0]]: 1, [resources[6]]: 1 })
     expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
     available = true
     vi.spyOn(Date, 'now').mockReturnValue(Date.now())
@@ -193,14 +196,21 @@ it.each(['online', 'manual'] as const)(
         document.dispatchEvent(new Event('visibilitychange'))
       })
     }
-    expect(counts()).toEqual(Object.fromEntries(six.map((path, index) => [path, index ? 1 : 2])))
+    expect(counts()).toEqual(
+      Object.fromEntries(
+        resources.map((path, index) => [
+          path,
+          index === 0 || (index === 6 && recovery === 'online') ? 2 : 1,
+        ]),
+      ),
+    )
   },
 )
 
 it('does not read conversation resources or hidden pickers before a new conversation exists', async () => {
   view('/assistant?new=1')
   await screen.findByRole('button', { name: '发送' })
-  expect(fetch).not.toHaveBeenCalled()
+  expect(counts()).toEqual({ [resources[6]]: 1 })
   fireEvent.change(screen.getByRole('textbox', { name: '工作消息' }), {
     target: { value: '只编辑草稿' },
   })
@@ -208,7 +218,7 @@ it('does not read conversation resources or hidden pickers before a new conversa
     window.dispatchEvent(new Event('online'))
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  expect(fetch).not.toHaveBeenCalled()
+  expect(counts()).toEqual({ [resources[6]]: 2 })
 })
 
 it('updates heading and breadcrumb from a complete saved conversation without refetching chat resources', async () => {
@@ -218,7 +228,7 @@ it('updates heading and breadcrumb from a complete saved conversation without re
   act(() => query.set({ ...conversation, title: '修改后的标题', revision: 2 }))
   await screen.findByRole('heading', { name: '修改后的标题' })
   expect(screen.getByText('修改后的标题', { selector: 'strong' })).toBeTruthy()
-  expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 1])))
+  expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
 })
 
 it.each(['current', 'last', 'other'] as const)(
@@ -292,7 +302,7 @@ it('uses one shared SSE and reconciles one final result even when both consumers
   await screen.findByRole('button', { name: '中断' })
   await waitFor(() => expect(sources).toHaveLength(1))
   await screen.findByText('查询公开资料')
-  expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 1])))
+  expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
   messages = [
     { ...messages[0], reply: '已整理三项公开资料', job: { ...running, state: 'succeeded' } },
   ]
@@ -316,12 +326,12 @@ it('uses one shared SSE and reconciles one final result even when both consumers
   )
   await screen.findByText('已整理三项公开资料')
   await screen.findByRole('button', { name: '发送' })
-  expect(counts()[six[1]]).toBe(2)
-  expect(counts()[six[2]]).toBe(2)
-  expect(counts()[six[3]]).toBe(2)
-  expect(counts()[six[4]]).toBe(2)
-  expect(counts()[six[0]]).toBe(1)
-  expect(counts()[six[5]]).toBe(1)
+  expect(counts()[resources[1]]).toBe(2)
+  expect(counts()[resources[2]]).toBe(2)
+  expect(counts()[resources[3]]).toBe(2)
+  expect(counts()[resources[4]]).toBe(2)
+  expect(counts()[resources[0]]).toBe(1)
+  expect(counts()[resources[5]]).toBe(1)
   expect(sources).toHaveLength(1)
 })
 
@@ -332,7 +342,7 @@ it('does not lose the completed reply when completion overtakes a slow earlier h
   const stale = deferred<Response>()
   delayMessages = stale.promise
   await act(async () => window.dispatchEvent(new Event('online')))
-  await waitFor(() => expect(counts()[six[1]]).toBe(2))
+  await waitFor(() => expect(counts()[resources[1]]).toBe(2))
   messages = [
     {
       id: 'message',
@@ -368,14 +378,14 @@ it('does not lose the completed reply when completion overtakes a slow earlier h
     stale.resolve(new Response(JSON.stringify({ items: [], nextCursor: null })))
   })
   await screen.findByText('最终完整结果')
-  expect(counts()[six[1]]).toBe(3)
+  expect(counts()[resources[1]]).toBe(3)
 })
 
 it('uses streamed thinking, search, operation and review changes without refetching persisted records', async () => {
   active = running
   view()
   await screen.findByRole('button', { name: '中断' })
-  await waitFor(() => expect(Object.keys(counts())).toHaveLength(6))
+  await waitFor(() => expect(Object.keys(counts())).toHaveLength(7))
   await act(async () => {
     for (const [seq, stage] of [
       'generating',
@@ -400,7 +410,7 @@ it('uses streamed thinking, search, operation and review changes without refetch
         }),
       )
   })
-  expect(counts()).toEqual(Object.fromEntries(six.map((path) => [path, 1])))
+  expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
   await act(async () => {
     for (const [index, stage] of ['transcribing', 'generating'].entries())
       sources[0].dispatchEvent(
@@ -419,6 +429,6 @@ it('uses streamed thinking, search, operation and review changes without refetch
         }),
       )
   })
-  await waitFor(() => expect(counts()[six[1]]).toBe(2))
-  expect(Object.keys(counts()).filter((path) => counts()[path] === 2)).toEqual([six[1]])
+  await waitFor(() => expect(counts()[resources[1]]).toBe(2))
+  expect(Object.keys(counts()).filter((path) => counts()[path] === 2)).toEqual([resources[1]])
 })

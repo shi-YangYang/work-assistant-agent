@@ -27,8 +27,6 @@ export type Composer = {
   replyTo?: string
   sending?: boolean
   personaId?: PersonaId
-  executionMode?: ExecutionMode
-  fullAccessConfirmed?: boolean
   submissionPersonaId?: PersonaId
   uploading?: string
   pending?: {

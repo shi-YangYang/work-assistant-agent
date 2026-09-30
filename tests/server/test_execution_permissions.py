@@ -18,8 +18,19 @@ from test_company import keyed
 pytestmark = pytest.mark.asyncio
 
 
+SETTINGS_PATH = '/api/v1/assistant/execution-settings'
+
+
+async def set_mode(client, mode, *, confirmed=True):
+    previous = (await client.get(SETTINGS_PATH)).json()
+    result = await client.patch(SETTINGS_PATH, json={'executionMode': mode, 'fullAccessConfirmed': confirmed, 'expectedRevision': previous['modeRevision']})
+    assert result.status_code == 200, result.text
+    return result.json()
+
+
 async def mode_runtime(setup, mode, text='创建工作：整理需求', who='employee'):
     settings, sessions, users, clients = setup
+    await set_mode(clients[who], mode)
     response = await clients[who].post('/api/v1/messages', json={'newConversation': True, 'text': text, 'executionMode': mode, 'fullAccessConfirmed': mode == 'full'}, headers=keyed())
     assert response.status_code == 202, response.text
     sent = response.json()
@@ -83,20 +94,20 @@ async def test_delete_mode_and_real_owner_protection(setup, mode):
 async def test_mode_switch_blocked_while_running_and_no_retry_escalation(setup):
     _, sessions, _, clients = setup
     context, sent = await mode_runtime(setup, 'auto')
-    conversation = (await clients['employee'].get('/api/v1/conversations/' + sent['conversationId'])).json()
-    response = await clients['employee'].patch('/api/v1/conversations/' + sent['conversationId'], json={'expectedRevision': conversation['revision'], 'executionMode': 'full', 'fullAccessConfirmed': True})
+    settings = (await clients['employee'].get(SETTINGS_PATH)).json()
+    response = await clients['employee'].patch(SETTINGS_PATH, json={'expectedRevision': settings['modeRevision'], 'executionMode': 'full', 'fullAccessConfirmed': True})
     assert response.status_code == 409
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         job.state, job.lease_until = 'awaiting_retry', None
-    changed = await clients['employee'].patch('/api/v1/conversations/' + sent['conversationId'], json={'expectedRevision': conversation['revision'], 'executionMode': 'full', 'fullAccessConfirmed': True})
+    changed = await clients['employee'].patch(SETTINGS_PATH, json={'expectedRevision': settings['modeRevision'], 'executionMode': 'full', 'fullAccessConfirmed': True})
     assert changed.status_code == 200
     from app.modules.operations.policy.execution_policy import mode_for
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
-        assert await mode_for(db, job, sent['conversationId']) == 'auto'
+        assert await mode_for(db, job) == 'auto'
         job.result = {}  # legacy job must never gain a later full setting
-        assert await mode_for(db, job, sent['conversationId']) == 'auto'
+        assert await mode_for(db, job) == 'auto'
 
 
 async def test_explicit_review_required_in_full_mode(setup):
@@ -286,3 +297,54 @@ async def test_each_approval_only_settles_its_own_node_then_finishes_source_stag
     assert [work['title'] for work in works] == ['A']
     feedback = (await clients['employee'].get('/api/v1/jobs/' + sent['jobId'] + '/feedback')).json()
     assert feedback['nodes'] == after['nodes']
+
+
+async def test_account_mode_applies_to_old_new_conversations_and_only_own_account(setup):
+    _, sessions, users, clients = setup
+    client = clients['employee']
+    old = (await client.post('/api/v1/conversations', json={'title': '旧会话'})).json()
+    settings = await set_mode(client, 'full')
+    new = (await client.post('/api/v1/conversations', json={'title': '新会话'})).json()
+    for conversation in (old, new):
+        current = (await client.get('/api/v1/conversations/' + conversation['id'])).json()
+        assert current['executionMode'] == 'full' and current['fullAccessConfirmed']
+        result = await client.post('/api/v1/messages', json={'conversationId': conversation['id'], 'text': '继续'}, headers=keyed())
+        assert result.status_code == 202, result.text
+        async with sessions() as db:
+            job = await db.get(Job, result.json()['jobId'])
+            assert job.result['executionMode'] == 'full' and job.result['modeRevision'] == settings['modeRevision']
+    result = await client.post('/api/v1/messages', json={'newConversation': True, 'text': '首次发送'}, headers=keyed())
+    assert result.status_code == 202, result.text
+    async with sessions() as db:
+        assert (await db.get(Job, result.json()['jobId'])).result['executionMode'] == 'full'
+    assert (await client.get(SETTINGS_PATH)).json() == settings
+    for who in ('admin', 'peer', 'outsider'):
+        assert (await clients[who].get(SETTINGS_PATH)).json()['executionMode'] == 'auto'
+    # Cannot switch global settings from an idle/new conversation while another is running.
+    blocked = await client.patch(SETTINGS_PATH, json={'executionMode': 'auto', 'expectedRevision': settings['modeRevision']})
+    assert blocked.status_code == 409 and blocked.json()['error']['code'] == 'assistant_busy'
+
+
+async def test_account_setting_requires_confirmation_versions_and_rejects_legacy_overrides(setup):
+    _, sessions, users, clients = setup
+    client = clients['employee']
+    body = {'executionMode': 'full', 'expectedRevision': 1}
+    denied = await client.patch(SETTINGS_PATH, json=body)
+    assert denied.status_code == 422
+    settings = await set_mode(client, 'ask')
+    conflict = await client.patch(SETTINGS_PATH, json={**body, 'fullAccessConfirmed': True})
+    assert conflict.status_code == 409 and conflict.json()['error']['code'] == 'execution_settings_changed'
+    override = await client.post('/api/v1/messages', json={'newConversation': True, 'text': '旧草稿', 'executionMode': 'full', 'fullAccessConfirmed': True}, headers=keyed())
+    assert override.status_code == 409
+    assert (await client.get(SETTINGS_PATH)).json() == settings
+    # Account acknowledgement persists when leaving and returning to full access.
+    await set_mode(client, 'full')
+    await set_mode(client, 'auto')
+    again = await set_mode(client, 'full', confirmed=False)
+    assert again['executionMode'] == 'full' and again['fullAccessConfirmed']
+    # A retried historical task follows stricter current settings even in another conversation.
+    from app.modules.operations.policy.execution_policy import mode_for
+    await set_mode(client, 'ask')
+    async with sessions.begin() as db:
+        old = Job(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='message', target_id='historical', result={'executionMode': 'full'})
+        assert await mode_for(db, old) == 'ask'

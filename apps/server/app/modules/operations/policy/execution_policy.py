@@ -28,10 +28,14 @@ def effective(snapshot, current):
     return MODES[min(MODES.index(snapshot if snapshot in MODES else 'auto'), MODES.index(current if current in MODES else 'auto'))]
 
 
-async def mode_for(db, job, conversation_id):
-    from app.modules.conversations.models import Conversation
-    conversation = await db.get(Conversation, conversation_id) if conversation_id else None
-    current = conversation.execution_mode if conversation else 'auto'
+async def current_mode(db, owner_id, company_id):
+    from sqlalchemy import select
+    from app.modules.members.models import Member
+    return await db.scalar(select(Member.execution_mode).where(Member.id == owner_id, Member.company_id == company_id)) or 'auto'
+
+
+async def mode_for(db, job):
+    current = await current_mode(db, job.owner_id, job.company_id)
     if 'executionMode' not in job.result:
         job.result = {**job.result, 'executionMode': 'auto', 'modeRevision': 1}
     return effective(job.result['executionMode'], current)

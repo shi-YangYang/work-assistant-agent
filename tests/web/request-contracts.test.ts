@@ -243,11 +243,16 @@ const contracts: Contract[] = [
   ),
   write(
     'PATCH',
-    '/conversations/chat',
-    () => interactions.updateExecutionMode(conversation, 'full', true),
+    '/assistant/execution-settings',
+    () =>
+      interactions.updateExecutionMode(
+        { executionMode: 'auto', modeRevision: 7, fullAccessConfirmed: false },
+        'full',
+        true,
+      ),
     { executionMode: 'full', fullAccessConfirmed: true, expectedRevision: 7 },
     undefined,
-    'conversation execution mode',
+    'account execution mode',
   ),
   write(
     'DELETE',

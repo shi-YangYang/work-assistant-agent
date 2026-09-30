@@ -202,7 +202,7 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
     if (expanded) list.refresh()
   }
   const persona = useConversationPersona(conversationId, current.data, updated)
-  const execution = useExecutionMode(conversationId, current.data, persona.interaction, updated)
+  const execution = useExecutionMode(persona.interaction)
   const stopBeforeAction = () => {
     if (!drafts.recording) return true
     notify('请先停止录音，再管理会话；录音会保留在当前会话。')
@@ -299,7 +299,6 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
             onSent={(id, sentPersona) => {
               if (!conversationId) {
                 persona.adoptCreated(id, sentPersona)
-                execution.adoptCreated(id)
                 setChatSession((previous) => ({ ...previous, createdId: id }))
                 navigate(
                   `/assistant/${id}${workEntry ? `?workId=${encodeURIComponent(workEntry)}` : ''}`,

@@ -9,7 +9,8 @@
 ```text
 apps/server/app/
 ├── modules/conversations/
-│   ├── models.py、schemas.py、router.py、serializers.py ~ 会话模式及版本
+│   ├── models.py、schemas.py、router.py、serializers.py ~ 会话元数据及账号模式投影
+│   ├── execution_settings.py                          + 账号模式读写与版本校验
 │   └── task_state.py                                  ~ 问答与原任务续接
 ├── modules/interactions/                              + 用户问题生命周期
 │   ├── models.py、schemas.py                          + 问题、答案、来源、版本
@@ -28,6 +29,7 @@ apps/server/app/
 ├── modules/messages/
 │   ├── schemas.py、commands.py                        ~ 模式冻结、自然语言回答
 │   └── serializers.py                                ~ 问答摘要
+├── modules/members/models.py                          ~ 账号执行模式、确认及版本
 ├── modules/members/commands.py                        ~ 删除账号清理等待项
 ├── agent/
 │   ├── execution_mode.py                             + 模式的模型提示
@@ -44,14 +46,15 @@ apps/server/app/
 │   └── cancellation.py                               ~ 取消关联问题
 ├── security/versions.py                              ~ 仅接受同任务成功回执的版本推进
 ├── http/routers.py、db/registry.py                    ~ 注册问题接口及模型
-└── migrations/versions/0019_assistant_interactions.py + 增量迁移
+├── migrations/versions/0019_assistant_interactions.py + 问答与执行快照迁移
+└── migrations/versions/0024_account_execution_mode.py + 执行模式迁移至账号
 packages/api-contracts/src/index.ts                    ~ 模式、问题、答案和批准 DTO
 apps/web/src/
 ├── api/job-feedback.ts                               ~ 交互状态 SSE 契约
 └── features/assistant/
     ├── api/interactions.ts                           + 回答请求与续接契约
     ├── api/requests.ts                               ~ 消息模式快照
-    ├── hooks/useExecutionMode.ts                     + 会话模式、空会话选择
+    ├── hooks/useExecutionMode.ts                     + 共享账号模式、空会话选择
     ├── hooks/useAssistantInteraction.ts               + 回答草稿、提交与恢复
     ├── hooks/useConversationPersona.ts               ~ 模式与发送并发互斥
     ├── utils/interactions.ts                         + HTTP／SSE 交互合并
@@ -86,7 +89,7 @@ constitution/mission.md、docs/architecture.md          ~ 模式、真实权限�
 
 ## 数据与接口
 
-1. `Conversation` 增加执行模式，沿用会话 revision；创建／修改 DTO 接受枚举，首次发送的新会话同时携带模式。Job 冻结模式版本，重试提升权限不得静默继承。
+1. `Member` 保存账号执行模式和独立版本；`modules/conversations/execution_settings.py` 提供统一读写接口，`0024_account_execution_mode.py` 迁移旧会话设置。新消息从账号设置取得模式，前端携带模式仅用于冲突校验。Job 冻结模式版本，重试提升权限不得静默继承。
 2. 新问题记录含公司／所有者／会话／逻辑任务、来源消息版本、缺失项标识、问题及选项、答案、状态、revision 和已创建的续接标识。去重键由服务端确定，不接受模型伪造的可信状态。
 3. 拟定 `GET /api/v1/conversations/{id}/interactions` 读取当前等待项；`POST /api/v1/interactions/{id}/answer` 提交结构化答案；`POST /api/v1/interactions/{id}/cancel` 取消相应等待任务。回答携带 `expectedRevision` 与幂等键，返回已保存答案、交互状态及可选续接 Job。
 4. 现有操作 `confirm/cancel` 接口保持入口，扩展动作支持与可选续接信息；所有确认仍校验操作预览摘要和当前来源。旧卡片不因默认模式改变而自动执行。

@@ -153,6 +153,8 @@ async def test_reference_updates_exact_same_named_target_respects_modes_and_repl
     _, sessions, users, clients = setup
     first = await create(clients['employee'], '同名工作', summary='第一项')
     second = await create(clients['employee'], '同名工作', summary='第二项', blocker='原阻碍', dueDate='2026-10-10')
+    from test_execution_permissions import set_mode
+    await set_mode(clients['employee'], mode)
     sent = await send_ref(clients['employee'], second, '把这项工作的下一步改成：准备验收。', executionMode=mode, fullAccessConfirmed=mode == 'full')
     context = await context_for(setup, sent)
     await task_projection(context)
@@ -256,6 +258,8 @@ async def test_retry_after_own_delete_recovers_reply_without_repeating_delete(se
     from app.modules.operations.models import BusinessAction
     settings, sessions, users, clients = setup
     work = await create(clients['employee'], '只删除一次')
+    from test_execution_permissions import set_mode
+    await set_mode(clients['employee'], 'full')
     sent = await send_ref(clients['employee'], work, '删除这项工作，然后给一点建议。', executionMode='full', fullAccessConfirmed=True)
     receipts = []
     async def graph(context, *_args, **_kwargs):

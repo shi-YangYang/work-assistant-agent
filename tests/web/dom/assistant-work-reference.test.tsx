@@ -89,6 +89,8 @@ beforeEach(() => {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
+      if (url.includes('/assistant/execution-settings'))
+        return json({ executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false })
       if (url.includes('/work-items/')) return json(work)
       if (url.includes('/work-items?')) return json({ items: [work], nextCursor: null })
       if (url.includes('/context-usage')) return json({ contextUsage: null })
