@@ -96,6 +96,7 @@ export function LoginBook({
                 onClick={() => open()}
               >
                 <span className={styles['cover-border']} aria-hidden="true" />
+                <span className={styles['ribbon']} aria-hidden="true" />
                 <span className={styles['cover-brand']}>
                   <img src={brandMark} className={styles['cover-logo']} alt="" aria-hidden="true" />
                   <span className={styles['cover-edition']}>YOUR PERSONAL ARK</span>
@@ -139,7 +140,6 @@ export function LoginBook({
                 </div>
               </section>
             </div>
-            <div className={styles['ribbon']} aria-hidden="true" />
           </div>
         </section>
         <div className={styles['below-book']}>

@@ -5,6 +5,8 @@
   --book-muted: #636363;
   --spread: 820px;
   --book-height: 530px;
+  --hinge-depth: 2px;
+  --back-depth: -17px;
   --duration: 1650ms;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
@@ -141,10 +143,22 @@
   height: calc(100% + 8px);
   background: #252525;
   border-radius: 3px 9px 9px 3px;
-  transform: translateZ(-17px);
+  transform: translateZ(var(--back-depth));
   box-shadow:
     1px 3px 2px #0b0b0b,
     0 16px 18px #0005;
+}
+.book-login .book::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: calc(var(--hinge-depth) - var(--back-depth));
+  height: 100%;
+  background: linear-gradient(90deg, #101010, #363636 45%, #252525);
+  transform-origin: 0 50%;
+  transform: translateZ(var(--hinge-depth)) rotateY(90deg);
+  pointer-events: none;
 }
 .book-login .page-stack {
   position: absolute;
@@ -220,7 +234,7 @@
   height: 100%;
   transform-origin: 0 50%;
   transform-style: preserve-3d;
-  transform: translateZ(18px) rotateY(-2deg);
+  transform: translateZ(var(--hinge-depth)) rotateY(0deg);
   transition: transform var(--duration) cubic-bezier(0.22, 0.65, 0.19, 1);
   will-change: transform;
 }
@@ -411,10 +425,9 @@
 .book-login .ribbon {
   position: absolute;
   left: calc(100% - 55px);
-  top: -3px;
+  top: 0;
   width: 23px;
   height: 77px;
-  transform: translateZ(22px);
   background: linear-gradient(90deg, #636363, #bcbcbc 25%, #868686 70%, #454545);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 87%, 0 100%);
   transition: opacity 500ms;
@@ -509,7 +522,7 @@
   transform: translateX(0) rotateX(0) rotateY(0) rotateZ(0);
 }
 .book-login[data-open='true'] .cover {
-  transform: translateZ(2px) rotateY(-180deg);
+  transform: translateZ(var(--hinge-depth)) rotateY(-180deg);
 }
 .book-login[data-open='true'] .book-shadow {
   width: 790px;
@@ -529,7 +542,7 @@
   transition: none;
 }
 .book-login[data-state='closed'] .cover:hover {
-  transform: translateZ(18px) rotateY(-9deg);
+  transform: translateZ(var(--hinge-depth)) rotateY(-9deg);
 }
 @media (min-width: 1100px) and (min-height: 940px) {
   .book-login {
@@ -787,7 +800,7 @@
     transition: none;
   }
   .book-login[data-state='closed'] .cover:hover {
-    transform: translateZ(18px);
+    transform: translateZ(var(--hinge-depth));
   }
 }
 .book-login {
