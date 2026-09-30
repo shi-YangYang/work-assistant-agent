@@ -2,7 +2,7 @@ import layoutStyles from '../../../styles/layout.module.css'
 import utilitiesStyles from '../../../styles/utilities.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import voiceprintsStyles from '../styles/voiceprints.module.css'
-import { ErrorNotice } from '@web/components/ErrorNotice'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { manageVoiceprint, voiceprintsPath } from '@web/features/voiceprints/api/requests'
 import type { Enrollment, VoiceprintList } from '@web/features/voiceprints/api/types'
 import { status } from '@web/features/voiceprints/api/types'
@@ -56,7 +56,7 @@ export function VoiceprintsPage() {
       <header className={voiceprintsStyles['voiceprint-heading']}>
         <div>
           <h2>公司声纹</h2>
-          <p className={utilitiesStyles['muted']}>登记成员的声音，让桌面会议助手识别发言者。</p>
+          <p className={utilitiesStyles['muted']}>登记成员的声音，让 Noria 桌面端识别发言者。</p>
         </div>
         <button onClick={resource.refresh} aria-label="刷新声纹">
           <RefreshCw size={16} />

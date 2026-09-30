@@ -1,14 +1,14 @@
 import pytest
 from uuid import uuid4
 from sqlalchemy import event, select
-from app.agent.conversation_context import conversation_references
+from app.agent.context.conversation_context import conversation_references
 from app.db.base import now
-from app.modules.conversations.context_store import publish_summary
-from app.modules.conversations.context_invalidation import invalidate
+from app.modules.conversations.context.context_store import publish_summary
+from app.modules.conversations.context.context_invalidation import invalidate
 from app.modules.conversations.models import ConversationContext
 from app.modules.messages.models import Message
 from app.tasks.context import RunContext, InputChanged
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 
 pytestmark = pytest.mark.asyncio
 
@@ -76,7 +76,7 @@ async def test_late_reply_revision_replaces_cached_reference(setup):
 
 
 async def test_invalidated_summary_cannot_publish_and_original_remains(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     settings, sessions, users, clients = setup
     first = await sent(clients['employee'], '原始问题')
     actor = users['employee']; job = await claim(sessions, actor.id)
@@ -87,7 +87,7 @@ async def test_invalidated_summary_cannot_publish_and_original_remains(setup):
         sources = await capture_sources(db, actor, current)
     async with sessions.begin() as db:
         await invalidate(db, conversation_id=first['conversationId'])
-    with pytest.raises(InputChanged):
+    with pytest.raises(InputChanged, match='对话引用的资料已变化'):
         await publish_summary(context, {'id': 'old', 'summary': '失效摘要', 'covered': [], 'sources': sources})
     async with sessions() as db:
         assert (await db.get(Message, first['messageId'])).text == '原始问题'
@@ -95,7 +95,7 @@ async def test_invalidated_summary_cannot_publish_and_original_remains(setup):
 
 
 async def test_tool_summary_keeps_its_own_access_after_failed_job(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     from app.modules.members.models import Member
     from app.security.access import scope
     from app.tasks.models import Job
@@ -125,7 +125,7 @@ async def test_tool_summary_keeps_its_own_access_after_failed_job(setup):
 
 
 async def test_newer_tool_summary_is_not_visible_to_older_task(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '较早问题')
     second = await legacy_message(sessions, users['employee'], '较晚的工具查询', first['conversationId'])
@@ -143,7 +143,7 @@ async def test_newer_tool_summary_is_not_visible_to_older_task(setup):
 
 
 async def test_lease_selects_epoch_without_context_payload(setup):
-    from app.modules.conversations.context_store import capture_sources
+    from app.modules.conversations.context.context_store import capture_sources
     from app.tasks.lease import lease
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '查询')
@@ -167,9 +167,9 @@ async def test_lease_selects_epoch_without_context_payload(setup):
 
 
 async def test_checkpoint_publication_recovers_once_without_overwriting_newer_summary(setup, monkeypatch):
-    from app.agent.checkpoints import GuardedSaver
-    from app.agent.compaction import save_packet, saved_packet, publish_packet
-    from app.modules.conversations.context_store import capture_sources
+    from app.agent.context.checkpoints import GuardedSaver
+    from app.agent.context.compaction import save_packet, saved_packet, publish_packet
+    from app.modules.conversations.context.context_store import capture_sources
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     settings, sessions, users, clients = setup
     actor = users['employee']; first = await sent(clients['employee'], '需要保留的请求')
@@ -188,7 +188,7 @@ async def test_checkpoint_publication_recovers_once_without_overwriting_newer_su
         if len(calls) == 1:
             raise RuntimeError('controlled publication interruption')
         return await real_publish(context, value)
-    monkeypatch.setattr('app.agent.compaction.publish_summary', interrupted)
+    monkeypatch.setattr('app.agent.context.compaction.publish_summary', interrupted)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         context.context_checkpoint, context.context_checkpoint_config = GuardedSaver(saver, context), config
         await save_packet(context, packet)
@@ -269,3 +269,54 @@ async def test_inaccessible_unselected_history_does_not_block_new_summary(setup)
         'covered': [available.id], 'sources': context.context_sources, 'access': context.access})
     async with sessions() as db:
         assert (await db.get(ConversationContext, current.conversation_id)).payload['summary'] == '自己的文档整理计划'
+
+
+async def test_other_employee_deletion_does_not_interrupt_private_file_generation(setup, monkeypatch):
+    from dataclasses import replace
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from fakes import ReviewedFixtureModel, completion
+    from app.modules.work.models import WorkItem
+    from app.tasks.processing.handlers import process_job
+    from app.tasks.models import Job
+    from test_business_assistant import facts
+    from test_sandbox_execution import ReceiptClient
+    settings, sessions, users, clients = setup
+    settings = replace(settings, sandbox_url='http://controlled-sandbox', sandbox_token='controlled')
+    work, _, _ = await facts(sessions, users['employee'])
+    ReceiptClient.runs, ReceiptClient.count = {}, 0
+    monkeypatch.setattr('app.modules.executions.service.SandboxClient', ReceiptClient)
+    message = await sent(clients['peer'], '生成我自己的文件')
+    epochs = []
+
+    class FileModel(ReviewedFixtureModel):
+        calls: int = 0
+        async def _agenerate(self, messages, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                answer = AIMessage(content='', tool_calls=[{'id': 'file-once', 'name': 'run_python', 'args': {'code': 'print(3)', 'title': '私人成果'}}])
+            else:
+                assert self.calls == 2
+                async with sessions() as db:
+                    epochs.append((await db.get(ConversationContext, message['conversationId'])).invalidation_version)
+                response = await clients['employee'].request('DELETE', '/api/v1/work-items/' + work.id, json={'expectedRevision': 1})
+                assert response.status_code == 200, response.text
+                async with sessions() as db:
+                    epochs.append((await db.get(ConversationContext, message['conversationId'])).invalidation_version)
+                answer = completion('私人成果已生成。')
+            return ChatResult(generations=[ChatGeneration(message=answer)])
+
+    job = await claim(sessions, users['peer'].id)
+    fake = FileModel(model='controlled', api_key='controlled')
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(job, sessions, settings, saver, model=fake)
+    result = (await clients['peer'].get('/api/v1/messages/' + message['messageId'])).json()
+    assert result['job']['state'] == 'succeeded' and result['reply'] == '私人成果已生成。', result
+    assert epochs == [0, 0] and fake.calls == 2 and ReceiptClient.count == 1
+    assert len(result['deliverables']) == 1
+    assert (await clients['peer'].get(result['deliverables'][0]['files'][0]['url'])).content == ReceiptClient.data
+    async with sessions() as db:
+        assert (await db.get(WorkItem, work.id)).deleted
+        saved = await db.get(Job, job.id)
+        assert not saved.error and not saved.access.get('team')

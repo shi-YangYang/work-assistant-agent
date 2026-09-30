@@ -1,0 +1,119 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 7px;
+  max-width: 100%;
+  min-height: 30px;
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--control);
+  border-radius: 9px;
+  background: var(--subtle);
+  color: var(--secondary);
+  font-size: 12px;
+}
+.chip > svg {
+  flex-shrink: 0;
+}
+.chip[data-sent='true'] {
+  width: fit-content;
+  align-self: flex-end;
+  margin-bottom: 0;
+}
+.chip > span,
+.chip > a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+.chip[data-unavailable='true'] {
+  color: var(--muted);
+}
+.chip > button {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  min-height: 24px;
+  width: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 6px;
+}
+.chip > button:hover:not(:disabled) {
+  background: var(--hover);
+}
+.picker {
+  width: 520px;
+  max-width: calc(100vw - 24px);
+  pointer-events: auto;
+}
+.search {
+  position: relative;
+  display: block;
+  color: var(--muted);
+}
+.search > svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.search > input {
+  min-width: 0;
+  width: 100%;
+  padding-left: 38px;
+}
+.results {
+  margin-top: 12px;
+  max-height: min(45dvh, 360px);
+  overflow-y: auto;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 0;
+  text-align: left;
+  background: transparent;
+  border-radius: 9px;
+}
+.option > span:first-child {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.option > svg {
+  flex-shrink: 0;
+}
+.option:hover,
+.option:focus-visible,
+.option[aria-pressed='true'] {
+  background: var(--hover);
+}
+.empty {
+  padding: 22px 12px;
+  text-align: center;
+  color: var(--muted);
+}
+.more {
+  width: 100%;
+  margin-top: 10px;
+}
+@media (max-width: 760px) {
+  .chip > button {
+    width: 32px;
+    min-height: 32px;
+  }
+  .option {
+    gap: 8px;
+  }
+}

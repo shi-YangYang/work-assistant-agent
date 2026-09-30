@@ -19,6 +19,7 @@ class WorkItem(Owned, Base):
 
 class WorkRevision(Owned, Base):
     __tablename__ = 'company_work_revision'
+    origin: Mapped[str] = mapped_column(String(24), default='unknown', server_default='unknown')
     business_links: Mapped[list] = mapped_column(JSONB, default=list)
     access: Mapped[dict] = mapped_column(JSONB, default=dict)
     work_id: Mapped[str] = mapped_column(ForeignKey('company_work_item.id'), index=True)

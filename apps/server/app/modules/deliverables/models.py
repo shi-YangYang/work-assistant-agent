@@ -23,6 +23,7 @@ class DeliverableRevision(Owned, Base):
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     items: Mapped[list] = mapped_column(JSONB, default=list)
+    files: Mapped[list] = mapped_column(JSONB, default=list)
     digest: Mapped[str] = mapped_column(String(64))
     __table_args__ = (UniqueConstraint('deliverable_id', 'revision'), UniqueConstraint('message_id', 'step'))
 

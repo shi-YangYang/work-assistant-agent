@@ -3,11 +3,11 @@ from .queries import work_item_query
 from fastapi import APIRouter, Header, Query
 from app.core.schemas import Revision
 from app.http.dependencies import AUTH, DB, SETTINGS
-from app.modules.operations.writes import remove_record as writes_remove_record
+from app.modules.operations.mutations.writes import remove_record as writes_remove_record
 from app.modules.work.schemas import Confirm, DraftEdit, Progress, WorkEdit
 from app.modules.work.serializers import work_dto
 from app.modules.work.service import save_work as writes_save_work
-from app.tasks.cleanup import finish_deletion
+from app.tasks.maintenance.cleanup import finish_deletion
 from typing import Annotated
 
 router = APIRouter()

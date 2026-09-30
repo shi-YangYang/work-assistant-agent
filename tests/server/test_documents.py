@@ -1,8 +1,8 @@
 import asyncio
 import io
 import json
-import app.tasks.documents as documents
-import app.tasks.handlers as worker
+import app.tasks.processing.documents as documents
+import app.tasks.processing.handlers as worker
 import pytest
 from PIL import Image
 from datetime import timedelta
@@ -21,8 +21,8 @@ from app.modules.model_services.models import ModelUsage
 from app.modules.reports.models import Report, ReportRevision
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
 from app.tasks.context import InputChanged, LostLease, RunContext
-from app.tasks.documents import prepare_document
-from app.tasks.handlers import process_job
+from app.tasks.processing.documents import prepare_document
+from app.tasks.processing.handlers import process_job
 from app.tasks.lease import lease
 from app.tasks.models import Job
 from sqlalchemy import func, select, text
@@ -278,8 +278,8 @@ async def test_source_deletion_purges_inflight_document_proposals(setup, deletio
     runtime = SimpleNamespace(context=context)
     result = await read_document.coroutine(attachment_id=item['id'], start=3, runtime=runtime)
     assert '后半部分标记' in result
-    from test_business_actions import Judge
-    context.intent_model = Judge()
+    from test_assistant_write_scope import ScopeJudge
+    context.intent_model = ScopeJudge(True, preview=True)
     await propose_progress.coroutine(title='来自原文件', summary='后半部分标记', status='in_progress', blocker='', next_step='', runtime=runtime)
     before = (await c['employee'].get('/api/v1/messages/' + followup['messageId'])).json()
     assert len(before['drafts']) == 1 and before['drafts'][0]['status'] == 'pending'
@@ -357,3 +357,62 @@ async def test_unchanged_document_checkpoint_reuses_verified_reads_on_retry(setu
     assert data['job']['state'] == 'awaiting_input', data
     assert len(model.seen) == 1  # Completed graph was reused, no second tool/model loop.
     assert data['citations'][0]['ordinal'] == 3 and '材料范围' in data['reply']
+
+
+async def test_scope_distinguishes_original_code_input_from_inherited_document_source(setup, monkeypatch):
+    from app.agent.tools.execution import run_python
+    from fakes import set_delivery
+    from test_sandbox_execution import ReceiptClient
+    settings, sessions, users, clients = setup
+    ReceiptClient.runs, ReceiptClient.count = {}, 0
+    monkeypatch.setattr('app.modules.executions.service.SandboxClient', ReceiptClient)
+    conv = await conversation(clients['employee'])
+    attachment = await upload(clients['employee'], 'sales.csv', b'project,sales,refund\nA,100,10\nB,200,40\n')
+    references = [{'attachment_id': attachment['id']}]
+    executions = []
+    async def compute(context, *args, **kwargs):
+        value = json.loads(await run_python.coroutine(code='print(3)', title='计算结果',
+            input_refs=references, runtime=SimpleNamespace(context=context)))
+        assert value['state'] == 'succeeded', value
+        executions.append(value)
+        await set_delivery(context, '计算结果已保存为文件。')
+        return '计算结果已保存为文件。'
+    monkeypatch.setattr(worker, 'invoke_harness', compute)
+    sent = await message(clients['employee'], conv, '用代码处理附件', [attachment['id']])
+    await run(settings, sessions, users, sent, object())
+    first = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert first['job']['state'] == 'succeeded', first
+    assert '文字工具读取 0/3 个分段' in first['reply']
+    assert '原文件已提供给代码执行，具体读取范围未单独记录' in first['reply']
+    assert '实际读取 0/3' not in first['reply'] and '完整读取' not in first['reply']
+    assert executions[0]['inputRefs'] == references
+    delivery = executions[0]['delivery']
+    references = [{'deliverable_id': delivery['id'], 'revision': 1, 'file_id': delivery['files'][0]['id']}]
+    following = await message(clients['employee'], conv, '根据已生成的文件继续计算')
+    await run(settings, sessions, users, following, object())
+    second = (await clients['employee'].get('/api/v1/messages/' + following['messageId'])).json()
+    assert second['job']['state'] == 'succeeded', second
+    assert '列为代码执行的关联来源，不能据此认定本轮已读取原文件' in second['reply']
+    assert '原文件已提供给代码执行' not in second['reply']
+
+
+@pytest.mark.parametrize('separator', ['', '\n'])
+async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup, monkeypatch, separator):
+    from fakes import controlled_model, set_delivery
+    settings, sessions, users, clients = setup
+    conv = await conversation(clients['employee'])
+    attachment = await upload(clients['employee'], 'sales.csv', b'project,sales,refund\nA,100,10\nB,200,40\n')
+    async def read(context, *args, **kwargs):
+        await read_document.coroutine(attachment['id'], 0, SimpleNamespace(context=context))
+        answer = '销售额合计为300。\n\n材料范围：' + separator + 'sales.csv：实际读取 3/3 个文字分段'
+        await set_delivery(context, answer)
+        return answer
+    monkeypatch.setattr(worker, 'invoke_harness', read)
+    sent = await message(clients['employee'], conv, '核对销售额', [attachment['id']])
+    # The numeric answer takes the real review path before scope-note deduplication.
+    await run(settings, sessions, users, sent, controlled_model())
+    result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert result['job']['state'] == 'awaiting_input', result
+    assert result['reply'].count('材料范围：') == 1
+    assert result['reply'].startswith('销售额合计为300。')
+    assert '文字工具读取 3/3 个分段' in result['reply']

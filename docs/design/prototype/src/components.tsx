@@ -223,7 +223,7 @@ export function Modal({
       <div className="dialog-inner">
         <header>
           <div>
-            <span className="eyebrow">WORK ASSISTANT</span>
+            <span className="eyebrow">NORIA</span>
             <h2>{title}</h2>
           </div>
           <Tool label="关闭" icon="X" onClick={onClose} />

@@ -1,3 +1,4 @@
+from app.modules.executions.builtin.schemas import EXECUTION_TOOLS
 import asyncio
 import hashlib
 import json
@@ -5,14 +6,17 @@ import time
 from deepagents import create_deep_agent
 from deepagents.backends import StateBackend
 from deepagents.profiles import GeneralPurposeSubagentProfile, HarnessProfile, register_harness_profile
-from app.agent.compaction import ContextCompaction
+from app.agent.context.compaction import ContextCompaction
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
-from app.agent.history import conversation_history
-from app.agent.middleware import ToolBoundary
-from app.agent.model import BoundedChatModel, approximate_tokens
-from app.agent.persona import persona_prompt
-from app.agent.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
+from app.agent.context.history import conversation_history
+from app.agent.context.task_context import TASK_POLICY
+from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, take_repair, validate_completion_response
+from app.agent.runtime.middleware import ToolBoundary
+from app.agent.runtime.model import BoundedChatModel, approximate_tokens
+from app.agent.prompts.persona import persona_prompt
+from app.agent.prompts.evidence import EVIDENCE_POLICY
+from app.agent.prompts.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
 from app.agent.tools.registry import BUSINESS_TOOLS
 from app.agent.tools.team import TEAM_TOOLS
 from app.core.personas import LEGACY_PERSONA
@@ -31,27 +35,33 @@ def build_graph(settings, checkpointer, context, model=None):
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
         model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
-    graph = create_deep_agent(model, tools=BUSINESS_TOOLS + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + persona_prompt(context.persona_id) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    if isinstance(model, BoundedChatModel):
+        model._completion_validator = validate_completion_response
+    from app.agent.prompts.execution_mode import mode_prompt
+    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name not in EXECUTION_TOOLS or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
 async def invoke_harness(context, checkpointer, content, model=None, *, repair_missing_action=False):
-    from app.agent.checkpoints import GuardedSaver
+    from app.agent.context.checkpoints import GuardedSaver
     async with context.sessions.begin() as db:
         live, actor = await lease(db, context)
         if not live.access:
             live.access = business_scope(actor)
         context.role = actor.role
+        from app.modules.operations.policy.execution_policy import mode_for
+        source = await db.get(Message, live.target_id) if live.kind == 'message' else None
+        context.execution_mode = await mode_for(db, live, source.conversation_id if source else None)
         from app.modules.model_services.bindings import freeze_capacities
         if context.model_binding:
             await freeze_capacities(db, context.model_binding)
     from app.modules.members.models import Company
-    from zoneinfo import ZoneInfo
     async with context.sessions() as db:
         company = await db.get(Company, context.company_id)
         message = await db.get(Message, live.target_id) if live.kind == 'message' else None
         clock = message.created_at if message else now()
-        clock_note = f"当前请求时间：{clock.astimezone(ZoneInfo(company.rules['timezone'])).isoformat()}；公司时区：{company.rules['timezone']}。相对日期以此为准；日期回复需写具体年月日。"
+        from app.agent.context.request_clock import instruction as clock_instruction
+        clock_note = clock_instruction(clock, company.rules['timezone'])
     context.request_clock = clock_note
     graph = build_graph(context.settings, GuardedSaver(checkpointer, context), context, model)
     async with context.sessions() as db:
@@ -73,16 +83,19 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             thread += f':input:{context.source_revision}:{digest}'
             if context.document_snapshot:
                 thread += ':files:' + context.document_snapshot
+    history = await conversation_history(context, job, content) if job.kind == 'message' else []
+    if context.work_reference_snapshot:
+        reference_digest = hashlib.sha256(json.dumps(context.work_reference_snapshot, sort_keys=True).encode()).hexdigest()
+        thread += ':work:' + reference_digest
     context.compaction_packet, context.compaction_loaded = None, False
     context.context_checkpoint = GuardedSaver(checkpointer, context)
     context.context_checkpoint_config = {'configurable': {'thread_id': thread + ':context', 'checkpoint_ns': ''}}
-    history = await conversation_history(context, job, content) if job.kind == 'message' else []
     config = {'configurable': {'thread_id': thread}, 'recursion_limit': 36, 'callbacks': []}
     with tracing_context(enabled=False):
         state = await graph.aget_state(config)
         # Completed graphs bypass middleware. Recover compacted evidence as well
         # as the final prose before independent review, including a fresh worker.
-        from app.agent.compaction import saved_packet, publish_packet
+        from app.agent.context.compaction import saved_packet, publish_packet
         packet = await saved_packet(context)
         if packet:
             await publish_packet(context, packet)
@@ -101,16 +114,35 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     messages = result.get('messages', [])
     answer = next((m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None)
-    if answer is None:
-        raise ValueError('模型未返回可用答复')
+    delivery = from_messages(messages)
+    shortcut = answer and (answer.id or '').startswith(('receipt-completion:', 'interaction-wait:'))
+    if delivery is None and not shortcut:
+        # Old checkpoints and providers returning plain text get one bounded
+        # protocol repair. This is not a universal second-pass answer review.
+        if await take_repair(context, 'protocol'):
+            instruction = '请使用 finish_task 单独交付刚才的完整答复和本轮任务摘要，不重做工具或业务操作。若上一工具参数无效，修正结构；保持真实未完成项。' + COMPLETION_POLICY
+            if job.kind == 'message':
+                from app.modules.messages.input_text import request_text
+                async with context.sessions() as db:
+                    current_job, _ = await lease(db, context)
+                    current_message = await db.get(Message, current_job.target_id)
+                    instruction += '\n以下是当前用户请求的数据；verification_quote 只能逐字引用其中的核验要求，不能引用此前消息或本条服务端提醒：\n' + json.dumps({'currentUserRequest': request_text(current_message, current_job)}, ensure_ascii=False)
+            with tracing_context(enabled=False):
+                result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+            messages = result.get('messages', [])
+            delivery = from_messages(messages)
+    context.delivery = delivery.model_dump() if delivery else None
+    if delivery is None and answer is None:
+        raise ValueError('模型未返回有效收尾，请重试；已保存操作不会重复执行')
     async with context.sessions() as db:
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
-    context.reply_evidence = [*context.context_evidence, *[
+    from app.agent.context.work_context import reference_evidence
+    context.reply_evidence = [*reference_evidence(context), *context.context_evidence, *[
         {'id': index, 'tool': message.name, 'result': message.content}
         for index, message in enumerate(messages)
-        if isinstance(message, ToolMessage) and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
+        if isinstance(message, ToolMessage) and message.name != 'finish_task' and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
     ]]
     context.reply_evidence = [{**row, 'id': index} for index, row in enumerate(context.reply_evidence)]
-    return answer.text[:16000]
+    return delivery.answer if delivery else answer.text[:16000]

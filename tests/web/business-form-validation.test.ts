@@ -2,22 +2,22 @@ import type { Draft, Progress, Report, Work, WorkMessage } from '@paa/api-contra
 import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../apps/web/src/api/client'
-import { BusyButton } from '../../apps/web/src/components/BusyButton'
-import { ErrorNotice } from '../../apps/web/src/components/ErrorNotice'
-import { Modal } from '../../apps/web/src/components/Modal'
+import { BusyButton } from '../../apps/web/src/components/actions/BusyButton'
+import { ErrorNotice } from '../../apps/web/src/components/feedback/ErrorNotice'
+import { Modal } from '../../apps/web/src/components/overlays/Modal'
 import { correctTranscript } from '../../apps/web/src/features/assistant/api/requests'
-import { TranscriptEditor } from '../../apps/web/src/features/assistant/components/TranscriptEditor'
+import { TranscriptEditor } from '../../apps/web/src/features/assistant/components/messages/TranscriptEditor'
 import { submitReport } from '../../apps/web/src/features/reports/api/requests'
-import { ReportDetail } from '../../apps/web/src/features/reports/components/ReportDetail'
+import { ReportDetail } from '../../apps/web/src/features/reports/components/detail/ReportDetail'
 import {
   createWork,
   updateProgressDraft,
   updateWorkProgress,
 } from '../../apps/web/src/features/work/api/requests'
-import { CreateWork } from '../../apps/web/src/features/work/components/CreateWork'
-import { ProgressEditor } from '../../apps/web/src/features/work/components/ProgressEditor'
-import { ProgressFields } from '../../apps/web/src/features/work/components/ProgressFields'
-import { WorkEditor } from '../../apps/web/src/features/work/components/WorkEditor'
+import { CreateWork } from '../../apps/web/src/features/work/components/editor/CreateWork'
+import { ProgressEditor } from '../../apps/web/src/features/work/components/editor/ProgressEditor'
+import { ProgressFields } from '../../apps/web/src/features/work/components/editor/ProgressFields'
+import { WorkEditor } from '../../apps/web/src/features/work/components/editor/WorkEditor'
 
 const state = vi.hoisted(() => ({
   slots: [] as unknown[],

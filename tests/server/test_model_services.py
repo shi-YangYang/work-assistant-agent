@@ -16,14 +16,13 @@ from app.modules.model_services.parameters import reply_review_config, request_o
 from app.modules.model_services.probes import reserve_probe as model_services_reserve_probe
 from app.modules.model_services.schemas import ServiceInput, parameters
 from app.security.secrets import SecretUnavailable, decrypt, initialize_key
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from pathlib import Path
 from sqlalchemy import select
 from test_company import send
 from test_recovery import model
-
 
 
 pytestmark = pytest.mark.asyncio
@@ -195,13 +194,13 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     saved=await create(c['admin'], service); routing=route(saved);routing['assistant']['streaming']=streaming
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
-    from app.tasks.feedback import publish
+    from app.tasks.feedback.feedback import publish
     phases = []
     async def track_phase(context, stage, *args, **kwargs):
         phases.append(stage)
         return await publish(context, stage, *args, **kwargs)
-    monkeypatch.setattr('app.tasks.feedback.publish', track_phase)
-    monkeypatch.setattr('app.tasks.handlers.publish', track_phase)
+    monkeypatch.setattr('app.tasks.feedback.feedback.publish', track_phase)
+    monkeypatch.setattr('app.tasks.processing.handlers.publish', track_phase)
     reply='请确认这条进展建议。'
     async def response(request):
         body=json.loads(request.content);calls.append((str(request.url),body))
@@ -222,20 +221,21 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
             finish='tool_calls'
         elif verification is not None and 'proposedOperation' in verification:
             assert verification['proposedOperation']['action'] == 'propose_progress'
-            verdict={'allowed':True,'quote':verification['currentUserText'],'reason':''}
+            verdict={'allowed':True,'requireConfirmation':True,'quote':verification['currentUserText'],'reason':''}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         elif body.get('tools'):
-            message={'role':'assistant','content':reply};finish='stop'
+            from fakes import wire_completion
+            message=wire_completion(reply, task={'state': 'needs_confirmation'}, business=True);finish='tool_calls'
         else:
             # Both authorization and reply review use the frozen service.
             assert len(calls)==4 and not body.get('tools')
             review=verification
             assert review['task']=='business_reply_review'
-            assert review['segments']==[{'index':0,'text':reply}]
+            assert review['answer']==reply
             assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
             assert 'persistedOperations' not in review
             assert body['max_tokens'] == 2000
-            verdict={'segments':[{'index':0,'scope_reason':'受控范围判定','scope':'answer','kind':'information','evidence':[]}]}
+            verdict={'issues': []}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         if streaming:
             delta=dict(message)
@@ -476,6 +476,31 @@ async def test_dashscope_asr_rejects_invalid_text_without_retry(monkeypatch, res
     monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
     with pytest.raises(ProviderError, match='没有返回有效文字'):
         await transcribe(Settings(), {'baseUrl': 'https://example.com/api/v1', 'model': 'asr', 'protocol': 'dashscope-asr'}, SECRET, b'RIFF')
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(('status', 'response_body', 'expected_code'), [
+    (400, {}, 'audio_rejected'),
+    (400, {'code': 'InvalidParameter'}, 'protocol'),
+    (400, {'code': 'DataInspectionFailed'}, 'content_filter'),
+    (401, {}, 'authentication'),
+    (429, {'code': 'Throttling'}, 'rate_limit'),
+])
+async def test_asr_empty_rejection_does_not_blame_configuration(monkeypatch, status, response_body, expected_code):
+    from app.core.config import Settings
+    calls = []
+
+    def response(request):
+        calls.append(request)
+        return httpx.Response(status, json=response_body)
+
+    monkeypatch.setattr('app.integrations.models.transport.client', lambda settings: httpx.AsyncClient(transport=httpx.MockTransport(response)))
+    with pytest.raises(ProviderError) as error:
+        await transcribe(Settings(), {'baseUrl': 'https://example.com/api/v1', 'model': 'asr', 'protocol': 'dashscope-asr'}, SECRET, b'RIFF')
+    assert error.value.code == expected_code
+    assert error.value.status == status
+    if expected_code == 'audio_rejected':
+        assert str(error.value) == '未识别到任何文字，请重新录音或输入文字。'
     assert len(calls) == 1
 
 

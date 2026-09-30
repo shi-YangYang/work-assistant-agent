@@ -4,8 +4,8 @@ import signal
 from .db import registry
 from app.core.config import Settings
 from app.db.session import database
-from app.tasks.maintenance import scheduler
-from app.tasks.runner import run_slots
+from app.tasks.maintenance.maintenance import scheduler
+from app.tasks.runtime.runner import run_slots
 
 
 async def main():
@@ -27,7 +27,7 @@ async def main():
             await engine.dispose()
             raise RuntimeError('A company worker is already running')
         timer = asyncio.create_task(scheduler(sessions, settings))
-        from app.tasks.voiceprints import worker_loop
+        from app.tasks.processing.voiceprints import worker_loop
         voiceprints = asyncio.create_task(worker_loop(sessions, settings, stop))
         try:
             await run_slots(sessions, settings, stop)

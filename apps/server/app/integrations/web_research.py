@@ -14,7 +14,9 @@ USER_AGENT = 'work-assistant-agent/0.1'
 
 
 class WebResearchError(ValueError):
-    pass
+    def __init__(self, message, *, code='unavailable'):
+        super().__init__(message)
+        self.code = code
 
 
 class WebTemporaryError(WebResearchError):
@@ -31,7 +33,7 @@ def public_url(value):
             raise ValueError()
         return url.copy_with(fragment=None)
     except (ValueError, httpx.InvalidURL) as error:
-        raise WebResearchError('仅支持公开的 HTTP(S) 网页地址') from error
+        raise WebResearchError('仅支持公开的 HTTP(S) 网页地址', code='blocked_url') from error
 
 
 async def public_addresses(host, port):
@@ -45,7 +47,7 @@ async def public_addresses(host, port):
         raise WebResearchError('网页域名无法解析') from error
     addresses = list(dict.fromkeys(row[4][0] for row in rows))
     if not addresses or any(not ipaddress.ip_address(value).is_global for value in addresses):
-        raise WebResearchError('不能访问本机、内网或非公开地址')
+        raise WebResearchError('不能访问本机、内网或非公开地址', code='blocked_url')
     return addresses
 
 
@@ -77,7 +79,7 @@ async def fetch_html(url, *, transport=None, xml=False):
                         if response.status_code in (408, 429, 500, 502, 503, 504):
                             raise WebTemporaryError(f'公开网页服务暂时不可用（HTTP {response.status_code}）')
                         if response.status_code != 200:
-                            raise WebResearchError(f'网页暂不可访问（HTTP {response.status_code}）')
+                            raise WebResearchError(f'网页暂不可访问（HTTP {response.status_code}）', code=f'http_{response.status_code}')
                         mime = response.headers.get('content-type', '').split(';')[0].strip().lower()
                         if mime not in (('text/xml', 'application/xml', 'application/rss+xml', 'text/html') if xml else ('text/html', 'application/xhtml+xml', 'text/plain')):
                             raise WebResearchError('该地址不是可读取的文字网页')
@@ -150,17 +152,64 @@ def extract_page(html):
     return ' '.join(''.join(page.title).split())[:300], text
 
 
-async def web_fetch(url, *, offset=0, transport=None):
-    if not isinstance(offset, int) or offset < 0:
+def literal_match(text, query, index):
+    """Return case-insensitive literal matches in original-text coordinates."""
+    folded, needle = text.casefold(), query.casefold()
+    count = folded.count(needle)
+    if index >= count:
+        return count, None, None
+    cursor = 0
+    for _ in range(index + 1):
+        start = folded.find(needle, cursor)
+        cursor = start + len(needle)
+    end = cursor
+    if len(folded) == len(text):
+        return count, start, end
+    # Unicode case folding can expand a character (e.g. ß -> ss). Keep the
+    # returned range on the original page, without allocating a per-byte map.
+    cursor, original_start = 0, None
+    for position, character in enumerate(text):
+        cursor += len(character.casefold())
+        if original_start is None and cursor > start:
+            original_start = position
+        if cursor >= end:
+            return count, original_start, position + 1
+
+
+async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
+    if type(offset) is not int or offset < 0:
         raise WebResearchError('网页阅读位置无效')
+    if not isinstance(find, str) or len(find) > 200 or (find and not find.strip()):
+        raise WebResearchError('网页查找词需为 1～200 个字符')
+    if type(match_index) is not int or match_index < 0 or (match_index and not find):
+        raise WebResearchError('网页匹配序号无效；从 0 开始，需同时提供查找词')
+    if find and offset:
+        raise WebResearchError('查找词与阅读位置不能同时指定；查找下一处请使用 match_index')
     final, raw, mime = await fetch_html(url, transport=transport)
     title, text = extract_page(raw) if mime != 'text/plain' else ('', raw)
     if not text.strip():
         raise WebResearchError('网页没有可读取正文，可能需要登录或 JavaScript')
+    source = {'url': final, 'title': title or urlsplit(final).hostname,
+              'sourceType': 'public_web', 'untrusted': True}
+    if httpx.URL(url).fragment:
+        source['requestedUrl'] = str(httpx.URL(url))
+    match = {}
+    if find:
+        count, start, end = literal_match(text, find, match_index)
+        match = {'find': find, 'matchIndex': match_index, 'matchCount': count,
+                 'nextMatchIndex': match_index + 1 if match_index + 1 < count else None}
+        if start is None:
+            return {**source, **match, 'state': 'not_found', 'evidenceType': 'page_search',
+                    'totalChars': len(text), 'message': '提取的正文中未找到该词。' if count == 0 else '指定匹配序号不存在。',
+                    'coverage': '本次未返回正文片段，不能据此确认或否定网页中的观点。请换用原文关键词，或不带 find 从头阅读。'}
+        offset = max(0, min(start - PAGE_CHARS // 3, len(text) - PAGE_CHARS))
+        match.update(matchStart=start, matchEnd=end)
     if offset >= len(text):
         raise WebResearchError('网页阅读位置已超出正文范围，请从头读取')
-    end = offset + PAGE_CHARS
-    return {'url': final, 'title': title or urlsplit(final).hostname, 'text': text[offset:end], 'offset': offset, 'nextOffset': end if end < len(text) else None, 'truncated': offset > 0 or end < len(text), 'sourceType': 'public_web', 'untrusted': True}
+    end = min(offset + PAGE_CHARS, len(text))
+    return {**source, **match, 'text': text[offset:end], 'offset': offset, 'endOffset': end,
+            'totalChars': len(text), 'nextOffset': end if end < len(text) else None,
+            'truncated': offset > 0 or end < len(text), 'evidenceType': 'page_text'}
 
 
 async def web_search(query, *, transport=None):
@@ -182,10 +231,10 @@ async def web_search(query, *, transport=None):
             target = str(public_url(item.findtext('link', '')))
         except WebResearchError:
             continue
-        entry = {'title': ' '.join(item.findtext('title', '').split())[:200], 'url': target, 'snippet': extract_page(item.findtext('description', ''))[1][:400]}
+        entry = {'title': ' '.join(item.findtext('title', '').split())[:200], 'url': target, 'snippet': extract_page(item.findtext('description', ''))[1][:400], 'evidenceType': 'search_snippet'}
         if len(json.dumps([*results, entry], ensure_ascii=False)) > 4000:
             break
         results.append(entry)
         if len(results) >= 5:
             break
-    return {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要；需要正文时读取对应网页', 'untrusted': True}
+    return {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要，未读取正文；仅需要链接时可直接提供实际检索所得网址。摘要日期不能单独证明文章发布日期。', 'untrusted': True}

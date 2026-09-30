@@ -12,12 +12,18 @@ from app.modules.messages.service import active_message
 from app.security.access import require as business_require, scope as business_scope
 from app.security.ownership import owned
 from app.tasks.models import Job
-from app.tasks.conversation_activity import require_idle
+from app.tasks.runtime.conversation_activity import require_idle
 from sqlalchemy import select
 
 
 async def submit_message(db, actor, body, idempotency_key):
     payload = body.model_dump()
+    if body.workReference is None:
+        payload.pop('workReference')
+    if body.executionMode is None:
+        payload.pop('executionMode')
+    if not body.fullAccessConfirmed:
+        payload.pop('fullAccessConfirmed')
     if body.deliverableReference is None:
         payload.pop('deliverableReference')
     if body.personaId is None:
@@ -34,13 +40,20 @@ async def submit_message(db, actor, body, idempotency_key):
     if prior:
         await active_message(db, prior['messageId'], actor)
         return prior
+    if body.workReference:
+        from app.modules.messages.work_references import require_work
+        await require_work(db, actor, body.workReference.workId)
+    if body.executionMode == 'full' and not body.conversationId and not body.fullAccessConfirmed:
+        problem(422, '请先确认自主执行的范围')
     if body.newConversation:
-        conversation = Conversation(company_id=actor.company_id, owner_id=actor.id, persona_id=body.personaId or DEFAULT_PERSONA)
+        conversation = Conversation(company_id=actor.company_id, owner_id=actor.id, persona_id=body.personaId or DEFAULT_PERSONA, execution_mode=body.executionMode or 'auto', full_access_confirmed=body.fullAccessConfirmed)
         db.add(conversation)
         await db.flush()
     else:
         conversation = await owned(db, Conversation, body.conversationId, actor, lock=True) if body.conversationId else await default_conversation(db, actor, body.personaId)
     await require_idle(db, actor, conversation.id)
+    if body.executionMode is not None and body.executionMode != conversation.execution_mode:
+        problem(409, '执行权限已变化，请先更新会话设置')
     if body.deliverableReference:
         from app.modules.deliverables.queries import check_reference
         await check_reference(db, actor, body.deliverableReference.model_dump(), conversation.id)
@@ -59,9 +72,11 @@ async def submit_message(db, actor, body, idempotency_key):
         await business_require(db, actor, reply.access)
         if reply.conversation_id != conversation.id:
             problem(422, '回复必须属于当前会话')
-    item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo, deliverable_reference=body.deliverableReference.model_dump() if body.deliverableReference else {})
+    item = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation.id, persona_id=body.personaId or conversation.persona_id, text=body.text, reply_to=body.replyTo, work_reference=body.workReference.model_dump() if body.workReference else {}, deliverable_reference=body.deliverableReference.model_dump() if body.deliverableReference else {})
     db.add(item)
     await db.flush()
+    from app.modules.conversations.task.task_state import begin_input
+    await begin_input(db, actor, item)
     conversation.updated_at = now()
     if conversation.title == '新会话':
         conversation.title = body.text[:40] or ('文件上报' if attached[0].kind == 'document' else '图片上报' if attached[0].kind == 'image' else '语音上报')
@@ -70,7 +85,11 @@ async def submit_message(db, actor, body, idempotency_key):
         a.message_id = item.id
         if a.kind == 'document':
             a.extraction_status = 'pending'
-    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business_scope(actor), result={'attachmentOrder': body.attachmentIds, 'audioSources': [{'id': a.id, 'name': a.name} for a in attached if a.kind == 'audio'], **({'voiceCommandAttachmentId': body.voiceCommandAttachmentId} if body.voiceCommandAttachmentId else {}), **({'voiceCommandAttachmentIds': voice_ids} if body.voiceCommandAttachmentIds is not None else {})})
+    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=item.id, access=business_scope(actor), result={'executionMode': conversation.execution_mode, 'modeRevision': conversation.mode_revision, 'attachmentOrder': body.attachmentIds, 'audioSources': [{'id': a.id, 'name': a.name} for a in attached if a.kind == 'audio'], **({'voiceCommandAttachmentId': body.voiceCommandAttachmentId} if body.voiceCommandAttachmentId else {}), **({'voiceCommandAttachmentIds': voice_ids} if body.voiceCommandAttachmentIds is not None else {})})
+    from app.modules.interactions.models import AssistantInteraction
+    waiting = await db.scalar(select(AssistantInteraction).where(AssistantInteraction.conversation_id == conversation.id, AssistantInteraction.owner_id == actor.id, AssistantInteraction.state == 'waiting').order_by(AssistantInteraction.created_at.desc()).limit(1))
+    if waiting:
+        job.result = {**job.result, 'questionCandidate': waiting.id}
     db.add(job)
     await db.flush()
     return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})
@@ -91,6 +110,8 @@ async def correct_transcript(db, actor, identifier, body):
         problem(422, str(error))
     item.transcript_history = [*item.transcript_history, {'revision': item.transcript_revision, 'text': item.transcript, 'at': now().isoformat()}]
     item.transcript, item.transcript_revision = body.text, item.transcript_revision + 1
-    from app.modules.conversations.context_invalidation import invalidate
+    from app.modules.conversations.task.task_state import invalidate_sources
+    await invalidate_sources(db, {item.id})
+    from app.modules.conversations.context.context_invalidation import invalidate
     await invalidate(db, conversation_id=item.conversation_id, owner_id=item.owner_id)
     return await message_dto(db, item, actor)

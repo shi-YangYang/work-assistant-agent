@@ -38,7 +38,10 @@ async def lease(db, context):
             ConversationContext.conversation_id == source.conversation_id,
             ConversationContext.owner_id == actor.id, ConversationContext.company_id == actor.company_id)) if source and source.conversation_id else None
         if epoch is None or epoch != context.context_sources['invalidationVersion']:
-            raise InputChanged()
+            raise InputChanged(context=True)
+    if job.result.get('sandboxSources'):
+        from app.modules.executions.sources import check_sources
+        await check_sources(db, actor, job.result['sandboxSources'])
     context.access = job.access or business_scope(actor)
     context.role = actor.role
     context.own_work_searched = job.result.get('ownWorkSearched', False)
@@ -55,6 +58,8 @@ async def lease(db, context):
         # Hold this lock through each write, so a transcript PATCH cannot commit
         # between validating its revision and saving a tool result or final reply.
         message = await owned(db, Message, job.target_id, actor, lock=True)
+        from app.modules.conversations.task.task_state import assert_current
+        await assert_current(db, actor, job, message)
         if message.transcript_revision != context.source_revision:
             raise InputChanged()
     for identifier, revision in context.document_versions.items():

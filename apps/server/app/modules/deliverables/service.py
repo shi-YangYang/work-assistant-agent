@@ -9,12 +9,12 @@ from app.security.locks import company_lock
 from sqlalchemy import select
 
 
-async def save(db, actor, message, job, content, *, identifier='', expected_revision=0, read_revision=None, step=1):
+async def save(db, actor, message, job, content, *, identifier='', expected_revision=0, read_revision=None, step=1, files=None):
     content = DeliverableContent.model_validate(content)
     if not 1 <= step <= 8 or not message.conversation_id:
         problem(422, '成果步骤或会话无效')
     await company_lock(db, actor.company_id)
-    fingerprint = digest({'content': content.model_dump(), 'id': identifier, 'revision': expected_revision})
+    fingerprint = digest({'content': content.model_dump(), 'id': identifier, 'revision': expected_revision, **({'files': files} if files is not None else {})})
     prior = await db.scalar(select(DeliverableRevision).where(DeliverableRevision.message_id == message.id, DeliverableRevision.step == step))
     if prior:
         if prior.digest != fingerprint:
@@ -38,7 +38,7 @@ async def save(db, actor, message, job, content, *, identifier='', expected_revi
         await db.flush()
     item.title, item.updated_at = content.title, now()
     inherit(actor, item, job, message)
-    record = DeliverableRevision(company_id=actor.company_id, owner_id=actor.id, deliverable_id=item.id, revision=item.revision, message_id=message.id, step=step, title=content.title, body=content.body, items=[{**entry.model_dump(), 'id': entry.id or uid()} for entry in content.items], digest=fingerprint)
+    record = DeliverableRevision(company_id=actor.company_id, owner_id=actor.id, deliverable_id=item.id, revision=item.revision, message_id=message.id, step=step, title=content.title, body=content.body, files=files if files is not None else (old.files if identifier else []), items=[{**entry.model_dump(), 'id': entry.id or uid()} for entry in content.items], digest=fingerprint)
     db.add(record)
     await db.flush()
     return item, record

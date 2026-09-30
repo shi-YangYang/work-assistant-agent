@@ -12,19 +12,17 @@ from app.modules.auth.models import Session
 from app.modules.members.models import Company, Member
 from app.modules.messages.models import Message
 from app.modules.model_services.models import ModelUsage
-from app.modules.model_services.usage import RequestRecord, usage_fields
+from app.modules.model_services.usage.usage import RequestRecord, usage_fields
 from app.modules.reports.models import Report, ReportRevision
 from app.modules.work.models import WorkItem, WorkRevision
 from app.security.access import scope as business_scope
-from app.tasks.feedback import events, update_feedback
-from app.tasks.handlers import process_job
+from app.tasks.feedback.feedback import events, update_feedback
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from sqlalchemy import delete
 from test_company import send
 from test_model_services import create, route
-
-
 
 
 pytestmark = pytest.mark.asyncio
@@ -141,9 +139,11 @@ class GatedStream(httpx.AsyncByteStream):
         self.seen.set()
         await self.release.wait()
         if self.tools:
-            part={'choices':[{'delta':{'tool_calls':[{'index':0,'id':'call_1','function':{'name':'find_work_items','arguments':'{"query":"secret argument"}'}}]},'finish_reason':'tool_calls'}]}
+            part={'choices':[{'delta':{'tool_calls':[{'index':0,'id':'call_1','function':{'name':'find_work_items','arguments':'{"query":"上线 Web","status":"blocked"}'}}]},'finish_reason':'tool_calls'}]}
         else:
-            part={'choices':[{'delta':{'content':'world'},'finish_reason':'stop'}]}
+            from fakes import wire_completion
+            call = wire_completion('Hello world')['tool_calls'][0]
+            part={'choices':[{'delta':{'tool_calls':[{'index': 0, **call}]},'finish_reason':'tool_calls'}]}
         yield ('data: '+json.dumps(part)+'\n\n').encode()
         yield b'data: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\n'
         if not self.interrupted:
@@ -151,7 +151,7 @@ class GatedStream(httpx.AsyncByteStream):
 
 
 @pytest.mark.parametrize('role,interrupted,tools', [('employee',False,False),('admin',False,False),('employee',True,False),('employee',False,True)])
-async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,monkeypatch,role,interrupted,tools):
+async def test_stage_feedback_precedes_completed_reply_and_preserves_usage(setup,monkeypatch,role,interrupted,tools):
     settings,sessions,users,c=setup
     saved=await create(c['admin'])
     assert (await c['admin'].put('/api/v1/settings/model-routing',json=route(saved))).status_code==200
@@ -162,12 +162,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
     def handler(request):
         calls.append(request)
         payload = json.loads(request.content)
-        if not payload.get('tools'):
-            # Independent presentation request is counted like every provider call.
-            verdict = json.dumps({'segments': [{'index': 0, 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'information', 'evidence': []}]})
-            event = {'choices': [{'delta': {'content': verdict}, 'finish_reason': 'stop'}]}
-            wire = 'data: ' + json.dumps(event) + '\n\ndata: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":7}}\n\ndata: [DONE]\n\n'
-            return httpx.Response(200, text=wire, headers={'content-type': 'text/event-stream'})
+        assert payload.get('tools'), 'Ordinary chat must not create a second reviewer call'
         return httpx.Response(200,stream=GatedStream(seen,release,interrupted=interrupted,tools=tools and len(calls)==1))
     monkeypatch.setattr('app.integrations.models.transport.client',lambda settings:httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
@@ -201,7 +196,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
             subscription=asyncio.create_task(c[role]._transport.app(scope,receive,capture))
             try:
                 await asyncio.wait_for(delivered.wait(),5)
-                assert not task.done() and b'secret argument' not in b''.join(bodies) and b'Hello' not in b''.join(bodies)
+                assert not task.done() and '上线 Web'.encode() not in b''.join(bodies) and b'Hello' not in b''.join(bodies)
             finally:
                 subscription.cancel()
                 await asyncio.gather(subscription,return_exceptions=True)
@@ -216,7 +211,7 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
         assert data['job']['state']=='awaiting_input' and data['reply']=='Hello world'
         assert (await c[role].get(f"/api/v1/jobs/{job.id}/feedback")).json()['text']==''
     usage=(await c['admin'].get('/api/v1/settings/model-usage')).json()
-    expected_calls=4 if interrupted else (2 if tools else 1) + 1
+    expected_calls=4 if interrupted else (2 if tools else 1)
     if interrupted:
         assert data['job']['nodes'][0]['attempts']==4 and data['job']['nodes'][0]['retries']==3
     assert usage['summary']['calls']==expected_calls and usage['summary']['inputTokens']==0 and usage['summary']['inputKnown']==expected_calls
@@ -226,13 +221,18 @@ async def test_stage_feedback_precedes_reviewed_reply_and_preserves_usage(setup,
     assert len(calls)==expected_calls
     wire=await c[role].get(f'/api/v1/jobs/{job.id}/events')
     assert wire.status_code==200 and 'no-transform' in wire.headers['cache-control']
-    assert 'secret argument' not in wire.text
+    # The approved display projection includes the query, never raw tool arguments.
+    assert '"arguments"' not in wire.text and '"query"' not in wire.text and '"tool_calls"' not in wire.text
+    if tools:
+        search = next(node for node in data['job']['nodes'] if node['label'] == '查找工作')
+        assert search['presentation'] == {'type': 'operation', 'subject': '上线 Web'}
+        assert '上线 Web' in wire.text
 
 
 async def test_feedback_live_authorization_and_stale_writer(setup):
     settings,sessions,users,c=setup
     from app.tasks.context import RunContext, LostLease
-    from app.tasks.feedback import publish
+    from app.tasks.feedback.feedback import publish
     sent=await send(c['admin'],'查询')
     job=await claim(sessions,users['admin'].id)
     context=RunContext(job.owner_id,job.company_id,job.id,job.fence,sessions,settings)
@@ -340,7 +340,7 @@ async def test_usage_address_rejection_not_sent_but_http_redirect_is_failed(setu
 
 async def test_document_stage_follows_actual_parse_and_feedback_expires(setup):
     from app.tasks.context import RunContext
-    from app.tasks.documents import prepare_document
+    from app.tasks.processing.documents import prepare_document
     settings,sessions,users,c=setup
     uploaded=await c['employee'].post('/api/v1/uploads',files={'file':('note.txt',b'Plain document','text/plain')})
     assert uploaded.status_code==201,uploaded.text

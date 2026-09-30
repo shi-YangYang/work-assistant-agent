@@ -1,11 +1,18 @@
-import { CompanySettings, guestCompany } from './CompanySettings'
-import { MeetingLibraryList } from './MeetingLibraryList'
+import brandMark from '@paa/ui-web/mark.png'
+import { CompanySettings, guestCompany } from './features/settings/company/CompanySettings'
+import { MeetingLibraryList } from './features/meetings/library/MeetingLibraryList'
 import type { MeetingHit } from '../shared/library-contracts'
-import { Appearance, CommandPalette, pageLabels, useTheme, type Page } from './Navigation'
-import { MeetingWorkspace } from './MeetingWorkspace'
-import { type AudioPlayerHandle } from './AudioPlayer'
-import { ApiModelSettings } from './ModelSettings'
-import { ModelSettings, Transcript } from './Transcription'
+import {
+  Appearance,
+  CommandPalette,
+  pageLabels,
+  useTheme,
+  type Page,
+} from './components/navigation/Navigation'
+import { MeetingWorkspace } from './features/meetings/workspace/MeetingWorkspace'
+import { type AudioPlayerHandle } from './features/meetings/playback/AudioPlayer'
+import { ApiModelSettings } from './features/settings/models/ModelSettings'
+import { ModelSettings, Transcript } from './features/meetings/transcript/Transcription'
 import type { ModelState } from '../shared/contracts'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
@@ -418,8 +425,8 @@ export function App(): React.JSX.Element {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true" />
-          <strong>桌面会议助手</strong>
+          <img src={brandMark} className="brand-mark" alt="" aria-hidden="true" />
+          <strong>Noria</strong>
         </div>
         <button className="command-trigger" onClick={() => setCommandOpen(true)}>
           <Command size={16} />

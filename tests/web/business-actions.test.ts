@@ -1,6 +1,6 @@
 import type { BusinessAction } from '@paa/api-contracts'
 import { expect, it } from 'vitest'
-import { actionStateLabel } from '../../apps/web/src/features/assistant/components/BusinessActionCard'
+import { actionStateLabel } from '../../apps/web/src/features/assistant/components/interactions/BusinessActionCard'
 
 const base: BusinessAction = {
   id: 'action',
@@ -36,7 +36,7 @@ it('renders changed empty fields and actual blocker/next step from saved receipt
   const { createElement } = await import('react')
   const { renderToStaticMarkup } = await import('react-dom/server')
   const { WorkActionDetails } =
-    await import('../../apps/web/src/features/assistant/components/BusinessActionCard')
+    await import('../../apps/web/src/features/assistant/components/interactions/BusinessActionCard')
   const html = renderToStaticMarkup(
     createElement(WorkActionDetails, {
       action: {

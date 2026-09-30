@@ -4,7 +4,7 @@ import type { Work } from '@paa/api-contracts'
 import { startTransition, StrictMode, Suspense, useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { updateWorkProgress } from '../../../apps/web/src/features/work/api/requests'
-import { WorkEditor } from '../../../apps/web/src/features/work/components/WorkEditor'
+import { WorkEditor } from '../../../apps/web/src/features/work/components/editor/WorkEditor'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
 
 vi.mock('@web/features/work/api/requests', async (load) => ({

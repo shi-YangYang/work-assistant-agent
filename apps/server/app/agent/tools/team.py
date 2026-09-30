@@ -1,4 +1,3 @@
-import hashlib
 import json
 from fastapi import HTTPException
 from langchain.tools import ToolRuntime, tool
@@ -80,14 +79,15 @@ async def read_team_source(token: str, runtime: ToolRuntime[RunContext], child_i
 @tool
 async def propose_followup(title: str, summary: str, status: Literal['in_progress', 'blocked', 'done'], blocker: str, next_step: str, source_tokens: list[str], runtime: ToolRuntime[RunContext], work_id: str | None = None) -> str:
     """Prepare a suggestion ONLY when the administrator asks for a draft/proposal.
-    Explicitly requesting a saved follow-up uses execute_business_action instead.
+    Execution mode governs saving; an explicit preview request always waits.
+    Prefer execute_business_action for explicitly requested saved follow-ups.
     First find_work_items to avoid duplicates. Link 1-20 exact work/report token
     fields (not [[business:...]] citation strings). Employees remain sources, never
     assignees. Updating existing own work requires its freshly-read work_id.
     """
-    content = Progress(title=title, summary=summary, status=status, blocker=blocker, nextStep=next_step).model_dump()
+    content = Progress(title=title, summary=summary, status=status, blocker=blocker, nextStep=next_step).model_dump(mode='json', exclude_unset=True)
     context = runtime.context
-    from app.agent.suggestions import authorize_suggestion
+    from app.agent.actions.suggestions import authorize_suggestion, suggestion_key, suggestion_receipt, settle_suggestion
     rejected = await authorize_suggestion(context, 'propose_followup', content, work_id if work_id != 'null' else None, source_tokens)
     if rejected:
         return clip(rejected)
@@ -118,10 +118,10 @@ async def propose_followup(title: str, summary: str, status: Literal['in_progres
             await business_require(db, actor, work.access, retained=True)
         if work and context.read_versions.get(work.id) != work.revision:
             return '本人事项尚未读取或已更新，请先重新读取。'
-        key = f'{job.id}:' + hashlib.sha256(json.dumps([content, work_id, sorted(source_tokens)], sort_keys=True).encode()).hexdigest()
+        key = suggestion_key(context, job, 'propose_followup', content, work_id if work_id != 'null' else None, source_tokens)
         existing = await db.scalar(select(ProgressDraft).where(ProgressDraft.tool_key == key))
         if existing:
-            return clip({'draftId': existing.id, 'status': existing.status})
+            return clip(suggestion_receipt(context, job, 'propose_followup', existing, content, work_id if work_id != 'null' else None, source_tokens))
         if len(message.suggestions) >= 20:
             return '本轮建议已达到 20 项，请等待确认。'
         draft = ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, content=content, work_id=work.id if work else None, base_revision=work.revision if work else None, tool_key=key, business_links=links, access=job.access)
@@ -130,7 +130,7 @@ async def propose_followup(title: str, summary: str, status: Literal['in_progres
         await db.flush()
         message.access = business_merge_access(message.access or business_scope(actor), job.access)
         message.suggestions = [*message.suggestions, {'id': draft.id, 'content': content, 'workId': draft.work_id}]
-        return clip({'draftId': draft.id, 'status': 'pending', 'message': '本人督办建议已准备，等待管理员确认；未向员工派单。'})
+        return clip(await settle_suggestion(context, db, job, actor, message, draft, 'propose_followup', content, work_id if work_id != 'null' else None, source_tokens))
 
 
 TEAM_TOOLS = [find_team_members, query_team_business, read_team_source, propose_followup]

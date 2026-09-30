@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Identity, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
+import type { BusinessAction, Identity, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -10,9 +10,10 @@ import {
   sendMessage,
 } from '../../../apps/web/src/features/assistant/api/requests'
 import { cancelJob, retryJob } from '../../../apps/web/src/features/jobs/api/requests'
-import { MessageCard } from '../../../apps/web/src/features/assistant/components/MessageCard'
-import { ConversationChat } from '../../../apps/web/src/features/assistant/components/ConversationChat'
+import { MessageCard } from '../../../apps/web/src/features/assistant/components/messages/MessageCard'
+import { ConversationChat } from '../../../apps/web/src/features/assistant/components/conversation/ConversationChat'
 import { useAssistantTask } from '../../../apps/web/src/features/assistant/hooks/useAssistantTask'
+import { useExecutionMode } from '../../../apps/web/src/features/assistant/hooks/useExecutionMode'
 import { useConversationPersona } from '../../../apps/web/src/features/assistant/hooks/useConversationPersona'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
 
@@ -103,11 +104,13 @@ afterEach(() => {
 function Chat({ initial = 'first' }: { initial?: string }) {
   const [id, setId] = useState(initial || undefined)
   const persona = useConversationPersona(id, null, vi.fn())
+  const execution = useExecutionMode(id, null, persona.interaction, vi.fn())
   return (
     <ConversationChat
       conversationId={id}
       personaId="professional"
       interaction={persona.interaction}
+      execution={execution}
       onSent={setId}
     />
   )
@@ -386,6 +389,46 @@ it('does not replace a persisted terminal card with a stale active snapshot from
   expect(sources).toHaveLength(0)
 })
 
+it.each([true, false])(
+  'shows one confirmation through continued messages and live feedback when the origin is loaded: %s',
+  async (originLoaded) => {
+    const action: BusinessAction = {
+      id: 'delete-selection',
+      messageId: 'original',
+      action: 'delete_work',
+      label: '删除工作',
+      confirmLabel: '确认删除工作',
+      state: 'pending',
+      revision: 1,
+      createdAt: running.updatedAt,
+      canConfirm: true,
+      preview: { title: '选择验证乙', revision: 1 },
+    }
+    const terminal = (id: string): WorkMessage => ({
+      ...message({ ...running, id: `job-${id}`, targetId: id, state: 'succeeded' }),
+      actions: [action],
+    })
+    history = [
+      ...(originLoaded ? [terminal('original')] : []),
+      terminal('continued'),
+      { ...message(running), actions: [action] },
+    ]
+    view()
+    await screen.findByRole('button', { name: '确认删除工作' })
+    expect(screen.getAllByRole('button', { name: '确认删除工作' })).toHaveLength(1)
+    expect(screen.getAllByText('选择验证乙')).toHaveLength(1)
+    await waitFor(() => expect(sources).toHaveLength(1))
+    await act(async () =>
+      sources[0].dispatchEvent(
+        new MessageEvent('snapshot', {
+          data: JSON.stringify(feedback({ seq: 10, actions: [action] })),
+        }),
+      ),
+    )
+    expect(screen.getAllByRole('button', { name: '确认删除工作' })).toHaveLength(1)
+  },
+)
+
 it('adopts the newer context when another tab finishes a subsequent job before activity is observed', async () => {
   vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: running })
   vi.mocked(cancelJob).mockResolvedValue({ ...running, state: 'cancelled', fence: 3 })
@@ -420,4 +463,58 @@ it('adopts the newer context when another tab finishes a subsequent job before a
   ]
   await act(async () => window.dispatchEvent(new Event('online')))
   await screen.findByRole('button', { name: '上下文使用情况：约 30%' })
+})
+
+it('stays quiet while idle, then refreshes the final reply from SSE without polling', async () => {
+  history = [message(running)]
+  vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: running })
+  view()
+  await screen.findByText('原消息')
+  await screen.findByRole('button', { name: '中断' })
+  await waitFor(() => expect(sources).toHaveLength(1))
+  vi.useFakeTimers()
+  try {
+    const calls = vi.mocked(fetch).mock.calls.length
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000)
+    })
+    expect(fetch).toHaveBeenCalledTimes(calls)
+    history = [{ ...message({ ...running, state: 'succeeded' }), reply: '任务已经处理完成' }]
+    vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: null })
+    await act(async () => {
+      sources[0].dispatchEvent(
+        new MessageEvent('snapshot', {
+          data: JSON.stringify(feedback({ seq: 9, state: 'succeeded', stage: 'complete' })),
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('任务已经处理完成')).toBeTruthy()
+    expect(screen.getByRole('button', { name: '发送' })).toBeTruthy()
+    const completedCalls = vi.mocked(fetch).mock.calls.length
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000)
+    })
+    expect(fetch).toHaveBeenCalledTimes(completedCalls)
+    expect(sendMessage).not.toHaveBeenCalled()
+    expect(retryJob).not.toHaveBeenCalled()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('preserves an uncertain send across offline/online without automatically posting again', async () => {
+  vi.mocked(sendMessage).mockRejectedValueOnce(new Error('连接中断'))
+  view()
+  await screen.findByRole('button', { name: '发送' })
+  type('断网时的原消息')
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  await screen.findByRole('button', { name: '原样重试，确认结果' })
+  await act(async () => {
+    window.dispatchEvent(new Event('offline'))
+    window.dispatchEvent(new Event('online'))
+  })
+  expect(sendMessage).toHaveBeenCalledTimes(1)
+  expect(retryJob).not.toHaveBeenCalled()
+  expect(input().value).toBe('断网时的原消息')
 })

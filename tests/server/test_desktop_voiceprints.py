@@ -8,11 +8,11 @@ import secrets
 import wave
 from datetime import timedelta
 from app.db.base import now
-from app.modules.auth.models import DesktopAuthorization, DesktopSession
-from app.modules.auth.sessions import digest, revoke_member
+from app.modules.auth.models import DesktopAuthorization, DesktopSession, Session
+from app.modules.auth.sessions import COOKIE, digest, revoke_member
 from app.modules.members.models import Member
 from app.modules.voiceprints.models import Voiceprint
-from app.tasks.voiceprints import process_once
+from app.tasks.processing.voiceprints import process_once
 from paa_voiceprints import MODEL_ID
 from sqlalchemy import delete, select, update
 
@@ -105,6 +105,26 @@ async def test_desktop_authorization_needs_no_password_change_step(setup):
     result = await c['admin'].get('/api/v1/desktop/me', headers=headers)
     assert result.status_code == 200 and result.json()['member']['id'] == users['admin'].id
     assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)).status_code == 200
+
+
+@pytest.mark.parametrize('remaining', [timedelta(days=7), timedelta(hours=2)])
+async def test_new_desktop_expiry_is_bounded_by_eight_hours_and_parent(setup, monkeypatch, remaining):
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    instant = now()
+    monkeypatch.setattr('app.modules.auth.desktop_router.now', lambda: instant)
+    async with sessions.begin() as db:
+        parent = await db.scalar(select(Session).where(Session.token_hash == digest(client.cookies.get(COOKIE))))
+        parent.expires_at = instant + remaining
+    raw = await token(client)
+    async with sessions() as db:
+        desktop = await db.scalar(select(DesktopSession).where(DesktopSession.token_hash == digest(raw)))
+        assert desktop.expires_at == instant + min(timedelta(hours=8), remaining)
+        desktop_expiry = desktop.expires_at
+    # Ordinary Web activity may upgrade/renew the parent, never its desktop token.
+    assert (await client.get('/api/v1/auth/me')).status_code == 200
+    async with sessions() as db:
+        assert (await db.get(DesktopSession, desktop.id)).expires_at == desktop_expiry
 
 
 async def test_grant_expiry_denial_and_origin_boundaries(setup):
@@ -204,7 +224,7 @@ async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
     import sys
     from dataclasses import replace
     from app.core.config import Settings
-    from app.tasks.voiceprints import extract
+    from app.tasks.processing.voiceprints import extract
     runner = tmp_path / 'runner.py'
     runner.write_text('import sys,time\nprint("ready",flush=True)\ntime.sleep(60)\n')
     actual_spawn = asyncio.create_subprocess_exec
@@ -216,8 +236,8 @@ async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
         child_started.set()
         return child
     async def audio(*args): return wav_bytes(), 1
-    monkeypatch.setattr('app.tasks.voiceprints.audio_wav', audio)
-    monkeypatch.setattr('app.tasks.voiceprints.asyncio.create_subprocess_exec', spawn)
+    monkeypatch.setattr('app.tasks.processing.voiceprints.audio_wav', audio)
+    monkeypatch.setattr('app.tasks.processing.voiceprints.asyncio.create_subprocess_exec', spawn)
     task = asyncio.create_task(extract(tmp_path / 'sample', Settings()))
     await asyncio.wait_for(child_started.wait(), 5)
     task.cancel()

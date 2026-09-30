@@ -4,13 +4,13 @@ from fastapi import APIRouter, Header, Query
 from app.core.schemas import Revision
 from app.db.idempotency import idem_begin, idem_save
 from app.http.dependencies import READ_AUTH, AUTH, DB, SETTINGS
-from app.modules.operations.writes import deletion_impact as writes_deletion_impact, remove_record as writes_remove_record
+from app.modules.operations.mutations.writes import deletion_impact as writes_deletion_impact, remove_record as writes_remove_record
 from app.modules.reports.models import Report
 from app.modules.reports.queries import report_dto
 from app.modules.reports.schemas import GenerateReport, ReportEdit
 from app.modules.reports.service import edit_report as writes_edit_report, ensure_report
 from app.security.ownership import owned
-from app.tasks.cleanup import finish_deletion
+from app.tasks.maintenance.cleanup import finish_deletion
 from typing import Annotated
 
 router = APIRouter()

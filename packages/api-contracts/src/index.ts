@@ -69,7 +69,40 @@ export interface ExtractionPage {
   items: { ordinal: number; location: string; text: string }[]
   nextCursor: number | null
 }
+export type ExecutionMode = 'ask' | 'auto' | 'full'
+export interface AssistantContinuation {
+  messageId: string
+  jobId: string
+  conversationId: string
+}
+export interface AssistantQuestion {
+  id: string
+  prompt: string
+  type: 'single' | 'multiple' | 'text'
+  options: { id: string; label: string; description?: string }[]
+  allowCustom: boolean
+}
+export interface AssistantAnswer {
+  questionId: string
+  optionIds: string[]
+  text: string
+}
+export interface AssistantInteraction {
+  id: string
+  messageId: string
+  conversationId: string
+  taskId: string
+  revision: number
+  state: 'waiting' | 'answered' | 'cancelled' | 'expired'
+  questions: AssistantQuestion[]
+  answers: AssistantAnswer[]
+  createdAt: string
+  continuation?: AssistantContinuation | null
+}
 export interface BusinessAction {
+  confirmLabel?: string
+  executionMode?: ExecutionMode
+  continuation?: AssistantContinuation | null
   id: string
   messageId: string
   action: string
@@ -85,7 +118,13 @@ export interface BusinessAction {
   changedFields?: (keyof Progress)[]
   message?: string
   canConfirm?: boolean
-  preview?: { title: string; content?: ReportContent; revision: number }
+  preview?: {
+    title: string
+    content?: ReportContent
+    before?: Record<string, unknown>
+    changes?: Record<string, unknown>
+    revision: number
+  }
   impact?: { messages: number; attachments: number }
   job?: Job
 }
@@ -99,6 +138,9 @@ export interface Progress {
 }
 export type PersonaId = 'dabao' | 'professional'
 export interface Conversation {
+  executionMode?: ExecutionMode
+  modeRevision?: number
+  fullAccessConfirmed?: boolean
   personaId: PersonaId
   id: string
   title: string
@@ -118,6 +160,7 @@ export interface Work extends Progress {
     id: string
     revision: number
     content: Progress
+    origin?: 'manual' | 'assistant' | 'assistant_confirmed' | 'unknown'
     sourceIds: string[]
     deletedSourceIds?: string[]
     createdAt: string
@@ -144,6 +187,7 @@ export interface TaskNode {
   id: string
   parentId: string | null
   kind: 'model' | 'tool' | 'authorization' | 'review' | 'compaction'
+  presentation?: { type: 'operation' | 'activity'; subject?: string }
   label: string
   state:
     | 'waiting'
@@ -184,7 +228,22 @@ export interface ContextUsage {
   reason?: string | null
   updatedAt: string
 }
+export interface TaskOutcome {
+  state:
+    | 'processing'
+    | 'completed'
+    | 'partial'
+    | 'needs_input'
+    | 'needs_confirmation'
+    | 'blocked'
+    | 'cancelled'
+  completed: string[]
+  remaining: string[]
+  reason?: string
+  nextAction: 'none' | 'reply' | 'confirm' | 'retry'
+}
 export interface Job {
+  taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean
   nodes?: TaskNode[]
@@ -212,6 +271,13 @@ export interface DeliverableReference {
   revision: number
   itemIds: string[]
 }
+export interface DeliverableFile {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  url: string
+}
 export interface DeliverableSummary {
   id: string
   revision: number
@@ -220,13 +286,23 @@ export interface DeliverableSummary {
   messageId: string
   itemCount: number
   updatedAt: string
+  files?: DeliverableFile[]
 }
 export interface Deliverable extends DeliverableSummary {
   body: string
   items: { id: string; title: string; body: string }[]
   links: { itemId: string; workId: string; sourceRevision: number; unavailable: boolean }[]
 }
+export interface WorkReference {
+  workId: string
+}
+export interface WorkReferenceView extends WorkReference {
+  title?: string
+  unavailable?: boolean
+}
 export interface WorkMessage {
+  workReference?: WorkReferenceView | null
+  interactions?: AssistantInteraction[]
   deliverables?: DeliverableSummary[]
   actions?: BusinessAction[]
   conversationId: string | null
@@ -400,6 +476,8 @@ export interface ModelCheck {
 }
 
 export interface JobFeedback {
+  interactions?: AssistantInteraction[]
+  taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean
   nodes?: TaskNode[]

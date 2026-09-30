@@ -11,10 +11,10 @@ from unittest.mock import Mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'apps/desktop/core/src'))
 from paa_core.repository import Repository, DomainError
-from paa_core.audio_store import AudioWriter
-from paa_core.transcript_store import TranscriptStore
-from paa_core.speaker_store import SpeakerStore
-from paa_core.voiceprints import Voiceprints
+from paa_core.audio.audio_store import AudioWriter
+from paa_core.asr.transcript_store import TranscriptStore
+from paa_core.speakers.speaker_store import SpeakerStore
+from paa_core.speakers.voiceprints import Voiceprints
 from paa_core.protocol import serve
 from paa_voiceprints import MODEL_ID, DIMENSION, VoiceprintError, isolated_turns, match, validate_profiles
 

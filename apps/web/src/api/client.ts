@@ -1,15 +1,19 @@
 import type { SupportDiagnostics } from '@paa/api-contracts'
+import { clearQueryResources } from '@web/lib/query-resource'
 import { captureDiagnostics } from '@web/lib/diagnostics'
 
 let csrf = ''
 
 export let epoch = 0
+export let queryIdentity = 'anonymous'
 
 let expired = false
 
 const requests = new Set<AbortController>()
 
-export const setCsrf = (value: string) => {
+export const setCsrf = (value: string, identity = 'anonymous') => {
+  queryIdentity = identity
+  clearQueryResources()
   csrf = value
   expired = false
   epoch++
@@ -19,6 +23,8 @@ export const setCsrf = (value: string) => {
 export function expireSession() {
   if (expired) return
   expired = true
+  queryIdentity = 'anonymous'
+  clearQueryResources()
   csrf = ''
   epoch++
   requests.forEach((controller) => controller.abort())
@@ -52,7 +58,8 @@ export class ApiError extends Error {
 export const cancelledRequest = () => new ApiError(0, 'cancelled', '', 'cancelled')
 
 export const isCancelled = (error: unknown) =>
-  error instanceof ApiError && error.category === 'cancelled'
+  (error instanceof ApiError && error.category === 'cancelled') ||
+  (error instanceof DOMException && error.name === 'AbortError')
 
 export const requestBudget = (path: string) =>
   path === '/uploads' || path.startsWith('/settings/voiceprints/')

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 from sqlalchemy import func, select
-from app.agent import operations
-from app.agent.tool_nodes import tool_node
+from app.agent.actions import operations
+from app.agent.runtime.tool_nodes import tool_node
 from app.agent.tools.actions import query_reports
 from app.db.base import now
 from app.integrations.models.transport import ProviderError
@@ -15,11 +15,11 @@ from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem
-from app.tasks import node_execution
+from app.tasks.nodes import node_execution
 from app.tasks.context import InputChanged, LostLease, RunContext
 from app.tasks.models import Job
-from app.tasks.node_state import execution
-from app.tasks.queue import claim
+from app.tasks.nodes.node_state import execution
+from app.tasks.runtime.queue import claim
 from test_business_actions import Judge, create, read_work
 from test_task_retry import enabled, fast_nodes
 

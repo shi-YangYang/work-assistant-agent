@@ -2,7 +2,7 @@
   "name": "personal-agent-assistant",
   "version": "0.1.0",
   "private": true,
-  "description": "面向 macOS 和 Windows 的个人工作助手",
+  "description": "Noria 桌面端：会议录音、本地转写与 AI 纪要",
   "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {

@@ -19,6 +19,10 @@ fi
 exec 9>"$root/.deploy.lock"
 flock -n 9 || { echo 'Another deployment is running' >&2; exit 1; }
 # Build and download before touching the running release. The manifest pins local image IDs.
+# Read only an exact opt-in flag; never source a credentials file as shell code.
+if [[ $(sed -n 's/^COMPOSE_PROFILES=//p' "$env_file") == sandbox ]]; then
+  export PAA_BUILD_SANDBOX=true
+fi
 bash "$release/deploy/company/build.sh" "$release" "$release_id" "$mode"
 mkdir -p "$release/apps/server"
 ln -s "$env_file" "$release/apps/server/.env.web"
@@ -94,6 +98,9 @@ trap 'exit 1' HUP INT TERM
 printf 'deploying\n' > "$release/deployment-status"
 compose up -d --no-build --wait --wait-timeout 90 postgres
 compose run --rm --no-deps -T migrate
+if [[ ${PAA_BUILD_SANDBOX:-false} == true ]]; then
+  compose up -d --no-build --no-deps --wait --wait-timeout 60 sandbox
+fi
 compose up -d --no-build --no-deps api worker web
 # The API health endpoint checks PostgreSQL; test the actual HTTPS entry, without -k.
 origin=$(compose exec -T api python -c 'import os; print(os.environ["PAA_WEB_ORIGIN"].rstrip("/"))')

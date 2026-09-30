@@ -1,5 +1,6 @@
 from .queries import conversations_query
 from fastapi import APIRouter, Query
+from typing import Literal
 from app.core.errors import problem
 from app.core.schemas import Revision
 from app.core.versions import version
@@ -8,21 +9,23 @@ from app.modules.conversations.models import Conversation
 from app.modules.conversations.schemas import ConversationCreate, ConversationEdit
 from app.modules.conversations.serializers import conversation_dto
 from app.security.ownership import owned
-from app.tasks.cleanup import finish_deletion
+from app.tasks.maintenance.cleanup import finish_deletion
 
 router = APIRouter()
 
 
 @router.get('/api/v1/conversations')
-async def conversations(q: str = Query('', max_length=120), cursor: str | None = None, actor=AUTH, db=DB):
-    return await conversations_query(q, cursor, actor, db)
+async def conversations(q: str = Query('', max_length=120), cursor: str | None = None, order: Literal['updated', 'last_message'] = 'updated', actor=AUTH, db=DB):
+    return await conversations_query(q, cursor, actor, db, order=order)
 
 
 @router.post('/api/v1/conversations', status_code=201)
 async def add_conversation(body: ConversationCreate, actor=AUTH, db=DB):
     if not body.title.strip():
         problem(422, '请输入会话名称')
-    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId)
+    if body.executionMode == 'full' and not body.fullAccessConfirmed:
+        problem(422, '请先确认自主执行的范围')
+    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId, execution_mode=body.executionMode, full_access_confirmed=body.fullAccessConfirmed)
     db.add(item)
     await db.flush()
     return conversation_dto(item)
@@ -37,6 +40,14 @@ async def get_conversation(identifier: str, actor=AUTH, db=DB):
 async def rename_conversation(identifier: str, body: ConversationEdit, actor=AUTH, db=DB):
     item = await owned(db, Conversation, identifier, actor, lock=True)
     version(item, body.expectedRevision)
+    if 'executionMode' in body.model_fields_set and body.executionMode != item.execution_mode:
+        from app.tasks.runtime.conversation_activity import require_idle
+        await require_idle(db, actor, item.id)
+        if body.executionMode == 'full' and not item.full_access_confirmed and not body.fullAccessConfirmed:
+            problem(422, '请先确认自主执行的范围')
+        item.full_access_confirmed = item.full_access_confirmed or body.fullAccessConfirmed
+        item.execution_mode = body.executionMode
+        item.mode_revision += 1
     if 'title' in body.model_fields_set:
         item.title = body.title
     if 'personaId' in body.model_fields_set:
@@ -47,7 +58,7 @@ async def rename_conversation(identifier: str, body: ConversationEdit, actor=AUT
 
 @router.get('/api/v1/conversations/{identifier}/deletion')
 async def conversation_deletion(identifier: str, actor=AUTH, db=DB):
-    from app.modules.operations.deletion import conversation_impact
+    from app.modules.operations.mutations.deletion import conversation_impact
     item = await owned(db, Conversation, identifier, actor)
     messages, retained = await conversation_impact(db, item)
     return {'messages': len(messages), 'retainedSources': len(retained)}
@@ -55,7 +66,7 @@ async def conversation_deletion(identifier: str, actor=AUTH, db=DB):
 
 @router.delete('/api/v1/conversations/{identifier}')
 async def delete_conversation(identifier: str, body: Revision, actor=AUTH, db=DB, settings=SETTINGS):
-    from app.modules.operations.deletion import target, remove_conversation
+    from app.modules.operations.mutations.deletion import target, remove_conversation
     item = await target(db, Conversation, identifier, actor, body.expectedRevision)
     await remove_conversation(db, item)
     return await finish_deletion(db, item.owner_id, settings)
@@ -63,13 +74,13 @@ async def delete_conversation(identifier: str, body: Revision, actor=AUTH, db=DB
 
 @router.get('/api/v1/conversations/{identifier}/context-usage')
 async def get_context_usage(identifier: str, actor=AUTH, db=DB):
-    from app.modules.conversations.context_usage import latest_usage
+    from app.modules.conversations.context.context_usage import latest_usage
     return await latest_usage(db, actor, identifier)
 
 
 @router.get('/api/v1/conversations/{identifier}/active-job')
 async def get_active_job(identifier: str, actor=AUTH, db=DB):
-    from app.tasks.conversation_activity import current_job
+    from app.tasks.runtime.conversation_activity import current_job
     from app.tasks.serializers import job_dto
     item = await current_job(db, actor, identifier)
     return {'job': job_dto(item) if item else None}

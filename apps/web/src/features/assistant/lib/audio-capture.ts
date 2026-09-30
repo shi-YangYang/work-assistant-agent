@@ -1,5 +1,12 @@
-import type { Attachment, DeliverableReference, PersonaId } from '@paa/api-contracts'
-import { MAX_FILE_BYTES } from './attachment-limits'
+import type {
+  Attachment,
+  DeliverableReference,
+  ExecutionMode,
+  PersonaId,
+  WorkReference,
+  WorkReferenceView,
+} from '@paa/api-contracts'
+import { MAX_FILE_BYTES } from '../utils/attachment-limits'
 
 type PendingFile = {
   id: string
@@ -16,9 +23,12 @@ export type Composer = {
   key: string
   deliverableReference?: DeliverableReference
   deliverableTitle?: string
+  workReference?: WorkReferenceView
   replyTo?: string
   sending?: boolean
   personaId?: PersonaId
+  executionMode?: ExecutionMode
+  fullAccessConfirmed?: boolean
   submissionPersonaId?: PersonaId
   uploading?: string
   pending?: {
@@ -27,12 +37,15 @@ export type Composer = {
       conversationId?: string
       newConversation?: boolean
       personaId?: PersonaId
+      executionMode?: ExecutionMode
+      fullAccessConfirmed?: boolean
       text: string
       attachmentIds: string[]
       voiceCommandAttachmentId?: string
       voiceCommandAttachmentIds?: string[]
       replyTo: string | null
       deliverableReference?: DeliverableReference
+      workReference?: WorkReference
     }
   }
 }

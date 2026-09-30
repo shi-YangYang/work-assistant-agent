@@ -44,9 +44,18 @@ class Settings:
     voiceprint_python: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_PYTHON', str(ROOT / '.venv-voiceprints' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')))))
     voiceprint_model: Path = field(default_factory=lambda: Path(os.getenv('PAA_VOICEPRINT_MODEL', str(ROOT / 'packages/voiceprint-engine/resources/models/speaker-community-1/embedding/pytorch_model.bin'))).resolve())
 
+    generated_total_quota_mb: int = field(default_factory=lambda: int(os.getenv('PAA_GENERATED_TOTAL_QUOTA_MB', '4096')))
+    generated_quota_mb: int = field(default_factory=lambda: int(os.getenv('PAA_GENERATED_QUOTA_MB', '512')))
+    sandbox_url: str = field(default_factory=lambda: os.getenv('PAA_SANDBOX_URL', ''))
+    sandbox_token: str = field(repr=False, default_factory=lambda: os.getenv('PAA_SANDBOX_TOKEN', ''))
+
     worker_concurrency: int = field(default_factory=lambda: int(os.getenv('PAA_WORKER_CONCURRENCY', '3')))
 
     def __post_init__(self):
+        if not 32 <= self.generated_total_quota_mb <= 1048576:
+            raise ValueError('PAA_GENERATED_TOTAL_QUOTA_MB must be between 32 and 1048576')
+        if not 32 <= self.generated_quota_mb <= 10240:
+            raise ValueError('PAA_GENERATED_QUOTA_MB must be between 32 and 10240')
         if not 1 <= self.worker_concurrency <= 8:
             raise ValueError('PAA_WORKER_CONCURRENCY must be between 1 and 8')
 

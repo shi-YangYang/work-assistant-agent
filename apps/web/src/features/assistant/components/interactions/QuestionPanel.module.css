@@ -1,0 +1,199 @@
+.panel {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid var(--control);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+}
+.heading {
+  flex-shrink: 0;
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  align-items: center;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.heading > span {
+  flex: 1;
+}
+.heading > svg:last-child {
+  transition: transform 160ms;
+}
+.heading[aria-expanded='true'] > svg:last-child {
+  transform: rotate(180deg);
+}
+.body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 14px 12px;
+}
+.body[hidden] {
+  display: none;
+}
+.body form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  gap: 0;
+}
+.questions {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(36dvh, 320px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.questions fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0;
+  border: 0;
+}
+.questions fieldset + fieldset {
+  border-top: 1px solid var(--line);
+}
+.questions legend {
+  font-size: 13px;
+  font-weight: 550;
+  padding: 0;
+  overflow-wrap: anywhere;
+}
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.options label {
+  flex-direction: row;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.options label:hover,
+.options label[data-selected='true'] {
+  background: var(--hover);
+  border-color: var(--control);
+}
+.options input {
+  width: 15px;
+  min-height: 0;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--text);
+}
+.options small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.custom {
+  display: block;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.custom textarea {
+  width: 100%;
+  margin-top: 5px;
+  height: 58px;
+  min-height: 58px;
+  max-height: 100px;
+  padding: 8px 10px;
+  background: var(--subtle);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.actions {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.actions button {
+  min-height: 34px;
+  font-size: 12px;
+}
+.history {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.history summary {
+  cursor: pointer;
+}
+.history > div {
+  padding: 9px 0 0 14px;
+}
+.history strong {
+  color: var(--secondary);
+  font-weight: 500;
+}
+.history p {
+  margin: 5px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .questions {
+    max-height: 28dvh;
+  }
+  .custom textarea {
+    font-size: 16px;
+  }
+  .options label {
+    min-height: 40px;
+  }
+  .actions button {
+    min-height: 40px;
+  }
+}
+
+@media (max-height: 600px) {
+  .panel {
+    margin-bottom: 6px;
+  }
+  .heading {
+    min-height: 32px;
+    padding: 6px 10px;
+  }
+  .body {
+    padding: 0 10px 8px;
+  }
+  .questions {
+    min-height: 58px;
+    max-height: 35dvh;
+  }
+  .questions fieldset {
+    padding: 6px 0;
+  }
+  .actions {
+    margin-top: 5px;
+  }
+  .actions button {
+    min-height: 32px;
+    padding: 5px 9px;
+  }
+}

@@ -3,7 +3,7 @@ import { PassThrough, Writable } from 'node:stream'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { afterEach, expect, it, vi } from 'vitest'
 import { JsonLineClient } from '../../apps/desktop/src/main/json-line-client'
-import { MeetingProcessingQueue } from '../../apps/desktop/src/renderer/meeting-processing-queue'
+import { MeetingProcessingQueue } from '../../apps/desktop/src/renderer/features/meetings/lib/meeting-processing-queue'
 import type { Result, TranscriptionStatus } from '../../apps/desktop/src/shared/contracts'
 import type { SummaryView } from '../../apps/desktop/src/shared/summary-contracts'
 

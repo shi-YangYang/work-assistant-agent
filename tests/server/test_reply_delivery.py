@@ -5,35 +5,35 @@ from app.db.base import now
 from types import SimpleNamespace
 
 import pytest
-from app.agent.reply_review import check_segments, reply_segments
 from app.modules.operations.receipts import current_reply
 from app.modules.team.sources import citations, current_source_tokens
 from app.modules.work.models import ProgressDraft
 from app.tasks.models import Job
 from test_business_actions import ReplyJudge, create, execute, run_reply, runtime
-from test_freeform_actions import verdict
 from test_business_assistant import facts
 from app.agent.tools.team import query_team_business
 
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.parametrize('marker', ['[[file:attachment:1:3]]', '[[business:123456789012345678901234]]'])
-async def test_trailing_citation_stays_with_retained_or_removed_sentence(marker):
-    answer = f'原话：「周五核对范围。」 {marker}\n\n额外内容。'
-    parts = reply_segments(answer)
-    assert len(parts) == 2 and ''.join(parts) == answer
-    assert check_segments(parts, verdict(['information', 'unsupported']), []).text == answer.split('\n\n')[0]
-    assert check_segments(parts, verdict(['unsupported', 'information']), []).text == '额外内容。'
-
-
-async def test_authorized_original_source_is_fact_evidence_but_tool_error_is_not():
-    parts = ['员工原话：等待审批。[[business:original]]']
-    evidence = [{'id': 7, 'tool': 'read_team_source', 'result': json.dumps({'kind': 'business', 'objectType': 'message', 'content': {'text': '等待审批。'}})}]
-    assert check_segments(parts, verdict(['query_fact'], [7]), evidence).text == parts[0]
-    for result in ['{"error":"无权查看"}', '读取失败']:
-        evidence[0]['result'] = result
-        assert check_segments(parts, verdict(['query_fact'], [7]), evidence).text == ''
+@pytest.mark.parametrize('available', [True, False])
+async def test_worker_delivers_public_results_or_honest_limitation_without_review(setup, monkeypatch, available):
+    from fakes import set_delivery
+    news = '城市书展今日开幕，地点在城市公园。'
+    answer = news + '\n\n来源：[城市新闻](https://example.org/news)' if available else '网页暂时无法读取，未能核实今天的新闻。'
+    async def graph(context, *args, **kwargs):
+        result = {'url': 'https://example.org/news', 'text': news} if available else {'state': 'unavailable', 'message': '网页无法读取'}
+        context.reply_evidence = [{'id': 7, 'tool': 'web_fetch', 'result': json.dumps(result)}]
+        await set_delivery(context, answer, task={'goal': '查询城市新闻', 'state': 'completed' if available else 'blocked', 'remaining': [] if available else ['网页读取失败，无法核实当日新闻']})
+        return answer
+    class Judge:
+        async def ainvoke(self, messages):
+            raise AssertionError('Ordinary search must not invoke a reviewer')
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
+    result = await run_reply(setup, '联网搜索城市新闻，结果呢？', answer, Judge())
+    assert result['reply'] == answer
+    assert result['job']['taskOutcome']['state'] == ('completed' if available else 'blocked')
+    assert '请补充具体事项' not in result['reply']
 
 
 async def test_current_read_fallback_does_not_inherit_previous_turn_sources(setup):
@@ -125,3 +125,36 @@ async def test_legacy_receipt_with_newly_available_title_still_refreshes():
     row = SimpleNamespace(reply='生成报告：正在处理。')
     cards = [{'action': 'generate_report', 'label': '生成报告', 'state': 'succeeded', 'title': '2026-09-28 日报'}]
     assert current_reply(row, None, cards, []) == '生成报告《2026-09-28 日报》：已完成。'
+
+
+async def test_required_question_is_preserved_without_repair_or_repeating_saved_action(setup, monkeypatch):
+    from langchain_core.messages import AIMessage
+    from app.agent.tools.work import find_work_items
+    clients = setup[3]
+    await create(clients['employee'], '材料汇总', summary='第一批')
+    await create(clients['employee'], '材料汇总', summary='第二批')
+    question = '请选择材料汇总：\n- 第一批\n- 第二批'
+    original = '前项已处理。\n\n' + question + '\n\n确认后我会修改。'
+    calls = []
+    async def before(context):
+        await execute(context, step=1, action='create_work', changes={'title': '前项'})
+    async def graph(context, *args, **kwargs):
+        result = await find_work_items.coroutine('材料汇总', SimpleNamespace(context=context))
+        context.reply_evidence.append({'id': 8, 'tool': 'find_work_items', 'result': result})
+        from fakes import set_delivery
+        await set_delivery(context, original, business=True, task={'state': 'needs_input', 'remaining': ['选择材料汇总']})
+        return original
+    async def repair(context, answer, reason, *, model=None):
+        calls.append(reason)
+        return question
+    class Judge:
+        async def ainvoke(self, messages):
+            payload = json.loads(messages[-1].content)
+            return AIMessage(content=json.dumps({'issues': [
+                {'kind': 'execution', 'quote': '前项已处理。', 'reason': '执行结果由真实回执说明'},
+                {'kind': 'execution', 'quote': '确认后我会修改。', 'reason': '尚未修改'}]}))
+    monkeypatch.setattr('app.agent.completion.response_repair.repair_response', repair)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
+    result = await run_reply(setup, '创建前项，再修改材料汇总下一步', original, Judge(), before=before)
+    assert len(calls) == 0 and len(result['actions']) == 1
+    assert question in result['reply'] and result['job']['taskOutcome']['state'] == 'partial'

@@ -236,7 +236,7 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: '桌面会议助手',
+    title: 'Noria',
     icon: appIcon,
     backgroundColor: '#f8f9f6',
     autoHideMenuBar: true,

@@ -7,9 +7,16 @@ from sqlalchemy import select, text
 
 
 async def invalidate_deleted(db, company_id):
-    from app.modules.conversations.context_invalidation import invalidate
-    await invalidate(db, company_id=company_id)
-    """Invalidate all dependent owners while the caller holds the company lock."""
+    """Invalidate dependent contexts and owners while holding the company lock."""
+    from app.modules.conversations.models import ConversationContext
+    from app.modules.conversations.context.context_invalidation import invalidate
+    stores = (await db.scalars(select(ConversationContext).where(ConversationContext.company_id == company_id).with_for_update())).all()
+    for store in stores:
+        access = store.payload.get('access', {})
+        if access.get('team'):
+            actor = await db.get(Member, store.owner_id)
+            if not actor or not await valid(db, actor, access):
+                await invalidate(db, conversation_id=store.conversation_id)
     jobs = (await db.scalars(select(Job).where(Job.company_id == company_id, Job.access['team'].as_boolean().is_(True)).with_for_update())).all()
     for job in jobs:
         actor = await db.get(Member, job.owner_id)

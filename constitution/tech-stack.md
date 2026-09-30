@@ -37,6 +37,8 @@
 - 公司配置放 `apps/server/.env.web`；桌面配置放 `apps/desktop/.env.electron`，各有同目录示例。真实配置不入 Git。
 - 应用配置就近维护；根目录保留 workspace、统一检查和公共 TypeScript 配置。
 - 构建输出在各应用的 `out/`；桌面发行包在 `dist/desktop/`，冻结核心在 `dist/core/`。
+- 拥挤目录按功能归组：Web 布局归 `app/layout/`，组件与私有 CSS 就近，跨组件共享 CSS 归 `styles/patterns/`；桌面 renderer 按会议／设置组织，本地核心按录音／转写／说话人／模型／纪要组织。
+- 后端在 `agent/`、`tasks/` 和业务模块内部按职责划分子包，保留应用入口、ORM、公共任务上下文及租约路径；不创建旧路径转发层。完整目录与依赖见[技术架构](../docs/architecture.md)。
 
 ## 工程命令
 
@@ -64,3 +66,12 @@
 - 原始材料、账号数据、密钥和用户模型缓存不入 Git；固定公共说话人权重随包分发，保留许可证。
 - Web 与 Electron 独立维护 CSS，共享[视觉规范](../docs/design/README.md)和品牌图片。
 - 桌面人工验收使用日常用户目录；自动故障测试使用临时数据，不能清理或破坏用户资料。
+
+## 代码执行沙盒
+
+- `apps/sandbox/`：自部署 FastAPI 控制服务与固定 Python 执行镜像，gVisor/runsc 隔离；不在 API/worker 进程执行模型代码。
+- `apps/server/app/modules/executions/`：归属、输入授权、持久回执、租约与成果发布；`integrations/sandbox/` 为私有协议适配。
+- 生成 TXT、MD、JSON、CSV、XLSX、PNG、DOCX、PDF、PPTX，沿用个人成果版本与媒体存储。Python 固定依赖、中文字体、LibreOffice／Poppler 在独立执行镜像中，不加入业务 API 镜像。
+- 可选配置 `PAA_SANDBOX_URL`、`PAA_SANDBOX_TOKEN`，部署使用 `sandbox` profile；默认关闭，未启用不影响既有聊天与业务工具。
+- 本地执行一次 `npm run sandbox:setup`，配置写入 `apps/server/.env.web`。`dev:web` 管理本次启动的独立 Docker/gVisor 沙盒；停止保留镜像与缓存，不改宿主 Docker 配置。
+- `tests/sandbox/test_protocol.py` 验证控制协议；`tests/sandbox/real_execution.py` 仅显式启用时对本地隔离执行服务运行真实破坏性测试；真实模型评测入口 `scripts/benchmarks/sandbox-evaluation.py`。

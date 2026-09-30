@@ -138,6 +138,7 @@ async def test_new_employee_reuses_identity_concurrently_and_keeps_local_passwor
         results = await asyncio.gather(complete(first, states[0]), complete(second, states[1]))
         assert all(result.headers['location'].endswith('dingtalk=logged-in') for result in results)
         assert all(result.headers['referrer-policy'] == 'no-referrer' for result in results)
+        assert all('Max-Age=604800' in result.headers.get('set-cookie', '') for result in results)
         a, b = await logged_in(first), await logged_in(second)
         assert a['member']['id'] == b['member']['id']
         assert a['member']['role'] == 'employee' and 'mustChangePassword' not in a['member'] and not a['member']['hasPassword']
@@ -150,6 +151,9 @@ async def test_new_employee_reuses_identity_concurrently_and_keeps_local_passwor
             assert await db.scalar(select(ReportEligibility.id).where(ReportEligibility.owner_id == actor.id))
             grant = await db.scalar(select(DingTalkAuthorization).where(DingTalkAuthorization.state_hash == digest(states[0])))
             assert grant.state_hash != states[0] and grant.browser_hash != first.cookies.get(BROWSER_COOKIE, '')
+            assert timedelta(minutes=4) < grant.expires_at - grant.created_at <= timedelta(minutes=5)
+            session = await db.scalar(select(Session).where(Session.token_hash == digest(first.cookies.get(COOKIE))))
+            assert session.expires_at - session.created_at == timedelta(days=7)
         assert (await first.post('/api/v1/auth/dingtalk/account/unbind', json={'useDingTalk': True})).status_code == 409
         assert (await clients['admin'].patch('/api/v1/members/' + a['member']['id'], json={'active': False})).status_code == 200
         state = await begin(second)
@@ -246,8 +250,17 @@ async def test_password_proof_same_identity_one_time_and_session_revocation(setu
         assert 'reason=denied' in (await complete(client, wrong, 'someone-else')).headers['location']
         assert (await client.post('/api/v1/auth/password', json={'newPassword': 'new-controlled-password', 'useDingTalk': True})).status_code == 400
         state = await begin(client, '/api/v1/auth/dingtalk/account/reauth')
-        assert 'dingtalk=verified' in (await complete(client, state)).headers['location']
+        verified = await complete(client, state)
+        assert 'dingtalk=verified' in verified.headers['location']
+        assert 'Max-Age=300' in verified.headers.get('set-cookie', '')
         proof_cookie = client.cookies.get(PROOF_COOKIE)
+        async with sessions() as db:
+            before = await db.scalar(select(DingTalkAuthorization).where(DingTalkAuthorization.state_hash == digest(state)))
+            proof_expires = before.proof_expires_at
+            assert timedelta(minutes=4) < proof_expires - before.consumed_at <= timedelta(minutes=5, seconds=1)
+        await logged_in(client)
+        async with sessions() as db:
+            assert (await db.get(DingTalkAuthorization, before.id)).proof_expires_at == proof_expires
         assert (await client.get('/api/v1/auth/dingtalk/account')).json()['passwordVerified']
         assert (await client.post('/api/v1/auth/password', json={'newPassword': 'new-controlled-password', 'useDingTalk': True})).status_code == 200
         assert (await other.get('/api/v1/auth/me')).status_code == 401

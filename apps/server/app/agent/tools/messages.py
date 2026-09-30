@@ -34,7 +34,7 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext],
         current_job.access = business_merge_access(current_job.access or business_scope(actor), message.access)
         drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.owner_id == actor.id, ProgressDraft.company_id == actor.company_id).order_by(ProgressDraft.created_at.desc()).limit(20))).all()
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)).order_by(Attachment.created_at, Attachment.id))).all()
-        from app.agent.conversation_context import message_reference
+        from app.agent.context.conversation_context import message_reference
         reference = await message_reference(db, actor, message)
         content, page = text_page({'text': message.text, 'transcript': message.transcript, 'userRequest': reference['userText'], 'reply': reference['assistantReference']}, start)
         return clip({'id': message.id, 'attachments': attachment_inventory(attachments, message.transcript, message.transcript_revision), 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], **content, **page, 'replyIsHistorical': True, 'currentActions': reference['currentActions'], 'documents': [{'id': item.id, 'name': item.name, 'status': item.extraction_status} for item in attachments if item.kind == 'document']})

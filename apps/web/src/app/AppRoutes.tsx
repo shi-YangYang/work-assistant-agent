@@ -1,52 +1,10 @@
 import styles from './AppRoutes.module.css'
 import type { Identity } from '@paa/api-contracts'
-import { Component, Suspense, lazy, useState, type ComponentType, type ReactNode } from 'react'
+import { routePage } from './route-page'
 import { Navigate, Route, Routes } from 'react-router'
 
-class RouteFailure extends Component<
-  { children: ReactNode; retry: () => void },
-  { failed: boolean }
-> {
-  state = { failed: false }
-  static getDerivedStateFromError() {
-    return { failed: true }
-  }
-  render() {
-    return this.state.failed ? (
-      <div className={styles['route-state']} role="alert">
-        <p>页面未能加载，请检查网络后重试。</p>
-        <button onClick={this.props.retry}>重新加载页面</button>
-      </div>
-    ) : (
-      this.props.children
-    )
-  }
-}
-function routePage<Props extends object>(load: () => Promise<{ default: ComponentType<Props> }>) {
-  return function DeferredPage(props: Props) {
-    const [attempt, setAttempt] = useState(() => ({ id: 0, Page: lazy(load) }))
-    const Page = attempt.Page
-    return (
-      <RouteFailure
-        key={attempt.id}
-        retry={() => setAttempt((value) => ({ id: value.id + 1, Page: lazy(load) }))}
-      >
-        <Suspense
-          fallback={
-            <div className={styles['route-state']} role="status">
-              正在打开页面…
-            </div>
-          }
-        >
-          <Page {...props} />
-        </Suspense>
-      </RouteFailure>
-    )
-  }
-}
-
 const LoginMethods = routePage(async () => ({
-  default: (await import('@web/features/auth/components/LoginMethods')).LoginMethods,
+  default: (await import('@web/features/auth/components/configuration/LoginMethods')).LoginMethods,
 }))
 const SupportPage = routePage(async () => ({
   default: (await import('@web/features/feedback/components/SupportPage')).SupportPage,
@@ -58,16 +16,19 @@ const ModelServices = routePage(async () => ({
   default: (await import('@web/features/model-services/components/ModelServices')).ModelServices,
 }))
 const ModelUsagePage = routePage(async () => ({
-  default: (await import('@web/features/model-services/components/ModelUsagePage')).ModelUsagePage,
+  default: (await import('@web/features/model-services/components/usage/ModelUsagePage'))
+    .ModelUsagePage,
 }))
 const AccountPage = routePage(async () => ({
-  default: (await import('@web/features/settings/components/AccountPage')).DingTalkAccountPage,
+  default: (await import('@web/features/settings/components/account/AccountPage'))
+    .DingTalkAccountPage,
 }))
 const AppearancePage = routePage(async () => ({
-  default: (await import('@web/features/settings/components/AppearancePage')).AppearancePage,
+  default: (await import('@web/features/settings/components/appearance/AppearancePage'))
+    .AppearancePage,
 }))
 const RulesPage = routePage(async () => ({
-  default: (await import('@web/features/settings/components/RulesPage')).RulesPage,
+  default: (await import('@web/features/settings/components/rules/RulesPage')).RulesPage,
 }))
 const VoiceprintsPage = routePage(async () => ({
   default: (await import('@web/features/voiceprints/components/VoiceprintsPage')).VoiceprintsPage,

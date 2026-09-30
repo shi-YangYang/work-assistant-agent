@@ -25,7 +25,7 @@ def reply_review_config(config, *, reasoning=False):
     toggle = None
     # https://help.aliyun.com/zh/model-studio/deep-thinking
     if reasoning and aliyun and model in ('deepseek-v4.1-flash', 'deepseek-v4-flash-0731', 'deepseek-v4-pro-0813'):
-        # Planning and report fact comparisons retain bounded reasoning.
+        # Planning and complex authorization retain bounded reasoning.
         # Simple authorization/presentation checks use the faster mode below.
         toggle = {'enable_thinking': True, 'reasoning_effort': 'low'}
     elif reasoning:
@@ -51,3 +51,10 @@ def business_model_config(config, choice):
         return config
     candidate = reply_review_config(config, reasoning=True)
     return candidate if candidate.get('parameters', {}).get('reasoning_effort') == 'low' else config
+
+
+def report_model_config(config, choice):
+    """Reserve bounded report output for its JSON unless reasoning was selected."""
+    if choice.get('presetId') or any(key in config.get('parameters', {}) for key in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')):
+        return config
+    return reply_review_config(config)

@@ -1,0 +1,61 @@
+.timeline article {
+  position: relative;
+  border-left: 1px solid var(--control);
+  padding: 0 0 24px 20px;
+}
+.timeline p {
+  margin: 8px 0;
+}
+.timeline a {
+  font-size: 12px;
+  display: block;
+}
+
+.timeline article::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--secondary);
+  border: 2px solid var(--stage);
+}
+
+.empty-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 12px 0 24px;
+  color: var(--muted);
+}
+.empty-content p {
+  margin: 0;
+}
+
+.changes {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  font-size: 14px;
+}
+.changes > div {
+  display: grid;
+  grid-template-columns: 5em minmax(0, 1fr);
+  gap: 12px;
+}
+.changes dt,
+.before {
+  color: var(--muted);
+}
+.changes dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.arrow {
+  margin: 0 8px;
+  color: var(--muted);
+}

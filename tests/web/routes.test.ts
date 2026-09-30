@@ -23,13 +23,13 @@ vi.mock('@web/features/model-services/components/ModelServices', () => ({
 vi.mock('@web/features/voiceprints/components/VoiceprintsPage', () => ({
   VoiceprintsPage: () => 'voiceprints-page',
 }))
-vi.mock('@web/features/settings/components/AccountPage', () => ({
+vi.mock('@web/features/settings/components/account/AccountPage', () => ({
   DingTalkAccountPage: () => 'account-page',
 }))
-vi.mock('@web/features/auth/components/LoginMethods', () => ({
+vi.mock('@web/features/auth/components/configuration/LoginMethods', () => ({
   LoginMethods: () => 'login-methods-page',
 }))
-vi.mock('@web/features/model-services/components/ModelUsagePage', () => ({
+vi.mock('@web/features/model-services/components/usage/ModelUsagePage', () => ({
   ModelUsagePage: () => 'model-usage-page',
 }))
 

@@ -1,7 +1,7 @@
 import type { DateRange } from '@paa/api-contracts'
 import { isValidElement, type InputHTMLAttributes, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { PeriodFilter } from '../../apps/web/src/components/PeriodFilter'
+import { PeriodFilter } from '../../apps/web/src/components/forms/PeriodFilter'
 import { customRangeError } from '../../apps/web/src/utils/date-range'
 
 const hooks = vi.hoisted(() => ({ slots: [] as unknown[], cursor: 0, changed: false }))

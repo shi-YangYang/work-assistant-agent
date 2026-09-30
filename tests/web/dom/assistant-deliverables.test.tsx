@@ -2,9 +2,9 @@
 import type { Deliverable, DeliverableSummary } from '@paa/api-contracts'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { DeliverableEntry } from '../../../apps/web/src/features/assistant/components/Deliverable'
+import { DeliverableEntry } from '../../../apps/web/src/features/assistant/components/deliverables/Deliverable'
 import { messageSubmission } from '../../../apps/web/src/features/assistant/utils/files'
-import { Markdown } from '../../../apps/web/src/components/Markdown'
+import { Markdown } from '../../../apps/web/src/components/content/Markdown'
 import { dialogs } from './helpers'
 
 const summary: DeliverableSummary = {

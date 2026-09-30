@@ -1,5 +1,6 @@
 import type { Identity, LoginProviders } from '@paa/api-contracts'
-import { api, write } from '@web/api/client'
+import { QueryResource, sharedResource } from '@web/lib/query-resource'
+import { api, write, epoch } from '@web/api/client'
 
 export function saveDingTalkConfiguration(body: {
   corpId: string
@@ -39,7 +40,10 @@ export function login(body: {
 }
 
 export function readIdentity(options: RequestInit) {
-  return api<Identity>('/auth/me', options)
+  return sharedResource(
+    `identity:${epoch}`,
+    (evict) => new QueryResource((signal) => api<Identity>('/auth/me', { signal }), evict),
+  ).get(options.signal ?? undefined)
 }
 
 const dingTalkPaths = {

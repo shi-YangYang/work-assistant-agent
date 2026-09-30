@@ -1,6 +1,7 @@
 import type {
   Attachment,
   DeliverableReference,
+  ExecutionMode,
   BusinessAction,
   Conversation,
   ContextUsage,
@@ -8,7 +9,10 @@ import type {
   Page,
   PersonaId,
   WorkMessage,
+  Work,
+  WorkReference,
 } from '@paa/api-contracts'
+import { assistantQuery } from './queries'
 import { api, write } from '@web/api/client'
 
 export function resolveBusinessAction(
@@ -16,7 +20,9 @@ export function resolveBusinessAction(
   choice: 'confirm' | 'cancel',
   body: { expectedRevision: number },
 ) {
-  return write<BusinessAction>(`/business-actions/${current.id}/${choice}`, body)
+  return write<
+    BusinessAction & { continuation?: { conversationId: string; messageId: string; jobId: string } }
+  >(`/business-actions/${current.id}/${choice}`, body)
 }
 
 export function readAttachmentBytes(url: string | undefined, options: RequestInit) {
@@ -69,12 +75,15 @@ export function sendMessage(
     conversationId?: string
     newConversation?: boolean
     personaId?: PersonaId
+    executionMode?: ExecutionMode
+    fullAccessConfirmed?: boolean
     text: string
     attachmentIds: string[]
     voiceCommandAttachmentId?: string
     voiceCommandAttachmentIds?: string[]
     replyTo: string | null
     deliverableReference?: DeliverableReference
+    workReference?: WorkReference
   },
   key: string,
 ) {
@@ -135,8 +144,10 @@ export function messagePath(id: string | undefined) {
   return `/messages/${id}`
 }
 
-export function readConversationForBreadcrumb(id: string, options: RequestInit) {
-  return api<Conversation>(`/conversations/${id}`, options)
+export function readConversationForBreadcrumb(id: string, options: RequestInit, owner?: string) {
+  return assistantQuery<Conversation>(`/conversations/${id}`, owner)!.get(
+    options.signal ?? undefined,
+  )
 }
 
 export function readMessageForBreadcrumb(id: string, options: RequestInit) {
@@ -152,4 +163,12 @@ export function readConversationContext(conversationId: string, signal?: AbortSi
 
 export function readActiveAssistantJob(conversationId: string, signal?: AbortSignal) {
   return api<{ job: Job | null }>(`/conversations/${conversationId}/active-job`, { signal })
+}
+
+export function referenceWorksPath(query: string) {
+  return `/work-items?q=${encodeURIComponent(query)}`
+}
+
+export function readReferenceWork(id: string, signal: AbortSignal) {
+  return api<Work>(`/work-items/${encodeURIComponent(id)}`, { signal })
 }

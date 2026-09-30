@@ -1,11 +1,13 @@
 import asyncio
 import io
+import json
 import pytest
 from PIL import Image
 from datetime import timedelta
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.checkpoints import GuardedSaver
-from app.agent.history import conversation_history
+from langchain_core.messages import HumanMessage
+from app.agent.context.checkpoints import GuardedSaver
+from app.agent.context.history import conversation_history
 from app.agent.tools.reports import draft_report
 from app.db.base import now
 from app.modules.messages.models import Message
@@ -124,7 +126,16 @@ async def test_conversation_crud_reply_scope_history_and_empty_delete(setup):
         job.state, job.fence, job.lease_until = 'running', 1, now() + timedelta(seconds=90)
     context = RunContext(users['employee'].id, users['employee'].company_id, job.id, job.fence, sessions, settings)
     history = await conversation_history(context, job, '新消息')
-    assert not history
+    # A new conversation has its own task projection, but no other chat's history.
+    assert len(history) == 1 and isinstance(history[0], HumanMessage)
+    prefix = '服务端会话任务：'
+    assert history[0].content.startswith(prefix)
+    task = json.loads(history[0].content.removeprefix(prefix))
+    assert task['taskId'] == current['messageId']
+    assert task['activeDirectives'] == task['historicalUserSources'] == task['interactionAnswers'] == []
+    assert task['previousTask'] == {}
+    assert '甲会话的私有闲聊' not in history[0].content
+    assert old['messageId'] not in history[0].content and first['id'] not in history[0].content
     assert [m['id'] for m in (await client.get('/api/v1/messages?conversationId=' + first['id'])).json()['items']] == [old['messageId']]
 
 

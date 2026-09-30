@@ -5,6 +5,7 @@ from .db import registry
 from .db.session import database
 from .http.errors import http_error, model_error, validation_error
 from .http.middleware import BodyLimit, Boundaries
+from .http.session_renewal import SessionRenewal
 from .http.routers import register_routes
 from .integrations.dingtalk import DingTalkProvider
 from .integrations.models.transport import ProviderError
@@ -30,6 +31,7 @@ def create_app(settings=None):
     app.state.settings = settings
     app.state.dingtalk_provider = DingTalkProvider()
     app.add_middleware(BodyLimit)
+    app.add_middleware(SessionRenewal)
     app.add_middleware(Boundaries)
     logging.getLogger('uvicorn.access').disabled = True
     app.add_exception_handler(HTTPException, http_error)

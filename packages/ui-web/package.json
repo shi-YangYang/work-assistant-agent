@@ -4,6 +4,7 @@
   "private": true,
   "exports": {
     "./app-icon.png": "./brand/desktop/app-icon.png",
-    "./logo.svg": "./brand/logo.svg"
+    "./logo.png": "./brand/logo.png",
+    "./mark.png": "./brand/mark.png"
   }
 }

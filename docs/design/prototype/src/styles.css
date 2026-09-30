@@ -210,10 +210,8 @@ button {
   width: 29px;
   height: 29px;
   object-fit: contain;
-  filter: grayscale(1) brightness(0.45);
-}
-[data-theme='dark'] .brand img {
-  filter: grayscale(1) brightness(2);
+  border-radius: 50%;
+  background: #fff;
 }
 .brand > span {
   font-weight: 650;

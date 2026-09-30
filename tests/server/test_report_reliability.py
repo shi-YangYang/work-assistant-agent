@@ -6,20 +6,20 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from langchain_core.messages import AIMessage
-from app.agent.model import reserve_call
+from app.agent.runtime.model import reserve_call
 from app.db.base import now
 from app.modules.members.models import Company, Member
 from app.modules.model_services.models import ModelUsage
 from app.modules.reports.models import Report, ReportNotification, ReportObligation, ReportSchedule
-from app.modules.reports.schedule import eligibility_changed, save_schedule
+from app.modules.reports.scheduling.schedule import eligibility_changed, save_schedule
 from app.modules.reports.service import ensure_report
 from app.modules.work.models import WorkItem, WorkRevision
 from app.tasks.context import RunContext
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
-from app.tasks.runner import run_slots
-from app.tasks.scheduling import schedule_company
+from app.tasks.runtime.queue import claim
+from app.tasks.runtime.runner import run_slots
+from app.tasks.maintenance.scheduling import schedule_company
 from sqlalchemy import func, select
 from test_company import keyed
 from uuid import uuid4
@@ -127,6 +127,65 @@ async def test_report_fact_failure_keeps_original_and_never_regenerates_implicit
     assert checked['report']['completed'] == '整项方案已经完成'
 
 
+async def test_report_review_policy_change_rechecks_old_verdict_and_reuses_current_result(setup):
+    from app.agent.reports import ReportVerdict, verify_report
+    from app.core.digests import digest
+    from app.tasks.nodes import node_execution
+    from test_task_retry import enabled
+    context, _ = await enabled(setup)
+    payload = {'confirmed': [{'content': {'summary': '负责岗位招聘全流程，包括筛选、面试与入职安排', 'status': 'in_progress'}}]}
+    content = {'completed': '', 'ongoing': '负责岗位招聘全流程，包括筛选、面试与入职安排', 'blockers': '', 'next': ''}
+    async def legacy_review():
+        return ReportVerdict(valid=False, reason='误把职责当成整体完成')
+    await node_execution.execute_node(context, identity=digest({'payload': payload, 'content': content}),
+        kind='review', label='核对报告内容中', operation=legacy_review,
+        encode=lambda verdict: verdict.model_dump(), decode=ReportVerdict.model_validate,
+        outcome=lambda verdict: ('awaiting_input', '内容与来源不一致'))
+    model = ReportModel()
+    await verify_report(context, payload, content, model)
+    await verify_report(context, payload, content, model)
+    assert model.calls == 0 and len(model.reviews) == 1
+    assert json.loads(model.reviews[0][-1].content)['report'] == content
+    async with context.sessions() as db:
+        live = await db.get(Job, context.job_id)
+        reviews = [row for row in live.result['nodeExecution']['nodes'] if row['kind'] == 'review']
+        assert len(reviews) == 2
+        assert reviews[0]['output']['valid'] is False and reviews[1]['output']['valid'] is True
+
+
+async def test_rejected_draft_rechecks_new_policy_without_resetting_correction_budget(setup, monkeypatch):
+    from app.agent import reports
+    settings, sessions, users, clients = setup
+    report, job, _ = await prepared(setup)
+    async with sessions.begin() as db:
+        live = await db.get(Job, job.id)
+        live.result = {**live.result, 'instructions': '按已有工作整理报告，不提交'}
+    rejected = ReportModel(verdict='{"valid":false,"reason":"来源阶段不符"}')
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=rejected)
+    assert rejected.calls == 2 and len(rejected.reviews) == 2
+    async with sessions() as db:
+        live = await db.get(Job, job.id)
+        assert live.result['reportDraft']['stage'] == 'rejected' and live.result['reportCorrectionAttempted']
+        assert live.result['reportDraft']['reviewVersion'] == reports.REVIEW_VERSION
+        assert not live.result.get('reportSaved')
+        rejected_content = live.result['reportDraft']['content']
+    unchanged = ReportModel()
+    assert (await clients['employee'].post(f'/api/v1/jobs/{job.id}/retry', json={})).status_code == 200
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=unchanged)
+    assert unchanged.calls == 0 and not unchanged.reviews
+    monkeypatch.setattr(reports, 'REVIEW_VERSION', reports.REVIEW_VERSION + 1)
+    current = ReportModel()
+    assert (await clients['employee'].post(f'/api/v1/jobs/{job.id}/retry', json={})).status_code == 200
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=current)
+    assert current.calls == 0 and len(current.reviews) == 1
+    assert json.loads(current.reviews[0][-1].content)['report'] == rejected_content
+    async with sessions() as db:
+        live = await db.get(Job, job.id)
+        saved = await db.get(Report, report.id)
+        assert live.state == 'succeeded' and live.result['reportSaved'] and live.result['reportCorrectionAttempted']
+        assert saved.content == rejected_content and not saved.published_revision
+
+
 @pytest.mark.parametrize('change', ['delete_report', 'delete_work', 'inactive', 'role'])
 async def test_report_late_response_cannot_restore_revoked_material(setup, change):
     settings, sessions, users, c = setup
@@ -152,7 +211,7 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
     settings, sessions, users, _ = setup
     company = users['employee'].company_id
     from functools import partial
-    monkeypatch.setattr('app.tasks.runner.claim',partial(claim,company_id=company))
+    monkeypatch.setattr('app.tasks.runtime.runner.claim',partial(claim,company_id=company))
     owners = []
     async with sessions.begin() as db:
         for index in range(30):
@@ -226,7 +285,7 @@ async def test_todos_no_work_reminders_read_submission_permissions_and_delete(se
     settings,sessions,users,c=setup
     instant=datetime(2027,1,4,17,0,tzinfo=timezone.utc)
     await arrange(setup,instant)
-    monkeypatch.setattr('app.modules.reports.schedule.now',lambda:instant)
+    monkeypatch.setattr('app.modules.reports.scheduling.schedule.now',lambda:instant)
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     data=(await c['employee'].get('/api/v1/report-obligations')).json()
     assert len(data['items'])==1 and data['items'][0]['job']['phase']=='empty'
@@ -317,7 +376,7 @@ async def test_unsent_reservation_requeues_but_old_fence_cannot_publish(setup):
         with pytest.raises(LostLease):await lease(db,context)
 
 
-@pytest.mark.parametrize('reasoning_check', [False, True])
+@pytest.mark.parametrize('reasoning_check', [False, True, 'explicit'])
 async def test_structured_report_actual_request_usage_and_report_probe(setup,monkeypatch,reasoning_check):
     import httpx
     from test_model_services import create,payload,route
@@ -326,8 +385,12 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
     if reasoning_check:
         config['baseUrl']='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
         config['models'][0]['model']='deepseek-v4.1-flash'
+    if reasoning_check == 'explicit':
+        config['models'][0]['presets'] = [{'id': 'chosen', 'name': '显式推理', 'mode': 'advanced', 'parameters': {'enable_thinking': True, 'reasoning_effort': 'high'}}]
     saved=await create(c['admin'], config)
     routing=route(saved);routing['assistant']['streaming']=False
+    if reasoning_check == 'explicit':
+        routing['assistant']['presetId'] = 'chosen'
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     report,job,_=await prepared(setup)
     requests=[]
@@ -335,11 +398,18 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
         data=json.loads(request.content);requests.append(data)
         assert not data.get('tools') and not data.get('tool_choice')
         content='测试成功' if '只回复：测试成功' in str(data['messages']) else json.dumps(CONTENT,ensure_ascii=False)
+        if reasoning_check and len(requests) <= 2:
+            explicit_generation = reasoning_check == 'explicit' and len(requests) == 1
+            assert data['enable_thinking'] is explicit_generation
+            if explicit_generation:
+                assert data['reasoning_effort'] == 'high'
+            else:
+                assert 'reasoning_effort' not in data
         if 'report_fact_review' in str(data['messages']):
             content='{"valid":true}'
             assert data['max_tokens'] == 2000
             if reasoning_check:
-                assert data['enable_thinking'] is True and data['reasoning_effort']=='low'
+                assert data['enable_thinking'] is False and 'reasoning_effort' not in data
             else:
                 assert 'enable_thinking' not in data
         return httpx.Response(200,json={'choices':[{'index':0,'message':{'role':'assistant','content':content},'finish_reason':'stop'}],'usage':{'prompt_tokens':123,'completion_tokens':45,'total_tokens':168}})
@@ -357,7 +427,7 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
 
 
 async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(setup):
-    from app.modules.reports.schedule import draft_ready
+    from app.modules.reports.scheduling.schedule import draft_ready
     settings,sessions,users,c=setup
     instant=datetime(2027,3,1,17,tzinfo=timezone.utc)
     await arrange(setup,instant)
@@ -428,3 +498,19 @@ async def test_manual_report_retry_uses_latest_binding_without_overwriting_edits
     async with sessions() as db:
         saved = await db.get(Report, report.id)
         assert saved.content['completed'] == '人工编辑' and saved.candidate['content'] == CONTENT
+
+
+@pytest.mark.parametrize('host,model,expected', [
+    ('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'deepseek-v4.1-flash', {'enable_thinking': False}),
+    ('https://api.deepseek.com', 'deepseek-chat', {'thinking': {'type': 'disabled'}}),
+    ('https://unknown.example/v1', 'deepseek-v4.1-flash', {}),
+])
+async def test_report_default_mode_preserves_unknown_protocol_and_explicit_parameters(host, model, expected):
+    from app.modules.model_services.parameters import report_model_config
+    config = {'baseUrl': host, 'model': model, 'parameters': {'temperature': .2}}
+    assert report_model_config(config, {})['parameters'] == {'temperature': .2, **expected}
+    assert config['parameters'] == {'temperature': .2}
+    assert report_model_config(config, {'presetId': 'selected'}) is config
+    for parameters in ({'enable_thinking': True}, {'thinking': {'type': 'enabled'}}, {'reasoning_effort': 'high'}, {'thinking_budget': 3000}):
+        explicit = {**config, 'parameters': parameters}
+        assert report_model_config(explicit, {}) is explicit

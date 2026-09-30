@@ -15,7 +15,7 @@ const modelCheck = spawnSync(
   [
     ...args,
     '-c',
-    "import sys; sys.path.insert(0, 'apps/desktop/core/src'); from paa_core.speaker_worker import bundled_model_path, verified; assert verified(bundled_model_path()), 'Bundled Community-1 weights are missing or modified'",
+    "import sys; sys.path.insert(0, 'apps/desktop/core/src'); from paa_core.speakers.speaker_worker import bundled_model_path, verified; assert verified(bundled_model_path()), 'Bundled Community-1 weights are missing or modified'",
   ],
   { stdio: 'inherit' },
 )

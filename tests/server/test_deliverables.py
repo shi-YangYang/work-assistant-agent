@@ -2,9 +2,9 @@ import json
 from types import SimpleNamespace
 import pytest
 from sqlalchemy import func, select
-from app.agent.operations import execute
+from app.agent.actions.operations import execute
 from app.agent.tools.deliverables import read_deliverable, save_deliverable
-from app.agent.deliverable_context import deliverable_context
+from app.agent.context.deliverable_context import deliverable_context
 from app.modules.deliverables.models import Deliverable, DeliverableRevision, DeliverableLink
 from app.modules.messages.models import Message
 from app.modules.work.models import WorkItem, WorkRevision
@@ -152,7 +152,7 @@ async def test_old_plan_survives_history_window_and_message_reference_is_idempot
 async def test_private_revision_delivery_and_existing_link_do_not_claim_business_failure(setup):
     from app.modules.deliverables.serializers import delivery_summary
     from app.modules.operations.receipts import receipt_reply
-    from app.agent.reply_review import ReviewedReply
+    from app.agent.completion.reply_review import ReviewedReply
     _, sessions, users, _ = setup
     context, sent = await runtime(setup, '制定计划')
     first = await save_plan(context, title='实施计划', body='范围', items=[{'title': '联调', 'body': '原安排'}])

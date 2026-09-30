@@ -1,12 +1,12 @@
 import utilitiesStyles from '../../../styles/utilities.module.css'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
-import noticeStyles from '../../../components/Notice.module.css'
+import noticeStyles from '../../../styles/patterns/Notice.module.css'
 import type { Job, WorkMessage } from '@paa/api-contracts'
 import { stageNames } from '@web/api/job-feedback'
-import { BusyButton } from '@web/components/BusyButton'
-import { ErrorNotice } from '@web/components/ErrorNotice'
-import { Modal } from '@web/components/Modal'
+import { BusyButton } from '@web/components/actions/BusyButton'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { Modal } from '@web/components/overlays/Modal'
 import { retryJob } from '@web/features/jobs/api/requests'
 import { TaskProgress } from './TaskProgress'
 import { LoaderCircle } from 'lucide-react'
@@ -42,7 +42,12 @@ export function JobNotice(props: JobNoticeProps) {
     setSource({ signature, optimistic: '' })
   return (
     <JobRetryNotice
-      key={source.signature}
+      key={
+        props.showNodes && props.job.kind === 'message'
+          ? `assistant:${props.job.id}`
+          : source.signature
+      }
+      ownerVersion={source.signature}
       {...props}
       expanded={expandedJob === props.job.id}
       onExpandedChange={(expanded) => setExpandedJob(expanded ? props.job.id : null)}
@@ -60,30 +65,36 @@ function JobRetryNotice({
   onRetryStart,
   onRetrySettled,
   onOptimistic,
+  ownerVersion,
   expanded,
   onExpandedChange,
 }: JobNoticeProps & {
   onOptimistic: (job: Job) => void
+  ownerVersion: string
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
   const [local, setLocal] = useState({
+    ownerVersion,
     busy: false,
     retrying: null as Job | null,
     error: '' as Error | string,
     confirmation: null as 'original' | 'current' | null,
   })
+  if (local.ownerVersion !== ownerVersion)
+    setLocal({ ownerVersion, busy: false, retrying: null, error: '', confirmation: null })
   const { retrying, error, confirmation, busy } = local
   const current = useRef<{ request: object | null } | null>(null)
   const update = (next: Partial<typeof local>) => setLocal((previous) => ({ ...previous, ...next }))
   useLayoutEffect(() => {
-    // Only committed renders acquire ownership; abandoned renders cannot invalidate a retry.
+    // Keep progress rows mounted; reset request ownership only for committed job versions.
+    // Abandoned/suspended renders must not invalidate the active request.
     const committed = { request: null }
     current.current = committed
     return () => {
       if (current.current === committed) current.current = null
     }
-  }, [])
+  }, [ownerVersion])
   const job = retrying ?? sourceJob
   const report = job.kind === 'report'
   const assistant = showNodes && job.kind === 'message'
@@ -114,6 +125,7 @@ function JobRetryNotice({
         error: '',
         nodes: [],
         operationFeedback: [],
+        taskOutcome: null,
       }
       // The parent echoes this optimistic snapshot before the retry request completes.
       onOptimistic(optimistic)
@@ -158,6 +170,28 @@ function JobRetryNotice({
         已中断
       </p>
     ) : null
+  if (
+    assistant &&
+    job.taskOutcome &&
+    !['queued', 'running', 'failed', 'awaiting_retry'].includes(job.state)
+  ) {
+    const labels = {
+      processing: '正在处理',
+      completed: '',
+      partial: '部分完成',
+      needs_input: '等待补充信息',
+      needs_confirmation: '等待你的确认',
+      blocked: '暂时无法继续',
+      cancelled: '已中断',
+    }
+    const label = labels[job.taskOutcome.state]
+    return label ? (
+      <p className={utilitiesStyles['muted']} role="status">
+        {label}
+        {job.taskOutcome.reason ? `：${job.taskOutcome.reason}` : ''}
+      </p>
+    ) : null
+  }
   if (job.state === 'succeeded') return null
   if (job.state === 'awaiting_input')
     return (

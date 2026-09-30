@@ -10,6 +10,12 @@ class BusinessAction(Owned, Base):
     __tablename__ = 'company_business_action'
     message_id: Mapped[str] = mapped_column(String(36), index=True)
     conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    execution_mode: Mapped[str] = mapped_column(String(8), default='auto', server_default='auto')
+    mode_revision: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
+    approval_reason: Mapped[str] = mapped_column(String(120), default='', server_default='')
+    continuation: Mapped[dict] = mapped_column(JSONB, default=dict, server_default='{}')
+    task_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    task_item_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     step: Mapped[int] = mapped_column(Integer)
     action: Mapped[str] = mapped_column(String(32))
     digest: Mapped[str] = mapped_column(String(64))
@@ -20,4 +26,4 @@ class BusinessAction(Owned, Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     result: Mapped[dict] = mapped_column(JSONB, default=dict)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    __table_args__ = (UniqueConstraint('message_id', 'step'), UniqueConstraint('message_id', 'intent_key'))
+    __table_args__ = (UniqueConstraint('message_id', 'step'), UniqueConstraint('message_id', 'intent_key'), UniqueConstraint('task_id', 'task_item_key', name='uq_business_action_task_item'))

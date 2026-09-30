@@ -1,11 +1,11 @@
-import authLayoutStyles from '../components/AuthLayout.module.css'
+import authLayoutStyles from '../styles/patterns/AuthLayout.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { isCancelled, setCsrf } from '@web/api/client'
-import { Shell } from '@web/app/Shell'
+import { Shell } from '@web/app/layout/Shell'
 import { composerDraftLifecycle } from '@web/features/assistant/lib/composer-drafts'
 import { readIdentity } from '@web/features/auth/api/requests'
-import { DesktopConnect } from '@web/features/auth/components/DesktopConnect'
-import { Login } from '@web/features/auth/components/Login'
+import { DesktopConnect } from '@web/features/auth/components/desktop-connect/DesktopConnect'
+import { Login } from '@web/features/auth/components/login/Login'
 import { useDesktopReturn } from '@web/features/auth/hooks/useDesktopReturn'
 import { identityScope, SessionDrafts } from '@web/lib/session-drafts'
 import { useEffect, useRef, useState } from 'react'
@@ -25,7 +25,7 @@ export function App() {
     void readIdentity({ signal: controller.signal })
       .then((value) => {
         if (controller.signal.aborted) return
-        setCsrf(value.csrf)
+        setCsrf(value.csrf, identityScope(value))
         vault.resume(value)
         verified.current = identityScope(value)
         setIdentity(value)
@@ -71,7 +71,7 @@ export function App() {
         initialError={loadError}
         onLogin={async (value) => {
           const changedAccount = verified.current && verified.current !== identityScope(value)
-          setCsrf(value.csrf)
+          setCsrf(value.csrf, identityScope(value))
           vault.resume(value)
           if (changedAccount && location.pathname !== '/desktop/connect')
             await navigate('/', { replace: true })

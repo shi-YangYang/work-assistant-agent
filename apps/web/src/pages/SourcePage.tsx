@@ -1,8 +1,8 @@
 import layoutStyles from '../styles/layout.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
-import { ErrorNotice } from '@web/components/ErrorNotice'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { messagePath } from '@web/features/assistant/api/requests'
-import { MessageCard } from '@web/features/assistant/components/MessageCard'
+import { MessageCard } from '@web/features/assistant/components/messages/MessageCard'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { detailReturn } from '@web/utils/navigation'
@@ -11,7 +11,7 @@ import { useLocation, useParams } from 'react-router'
 export function SourcePage() {
   const { id } = useParams()
   const { identity } = useWorkspace()
-  const { data, error, refresh } = useResource<WorkMessage>(messagePath(id), 2000)
+  const { data, error, refresh } = useResource<WorkMessage>(messagePath(id))
   const location = useLocation()
   const context = detailReturn(location.pathname, location.state)
   return (

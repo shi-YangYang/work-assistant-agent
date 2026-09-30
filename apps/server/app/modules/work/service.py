@@ -9,7 +9,7 @@ from app.security.locks import company_lock as business_company_lock
 from app.security.ownership import owned
 
 
-async def save_work(db, actor, patch, *, identifier=None, expected=None, sources=(), origin='manual', links=(), access=None, publication=None):
+async def save_work(db, actor, patch, *, identifier=None, expected=None, sources=(), origin='manual', links=(), access=None, publication=None, revision_origin=None):
     await business_company_lock(db, actor.company_id)
     if identifier:
         work = await owned(db, WorkItem, identifier, actor, lock=True)
@@ -33,16 +33,16 @@ async def save_work(db, actor, patch, *, identifier=None, expected=None, sources
     if access:
         work.access = business_merge_access(work.access or business_scope(actor), access)
     work.business_links = business_merge_links(work.business_links, list(links))
-    if identifier and content == work.content and not links and (not sources or origin == 'assistant'):
+    if identifier and content == work.content and not links and (not sources or origin in ('assistant', 'suggestion')):
         return work
     if identifier:
         work.revision += 1
     work.content, work.title, work.updated_at = content, content['title'], now()
     if publication is None and private_sources:
-        from app.modules.operations.publication import snapshot
+        from app.modules.operations.mutations.publication import snapshot
         publication = snapshot(content, message_ids=private_sources)
     if publication is not None:
         publication = {**publication, 'content': content}
-    db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, content=content, source_ids=public_sources, publication=publication or {}, access=work.access, business_links=work.business_links))
+    db.add(WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=work.revision, origin=revision_origin or origin, content=content, source_ids=public_sources, publication=publication or {}, access=work.access, business_links=work.business_links))
     await db.flush()
     return work

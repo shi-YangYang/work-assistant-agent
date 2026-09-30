@@ -12,13 +12,14 @@ import {
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 process.chdir(resolve(import.meta.dirname, '../..'))
+const { productName } = JSON.parse(readFileSync('apps/desktop/electron-builder.json', 'utf8'))
 const [resourcesArgument] = process.argv
   .slice(2)
   .filter((argument) => !['--licenses-only', '--runtime-only'].includes(argument))
 const resources = resolve(
   resourcesArgument ||
     (process.platform === 'darwin'
-      ? 'dist/desktop/mac-arm64/桌面会议助手.app/Contents/Resources'
+      ? `dist/desktop/mac-arm64/${productName}.app/Contents/Resources`
       : 'dist/desktop/win-unpacked/resources'),
 )
 const executable = join(

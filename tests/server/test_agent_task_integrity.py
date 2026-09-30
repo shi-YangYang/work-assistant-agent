@@ -8,8 +8,8 @@ import pytest
 from langchain_core.messages import AIMessage
 from sqlalchemy import select
 
-from app.agent.operations import execute
-from app.agent.query_fallback import latest_query, work_query_fallback
+from app.agent.actions.operations import execute
+from app.agent.completion.query_fallback import latest_query, work_query_fallback
 from app.agent.tools.actions import query_reports
 from app.agent.tools.work import find_work_items
 from app.db.base import now
@@ -18,9 +18,9 @@ from app.modules.reports.models import Report
 from app.modules.reports.service import ensure_report
 from app.modules.reports.sources import report_fact_basis
 from app.modules.work.models import WorkItem
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from test_business_actions import Judge, create, finish, run_reply, runtime
 from test_report_reliability import CONTENT, ReportModel, prepared
 from agent_eval_cases import cases, failures
@@ -40,12 +40,14 @@ async def test_partial_task_repairs_only_missing_step_and_never_claims_full_succ
         receipts.append(await execute(context, step=1, action='create_work', changes={'title': '任务A'}))
         if options.get('repair_missing_action') and complete:
             await execute(context, step=2, action='create_work', changes={'title': '任务B'})
+        from fakes import set_delivery
+        await set_delivery(context, answer, business=True)
         return answer
     class CompletionJudge:
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            return AIMessage(content=json.dumps({'segments': [{'index': row['index'], 'scope_reason': '受控范围判定', 'scope': 'answer', 'kind': 'execution', 'evidence': []} for row in payload['segments']], 'needs_action': len(payload['currentActions']) < 2}))
-    monkeypatch.setattr('app.tasks.handlers.invoke_harness', graph)
+            return AIMessage(content=json.dumps({'issues': ([{'kind': 'execution', 'quote': payload['answer'], 'reason': '使用实际回执'}] if payload['answer'] else []) + ([{'kind': 'missing_action', 'reason': '尚未创建任务B'}] if len(payload['currentActions']) < 2 else [])}))
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     data = await run_reply(setup, '分别创建任务A和任务B', '', CompletionJudge())
     assert len(calls) == 2 and calls[1] == {'repair_missing_action': True}
     assert receipts[0]['id'] == receipts[1]['id']

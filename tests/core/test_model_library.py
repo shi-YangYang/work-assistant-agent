@@ -11,16 +11,16 @@ from functools import partial
 import multiprocessing
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
-from paa_core.asr_worker import config_for_mode, DEFAULT_CONFIG, ASRWorker
-from paa_core.model_catalog import CATALOG
-from paa_core.model_manager import ModelManager, MODEL_ID, REVISION
+from paa_core.asr.asr_worker import config_for_mode, DEFAULT_CONFIG, ASRWorker
+from paa_core.models.model_catalog import CATALOG
+from paa_core.models.model_manager import ModelManager, MODEL_ID, REVISION
 from paa_core.repository import Repository, DomainError
-from paa_core.recorder import Recorder
-from paa_core.transcription import Transcription
-from paa_core.transcript_store import TranscriptStore
-from paa_core.summary_store import SummaryStore
+from paa_core.audio.recorder import Recorder
+from paa_core.asr.transcription import Transcription
+from paa_core.asr.transcript_store import TranscriptStore
+from paa_core.minutes.summary_store import SummaryStore
 from paa_core.meeting_library import document_lines, search
-from paa_core.audio_store import AudioWriter
+from paa_core.audio.audio_store import AudioWriter
 from test_recording import FakeInput, wait_for
 from test_transcription import InlineWorker, HeldProvider
 from test_summary import settings as summary_config, content
@@ -28,7 +28,7 @@ from test_summary import settings as summary_config, content
 
 class ModelLibraryTests(unittest.TestCase):
     def setUp(self):
-        device = patch('paa_core.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
+        device = patch('paa_core.models.model_manager.hardware', return_value={'cpuName': 'Fixture CPU', 'gpuNames': [], 'gpuName': None, 'gpuAvailable': False, 'gpuBackend': None, 'gpuReason': 'Unavailable'})
         device.start(); self.addCleanup(device.stop)
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
@@ -101,6 +101,33 @@ class ModelLibraryTests(unittest.TestCase):
         next_id = self.audio(); self.service.start(next_id)
         wait_for(lambda: self.service.status(next_id)['state'] == 'completed')
         self.assertEqual(self.service.status(next_id)['published']['language'], 'en')
+
+    def test_status_tolerates_model_directory_and_file_disappearing(self):
+        path = self.manager.path
+        path.mkdir(parents=True)
+        (path / 'stable.bin').write_bytes(b'kept')
+        retired = path.with_name(path.name + '.retired')
+        iterate = Path.iterdir
+
+        def replace_directory(current):
+            if current == path:
+                path.rename(retired)
+            return iterate(current)
+
+        with patch.object(Path, 'iterdir', replace_directory):
+            self.assertEqual(self.manager.status('small')['occupiedBytes'], 0)
+        retired.rename(path)
+        disappearing = path / 'model.bin'
+        disappearing.write_bytes(b'replaced')
+        file_stat = Path.lstat
+
+        def remove_file(current):
+            if current == disappearing:
+                disappearing.unlink()
+            return file_stat(current)
+
+        with patch.object(Path, 'lstat', remove_file):
+            self.assertEqual(self.manager.status('small')['occupiedBytes'], 4)
 
     def test_candidate_failure_cancel_and_late_result_preserve_published_version(self):
         mid = self.audio(); before = self.publish(mid); summary, original = self.summary(mid)
@@ -210,12 +237,12 @@ class ModelLibraryTests(unittest.TestCase):
         with self.assertRaises(DomainError): self.manager.remove('base')
         self.store.cancel_rerun(mid)
         path=self.manager.path_for('base');path.mkdir(parents=True);(path/'model.bin').write_bytes(b'fixture')
-        with patch('paa_core.model_manager.shutil.rmtree',side_effect=PermissionError('held')),self.assertRaises(DomainError) as error: self.manager.remove('base')
+        with patch('paa_core.models.model_manager.shutil.rmtree',side_effect=PermissionError('held')),self.assertRaises(DomainError) as error: self.manager.remove('base')
         self.assertEqual(error.exception.code,'model_remove_failed');self.assertTrue(path.exists())
         self.manager.remove('base');self.assertFalse(path.exists())
 
     def test_model_validation_waits_for_inference_and_cancel_does_not_interrupt_it(self):
-        from paa_core.asr_worker import InferenceToken
+        from paa_core.asr.asr_worker import InferenceToken
         ctx = multiprocessing.get_context('spawn')
         entered, release = ctx.Semaphore(0), ctx.Semaphore(0)
         worker = ASRWorker(partial(HeldProvider, entered=entered, release=release))
@@ -245,7 +272,7 @@ class ModelLibraryTests(unittest.TestCase):
     def test_download_disk_precheck_and_single_preparer_never_use_network(self):
         from collections import namedtuple
         usage = namedtuple('Usage', 'total used free')(100,100,0)
-        with patch('paa_core.model_manager.shutil.disk_usage', return_value=usage), patch('paa_core.model_manager.urllib.request.build_opener') as opener:
+        with patch('paa_core.models.model_manager.shutil.disk_usage', return_value=usage), patch('paa_core.models.model_manager.urllib.request.build_opener') as opener:
             self.manager.download('tiny')
             wait_for(lambda: self.manager.status()['models'][0]['state'] == 'error')
             opener.assert_not_called()

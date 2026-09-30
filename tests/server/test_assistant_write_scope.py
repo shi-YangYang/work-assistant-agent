@@ -7,8 +7,8 @@ from app.agent.tools.work import propose_progress
 from app.agent.tools.team import propose_followup
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
 from app.modules.messages.models import Message
-from app.modules.operations.publication import shared_attachment
-from app.agent.operations import execute
+from app.modules.operations.mutations.publication import shared_attachment
+from app.agent.actions.operations import execute
 from test_business_actions import runtime, finish
 from test_company import keyed
 
@@ -16,10 +16,10 @@ pytestmark = pytest.mark.asyncio
 
 
 class ScopeJudge:
-    def __init__(self, requested): self.requested = requested
+    def __init__(self, requested, preview=False): self.requested, self.preview = requested, preview
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
-        return AIMessage(content=json.dumps({'allowed': self.requested, 'quote': payload['currentUserText'], 'reason': '仅讨论，不保存' if not self.requested else '', 'notRequested': not self.requested}))
+        return AIMessage(content=json.dumps({'allowed': self.requested, 'requireConfirmation': self.preview, 'quote': payload['currentUserText'], 'reason': '仅讨论，不保存' if not self.requested else '', 'notRequested': not self.requested}))
 
 
 @pytest.mark.parametrize('who,tool', [('employee', propose_progress), ('admin', propose_followup)])
@@ -39,7 +39,7 @@ async def test_advice_does_not_silently_save_suggestions(setup, who, tool):
 async def test_explicit_progress_confirmation_publishes_selected_content_only(setup):
     _, sessions, users, c = setup
     context, sent = await runtime(setup, '私人讨论不想公开。请把完成初稿记录为待确认进展')
-    context.intent_model = ScopeJudge(True)
+    context.intent_model = ScopeJudge(True, preview=True)
     result = json.loads(await propose_progress.coroutine('初稿', '完成初稿', 'in_progress', '', '评审', SimpleNamespace(context=context)))
     assert result['status'] == 'pending'
     response = await c['employee'].post('/api/v1/progress-drafts/confirm', json={'items': [{'id': result['draftId'], 'expectedRevision': 1}]}, headers=keyed())
@@ -81,7 +81,7 @@ async def test_selected_material_survives_private_conversation_deletion(setup):
     from app.agent.tools.team import query_team_business, read_team_source
     from app.agent.tools.documents import read_document
     from app.modules.attachments.models import Attachment, DocumentChunk
-    from app.tasks.documents import prepare_document
+    from app.tasks.processing.documents import prepare_document
     _, sessions, users, c = setup
     context, sent = await runtime(setup, '创建需求核对工作，仅附带公开材料')
     files = []

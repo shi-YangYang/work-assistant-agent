@@ -6,10 +6,10 @@ import {
   type ReactNode,
 } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { Modal } from '../../apps/web/src/components/Modal'
-import { ModelPicker } from '../../apps/web/src/features/model-services/components/ModelPicker'
+import { Modal } from '../../apps/web/src/components/overlays/Modal'
+import { ModelPicker } from '../../apps/web/src/features/model-services/components/catalog/ModelPicker'
 import { ModelServices } from '../../apps/web/src/features/model-services/components/ModelServices'
-import { ServiceModelLibrary } from '../../apps/web/src/features/model-services/components/ServiceModelLibrary'
+import { ServiceModelLibrary } from '../../apps/web/src/features/model-services/components/service/ServiceModelLibrary'
 import { newModel } from '../../apps/web/src/features/model-services/utils/service-drafts'
 
 const state = vi.hoisted(() => ({

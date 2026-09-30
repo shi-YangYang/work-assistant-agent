@@ -1,6 +1,6 @@
 # 安装与部署指南
 
-员工使用公司已部署的 Web，只需浏览器和管理员提供的账号。
+员工使用公司已部署的 Noria Web，只需浏览器和管理员提供的账号。
 
 源码运行需要 Node.js 24、npm 11、Python 3.12，先获取代码并执行 `npm ci`。下列命令默认在仓库根目录执行。
 
@@ -44,6 +44,14 @@ npm run dev:web
 ```
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令启动 Web、API、worker；Python 修改后需重启。`Ctrl+C` 停止应用，数据库继续运行；下次启动前用 Compose 确认数据库就绪。
+
+### 本地代码执行与文件生成
+
+Docker 启动后，执行一次 `npm run sandbox:setup`。首次下载并构建镜像，自动向已有 `apps/server/.env.web` 写入本地地址和随机沙盒密钥，保留其他配置。升级代码后先执行 `npm run db:company`。
+
+之后 `npm run dev:web` 会一起启动沙盒，`Ctrl+C` 停止本次启动的沙盒服务，保留镜像和缓存。沙盒使用独立 Docker 引擎和 gVisor，不修改系统 Docker 配置；接口仅监听本机 `127.0.0.1:8011`，默认同时执行 1 个任务。
+
+分开调试时可用 `npm run sandbox:start`、`npm run sandbox:status`、`npm run sandbox:stop`。已手动启动的沙盒不会随 `dev:web` 退出而停止。仅需普通聊天时，将 `PAA_SANDBOX_LOCAL=false` 并清空 `PAA_SANDBOX_URL` 后重启。
 
 ### 发送与查看附件
 
@@ -211,6 +219,77 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 
 旧手工部署接入 CD 时沿用部署根目录、`.env.company`、主密钥和 `paa-company` 数据卷；发布脚本将旧配置链接到新版本 `apps/server/.env.web`。续期 cron 和日常备份改用 `current/deploy/company/` 下的脚本。
 
+### 自部署代码沙盒
+
+沙盒用于运行 Python、分析文件和生成 Excel、Word、PDF、PPT；普通问答不依赖沙盒。每次执行使用独立环境，生成文件随会话保留。
+
+常规操作使用五个内置工具，无需用户配置：
+
+| 工具 | 输入与结果 |
+| --- | --- |
+| `inspect_table` | 附件／成果中的 CSV、XLSX；返回列、缺失、重复和最多 20 行样本 |
+| `export_table` | 内联表格或文件引用；导出 CSV、XLSX |
+| `create_chart` | 指定横轴与数值列；生成中文柱状图／折线图 PNG |
+| `create_document` | 标题、段落、列表、表格、图片；生成 DOCX、PDF |
+| `create_slides` | 页面标题与内容块；生成可编辑 PPTX，长内容自动拆页 |
+
+常规文件可直接说“把这份计划生成 PDF”。工具不自动清洗、汇总或执行公式；特殊算法与布局仍可用 `run_python`。CSV 默认保留文本与前导零，指定列类型后才转换。表格最多 40 列、20000 行（内联最多 2000 行）；图表最多 60 行，重复类别需先明确汇总规则。文档宽表超过 8 列、PPT 表格超过 6 列或单行过长会明确失败。格式可读与视觉排版检查是不同事项。
+
+内置任务参数示例（由模型提交，不要求用户手写）：
+
+```json
+{
+  "filename": "实施计划.pdf",
+  "format": "pdf",
+  "title": "实施计划",
+  "blocks": [{"type": "paragraph", "text": "先确认需求，再完成验证。"}]
+}
+```
+
+`run_python` 也可 `from noria_tools import export_table`，调用 `export_table(filename="结果.xlsx", data={"columns":["数量"],"rows":[[3]]})`。文件引用使用真实附件或成果 ID，不传宿主机路径；每次执行是新环境，继续处理使用已保存成果。
+
+
+Linux 执行主机先按 [gVisor 安装说明](https://gvisor.dev/docs/user_guide/install/)安装 `runsc` 并注册到 Docker。安装或调整 Docker 配置安排在维护时段；CD 只检查运行时，不自动安装。使用完整发行包及其校验文件，保留 `runsc` 同目录的 `gvisor-bin/`，不能只复制单个可执行文件。
+
+确认隔离运行时可用：
+
+```sh
+docker run --rm --runtime=runsc --network=none --read-only --cap-drop=ALL \
+  --security-opt=no-new-privileges --user=65532:65532 \
+  --memory=1g --memory-swap=1g --cpus=1 busybox:1.37 uname -r
+```
+
+输出应包含 `gvisor`。在已有 `apps/server/.env.web` 补充以下配置，控制令牌使用至少 32 字节随机值，不提交 Git：
+
+```dotenv
+COMPOSE_PROFILES=sandbox
+PAA_SANDBOX_URL=http://sandbox:8010
+PAA_SANDBOX_TOKEN=替换为随机控制令牌
+SANDBOX_CONCURRENCY=1
+SANDBOX_MEMORY_MIB=1024
+SANDBOX_CPUS=1
+SANDBOX_TIMEOUT_SECONDS=60
+PAA_GENERATED_QUOTA_MB=512
+PAA_GENERATED_TOTAL_QUOTA_MB=4096
+```
+
+先构建执行镜像，再按原域名／IP Compose 或 CD 流程发布：
+
+```sh
+docker build -f deploy/company/Dockerfile.sandbox --target runner \
+  -t noria-sandbox-runner:local .
+```
+
+升级内置工具时同时更新控制服务与 runner 镜像，再执行数据库迁移并启动业务服务；只更新 API 不会把工具装入旧镜像。本地重新执行 `npm run sandbox:setup` 后运行 `npm run db:company`。旧 Python 请求及历史成果兼容，无需新增环境变量。
+
+CD 启用此配置后会构建并固定控制服务与执行镜像版本。并发 `1` 是资源测试起点，达到上限才排队；提高前需测量整机内存、文档渲染与业务 API 响应。控制服务只在内网提供接口；Docker 控制 socket 仅供可信管理服务使用，不挂入生成代码的环境。
+
+生成文件默认每人最多 512 MiB、全站最多 4 GiB；达到配额时停止新增，不删除已交付文件。调整上限前确认媒体卷的可用空间。
+
+本地真实执行同样需要支持 `runsc` 的 Docker daemon，可用 `DOCKER_HOST` 指向独立测试环境。默认 Docker Desktop 未注册 `runsc` 时不能直接启用，不回退为宿主 Python。未配置沙盒时，其余助手能力照常使用。
+
+关闭功能时清空 `PAA_SANDBOX_URL`，停用沙盒 profile 并重启应用；保留数据库及媒体数据卷，历史成果仍可下载。
+
 ### 钉钉登录配置
 
 1. 取得企业内部应用开发管理权限，可管理凭证、接口权限、可用范围、安全设置和发布。
@@ -268,11 +347,13 @@ node scripts/desktop/install-build-python.mjs
 npm run package
 ```
 
-产物位于 `dist/desktop/`：macOS ARM64 为 DMG，Windows x64 为 NSIS。安装包内置 Python、录音与转写依赖；模型仍由用户在应用内下载。`npm run package:dir` 只生成应用目录。
+产物位于 `dist/desktop/`，以 Noria 命名：macOS ARM64 为 DMG，Windows x64 为 NSIS。安装包内置 Python、录音与转写依赖；模型仍由用户在应用内下载。`npm run package:dir` 只生成应用目录。
 
 尚无正式签名、公证和自动更新。macOS 切换开发版／安装版或重建后可能请求钥匙串授权；安装和卸载保留用户资料。
 
 ## 数据存放
+
+Noria 桌面端沿用旧内部名称对应的目录和密钥身份，品牌更新不会迁移或清空已有资料。
 
 | 内容 | 位置 |
 | --- | --- |

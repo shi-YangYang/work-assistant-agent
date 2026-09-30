@@ -1,5 +1,6 @@
-import type { Job, WorkMessage } from '@paa/api-contracts'
+import type { Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { epoch, isCancelled } from '@web/api/client'
+import { assistantQuery } from '../api/queries'
 import { readActiveAssistantJob } from '@web/features/assistant/api/requests'
 import { cancelJob } from '@web/features/jobs/api/requests'
 import { useJobFeedback } from '@web/hooks/useJobFeedback'
@@ -13,7 +14,7 @@ function announce(owner: string, id: string) {
   try {
     localStorage.setItem(activityKey(owner, id), crypto.randomUUID())
   } catch {
-    // Focus/online recovery and the server's conversation guard remain available.
+    // Visibility/online recovery and the server's conversation guard remain available.
   }
 }
 
@@ -25,12 +26,26 @@ type Snapshot = {
   error: Error | string
 }
 
-export function useAssistantTask(conversationId: string | undefined, messages: WorkMessage[]) {
+export function useAssistantTask(
+  conversationId: string | undefined,
+  _messages: WorkMessage[],
+  onSync?: (feedback?: JobFeedback) => void,
+  managed = false,
+) {
   const { identity } = useWorkspace()
   const owner = identityScope(identity)
   const generation = epoch
   const scope = `${owner}:${generation}:${conversationId ?? 'new'}`
+  const resource = assistantQuery<{ job: Job | null }>(
+    conversationId ? `/conversations/${conversationId}/active-job` : null,
+    owner,
+    (signal) => readActiveAssistantJob(conversationId!, signal),
+  )
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const syncRef = useRef(onSync)
+  useEffect(() => {
+    syncRef.current = onSync
+  }, [onSync])
   const committed = useRef<{
     scope: string
     conversationId?: string
@@ -66,71 +81,78 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
     },
     [valid],
   )
-  const restore = useCallback(async () => {
-    const current = valid()
-    if (!current?.conversationId) return
-    current.controller?.abort()
-    const controller = new AbortController()
-    current.controller = controller
-    const revision = ++current.revision
-    current.value = { ...current.value, checking: true }
-    await readActiveAssistantJob(current.conversationId, controller.signal).then(
-      ({ job }) => {
-        if (valid() !== current || controller.signal.aborted || current.revision !== revision)
-          return
-        // Keep the last terminal snapshot until history catches up, but never a stale active one.
-        update({
-          job: job ?? (activeJob(current.value.job) ? null : current.value.job),
-          checking: false,
-          error: '',
-        })
-      },
-      (error: unknown) => {
-        if (
-          valid() !== current ||
-          controller.signal.aborted ||
-          current.revision !== revision ||
-          isCancelled(error)
-        )
-          return
-        update({
-          checking: true,
-          error: error instanceof Error ? error : '处理状态暂不可用，请重试。',
-        })
-      },
-    )
-  }, [valid, update])
-  const refresh = useCallback(() => {
+  const restore = useCallback(
+    async (fresh = false) => {
+      const current = valid()
+      if (!current?.conversationId) return
+      current.controller?.abort()
+      const controller = new AbortController()
+      current.controller = controller
+      const revision = ++current.revision
+      current.value = { ...current.value, checking: true }
+      if (!resource) return
+      if (fresh) await resource.refresh()
+      await resource.get(controller.signal).then(
+        ({ job }) => {
+          if (valid() !== current || controller.signal.aborted || current.revision !== revision)
+            return
+          // Keep the last terminal snapshot until history catches up, but never a stale active one.
+          update({
+            job: job ?? (activeJob(current.value.job) ? null : current.value.job),
+            checking: false,
+            error: '',
+          })
+        },
+        (error: unknown) => {
+          if (
+            valid() !== current ||
+            controller.signal.aborted ||
+            current.revision !== revision ||
+            isCancelled(error)
+          )
+            return
+          update({
+            checking: true,
+            error: error instanceof Error ? error : '处理状态暂不可用，请重试。',
+          })
+        },
+      )
+    },
+    [valid, update, resource],
+  )
+  const refresh = useCallback(async () => {
     if (!valid()?.conversationId) return
     update({ checking: true })
-    return restore()
+    await restore(true)
   }, [restore, update, valid])
-  const historyActivity = messages
-    .filter((message) => !message.businessUnavailable && activeJob(message.job))
-    .map((message) => `${message.job!.id}:${message.job!.attempt}:${message.job!.fence}`)
-    .join('|')
   useEffect(() => {
+    const unsubscribe = resource?.subscribe(() => {})
     void restore()
     const recover = () => {
       if (!document.hidden) void refresh()
     }
     const changed = (event: StorageEvent) => {
-      if (conversationId && event.key === activityKey(owner, conversationId)) void refresh()
+      if (conversationId && event.key === activityKey(owner, conversationId)) {
+        void refresh()
+        syncRef.current?.()
+      }
     }
-    window.addEventListener('online', recover)
-    window.addEventListener('focus', recover)
+    if (!managed) window.addEventListener('online', recover)
     window.addEventListener('storage', changed)
-    document.addEventListener('visibilitychange', recover)
+    if (!managed) document.addEventListener('visibilitychange', recover)
     return () => {
+      unsubscribe?.()
       window.removeEventListener('online', recover)
-      window.removeEventListener('focus', recover)
       window.removeEventListener('storage', changed)
       document.removeEventListener('visibilitychange', recover)
     }
-  }, [restore, refresh, owner, conversationId, historyActivity])
+  }, [restore, refresh, owner, conversationId, managed, resource])
   const current = snapshot?.scope === scope ? snapshot : null
   const sourceJob = current?.job ?? null
-  const live = useJobFeedback(sourceJob, true, refresh)
+  const live = useJobFeedback(sourceJob, true, (feedback) => {
+    if (!feedback || !['queued', 'running'].includes(feedback.state)) void refresh()
+    syncRef.current?.(feedback)
+  })
   const job = useMemo(
     () =>
       sourceJob && live.feedback
@@ -165,8 +187,12 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
       checking: true,
       error: '',
     })
+    assistantQuery<{ job: Job | null }>(
+      `/conversations/${sent.conversationId}/active-job`,
+      owner,
+    )?.set({ job: valid()!.value.job })
     announce(owner, sent.conversationId)
-    void refresh()
+    update({ checking: false })
   }
   const canSubmit = () => {
     const state = valid()
@@ -188,7 +214,10 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
     const state = valid()
     if (!state) return
     state.retrying = false
-    if (next) update({ job: next })
+    if (next) {
+      resource?.set({ job: next })
+      update({ job: next })
+    }
     if (state.conversationId) announce(owner, state.conversationId)
     void refresh()
   }
@@ -201,6 +230,7 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
       const result = await cancelJob(target)
       if (valid() !== state) return
       state.revision++
+      resource?.set({ job: result })
       update({ job: result })
       if (state.conversationId) announce(owner, state.conversationId)
       await refresh()
@@ -226,6 +256,12 @@ export function useAssistantTask(conversationId: string | undefined, messages: W
     beginRetry,
     finishRetry,
     interrupt,
-    refresh,
+    synchronize: async () => {
+      await Promise.all([refresh(), live.reconnect()])
+    },
+    refresh: async () => {
+      await Promise.all([refresh(), live.reconnect()])
+      syncRef.current?.()
+    },
   }
 }

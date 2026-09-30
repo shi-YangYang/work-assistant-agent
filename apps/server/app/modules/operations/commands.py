@@ -14,8 +14,15 @@ async def confirm_business_action_command(identifier, choice, body, actor, db, s
     target = await db.get(Report if row.action.endswith('report') else WorkItem, target_id) if target_id else None
     cleanup_owner = target.owner_id if target and target.company_id == actor.company_id else actor.id
     result = await actions_confirm(db, actor, identifier, body.expectedRevision, cancel=choice == 'cancel')
+    if result['state'] in ('succeeded', 'running', 'cancelled'):
+        from app.tasks.runtime.interactions import continue_approval
+        continuation = await continue_approval(db, actor, row)
+        if continuation:
+            result['continuation'] = continuation
+    from app.tasks.runtime.waiting import settle
+    await settle(db, actor, row.message_id)
     await db.commit()
-    from app.modules.operations.deletion import clean_files
+    from app.modules.operations.mutations.deletion import clean_files
     try:
         await clean_files(db, settings, cleanup_owner)
     except OSError:

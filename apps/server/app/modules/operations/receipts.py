@@ -2,13 +2,14 @@ from fastapi import HTTPException
 from app.core.digests import digest
 from app.core.errors import problem
 from app.modules.operations.models import BusinessAction
-from app.modules.operations.rules import LABELS
+from app.modules.operations.policy.rules import LABELS
 from app.modules.operations.targets import preview, source_check
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem, WorkRevision
 from app.security.access import require as business_require, valid as business_valid
 from app.security.ownership import owned
 from app.tasks.models import Job
+from app.tasks.feedback.items import collect
 from app.tasks.serializers import job_dto
 from sqlalchemy import select
 
@@ -30,6 +31,7 @@ async def refresh_generation(db, actor, row):
                 row.result = {**row.result, 'message': '新生成内容已保留为候选，请在报告页审阅采用后再提出提交。'}
             else:
                 row.action = 'submit_report'
+                row.continuation = {}
                 row.params = {**row.params, 'targetId': report.id, 'expectedRevision': report.revision}
                 value = await preview(db, actor, row)
                 row.result = {**row.result, 'previewDigest': digest(value)}
@@ -45,14 +47,14 @@ async def refresh_generation(db, actor, row):
 async def action_dto(db, actor, row):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
-    base = {'id': row.id, 'messageId': row.message_id, 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
+    base = {'confirmLabel': '确认' + LABELS[row.action], 'executionMode': row.execution_mode, 'continuation': row.continuation or None, 'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key or row.result.get('originalTaskItemId'), 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
     if row.action.startswith('delete_') and row.state == 'succeeded' and row.access.get('role') == actor.role:
         return {**base, 'message': '记录已删除'}
     if row.access.get('role') != actor.role or not await business_valid(db, actor, row.access):
         return {**base, 'state': 'unavailable', 'message': '关联资料已变化或无权查看'}
     try:
         await refresh_generation(db, actor, row)
-        base.update(action=row.action, label=LABELS[row.action], state=row.state, revision=row.revision)
+        base.update(action=row.action, label=LABELS[row.action], confirmLabel='确认' + LABELS[row.action], state=row.state, revision=row.revision)
         if row.state == 'pending':
             await source_check(db, actor, row)
             value = await preview(db, actor, row)
@@ -84,7 +86,12 @@ async def action_dto(db, actor, row):
 async def message_actions(db, actor, message):
     if message.owner_id != actor.id:
         return []
-    rows = (await db.scalars(select(BusinessAction).where(BusinessAction.message_id == message.id, BusinessAction.owner_id == actor.id).order_by(BusinessAction.step))).all()
+    job = await db.scalar(select(Job).where(Job.kind == 'message', Job.target_id == message.id, Job.owner_id == actor.id))
+    references = {item['receiptId'] for item in collect(job) if item.get('receiptId')} if job else set()
+    association = BusinessAction.message_id == message.id
+    # A continuation can carry earlier receipts, never actions added by future turns.
+    association = association | (BusinessAction.id.in_(references) & (BusinessAction.conversation_id == message.conversation_id))
+    rows = (await db.scalars(select(BusinessAction).where(association, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).order_by(BusinessAction.step))).all()
     return [await action_dto(db, actor, row) for row in rows]
 
 
@@ -105,19 +112,21 @@ def receipt_summary(cards, drafts=()):
 
 
 def receipt_reply(review, cards, drafts=(), deliverables=''):
-    """Only independently checked prose plus database-authenticated outcomes."""
+    """Delivered prose plus database-authenticated outcomes."""
     summary = receipt_summary(cards, drafts)
     parts = [review.text] if review.text else [deliverables] if deliverables and review.verified else []
     if summary:
         parts.append(summary)
     if review.verified and review.needs_action:
-        parts.append('本次请求仍有操作未完成；已保存的结果会保留，请继续说明要处理的剩余事项。')
+        parts.append('本次请求仍有操作未完成；已保存的结果会保留。')
+    if review.verified and review.needs_response:
+        parts.append('所需答复尚未完成核对，暂时无法提供完整结果。')
     if not review.verified:
         parts.append('答复说明暂未完成核对；已保存的操作结果以上方记录为准。' if cards else '答复暂未完成核对，请重试答复核对；业务操作结果会保留。')
     elif review.execution_claims and not cards and not drafts and not deliverables:
         parts.append('本次没有保存新的业务操作结果，未执行创建、修改、提交或删除。')
     elif not parts:
-        parts.append('暂时缺少足够依据回答，请补充具体事项。')
+        parts.append('本次暂未交付所需结果，请重试；已保存的操作不会重复执行。')
     return '\n\n'.join(parts)
 
 

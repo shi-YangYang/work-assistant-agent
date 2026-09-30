@@ -10,6 +10,7 @@ from app.http.dependencies import AUTH, DB, SETTINGS
 from app.http.desktop_dependencies import DESKTOP, start_rate
 from app.modules.auth.desktop import Approval, Exchange, Start, grant, identity_dto
 from app.modules.auth.models import DesktopAuthorization, DesktopSession, Session
+from app.modules.auth.session_policy import ABSOLUTE_LIFETIME, DESKTOP_LIFETIME
 from app.modules.auth.sessions import digest
 from app.modules.members.models import Company, Member
 from app.security.locks import company_lock
@@ -64,9 +65,10 @@ async def exchange(body: Exchange, db=DB):
         return JSONResponse({'state': 'pending'}, status_code=202)
     session = await db.get(Session, item.session_id)
     actor = await db.get(Member, item.member_id)
-    if not session or session.expires_at <= now() or not actor or not actor.active or actor.company_id != item.company_id:
+    instant = now()
+    if not session or min(session.expires_at, session.created_at + ABSOLUTE_LIFETIME) <= instant or not actor or not actor.active or actor.company_id != item.company_id:
         problem(410, '账号授权已失效，请重新登录', 'invalid_grant')
-    token, expires = secrets.token_urlsafe(48), session.expires_at
+    token, expires = secrets.token_urlsafe(48), min(instant + DESKTOP_LIFETIME, session.expires_at, session.created_at + ABSOLUTE_LIFETIME)
     db.add(DesktopSession(company_id=actor.company_id, member_id=actor.id, session_id=session.id, token_hash=digest(token), expires_at=expires))
     item.state = 'consumed'
     return {'token': token, **identity_dto(actor, await db.get(Company, actor.company_id), expires)}

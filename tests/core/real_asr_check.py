@@ -11,9 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.protocol import CoreService
-from paa_core.model_manager import MODEL_ID, REVISION, verify_files
-from paa_core.asr_worker import ASRWorker, WhisperProvider
-from paa_core.transcription import Transcription
+from paa_core.models.model_manager import MODEL_ID, REVISION, verify_files
+from paa_core.asr.asr_worker import ASRWorker, WhisperProvider
+from paa_core.asr.transcription import Transcription
 
 SPEECH_URL = 'https://raw.githubusercontent.com/wenet-e2e/wenet/d17059667d6afe0680d19b3a4948ab825ef25105/test/resources/aishell-BAC009S0724W0121.wav'
 SPEECH_SHA256 = '2f9fc9c912bb71c85fb286cb88b599c81efb8f727c727a5ea8f6d1c89c55ac13'

@@ -8,14 +8,14 @@ import sqlite3
 from pathlib import Path
 from typing import BinaryIO
 
-from .recorder import Recorder
+from .audio.recorder import Recorder
 from .repository import ACTIVE, DomainError, Repository, valid_id
-from .transcription import Transcription
-from .meeting_summary import MeetingSummary
-from .llm_provider import Provider
+from .asr.transcription import Transcription
+from .minutes.meeting_summary import MeetingSummary
+from .minutes.llm_provider import Provider
 from .meeting_library import MeetingLibrary
-from .speakers import Speakers
-from .voiceprints import Voiceprints
+from .speakers.speakers import Speakers
+from .speakers.voiceprints import Voiceprints
 
 MAX_LINE_BYTES = 65_536
 MAX_VOICEPRINT_BYTES = 48 * 1024 * 1024

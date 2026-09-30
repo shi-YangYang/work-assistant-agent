@@ -4,12 +4,12 @@ import controlsStyles from '../../../styles/controls.module.css'
 import styles from './SupportPage.module.css'
 import type { SupportDiagnostics, SupportFeedback, SupportFeedbackCreate } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
-import { AutoTextarea } from '@web/components/AutoTextarea'
-import { BusyButton } from '@web/components/BusyButton'
-import { ErrorNotice } from '@web/components/ErrorNotice'
-import { Modal } from '@web/components/Modal'
-import { Pagination } from '@web/components/Pagination'
-import { PanelSection } from '@web/components/PanelSection'
+import { AutoTextarea } from '@web/components/forms/AutoTextarea'
+import { BusyButton } from '@web/components/actions/BusyButton'
+import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { Modal } from '@web/components/overlays/Modal'
+import { Pagination } from '@web/components/actions/Pagination'
+import { PanelSection } from '@web/components/content/PanelSection'
 import {
   feedbackListPath,
   handleFeedback,

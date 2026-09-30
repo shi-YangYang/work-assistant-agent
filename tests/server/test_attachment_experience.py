@@ -3,7 +3,7 @@ import base64
 import io
 import json
 import app.modules.attachments.router as api_module
-import app.tasks.handlers as worker
+import app.tasks.processing.handlers as worker
 import pytest
 import subprocess
 import wave
@@ -19,9 +19,10 @@ from app.integrations.media import audio_mime, audio_wav, image_process, image_p
 from app.integrations.parsing.process import parse_process
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
-from app.tasks.handlers import process_job
-from app.tasks.maintenance import maintenance
+from app.tasks.processing.handlers import process_job
+from app.tasks.maintenance.maintenance import maintenance
 from app.tasks.models import Job
+from app.tasks.runtime.queue import claim
 from pathlib import Path
 from test_company import keyed
 from test_documents import upload
@@ -147,18 +148,22 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
         return await original_harness(context, saver, blocks, model)
     monkeypatch.setattr(worker, 'invoke_harness', inspect_input)
     async def execute(provider):
-        async with sessions.begin() as db:
-            job = await db.get(Job, sent.json()['jobId']); job.state = 'running'; job.fence += 1; job.lease_until = now() + timedelta(seconds=90)
+        job = await claim(sessions, users['employee'].id)
+        assert job is not None and job.id == sent.json()['jobId']
         model = controlled_model('clarify')
         async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
             await process_job(job, sessions, settings, saver, model=model, asr_provider=provider)
         return model
+    async def retry():
+        response = await c['employee'].post('/api/v1/jobs/' + sent.json()['jobId'] + '/retry', json={})
+        assert response.status_code == 200, response.text
     async def failed(*_): raise ValueError('受控语音识别失败')
     model = await execute(failed)
     result = (await c['employee'].get('/api/v1/messages/' + sent.json()['messageId'])).json()
     assert result['job']['state'] == 'failed' and not result['reply'] and len(result['attachments']) == 3
     assert not model.seen_images
     async def recognized(*_): return '今天完成现场检查，附件是进度资料'
+    await retry()
     model = await execute(recognized)
     result = (await c['employee'].get('/api/v1/messages/' + sent.json()['messageId'])).json()
     assert result['job']['state'] == 'awaiting_input', result
@@ -175,16 +180,26 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     assert [item['id'] for item in source['documents']] == [doc['id']]
     assert '今天完成现场检查，附件是进度资料' in prompt and source['transcript'] in prompt
     assert '仅含文档，不含图片和语音' in prompt
-    # Reprocessing a corrected transcript preserves its source and never repeats ASR.
+    # Simulate a lost completion commit, then correct and retry through the API.
+    # The retry must refresh the input snapshot and must not repeat ASR.
     async with sessions.begin() as db:
-        row = await db.get(Message, sent.json()['messageId'])
-        row.transcript, row.transcript_revision = '纠正：现场检查尚未完成', 2
+        (await db.get(Job, sent.json()['jobId'])).state = 'failed'
+    corrected = await c['employee'].patch('/api/v1/messages/' + sent.json()['messageId'] + '/transcript',
+        json={'text': '纠正：现场检查尚未完成', 'expectedRevision': result['transcriptRevision']})
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()['transcriptRevision'] == 2
+    await retry()
     await execute(failed)
     result = (await c['employee'].get('/api/v1/messages/' + sent.json()['messageId'])).json()
     assert result['job']['state'] == 'awaiting_input', result
     prompt, source = received[-1]
     assert '纠正：现场检查尚未完成' in prompt and source['transcript'] in prompt
     assert next(item for item in source['attachments'] if item['kind'] == 'audio')['transcription']['revision'] == 2
+    async with sessions() as db:
+        saved = await db.get(Message, sent.json()['messageId'])
+        assert saved.transcript_history[-1]['text'] == '今天完成现场检查，附件是进度资料'
+        job = await db.get(Job, sent.json()['jobId'])
+        assert job.result['taskSnapshot']['inputRevision'] == saved.transcript_revision == 2
 
 
 

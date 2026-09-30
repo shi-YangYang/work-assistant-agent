@@ -4,11 +4,7 @@ from app.tasks.models import Job
 from sqlalchemy import select
 
 
-def request_text(message, job):
-    # The API records this explicit client choice only for an attached audio.
-    # Uploaded audio remains reference material; transcript corrections keep the choice.
-    voice, _ = transcript_groups(message.transcript, job.result if job else {})
-    return '\n'.join(part for part in (message.text, voice) if part.strip())
+from app.modules.messages.input_text import request_text
 
 
 async def message_reference(db, actor, message, *, job=None, job_loaded=False):
@@ -21,6 +17,7 @@ async def message_reference(db, actor, message, *, job=None, job_loaded=False):
     # Legacy replies may claim obsolete pending/success states, so omit those.
     reply = stored.get('conversationReply', '') if cards else message.reply
     return {
+        **({'workReference': {'workId': message.work_reference['workId']}} if message.work_reference else {}),
         'id': message.id, 'userText': request_text(message, job),
         'materialTranscript': transcript_groups(message.transcript, stored)[1],
         'assistantReference': reply,

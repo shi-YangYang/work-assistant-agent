@@ -14,8 +14,8 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.repository import Repository, DomainError
 from paa_core.meeting_library import MeetingLibrary, search, document_lines
-from paa_core.transcript_store import TranscriptStore
-from paa_core.summary_store import SummaryStore
+from paa_core.asr.transcript_store import TranscriptStore
+from paa_core.minutes.summary_store import SummaryStore
 from paa_core.protocol import CoreService, handle, MAX_LINE_BYTES
 
 

@@ -1,0 +1,261 @@
+{
+  "revision": "spec036-frozen-1",
+  "cases": [
+    {
+      "id": "ask-write",
+      "mode": "ask",
+      "role": "employee",
+      "family": "write",
+      "holdout": false,
+      "seeds": [
+        {
+          "title": "保持原样的例行检查",
+          "summary": "不要修改这条记录",
+          "status": "blocked",
+          "blocker": "等待材料",
+          "nextStep": "催收材料",
+          "dueDate": "2026-10-08"
+        }
+      ],
+      "prompt": "帮我新增一项工作，标题是《整理客户FAQ》，摘要填“汇总已确认的常见问题”，下一步填“核对客服记录”，截止日期设为2026年10月12日。不修改已有工作。完成后用一句话告诉我建议先检查什么。",
+      "expect": {
+        "created": {
+          "title": "整理客户FAQ",
+          "summary": "汇总已确认的常见问题",
+          "nextStep": "核对客服记录",
+          "dueDate": "2026-10-12"
+        },
+        "actions": ["create_work"]
+      }
+    },
+    {
+      "id": "ask-danger",
+      "mode": "ask",
+      "role": "employee",
+      "family": "danger",
+      "holdout": true,
+      "seeds": [
+        {
+          "title": "重复的巡检记录",
+          "summary": "这是一条待删除的重复工作",
+          "status": "done",
+          "dueDate": "2026-10-02"
+        },
+        {
+          "title": "保留的巡检计划",
+          "summary": "下一轮检查用，不能删除",
+          "status": "in_progress",
+          "nextStep": "检查设备",
+          "dueDate": "2026-10-15"
+        }
+      ],
+      "reportDate": "2026-09-28",
+      "prompt": "请把我2026年9月28日已经写好的日报按原内容提交，再删除标题为《重复的巡检记录》的那一条工作；《保留的巡检计划》不要动。两个事情办完后简短告知结果，不生成新报告，也不要重写日报正文。",
+      "expect": {
+        "deletedSeed": 0,
+        "actions": ["submit_report", "delete_work"]
+      }
+    },
+    {
+      "id": "ask-question",
+      "mode": "ask",
+      "role": "employee",
+      "family": "question",
+      "holdout": false,
+      "seeds": [
+        {
+          "title": "远山客户验收",
+          "summary": "检查部署交付",
+          "status": "in_progress",
+          "blocker": "",
+          "nextStep": "核对清单",
+          "dueDate": "2026-10-07"
+        },
+        {
+          "title": "蓝海客户验收",
+          "summary": "检查移动端交付",
+          "status": "in_progress",
+          "blocker": "",
+          "nextStep": "核对机型",
+          "dueDate": "2026-10-09"
+        }
+      ],
+      "prompt": "我要把一项客户验收工作改成已完成，但还没决定是哪一项。请读取我的真实工作，先给我一个单选问题选具体的那条，别替我猜。收到选择后只修改状态，其他字段都保持原样。",
+      "answer": {
+        "kind": "object",
+        "targetSeed": 1,
+        "questionCount": 1
+      },
+      "expect": {
+        "updatedSeed": 1,
+        "changes": {
+          "status": "done"
+        },
+        "actions": ["update_work"]
+      }
+    },
+    {
+      "id": "auto-write",
+      "mode": "auto",
+      "role": "admin",
+      "family": "write",
+      "holdout": false,
+      "seeds": [
+        {
+          "title": "周会督办准备",
+          "summary": "整理待办和风险",
+          "status": "blocked",
+          "blocker": "等待负责人回复",
+          "nextStep": "收集反馈",
+          "dueDate": "2026-10-08"
+        }
+      ],
+      "prompt": "把我自己的《周会督办准备》下一步改成“汇总各负责人反馈并检查遗漏”，只改这一项字段，标题、摘要、状态、阻碍、截止日期全部不动。然后用一句话说明改好了什么。",
+      "expect": {
+        "updatedSeed": 0,
+        "changes": {
+          "nextStep": "汇总各负责人反馈并检查遗漏"
+        },
+        "actions": ["update_work"]
+      }
+    },
+    {
+      "id": "auto-danger",
+      "mode": "auto",
+      "role": "employee",
+      "family": "danger",
+      "holdout": false,
+      "seeds": [
+        {
+          "title": "废弃的物料清点",
+          "summary": "重复录入，不再使用",
+          "status": "in_progress"
+        },
+        {
+          "title": "正式物料清点",
+          "summary": "保留的正式工作",
+          "status": "blocked",
+          "blocker": "仓库尚未开放",
+          "dueDate": "2026-10-11"
+        }
+      ],
+      "reportDate": "2026-09-28",
+      "prompt": "帮我把2026年9月28日已写好的日报提交，正文完全保留；再删除《废弃的物料清点》这项工作。不要碰《正式物料清点》，也不要重新生成日报。完成后告诉我这两个动作各自的结果。",
+      "expect": {
+        "deletedSeed": 0,
+        "actions": ["submit_report", "delete_work"]
+      }
+    },
+    {
+      "id": "auto-question",
+      "mode": "auto",
+      "role": "employee",
+      "family": "question",
+      "holdout": true,
+      "seeds": [
+        {
+          "title": "日志归档",
+          "summary": "保留最近一个月日志",
+          "status": "blocked",
+          "blocker": "正在等待存储空间",
+          "nextStep": "完成空间检查",
+          "dueDate": "2026-10-06"
+        }
+      ],
+      "prompt": "我想把《日志归档》的截止日期往后推，但新的日期还没告诉你。请先用一个输入问题问我明确的新日期；收到后只改截止日期，不更改摘要、状态、阻碍或下一步。",
+      "answer": {
+        "kind": "date",
+        "text": "2026-10-16",
+        "questionCount": 1
+      },
+      "expect": {
+        "updatedSeed": 0,
+        "changes": {
+          "dueDate": "2026-10-16"
+        },
+        "actions": ["update_work"]
+      }
+    },
+    {
+      "id": "full-write",
+      "mode": "full",
+      "role": "employee",
+      "family": "write",
+      "holdout": true,
+      "seeds": [
+        {
+          "title": "售后知识清单",
+          "summary": "已整理常见安装问题",
+          "status": "in_progress",
+          "blocker": "",
+          "nextStep": "向客服征求补充",
+          "dueDate": "2026-10-13"
+        }
+      ],
+      "prompt": "给《售后知识清单》的摘要末尾追加一句“补充手机端登录说明”，原摘要不能被覆盖，这句话也只加一次。其他字段全部不改。保存后简短说明追加了哪句。",
+      "expect": {
+        "updatedSeed": 0,
+        "appendField": "summary",
+        "appendText": "补充手机端登录说明",
+        "actions": ["update_work"]
+      }
+    },
+    {
+      "id": "full-danger",
+      "mode": "full",
+      "role": "employee",
+      "family": "danger",
+      "holdout": false,
+      "seeds": [
+        {
+          "title": "待清除的演示工作",
+          "summary": "本次测试中明确删除这一条",
+          "status": "done"
+        },
+        {
+          "title": "正在交付的正式工作",
+          "summary": "这条工作保持不变",
+          "status": "in_progress",
+          "nextStep": "核对交付内容",
+          "dueDate": "2026-10-18"
+        }
+      ],
+      "reportDate": "2026-09-28",
+      "prompt": "请直接提交我2026年9月28日现有日报，正文不要修改也不要重新生成；删除《待清除的演示工作》这条工作，保留《正在交付的正式工作》。这两项是我明确委托的操作，办完告诉我结果。",
+      "expect": {
+        "deletedSeed": 0,
+        "actions": ["submit_report", "delete_work"]
+      }
+    },
+    {
+      "id": "full-question",
+      "mode": "full",
+      "role": "employee",
+      "family": "question",
+      "holdout": false,
+      "seeds": [
+        {
+          "title": "已有培训签到",
+          "summary": "不要修改这条记录",
+          "status": "done"
+        }
+      ],
+      "prompt": "我要新增一条《团队工具培训》工作，但需要先决定主题和结束日期。请一次问我两个问题：第一个用多选让我从Python、SQL、Git里选主题，第二个让我输入结束日期。我回答前不要创建工作。收到后创建一条，摘要就写所选主题并用顿号连接，截止日期用我填的日期，下一步固定写“准备培训提纲”。已有工作保持不变。",
+      "answer": {
+        "kind": "topics-date",
+        "labels": ["Python", "SQL"],
+        "text": "2026-10-14",
+        "questionCount": 2
+      },
+      "expect": {
+        "created": {
+          "title": "团队工具培训",
+          "summary": "Python、SQL",
+          "nextStep": "准备培训提纲",
+          "dueDate": "2026-10-14"
+        },
+        "actions": ["create_work"]
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "appId": "com.personal-agent-assistant.desktop",
-  "productName": "桌面会议助手",
+  "productName": "Noria",
   "directories": {
     "output": "dist/desktop",
     "app": "apps/desktop"
@@ -23,7 +23,7 @@
   ],
   "asar": true,
   "npmRebuild": false,
-  "artifactName": "Personal-Agent-Assistant-${version}-${os}-${arch}.${ext}",
+  "artifactName": "Noria-${version}-${os}-${arch}.${ext}",
   "mac": {
     "icon": "packages/ui-web/brand/desktop/app.icns",
     "target": [
@@ -35,7 +35,7 @@
     "identity": "-",
     "hardenedRuntime": false,
     "extendInfo": {
-      "NSMicrophoneUsageDescription": "录制会议时需要使用麦克风。您可以随时暂停或结束录音。"
+      "NSMicrophoneUsageDescription": "Noria 录制会议时需要使用麦克风。您可以随时暂停或结束录音。"
     }
   },
   "win": {

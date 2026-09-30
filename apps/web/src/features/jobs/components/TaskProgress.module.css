@@ -69,6 +69,18 @@
   min-width: 0;
   line-height: 20px;
 }
+.name {
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.nodeError {
+  flex-basis: 100%;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.activity {
+  padding: 6px 0;
+}
 .nodeContent > span:first-child {
   color: var(--text);
 }
@@ -90,8 +102,11 @@
   font-size: 12px;
   min-height: 32px;
 }
-.details:not([open])[data-running='true'] > summary > span,
-.details[open] .node[data-running='true'] .nodeContent > span:first-child {
+.activity[data-running='true'] > span,
+.details[data-running='true']:not([open]) > summary > span,
+.details[open] .node[data-running='true'] .name {
+  overflow-wrap: anywhere;
+  max-width: 100%;
   background-image: linear-gradient(
     90deg,
     color-mix(in srgb, var(--text) 50%, var(--surface)) 46%,
@@ -115,8 +130,7 @@
 }
 @media (max-width: 600px) {
   .nodeContent {
-    flex-direction: column;
-    gap: 2px;
+    gap: 2px 8px;
   }
   .actions {
     flex-direction: column;
@@ -127,18 +141,25 @@
   }
 }
 @media (prefers-reduced-motion: reduce), (forced-colors: active) {
-  .details:not([open])[data-running='true'] > summary > span,
-  .details[open] .node[data-running='true'] .nodeContent > span:first-child {
+  .activity[data-running='true'] > span,
+  .details[data-running='true']:not([open]) > summary > span,
+  .details[open] .node[data-running='true'] .name {
     animation: none;
     background: none;
     -webkit-text-fill-color: currentColor;
   }
-}
-@media (prefers-reduced-motion: reduce) {
   .node[data-running='true'] > .icon {
     animation: none;
   }
   .chevron {
     transition: none;
   }
+}
+
+.outcome {
+  margin: 6px 0 0 23px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }

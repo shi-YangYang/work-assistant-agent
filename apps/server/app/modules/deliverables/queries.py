@@ -15,6 +15,9 @@ async def get_deliverable(db, actor, identifier, revision=None, *, conversation_
     record = await db.scalar(select(DeliverableRevision).where(DeliverableRevision.deliverable_id == item.id, DeliverableRevision.revision == (revision or item.revision)))
     if not record:
         problem(404, '成果版本不存在')
+    from app.modules.executions.sources import check_sources
+    for file in record.files or []:
+        await check_sources(db, actor, file.get('sources', []))
     return item, record
 
 
@@ -28,3 +31,13 @@ async def check_reference(db, actor, reference, conversation_id):
 async def conversation_deliverables(db, actor, conversation_id, offset=0):
     await owned(db, Conversation, conversation_id, actor)
     return list((await db.scalars(select(Deliverable).where(Deliverable.company_id == actor.company_id, Deliverable.owner_id == actor.id, Deliverable.conversation_id == conversation_id).order_by(Deliverable.updated_at.desc(), Deliverable.id).offset(offset).limit(21))).all())
+
+
+async def available_revision(db, actor, identifier, revision=None):
+    from fastapi import HTTPException
+    try:
+        return (await get_deliverable(db, actor, identifier, revision))[1]
+    except HTTPException as error:
+        if error.status_code not in (403, 404):
+            raise
+        return None

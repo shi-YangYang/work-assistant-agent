@@ -5,7 +5,7 @@ import {
   MAX_AUDIO_ATTACHMENTS,
   MAX_IMAGE_BYTES,
   MAX_FILE_BYTES,
-} from '../lib/attachment-limits'
+} from './attachment-limits'
 
 const documents = new Set(['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx'])
 
@@ -83,7 +83,13 @@ export function messageSubmission(
     body: {
       conversationId,
       personaId: composer.submissionPersonaId ?? personaId,
-      ...(!conversationId ? { newConversation: true } : {}),
+      ...(!conversationId
+        ? {
+            newConversation: true,
+            executionMode: composer.executionMode ?? 'auto',
+            fullAccessConfirmed: !!composer.fullAccessConfirmed,
+          }
+        : {}),
       text: composer.text,
       attachmentIds: composer.files.map((file) => {
         if (!file.attachment) throw new Error('附件尚未上传完成')
@@ -97,6 +103,9 @@ export function messageSubmission(
           }
         : {}),
       replyTo: composer.replyTo ?? null,
+      ...(composer.workReference
+        ? { workReference: { workId: composer.workReference.workId } }
+        : {}),
       ...(composer.deliverableReference
         ? { deliverableReference: structuredClone(composer.deliverableReference) }
         : {}),

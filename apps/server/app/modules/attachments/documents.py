@@ -46,7 +46,7 @@ async def visible_attachment(db, identifier, actor, *, lock=False):
         if item.owner_id != actor.id:
             problem(404, '附件尚未发送或无权查看')
     else:
-        from app.modules.operations.publication import shared_attachment, published_attachment
+        from app.modules.operations.mutations.publication import shared_attachment, published_attachment
         if item.owner_id == actor.id and await published_attachment(db, item):
             return item
         if item.owner_id != actor.id and await shared_attachment(db, actor, item):
@@ -73,7 +73,7 @@ async def agent_attachment(db, identifier, actor, job):
     item = await owned(db, Attachment, identifier, actor)
     if item.kind != 'document' or not item.message_id:
         problem(404, '文件不可用或尚未发送')
-    from app.modules.operations.publication import published_attachment
+    from app.modules.operations.mutations.publication import published_attachment
     if await published_attachment(db, item, revision_ids=job.result.get('sourceIds', []) if job.kind == 'report' else None):
         return item
     message = await owned(db, Message, item.message_id, actor)
@@ -123,3 +123,48 @@ async def verified_citations(db, context, answer):
     for key, value in replacements.items():
         answer = answer.replace(key, value)
     return answer, citations
+
+
+async def material_coverage(db, actor, job, documents, reads):
+    """Keep extracted-text reads distinct from files supplied for computation."""
+    from app.modules.executions.models import SandboxExecution
+    executions = (await db.scalars(select(SandboxExecution).where(SandboxExecution.job_id == job.id,
+        SandboxExecution.owner_id == actor.id, SandboxExecution.company_id == actor.company_id,
+        SandboxExecution.state == 'succeeded'))).all()
+    coverage, legacy = [], []
+    for document in documents:
+        read = len({entry[2] for entry in reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
+        total = document.extraction_info.get('chunks', 0)
+        if document.extraction_status == 'failed':
+            detail = '文字提取失败：' + document.extraction_info.get('error', '解析失败')
+            old_detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
+        else:
+            detail = f'文字工具读取 {read}/{total} 个分段'
+            old_detail = f'实际读取 {read}/{total} 个文字分段'
+            if document.extraction_status == 'partial':
+                detail += '；文件文字仅部分可读'
+                old_detail += '；文件仅部分可读'
+        related = [row for row in executions if any(source.get('kind') == 'attachment' and source.get('id') == document.id
+            and source.get('revision') == document.extraction_revision and source.get('sha256') == document.sha256 for source in row.sources)]
+        direct = any(ref.get('attachment_id') == document.id for row in related for ref in row.result.get('inputRefs', []))
+        if direct:
+            detail += '；原文件已提供给代码执行，具体读取范围未单独记录'
+        elif related:
+            detail += '；列为代码执行的关联来源，不能据此认定本轮已读取原文件'
+        coverage.append(document.name + '：' + detail)
+        legacy.append(document.name + '：' + old_detail)
+    return coverage, legacy
+
+
+def append_material_coverage(answer, coverage, legacy):
+    """Replace only an identical terminal scope note, preserving answer prose."""
+    normalize = lambda value: re.sub(r'\s+', '', value)
+    equivalents = {normalize('\n'.join(lines)) for lines in (coverage, legacy)}
+    while True:
+        prefix, separator, tail = answer.rpartition('\n\n材料范围：')
+        if not separator and answer.startswith('材料范围：'):
+            prefix, separator, tail = '', '材料范围：', answer[len('材料范围：'):]
+        if not separator or normalize(tail) not in equivalents:
+            break
+        answer = prefix.rstrip()
+    return answer + '\n\n材料范围：\n' + '\n'.join(coverage)

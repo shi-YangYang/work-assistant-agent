@@ -3,7 +3,7 @@ from app.core.pagination import cursor_decode, cursor_encode
 from app.modules.messages.service import deleted_sources
 from app.modules.team.sources import business_link_dtos
 from app.modules.work.models import WorkItem, WorkRevision
-from app.modules.work.serializers import work_dto
+from app.modules.work.serializers import revision_origin, work_dto
 from app.security.access import require as business_require, valid as business_valid
 from app.security.ownership import owned
 from sqlalchemy import or_, select
@@ -59,4 +59,4 @@ async def work_item_query(identifier, revision, actor, db):
             problem(404, '工作修订不存在或无权查看')
         dto = revision_work(item, selected)
         history = [row for row in history if row.revision <= revision]
-    return {**dto, 'businessLinks': await business_link_dtos(db, actor, selected.business_links if revision is not None else item.business_links), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history if await business_valid(db, actor, r.access, retained=True)]}
+    return {**dto, 'businessLinks': await business_link_dtos(db, actor, selected.business_links if revision is not None else item.business_links), 'history': [{'id': r.id, 'revision': r.revision, 'content': r.content, 'origin': revision_origin(r), 'sourceIds': r.source_ids, 'deletedSourceIds': await deleted_sources(db, r.source_ids), 'createdAt': r.created_at.isoformat()} for r in history if await business_valid(db, actor, r.access, retained=True)]}

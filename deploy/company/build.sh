@@ -22,5 +22,16 @@ for target in service worker web; do
   [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || { echo "Invalid $target image ID" >&2; exit 1; }
   printf 'PAA_%s_IMAGE=%s\n' "$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')" "$image_id" >> "$manifest"
 done
-printf 'PAA_DEPLOY_MODE=%s\n' "$mode" >> "$manifest"
+# Sandbox is explicitly enabled by deployment environment, never by a PR.
+if [[ "${PAA_BUILD_SANDBOX:-false}" == true ]]; then
+  docker info --format '{{json .Runtimes}}' | python3 -c 'import json,sys; assert "runsc" in json.load(sys.stdin), "Install gVisor runsc before enabling sandbox"'
+  for target in runner control; do
+    image="noria-sandbox-$target:$release_id"
+    docker build --progress=plain --file "$release/deploy/company/Dockerfile.sandbox" --target "$target" --tag "$image" "$release"
+    image_id=$(docker image inspect --format '{{.Id}}' "$image")
+    [[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || exit 1
+    printf 'PAA_SANDBOX_%s_IMAGE=%s\n' "$(printf '%s' "$target" | tr '[:lower:]' '[:upper:]')" "$image_id" >> "$manifest"
+  done
+fi
+printf 'PAA_DEPLOY_MODE=%s\n'  "$mode" >> "$manifest"
 mv "$manifest" "$release/.release.env"

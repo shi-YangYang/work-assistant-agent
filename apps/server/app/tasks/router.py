@@ -12,7 +12,7 @@ from app.modules.reports.models import Report
 from app.security.access import require as business_require
 from app.security.ownership import owned
 from app.tasks.models import Job
-from app.tasks.cancellation import CancelJob, cancel_job
+from app.tasks.runtime.cancellation import CancelJob, cancel_job
 from app.tasks.serializers import job_dto
 
 router = APIRouter()
@@ -22,18 +22,24 @@ router = APIRouter()
 async def get_job(identifier: str, actor=AUTH, db=DB):
     item = await owned(db, Job, identifier, actor)
     await business_require(db, actor, item.access)
+    if item.kind == 'message':
+        from app.modules.messages.serializers import message_dto
+        message = await active_message(db, item.target_id, actor)
+        return (await message_dto(db, message, actor))['job']
     return job_dto(item)
 
 
 @router.get('/api/v1/jobs/{identifier}/feedback')
-async def job_feedback(identifier: str, request: Request, actor=AUTH, sessions=SESSIONS):
-    from app.tasks.feedback import snapshot
+async def job_feedback(identifier: str, request: Request, sessions=SESSIONS):
+    from app.tasks.feedback.feedback import snapshot
+    # snapshot authenticates and checks ownership in its own short transaction.
+    # Do not hold an AUTH connection while borrowing another from the same pool.
     return await snapshot(sessions, hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest(), identifier)
 
 
 @router.get('/api/v1/jobs/{identifier}/events')
-async def job_events(identifier: str, request: Request, actor=AUTH, settings=SETTINGS, sessions=SESSIONS):
-    from app.tasks.feedback import snapshot, events
+async def job_events(identifier: str, request: Request, settings=SETTINGS, sessions=SESSIONS):
+    from app.tasks.feedback.feedback import snapshot, events
     if request.headers.get('origin') not in (None, settings.web_origin) or request.headers.get('sec-fetch-site') == 'cross-site':
         problem(403, '请求来源不被允许')
     token_hash = hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest()
@@ -59,8 +65,10 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
     if item.access and item.access.get('role') != actor.role:
         problem(403, '账号权限已变化，请重新提问')
     if item.kind == 'message':
-        from app.tasks.conversation_activity import require_idle
+        from app.tasks.runtime.conversation_activity import require_idle
         await require_idle(db, actor, message.conversation_id)
+        from app.modules.conversations.task.task_state import prepare_retry
+        await prepare_retry(db, actor, item, message)
     item.state, item.error, item.request_started = 'queued', '', False
     if item.kind == 'message':
         # Replace the failed response in place. Keep the source and operation
@@ -76,10 +84,10 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         item.model_binding = None
         item.config_attempt += 1
     if item.kind == 'message' and item.result.get('nodeExecution'):
-        from app.tasks.node_state import reopen_failed
+        from app.tasks.nodes.node_state import reopen_failed
         reopen_failed(item)
     item.attempt += 1
-    from app.tasks.feedback_state import update_feedback
+    from app.tasks.feedback.feedback_state import update_feedback
     update_feedback(item, 'queued', '')
     item.updated_at = now()
     return job_dto(item)

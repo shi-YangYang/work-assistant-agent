@@ -5,17 +5,17 @@ from fakes import ReviewedFixtureModel
 from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.history import conversation_history
-from app.agent.middleware import ToolBoundary
+from app.agent.context.history import conversation_history
+from app.agent.runtime.middleware import ToolBoundary
 from app.db.base import now
 from app.modules.messages.models import Message
 from app.modules.reports.models import Report
 from app.modules.work.models import ProgressDraft
 from app.security.access import scope as business_scope
 from app.tasks.context import RunContext
-from app.tasks.handlers import process_job
+from app.tasks.processing.handlers import process_job
 from app.tasks.models import Job
-from app.tasks.queue import claim
+from app.tasks.runtime.queue import claim
 from pydantic import Field
 from sqlalchemy import select
 from test_company import send
@@ -67,15 +67,12 @@ async def test_retry_only_resumes_its_message_job_after_a_later_job_fails(setup,
             return await original(self, request, handler)
         monkeypatch.setattr(ToolBoundary, 'awrap_tool_call', fail_before_b_tool)
         await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=model('仅属于 B'))
-        assert (await employee.post(f"/api/v1/jobs/{first['jobId']}/retry", json={})).status_code == 200
-        retry_model = model('仅属于 A')
-        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=retry_model)
+        stale = await employee.post(f"/api/v1/jobs/{first['jobId']}/retry", json={})
+        assert stale.status_code == 409 and stale.json()['error']['code'] == 'task_superseded'
         async with sessions() as db:
-            assert (await db.get(Job, first['jobId'])).state == 'succeeded'
+            assert (await db.get(Job, first['jobId'])).state == 'failed'
             assert (await db.get(Job, second['jobId'])).state == 'failed'
-            drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.owner_id == actor.id))).all()
-            assert [(draft.message_id, draft.content['title']) for draft in drafts] == [(first['messageId'], '仅属于 A')]
-            assert '只有 B' not in str(retry_model.seen)
+            assert not (await db.scalars(select(ProgressDraft).where(ProgressDraft.owner_id == actor.id))).all()
         assert (await employee.post(f"/api/v1/jobs/{second['jobId']}/retry", json={})).status_code == 200
         resumed_model = model('不应重新生成的 C')
         await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=resumed_model)
@@ -142,7 +139,17 @@ async def test_history_keeps_explicit_clarification_and_excludes_future_or_other
     text = str([item.content for item in history])
     assert parent.id in text and '请补充客户名称' in text
     assert '另一个员工的机密' not in text and '后发的 B' not in text
-    assert sum(len(item.content) for item in history) <= 20000 - (8000 + 4 * 2048)
+    # History is complete; the request boundary uses the actual model capability,
+    # including image envelopes and the task projection, rather than a 20k cap.
+    from app.agent.context.context_usage import ensure_input, estimate_request
+    from app.tasks.context import BudgetExceeded
+    from langchain_core.messages import HumanMessage
+    used = estimate_request([*history, HumanMessage(content=content)])
+    context.model_binding = {'assistant': {'contextCapability': {'contextWindow': 100000, 'inputLimit': used, 'maxOutput': 4000}}}
+    ensure_input(context, used)
+    context.model_binding['assistant']['contextCapability']['inputLimit'] = used - 1
+    with pytest.raises(BudgetExceeded):
+        ensure_input(context, used)
 
 
 class ReferenceRecoveryModel(ReviewedFixtureModel):

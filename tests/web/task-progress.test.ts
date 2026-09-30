@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest'
 import { acceptFeedback, visibleFeedback } from '../../apps/web/src/api/job-feedback'
 import { JobNotice } from '../../apps/web/src/features/jobs/components/JobNotice'
 import { nodeStatus } from '../../apps/web/src/features/jobs/components/TaskNode'
+import { progressView, nodeName } from '../../apps/web/src/features/jobs/utils/progress'
 import { TaskProgress } from '../../apps/web/src/features/jobs/components/TaskProgress'
 
 const node = (patch: Partial<TaskNode> = {}): TaskNode => ({
@@ -56,8 +57,8 @@ it('renders compact accessible progress, completion totals, and in-place manual 
       }),
     )
   const running = render(job())
-  expect(running).toContain('<summary>')
-  expect(running).toContain('aria-label="处理步骤"')
+  expect(running).not.toContain('<summary>')
+  expect(running).toContain('处理请求')
   expect(running).not.toContain('aria-live')
   const complete = render(
     job({
@@ -68,7 +69,7 @@ it('renders compact accessible progress, completion totals, and in-place manual 
       ],
     }),
   )
-  expect(complete).toContain('已完成 1 个步骤 · 自动重试 2 次')
+  expect(complete).toContain('已完成 · 自动重试 2 次')
   expect(complete).toContain('已失败')
   expect(complete).not.toContain('等待执行')
   expect(complete).not.toContain('<button')
@@ -116,7 +117,8 @@ it('distinguishes partial task completion from completed processing steps', () =
       onRetry: vi.fn(),
     }),
   )
-  expect(html).toContain('仍有事项未完成 · 已完成 1 个步骤')
+  expect(html).toContain('仍有事项未完成')
+  expect(html).not.toContain('项操作')
 })
 
 it('requires explicit assistant opt-in and preserves other JobNotice presentation', () => {
@@ -125,7 +127,7 @@ it('requires explicit assistant opt-in and preserves other JobNotice presentatio
   const assistant = renderToStaticMarkup(
     createElement(JobNotice, { job: job(), refresh: vi.fn(), showNodes: true }),
   )
-  expect(assistant).toContain('处理步骤')
+  expect(assistant).toContain('处理请求')
   const legacy = renderToStaticMarkup(
     createElement(JobNotice, {
       job: job({ stage: 'transcribing' }),
@@ -223,7 +225,10 @@ it('only marks actual execution for shine and clears unfinished nodes on interru
   const cancelled = render(
     job({
       state: 'cancelled',
-      nodes: [node({ id: 'saved', state: 'succeeded' }), node({ state: 'retry_wait' })],
+      nodes: [
+        node({ id: 'saved', kind: 'tool', label: '查找工作', state: 'succeeded' }),
+        node({ state: 'retry_wait' }),
+      ],
     }),
   )
   expect(cancelled).toContain('已中断')
@@ -247,4 +252,129 @@ it('does not relight a terminal attempt when a late snapshot has a larger sequen
   expect(
     acceptFeedback(terminal, { ...terminal, attempt: 2, state: 'running' }, 'job')?.state,
   ).toBe('running')
+})
+
+it.each([
+  ['needs_input', '等待补充信息'],
+  ['needs_confirmation', '等待你的确认'],
+  ['partial', '部分完成'],
+  ['processing', '正在处理'],
+  ['blocked', '暂时无法继续'],
+] as const)(
+  'uses the business %s outcome instead of declaring the task complete',
+  (state, label) => {
+    const html = renderToStaticMarkup(
+      createElement(TaskProgress, {
+        job: job({
+          state: 'awaiting_input',
+          nodes: [node({ state: 'succeeded' })],
+          taskOutcome: { state, completed: [], remaining: ['请提供具体对象'], nextAction: 'reply' },
+        }),
+        busy: false,
+        onRetry: vi.fn(),
+      }),
+    )
+    expect(html).toContain(label)
+    expect(html).not.toContain('已完成 ·')
+  },
+)
+
+it('prefers the live retry state and accepts outcome-only feedback updates', () => {
+  const value = job({
+    state: 'running',
+    taskOutcome: { state: 'blocked', completed: [], remaining: [], nextAction: 'reply' },
+  })
+  const html = renderToStaticMarkup(
+    createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }),
+  )
+  expect(html).toContain('处理请求')
+  expect(html).not.toContain('暂时无法继续')
+  const base: JobFeedback = {
+    jobId: 'job',
+    attempt: 1,
+    fence: 1,
+    seq: 1,
+    stage: 'complete',
+    state: 'succeeded',
+    text: '',
+    error: '',
+    updatedAt: '2026-09-28',
+  }
+  const changed: JobFeedback = {
+    ...base,
+    taskOutcome: { state: 'completed', completed: ['生成报告'], remaining: [], nextAction: 'none' },
+  }
+  expect(acceptFeedback(base, changed, 'job')).toBe(changed)
+})
+
+it('projects six execution nodes into two actual operations with no duplicate thoughts', () => {
+  const nodes = [
+    node({ id: 'm1' }),
+    node({
+      id: 'query',
+      kind: 'tool',
+      label: '查找工作',
+      presentation: { type: 'operation', subject: '上线 Web' },
+    }),
+    node({ id: 'm2' }),
+    node({
+      id: 'export',
+      kind: 'tool',
+      label: '导出表格',
+      presentation: { type: 'operation', subject: '工作清单.xlsx' },
+    }),
+    node({ id: 'm3' }),
+    node({ id: 'm4' }),
+  ].map((value) => ({ ...value, state: 'succeeded' as const }))
+  const value = job({ state: 'succeeded', nodes })
+  const view = progressView(value)
+  expect(view.rows.map(nodeName)).toEqual(['查找工作：上线 Web', '导出表格：工作清单.xlsx'])
+  expect(view.completed).toBe(2)
+  const html = renderToStaticMarkup(
+    createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }),
+  )
+  expect(html).toContain('已完成 · 2 项操作')
+  expect(html).not.toContain('思考中')
+})
+
+it('keeps simultaneous operations, abnormal internal nodes and retry totals without counting them as success', () => {
+  const nodes = [
+    node({ id: 'a', kind: 'tool', label: '读取网页' }),
+    node({ id: 'b', kind: 'tool', label: '读取网页' }),
+    node({ id: 'internal', kind: 'review', state: 'succeeded', totalRetries: 2 }),
+    node({
+      id: 'blocked',
+      kind: 'authorization',
+      parentId: 'a',
+      state: 'awaiting_input',
+      error: '需要补充对象',
+    }),
+    node({ id: 'receipt', kind: 'tool', label: '读取操作结果', state: 'succeeded' }),
+  ]
+  const view = progressView(job({ nodes }))
+  expect(view.parallel).toBe(true)
+  expect(view.rows.map((row) => row.id)).toEqual(['a', 'b', 'internal', 'blocked'])
+  expect(view.completed).toBe(0)
+  expect(view.retries).toBe(2)
+  const html = renderToStaticMarkup(
+    createElement(TaskProgress, { job: job({ nodes }), busy: false, onRetry: vi.fn() }),
+  )
+  expect(html.match(/data-state="running"[^>]*data-running="true"/g)).toHaveLength(2)
+  expect(html).toContain('需要补充对象')
+})
+
+it('omits successful plain-question progress but retains cancellation and final reply failure', () => {
+  const render = (value: Job) =>
+    renderToStaticMarkup(createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }))
+  expect(render(job({ state: 'succeeded', nodes: [node({ state: 'succeeded' })] }))).toBe('')
+  const failed = render(
+    job({
+      state: 'failed',
+      error: '答复失败',
+      nodes: [node({ kind: 'tool', state: 'succeeded' })],
+    }),
+  )
+  expect(failed).toContain('答复失败')
+  expect(failed).not.toContain('已完成 ·')
+  expect(render(job({ state: 'cancelled' }))).toContain('已中断')
 })
