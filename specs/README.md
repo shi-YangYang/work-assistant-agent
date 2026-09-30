@@ -23,6 +23,8 @@
 | [042](spec-042-general-assistant-sandbox/spec.md) | 通用问答、隔离代码执行与文件成果交付 | 已完成 |
 | [043](spec-043-project-directory-organization/spec.md) | Web、公司后端与 Electron 代码按职责归组 | [验收 PASS](spec-043-project-directory-organization/acceptance.md) |
 | [044](spec-044-web-full-system-testing/spec.md) | Web 全功能、真实 Agent 多轮与破坏性测试 | 部分修复，2 类技术问答未通过 |
+| [045](spec-045-sandbox-built-in-toolkit/spec.md) | 沙盒结构化内置工具、自由 Python 与统一执行 | 已完成 |
+| [046](spec-046-assistant-progress-clarity/spec.md) | 工作助手具体操作名称、当前活动与精简进度列表 | [验收 PASS](spec-046-assistant-progress-clarity/acceptance.md) |
 
 ## 文档分工
 
@@ -33,4 +35,4 @@
 
 ## 生命周期
 
-新 Spec 从 **045** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **047** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

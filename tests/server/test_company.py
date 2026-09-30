@@ -5,7 +5,7 @@ from PIL import Image
 from datetime import timedelta
 from fakes import controlled_model
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.prompts.policies import ALLOWED_TOOLS
+from app.agent.prompts.policies import ALLOWED_TOOLS, EXECUTION_TOOLS
 from app.db.base import now
 from app.modules.members.models import Company, Member
 from app.modules.reports.models import Report, ReportRevision
@@ -50,7 +50,7 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     model = await run_target(settings, sessions, users, result)
     message = (await employee.get('/api/v1/messages/' + result['messageId'])).json()
     assert message['job']['state'] == 'succeeded', message
-    assert set(model.seen_tools) == ALLOWED_TOOLS - {'run_python'}
+    assert set(model.seen_tools) == ALLOWED_TOOLS - EXECUTION_TOOLS
     assert not (await employee.get('/api/v1/work-items')).json()['items']
     assert (await peer.get('/api/v1/messages/' + result['messageId'])).status_code == 404
     assert (await outsider.get('/api/v1/messages/' + result['messageId'])).status_code == 404

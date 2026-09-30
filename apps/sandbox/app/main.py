@@ -4,7 +4,7 @@ import hmac
 import os
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from .schemas import ExecutionRequest, MAX_INPUT_BYTES, execution_id
+from .schemas import ExecutionRequest, MAX_REQUEST_BYTES, execution_id
 from .service import Service
 
 service = Service()
@@ -34,7 +34,7 @@ app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
 async def body_limit(request, call_next):
     from starlette.responses import JSONResponse
     if request.method == 'POST':
-        maximum = MAX_INPUT_BYTES * 4 // 3 + 128 * 1024
+        maximum = MAX_REQUEST_BYTES
         data = bytearray()
         async for chunk in request.stream():
             data.extend(chunk)

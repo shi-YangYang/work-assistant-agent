@@ -39,6 +39,7 @@ def node_dtos(job):
         result.append({
             'id': row['id'], 'parentId': row.get('parentId'), 'kind': row['kind'],
             'label': row['label'], 'state': status, 'attempts': row['attempts'],
+            **({'presentation': row['presentation']} if row.get('presentation') else {}),
             'maxAttempts': 4, 'retries': max(0, row['attempts'] - 1),
             'totalRetries': row.get('totalRetries', 0), 'round': row.get('round', 0),
             'nextRetryAt': iso(row.get('nextAt')) if status == 'retry_wait' else None,

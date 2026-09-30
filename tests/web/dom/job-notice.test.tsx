@@ -41,10 +41,10 @@ afterEach(cleanup)
 
 it.each([true, false])('preserves manually chosen expansion %s across task updates', (expanded) => {
   const node: NonNullable<Job['nodes']>[number] = {
-    id: 'thinking',
+    id: 'initial-read',
     parentId: null,
-    kind: 'model',
-    label: '思考中',
+    kind: 'tool',
+    label: '查找工作',
     state: 'running',
     attempts: 1,
     maxAttempts: 4,

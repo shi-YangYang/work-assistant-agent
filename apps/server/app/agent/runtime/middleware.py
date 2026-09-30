@@ -2,7 +2,7 @@ import json
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from app.agent.prompts.policies import ALLOWED_TOOLS, TEAM_TOOL_NAMES
+from app.agent.prompts.policies import ALLOWED_TOOLS, TEAM_TOOL_NAMES, EXECUTION_TOOLS
 from app.tasks.context import BudgetExceeded
 from app.tasks.lease import lease
 
@@ -32,7 +32,7 @@ class ToolBoundary(AgentMiddleware):
             return ModelResponse(result=[AIMessage(id=f'receipt-completion:{context.job_id}', content='')])
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
         if not getattr(context.settings, 'sandbox_url', '') or not getattr(context.settings, 'sandbox_token', ''):
-            allowed = allowed - {'run_python'}
+            allowed = allowed - EXECUTION_TOOLS
         names = {t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name')) for t in request.tools}
         # Profiles tune model visibility; this middleware is the security boundary.
         visible = [t for t in request.tools if (t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name'))) in allowed]
@@ -52,7 +52,7 @@ class ToolBoundary(AgentMiddleware):
             await lease(db, context)
         allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
         if not getattr(context.settings, 'sandbox_url', '') or not getattr(context.settings, 'sandbox_token', ''):
-            allowed = allowed - {'run_python'}
+            allowed = allowed - EXECUTION_TOOLS
         if request.tool_call['name'] not in allowed:
             raise RuntimeError('Tool is not allowed')
         if repairing_delivery(request.state.get('messages', []), context.job_id) and request.tool_call['name'] != 'finish_task':

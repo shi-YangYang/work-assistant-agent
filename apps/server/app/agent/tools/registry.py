@@ -1,3 +1,4 @@
+from app.agent.tools.sandbox import SANDBOX_TOOLS
 from app.agent.tools.execution import run_python, read_execution
 from app.agent.tools.completion import finish_task
 from app.agent.tools.questions import request_user_input
@@ -13,7 +14,7 @@ from app.agent.tools.deliverables import DELIVERABLE_TOOLS
 from app.agent.tools.web import WEB_TOOLS
 
 
-BUSINESS_TOOLS = [run_python, read_execution, finish_task, request_user_input, *ACTION_TOOLS, *DELIVERABLE_TOOLS, *WEB_TOOLS, find_work_items, get_work_item, get_message_context, propose_progress, find_documents, read_document]
+BUSINESS_TOOLS = [*SANDBOX_TOOLS, run_python, read_execution, finish_task, request_user_input, *ACTION_TOOLS, *DELIVERABLE_TOOLS, *WEB_TOOLS, find_work_items, get_work_item, get_message_context, propose_progress, find_documents, read_document]
 
 
 if {tool.name for tool in BUSINESS_TOOLS} != ALLOWED_TOOLS - {'read_file'}:

@@ -22,6 +22,8 @@ class SandboxClient:
                 raise ValueError('代码执行服务认证配置有误，请联系管理员')
             if response.status_code == 409:
                 raise ValueError('执行身份与输入不一致，已停止此次执行')
+            if response.status_code in (400, 422):
+                raise ValueError('执行协议或参数不受支持；请核对参数，并确认沙盒控制服务和执行镜像均已更新')
             if response.status_code == 429:
                 raise ValueError('代码执行队列已满，请稍后重试')
             response.raise_for_status()

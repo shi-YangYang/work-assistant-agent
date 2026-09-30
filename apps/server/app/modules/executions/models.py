@@ -13,5 +13,6 @@ class SandboxExecution(Owned, Base):
     fence: Mapped[int] = mapped_column(Integer)
     state: Mapped[str] = mapped_column(String(16), default='queued')
     code: Mapped[str] = mapped_column(Text)
+    request: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     sources: Mapped[list] = mapped_column(JSONB, default=list)
     result: Mapped[dict] = mapped_column(JSONB, default=dict)

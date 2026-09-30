@@ -1,8 +1,11 @@
 """Read persisted observations without replaying code or crossing conversations."""
+import json
 from fastapi import HTTPException
 from sqlalchemy import select
 from app.core.errors import problem
 from app.modules.conversations.models import Conversation
+from app.modules.deliverables.queries import get_deliverable
+from app.modules.deliverables.serializers import summary as delivery_summary
 from app.modules.executions.models import SandboxExecution
 from app.modules.executions.sources import check_sources, remember_sources
 from app.modules.messages.models import Message
@@ -34,8 +37,26 @@ async def authorize(db, actor, job, row, message, origin):
 
 def summary(row):
     return {'executionId': row.id, 'messageId': row.message_id, 'createdAt': row.created_at.isoformat(),
-            'title': row.result.get('title', 'Python 执行'), 'state': row.state,
+            'title': row.result.get('title', '内置工具执行' if row.request else 'Python 执行'), 'state': row.state,
+            'kind': 'builtin' if row.request else 'python', 'tool': row.request['name'] if row.request else 'run_python',
             'exitCode': row.result.get('exitCode')}
+
+
+async def delivery_reference(db, actor, job, row):
+    snapshot = row.result.get('delivery')
+    if not snapshot:
+        return 'none', ''
+    if not isinstance(snapshot, dict) or not isinstance(snapshot.get('id'), str) or type(snapshot.get('revision')) is not int or snapshot['revision'] < 1:
+        return 'unavailable', ''
+    try:
+        item, record = await get_deliverable(db, actor, snapshot['id'], snapshot['revision'], conversation_id=row.conversation_id)
+    except HTTPException as error:
+        if error.status_code not in (403, 404):
+            raise
+        return 'unavailable', ''
+    job.access = merge_access(job.access or scope(actor), item.access)
+    # Rebuild references from the authorized immutable revision, never replay saved URLs/body.
+    return 'available', json.dumps(delivery_summary(item, record), ensure_ascii=False)
 
 
 async def read_executions(db, actor, job, current, *, identifier='', offset=0, context=None):
@@ -67,12 +88,18 @@ async def read_executions(db, actor, job, current, *, identifier='', offset=0, c
     await authorize(db, actor, job, row, message, origin)
     if context is not None:
         remember_sources(job, context, row.sources)
+    delivery_state, delivery = await delivery_reference(db, actor, job, row)
     fields = {'code': row.code, 'stdout': str(row.result.get('stdout', '')),
-              'stderr': str(row.result.get('stderr', ''))}
+              'stderr': str(row.result.get('stderr', '')), 'message': str(row.result.get('message', '')),
+              'delivery': delivery}
+    if row.request is not None:
+        fields.update(request=json.dumps(row.request, ensure_ascii=False), resultData=json.dumps(row.result.get('data', {}), ensure_ascii=False),
+                      warnings=json.dumps(row.result.get('warnings', []), ensure_ascii=False))
     length = max(map(len, fields.values()))
     if offset and offset >= length:
         problem(422, '执行记录阅读位置已超出范围')
     return {**summary(row), **{name: value[offset:offset + TEXT_WIDTH] for name, value in fields.items()},
+            'deliveryState': delivery_state,
             'contentOffset': offset, 'nextOffset': offset + TEXT_WIDTH if offset + TEXT_WIDTH < length else None,
             'contentTruncated': offset > 0 or length > TEXT_WIDTH,
             'evidenceType': 'execution_receipt', 'historical': row.job_id != job.id,

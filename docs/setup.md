@@ -223,6 +223,32 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 
 沙盒用于运行 Python、分析文件和生成 Excel、Word、PDF、PPT；普通问答不依赖沙盒。每次执行使用独立环境，生成文件随会话保留。
 
+常规操作使用五个内置工具，无需用户配置：
+
+| 工具 | 输入与结果 |
+| --- | --- |
+| `inspect_table` | 附件／成果中的 CSV、XLSX；返回列、缺失、重复和最多 20 行样本 |
+| `export_table` | 内联表格或文件引用；导出 CSV、XLSX |
+| `create_chart` | 指定横轴与数值列；生成中文柱状图／折线图 PNG |
+| `create_document` | 标题、段落、列表、表格、图片；生成 DOCX、PDF |
+| `create_slides` | 页面标题与内容块；生成可编辑 PPTX，长内容自动拆页 |
+
+常规文件可直接说“把这份计划生成 PDF”。工具不自动清洗、汇总或执行公式；特殊算法与布局仍可用 `run_python`。CSV 默认保留文本与前导零，指定列类型后才转换。表格最多 40 列、20000 行（内联最多 2000 行）；图表最多 60 行，重复类别需先明确汇总规则。文档宽表超过 8 列、PPT 表格超过 6 列或单行过长会明确失败。格式可读与视觉排版检查是不同事项。
+
+内置任务参数示例（由模型提交，不要求用户手写）：
+
+```json
+{
+  "filename": "实施计划.pdf",
+  "format": "pdf",
+  "title": "实施计划",
+  "blocks": [{"type": "paragraph", "text": "先确认需求，再完成验证。"}]
+}
+```
+
+`run_python` 也可 `from noria_tools import export_table`，调用 `export_table(filename="结果.xlsx", data={"columns":["数量"],"rows":[[3]]})`。文件引用使用真实附件或成果 ID，不传宿主机路径；每次执行是新环境，继续处理使用已保存成果。
+
+
 Linux 执行主机先按 [gVisor 安装说明](https://gvisor.dev/docs/user_guide/install/)安装 `runsc` 并注册到 Docker。安装或调整 Docker 配置安排在维护时段；CD 只检查运行时，不自动安装。使用完整发行包及其校验文件，保留 `runsc` 同目录的 `gvisor-bin/`，不能只复制单个可执行文件。
 
 确认隔离运行时可用：
@@ -253,6 +279,8 @@ PAA_GENERATED_TOTAL_QUOTA_MB=4096
 docker build -f deploy/company/Dockerfile.sandbox --target runner \
   -t noria-sandbox-runner:local .
 ```
+
+升级内置工具时同时更新控制服务与 runner 镜像，再执行数据库迁移并启动业务服务；只更新 API 不会把工具装入旧镜像。本地重新执行 `npm run sandbox:setup` 后运行 `npm run db:company`。旧 Python 请求及历史成果兼容，无需新增环境变量。
 
 CD 启用此配置后会构建并固定控制服务与执行镜像版本。并发 `1` 是资源测试起点，达到上限才排队；提高前需测量整机内存、文档渲染与业务 API 响应。控制服务只在内网提供接口；Docker 控制 socket 仅供可信管理服务使用，不挂入生成代码的环境。
 

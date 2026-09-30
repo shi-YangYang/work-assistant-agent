@@ -62,7 +62,7 @@ class Service:
 
     def submit(self, request):
         request.validate_inputs()
-        serialized = request.model_dump_json()
+        serialized = request.serialized()
         fingerprint = hashlib.sha256(serialized.encode()).hexdigest()
         old = self.rows.get(request.id)
         if old:

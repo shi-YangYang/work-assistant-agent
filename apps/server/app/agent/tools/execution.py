@@ -7,9 +7,14 @@ from app.modules.executions.service import execute
 
 @tool
 async def read_execution(runtime: ToolRuntime[RunContext], execution_id: str = '', offset: int = 0) -> str:
-    """Read saved Python executions in THIS conversation without running code.
+    """Read saved Python/builtin executions in THIS conversation without running code.
     Without execution_id lists receipt IDs, titles, times and states; use nextOffset
-    for more. With a real ID reads code/stdout/stderr/exitCode by offset/nextOffset.
+    for more. With a real ID reads kind, code OR request JSON plus resultData,
+    warnings, stdout/stderr, saved error message and delivery by offset/nextOffset.
+    Every text field is bounded; join each field's chunks before parsing JSON.
+    delivery is JSON with real deliverable id, revision and file IDs/download URLs,
+    rechecked against current permissions; deliveryState is available/none/unavailable.
+    An unavailable delivery has no references. Read the deliverable before revising it.
     Use for follow-ups about past experiments before considering another run.
     Works without a sandbox connection. Historical observations are not new runs;
     report only conditions and versions actually recorded, never infer them.
@@ -36,7 +41,10 @@ async def run_python(code: str, title: str, runtime: ToolRuntime[RunContext], in
     """Run Python in a private CPU sandbox for actual computation, data analysis,
     charts, minimal experiments for disputed/uncertain executable behavior, or
     generating TXT/MD/JSON/CSV/XLSX/PNG/DOCX/PDF/PPTX files. Ordinary knowledge,
-    writing and unambiguous code explanations need no execution. No network or pip install.
+    writing and unambiguous code explanations need no execution. Routine table,
+    chart, Word/PDF and PPT tasks should use structured tools instead of writing
+    boilerplate. This entry remains for custom computation/unsupported layouts.
+    It can import noria_tools (same fixed helper API). No network or pip install.
     Libraries: pandas,numpy,openpyxl,matplotlib,python-docx,python-pptx,reportlab,
     Pillow,pypdf. LibreOffice/Poppler and Noto CJK fonts available for render checks.
     Input references: {attachment_id: real ID} or {deliverable_id,revision,file_id}

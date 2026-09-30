@@ -9,7 +9,8 @@ COPY apps/sandbox/runner/requirements.txt /runner/requirements.txt
 RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" -r /runner/requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends poppler-data fonts-wqy-microhei \
     && rm -rf /var/lib/apt/lists/*
-COPY apps/sandbox/runner/entrypoint.py /runner/entrypoint.py
+COPY apps/sandbox/runner/entrypoint.py apps/sandbox/runner/builtin.py /runner/
+COPY apps/sandbox/runner/noria_tools /runner/noria_tools
 USER 65532:65532
 WORKDIR /work
 CMD ["sleep", "120"]

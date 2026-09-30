@@ -42,7 +42,12 @@ export function JobNotice(props: JobNoticeProps) {
     setSource({ signature, optimistic: '' })
   return (
     <JobRetryNotice
-      key={source.signature}
+      key={
+        props.showNodes && props.job.kind === 'message'
+          ? `assistant:${props.job.id}`
+          : source.signature
+      }
+      ownerVersion={source.signature}
       {...props}
       expanded={expandedJob === props.job.id}
       onExpandedChange={(expanded) => setExpandedJob(expanded ? props.job.id : null)}
@@ -60,30 +65,36 @@ function JobRetryNotice({
   onRetryStart,
   onRetrySettled,
   onOptimistic,
+  ownerVersion,
   expanded,
   onExpandedChange,
 }: JobNoticeProps & {
   onOptimistic: (job: Job) => void
+  ownerVersion: string
   expanded: boolean
   onExpandedChange: (expanded: boolean) => void
 }) {
   const [local, setLocal] = useState({
+    ownerVersion,
     busy: false,
     retrying: null as Job | null,
     error: '' as Error | string,
     confirmation: null as 'original' | 'current' | null,
   })
+  if (local.ownerVersion !== ownerVersion)
+    setLocal({ ownerVersion, busy: false, retrying: null, error: '', confirmation: null })
   const { retrying, error, confirmation, busy } = local
   const current = useRef<{ request: object | null } | null>(null)
   const update = (next: Partial<typeof local>) => setLocal((previous) => ({ ...previous, ...next }))
   useLayoutEffect(() => {
-    // Only committed renders acquire ownership; abandoned renders cannot invalidate a retry.
+    // Keep progress rows mounted; reset request ownership only for committed job versions.
+    // Abandoned/suspended renders must not invalidate the active request.
     const committed = { request: null }
     current.current = committed
     return () => {
       if (current.current === committed) current.current = null
     }
-  }, [])
+  }, [ownerVersion])
   const job = retrying ?? sourceJob
   const report = job.kind === 'report'
   const assistant = showNodes && job.kind === 'message'

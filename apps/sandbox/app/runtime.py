@@ -104,11 +104,23 @@ class Runtime:
                 '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=700',
                 '--log-driver', 'none', '--init', self.image, 'sleep', str(self.seconds + 45))
             await self.command('start', name)
-            payload = json.dumps({'code': request.code, 'inputs': [item.model_dump() for item in request.inputs]}).encode()
+            task_payload = {'inputs': [item.model_dump() for item in request.inputs]}
+            task_payload.update({'task': request.task.model_dump()} if request.task is not None else {'code': request.code})
+            payload = json.dumps(task_payload).encode()
+            if request.task is not None:
+                exists, _, _ = await self.command('exec', name, 'test', '-f', '/runner/builtin.py', check=False)
+                if exists:
+                    raise ValueError('执行镜像不支持内置工具，请更新沙盒镜像')
             code, out, err = await self.command('exec', '-i', name, 'python', '/runner/entrypoint.py', payload=payload, timeout=self.seconds, limit=32768, check=False)
             result = {'state': 'succeeded' if code == 0 else 'failed', 'exitCode': code,
                       'stdout': out.decode(errors='replace')[:16000], 'stderr': err.decode(errors='replace')[:8000], 'files': []}
             if code == 0:
+                if request.task is not None:
+                    _, raw, _ = await self.command('exec', name, 'cat', '/work/builtin-result.json', limit=65536)
+                    value = json.loads(raw)
+                    if not isinstance(value, dict) or set(value) != {'data', 'warnings'} or not isinstance(value['data'], dict) or not isinstance(value['warnings'], list) or len(value['warnings']) > 40 or any(not isinstance(warning, str) or len(warning) > 1000 for warning in value['warnings']):
+                        raise ValueError('内置工具结果格式无效')
+                    result.update(value)
                 _, archive, _ = await self.command('exec', name, 'tar', '-C', '/work', '-cf', '-', 'output', limit=MAX_OUTPUT_BYTES + 1024 * 1024)
                 result['files'] = export_archive(archive, directory, validate_files=False)
                 for file in result['files']:

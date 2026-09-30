@@ -65,7 +65,10 @@ class BoundedChatModel(ChatOpenAI):
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
         # Message ids are graph/checkpoint identities, not provider call counters.
         identity = digest({'request': payload, 'messages': [getattr(m, 'id', None) for m in messages]})
-        return await execute_node(context, identity=identity, kind='model', label='思考中', operation=operation,
+        from app.agent.runtime.progress import model_phase
+        label = model_phase(messages, context.job_id, nested=bool(parent))
+        return await execute_node(context, identity=identity, kind='model', label=label, operation=operation,
+                                  presentation={'type': 'activity'},
                                   encode=encode_result, decode=decode_result)
 
     async def _single(self, messages, stop=None, run_manager=None, **kwargs):

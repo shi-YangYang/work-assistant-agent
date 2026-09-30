@@ -10,33 +10,43 @@ from app.modules.deliverables.serializers import detail
 from app.modules.executions.files import prepare_inputs, persist_file, validate_metadata
 from app.modules.executions.sources import check_sources, task_sources
 from app.modules.executions.models import SandboxExecution
+from app.modules.executions.requests import builtin_request, references_for, bind_inputs, execution_key
+from app.modules.executions.builtin.results import structured_result
+from app.modules.executions.builtin.schemas import LABELS
 from app.modules.messages.models import Message
 from app.security.ownership import owned
 from app.tasks.lease import lease
 from app.tasks.context import LostLease
 
 
-async def execute(context, *, code, title, references, identifier='', revision=0, step=1):
+async def execute(context, *, code='', title, references=None, identifier='', revision=0, step=1, task=None):
     client = SandboxClient(context.settings)
-    if not 1 <= step <= 8 or not code.strip() or len(code) > 60000 or len(references) > 12 or not title.strip() or len(title) > 200:
+    if task is not None:
+        if code:
+            raise ValueError('代码与内置任务不能混用')
+        task = builtin_request(task['name'], task['arguments'])
+        references = references_for(task)
+    references = references or []
+    if not 1 <= step <= 8 or (task is None and (not code.strip() or len(code) > 60000)) or len(references) > 12 or not title.strip() or len(title) > 200:
         problem(422, '代码、标题、输入文件数量或步骤不符合要求')
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         inputs, sources = await prepare_inputs(db, actor, job, message, context.settings, references)
         sources = await task_sources(db, actor, job, context, sources)
-        key = digest({'job': job.id, 'code': code, 'inputs': inputs, 'sources': sources, 'title': title, 'target': identifier, 'revision': revision, 'step': step})
+        key = execution_key(job=job.id, code=code, task=task, inputs=inputs, sources=sources, title=title, identifier=identifier, revision=revision, step=step)
         row = await db.scalar(select(SandboxExecution).where(SandboxExecution.key == key).with_for_update())
         if row is None:
             row = SandboxExecution(key=key, company_id=actor.company_id, owner_id=actor.id, job_id=job.id, conversation_id=message.conversation_id,
-                                   message_id=message.id, fence=job.fence, code=code, sources=sources, state='queued', result={})
+                                   message_id=message.id, fence=job.fence, code=code, request=task, sources=sources, state='queued', result={})
             db.add(row)
         else:
             await check_sources(db, actor, row.sources)
             if row.state in ('succeeded', 'failed', 'cancelled'):
                 return row.result
         owner_key = digest({'company': actor.company_id, 'owner': actor.id})
-    request = {'id': key, 'owner': owner_key, 'code': code, 'inputs': inputs}
+    request = {'id': key, 'owner': owner_key, 'inputs': inputs}
+    request.update({'task': bind_inputs(task, references, inputs)} if task is not None else {'code': code})
     try:
         result = await client.read(key)
         if result is None:
@@ -63,7 +73,7 @@ async def execute(context, *, code, title, references, identifier='', revision=0
                         state = execution(current)
                         entry = next((x for x in state['nodes'] if x['id'] == node[0]), None)
                         if entry:
-                            entry['label'] = '等待执行资源' if result['state'] == 'queued' else '运行代码与生成文件'
+                            entry['label'] = '等待执行资源' if result['state'] == 'queued' else LABELS[task['name']] if task else '运行代码与生成文件'
                             save_nodes(current, state)
                 previous = result['state']
             await asyncio.sleep(.5)
@@ -73,12 +83,17 @@ async def execute(context, *, code, title, references, identifier='', revision=0
         clean = {'executionId': row.id, 'title': title, 'state': result['state'], 'stdout': str(result.get('stdout', ''))[:16000], 'stderr': str(result.get('stderr', ''))[:8000],
                  'exitCode': result.get('exitCode'), 'message': result.get('error', ''), 'inputFiles': [item['name'] for item in inputs],
                  'inputRefs': references}
+        clean['kind'] = 'builtin' if task else 'python'
+        if task:
+            clean['tool'] = task['name']
+            if result['state'] == 'succeeded':
+                clean.update(structured_result(result))
         outputs = result.get('files', [])
         if len(outputs) > 12 or sum(validate_metadata(item)['size'] for item in outputs) > 32 * 1024 * 1024:
             raise ValueError('生成文件超过导出限制')
         clean['fileChecks'] = [{'name': item['name'], 'formatReadable': True,
                                'fontCheck': '中文字体嵌入已检查；PDF标准字体无需嵌入' if item['mimeType'] == 'application/pdf' else '未检查字体嵌入，不可声称已嵌入',
-                               'layoutCheck': '以本次代码实际渲染结果为准，不由格式校验保证'} for item in outputs]
+                               'layoutCheck': '未进行自动视觉验收，不由格式校验保证'} for item in outputs]
         payloads = [(item, await client.file(key, item)) for item in outputs] if result['state'] == 'succeeded' else []
         async with context.sessions.begin() as db:
             job, actor = await lease(db, context)

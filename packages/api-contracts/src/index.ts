@@ -187,6 +187,7 @@ export interface TaskNode {
   id: string
   parentId: string | null
   kind: 'model' | 'tool' | 'authorization' | 'review' | 'compaction'
+  presentation?: { type: 'operation' | 'activity'; subject?: string }
   label: string
   state:
     | 'waiting'

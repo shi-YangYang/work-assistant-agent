@@ -1,3 +1,4 @@
+from app.modules.executions.builtin.schemas import EXECUTION_TOOLS
 import asyncio
 import hashlib
 import json
@@ -37,7 +38,7 @@ def build_graph(settings, checkpointer, context, model=None):
     if isinstance(model, BoundedChatModel):
         model._completion_validator = validate_completion_response
     from app.agent.prompts.execution_mode import mode_prompt
-    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name != 'run_python' or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name not in EXECUTION_TOOLS or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 

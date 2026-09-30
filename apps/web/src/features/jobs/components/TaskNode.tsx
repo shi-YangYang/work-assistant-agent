@@ -1,6 +1,7 @@
 import type { TaskNode as Node } from '@paa/api-contracts'
 import { Check, Circle, Clock3, LoaderCircle, Minus, ShieldQuestion, X } from 'lucide-react'
 import styles from './TaskProgress.module.css'
+import { nodeName } from '../utils/progress'
 
 export function nodeStatus(node: Node, now = Date.now()) {
   if (node.state === 'retry_wait') {
@@ -49,16 +50,22 @@ export function TaskNode({
   return (
     <li
       className={styles.node}
+      data-node-id={node.id}
       data-state={node.state}
       data-child={!!node.parentId}
       data-running={running}
     >
       <Icon size={14} aria-hidden="true" className={styles.icon} />
       <div className={styles.nodeContent}>
-        <span>{node.label}</span>
+        <span className={styles.name} title={nodeName(node)}>
+          {nodeName(node)}
+        </span>
         <span className={styles.status}>{nodeStatus(node, now)}</span>
         {node.totalRetries > 0 && ['succeeded', 'awaiting_confirmation'].includes(node.state) && (
           <span className={styles.status}>自动重试 {node.totalRetries} 次</span>
+        )}
+        {node.error && ['failed', 'awaiting_input', 'retry_wait'].includes(node.state) && (
+          <span className={styles.nodeError}>{node.error}</span>
         )}
       </div>
     </li>

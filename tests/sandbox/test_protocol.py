@@ -184,5 +184,46 @@ class Queue(unittest.IsolatedAsyncioTestCase):
                 await service.stop()
 
 
+class BuiltinProtocol(unittest.TestCase):
+    def test_old_python_fingerprint_is_unchanged(self):
+        import hashlib
+        request = ExecutionRequest(id='a' * 64, owner='b' * 64, code='print("中文")', inputs=[])
+        old = json.dumps({'id': 'a' * 64, 'owner': 'b' * 64, 'code': 'print("中文")', 'inputs': []}, ensure_ascii=False, separators=(',', ':'))
+        self.assertEqual(request.serialized(), old)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'SANDBOX_STATE_DIR': directory}):
+            service = Service()
+            self.assertEqual(service.submit(request)['fingerprint'], hashlib.sha256(old.encode()).hexdigest())
+
+    def test_builtin_xor_name_version_size_and_unknown_fields(self):
+        task = {'kind': 'builtin', 'name': 'inspect_table', 'version': 1, 'arguments': {'source': {'input': '表.csv'}}}
+        valid = {'id': 'c' * 64, 'owner': 'd' * 64, 'task': task}
+        request = ExecutionRequest(**valid)
+        self.assertNotIn('code', json.loads(request.serialized()))
+        cases = [{**valid, 'code': 'print(1)'}, {'id': 'c' * 64, 'owner': 'd' * 64},
+                 {**valid, 'task': {**task, 'name': '__import__'}}, {**valid, 'task': {**task, 'version': True}}, {**valid, 'task': {**task, 'version': 2}},
+                 {**valid, 'task': {**task, 'expression': 'print(1)'}},
+                 {**valid, 'task': {**task, 'arguments': {'text': 'x' * (240 * 1024)}}}]
+        for case in cases:
+            with self.subTest(case=list(case)), self.assertRaises(ValueError):
+                ExecutionRequest(**case)
+
+    def test_builtin_idempotency_changes_with_arguments(self):
+        task = {'kind': 'builtin', 'name': 'inspect_table', 'version': 1, 'arguments': {'source': {'input': '表.csv'}, 'sample_rows': 1}}
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'SANDBOX_STATE_DIR': directory}):
+            service = Service()
+            request = ExecutionRequest(id='a' * 64, owner='b' * 64, task=task)
+            self.assertEqual(service.submit(request), service.submit(request))
+            reordered = ExecutionRequest(id='a' * 64, owner='b' * 64, task={**task, 'arguments': dict(reversed(list(task['arguments'].items())))})
+            self.assertEqual(service.submit(request), service.submit(reordered))
+            changed = ExecutionRequest(id='a' * 64, owner='b' * 64, task={**task, 'arguments': {**task['arguments'], 'sample_rows': 2}})
+            with self.assertRaises(ValueError):
+                service.submit(changed)
+
+    def test_body_limit_includes_legal_arguments_and_base64_padding(self):
+        from app.schemas import MAX_INPUT_BYTES, MAX_ARGUMENT_BYTES, MAX_REQUEST_BYTES
+        maximum_encoded_inputs = (MAX_INPUT_BYTES + 2) // 3 * 4
+        self.assertGreaterEqual(MAX_REQUEST_BYTES, maximum_encoded_inputs + MAX_ARGUMENT_BYTES + 12 * 1024)
+
+
 if __name__ == '__main__':
     unittest.main()

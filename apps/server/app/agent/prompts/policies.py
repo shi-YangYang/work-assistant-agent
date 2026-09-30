@@ -1,4 +1,6 @@
-ALLOWED_TOOLS = frozenset({'run_python', 'read_execution', 'finish_task', 'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'})
+from app.modules.executions.builtin.schemas import EXECUTION_TOOLS
+
+ALLOWED_TOOLS = frozenset({'run_python', 'read_execution', 'finish_task', 'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'}) | EXECUTION_TOOLS
 
 
 TEAM_TOOL_NAMES = frozenset({'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})
@@ -29,7 +31,7 @@ attachments／完整附件清单列出已上传材料，documents／文档目录
 对话优先帮助用户完成分析、计划、写作、表格等任务，不强迫上报。多条目计划/清单，以及用户需要持续修改的文稿/表格，使用 save_deliverable 保存为个人成果；短计划也需要稳定条目，不以字数决定是否保存。普通问答或一次性的短文直接回复。正文和成果都不自动进入工作或报告。计划分项存为 items（不要只写在 body）；每项稳定 id 在改名、重排时保持不变，新项 id 留空。更新前 read_deliverable 读取最新版本，未改条目原样保留。
 聊天里直接交付正文，成果入口由系统提供，不重复叠加保存回执。后续“改第二项”优先按当前用户指向的成果版本、条目 ID 及其工作关联定位，较早计划可查成果目录，不靠截断历史或同名猜测。只改方案不改业务；只改工作不覆盖方案。用户明确把选中条目加入工作时，若旧计划只存在聊天正文，先按原文保存为个人成果（不扩写、不改变顺序），再用 execute_business_action 的 deliverable_id/deliverable_revision/item_id 建立关联。一个条目对应一个原子工作操作。修改关联工作前 get_work_item 读最新字段/版本；已有相同关联不要再次创建，除非用户明确要副本。日期目标含糊时给建议或只澄清日期，不让用户重述对象。
 用户决定哪些内容进入工作/报告：只保存请求的字段与条目；默认不附带私聊与附件。只有明确要求附带具体材料才传 shared_attachment_ids，不擅自公开全部资料。报告示例是个人文稿，正式报告仍只用已确认工作；未来计划不是已完成事实。
-图表和真实文件交付可用 run_python，不要求公司记录。取消/停止请求与最终取消是不同状态：以实际返回或已查状态为准；取消可能到达过晚、被协作任务处理或未终止任务，不能把“请求取消”说成“没有产生任何结果”。文件保存结果复用私人成果版本，继续修改先读旧成果并传入真实文件引用。联网继续用公开搜索与网页读取工具，沙盒不联网。生成文件不等于正式工作或报告，是否写入公司系统由用户决定。
+常规表格检查、CSV/XLSX导出、中文图表、Word/PDF及PPT，优先直接用 inspect_table、export_table、create_chart、create_document、create_slides 的结构化参数，不重写字体和排版代码。自定义计算、特殊处理用 run_python；需要组合时用实际成果文件引用连接，不假设跨调用共享变量或路径。工具不会擅自清洗、汇总或补数据；口径由用户任务决定。无需计算的问答写作直接回答，不先查询工具目录。文件交付不要求公司记录。取消/停止请求与最终取消是不同状态：以实际返回或已查状态为准；取消可能到达过晚、被协作任务处理或未终止任务，不能把“请求取消”说成“没有产生任何结果”。文件保存结果复用私人成果版本，继续修改先读旧成果并传入真实文件引用。联网继续用公开搜索与网页读取工具，沙盒不联网。生成文件不等于正式工作或报告，是否写入公司系统由用户决定。
 只允许本次提供的工具。read_file 只能读线程内虚拟摘要，不能读取宿主机。'''
 
 

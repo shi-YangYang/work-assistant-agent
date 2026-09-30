@@ -28,9 +28,10 @@ class Runner:
         self.results = []
         self.ids = []
 
-    async def submit(self, code, owner='a', inputs=None):
+    async def submit(self, code=None, owner='a', inputs=None, task=None):
         identifier = hashlib.sha256(uuid4().bytes).hexdigest()
-        body = {'id': identifier, 'owner': hashlib.sha256(owner.encode()).hexdigest(), 'code': code, 'inputs': inputs or []}
+        body = {'id': identifier, 'owner': hashlib.sha256(owner.encode()).hexdigest(), 'inputs': inputs or []}
+        body.update({'task': task} if task is not None else {'code': code})
         response = await self.client.post('/executions', json=body)
         assert response.status_code == 200, response.text
         self.ids.append(identifier)
@@ -103,6 +104,43 @@ print(json.dumps({'net':int(net),'rows':len(df)}))''')
                     assert len(slides) == 2
         self.file_receipt, self.file_body = result, body
         return {'formats': [item['name'] for item in result['files']], 'knownNet': 120}
+
+    async def builtins(self):
+        table = {'columns': ['月份', '销售额'], 'rows': [['一月', 10], ['二月', 20]]}
+        blocks = [{'type': 'heading', 'text': '第一阶段'}, {'type': 'paragraph', 'text': '中文实施计划：保留实际内容。'}]
+        inputs = [{'name': '表.csv', 'data': base64.b64encode('账号,数量\n001,2\n002,3\n'.encode()).decode()}]
+        cases = [('inspect_table', {'source': {'input': '表.csv'}}, inputs),
+                 ('export_table', {'filename': '导出.xlsx', 'data': table}, []),
+                 ('create_chart', {'filename': '中文图表.png', 'x': '月份', 'y': ['销售额'], 'data': table, 'title': '中文销售趋势'}, []),
+                 ('create_document', {'filename': '中文计划.pdf', 'format': 'pdf', 'title': '实施计划', 'blocks': blocks}, []),
+                 ('create_document', {'filename': '中文计划.docx', 'title': '实施计划', 'blocks': blocks}, []),
+                 ('create_slides', {'filename': '计划.pptx', 'title': '实施计划', 'pages': [{'title': '阶段计划', 'blocks': blocks}]}, [])]
+        receipts = []
+        for name, arguments, inputs in cases:
+            body = await self.submit(task={'kind': 'builtin', 'name': name, 'version': 1, 'arguments': arguments}, inputs=inputs)
+            value = await self.wait(body['id'])
+            assert value['state'] == 'succeeded', value
+            assert isinstance(value['data'], dict) and isinstance(value['warnings'], list)
+            if name == 'inspect_table':
+                assert value['data']['sample'][0] == ['001', '2'] and not value['files'], value
+            else:
+                assert len(value['files']) == 1, value
+                item = value['files'][0]
+                response = await self.client.get('/executions/' + body['id'] + '/files/' + item['id'])
+                assert response.status_code == 200 and hashlib.sha256(response.content).hexdigest() == item['sha256']
+                generated = Path(os.environ.get('SANDBOX_GENERATED_DIR', 'artifacts/spec042/generated'))
+                generated.mkdir(parents=True, exist_ok=True)
+                (generated / item['name']).write_bytes(response.content)
+            receipts.append({'tool': name, 'data': value['data'], 'warnings': value['warnings']})
+            replay = await self.client.post('/executions', json=body)
+            assert replay.json()['data'] == value['data']
+        bad = await self.submit(task={'kind': 'builtin', 'name': 'inspect_table', 'version': 1, 'arguments': {'source': {'input': '../secret.csv'}}})
+        rejected = await self.wait(bad['id'])
+        assert rejected['state'] == 'failed' and not rejected['files']
+        helper = await self.submit("from noria_tools import export_table\nprint(export_table(filename='helper.csv',format='csv',data={'columns':['值'],'rows':[[3]]})['data']['rowCount'])")
+        value = await self.wait(helper['id'])
+        assert value['state'] == 'succeeded' and value['stdout'].strip() == '1', value
+        return receipts
 
     async def same_name_parallel(self):
         async def one(owner):
@@ -211,7 +249,7 @@ assert len(children)<100''')
 
     async def main(self):
         try:
-            for name, callback in [('authentication', self.authentication), ('nine-formats-known-calculation', self.files), ('parallel-isolation-and-idempotency', self.same_name_parallel), ('runtime-boundary', self.boundary), ('malicious-outputs', self.reject_output), ('cancel-child-and-recover', self.cancel), ('resource-exhaustion', self.resource_limits)]:
+            for name, callback in [('authentication', self.authentication), ('nine-formats-known-calculation', self.files), ('structured-builtins-and-python-helper', self.builtins), ('parallel-isolation-and-idempotency', self.same_name_parallel), ('runtime-boundary', self.boundary), ('malicious-outputs', self.reject_output), ('cancel-child-and-recover', self.cancel), ('resource-exhaustion', self.resource_limits)]:
                 await self.case(name, callback)
         finally:
             for identifier in self.ids:

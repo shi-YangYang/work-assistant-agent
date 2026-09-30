@@ -103,7 +103,7 @@ async def recover_receipt(db, context, job, actor, row):
 
 async def execute_node(context, *, identity, kind, label, operation, encode=lambda x: x,
                        decode=lambda x: x, outcome=None, safe_replay=True, restore=None,
-                       receipt_output=lambda x: x, on_failure=None):
+                       receipt_output=lambda x: x, on_failure=None, presentation=None, result_presentation=None):
     if not context.node_retry:
         return await operation()
     parent = active_node.get()
@@ -125,6 +125,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,
                    'round': job.attempt, 'totalRetries': 0, 'resumable': True}
+            if presentation is not None:
+                row['presentation'] = presentation
             state['nodes'].append(row)
             save(job, state)
         if 'output' in row and not row.get('receiptId'):
@@ -193,6 +195,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             job, _ = await lease(db, context)
             state = execution(job)
             row = next(item for item in state['nodes'] if item['id'] == identifier)
+            if result_presentation is not None:
+                row['label'], row['presentation'] = result_presentation(result)
             row.update(state='failed' if final_failure else status, nextAt=None,
                        error=(final_failure.message if final_failure else detail)[:240],
                        errorCode=final_failure.code if final_failure else 'business' if detail else '', resumable=False)
