@@ -47,7 +47,12 @@ async def lease(db, context):
     context.own_work_searched = job.result.get('ownWorkSearched', False)
     if job.kind == 'document':
         attachment = await owned(db, Attachment, job.target_id, actor)
-        await active_message(db, attachment.message_id, actor)
+        if attachment.message_id:
+            await active_message(db, attachment.message_id, actor)
+        else:
+            from app.modules.work.materials.queries import work_for_material
+            if not await work_for_material(db, actor, attachment.id):
+                raise ValueError('工作材料已不可用')
     elif job.kind == 'message':
         await active_message(db, job.target_id, actor)
     else:
@@ -63,11 +68,18 @@ async def lease(db, context):
         if message.transcript_revision != context.source_revision:
             raise InputChanged()
     for identifier, revision in context.document_versions.items():
-        attachment = await owned(db, Attachment, identifier, actor)
+        attachment = await owned(db, Attachment, identifier, actor, read=True)
+        from app.modules.work.materials.queries import work_for_material
+        await work_for_material(db, actor, attachment.id)
         if attachment.extraction_revision != revision:
             raise InputChanged(document=True)
     for identifier, message_id in context.image_sources.items():
-        attachment = await owned(db, Attachment, identifier, actor)
+        attachment = await owned(db, Attachment, identifier, actor, read=True)
+        if message_id is None:
+            from app.modules.work.materials.queries import work_for_material
+            if not await work_for_material(db, actor, attachment.id):
+                raise ValueError('工作图片已不可用')
+            continue
         parent = await active_message(db, message_id, actor)
         if attachment.message_id != parent.id or attachment.kind != 'image':
             raise ValueError('引用的图片已不可用，请重新发送')

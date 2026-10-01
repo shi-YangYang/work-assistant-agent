@@ -1,4 +1,16 @@
-import type { Draft, Progress, Work, WorkMessage } from '@paa/api-contracts'
+import type {
+  Draft,
+  Progress,
+  Work,
+  WorkMessage,
+  WorkDocument,
+  WorkPatch,
+  WorkUpdateInput,
+  WorkWriteResult,
+  WorkMaterial,
+  WorkMaterialSource,
+  WorkUpdate,
+} from '@paa/api-contracts'
 import { api, ApiError, write } from '@web/api/client'
 
 export function progressFieldErrors(error: unknown): Partial<Record<keyof Progress, string>> {
@@ -53,8 +65,16 @@ export function workDetailPath(id: string | undefined, search: string) {
   return `/work-items/${id}${search}`
 }
 
-export function createWork(body: Progress, key: string) {
-  return write('/work-items', body, 'POST', key)
+export function createWork(
+  body: {
+    title: string
+    body?: WorkDocument
+    dueDate?: string | null
+    materials?: WorkMaterialSource[]
+  },
+  key: string,
+) {
+  return write<Work>('/work-items', body, 'POST', key)
 }
 
 export function workListPath(query: string, status: string) {
@@ -63,4 +83,53 @@ export function workListPath(query: string, status: string) {
 
 export function readWorkForBreadcrumb(id: string, options: RequestInit) {
   return api<Work>(`/work-items/${id}`, options)
+}
+
+export function patchWork(id: string, body: WorkPatch, key: string) {
+  return write<WorkWriteResult>(`/work-items/${id}`, body, 'PATCH', key)
+}
+export function workRecordsPath(work: Work, kind: 'materials' | 'updates', start = 0) {
+  return `/work-items/${work.id}/${kind}?start=${start}&limit=20${work.historical ? `&revision=${work.revision}` : ''}`
+}
+export function saveWorkUpdate(
+  workId: string,
+  body: WorkUpdateInput,
+  key: string,
+  updateId?: string,
+) {
+  return write<WorkWriteResult>(
+    `/work-items/${workId}/updates${updateId ? `/${updateId}` : ''}`,
+    body,
+    updateId ? 'PATCH' : 'POST',
+    key,
+  )
+}
+export function deleteWorkUpdate(
+  work: Work,
+  updateId: string,
+  updateRevision: number,
+  key: string,
+) {
+  return write<WorkWriteResult>(
+    `/work-items/${work.id}/updates/${updateId}`,
+    { expectedRevision: work.revision, expectedUpdateRevision: updateRevision },
+    'DELETE',
+    key,
+  )
+}
+export function removeWorkMaterial(work: Work, material: WorkMaterial, key: string) {
+  return write<WorkWriteResult>(
+    `/work-items/${work.id}/materials/${material.id}`,
+    { expectedRevision: work.revision, expectedMaterialRevision: material.revision },
+    'DELETE',
+    key,
+  )
+}
+
+export async function readUpdateVersion(work: Work, updateId?: string) {
+  const latest = await readWork(work)
+  const update = updateId
+    ? await api<WorkUpdate>(`/work-items/${work.id}/updates/${updateId}`)
+    : undefined
+  return { work: latest, update }
 }

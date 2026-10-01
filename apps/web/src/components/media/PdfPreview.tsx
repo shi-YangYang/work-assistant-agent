@@ -1,8 +1,8 @@
-import mediaPreviewStyles from '../../styles/media-preview.module.css'
+import mediaPreviewStyles from './media-preview.module.css'
 import { isCancelled } from '@web/api/client'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
-import { readAttachmentBytes } from '@web/features/assistant/api/requests'
+import { readAttachmentBytes } from '@web/api/attachments'
 import { ChevronLeft, ChevronRight, Download, Expand, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
@@ -127,6 +127,7 @@ export function PdfPreview({
         <div className={mediaPreviewStyles['preview-toolbar']}>
           <div>
             <button
+              type="button"
               aria-label="上一页"
               disabled={!document || page === 1}
               onClick={() => {
@@ -154,6 +155,7 @@ export function PdfPreview({
               / {document?.numPages ?? '—'}
             </label>
             <button
+              type="button"
               aria-label="下一页"
               disabled={!document || page === document.numPages}
               onClick={() => {
@@ -166,6 +168,7 @@ export function PdfPreview({
           </div>
           <div>
             <button
+              type="button"
               aria-label="缩小页面"
               disabled={zoom <= 0.5}
               onClick={() => setZoom(Math.max(0.5, zoom / 1.25))}
@@ -173,13 +176,14 @@ export function PdfPreview({
               <ZoomOut size={18} />
             </button>
             <button
+              type="button"
               aria-label="放大页面"
               disabled={zoom >= 3}
               onClick={() => setZoom(Math.min(3, zoom * 1.25))}
             >
               <ZoomIn size={18} />
             </button>
-            <button aria-label="适应宽度" title="适应宽度" onClick={() => setZoom(1)}>
+            <button type="button" aria-label="适应宽度" title="适应宽度" onClick={() => setZoom(1)}>
               <Expand size={18} />
             </button>
             {download && (

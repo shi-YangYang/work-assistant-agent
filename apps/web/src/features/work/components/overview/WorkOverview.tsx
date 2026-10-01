@@ -12,9 +12,10 @@ import { WorkList } from '@web/features/work/components/overview/WorkList'
 import { useCursorPage } from '@web/hooks/useCursorPage'
 import { ChevronRight, ClipboardList, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 
 export function WorkPage() {
+  const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [search] = useSearchParams()
   const query = search.get('q') ?? ''
@@ -50,9 +51,10 @@ export function WorkPage() {
       {creating && (
         <CreateWork
           onClose={() => setCreating(false)}
-          onSaved={() => {
+          onSaved={(work) => {
             setCreating(false)
             list.refresh()
+            navigate(`/work/${work.id}`)
           }}
         />
       )}

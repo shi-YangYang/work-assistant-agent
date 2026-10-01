@@ -122,7 +122,8 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
         db.add(report); await db.flush()
     context, _ = await runtime(setup, '把日报改成老板看得懂的简短版本，不要夸大成果')
     data = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id))
-    assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': source.content}]
+    assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': {key: source.content[key] for key in ('title', 'summary', 'status', 'dueDate', 'blocker', 'nextStep')}}]
+    assert 'body' not in data['items'][0]['sourceFacts']['items'][0]['content']
     assert not data['items'][0]['sourceFacts']['complete']
     rejected = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=1, changes={'ongoing': '保留计划'})
     assert rejected['state'] == 'clarification' and '来源不完整' in rejected['message']

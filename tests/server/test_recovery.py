@@ -275,19 +275,18 @@ async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setu
     assert empty['items'] == [] and empty['nextCursor'] is None
 
 
-async def test_work_tool_returns_whole_long_records_with_a_continuation(setup):
+async def test_work_tool_returns_bounded_previews_and_full_detail_with_a_continuation(setup):
     import json
     from types import SimpleNamespace
-    from app.agent.tools.work import find_work_items
-    from app.modules.work.models import WorkItem
+    from app.agent.tools.work import find_work_items, get_work_item
+    from app.modules.work.service import save_work
     settings, sessions, users, clients = setup
     actor = users['admin']
     sent = await send(clients['admin'])
     job = await claim(sessions, actor.id)
     context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
     async with sessions.begin() as db:
-        rows = [WorkItem(company_id=actor.company_id, owner_id=actor.id, title='长内容 '+str(i), content={'title': '长内容 '+str(i), 'status': 'in_progress', 'summary': '文' * 4000, 'blocker': '阻' * 2000, 'nextStep': '续' * 2000}, access={**business_scope(actor), 'team': True}) for i in range(2)]
-        db.add_all(rows)
+        rows = [await save_work(db, actor, {'title': '长内容 '+str(i), 'status': 'in_progress', 'summary': '文' * 4000, 'blocker': '阻' * 2000, 'nextStep': '续' * 2000}, access={**business_scope(actor), 'team': True}) for i in range(2)]
     runtime = SimpleNamespace(context=context)
     first = json.loads(await find_work_items.coroutine('', runtime))
     async with sessions() as db:
@@ -296,4 +295,9 @@ async def test_work_tool_returns_whole_long_records_with_a_continuation(setup):
     second = json.loads(await find_work_items.coroutine('', runtime, cursor=first['nextCursor']))
     assert len(first['items']) == len(second['items']) == 1 and second['nextCursor'] is None
     assert {first['items'][0]['id'], second['items'][0]['id']} == {w.id for w in rows}
-    assert all(page['items'][0]['summary'] == '文' * 4000 and page['items'][0]['nextStep'] == '续' * 2000 for page in (first, second))
+    assert all(page['items'][0]['summary'] == '文' * 500 and page['items'][0]['nextStep'] == '续' * 2000 for page in (first, second))
+    for page in (first, second):
+        detail = json.loads(await get_work_item.coroutine(page['items'][0]['id'], runtime))
+        assert detail['updates']['items'][0]['text'] == '文' * 4000
+        assert detail['body']['content'][0]['content'][0]['text'] == '文' * 4000
+        assert detail['nextStep'] == '续' * 2000

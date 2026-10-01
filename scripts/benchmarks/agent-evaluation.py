@@ -9,6 +9,9 @@ their isolated fixture encryption keys cannot overlap startup checks.
 Use --suite task-consistency for 24 frozen multi-turn cases; --group selects
 development/holdout samples. Batches start fixture lifespans before installing
 independent credentials, so --concurrency remains safe across isolated tenants.
+Use --suite work-records for A01-A24 work content/material/progress scenarios.
+These always run serially, use real assistant/report/optional ASR configuration,
+and require the real sandbox for XLSX. Missing capabilities are BLOCKED, not PASS.
 Results are append-only; --resume skips recorded IDs (including failures).
 Only configuration is read from the normal database. All business writes and
 checkpoints use paa_company_test; fixture tenants are removed in finally blocks.
@@ -58,7 +61,7 @@ from sqlalchemy import select, text
 from sqlalchemy.engine import make_url
 
 
-async def configuration(username):
+async def configuration(username, *, include_asr=False):
     settings = Settings()
     engine, sessions = database(settings)
     try:
@@ -76,6 +79,11 @@ async def configuration(username):
                 revision = await db.get(ModelServiceRevision, choice['revisionId'])
                 model = next(m for m in revision.models if m['id'] == choice['modelId'])
                 configs[purpose] = {'model': copy.deepcopy(model), 'base': revision.base_url, 'key': decrypt(settings.model_key_file, revision.credential, users[0].company_id, choice['serviceId'], revision.revision), 'choice': choice}
+                if include_asr and purpose == 'assistant' and binding.get('asr'):
+                    asr_choice = binding['asr']
+                    asr_revision = await db.get(ModelServiceRevision, asr_choice['revisionId'])
+                    asr_model = next(m for m in asr_revision.models if m['id'] == asr_choice['modelId'])
+                    configs['asr'] = {'model': copy.deepcopy(asr_model), 'base': asr_revision.base_url, 'key': decrypt(settings.model_key_file, asr_revision.credential, users[0].company_id, asr_choice['serviceId'], asr_revision.revision), 'choice': asr_choice}
             return configs
     finally:
         await engine.dispose()
@@ -282,7 +290,7 @@ async def main():
     parser.add_argument('--source-user', required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--variant', type=int, choices=range(1, 9))
-    parser.add_argument('--suite', choices=('business', 'persona', 'task-consistency'), default='business')
+    parser.add_argument('--suite', choices=('business', 'persona', 'task-consistency', 'work-records'), default='business')
     parser.add_argument('--group', choices=('all', 'development', 'holdout'), default='all')
     parser.add_argument('--persona', choices=('dabao', 'professional'))
     parser.add_argument('--ids', default='')
@@ -295,8 +303,11 @@ async def main():
     url = os.getenv('DATABASE_TEST_URL', '')
     if not url or make_url(url).database != 'paa_company_test':
         raise RuntimeError('DATABASE_TEST_URL must point to the dedicated paa_company_test database')
-    configs = await configuration(args.source_user)
+    configs = await configuration(args.source_user, include_asr=args.suite == 'work-records')
     available = task_cases() if args.suite == 'task-consistency' else persona_cases((args.persona,) if args.persona else ('dabao', 'professional')) if args.suite == 'persona' else cases()
+    if args.suite == 'work-records':
+        from work_record_eval_cases import work_record_cases
+        available = work_record_cases()
     if args.suite == 'task-consistency' and args.group != 'all':
         available = [case for case in available if case.holdout == (args.group == 'holdout')]
     selected = [c for c in available if (not args.variant or c.id.endswith(f'-{args.variant:02}')) and (not args.ids or c.id in args.ids.split(','))]
@@ -309,17 +320,21 @@ async def main():
         done = {json.loads(line)['id'] for line in args.output.read_text().splitlines() if line.strip()}
     selected = [c for c in selected if c.id not in done]
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    semaphore = asyncio.Semaphore(1 if args.suite in ('persona', 'task-consistency') else args.concurrency)
+    semaphore = asyncio.Semaphore(1 if args.suite in ('persona', 'task-consistency', 'work-records') else args.concurrency)
     count = failed = 0
     async def run(case):
         nonlocal count, failed
         async with semaphore:
-            result = await evaluate(case, configs)
+            if args.suite == 'work-records':
+                from work_record_eval_runtime import evaluate_work_record
+                result = await evaluate_work_record(case, configs, sys.modules[__name__])
+            else:
+                result = await evaluate(case, configs)
             with args.output.open('a') as output:
                 output.write(json.dumps(result, ensure_ascii=False, default=str) + '\n')
             count += 1
             failed += not result['passed']
-            print(f"[{count}/{len(selected)}] {case.id} {'PASS' if result['passed'] else 'FAIL'} {result['seconds']}s {'; '.join(result['issues'])}", flush=True)
+            print(f"[{count}/{len(selected)}] {case.id} {result.get('status', 'PASS' if result['passed'] else 'FAIL')} {result['seconds']}s {'; '.join(result['issues'])}", flush=True)
     print(json.dumps({'cases': len(selected), 'models': {k: v['model']['model'] for k, v in configs.items()}}, ensure_ascii=False), flush=True)
     if args.suite == 'task-consistency':
         # All lifespan key checks finish before this batch installs independent

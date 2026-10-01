@@ -47,6 +47,7 @@ class RunContext:
     output_tokens: int = 0
     started: float = field(default_factory=time.monotonic)
     read_versions: dict[str, int] = field(default_factory=dict)
+    refresh_work_versions: dict[str, int] = field(default_factory=dict)
     role: str = 'employee'
     access: dict = field(default_factory=dict)
     own_work_searched: bool = False

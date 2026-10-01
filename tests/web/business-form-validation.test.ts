@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../apps/web/src/api/client'
 import { BusyButton } from '../../apps/web/src/components/actions/BusyButton'
 import { ErrorNotice } from '../../apps/web/src/components/feedback/ErrorNotice'
+import { FormField } from '../../apps/web/src/components/forms/FormField'
 import { Modal } from '../../apps/web/src/components/overlays/Modal'
 import { correctTranscript } from '../../apps/web/src/features/assistant/api/requests'
 import { TranscriptEditor } from '../../apps/web/src/features/assistant/components/messages/TranscriptEditor'
@@ -12,7 +13,7 @@ import { ReportDetail } from '../../apps/web/src/features/reports/components/det
 import {
   createWork,
   updateProgressDraft,
-  updateWorkProgress,
+  patchWork,
 } from '../../apps/web/src/features/work/api/requests'
 import { CreateWork } from '../../apps/web/src/features/work/components/editor/CreateWork'
 import { ProgressEditor } from '../../apps/web/src/features/work/components/editor/ProgressEditor'
@@ -54,6 +55,22 @@ vi.mock('../../apps/web/src/lib/workspace', () => ({
     identity: { company: { id: 'company' }, member: { id: 'owner', role: 'employee' } },
   }),
 }))
+vi.mock('../../apps/web/src/hooks/useDraftSubmission', () => ({
+  useDraftSubmission: () => ({
+    busy: false,
+    submit: async (
+      request: () => Promise<unknown>,
+      saved: (value: unknown) => void,
+      failure: (error: unknown) => void,
+    ) => {
+      try {
+        saved(await request())
+      } catch (error) {
+        failure(error)
+      }
+    },
+  }),
+}))
 vi.mock('../../apps/web/src/hooks/useResource', () => ({
   useResource: () => ({ data: state.data, error: '', refresh: vi.fn() }),
 }))
@@ -66,7 +83,7 @@ vi.mock('../../apps/web/src/features/work/api/requests', async (load) => ({
   ...(await load<typeof import('../../apps/web/src/features/work/api/requests')>()),
   createWork: vi.fn(),
   updateProgressDraft: vi.fn(),
-  updateWorkProgress: vi.fn(),
+  patchWork: vi.fn(),
 }))
 vi.mock('../../apps/web/src/features/assistant/api/requests', async (load) => ({
   ...(await load<typeof import('../../apps/web/src/features/assistant/api/requests')>()),
@@ -130,7 +147,7 @@ beforeEach(() => {
 it.each(['create', 'work', 'draft'] as const)(
   'blocks whitespace titles before the %s request and shows the field error',
   async (kind) => {
-    state.drafts['work:new'] = { content: progress, key: 'key' }
+    state.drafts['work:new'] = { title: progress.title, description: '', dueDate: '', key: 'key' }
     const component = () =>
       kind === 'create'
         ? CreateWork({ onClose: vi.fn(), onSaved: vi.fn() })
@@ -147,24 +164,33 @@ it.each(['create', 'work', 'draft'] as const)(
             })
     await submit(render(component))
     expect(createWork).not.toHaveBeenCalled()
-    expect(updateWorkProgress).not.toHaveBeenCalled()
+    expect(patchWork).not.toHaveBeenCalled()
     expect(updateProgressDraft).not.toHaveBeenCalled()
-    expect(
-      nodes(render(component)).find((node) => node.type === ProgressFields)!.props.errors,
-    ).toMatchObject({ title: '请填写工作标题' })
+    const tree = nodes(render(component))
+    if (kind === 'draft')
+      expect(tree.find((node) => node.type === ProgressFields)!.props.errors).toMatchObject({
+        title: '请填写工作标题',
+      })
+    else
+      expect(
+        tree.find((node) => node.type === FormField && node.props.label === '工作事项')!.props
+          .error,
+      ).toBe('请填写工作标题')
   },
 )
 
 it('keeps rejected work fields beside the fields in the open dialog', async () => {
-  state.drafts['work:new'] = { content: { ...progress, title: '项目' }, key: 'key' }
+  state.drafts['work:new'] = { title: '项目', description: '', dueDate: '', key: 'key' }
   const error = new ApiError(422, 'validation_error', '请检查输入项')
   error.fieldErrors = { dueDate: '请输入有效日期' }
   vi.mocked(createWork).mockRejectedValueOnce(error)
   const component = () => CreateWork({ onClose: vi.fn(), onSaved: vi.fn() })
   await submit(render(component))
   expect(
-    nodes(render(component)).find((node) => node.type === ProgressFields)!.props.errors,
-  ).toEqual(error.fieldErrors)
+    nodes(render(component)).find(
+      (node) => node.type === FormField && node.props.label === '截止日期（选填）',
+    )!.props.error,
+  ).toEqual('请输入有效日期')
 })
 
 it('allows clearing a transcript and leaves failed saves visible inside its modal', async () => {

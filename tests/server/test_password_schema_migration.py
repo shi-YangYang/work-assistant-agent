@@ -52,7 +52,7 @@ def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
             assert connection.scalar(text('SELECT version_num FROM alembic_version')) == ScriptDirectory.from_config(config).get_current_head()
             after = list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings())
             assert after == [{**{key: value for key, value in row.items() if key != 'must_change_password'}, 'execution_mode': 'auto', 'mode_revision': 1, 'full_access_confirmed': False} for row in before]
-            assert list(connection.execute(select(WorkItem.__table__)).mappings()) == work_before
+            assert list(connection.execute(select(WorkItem.__table__)).mappings()) == [{**row, 'content': {**row['content'], 'body': {'schemaVersion': 1, 'content': []}, 'bodyText': '', 'materialIds': []}} for row in work_before]
             # New accounts no longer need a value for the old NOT NULL column.
             connection.execute(Member.__table__.insert().values(
                 company_id=company_id, username='migration_new', name='新成员', password_hash='new-hash',

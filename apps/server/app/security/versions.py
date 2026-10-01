@@ -1,7 +1,7 @@
 """Business revision validation, shared by runtime and snapshot readers."""
 
 
-async def validate_cached_versions(db, actor, versions):
+async def validate_cached_versions(db, actor, versions, *, refresh_work_versions=None):
     from app.modules.work.models import WorkItem
     from app.modules.reports.models import Report
     from app.security.ownership import owned
@@ -13,6 +13,10 @@ async def validate_cached_versions(db, actor, versions):
         if model == WorkItem:
             await require(db, actor, record.access, retained=True)
         if record.revision != revision:
+            # A rejected own-work write may plan a fresh read. The old version
+            # stays stale: only that read can replace it, never this exception.
+            if model == WorkItem and record.owner_id == actor.id and (refresh_work_versions or {}).get(identifier) == revision:
+                continue
             raise ProviderError('version_conflict', '已读取的工作或报告已变化，请重新提问以读取最新内容')
 
 

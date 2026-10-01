@@ -31,7 +31,14 @@ async def find_documents(query: str, runtime: ToolRuntime[RunContext], attachmen
             statement = statement.where(Attachment.name.icontains(query[:120], autoescape=True))
         offset = max(0, min(start, 10000))
         items = list((await db.scalars(statement.order_by(Attachment.created_at, Attachment.id).offset(offset).limit(11))).all())
-        return json.dumps({'items': [attachment_dto(item) for item in items[:10]], 'nextCursor': offset + 10 if len(items) > 10 else None}, ensure_ascii=False)
+        visible = []
+        for item in items[:10]:
+            try:
+                await agent_attachment(db, item.id, actor, job)
+                visible.append(attachment_dto(item))
+            except HTTPException:
+                continue
+        return json.dumps({'items': visible, 'nextCursor': offset + 10 if len(items) > 10 else None}, ensure_ascii=False)
 
 
 def document_tool_result(context, item, result, job):

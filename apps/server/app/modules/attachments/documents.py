@@ -40,9 +40,12 @@ def attachment_dto(a):
     return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'previewUrl': f'/api/v1/uploads/{a.id}/preview' if a.kind in ('image', 'audio') else None, 'image': a.extraction_info if a.kind == 'image' else None, 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **(a.extraction_info or {})} if a.kind == 'document' else None}
 
 
-async def visible_attachment(db, identifier, actor, *, lock=False):
+async def visible_attachment(db, identifier, actor, *, lock=False, work_revision=None):
     item = await owned(db, Attachment, identifier, actor, read=True, lock=lock)
     if not item.message_id:
+        from app.modules.work.materials.queries import work_for_material
+        if await work_for_material(db, actor, item.id, work_revision=work_revision):
+            return item
         if item.owner_id != actor.id:
             problem(404, '附件尚未发送或无权查看')
     else:
@@ -65,12 +68,19 @@ async def document_statement(db, actor, job):
     scope = Message.id.in_(sources)
     if current:
         scope = scope | (Message.conversation_id == current.conversation_id)
-    return select(Attachment).join(Message, Message.id == Attachment.message_id).where(Attachment.owner_id == actor.id, Attachment.company_id == actor.company_id, Attachment.deleted.is_(False), Attachment.kind == 'document', (Message.deleted.is_(False) & scope) | Attachment.id.in_(published))
+    from app.modules.work.models import WorkMaterial
+    material_files = select(WorkMaterial.attachment_id).join(WorkItem, WorkItem.id == WorkMaterial.work_id).where(WorkMaterial.owner_id == actor.id, WorkMaterial.company_id == actor.company_id, WorkMaterial.removed.is_(False), WorkItem.deleted.is_(False))
+    return select(Attachment).outerjoin(Message, Message.id == Attachment.message_id).where(Attachment.owner_id == actor.id, Attachment.company_id == actor.company_id, Attachment.deleted.is_(False), Attachment.kind == 'document', (Message.deleted.is_(False) & scope) | Attachment.id.in_(published) | Attachment.id.in_(material_files))
 
 
 async def agent_attachment(db, identifier, actor, job):
     # Admin team browsing never grants the assistant cross-employee access.
     item = await owned(db, Attachment, identifier, actor)
+    from app.modules.work.materials.queries import work_for_material
+    if work := await work_for_material(db, actor, item.id):
+        from app.modules.work.materials.queries import require_agent_work
+        await require_agent_work(db, actor, job, work)
+        return item
     if item.kind != 'document' or not item.message_id:
         problem(404, '文件不可用或尚未发送')
     from app.modules.operations.mutations.publication import published_attachment

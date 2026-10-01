@@ -11,6 +11,7 @@ LABELS = {
     'find_work_items': '查找工作', 'get_work_item': '读取工作',
     'get_message_context': '读取消息', 'get_business_actions': '读取操作结果',
     'query_reports': '查找报告', 'query_report_obligations': '查找汇报待办',
+    'list_work_updates': '读取工作进展', 'list_work_materials': '查看工作材料', 'read_work_material': '读取工作材料',
     'find_documents': '查找文件', 'read_document': '读取文件', 'read_file': '读取材料',
     'find_team_members': '查找成员', 'query_team_business': '查询团队工作',
     'read_team_source': '读取团队来源', 'propose_progress': '整理进展建议',
@@ -88,6 +89,16 @@ def tool_presentation(name, arguments, result=None):
         subject = ' · '.join(text(args.get(key)) for key in ('employee_name', 'query') if text(args.get(key)))
     elif name == 'execute_business_action':
         label = choice(ACTIONS, args.get('action'), label)
+        changes = mapping(args.get('changes'))
+        if args.get('action') == 'update_work':
+            if 'update' in changes:
+                label = choice({'create': '记录工作进展', 'edit': '更正工作进展', 'delete': '删除工作进展'}, mapping(changes['update']).get('action'), label)
+            elif 'body' in changes or 'bodyEdits' in changes:
+                label = '保存工作内容'
+            elif 'removeMaterial' in changes:
+                label = '移除工作材料'
+            elif 'materials' in changes or 'materialIds' in changes:
+                label = '保存工作材料'
         if args.get('action') == 'create_work':
             subject = mapping(args.get('changes')).get('title', '')
         elif args.get('action') == 'generate_report':

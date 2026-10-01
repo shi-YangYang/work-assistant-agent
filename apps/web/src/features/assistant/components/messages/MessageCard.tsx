@@ -13,11 +13,8 @@ import { QuestionHistory } from '../interactions/QuestionPanel'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
 import { DeliverableEntry } from '../deliverables/Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/interactions/BusinessActionCard'
-import {
-  DocumentCard,
-  DocumentCitations,
-} from '@web/features/assistant/components/attachments/Documents'
-import { ImageGallery } from '@web/features/assistant/components/attachments/ImageGallery'
+import { DocumentCard, DocumentCitations } from '@web/components/media/Documents'
+import { ImageGallery } from '@web/components/media/ImageGallery'
 import { MessageTranscript } from '@web/features/assistant/components/messages/MessageTranscript'
 import { TranscriptEditor } from '@web/features/assistant/components/messages/TranscriptEditor'
 import { JobNotice } from '@web/features/jobs/components/JobNotice'

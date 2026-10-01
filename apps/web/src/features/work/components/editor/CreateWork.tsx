@@ -1,72 +1,109 @@
-import layoutStyles from '../../../../styles/layout.module.css'
-import controlsStyles from '../../../../styles/controls.module.css'
-import type { Progress } from '@paa/api-contracts'
+import type { Work } from '@paa/api-contracts'
+import { useState } from 'react'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { FormField } from '@web/components/forms/FormField'
 import { Modal } from '@web/components/overlays/Modal'
-import { createWork, progressFieldErrors } from '@web/features/work/api/requests'
-import { ProgressFields } from '@web/features/work/components/editor/ProgressFields'
-import { progressTitleError } from '@web/features/work/utils/progress-edit'
+import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useWorkspace } from '@web/lib/workspace'
-import { useState } from 'react'
+import { createWork, progressFieldErrors } from '../../api/requests'
+import { progressTitleError } from '../../utils/progress-edit'
+import { documentFromText } from '../../utils/document'
+import layout from '@web/styles/layout.module.css'
+import controls from '@web/styles/controls.module.css'
 
-export function CreateWork({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+export function CreateWork({
+  onClose,
+  onSaved,
+}: {
+  onClose: () => void
+  onSaved: (work: Work) => void
+}) {
   const { drafts, setDraft } = useWorkspace()
-  const draft = drafts['work:new'] as { content: Progress; key: string } | undefined
-  const [initialKey] = useState(() => crypto.randomUUID())
-  const content = draft?.content ?? {
+  const [initial] = useState(() => ({
     title: '',
-    summary: '',
-    status: 'in_progress' as const,
-    blocker: '',
-    nextStep: '',
-    dueDate: null,
-  }
-  const key = draft?.key ?? initialKey
-  const [busy, setBusy] = useState(false)
+    description: '',
+    dueDate: '',
+    key: crypto.randomUUID(),
+  }))
+  const value = (drafts['work:new'] as typeof initial | undefined) ?? initial
+  const { busy, submit } = useDraftSubmission('work:new')
   const [error, setError] = useState<Error | string>('')
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof Progress, string>>>({})
+  const [titleError, setTitleError] = useState('')
+  const [dateError, setDateError] = useState('')
+  const change = (patch: Partial<typeof value>) => {
+    setTitleError('')
+    setDateError('')
+    setDraft('work:new', { ...value, ...patch, key: crypto.randomUUID() })
+  }
   return (
-    <Modal title="新建工作" onClose={() => !busy && onClose()}>
+    <Modal title="新建工作" onClose={onClose}>
       <form
         onSubmit={async (event) => {
           event.preventDefault()
-          const title = progressTitleError(content.title)
-          setFieldErrors({ title })
-          if (title) return
-          setBusy(true)
+          const validation = progressTitleError(value.title)
+          setTitleError(validation || '')
+          if (validation) return
           setError('')
-          // Preserve the same key through an uncertain network response and reopening.
-          setDraft('work:new', { content, key })
-          try {
-            await createWork(content, key)
-            setDraft('work:new', undefined)
-            window.dispatchEvent(new Event('paa-record-updated'))
-            onSaved()
-          } catch (error) {
-            setFieldErrors(progressFieldErrors(error))
-            setError(error as Error)
-          } finally {
-            setBusy(false)
-          }
+          await submit(
+            () =>
+              createWork(
+                {
+                  title: value.title.trim(),
+                  ...(value.description ? { body: documentFromText(value.description) } : {}),
+                  dueDate: value.dueDate || null,
+                },
+                value.key,
+              ),
+            (work) => {
+              window.dispatchEvent(new Event('paa-record-updated'))
+              onSaved(work)
+            },
+            (failure) => {
+              setTitleError(progressFieldErrors(failure).title ?? '')
+              setDateError(progressFieldErrors(failure).dueDate ?? '')
+              setError(failure as Error)
+            },
+          )
         }}
       >
         <fieldset disabled={busy}>
-          <ProgressFields
-            value={content}
-            errors={fieldErrors}
-            change={(value) => {
-              setFieldErrors({})
-              setDraft('work:new', { content: value, key: crypto.randomUUID() })
-            }}
+          <FormField
+            label="工作事项"
+            value={value.title ?? ''}
+            required
+            maxLength={200}
+            error={titleError}
+            autoFocus
+            onChange={(event) => change({ title: event.target.value })}
           />
+          <details>
+            <summary>补充说明与日期（选填）</summary>
+            <label>
+              工作说明
+              <textarea
+                rows={3}
+                value={value.description ?? ''}
+                maxLength={12000}
+                onChange={(event) => change({ description: event.target.value })}
+              />
+            </label>
+            <FormField
+              label="截止日期（选填）"
+              error={dateError}
+              type="date"
+              max="9999-12-31"
+              value={value.dueDate ?? ''}
+              onChange={(event) => change({ dueDate: event.target.value })}
+            />
+          </details>
         </fieldset>
         <ErrorNotice>{error}</ErrorNotice>
-        <div className={layoutStyles['form-actions']}>
-          <button type="button" disabled={busy} onClick={onClose}>
+        <div className={layout['form-actions']}>
+          <button type="button" onClick={onClose}>
             稍后继续
           </button>
-          <BusyButton busy={busy} className={controlsStyles['primary']}>
+          <BusyButton busy={busy} className={controls.primary}>
             创建工作
           </BusyButton>
         </div>

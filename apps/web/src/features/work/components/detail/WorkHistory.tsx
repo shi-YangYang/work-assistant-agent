@@ -17,6 +17,12 @@ export function WorkHistory({ work }: { work: Work }) {
             <small>
               {historyOrigin(entry, work.origin)} · {dateLabel(entry.createdAt)} · 第{' '}
               {entry.revision} 版
+              <Link
+                to={`/work/${work.id}?revision=${entry.revision}`}
+                state={detailState(location)}
+              >
+                查看此版本
+              </Link>
             </small>
             <dl className={styles.changes}>
               {changes.map((change) => (

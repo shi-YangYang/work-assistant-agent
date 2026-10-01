@@ -69,7 +69,7 @@ class BoundedChatModel(ChatOpenAI):
         label = model_phase(messages, context.job_id, nested=bool(parent))
         return await execute_node(context, identity=identity, kind='model', label=label, operation=operation,
                                   presentation={'type': 'activity'},
-                                  encode=encode_result, decode=decode_result)
+                                  encode=encode_result, decode=decode_result, allow_work_refresh=True)
 
     async def _single(self, messages, stop=None, run_manager=None, **kwargs):
         context = self._run_context

@@ -9,18 +9,27 @@ from app.tasks.lease import lease
 
 def repairing_delivery(messages, job_id):
     latest = next((message for message in reversed(messages) if isinstance(message, HumanMessage)), None)
-    return latest is not None and latest.id == f'delivery-repair:{job_id}'
+    return latest is not None and latest.id in (f'delivery-repair:{job_id}', f'delivery-references:{job_id}')
 
 
 class ToolBoundary(AgentMiddleware):
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
         async with context.sessions() as db:
-            job, _ = await lease(db, context)
+            job, actor = await lease(db, context)
             from app.tasks.nodes.node_state import execution
             state = execution(job) if context.node_retry else {}
             tool_count = sum(row['kind'] == 'tool' and row['scope'] == context.node_scope for row in state.get('nodes', [])) if context.node_retry else context.tools
             finish_only = tool_count >= 14 or state.get('actualCalls', context.calls) >= (29 if context.node_retry else 6)
+            if context.refresh_work_versions:
+                from app.security.versions import validate_cached_versions
+                await validate_cached_versions(db, actor, context.read_versions,
+                                               refresh_work_versions=context.refresh_work_versions)
+        if context.refresh_work_versions:
+            reads = [tool for tool in request.tools if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) == 'get_work_item']
+            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n工作写入遇到版本冲突，旧正文不能继续用于保存或收尾。现在仅调用 get_work_item，work_id 从以下服务端确认的目标选择，body_start=0：' + json.dumps(sorted(context.refresh_work_versions), ensure_ascii=False) + '。读取最新内容后再按用户原请求修改，保留人工新增内容。')
+            return await handler(request.override(tools=reads, system_message=system,
+                                                  tool_choice={'type': 'function', 'function': {'name': 'get_work_item'}}))
         from app.agent.actions.interactions import waiting_text
         waiting = await waiting_text(context, include_actions=any(isinstance(message, ToolMessage) and message.name == 'execute_business_action' for message in request.messages))
         if waiting:
@@ -55,6 +64,12 @@ class ToolBoundary(AgentMiddleware):
             allowed = allowed - EXECUTION_TOOLS
         if request.tool_call['name'] not in allowed:
             raise RuntimeError('Tool is not allowed')
+        if context.refresh_work_versions and not (request.tool_call['name'] == 'get_work_item' and
+                                                 request.tool_call.get('args', {}).get('work_id') in context.refresh_work_versions and
+                                                 request.tool_call.get('args', {}).get('body_start', 0) == 0):
+            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], status='error',
+                               content=json.dumps({'state': 'conflict', 'message': '先用 get_work_item 从正文第一页读取冲突工作的最新版本，再继续保存或收尾。',
+                                                   'workIds': sorted(context.refresh_work_versions)}, ensure_ascii=False))
         if repairing_delivery(request.state.get('messages', []), context.job_id) and request.tool_call['name'] != 'finish_task':
             return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content='本轮仅修复收尾协议，此工具未执行。请单独调用 finish_task 交付已有结果。', status='error')
         batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
@@ -68,7 +83,8 @@ class ToolBoundary(AgentMiddleware):
                                                      verification_requested=args.get('verification_requested', False),
                                                      verification_quote=args.get('verification_quote', ''))
             if error:
-                return ToolMessage(tool_call_id=request.tool_call['id'], name='finish_task', content=error, status='error')
+                return ToolMessage(tool_call_id=request.tool_call['id'], name='finish_task', content=error, status='error',
+                                   additional_kwargs={'completion_reference_error': True})
             return await handler(request)
         if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')):
             from app.tasks.feedback.feedback import publish

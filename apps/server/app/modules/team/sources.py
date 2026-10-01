@@ -22,7 +22,7 @@ async def business_link_dtos(db, actor, links):
 
 
 def bounded_content(content, length=1200):
-    return {key: str(value)[:length] for key, value in content.items() if key in ('title', 'summary', 'status', 'blocker', 'nextStep', 'completed', 'ongoing', 'blockers', 'next')}
+    return {key: str(value)[:length] for key, value in content.items() if key in ('title', 'summary', 'bodyText', 'status', 'blocker', 'nextStep', 'completed', 'ongoing', 'blockers', 'next')}
 
 
 async def source_dto(db, actor, evidence, token=''):

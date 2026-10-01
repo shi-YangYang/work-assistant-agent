@@ -55,6 +55,22 @@ def from_messages(messages):
         return None
 
 
+def reference_repair_needed(messages, job_id):
+    """Allow feedback on the first terminal call after plain-text recovery."""
+    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+    repair = next((index for index in range(len(messages) - 1, -1, -1)
+                   if isinstance(messages[index], HumanMessage)), None)
+    if repair is None or messages[repair].id != f'delivery-repair:{job_id}':
+        return False
+    original = next((message for message in reversed(messages[:repair]) if isinstance(message, AIMessage)), None)
+    batch = next((message for message in reversed(messages[repair + 1:]) if isinstance(message, AIMessage)), None)
+    if not original or original.tool_calls or not batch or len(batch.tool_calls) != 1 or batch.tool_calls[0]['name'] != 'finish_task':
+        return False
+    output = next((message for message in reversed(messages) if isinstance(message, ToolMessage)
+                   and message.tool_call_id == batch.tool_calls[0]['id']), None)
+    return bool(output and output.status == 'error' and output.additional_kwargs.get('completion_reference_error'))
+
+
 def validate_completion_response(message, *, required=False):
     """Reject malformed terminal arguments before a model node caches success."""
     calls = message.tool_calls
@@ -81,8 +97,9 @@ async def completion_reference_error(context, operation_ids, *, verification_req
         from app.modules.messages.input_text import request_text
         current_request = request_text(message, job)
     if set(operation_ids or []) - known:
-        return ('operation_ids 引用了本轮业务回执以外的 ID。私人成果、生成文件和沙盒执行 ID 都不是业务回执；'
-                '仅交付文件时 business_requested=false、operation_ids=[]。保留已生成文件和答复，不要重新执行工具。'
+        return ('operation_ids 引用了本轮业务回执以外的 ID，不能沿用此前消息的回执。私人成果、生成文件和沙盒执行 ID 都不是业务回执；'
+                '本轮仅查询或交付文件时 business_requested=false、operation_ids=[]。答复应区分此前操作与本轮查询，'
+                '保留已生成文件和答复，不要重新执行工具。'
                 '本轮可用业务回执 ID：' + ', '.join(sorted(known)))
     if verification_requested and (not isinstance(verification_quote, str) or not verification_quote.strip() or verification_quote not in current_request):
         return ('verification_quote 不是当前用户请求的逐字原文，不能沿用以前消息或助手改写。'

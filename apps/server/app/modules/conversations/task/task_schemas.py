@@ -33,4 +33,4 @@ class TaskSource(BaseModel):
     kind: Literal['user_instruction'] = 'user_instruction'
     scope: str = ''
     targetId: str = ''
-    fields: list[str] = Field(default_factory=list, max_length=6)
+    fields: list[str] = Field(default_factory=list, max_length=12)

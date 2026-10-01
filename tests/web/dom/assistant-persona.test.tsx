@@ -75,7 +75,9 @@ beforeEach(() => {
       const path = url.replace('/api/v1', '')
       const body = path.startsWith('/conversations/')
         ? { ...conversation, id: path.split('/')[2] }
-        : { items: [], nextCursor: null }
+        : path === '/assistant/execution-settings'
+          ? { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
+          : { items: [], nextCursor: null }
       return new Response(JSON.stringify(body), { status: 200 })
     }),
   )
@@ -261,6 +263,7 @@ it('freezes the persona before upload and reuses the same pending body after a l
   const sendButton = screen.getByRole('button', { name: '发送' })
   const contextButton = screen.getByRole('button', { name: /^上下文使用情况/ })
   const sendIcon = sendButton.querySelector('svg')
+  await waitFor(() => expect((sendButton as HTMLButtonElement).disabled).toBe(false))
   fireEvent.click(sendButton)
   expect(vault.getSnapshot()['composer:new']).toMatchObject({
     submissionPersonaId: 'professional',

@@ -1,5 +1,5 @@
-import mediaPreviewStyles from '../../styles/media-preview.module.css'
-import documentsStyles from '../../styles/documents.module.css'
+import mediaPreviewStyles from './media-preview.module.css'
+import documentsStyles from './documents.module.css'
 import { isCancelled } from '@web/api/client'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
@@ -86,6 +86,7 @@ export function ImageGallery({
         <div className={mediaPreviewStyles['preview-toolbar']}>
           <div>
             <button
+              type="button"
               aria-label="上一张"
               disabled={index === 0 || converting}
               onClick={() => choose(index - 1)}
@@ -96,6 +97,7 @@ export function ImageGallery({
               {index + 1} / {images.length}
             </span>
             <button
+              type="button"
               aria-label="下一张"
               disabled={index === images.length - 1 || converting}
               onClick={() => choose(index + 1)}
@@ -105,6 +107,7 @@ export function ImageGallery({
           </div>
           <div>
             <button
+              type="button"
               aria-label="缩小图片"
               disabled={zoom <= 0.5}
               onClick={() => setZoom(Math.max(0.5, zoom / 1.25))}
@@ -113,13 +116,14 @@ export function ImageGallery({
             </button>
             <span>{Math.round(zoom * 100)}%</span>
             <button
+              type="button"
               aria-label="放大图片"
               disabled={zoom >= 8}
               onClick={() => setZoom(Math.min(8, zoom * 1.25))}
             >
               <ZoomIn size={18} />
             </button>
-            <button aria-label="适应窗口" title="适应窗口" onClick={reset}>
+            <button type="button" aria-label="适应窗口" title="适应窗口" onClick={reset}>
               <Expand size={18} />
             </button>
             {item && (
@@ -202,6 +206,7 @@ export function ImageGallery({
             <div className={mediaPreviewStyles['preview-placeholder']}>
               <p>HEIC／HEIF 图片需要转换后预览</p>
               <button
+                type="button"
                 disabled={converting}
                 onClick={async () => {
                   if (!item?.prepare) return

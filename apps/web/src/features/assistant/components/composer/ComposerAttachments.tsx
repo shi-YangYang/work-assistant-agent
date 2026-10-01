@@ -1,5 +1,5 @@
 import styles from './ComposerAttachments.module.css'
-import type { PreviewImage } from '@web/features/assistant/components/attachments/ImageGallery'
+import type { PreviewImage } from '@web/components/media/ImageGallery'
 import { ComposerAudioPreview } from './ComposerAudioPreview'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { fileKind, fileSize, isHeif } from '@web/features/assistant/utils/files'

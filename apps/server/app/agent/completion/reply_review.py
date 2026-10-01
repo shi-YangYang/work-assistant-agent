@@ -1,6 +1,7 @@
 """Targeted business/verification issues, never a general prose editor."""
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Literal
 from fastapi import HTTPException
@@ -16,7 +17,7 @@ from app.tasks.lease import lease
 
 log = logging.getLogger('paa.company')
 REVIEW_TASK = 'business_reply_review'
-REVIEW_VERSION = 39
+REVIEW_VERSION = 40
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ def check_issues(answer, raw, evidence, actions=(), task=None, drafts=()):
         if issue.kind in ('execution', 'fact', 'capability') and not issue.quote:
             raise ReviewFormatError('A disputed statement needs its exact quote')
         if issue.kind in ('execution', 'fact'):
+            text = re.sub(r'(?m)^[ \t]*(?:[-+*]|\d+[.)])[ \t]*' + re.escape(issue.quote) + r'[ \t]*(?:\n|$)', '', text)
             text = text.replace(issue.quote, '')
     limitations = [issue.reason for issue in verdict.issues if issue.kind == 'capability']
     if limitations:
@@ -90,6 +92,7 @@ async def review_reply(context, answer, *, model=None, quantitative=None, busine
     from app.agent.context.task_context import projection, TASK_POLICY
     from app.agent.prompts.policies import role_capabilities, REPORT_WRITING_POLICY
     from app.modules.operations.receipts import message_actions
+    from app.agent.completion.work_receipts import WORK_RECEIPT_POLICY, work_record_evidence
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
@@ -102,12 +105,14 @@ async def review_reply(context, answer, *, model=None, quantitative=None, busine
         draft_values = [{'id': draft.id, 'status': draft.status} for draft in drafts]
         task = (context.delivery or {}).get('task') or job.result.get('intentTaskInterpretation')
         review_evidence = context.reply_evidence
+        actions = await message_actions(db, actor, message)
         payload = {'task': REVIEW_TASK, 'version': REVIEW_VERSION,
             'currentUserText': request_text(message, job), 'answer': answer,
             'delivery': context.delivery, 'taskInterpretation': task, 'conversationTask': await projection(db, actor, job, message, context),
             'roleCapabilities': role_capabilities(actor.role),
             'conversationForReferenceOnly': await conversation_references(db, actor, job, message, context=context),
-            'currentActions': await message_actions(db, actor, message), 'currentDrafts': draft_values,
+            'currentActions': actions, 'currentDrafts': draft_values,
+            'workRecordEvidence': await work_record_evidence(db, actor, actions),
             'toolEvidence': review_evidence, 'toolOutcomes': job.result.get('toolOutcomes', []),
             'requestClock': getattr(context, 'request_clock', ''),
             'verificationQuote': (context.delivery or {}).get('verification_quote', ''),
@@ -122,7 +127,7 @@ async def review_reply(context, answer, *, model=None, quantitative=None, busine
                 pass
     from app.agent.completion.quantitative_review import QUANTITATIVE_POLICY
     from app.agent.prompts.evidence import CLAIM_SUPPORT_POLICY
-    prompt = [SystemMessage(content=TASK_POLICY + '\n' + REPORT_WRITING_POLICY + '\n' + (QUANTITATIVE_POLICY if quantitative else '') + '\n' + CLAIM_SUPPORT_POLICY + '''
+    prompt = [SystemMessage(content=TASK_POLICY + '\n' + REPORT_WRITING_POLICY + '\n' + WORK_RECEIPT_POLICY + '\n' + (QUANTITATIVE_POLICY if quantitative else '') + '\n' + CLAIM_SUPPORT_POLICY + '''
 按 reviewScope 核对：business 范围只含具体业务执行和用户明确要求核实的事实；quantitative_only 范围只含数值内部一致性；两者均启用时在同一次核对完成。返回 JSON {"issues":[]}，无问题即空数组，不为普通建议、人设、比喻、解释长度或“额外内容”编辑正文，不逐段分类。不要改写任务目标或新增授权。
 问题结构 {"kind":"execution|fact|missing_action|missing_response|capability","reason":"具体冲突或遗漏","quote":"有问题的原文完整片段","evidence":[],"receipt_ids":[],"resolvable_remaining":[]}。引用必须是当前工具证据 ID 或回执 ID；不能编造。execution/fact/capability 必须给出逐字原文 quote，其余 quote 留空。仅指出有依据的具体问题，无来源的推断不能推翻真实回执。
 execution：原文声称本轮已保存/删除/提交但回执不成立，或把入队、待确认、保存成功说成工作完成。只是回答已有报告是否提交，或虚构样例、计划和比喻不是本轮执行声明。私人成果与生成文件不是公司业务操作：run_python 和 inspect_table/export_table/create_chart/create_document/create_slides 的 succeeded、data、warnings、stdout 和 delivery/files 就是实际计算和文件交付证据，不要求 currentActions 中另有业务回执。当前工作状态、实际改动字段以 currentActions.details/changedFields 为准。

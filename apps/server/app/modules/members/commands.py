@@ -49,6 +49,10 @@ async def delete_member_command(identifier, actor, db):
         await db.execute(delete(ConversationContext).where(ConversationContext.owner_id == item.id, ConversationContext.company_id == actor.company_id))
         item.active, item.deleted, item.password_hash = False, True, None
         item.username = 'deleted:' + item.id
+        from app.modules.attachments.models import Attachment
+        from app.modules.work.models import WorkMaterial
+        from sqlalchemy import update
+        await db.execute(update(Attachment).where(Attachment.id.in_(select(WorkMaterial.attachment_id).where(WorkMaterial.owner_id == item.id))).values(deleted=True))
         await reporting_eligibility_changed(db, item)
         await revoke_member(db, item.id)
         from app.modules.auth.models import DingTalkIdentity

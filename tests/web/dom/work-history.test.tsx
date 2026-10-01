@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import type { Work } from '@paa/api-contracts'
+import type { Work, WorkDocument } from '@paa/api-contracts'
 import { render, screen, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, expect, it } from 'vitest'
@@ -55,7 +55,7 @@ it('shows field changes and correct authorship without repeating unchanged summa
   expect(screen.getByText(/手动更新/)).toBeTruthy()
   expect(screen.getByText('2026-10-01')).toBeTruthy()
   expect(screen.getByText('已完成')).toBeTruthy()
-  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(3)
 })
 
 it('includes clearing fields and never infers a diff across missing private history', () => {
@@ -73,4 +73,31 @@ it('includes clearing fields and never infers a diff across missing private hist
   expect(historyChanges(third, first).every((change) => change.before === undefined)).toBe(true)
   expect(historyOrigin({ ...second, origin: undefined })).toBe('历史记录')
   expect(historyChanges({ ...second, content }, first)).toEqual([])
+})
+
+it('omits an empty initial body but records a later explicit clearing', () => {
+  const empty: WorkDocument = { schemaVersion: 1, content: [] }
+  const created = {
+    ...first,
+    content: { ...content, summary: '', body: empty, bodyText: '', materialIds: [] },
+  }
+  expect(historyChanges(created).map((change) => change.key)).not.toContain('body')
+  expect(historyChanges(created).map((change) => change.key)).not.toContain('materials')
+  const previous = {
+    ...created,
+    content: {
+      ...created.content,
+      bodyText: '旧正文',
+      body: {
+        schemaVersion: 1 as const,
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: '旧正文' }] }],
+      },
+    },
+  }
+  expect(historyChanges({ ...created, revision: 2 }, previous)).toContainEqual({
+    key: 'body',
+    label: '工作内容',
+    before: '旧正文',
+    after: '空正文',
+  })
 })

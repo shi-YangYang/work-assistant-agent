@@ -49,6 +49,17 @@ async def test_policy_matrix(mode, action):
 
 
 @pytest.mark.parametrize('mode', ['ask', 'auto', 'full'])
+@pytest.mark.parametrize('changes', [{'update': {'action': 'delete', 'id': 'entry', 'expectedRevision': 1}},
+                                     {'removeMaterial': {'id': 'file', 'expectedRevision': 1}}])
+async def test_typed_deletion_policy_requires_approval_except_full(mode, changes):
+    assert decide(mode, 'update_work', changes=changes).outcome == ('allow' if mode == 'full' else 'ask')
+    assert decide(mode, 'update_work', changes=changes, authorized=False).outcome == 'deny'
+    assert decide(mode, 'update_work', changes=changes, explicitly_confirm=True).outcome == 'ask'
+    assert decide(mode, 'update_work', changes=changes, approved=True).outcome == 'allow'
+    assert decide('auto', 'update_work', changes={'update': {'action': 'edit'}}).outcome == 'allow'
+
+
+@pytest.mark.parametrize('mode', ['ask', 'auto', 'full'])
 async def test_create_mode_and_exact_approval_continuation(setup, mode):
     _, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, mode)

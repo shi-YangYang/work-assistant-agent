@@ -1,14 +1,14 @@
-import utilitiesStyles from '../../../../styles/utilities.module.css'
-import layoutStyles from '../../../../styles/layout.module.css'
-import controlsStyles from '../../../../styles/controls.module.css'
-import documentsStyles from '../../styles/documents.module.css'
+import utilitiesStyles from '../../styles/utilities.module.css'
+import layoutStyles from '../../styles/layout.module.css'
+import controlsStyles from '../../styles/controls.module.css'
+import documentsStyles from './documents.module.css'
 import type { Attachment, DocumentCitation, ExtractionPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
-import { documentExtractionPath, retryDocument } from '@web/features/assistant/api/requests'
-import { PdfPreview } from '@web/features/assistant/components/attachments/PdfPreview'
-import { currentCitation, fileSize } from '@web/features/assistant/utils/files'
+import { documentExtractionPath, retryDocument } from '@web/api/attachments'
+import { PdfPreview } from './PdfPreview'
+import { currentCitation, fileSize } from '@web/utils/attachments'
 import { useResource } from '@web/hooks/useResource'
 import { ChevronDown, Download, FileText } from 'lucide-react'
 import { useState } from 'react'
@@ -56,12 +56,20 @@ export function DocumentCard({
       ))}
       <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
         {attachment.mime === 'application/pdf' && (
-          <button className={`${controlsStyles['text-button']}`} onClick={() => setPdf(true)}>
+          <button
+            type="button"
+            className={`${controlsStyles['text-button']}`}
+            onClick={() => setPdf(true)}
+          >
             查看原页
           </button>
         )}
         {['ready', 'partial'].includes(extraction?.status ?? '') && (
-          <button className={`${controlsStyles['text-button']}`} onClick={() => setOpen(true)}>
+          <button
+            type="button"
+            className={`${controlsStyles['text-button']}`}
+            onClick={() => setOpen(true)}
+          >
             查看提取内容
           </button>
         )}
@@ -70,12 +78,13 @@ export function DocumentCard({
           下载原文件
         </a>
         {['pending', 'processing'].includes(extraction?.status ?? '') && (
-          <button className={controlsStyles['text-button']} onClick={refresh}>
+          <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
             刷新状态
           </button>
         )}
         {own && extraction?.status === 'failed' && (
           <BusyButton
+            type="button"
             busy={busy}
             onClick={async () => {
               setBusy(true)
@@ -106,6 +115,7 @@ export function DocumentCard({
       {open && (
         <DocumentPreview
           attachmentId={attachment.id}
+          workRevision={attachment.workRevision}
           revision={extraction?.revision}
           name={attachment.name}
           onClose={() => setOpen(false)}
@@ -117,12 +127,14 @@ export function DocumentCard({
 
 function DocumentPreview({
   attachmentId,
+  workRevision,
   revision,
   name,
   ordinal = 0,
   onClose,
 }: {
   attachmentId: string
+  workRevision?: number
   revision?: number
   name: string
   ordinal?: number
@@ -131,7 +143,7 @@ function DocumentPreview({
   const [starts, setStarts] = useState([ordinal])
   const start = starts[starts.length - 1]
   const { data, error, refresh } = useResource<ExtractionPage>(
-    documentExtractionPath(attachmentId, start, revision),
+    documentExtractionPath(attachmentId, start, revision, workRevision),
   )
   return (
     <Modal title={name} onClose={onClose}>
@@ -155,13 +167,18 @@ function DocumentPreview({
               </section>
             ))}
             <div className={layoutStyles['row-between']}>
-              <button disabled={starts.length === 1} onClick={() => setStarts(starts.slice(0, -1))}>
+              <button
+                type="button"
+                disabled={starts.length === 1}
+                onClick={() => setStarts(starts.slice(0, -1))}
+              >
                 上一组
               </button>
               <span className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
                 分段 {start + 1}–{start + data.items.length}
               </span>
               <button
+                type="button"
                 disabled={data.nextCursor === null}
                 onClick={() => setStarts([...starts, data.nextCursor!])}
               >
@@ -187,6 +204,7 @@ export function DocumentCitations({ citations }: { citations: DocumentCitation[]
       </summary>
       {citations.map((citation, index) => (
         <button
+          type="button"
           className={`${controlsStyles['text-button']}`}
           key={`${citation.attachmentId}:${citation.ordinal}`}
           onClick={() => setSelected(citation)}

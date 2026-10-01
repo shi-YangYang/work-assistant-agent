@@ -60,7 +60,9 @@ export function WorkList({
             >
               <h3>{work.title}</h3>
             </div>
-            <p className={recordLayoutStyles['record-summary']}>{work.summary}</p>
+            <p className={recordLayoutStyles['record-summary']}>
+              {work.summary || work.bodyText || '尚未补充工作内容'}
+            </p>
             {work.dueDate && (
               <small className={recordLayoutStyles['record-note']}>截止 {work.dueDate}</small>
             )}

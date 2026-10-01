@@ -1,5 +1,4 @@
 import type {
-  Attachment,
   DeliverableReference,
   ExecutionMode,
   BusinessAction,
@@ -25,21 +24,12 @@ export function resolveBusinessAction(
   >(`/business-actions/${current.id}/${choice}`, body)
 }
 
-export function readAttachmentBytes(url: string | undefined, options: RequestInit) {
-  return api<ArrayBuffer>((url ?? '').replace(/^\/api\/v1/, ''), options, 'bytes')
-}
-
-export function retryDocument(attachment: Attachment, body: Record<string, never>) {
-  return write(`/uploads/${attachment.id}/retry`, body)
-}
-
-export function documentExtractionPath(
-  attachmentId: string,
-  start: number,
-  revision: number | undefined,
-) {
-  return `/uploads/${attachmentId}/extraction?start=${start}${revision !== undefined ? `&revision=${revision}` : ''}`
-}
+export {
+  readAttachmentBytes,
+  retryDocument,
+  documentExtractionPath,
+  uploadAttachment,
+} from '@web/api/attachments'
 
 export function correctTranscript(
   message: WorkMessage,
@@ -64,10 +54,6 @@ export function orphanActionsPath(conversationId: string | undefined) {
   return conversationId
     ? `/business-actions?conversationId=${conversationId}&orphanOnly=true`
     : null
-}
-
-export function uploadAttachment(options: RequestInit) {
-  return api<Attachment>('/uploads', options)
 }
 
 export function sendMessage(

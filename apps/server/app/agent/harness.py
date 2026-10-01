@@ -11,7 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.context.history import conversation_history
 from app.agent.context.task_context import TASK_POLICY
-from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, take_repair, validate_completion_response
+from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, reference_repair_needed, take_repair, validate_completion_response
 from app.agent.runtime.middleware import ToolBoundary
 from app.agent.runtime.model import BoundedChatModel, approximate_tokens
 from app.agent.prompts.persona import persona_prompt
@@ -128,6 +128,15 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
                     instruction += '\n以下是当前用户请求的数据；verification_quote 只能逐字引用其中的核验要求，不能引用此前消息或本条服务端提醒：\n' + json.dumps({'currentUserRequest': request_text(current_message, current_job)}, ensure_ascii=False)
             with tracing_context(enabled=False):
                 result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+            messages = result.get('messages', [])
+            delivery = from_messages(messages)
+        if delivery is None and reference_repair_needed(messages, job.id) and await take_repair(context, 'references'):
+            # Plain text has no receipt fields to validate. Its first terminal
+            # call may reveal a reference error that the model has not seen yet.
+            # Use the existing shared semantic-repair budget, never replay tools.
+            instruction = '刚才 finish_task 的引用校验未通过。依据工具错误只纠正本轮收尾字段及相关措辞，单独调用 finish_task；不得重做工具或业务操作。保留真实未完成项。' + COMPLETION_POLICY
+            with tracing_context(enabled=False):
+                result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-references:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
             messages = result.get('messages', [])
             delivery = from_messages(messages)
     context.delivery = delivery.model_dump() if delivery else None

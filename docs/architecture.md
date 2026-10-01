@@ -102,6 +102,13 @@ tasks/
 
 `tests/server/test_architecture.py` 检查反向依赖、循环、ORM 登记和应用实例隔离。
 
+### 工作记录与材料
+
+- `WorkItem.content` 保存受限 JSON 正文、派生纯文本与材料引用；`WorkRevision` 保存对应版本。正文用于目标与方案，进展由 `WorkUpdate`／`WorkUpdateRevision` 独立记录和更正。
+- Web 与 Agent 通过 `modules/work/record_commands.py` 写入，统一检查归属、版本、幂等与材料；Agent 继续经过业务操作授权和回执，不另设直写通道。
+- `WorkMaterial` 绑定工作自有附件快照，复用附件解析、预览与下载。保存到工作后的文件不依赖源聊天；读取、历史访问、沙盒输入和清理都校验工作权限及仍有效的引用。
+- 模型按需读取正文、进展与材料，不把全部历史塞进上下文。报告区分期间实际进展与未来计划，保留生成时的来源快照。
+
 ## Web 前端组织
 
 `apps/web/src` 按业务组织：
@@ -130,6 +137,7 @@ styles/       本端基础 CSS、公共布局和控件 Module
 - 路由延迟加载，加载与失败恢复留在路由区域，不重置整个应用。
 - 业务 TSX 超过约 350 个非空行时检查职责，不机械拆碎。
 - 应用布局归 `app/layout/`；公共组件按 `actions`、`forms`、`feedback`、`overlays`、`content` 分组。拥挤的业务组件目录按功能分组，例如助手的 `conversation/`、`composer/`、`messages/`，私有样式与组件同目录，文件保留明确名称。
+- 工作正文编辑器归 `features/work/components/content/`，进展与材料分别归 `updates/`、`materials/`。共用媒体预览在 `components/media/`，上传请求在 `api/attachments.ts`；工作与聊天不互相引用私有媒体组件。
 
 ### Web 样式边界
 

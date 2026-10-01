@@ -13,12 +13,22 @@ class Decision:
     reason: str
 
 
-def decide(mode: ExecutionMode, action: str, *, authorized=True, explicitly_confirm=False, approved=False):
+def sensitive(action: str, changes=None):
+    if action in SENSITIVE:
+        return True
+    if action != 'update_work':
+        return False
+    changes = changes or {}
+    update = changes.get('update') or {}
+    return 'removeMaterial' in changes or isinstance(update, dict) and update.get('action') == 'delete'
+
+
+def decide(mode: ExecutionMode, action: str, *, changes=None, authorized=True, explicitly_confirm=False, approved=False):
     if not authorized:
         return Decision('deny', '当前任务未授权该操作')
     if approved:
         return Decision('allow', '本次操作已获明确批准')
-    if mode == 'ask' or explicitly_confirm or mode != 'full' and action in SENSITIVE:
+    if mode == 'ask' or explicitly_confirm or mode != 'full' and sensitive(action, changes):
         return Decision('ask', '逐项确认' if mode == 'ask' else '请核对本次操作')
     return Decision('allow', '')
 

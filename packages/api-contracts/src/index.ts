@@ -17,6 +17,7 @@ export interface Identity {
   company: { id: string; name: string }
 }
 export interface Attachment {
+  workRevision?: number
   id: string
   kind: 'image' | 'audio' | 'document'
   name: string
@@ -118,12 +119,16 @@ export interface BusinessAction {
   objectType?: 'work' | 'report'
   objectId?: string
   objectRevision?: number
+  updateId?: string
+  updateRevision?: number
+  materialIds?: string[]
   title?: string
-  details?: Partial<Progress>
-  changedFields?: (keyof Progress)[]
+  details?: Partial<Progress & WorkRecordFields>
+  changedFields?: string[]
   message?: string
   canConfirm?: boolean
   preview?: {
+    materialNames?: Record<string, string>
     title: string
     content?: ReportContent
     before?: Record<string, unknown>
@@ -152,7 +157,77 @@ export interface Conversation {
   revision: number
   updatedAt: string
 }
-export interface Work extends Progress {
+export interface WorkNode {
+  type: string
+  attrs?: Record<string, unknown>
+  text?: string
+  marks?: { type: string; attrs?: Record<string, unknown> }[]
+  content?: WorkNode[]
+}
+export interface WorkDocument {
+  schemaVersion: 1
+  content: WorkNode[]
+}
+export interface WorkMaterialSource {
+  attachmentId?: string
+  deliverableId?: string
+  revision?: number
+  fileId?: string
+}
+export interface WorkMaterial {
+  id: string
+  workId: string
+  revision: number
+  attachment: Attachment
+  createdAt: string
+  removed: boolean
+}
+export interface WorkUpdate {
+  id: string
+  workId: string
+  revision: number
+  text: string
+  materialIds: string[]
+  origin: string
+  ownerId: string
+  createdAt: string
+  updatedAt: string
+  deleted: boolean
+  workRevision: number
+}
+export interface WorkRecordFields {
+  body?: WorkDocument
+  bodyText?: string
+  _changeKind?: string
+  _updateText?: string
+  _updateDeleted?: boolean
+  materialIds?: string[]
+}
+export interface WorkPatch extends Partial<Omit<Progress, 'summary'>>, WorkRecordFields {
+  expectedRevision: number
+  materials?: WorkMaterialSource[]
+}
+export interface WorkUpdateInput {
+  expectedRevision: number
+  expectedUpdateRevision?: number
+  text: string
+  materialIds: string[]
+  materials?: WorkMaterialSource[]
+  status?: Progress['status']
+  dueDate?: string | null
+  blocker?: string
+  nextStep?: string
+}
+export interface WorkWriteResult {
+  work: Work
+  materialIds: string[]
+  update?: WorkUpdate
+}
+export interface WorkPageResult<T> {
+  items: T[]
+  nextCursor: number | null
+}
+export interface Work extends Progress, WorkRecordFields {
   origin?: 'manual' | 'assistant' | 'suggestion'
   historical?: boolean
   businessLinks?: BusinessCitation[]
@@ -164,7 +239,7 @@ export interface Work extends Progress {
   history?: {
     id: string
     revision: number
-    content: Progress
+    content: Progress & WorkRecordFields
     origin?: 'manual' | 'assistant' | 'assistant_confirmed' | 'unknown'
     sourceIds: string[]
     deletedSourceIds?: string[]

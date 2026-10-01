@@ -3,6 +3,9 @@ import controlsStyles from '../../../../styles/controls.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import recordDetailStyles from '../../../../styles/patterns/RecordDetail.module.css'
 import styles from './WorkDetail.module.css'
+import { WorkContent } from '../content/WorkContent'
+import { WorkUpdates } from '../updates/WorkUpdates'
+import { WorkMaterials } from '../materials/WorkMaterials'
 import type { Work } from '@paa/api-contracts'
 import { Actions } from '@web/components/actions/Actions'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
@@ -15,7 +18,6 @@ import { WorkHistory } from './WorkHistory'
 import { WorkEditor } from '@web/features/work/components/editor/WorkEditor'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
-import { dateLabel } from '@web/utils/date'
 import { detailReturn, detailState } from '@web/utils/navigation'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
@@ -31,13 +33,12 @@ export function WorkDetail({
   const id = recordId
   const { data, error, refresh } = useResource<Work>(
     workDetailPath(id, recordSearch ?? location.search),
-    5000,
   )
   const { identity } = useWorkspace()
   const [editing, setEditing] = useState(false)
   return (
     <div
-      className={`${layoutStyles['page']} ${layoutStyles['narrow']} ${recordDetailStyles['detail']}`}
+      className={`${layoutStyles['page']} ${styles['work-page']} ${recordDetailStyles['detail']}`}
       data-compact={compact}
       data-scroll-container
     >
@@ -77,25 +78,37 @@ export function WorkDetail({
               </div>
             )}
           </div>
-          <div className={`${layoutStyles['panel']} ${recordDetailStyles['panel']}`}>
-            {data.dueDate && <p>截止日期：{data.dueDate}</p>}
-            {data.summary && <p className={utilitiesStyles['preserve']}>{data.summary}</p>}
-            {!data.summary && !data.blocker && !data.nextStep && (
-              <div className={styles['empty-content']}>
-                <p>这项工作还没有填写具体内容</p>
-                {data.ownerId === identity.member.id && !data.historical && (
-                  <button onClick={() => setEditing(true)}>补充工作内容</button>
-                )}
-              </div>
-            )}
-            {data.blocker && <p className={utilitiesStyles['error-text']}>阻碍：{data.blocker}</p>}
-            {data.nextStep && <p>下一步：{data.nextStep}</p>}
-            <small>
-              更新于 {dateLabel(data.updatedAt)} · 第 {data.revision} 版
-            </small>
+          <div className={styles.metadata}>
+            <span>截止日期：{data.dueDate || '未设置'}</span>
+            <small>第 {data.revision} 版</small>
           </div>
+          <WorkContent
+            key={`content:${identity.company.id}:${identity.member.id}:${data.id}:${!!data.historical}`}
+            work={data}
+            own={data.ownerId === identity.member.id && !data.historical}
+            saved={refresh}
+          />
+          <WorkMaterials
+            work={data}
+            own={data.ownerId === identity.member.id && !data.historical}
+            saved={refresh}
+          />
+          {(data.blocker || data.nextStep) && (
+            <div className={styles.supplement}>
+              {data.blocker && (
+                <p className={utilitiesStyles['error-text']}>阻碍：{data.blocker}</p>
+              )}
+              {data.nextStep && <p>下一步：{data.nextStep}</p>}
+            </div>
+          )}
+          <WorkUpdates
+            key={`updates:${identity.company.id}:${identity.member.id}:${data.id}:${!!data.historical}`}
+            work={data}
+            own={data.ownerId === identity.member.id && !data.historical}
+            saved={refresh}
+          />
           <BusinessSources sources={data.businessLinks ?? []} endpoint={workSourcesPath(data.id)} />
-          {deleting && (
+          {deleting && data.ownerId === identity.member.id && !data.historical && (
             <DeleteRecord
               kind="work-items"
               id={data.id}
@@ -109,10 +122,10 @@ export function WorkDetail({
             />
           )}
           <details className={recordDetailStyles['record-evidence']}>
-            <summary>进展记录与来源</summary>
+            <summary>修改记录与来源</summary>
             <WorkHistory work={data} />
           </details>
-          {editing && (
+          {editing && data.ownerId === identity.member.id && !data.historical && (
             <WorkEditor
               work={data}
               onClose={() => setEditing(false)}

@@ -41,10 +41,25 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     For append/supplement requests, changes contains ONLY the new text for each
     field; the server preserves and appends to the original. Do not restate old
     content. Only explicit replace/clear requests contain full replacement text.
-    Changes contain ONLY requested fields: work title/summary/status/blocker/
-    nextStep/dueDate (YYYY-MM-DD or null); report completed/ongoing/blockers/next.
+    Changes contain ONLY requested fields: work title/status/blocker/nextStep/
+    dueDate (YYYY-MM-DD or null), body/bodyEdits/update/materials/removeMaterial;
+    report completed/ongoing/blockers/next. Work body is the goal/context/plan,
+    while update is a separate dated progress entry. Read get_work_item first.
+    body is {schemaVersion:1,content:[Tiptap nodes]}. Prefer bodyEdits using stable
+    block IDs: [{action:'append',blocks:[...]}, {action:'replace',blockId,blocks:[...]},
+    {action:'remove',blockId}]. Unmentioned blocks and materials are preserved.
+    update is {action:'create',text,materialIds?,materials?}, or {action:'edit',id,
+    expectedRevision,text,materialIds?}, or {action:'delete',id,expectedRevision}.
+    Read list_work_updates before editing/deleting an entry. materials contains
+    {attachmentId} or {deliverableId,revision,fileId}. Save only explicitly selected
+    files. Existing work materialIds come from list_work_materials. removeMaterial
+    is {id,expectedRevision}; remove references first if it is still in body/updates.
+    New material nodes use attachmentId temporarily in attrs.materialId alongside
+    materials:[{attachmentId}]; the server converts it to a durable material ID.
+    Never replace the entire body for a local edit. summary is legacy compatibility,
+    use update for new progress and body for descriptions/plans.
     For create_work title is required. When delegated to design/randomly generate
-    a useful task, also write its actionable summary and nextStep as FUTURE plans;
+    a useful task, also write its actionable body and nextStep as FUTURE plans;
     use in_progress, no invented achievements or deadlines. A title-only request
     still leaves other fields empty. Creating and
     editing save immediately. For update/delete read latest object first; pass its

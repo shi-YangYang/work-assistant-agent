@@ -86,6 +86,60 @@ async def test_missing_completion_protocol_fails_boundedly_instead_of_false_succ
     assert fake.answer not in result['reply']
 
 
+class PreviousReceiptModel(DeliveryModel):
+    receipt_id: str = ''
+    repeat_invalid: bool = False
+    repair_errors: list = Field(default_factory=list)
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.calls += 1
+        self.requests.append({'tools': [tool['function']['name'] for tool in kwargs.get('tools', [])], 'tool_choice': kwargs.get('tool_choice')})
+        errors = [message for message in messages if isinstance(message, ToolMessage)
+                  and message.name == 'finish_task' and message.status == 'error']
+        if self.raw_first and self.calls == 1:
+            result = AIMessage(content=self.answer)
+        else:
+            if errors:
+                self.repair_errors = [message.content for message in errors]
+                assert '此前消息' in errors[-1].content
+                assert self.requests[-1] == {'tools': ['finish_task'], 'tool_choice': {'type': 'function', 'function': {'name': 'finish_task'}}}
+            invalid = not errors or self.repeat_invalid
+            result = completion(self.answer, business=invalid, operation_ids=[self.receipt_id] if invalid else [])
+        return ChatResult(generations=[ChatGeneration(message=result)])
+
+
+@pytest.mark.parametrize('raw_first', [False, True])
+@pytest.mark.parametrize('repeat_invalid', [False, True])
+async def test_previous_message_receipt_repairs_first_terminal_reference_without_writing(setup, raw_first, repeat_invalid):
+    from app.agent.actions.operations import execute
+    from test_business_actions import finish, runtime
+    context, sent = await runtime(setup, '创建报价方案，截止日期设为2026年10月2日')
+    receipt = await execute(context, step=1, action='create_work', changes={'title': '报价方案', 'dueDate': '2026-10-02'})
+    assert receipt['state'] == 'succeeded'
+    await finish(context)
+    client = setup[3]['employee']
+    path = '/api/v1/work-items/' + receipt['objectId']
+    before = (await client.get(path)).json()
+    answer = '最后设置的截止日期是2026年10月2日；本轮仅查询，状态保持原样，没有新增进展。'
+    fake = PreviousReceiptModel(model='controlled', api_key='controlled', answer=answer,
+        receipt_id=receipt['id'], raw_first=raw_first, repeat_invalid=repeat_invalid)
+    result, stored = await run(setup, fake, '状态保持原样，告诉我最后设置的是哪一天，不要新增进展',
+        conversationId=sent['conversationId'], workReference={'workId': receipt['objectId']})
+    assert fake.calls == (3 if raw_first else 2) and fake.repair_errors
+    assert stored['deliveryRepairs'] == (['protocol', 'references'] if raw_first else ['protocol'])
+    assert not result['actions'] and not stored.get('toolOutcomes')
+    assert (await client.get(path)).json() == before
+    assert (await client.get(path + '/updates')).json()['items'] == []
+    if repeat_invalid:
+        assert result['job']['state'] in ('failed', 'awaiting_retry')
+        assert answer not in result['reply'] and '有效收尾' in result['job']['error']
+        assert result['job']['taskOutcome']['state'] == 'blocked'
+    else:
+        assert result['job']['state'] == 'awaiting_input' and result['job']['taskOutcome']['state'] == 'completed'
+        assert result['reply'] == answer
+        assert not stored.get('pendingReply') and not stored.get('replyReviewError')
+
+
 async def test_completion_and_write_in_same_batch_execute_neither_before_repair(setup):
     fake = model(mixed=True)
     result, _ = await run(setup, fake)

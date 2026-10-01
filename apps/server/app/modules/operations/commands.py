@@ -13,7 +13,7 @@ async def confirm_business_action_command(identifier, choice, body, actor, db, s
     target_id = row.result.get('objectId') or row.params.get('targetId')
     target = await db.get(Report if row.action.endswith('report') else WorkItem, target_id) if target_id else None
     cleanup_owner = target.owner_id if target and target.company_id == actor.company_id else actor.id
-    result = await actions_confirm(db, actor, identifier, body.expectedRevision, cancel=choice == 'cancel')
+    result = await actions_confirm(db, actor, identifier, body.expectedRevision, cancel=choice == 'cancel', settings=settings)
     if result['state'] in ('succeeded', 'running', 'cancelled'):
         from app.tasks.runtime.interactions import continue_approval
         continuation = await continue_approval(db, actor, row)

@@ -3,6 +3,7 @@ from datetime import timedelta
 from app.db.base import now
 from app.integrations.media import remove_media
 from app.modules.attachments.models import Attachment
+from app.modules.work.models import WorkMaterial
 from app.modules.auth.models import LoginAttempt, Session
 from app.tasks.processing.handlers import log
 from app.tasks.models import Job
@@ -17,9 +18,11 @@ async def maintenance(sessions, settings):
     from app.modules.executions.cleanup import stop_retired, clean_files as clean_generated_files
     await stop_retired(sessions, settings)
     async with sessions.begin() as db:
+        from app.modules.work.materials.cleanup import retire_orphans
+        await retire_orphans(db)
         await clean_files(db, settings)
         await clean_generated_files(db, settings)
-        old = (await db.scalars(select(Attachment).where(Attachment.message_id.is_(None), Attachment.created_at < now() - timedelta(hours=24)).with_for_update(skip_locked=True))).all()
+        old = (await db.scalars(select(Attachment).where(Attachment.message_id.is_(None), ~Attachment.id.in_(select(WorkMaterial.attachment_id)), Attachment.created_at < now() - timedelta(hours=24)).with_for_update(skip_locked=True))).all()
         for attachment in old:
             remove_media(settings, attachment.id)
             await db.delete(attachment)

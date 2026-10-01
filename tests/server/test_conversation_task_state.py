@@ -315,6 +315,121 @@ async def test_failed_response_can_resume_saved_effect_from_new_message(setup):
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 1
 
 
+async def cancel_running(setup, context):
+    response = await setup[3]['employee'].post('/api/v1/jobs/' + context.job_id + '/cancel',
+        json={'expectedAttempt': 0, 'expectedFence': context.fence})
+    assert response.status_code == 200 and response.json()['state'] == 'cancelled', response.text
+
+
+@pytest.mark.parametrize('legacy_scope', [False, True])
+async def test_explicit_cancelled_resume_preserves_sources_and_separates_work_steps(setup, legacy_scope):
+    from test_work_records import body
+    _, sessions, users, clients = setup
+    work = await create(clients['employee'], '官网改版')
+    original = '先保存工作正文“移动端方案”，再追加进展“收到客户需求”。各做一次。'
+    first, sent = await runtime(setup, original)
+    await read_work(first, work['id'])
+    saved = await execute(first, step=1, action='update_work', target_id=work['id'], expected_revision=1,
+        changes={'body': body('移动端方案')})
+    assert saved['state'] == 'succeeded'
+    await cancel_running(setup, first)
+    async with sessions.begin() as db:
+        state = await db.get(ConversationTaskState, sent['conversationId'])
+        assert state.payload['task']['state'] == 'cancelled'
+        assert state.payload['task']['sources'][0]['messageId'] == sent['messageId']
+        assert state.payload['task']['items'][0]['receiptId'] == saved['id']
+        if legacy_scope:
+            job = await db.get(Job, first.job_id)
+            job.result = {**job.result, 'taskItems': [{key: value for key, value in item.items() if key != 'workScope'} for item in job.result['taskItems']]}
+    context, _ = await runtime(setup, '继续上次中断的任务，只处理尚未完成的步骤，不要重复保存正文')
+    judge = ScopedJudge(source=sent['messageId'], quote=original, resume=True)
+    context.intent_model = judge
+    await read_work(context, work['id'])
+    repeated = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=2,
+        changes={'body': body('移动端方案')}, task_item_id=saved['taskItemId'])
+    assert repeated.get('id') == saved['id'], repeated
+    args = {'step': 2, 'action': 'update_work', 'target_id': work['id'], 'expected_revision': 2,
+        'changes': {'update': {'action': 'create', 'text': '收到客户需求'}}}
+    wrong = await execute(context, **args, task_item_id=saved['taskItemId'])
+    assert wrong['state'] == 'clarification' and wrong['category'] == 'invalid_arguments'
+    assert '变更范围' in wrong['message']
+    remaining = await execute(context, **args)
+    assert remaining['state'] == 'succeeded' and remaining['id'] != saved['id'], remaining
+    assert remaining['taskItemId'] != saved['taskItemId']
+    request = judge.inputs[-1]
+    assert request['conversationTask']['previousTask']['userSources'] == [{'messageId': sent['messageId'], 'userText': original}]
+    assert any(step['state'] == 'succeeded' and step['details'].get('bodyText') == '移动端方案' for step in request['completedOrPendingSteps'])
+    async with sessions() as db:
+        original_job, current_job = await db.get(Job, first.job_id), await db.get(Job, context.job_id)
+        assert original_job.state == 'cancelled'
+        assert current_job.result['taskSnapshot']['relation'] == 'continue'
+        actions = (await db.scalars(select(BusinessAction).where(BusinessAction.owner_id == users['employee'].id))).all()
+        assert len(actions) == 2 and all(action.task_id == sent['messageId'] for action in actions)
+        saved_work = await db.get(WorkItem, work['id'])
+        assert saved_work.revision == 3 and saved_work.content['bodyText'] == '移动端方案'
+    updates = (await clients['employee'].get('/api/v1/work-items/' + work['id'] + '/updates')).json()['items']
+    assert len(updates) == 1 and updates[0]['text'] == '收到客户需求'
+
+
+async def test_unrelated_request_does_not_automatically_resume_cancelled_task(setup):
+    _, sessions, _, _ = setup
+    original = '创建甲，再创建乙'
+    first, sent = await runtime(setup, original)
+    saved = await execute(first, step=1, action='create_work', changes={'title': '甲'})
+    await cancel_running(setup, first)
+    context, newer = await runtime(setup, '换个话题，现在独立创建丙')
+    context.intent_model = ScopedJudge(source=sent['messageId'], quote=original, resume=False)
+    allowed, _ = await authorize_intent(context, {'action': 'create_work', 'changes': {'title': '乙'}})
+    assert not allowed
+    context.intent_model = ScopedJudge()
+    result = await execute(context, step=1, action='create_work', changes={'title': '丙'})
+    assert result['state'] == 'succeeded' and result['id'] != saved['id']
+    async with sessions() as db:
+        action = await db.get(BusinessAction, result['id'])
+        assert action.task_id == newer['messageId']
+        assert (await db.get(Job, first.job_id)).state == 'cancelled'
+        assert (await db.get(Job, context.job_id)).result['taskSnapshot']['relation'] == 'new'
+
+
+@pytest.mark.parametrize('action, quote', [('delete_work', '删除旧工作'), ('submit_report', '提交日报')])
+async def test_vague_acknowledgement_cannot_use_cancelled_sensitive_request(setup, action, quote):
+    _, sessions, _, _ = setup
+    first, sent = await runtime(setup, '先创建甲，然后' + quote)
+    saved = await execute(first, step=1, action='create_work', changes={'title': '甲'})
+    await cancel_running(setup, first)
+    context, current = await runtime(setup, '好')
+    judge = ScopedJudge(source=sent['messageId'], quote=quote, resume=False)
+    context.intent_model = judge
+    allowed, _ = await authorize_intent(context, {'action': action, 'targetId': saved['objectId']})
+    assert not allowed
+    assert judge.inputs[0]['currentUserText'] == '好'
+    assert judge.inputs[0]['conversationTask']['previousTask']['state'] == 'cancelled'
+    async with sessions() as db:
+        assert not (await db.get(WorkItem, saved['objectId'])).deleted
+        assert (await db.get(Job, context.job_id)).result['taskSnapshot']['relation'] == 'new'
+        assert not await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == current['messageId']))
+
+
+@pytest.mark.parametrize('mutation', ['delete', 'revision', 'text'])
+async def test_cancelled_source_must_still_be_valid_before_explicit_resume(setup, mutation):
+    _, sessions, _, _ = setup
+    original = '创建甲，然后创建乙'
+    first, sent = await runtime(setup, original)
+    await execute(first, step=1, action='create_work', changes={'title': '甲'})
+    await cancel_running(setup, first)
+    context, _ = await runtime(setup, '继续刚才的剩余事项')
+    async with sessions.begin() as db:
+        source = await db.get(Message, sent['messageId'])
+        if mutation == 'delete': source.deleted = True
+        elif mutation == 'revision': source.transcript_revision += 1
+        else: source.text = '撤回原话'
+        await invalidate_sources(db, {source.id})
+    context.intent_model = ScopedJudge(source=sent['messageId'], quote=original, resume=True)
+    allowed, _ = await authorize_intent(context, {'action': 'create_work', 'changes': {'title': '乙'}})
+    assert not allowed
+    assert not context.intent_model.inputs[0]['conversationTask']['previousTask']
+
+
 async def test_one_time_quote_in_directive_source_is_not_an_active_grant(setup):
     first, sent = await runtime(setup, '现在创建甲。以后只补充乙的说明。')
     await close_task(first, quote='以后只补充乙的说明', scope='乙.summary')

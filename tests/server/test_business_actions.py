@@ -88,8 +88,21 @@ async def test_manual_create_date_source_and_edit_compatibility(setup):
     assert (await c['admin'].post('/api/v1/work-items/' + work['id'] + '/progress', json=patch)).status_code == 404
     report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}, headers=keyed())
     async with sessions() as db:
+        from app.modules.reports.sources import report_source_content, sources_for
         job = await db.get(Job, report.json()['jobId'])
-        assert len(job.result['sourceIds']) == 1
+        saved_report = await db.get(Report, report.json()['reportId'])
+        sources = await sources_for(db, saved_report, users['employee'], job.result['sourceIds'])
+        assert all(source.work_id == work['id'] for source in sources)
+        facts = {source.revision: report_source_content(source) for source in sources}
+        # Creation, the independent progress entry and the later date change
+        # remain distinct snapshots; the inherited progress is never repeated.
+        assert {revision: (fact['summary'], fact['dueDate'], fact.get('factType')) for revision, fact in facts.items()} == {
+            1: ('', '2026-09-30', None),
+            2: ('新进展', '2026-09-30', None),
+            3: ('', None, 'attribute_change'),
+        }
+        assert [fact['summary'] for fact in facts.values() if fact['summary']] == ['新进展']
+        assert facts[max(facts)]['dueDate'] is None
 
 
 async def test_commit_survives_model_failure_replay_new_step_and_new_message(setup):

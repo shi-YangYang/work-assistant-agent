@@ -31,7 +31,7 @@ async def setup(tmp_path):
         raise RuntimeError('Set DATABASE_TEST_URL to a dedicated migrated PostgreSQL test database')
     if make_url(test_url).database != 'paa_company_test':
         raise RuntimeError('Refusing tests outside the dedicated paa_company_test database')
-    settings = replace(base, database_url=test_url.replace('postgresql://', 'postgresql+psycopg://', 1), media_dir=tmp_path / 'media', cookie_secure=False, web_origin='http://test', agent_base_url='', agent_key='', asr_base_url='', asr_key='', model_key_file=tmp_path / 'master.key')
+    settings = replace(base, database_url=test_url.replace('postgresql://', 'postgresql+psycopg://', 1), media_dir=tmp_path / 'media', cookie_secure=False, web_origin='http://test', agent_base_url='', agent_key='', asr_base_url='', asr_key='', sandbox_url='', sandbox_token='', model_key_file=tmp_path / 'master.key')
     initialize_key(settings.model_key_file)
     engine, sessions = database(settings)
     company_ids, users = [], {}

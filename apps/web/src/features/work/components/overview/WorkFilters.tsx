@@ -25,7 +25,7 @@ export function WorkFilters({
         <SearchInput
           aria-label="搜索工作"
           placeholder="搜索工作…"
-          title="搜索标题、摘要、阻碍或下一步"
+          title="搜索工作标题、正文或进展"
           value={query}
           maxLength={200}
           onSearch={(q) => change({ q })}
