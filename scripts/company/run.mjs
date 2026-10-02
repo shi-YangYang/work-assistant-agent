@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { startLocalSandbox } from './sandbox-local.mjs'
+import { startLocalDatabase } from './database-local.mjs'
 const root = resolve(import.meta.dirname, '../..')
 const webRequire = createRequire(join(root, 'apps/web/package.json'))
 const python =
@@ -53,6 +54,8 @@ process.on('SIGINT', () => stop(0))
 process.on('SIGTERM', () => stop(0))
 if (action === 'all') {
   try {
+    await startLocalDatabase({ signal: startup.signal })
+    startup.signal.throwIfAborted()
     sandbox = await startLocalSandbox({ signal: startup.signal })
   } catch (error) {
     if (!stopping) console.error(error.message)

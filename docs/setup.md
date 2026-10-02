@@ -43,7 +43,7 @@ npm run admin:company
 npm run dev:web
 ```
 
-访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令启动 Web、API、worker；Python 修改后需重启。`Ctrl+C` 停止应用，数据库继续运行；下次启动前用 Compose 确认数据库就绪。
+访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令自动启动本地 PostgreSQL，等待健康检查通过后启动 Web、API、worker 和已启用的沙盒。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用，数据库继续运行。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；单独运行 API／worker 时仍需先启动数据库。
 
 ### 本地代码执行与文件生成
 
