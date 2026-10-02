@@ -35,6 +35,35 @@
   color: var(--muted);
   font-size: 13px;
 }
+.document-card[data-compact='true'] {
+  width: 440px;
+  flex: 0 1 440px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.document-card[data-compact='true'] .document-heading {
+  gap: 8px;
+}
+.document-card[data-compact='true'] .document-heading svg {
+  width: 18px;
+  height: 18px;
+}
+.document-card[data-compact='true'] > p {
+  margin: 5px 0 0;
+  font-size: 12px;
+}
+.document-card[data-compact='true'] .slot-card-actions {
+  margin-top: 6px;
+  gap: 6px 12px;
+}
+.document-card[data-compact='true'] .slot-card-actions button {
+  padding: 4px 0;
+}
+.document-card[data-compact='true'] .slot-card-actions a {
+  margin-left: 0;
+}
 .document-preview {
   min-width: 0;
 }

@@ -8,9 +8,15 @@ import { useWorkspace } from '@web/lib/workspace'
 import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { patchWork, readWork } from '../../api/requests'
 import { useWorkUpload } from '../../hooks/useWorkUpload'
-import { documentFromText, documentMaterialIds, removeDocumentMaterial } from '../../utils/document'
+import {
+  documentFromText,
+  documentMaterialIds,
+  removeDocumentMaterial,
+  splitDocumentMaterials,
+} from '../../utils/document'
 import { WorkRichText } from './WorkRichText'
 import { PendingMaterials } from '../materials/PendingMaterials'
+import { ContentMaterial } from './ContentMaterial'
 import controls from '@web/styles/controls.module.css'
 import styles from './WorkContent.module.css'
 
@@ -21,7 +27,11 @@ export function WorkContent({ work, own, saved }: { work: Work; own: boolean; sa
     <section className={styles.section} aria-label="工作内容">
       <div className={styles.heading}>
         <h3>工作内容</h3>
-        {own && !editing && <button onClick={() => setEditing(true)}>编辑正文</button>}
+        {own && !editing && (
+          <button className={controls['text-button']} onClick={() => setEditing(true)}>
+            编辑内容
+          </button>
+        )}
       </div>
       {editing && own ? (
         <ContentEditor
@@ -60,13 +70,41 @@ function ContentEditor({
   const value = (drafts[draftKey] as ContentDraft | undefined) ?? initial
   const { busy, submit } = useDraftSubmission(draftKey)
   const [error, setError] = useState<Error | string>('')
-  const change = (patch: Partial<ContentDraft>) =>
-    setDraft(draftKey, (latest: unknown) => ({
-      ...((latest as typeof value | undefined) ?? value),
-      ...patch,
-      key: crypto.randomUUID(),
-    }))
-  const uploads = useWorkUpload(value.files, (files) => change({ files }))
+  const change = (
+    patch: Partial<ContentDraft> | ((draft: ContentDraft) => Partial<ContentDraft>),
+  ) =>
+    setDraft(draftKey, (latest: unknown) => {
+      const draft = (latest as ContentDraft | undefined) ?? value
+      return {
+        ...draft,
+        ...(typeof patch === 'function' ? patch(draft) : patch),
+        key: crypto.randomUUID(),
+      }
+    })
+  const uploads = useWorkUpload(value.files, (files) =>
+    change((draft) => {
+      const ids = documentMaterialIds(draft.body)
+      return {
+        files,
+        body: {
+          ...draft.body,
+          content: [
+            ...draft.body.content,
+            ...files
+              .filter((file) => !ids.includes(file.id))
+              .map((file) => ({
+                type: 'material',
+                attrs: { id: crypto.randomUUID(), materialId: file.id },
+              })),
+          ],
+        },
+      }
+    }),
+  )
+  const editorBody = splitDocumentMaterials(value.body).body
+  const existingIds = documentMaterialIds(value.body).filter(
+    (id) => !value.files.some((file) => file.id === id),
+  )
   const disabled = busy || uploads.busy
   return (
     <form
@@ -94,23 +132,44 @@ function ContentEditor({
       }}
     >
       <WorkRichText
-        body={value.body}
+        body={editorBody}
         work={work}
         pending={value.files}
-        change={(body) => change({ body })}
+        change={(body) =>
+          change((draft) => ({
+            body: {
+              ...body,
+              content: [...body.content, ...splitDocumentMaterials(draft.body).materials],
+            },
+          }))
+        }
         upload={uploads.upload}
         disabled={disabled}
       />
-      <PendingMaterials
-        files={value.files}
-        disabled={disabled}
-        remove={(id) =>
-          change({
-            files: value.files.filter((file) => file.id !== id),
-            body: removeDocumentMaterial(value.body, id),
-          })
-        }
-      />
+      {(existingIds.length > 0 || value.files.length > 0) && (
+        <section className={styles.materials} aria-label="内容材料">
+          <h4>材料</h4>
+          {existingIds.map((id) => (
+            <ContentMaterial
+              key={id}
+              id={id}
+              work={work}
+              disabled={disabled}
+              remove={() => change((draft) => ({ body: removeDocumentMaterial(draft.body, id) }))}
+            />
+          ))}
+          <PendingMaterials
+            files={value.files}
+            disabled={disabled}
+            remove={(id) =>
+              change((draft) => ({
+                files: draft.files.filter((file) => file.id !== id),
+                body: removeDocumentMaterial(draft.body, id),
+              }))
+            }
+          />
+        </section>
+      )}
       <ErrorNotice>{error || uploads.error}</ErrorNotice>
       {error instanceof ApiError && error.status === 409 && (
         <ConflictRecovery<Work>
@@ -144,7 +203,7 @@ function ContentEditor({
           取消
         </button>
         <BusyButton busy={disabled} className={controls.primary}>
-          {uploads.busy ? '上传中' : '保存正文'}
+          {uploads.busy ? '上传中' : '保存内容'}
         </BusyButton>
       </div>
     </form>

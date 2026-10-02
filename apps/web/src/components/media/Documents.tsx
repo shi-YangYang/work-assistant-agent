@@ -26,10 +26,12 @@ export function DocumentCard({
   attachment,
   own,
   refresh,
+  compact = false,
 }: {
   attachment: Attachment
   own: boolean
   refresh: () => void
+  compact?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [pdf, setPdf] = useState(false)
@@ -37,7 +39,7 @@ export function DocumentCard({
   const [error, setError] = useState<Error | string>('')
   const extraction = attachment.extraction
   return (
-    <div className={documentsStyles['document-card']}>
+    <div className={documentsStyles['document-card']} data-compact={compact}>
       <div className={documentsStyles['document-heading']}>
         <FileText size={21} />
         <strong>{attachment.name}</strong>

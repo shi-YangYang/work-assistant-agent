@@ -16,7 +16,7 @@ export function MaterialView({
 }) {
   const [preview, setPreview] = useState(false)
   if (attachment.kind === 'document')
-    return <DocumentCard attachment={attachment} own={own} refresh={refresh} />
+    return <DocumentCard attachment={attachment} own={own} refresh={refresh} compact />
   return (
     <div className={styles.media}>
       {attachment.kind === 'image' ? (

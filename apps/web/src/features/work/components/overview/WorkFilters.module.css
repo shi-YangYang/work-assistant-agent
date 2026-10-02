@@ -45,11 +45,10 @@
 }
 @container (max-width: 400px) {
   .work-filters > div {
-    flex-basis: 100%;
+    flex: 1 1 140px;
   }
   .work-filters > select {
-    flex: 1;
-    max-width: none;
-    width: 100%;
+    flex: 0 0 116px;
+    width: 116px;
   }
 }

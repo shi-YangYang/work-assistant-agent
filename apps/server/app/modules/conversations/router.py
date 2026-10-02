@@ -11,7 +11,7 @@ from app.modules.conversations.serializers import conversation_dto
 from app.security.ownership import owned
 from app.tasks.maintenance.cleanup import finish_deletion
 
-from .execution_settings import router as execution_settings_router
+from .execution_settings_router import router as execution_settings_router
 
 router = APIRouter()
 router.include_router(execution_settings_router)

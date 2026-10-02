@@ -1,5 +1,5 @@
 .section {
-  padding: 28px 0;
+  padding: 18px 0;
   border-bottom: 1px solid var(--line);
 }
 .heading {
@@ -7,10 +7,10 @@
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 .heading h3 {
-  font-size: 15px;
+  font-size: 14px;
   margin: 0;
 }
 .hint {
@@ -33,11 +33,26 @@
   min-height: 36px;
 }
 .rich[data-editing='true'] :global(.tiptap) {
-  min-height: 200px;
-  padding: 16px;
+  min-height: 160px;
+  padding: 12px;
 }
-.rich :global(.tiptap) p {
+.rich :global(.tiptap) :where(p) {
   margin: 8px 0;
+}
+.rich[data-editing='false'] :global(.tiptap) > :first-child {
+  margin-top: 0;
+}
+.rich[data-editing='false'] :global(.tiptap) > :last-child,
+.rich[data-editing='false']
+  :global(.tiptap)
+  > :has(+ p:last-child > :global(.ProseMirror-trailingBreak):only-child) {
+  margin-bottom: 0;
+}
+/* The editor's trailing cursor paragraph is unnecessary in the reading view. */
+.rich[data-editing='false']
+  :global(.tiptap)
+  > p:last-child:has(> :global(.ProseMirror-trailingBreak):only-child) {
+  display: none;
 }
 .rich :global(.tiptap) h1,
 .rich :global(.tiptap) h2,
@@ -145,9 +160,44 @@
   gap: 8px;
   margin-top: 14px;
 }
+.materials {
+  margin-top: 12px;
+}
+.materials h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.material {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.material small {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.material button {
+  border: 0;
+  background: transparent;
+  padding: 4px;
+}
+.material button:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.material button:last-child {
+  display: flex;
+  flex-shrink: 0;
+}
 @media (max-width: 600px) {
   .section {
-    padding: 20px 0;
+    padding: 16px 0;
   }
   .toolbar button {
     min-height: 42px;

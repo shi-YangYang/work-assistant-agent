@@ -1,15 +1,16 @@
 // @vitest-environment jsdom
-import type { Attachment, Work, WorkWriteResult } from '@paa/api-contracts'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { Attachment, Work } from '@paa/api-contracts'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { uploadAttachment } from '../../../apps/web/src/api/attachments'
 import { api, ApiError, write } from '../../../apps/web/src/api/client'
 import { DocumentCard } from '../../../apps/web/src/components/media/Documents'
 import { WorkEditor } from '../../../apps/web/src/features/work/components/editor/WorkEditor'
 import { CreateWork } from '../../../apps/web/src/features/work/components/editor/CreateWork'
 import { WorkContent } from '../../../apps/web/src/features/work/components/content/WorkContent'
-import { UpdateEditor } from '../../../apps/web/src/features/work/components/updates/UpdateEditor'
-import { WorkUpdates } from '../../../apps/web/src/features/work/components/updates/WorkUpdates'
+import { WorkHistory } from '../../../apps/web/src/features/work/components/detail/WorkHistory'
+import { WorkDetail } from '../../../apps/web/src/features/work/components/detail/WorkDetail'
 import { documentFromText } from '../../../apps/web/src/features/work/utils/document'
 import { createVault, deferred, dialogs, TestWorkspace } from './helpers'
 
@@ -18,6 +19,7 @@ vi.mock('@web/api/client', async (load) => ({
   api: vi.fn(),
   write: vi.fn(),
 }))
+vi.mock('@web/api/attachments', () => ({ uploadAttachment: vi.fn() }))
 const work: Work = {
   id: 'work',
   ownerId: 'owner',
@@ -31,9 +33,9 @@ const work: Work = {
   body: documentFromText('目标与计划'),
   materialIds: [],
 }
-const renderWork = (node: React.ReactNode, vault = createVault()) =>
+const renderWork = (node: React.ReactNode, vault = createVault(), entry = '/work/work') =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <TestWorkspace vault={vault}>{node}</TestWorkspace>
     </MemoryRouter>,
   )
@@ -43,6 +45,190 @@ beforeEach(() => {
   vi.mocked(api).mockResolvedValue({ items: [], nextCursor: null })
 })
 afterEach(cleanup)
+it('returns through historical versions to the latest work without losing the return path', async () => {
+  const history = [3, 2, 1].map((revision) => ({
+    id: `r${revision}`,
+    revision,
+    content: { ...work, title: `标题 ${revision}` },
+    sourceIds: [],
+    createdAt: work.updatedAt,
+  }))
+  vi.mocked(api).mockImplementation(async (path) => {
+    const requested = new URL(String(path), 'http://local').searchParams.get('revision')
+    const revision = Number(requested ?? 3)
+    return {
+      ...work,
+      revision,
+      historical: !!requested,
+      history: history.filter((row) => row.revision <= revision),
+    }
+  })
+  renderWork(<WorkDetail recordId="work" />)
+  await screen.findByRole('heading', { name: work.title })
+  fireEvent.click(screen.getAllByRole('link', { name: '查看此版本' })[1])
+  await screen.findByText('历史版本 · 第 2 版')
+  fireEvent.click(screen.getByRole('link', { name: '查看此版本' }))
+  await screen.findByText('历史版本 · 第 1 版')
+  fireEvent.click(screen.getByRole('link', { name: '返回上一步' }))
+  await screen.findByText('历史版本 · 第 2 版')
+  fireEvent.click(screen.getByRole('link', { name: '返回最新版本' }))
+  await screen.findByRole('button', { name: '编辑内容' })
+  expect(screen.queryByText(/历史版本 ·/)).toBeNull()
+})
+
+it('lists uploaded materials below the text editor and excludes removed files from the save', async () => {
+  const file = (id: string): Attachment => ({
+    id,
+    kind: 'image',
+    name: `${id}.png`,
+    mime: 'image/png',
+    size: 12,
+    duration: null,
+    url: `/uploads/${id}`,
+  })
+  vi.mocked(uploadAttachment)
+    .mockResolvedValueOnce(file('first'))
+    .mockResolvedValueOnce(file('second'))
+  const saved = vi.fn()
+  vi.mocked(write).mockResolvedValue({ work })
+  renderWork(<WorkContent work={work} own saved={saved} />)
+  fireEvent.click(screen.getByRole('button', { name: '编辑内容' }))
+  fireEvent.change(screen.getByLabelText('正文材料'), {
+    target: {
+      files: [
+        new File(['a'], 'first.png', { type: 'image/png' }),
+        new File(['b'], 'second.png', { type: 'image/png' }),
+      ],
+    },
+  })
+  const materials = await screen.findByRole('region', { name: '内容材料' })
+  await within(materials).findByText('second.png')
+  const editor = screen.getByRole('textbox', { name: '工作正文' })
+  expect(editor.textContent).toBe('目标与计划')
+  expect(editor.querySelector('[data-work-material]')).toBeNull()
+  fireEvent.click(within(materials).getByRole('button', { name: '移除 first.png' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存内容' }))
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
+  const payload = vi.mocked(write).mock.calls[0][1] as { body: Work['body']; materials: unknown[] }
+  expect(payload.materials).toEqual([{ attachmentId: 'second' }])
+  expect(JSON.stringify(payload.body)).toContain('second')
+  expect(JSON.stringify(payload.body)).not.toContain('first')
+})
+
+it('keeps existing material references when editing text without rendering them in the textbox', async () => {
+  const body: NonNullable<Work['body']> = {
+    schemaVersion: 1,
+    content: [
+      ...work.body!.content,
+      { type: 'material', attrs: { id: 'stable-block', materialId: 'existing' } },
+    ],
+  }
+  vi.mocked(api).mockResolvedValue({ id: 'existing', attachment: { name: '需求.txt', size: 20 } })
+  vi.mocked(write).mockResolvedValue({ work })
+  const saved = vi.fn()
+  renderWork(<WorkContent work={{ ...work, body }} own saved={saved} />)
+  fireEvent.click(screen.getByRole('button', { name: '编辑内容' }))
+  expect(
+    await within(screen.getByRole('region', { name: '内容材料' })).findByRole('button', {
+      name: '需求.txt',
+    }),
+  ).toBeTruthy()
+  expect(
+    screen.getByRole('textbox', { name: '工作正文' }).querySelector('[data-work-material]'),
+  ).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '保存内容' }))
+  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
+  expect(write).toHaveBeenCalledWith(
+    '/work-items/work',
+    expect.objectContaining({
+      body: expect.objectContaining({
+        content: expect.arrayContaining([
+          { type: 'material', attrs: { id: 'stable-block', materialId: 'existing' } },
+        ]),
+      }),
+      materials: [],
+    }),
+    'PATCH',
+    expect.any(String),
+  )
+})
+
+it('shows modification history instead of progress and opens material tools on demand', async () => {
+  vi.mocked(api).mockImplementation(async (path) => {
+    if (path === '/work-items/work')
+      return {
+        ...work,
+        materialIds: ['material'],
+        history: [
+          { id: 'r1', revision: 1, content: work, sourceIds: [], createdAt: work.updatedAt },
+        ],
+      }
+    if (String(path).includes('/materials'))
+      return {
+        items: [{ id: 'material', attachment: { name: '需求.txt', size: 20 } }],
+        nextCursor: null,
+      }
+    return { items: [], nextCursor: null }
+  })
+  renderWork(<WorkDetail recordId="work" />)
+  await screen.findByRole('heading', { name: work.title })
+  expect(screen.getByText('目标与计划')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '记录新进展' })).toBeNull()
+  expect(screen.getByRole('region', { name: '修改记录' })).toBeTruthy()
+  expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('/updates'))).toBe(false)
+  expect(screen.queryByText('修改记录与来源')).toBeNull()
+  expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('/materials'))).toBe(
+    false,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: '管理工作' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '全部附件 · 1' }))
+  const materials = screen.getByRole('dialog', { name: '全部附件' })
+  expect(await within(materials).findByRole('button', { name: '需求.txt' })).toBeTruthy()
+  fireEvent.click(within(materials).getByRole('button', { name: '关闭' }))
+
+  fireEvent.click(screen.getByRole('button', { name: '管理工作' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '编辑工作属性' }))
+  const properties = screen.getByRole('dialog', { name: '编辑工作属性' })
+  fireEvent.click(within(properties).getByRole('button', { name: '关闭' }))
+
+  expect(write).not.toHaveBeenCalled()
+})
+it('keeps older modifications available without expanding every field change', () => {
+  renderWork(
+    <WorkHistory
+      work={{
+        ...work,
+        history: Array.from({ length: 5 }, (_, index) => ({
+          id: `r${5 - index}`,
+          revision: 5 - index,
+          content: { ...work, title: `工作版本 ${5 - index}` },
+          sourceIds: [],
+          createdAt: work.updatedAt,
+        })),
+      }}
+    />,
+  )
+  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(3)
+  fireEvent.click(screen.getByRole('button', { name: '查看更早的 2 条修改' }))
+  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(5)
+})
+it('keeps history available without exposing edit controls in a historical work', async () => {
+  vi.mocked(api).mockImplementation(async (path) =>
+    String(path).includes('/updates')
+      ? { items: [], nextCursor: null }
+      : { ...work, historical: true },
+  )
+  renderWork(<WorkDetail recordId="work" />)
+  await screen.findByRole('heading', { name: work.title })
+  expect(screen.queryByRole('button', { name: '管理工作' })).toBeNull()
+  expect(screen.getByRole('region', { name: '修改记录' })).toBeTruthy()
+  expect(screen.getByRole('link', { name: '返回最新版本' }).getAttribute('href')).toBe('/work/work')
+  expect(screen.queryByRole('menuitem', { name: '编辑工作属性' })).toBeNull()
+  expect(screen.queryByRole('menuitem', { name: '删除工作' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '编辑内容' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '记录新进展' })).toBeNull()
+})
 it('creates from a title and does not ask for progress or create fake updates', async () => {
   const saved = vi.fn()
   vi.mocked(write).mockResolvedValue(work)
@@ -58,57 +244,6 @@ it('creates from a title and does not ask for progress or create fake updates', 
     { title: '官网改版', dueDate: null },
     'POST',
     expect.any(String),
-  )
-})
-it('saves a separate update with stable key after lost response while preserving the work body', async () => {
-  const saved = vi.fn(),
-    vault = createVault()
-  vi.mocked(write)
-    .mockRejectedValueOnce(new Error('网络中断'))
-    .mockResolvedValueOnce({ work } as WorkWriteResult)
-  renderWork(<UpdateEditor work={work} close={vi.fn()} saved={saved} />, vault)
-  fireEvent.change(screen.getByLabelText('记录新进展'), { target: { value: '客户确认初稿' } })
-  fireEvent.click(screen.getByRole('button', { name: '保存进展' }))
-  await screen.findByText('网络中断')
-  const first = vi.mocked(write).mock.calls[0]
-  expect(first[1]).toMatchObject({ text: '客户确认初稿', expectedRevision: 1, materials: [] })
-  expect(first[1]).not.toHaveProperty('body')
-  fireEvent.click(screen.getByRole('button', { name: '保存进展' }))
-  await waitFor(() => expect(saved).toHaveBeenCalledOnce())
-  expect(vi.mocked(write).mock.calls[1]).toEqual(first)
-  expect(vault.getSnapshot()['work:update:work:new']).toBeUndefined()
-})
-it('keeps an attachment-only progress draft valid and only binds when saved', async () => {
-  const vault = createVault(),
-    saved = vi.fn()
-  vault.writer()('work:update:work:new', {
-    text: '',
-    files: [
-      {
-        id: 'upload',
-        kind: 'image',
-        name: '需求.png',
-        mime: 'image/png',
-        url: '/uploads/upload',
-        size: 12,
-        duration: null,
-      },
-    ],
-    materialIds: [],
-    revision: 1,
-    key: 'upload-save',
-    properties: {},
-  })
-  vi.mocked(write).mockResolvedValue({ work })
-  renderWork(<UpdateEditor work={work} close={vi.fn()} saved={saved} />, vault)
-  expect(write).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: '保存进展' }))
-  await waitFor(() => expect(saved).toHaveBeenCalled())
-  expect(write).toHaveBeenCalledWith(
-    '/work-items/work/updates',
-    expect.objectContaining({ text: '', materials: [{ attachmentId: 'upload' }] }),
-    'POST',
-    'upload-save',
   )
 })
 it('retains failed rich body draft and retries without losing its material sources', async () => {
@@ -138,10 +273,16 @@ it('retains failed rich body draft and retries without losing its material sourc
   })
   vi.mocked(write).mockRejectedValueOnce(new Error('网络中断')).mockResolvedValueOnce({ work })
   renderWork(<WorkContent work={work} own saved={saved} />, vault)
-  fireEvent.click(screen.getByRole('button', { name: '编辑正文' }))
+  fireEvent.click(screen.getByRole('button', { name: '编辑内容' }))
   expect(await screen.findByText('尚未保存的方案')).toBeTruthy()
+  expect(
+    screen.getByRole('textbox', { name: '工作正文' }).querySelector('[data-work-material]'),
+  ).toBeNull()
+  expect(
+    within(screen.getByRole('region', { name: '内容材料' })).getByText('需求.txt'),
+  ).toBeTruthy()
   const submittedDraft = vault.getSnapshot()['work:body:work'] as { key: string }
-  fireEvent.click(screen.getByRole('button', { name: '保存正文' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存内容' }))
   await screen.findByText('网络中断')
   expect(vault.getSnapshot()['work:body:work']).toEqual(submittedDraft)
   expect(screen.getByRole('button', { name: '移除 需求.txt' })).toBeTruthy()
@@ -168,21 +309,12 @@ it('retains failed rich body draft and retries without losing its material sourc
     submittedDraft.key,
   )
   const first = vi.mocked(write).mock.calls[0]
-  fireEvent.click(screen.getByRole('button', { name: '保存正文' }))
+  fireEvent.click(screen.getByRole('button', { name: '保存内容' }))
   await waitFor(() => expect(saved).toHaveBeenCalledOnce())
   expect(write).toHaveBeenCalledTimes(2)
   expect(vi.mocked(write).mock.calls[1]).toEqual(first)
   expect(vault.getSnapshot()['work:body:work']).toBeUndefined()
   expect(screen.queryByRole('button', { name: '移除 需求.txt' })).toBeNull()
-})
-it('does not show write actions for another owner or a historical version', async () => {
-  renderWork(<WorkUpdates work={{ ...work, historical: true }} own={false} saved={vi.fn()} />)
-  await screen.findByText(/还没有进展记录/)
-  expect(screen.queryByRole('button', { name: '记录新进展' })).toBeNull()
-  expect(api).toHaveBeenCalledWith(
-    '/work-items/work/updates?start=0&limit=20&revision=1',
-    expect.anything(),
-  )
 })
 it('holds a pending creation to one request', async () => {
   const request = deferred<Work>()

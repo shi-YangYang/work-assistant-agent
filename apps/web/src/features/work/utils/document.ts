@@ -35,3 +35,16 @@ export function removeDocumentMaterial(body: WorkDocument, id: string): WorkDocu
     })
   return { ...body, content: remove(body.content) }
 }
+
+export function splitDocumentMaterials(body: WorkDocument) {
+  const materials: WorkNode[] = []
+  const text = (nodes: WorkNode[]): WorkNode[] =>
+    nodes.flatMap((node) => {
+      if (node.type === 'material') {
+        materials.push(node)
+        return []
+      }
+      return [{ ...node, ...(node.content ? { content: text(node.content) } : {}) }]
+    })
+  return { body: { ...body, content: text(body.content) }, materials }
+}

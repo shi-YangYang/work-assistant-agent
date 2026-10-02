@@ -20,16 +20,8 @@ export function WorkMaterials({
   own: boolean
   saved: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  if (!work.materialIds?.length) return null
-  return (
-    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>相关材料 · {work.materialIds.length}</summary>
-      {open && (
-        <MaterialList key={`${work.id}:${work.revision}`} work={work} own={own} saved={saved} />
-      )}
-    </details>
-  )
+  if (!work.materialIds?.length) return <p>暂无附件</p>
+  return <MaterialList key={`${work.id}:${work.revision}`} work={work} own={own} saved={saved} />
 }
 function MaterialList({ work, own, saved }: { work: Work; own: boolean; saved: () => void }) {
   const [starts, setStarts] = useState([0])

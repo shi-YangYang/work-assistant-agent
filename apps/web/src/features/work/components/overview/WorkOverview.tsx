@@ -1,6 +1,7 @@
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import recordLayoutStyles from '../../../../styles/patterns/RecordLayout.module.css'
+import styles from './WorkOverview.module.css'
 import type { Work } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Pagination } from '@web/components/actions/Pagination'
@@ -23,13 +24,14 @@ export function WorkPage() {
   const list = useCursorPage<Work>(workListPath(query, status))
   return (
     <div
-      className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
+      className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']} ${styles.page}`}
       data-scroll-container
     >
-      <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
+      <div
+        className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']} ${styles.heading}`}
+      >
         <div>
           <h2>我的工作</h2>
-          <p>理清优先级，一件一件向前推进。</p>
         </div>
         <div
           className={`${layoutStyles['card-actions']} ${recordLayoutStyles['slot-card-actions']}`}
@@ -58,8 +60,8 @@ export function WorkPage() {
           }}
         />
       )}
-      <div className={recordLayoutStyles['records-surface']}>
-        <div className={recordLayoutStyles['records-toolbar']}>
+      <div className={`${recordLayoutStyles['records-surface']} ${styles.surface}`}>
+        <div className={`${recordLayoutStyles['records-toolbar']} ${styles.toolbar}`}>
           <WorkFilters compact query={query} status={status} change={list.filter} />
         </div>
         <ErrorNotice className={recordLayoutStyles['record-notice']} retry={list.refresh}>

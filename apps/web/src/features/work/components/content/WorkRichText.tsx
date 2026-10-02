@@ -76,15 +76,7 @@ export function WorkRichText({
       change?.({ schemaVersion: 1, content: editor.getJSON().content ?? [] }),
   })
   async function add(selected: File[]) {
-    const uploaded = await upload?.(selected)
-    if (editor && !editor.isDestroyed && uploaded?.length)
-      editor
-        .chain()
-        .focus()
-        .insertContent(
-          uploaded.map((file) => ({ type: 'material', attrs: { materialId: file.id } })),
-        )
-        .run()
+    await upload?.(selected)
   }
   const editable = !!change && !disabled
   useEffect(() => {
