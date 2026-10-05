@@ -101,3 +101,93 @@ it('omits an empty initial body but records a later explicit clearing', () => {
     after: '空正文',
   })
 })
+
+const paragraph = {
+  type: 'paragraph',
+  attrs: { id: 'paragraph-1' },
+  content: [{ type: 'text', attrs: {}, text: '保留这段工作内容' }],
+}
+const material = { type: 'material', attrs: { id: 'material-1', materialId: 'file-1' } }
+const document = (content: WorkDocument['content']): WorkDocument => ({ schemaVersion: 1, content })
+
+it.each([
+  {
+    name: 'adding a material',
+    before: { body: document([paragraph]), materialIds: [] },
+    after: { body: document([paragraph, material]), materialIds: ['file-1'] },
+    counts: ['0 个', '1 个'],
+  },
+  {
+    name: 'removing a body reference while the file stays in the material library',
+    before: { body: document([paragraph, material]), materialIds: ['file-1'] },
+    after: { body: document([paragraph]), materialIds: ['file-1'] },
+    counts: ['1 个', '0 个'],
+  },
+  {
+    name: 'removing the file from the material library',
+    before: { body: document([paragraph]), materialIds: ['file-1'] },
+    after: { body: document([paragraph]), materialIds: [] },
+    counts: ['1 个', '0 个'],
+  },
+  {
+    name: 'adding a material with editor-generated IDs and an empty cursor paragraph',
+    before: { body: document([paragraph]), materialIds: [] },
+    after: {
+      body: document([
+        {
+          type: 'paragraph',
+          attrs: { id: 'editor-id' },
+          content: [{ type: 'text', text: '保留这段工作内容' }],
+        },
+        material,
+        { type: 'paragraph', attrs: { id: 'cursor' } },
+      ]),
+      materialIds: ['file-1'],
+    },
+    counts: ['0 个', '1 个'],
+  },
+])('reports only materials when $name', ({ before, after, counts }) => {
+  const previous = { ...first, content: { ...content, ...before } }
+  const current = { ...second, content: { ...content, ...after } }
+  expect(historyChanges(current, previous)).toEqual([
+    { key: 'materials', label: '材料', before: counts[0], after: counts[1] },
+  ])
+  render(
+    <MemoryRouter>
+      <WorkHistory
+        work={{
+          ...current.content,
+          id: 'w',
+          ownerId: 'owner',
+          revision: 2,
+          updatedAt: first.createdAt,
+          history: [current, previous],
+        }}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('材料已更新')).toBeTruthy()
+  expect(screen.queryByText('工作内容、材料已更新')).toBeNull()
+})
+
+it.each(['text', 'format'])('retains real %s changes when materials also change', (change) => {
+  const previous = {
+    ...first,
+    content: { ...content, body: document([paragraph]), materialIds: [] },
+  }
+  const edited = {
+    ...paragraph,
+    content: [
+      {
+        type: 'text',
+        text: change === 'text' ? '修改后的工作内容' : '保留这段工作内容',
+        ...(change === 'format' ? { marks: [{ type: 'bold' }] } : {}),
+      },
+    ],
+  }
+  const current = {
+    ...second,
+    content: { ...content, body: document([edited, material]), materialIds: ['file-1'] },
+  }
+  expect(historyChanges(current, previous).map((entry) => entry.key)).toEqual(['body', 'materials'])
+})
