@@ -1,0 +1,27 @@
+.back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  font-size: 13px;
+  margin: 0 0 12px;
+  padding-left: 0;
+  color: var(--muted);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--text);
+}
+@media (max-width: 1023px) {
+  .back {
+    margin-left: 44px;
+    max-width: calc(50% - 76px);
+    min-height: 36px;
+  }
+}
+@media (max-width: 760px) {
+  .back {
+    min-height: 52px;
+    margin-bottom: 12px;
+  }
+}

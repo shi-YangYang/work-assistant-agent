@@ -6,6 +6,7 @@ import styles from './WorkDetail.module.css'
 import { WorkContent } from '../content/WorkContent'
 import { WorkMaterials } from '../materials/WorkMaterials'
 import type { Work } from '@paa/api-contracts'
+import { DetailBackLink } from '@web/components/navigation/DetailBackLink'
 import { Actions } from '@web/components/actions/Actions'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Status } from '@web/components/feedback/Status'
@@ -51,6 +52,7 @@ export function WorkDetail({
       data-compact={compact}
       data-scroll-container
     >
+      {!compact && !data?.historical && <DetailBackLink />}
       <ErrorNotice retry={refresh}>{error}</ErrorNotice>
       {data && (
         <>

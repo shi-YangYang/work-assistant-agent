@@ -16,5 +16,6 @@
 @media (max-width: 760px) {
   .error-outlet:not([data-placed]) {
     margin-inline: 12px;
+    margin-top: calc(88px + env(safe-area-inset-top));
   }
 }

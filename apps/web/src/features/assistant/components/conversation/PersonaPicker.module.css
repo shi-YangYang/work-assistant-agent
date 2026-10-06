@@ -57,6 +57,7 @@
 }
 @media (max-width: 760px) {
   .menu {
-    right: -76px;
+    left: 0;
+    right: auto;
   }
 }

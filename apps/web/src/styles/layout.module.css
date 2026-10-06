@@ -372,12 +372,6 @@
 }
 
 @media (max-width: 760px) {
-  .page > .page-heading h2,
-  .settings-page > h2,
-  .settings-page > .page-heading h2,
-  .settings-page > header h2 {
-    display: none;
-  }
   .page > .page-heading,
   .settings-page > .page-heading {
     margin-bottom: 16px;
@@ -386,5 +380,40 @@
   .page > .page-heading p,
   .settings-page > .page-heading p {
     margin-top: 0;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1023px) {
+  .page > .page-heading:first-child h2,
+  .settings-page > h2:first-child,
+  .settings-page > :is(header, .row-between):first-child h2,
+  .settings-page > .page-heading:first-child h2 {
+    margin-left: 32px;
+  }
+}
+@media (max-width: 760px) {
+  .page > .page-heading:first-child h2,
+  .settings-page > h2:first-child,
+  .settings-page > :is(header, .row-between):first-child h2,
+  .settings-page > .page-heading:first-child h2 {
+    margin-left: 44px;
+    max-width: calc(50vw - 100px);
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    font-size: 20px;
+    overflow-wrap: anywhere;
+  }
+  .settings-page > h2:first-child {
+    min-height: 48px;
+  }
+  .page > .page-heading:first-child p,
+  .settings-page > p,
+  .settings-page > :is(header, .page-heading):first-child p {
+    margin-top: 24px;
+  }
+  .page > .page-heading:first-child,
+  .settings-page > .page-heading:first-child {
+    min-height: 48px;
   }
 }

@@ -81,10 +81,6 @@ export function workListPath(query: string, status: string) {
   return `/work-items?${new URLSearchParams({ q: query, status })}`
 }
 
-export function readWorkForBreadcrumb(id: string, options: RequestInit) {
-  return api<Work>(`/work-items/${id}`, options)
-}
-
 export function patchWork(id: string, body: WorkPatch, key: string) {
   return write<WorkWriteResult>(`/work-items/${id}`, body, 'PATCH', key)
 }

@@ -44,9 +44,13 @@ export function WorkPage() {
           >
             <RefreshCw size={16} />
           </button>
-          <button className={controlsStyles['primary']} onClick={() => setCreating(true)}>
+          <button
+            className={controlsStyles['primary']}
+            aria-label="新建工作"
+            onClick={() => setCreating(true)}
+          >
             <Plus size={16} />
-            新建工作
+            <span className={styles['create-label']}>新建工作</span>
           </button>
         </div>
       </div>

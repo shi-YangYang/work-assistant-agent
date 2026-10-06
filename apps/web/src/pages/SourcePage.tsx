@@ -1,5 +1,6 @@
 import layoutStyles from '../styles/layout.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
+import { DetailBackLink } from '@web/components/navigation/DetailBackLink'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { messagePath } from '@web/features/assistant/api/requests'
 import { MessageCard } from '@web/features/assistant/components/messages/MessageCard'
@@ -16,6 +17,13 @@ export function SourcePage() {
   const context = detailReturn(location.pathname, location.state)
   return (
     <div className={`${layoutStyles['page']} ${layoutStyles['narrow']}`} data-scroll-container>
+      <DetailBackLink
+        fallback={
+          data?.conversationId && data.ownerId === identity.member.id
+            ? { path: `/assistant/${data.conversationId}`, state: null, label: '会话' }
+            : undefined
+        }
+      />
       <div className={layoutStyles['page-heading']}>
         <div>
           <h2>原始上报</h2>

@@ -7,6 +7,7 @@ import styles from './ReportDetail.module.css'
 import type { Report, ReportContent } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { reportNeedsPolling } from '@web/api/job-feedback'
+import { DetailBackLink } from '@web/components/navigation/DetailBackLink'
 import { Actions } from '@web/components/actions/Actions'
 import { AutoTextarea } from '@web/components/forms/AutoTextarea'
 import { BusyButton } from '@web/components/actions/BusyButton'
@@ -92,6 +93,15 @@ export function ReportDetail({
       data-compact={compact}
       data-scroll-container
     >
+      {!compact && (
+        <DetailBackLink
+          fallback={
+            identity.member.role === 'admin'
+              ? { path: '/team?view=reports', state: null, label: '团队看板' }
+              : undefined
+          }
+        />
+      )}
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {data && (
         <>

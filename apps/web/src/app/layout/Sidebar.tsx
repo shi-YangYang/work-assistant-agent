@@ -1,3 +1,4 @@
+import { ReportNotifications } from '@web/features/reports/components/notifications/ReportNotifications'
 import brandMark from '@paa/ui-web/mark.png'
 import controlsStyles from '../../styles/controls.module.css'
 import layoutStyles from '../../styles/layout.module.css'
@@ -112,6 +113,10 @@ export function Sidebar({
         ))}
       </nav>
       <div className={styles['sidebar-bottom']}>
+        <ReportNotifications
+          className={styles['notification-entry']}
+          labelClassName={styles['nav-label']}
+        />
         <button
           ref={settingsTrigger}
           className={styles['settings-toggle']}

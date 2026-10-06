@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { StrictMode } from 'react'
 import { MemoryRouter, Route, Routes, useParams } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { Breadcrumbs } from '../../../apps/web/src/app/layout/Breadcrumbs'
 import { Assistant } from '../../../apps/web/src/features/assistant/components/conversation/Conversations'
 import { assistantQuery } from '../../../apps/web/src/features/assistant/api/queries'
 import { latestChat } from '../../../apps/web/src/features/assistant/api/restore-conversation'
@@ -61,7 +60,6 @@ function Page() {
   const { id } = useParams()
   return (
     <>
-      <Breadcrumbs />
       <Assistant conversationId={id} />
     </>
   )
@@ -118,7 +116,7 @@ async function ready() {
   await waitFor(() => expect(Object.keys(counts())).toHaveLength(7))
 }
 
-it('shares account settings and six conversation resources between breadcrumbs and StrictMode-mounted assistant and stays idle', async () => {
+it('deduplicates account settings and six conversation resources in a StrictMode-mounted assistant and stays idle', async () => {
   view()
   await ready()
   expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
@@ -221,13 +219,12 @@ it('does not read conversation resources or hidden pickers before a new conversa
   expect(counts()).toEqual({ [resources[6]]: 2 })
 })
 
-it('updates heading and breadcrumb from a complete saved conversation without refetching chat resources', async () => {
+it('updates heading from a complete saved conversation without refetching chat resources', async () => {
   view()
   await ready()
   const query = assistantQuery<Conversation>('/conversations/chat', 'company:owner:employee')!
   act(() => query.set({ ...conversation, title: '修改后的标题', revision: 2 }))
   await screen.findByRole('heading', { name: '修改后的标题' })
-  expect(screen.getByText('修改后的标题', { selector: 'strong' })).toBeTruthy()
   expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
 })
 

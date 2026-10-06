@@ -53,9 +53,14 @@ function returnPoint(state: unknown): ReturnPoint | null {
   }
 }
 
-export function detailReturn(path: string, state: unknown): ReturnPoint {
+export function detailReturn(
+  path: string,
+  state: unknown,
+  defaultPoint?: ReturnPoint,
+): ReturnPoint {
   const point = returnPoint(state)
   if (point && point.path.split('?')[0] !== path) return point
+  if (defaultPoint) return defaultPoint
   const fallback = path.startsWith('/team/')
     ? '/team'
     : path.startsWith('/work/')
@@ -64,42 +69,4 @@ export function detailReturn(path: string, state: unknown): ReturnPoint {
         ? '/reports'
         : '/assistant'
   return { path: fallback, state: null, label: pageName(fallback) }
-}
-
-export function detailContext(state: unknown) {
-  let point = returnPoint(state)
-  for (let depth = 0; point && depth < 12; depth++) {
-    if (point.path.startsWith('/team')) return '团队看板'
-    point = returnPoint(point.state)
-  }
-  return '工作空间'
-}
-
-export function breadcrumbPoints(path: string, state: unknown): ReturnPoint[] {
-  const points: ReturnPoint[] = [{ path, state, label: pageName(path) }]
-  const seen = new Set([path.split('?')[0]])
-  let parent = returnPoint(state)
-  for (let depth = 0; parent && depth < 8; depth++) {
-    const key = parent.path.split('?')[0]
-    if (seen.has(key)) break
-    seen.add(key)
-    points.unshift(parent)
-    parent = returnPoint(parent.state)
-  }
-  // Only ancestors with decreasing business hierarchy can become breadcrumbs;
-  // switching between peers must never grow a click-history chain.
-  const rank = (value: string) =>
-    value.startsWith('/messages/')
-      ? 5
-      : value.startsWith('/work/')
-        ? 4
-        : value.startsWith('/reports/')
-          ? 3
-          : value.startsWith('/team/') || value.startsWith('/assistant/')
-            ? 2
-            : 1
-  return points.filter(
-    (point, index) =>
-      index === points.length - 1 || rank(point.path) < rank(points[index + 1].path),
-  )
 }

@@ -30,6 +30,18 @@
   .page {
     padding-top: 12px;
   }
+  .page > .heading {
+    margin-bottom: 16px;
+  }
+  .page > .heading h2 {
+    font-size: 20px;
+  }
+  .heading > div:first-child {
+    max-width: calc(50% - 28px);
+  }
+  .create-label {
+    display: none;
+  }
   .list > .row {
     display: grid;
     grid-template-columns: 18px minmax(0, 1fr) auto;
