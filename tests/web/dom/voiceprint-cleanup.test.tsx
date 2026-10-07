@@ -3,7 +3,7 @@ import type { VoiceprintCleanupSummary } from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api, write } from '../../../apps/web/src/api/client'
-import { DeleteMember } from '../../../apps/web/src/features/members/components/DeleteMember'
+import { DeleteMember } from '../../../apps/web/src/features/members/components/actions/DeleteMember'
 import { VoiceprintsPage } from '../../../apps/web/src/features/voiceprints/components/VoiceprintsPage'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
 

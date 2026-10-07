@@ -6,7 +6,7 @@ from app.core.periods import period_range
 from app.http.validation import validation_detail
 from app.modules.auth.schemas import Password
 from app.modules.conversations.schemas import ConversationEdit
-from app.modules.members.schemas import AdminBootstrap, MemberCreate, ResetPassword
+from app.modules.members.schemas import AdminBootstrap, MemberCreate, MemberPatch, ResetPassword
 from app.modules.reports.periods import period
 from app.modules.work.schemas import DraftEdit, Progress
 from pydantic import ValidationError
@@ -38,6 +38,7 @@ def test_every_new_password_entry_uses_shared_limits():
     (DraftEdit, 'title', {'expectedRevision': 1}),
     (ConversationEdit, 'title', {'expectedRevision': 1}),
     (MemberCreate, 'name', {'username': '111', 'password': '1111'}),
+    (MemberPatch, 'name', {}),
 ])
 def test_visible_names_are_normalized_and_never_blank(model, field, extra):
     with pytest.raises(ValidationError) as raised:

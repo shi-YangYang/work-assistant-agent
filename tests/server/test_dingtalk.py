@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 import asyncio
 import httpx
 import json
@@ -155,7 +156,7 @@ async def test_new_employee_reuses_identity_concurrently_and_keeps_local_passwor
             session = await db.scalar(select(Session).where(Session.token_hash == digest(first.cookies.get(COOKIE))))
             assert session.expires_at - session.created_at == timedelta(days=7)
         assert (await first.post('/api/v1/auth/dingtalk/account/unbind', json={'useDingTalk': True})).status_code == 409
-        assert (await clients['admin'].patch('/api/v1/members/' + a['member']['id'], json={'active': False})).status_code == 200
+        await set_legacy_active(sessions, actor)
         state = await begin(second)
         assert 'reason=denied' in (await complete(second, state)).headers['location']
         assert (await first.get('/api/v1/auth/me')).status_code == 401
@@ -331,8 +332,9 @@ async def test_password_login_cannot_issue_after_concurrent_revocation(setup, mo
         elif change == 'password':
             changed = await clients['employee'].post('/api/v1/auth/password', json={'currentPassword': 'controlled-test-password', 'newPassword': 'changed-controlled-password'})
         else:
-            changed = await clients['admin'].patch('/api/v1/members/' + users['employee'].id, json={'active': False})
-        assert changed.status_code == 200
+            await set_legacy_active(sessions, users['employee'])
+            changed = None
+        assert changed is None or changed.status_code == 200
         release.set()
         assert (await task).status_code == 401
         assert not client.cookies.get(COOKIE)

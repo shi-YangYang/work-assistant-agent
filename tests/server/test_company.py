@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 import io
 import json
 import pytest
@@ -114,8 +115,8 @@ async def test_security_idempotency_disabled_account_and_request_validation(setu
     assert (await c['employee'].post('/api/v1/messages', json=payload, headers={**keyed(), 'X-CSRF-Token':'invalid'})).status_code == 403
     assert (await c['employee'].post('/api/v1/messages', json=payload, headers={**keyed(), 'Origin':'https://other.invalid'})).status_code == 403
     assert (await c['employee'].get('/api/v1/members')).status_code == 403
-    assert (await c['admin'].patch('/api/v1/members/' + users['admin'].id, json={'active':False})).status_code == 404
-    assert (await c['admin'].patch('/api/v1/members/' + users['employee'].id, json={'active':False})).status_code == 200
+    assert (await c['admin'].patch('/api/v1/members/' + users['admin'].id, json={'name': '不允许'})).status_code == 404
+    await set_legacy_active(sessions, users['employee'])
     assert (await c['employee'].get('/api/v1/messages')).status_code == 401
     duplicate = await c['peer'].post('/api/v1/progress-drafts/confirm', json={'items':[{'id':'same','expectedRevision':1}]*2}, headers=keyed())
     assert duplicate.status_code == 422

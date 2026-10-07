@@ -7,7 +7,7 @@ import { ApiError } from '../../apps/web/src/api/client'
 import { ErrorNotice } from '../../apps/web/src/components/feedback/ErrorNotice'
 import { FormField } from '../../apps/web/src/components/forms/FormField'
 import { createMember, resetMemberPassword } from '../../apps/web/src/features/members/api/requests'
-import { MemberForm } from '../../apps/web/src/features/members/components/MemberForm'
+import { MemberForm } from '../../apps/web/src/features/members/components/forms/MemberForm'
 
 // Run the component's actual event handlers without adding a DOM dependency.
 const hooks = vi.hoisted(() => ({

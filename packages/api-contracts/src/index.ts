@@ -11,6 +11,9 @@ export interface Member {
   deleted?: boolean
   hasPassword: boolean
 }
+export interface MemberListItem extends Member {
+  createdAt: string
+}
 export interface Identity {
   member: Member
   csrf: string

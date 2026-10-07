@@ -26,10 +26,7 @@ async def change_member_command(identifier, body, actor, db):
     item = await visible_member(db, actor, identifier, employee_only=True)
     if item.deleted:
         problem(404, '账号已删除')
-    item.active = body.active
-    await reporting_eligibility_changed(db, item)
-    if not item.active:
-        await revoke_member(db, item.id)
+    item.name = body.name
     return member_dto(item)
 
 

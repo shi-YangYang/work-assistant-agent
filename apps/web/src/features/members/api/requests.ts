@@ -9,7 +9,7 @@ export function membersPath() {
   return '/members'
 }
 
-export function updateMember(member: Member, body: { active: boolean }) {
+export function updateMember(member: Member, body: { name: string }) {
   return write(`/members/${member.id}`, body, 'PATCH')
 }
 

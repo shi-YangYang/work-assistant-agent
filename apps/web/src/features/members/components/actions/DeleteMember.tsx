@@ -1,5 +1,5 @@
-import layoutStyles from '../../../styles/layout.module.css'
-import controlsStyles from '../../../styles/controls.module.css'
+import layoutStyles from '@web/styles/layout.module.css'
+import controlsStyles from '@web/styles/controls.module.css'
 import type { Member } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
@@ -11,7 +11,7 @@ import {
   memberDeletionPath,
   type MemberDeletionImpact,
 } from '@web/features/members/api/requests'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 export function DeleteMember({
   member,
@@ -25,9 +25,13 @@ export function DeleteMember({
   const { notify } = useWorkspace()
   const impact = useResource<MemberDeletionImpact>(memberDeletionPath(member))
   const [busy, setBusy] = useState(false)
+  const submitting = useRef(false)
+  const close = () => {
+    if (!submitting.current) onClose()
+  }
   const [failure, setFailure] = useState<Error | string>('')
   return (
-    <Modal title="删除账号" onClose={onClose}>
+    <Modal title="删除账号" onClose={close}>
       <p>
         确定删除 {member.name}（{member.username}）的账号？
       </p>
@@ -41,9 +45,11 @@ export function DeleteMember({
       ) : (
         !impact.error && <p role="status">正在核对关联资料…</p>
       )}
-      <ErrorNotice retry={impact.refresh}>{failure || impact.error}</ErrorNotice>
+      <ErrorNotice retry={failure ? undefined : impact.refresh}>
+        {failure || impact.error}
+      </ErrorNotice>
       <div className={layoutStyles['form-actions']}>
-        <button type="button" onClick={onClose}>
+        <button type="button" disabled={busy} onClick={close}>
           取消
         </button>
         <BusyButton
@@ -51,6 +57,8 @@ export function DeleteMember({
           busy={busy}
           disabled={!impact.data || !!impact.error}
           onClick={async () => {
+            if (submitting.current) return
+            submitting.current = true
             setBusy(true)
             setFailure('')
             try {
@@ -61,6 +69,7 @@ export function DeleteMember({
             } catch (error) {
               setFailure(error as Error)
             } finally {
+              submitting.current = false
               setBusy(false)
             }
           }}

@@ -1,5 +1,5 @@
-import layoutStyles from '../../../styles/layout.module.css'
-import controlsStyles from '../../../styles/controls.module.css'
+import layoutStyles from '@web/styles/layout.module.css'
+import controlsStyles from '@web/styles/controls.module.css'
 import { inputRules, type Member } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'

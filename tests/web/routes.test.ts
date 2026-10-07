@@ -14,7 +14,7 @@ vi.mock('@web/pages/TeamPage', () => ({
   TeamWorkspace: () => 'team-page',
   TeamLegacyRedirect: () => 'legacy-team',
 }))
-vi.mock('@web/features/members/components/MembersPage', () => ({
+vi.mock('@web/features/members/components/overview/MembersPage', () => ({
   MembersPage: () => 'members-page',
 }))
 vi.mock('@web/features/model-services/components/ModelServices', () => ({

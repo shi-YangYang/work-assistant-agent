@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 import asyncio
 import hashlib
 
@@ -189,7 +190,8 @@ async def test_revocation_committed_between_business_and_renewal_cannot_resurrec
         elif change == 'reset_password':
             revoked = await clients['admin'].post('/api/v1/members/' + users['employee'].id + '/reset-password', json={'password': 'reset-controlled-password'})
         elif change == 'disable':
-            revoked = await clients['admin'].patch('/api/v1/members/' + users['employee'].id, json={'active': False})
+            await set_legacy_active(sessions, users['employee'])
+            revoked = None
         else:
             async with sessions.begin() as db:
                 await original_lock(db, users['employee'].company_id)

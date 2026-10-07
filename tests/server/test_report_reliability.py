@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 """Fixed-response report commits, bounded dispatch and durable report schedules."""
 import asyncio
 import json
@@ -441,9 +442,8 @@ async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(
     from test_company import send
     await send(c['employee'])
     current=await claim(sessions,users['employee'].id)
-    response=await c['admin'].patch('/api/v1/members/'+users['employee'].id,json={'active':False})
-    assert response.status_code==200
-    assert (await c['admin'].patch('/api/v1/members/'+users['employee'].id,json={'active':True})).status_code==200
+    await set_legacy_active(sessions, users['employee'])
+    await set_legacy_active(sessions, users['employee'], True)
     async with sessions() as db:
         live=await db.get(Job,current.id)
         assert live.state=='cancelled' and live.fence>current.fence

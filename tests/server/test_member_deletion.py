@@ -45,7 +45,7 @@ async def test_delete_member_revokes_access_stops_work_and_preserves_history(set
     assert employee.id not in [m['id'] for m in (await admin.get('/api/v1/members')).json()['items']]
     assert (await clients['employee'].get('/api/v1/auth/me')).status_code == 401
     assert (await clients['employee'].post('/api/v1/auth/login', json={'username': employee.username, 'password': 'controlled-test-password'})).status_code == 401
-    assert (await admin.patch(path, json={'active': True})).status_code == 404
+    assert (await admin.patch(path, json={'name': '不能恢复'})).status_code == 404
     assert (await admin.post(path + '/reset-password', json={'password': 'controlled-test-password'})).status_code == 404
     recreated = await admin.post('/api/v1/members', json={'username': employee.username, 'name': '重新创建的员工', 'password': 'new-controlled-password', 'role': 'employee'})
     assert recreated.status_code == 201, recreated.text

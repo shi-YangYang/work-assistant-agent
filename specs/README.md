@@ -27,6 +27,7 @@
 | [046](spec-046-assistant-progress-clarity/spec.md)      | 工作助手具体操作名称、当前活动与精简进度列表       | [验收 PASS](spec-046-assistant-progress-clarity/acceptance.md)                           |
 | [047](spec-047-work-records-and-assistance/spec.md)     | 工作图文与材料、进展动态、Agent 读写与业务流程测试 | [验收 PASS](spec-047-work-records-and-assistance/acceptance.md)                          |
 | [048](spec-048-web-noria-pet/spec.md)                   | Web 移除全局顶栏、Noria 宠物与外观模态框           | 已恢复原版眨眼                                                                           |
+| [049](spec-049-member-management-refresh/spec.md)      | 成员列表、搜索、姓名编辑与移除账号启停             | [验收 PASS](spec-049-member-management-refresh/acceptance.md)                            |
 
 ## 文档分工
 
@@ -37,4 +38,4 @@
 
 ## 生命周期
 
-新 Spec 从 **049** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **050** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

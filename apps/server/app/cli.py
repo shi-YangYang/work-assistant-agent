@@ -1,5 +1,6 @@
 import asyncio
 import getpass
+import json
 import sys
 from alembic import command
 from alembic.config import Config
@@ -55,6 +56,19 @@ async def prepare_model_key():
     initialize_key(settings.model_key_file)
 
 
+async def cleanup_inactive():
+    from app.modules.members.cleanup_inactive import cleanup_inactive_members
+    settings = Settings()
+    engine, sessions = database(settings)
+    try:
+        result = await cleanup_inactive_members(sessions, settings)
+    finally:
+        await engine.dispose()
+    print(json.dumps(result, ensure_ascii=False))
+    if result['failed'] or result['remaining'] or result['cleanupPending'] or result['cleanupErrors']:
+        raise SystemExit(1)
+
+
 def main():
     action = sys.argv[1] if len(sys.argv) > 1 else ''
     if action == 'migrate':
@@ -68,8 +82,10 @@ def main():
         print('模型主密钥文件已就绪；请单独备份并供 API 与 worker 读取。')
     elif action == 'bootstrap-admin':
         asyncio.run(bootstrap())
+    elif action == 'cleanup-inactive-members':
+        asyncio.run(cleanup_inactive())
     else:
-        raise SystemExit('Usage: python -m app.cli migrate | bootstrap-admin')
+        raise SystemExit('Usage: python -m app.cli migrate | model-key | bootstrap-admin | cleanup-inactive-members')
 
 if __name__ == '__main__':
     main()

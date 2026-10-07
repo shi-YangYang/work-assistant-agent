@@ -10,7 +10,7 @@ const SupportPage = routePage(async () => ({
   default: (await import('@web/features/feedback/components/SupportPage')).SupportPage,
 }))
 const MembersPage = routePage(async () => ({
-  default: (await import('@web/features/members/components/MembersPage')).MembersPage,
+  default: (await import('@web/features/members/components/overview/MembersPage')).MembersPage,
 }))
 const ModelServices = routePage(async () => ({
   default: (await import('@web/features/model-services/components/ModelServices')).ModelServices,

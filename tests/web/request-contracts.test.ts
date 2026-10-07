@@ -439,8 +439,8 @@ const contracts: Contract[] = [
       }),
     { name: '员工', username: 'user', role: 'employee', password: 'controlled' },
   ),
-  write('PATCH', '/members/member', () => members.updateMember(member, { active: false }), {
-    active: false,
+  write('PATCH', '/members/member', () => members.updateMember(member, { name: '新姓名' }), {
+    name: '新姓名',
   }),
   write(
     'POST',
