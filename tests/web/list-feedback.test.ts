@@ -118,3 +118,42 @@ describe('resumable chat presentation', () => {
     ).toMatchObject({ text: '部分正文', state: 'awaiting_retry', error: '连接中断' })
   })
 })
+
+it('keeps independent reply generations and hands terminal snapshots to the persisted message', () => {
+  const current: JobFeedback = {
+    ...feedback,
+    replyStream: { version: 1, generation: 2, state: 'streaming', text: '当前前缀' },
+  }
+  expect(
+    acceptFeedback(
+      current,
+      {
+        ...current,
+        seq: 4,
+        replyStream: { ...current.replyStream!, generation: 1, text: '旧答案' },
+      },
+      'job',
+    ),
+  ).toBe(current)
+  const completed = acceptFeedback(
+    current,
+    { ...feedback, seq: 5, state: 'succeeded', replyStream: null },
+    'job',
+  )
+  expect(completed?.replyStream?.text).toBe('当前前缀')
+  expect(visibleFeedback({ ...job, state: 'succeeded' }, completed)?.replyStream?.text).toBe(
+    '当前前缀',
+  )
+  const revoked = acceptFeedback(
+    current,
+    { ...current, seq: 4, replyStream: { ...current.replyStream!, state: 'withdrawn', text: '' } },
+    'job',
+  )
+  expect(revoked?.replyStream?.text).toBe('')
+  const retried = acceptFeedback(
+    current,
+    { ...feedback, attempt: 2, seq: 4, replyStream: null },
+    'job',
+  )
+  expect(retried?.replyStream).toBeNull()
+})

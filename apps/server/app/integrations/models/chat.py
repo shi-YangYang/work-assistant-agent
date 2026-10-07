@@ -1,5 +1,6 @@
 import json
 from app.integrations.models import transport
+from app.integrations.models.stream_events import ModelDelta, ToolDelta, tool_arguments
 from app.integrations.models.transport import ProviderError, normalize_url, status_error, structured_error, retry_after
 
 
@@ -10,7 +11,7 @@ def token_usage(value):
     return result or None
 
 
-async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None):
+async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None, on_delta=None):
     body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming'], 'max_tokens': max_tokens}
     if tools:
         body['tools'] = tools
@@ -61,6 +62,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                     if not choices:
                         continue
                     item = choices[0]
+                    if not isinstance(item, dict) or not isinstance(item.get('delta', {}), dict):
+                        raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if item.get('finish_reason') == 'content_filter':
                         raise structured_error({'code': 'content_filter'})
                     delta = item.get('delta', {})
@@ -68,14 +71,25 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                     if not isinstance(fragment_text, str) or len(content) + len(fragment_text) > 32000:
                         raise ProviderError('invalid_response', '模型正文无效或过长')
                     content += fragment_text
+                    fragments = []
                     for fragment in delta.get('tool_calls') or []:
                         index = fragment.get('index')
                         if not isinstance(index, int) or not 0 <= index < 16:
                             raise ProviderError('invalid_response', '工具调用序号无效')
+                        if not isinstance(fragment.get('function', {}), dict):
+                            raise ProviderError('invalid_response', '工具调用分片无效')
+                        values = [fragment.get('id') or '', fragment.get('function', {}).get('name') or '', fragment.get('function', {}).get('arguments') or '']
+                        if any(not isinstance(value, str) for value in values):
+                            raise ProviderError('invalid_response', '工具调用分片无效')
+                        fragments.append(ToolDelta(index, values[1], values[2], values[0]))
                         call = calls.setdefault(index, {'id': '', 'type': 'function', 'function': {'name': '', 'arguments': ''}})
                         call['id'] += fragment.get('id') or ''
                         call['function']['name'] += fragment.get('function', {}).get('name') or ''
                         call['function']['arguments'] += fragment.get('function', {}).get('arguments') or ''
+                        if len(call['id']) > 200 or len(call['function']['name']) > 80 or len(call['function']['arguments']) > 32000:
+                            raise ProviderError('invalid_response', '工具调用无效或过长')
+                    if on_delta and (fragment_text or fragments):
+                        await on_delta(ModelDelta(fragment_text, tuple(fragments)))
                     if on_text and (fragment_text or delta.get('tool_calls')):
                         await on_text(content, bool(calls))
                     if item.get('finish_reason'):
@@ -88,7 +102,7 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
         if choice.get('finish_reason') == 'content_filter':
             raise structured_error({'code': 'content_filter'})
         if choice.get('finish_reason') not in ('stop', 'tool_calls'):
-            raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制')
+            raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制', output_limit=choice.get('finish_reason') == 'length')
         message = choice['message']
         if not isinstance(message.get('content') or '', str) or len(message.get('content') or '') > 32000:
             raise ValueError()
@@ -96,7 +110,7 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
         if len(calls) > 16 or (not calls and not (message.get('content') or '').strip()):
             raise ValueError()
         for call in calls:
-            if not call['id'] or len(call['id']) > 200 or not call['function']['name'] or len(call['function']['name']) > 80 or len(call['function']['arguments']) > 32000 or not isinstance(json.loads(call['function']['arguments']), dict):
+            if not call['id'] or len(call['id']) > 200 or not call['function']['name'] or len(call['function']['name']) > 80 or len(call['function']['arguments']) > 32000 or not isinstance(tool_arguments(call['function']['arguments']), dict):
                 raise ValueError()
         result['usage'] = token_usage(result.get('usage')) or {}
         return result

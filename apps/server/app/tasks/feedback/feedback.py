@@ -82,7 +82,9 @@ async def snapshot(sessions, token_hash, job_id):
         refresh(job, actions, drafts)
         from app.modules.interactions.serializers import message_interactions
         interactions = await message_interactions(db, actor, message)
-        return {'interactions': interactions, 'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
+        from app.tasks.feedback.reply_stream import dto as reply_dto
+        reply_stream = await reply_dto(db, actor, job, message)
+        return {'replyStream': reply_stream, 'interactions': interactions, 'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
 async def events(sessions, token_hash, job_id):
@@ -98,7 +100,7 @@ async def events(sessions, token_hash, job_id):
             return
         # A target can become unavailable or a report can finish independently
         # of the assistant's next phase. Do not keep a stale card on screen.
-        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'],json.dumps([value['actions'], value['taskOutcome'], value['interactions']], sort_keys=True))
+        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'],json.dumps([value['actions'], value['taskOutcome'], value['interactions'], value.get('replyStream')], sort_keys=True))
         if stamp != previous:
             yield 'event: snapshot\nid: ' + ':'.join(map(str, stamp[:3])) + '\ndata: ' + json.dumps(value,ensure_ascii=False) + '\n\n'
             previous = stamp

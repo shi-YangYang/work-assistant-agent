@@ -326,6 +326,7 @@ export interface TaskOutcome {
   nextAction: 'none' | 'reply' | 'confirm' | 'retry'
 }
 export interface Job {
+  replyStream?: ReplyStream | null
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean
@@ -384,6 +385,7 @@ export interface WorkReferenceView extends WorkReference {
   unavailable?: boolean
 }
 export interface WorkMessage {
+  replyStream?: ReplyStream | null
   workReference?: WorkReferenceView | null
   interactions?: AssistantInteraction[]
   deliverables?: DeliverableSummary[]
@@ -558,7 +560,15 @@ export interface ModelCheck {
   requestId: string
 }
 
+export interface ReplyStream {
+  version: 1
+  generation: number
+  state: 'streaming' | 'finalizing' | 'interrupted' | 'withdrawn'
+  text: string
+}
+
 export interface JobFeedback {
+  replyStream?: ReplyStream | null
   interactions?: AssistantInteraction[]
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null

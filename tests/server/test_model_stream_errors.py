@@ -124,3 +124,27 @@ async def test_web_search_then_review_rejection_reaches_job_nodes_and_usage(setu
         usage = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == sent['jobId']).order_by(ModelUsage.created_at))).all()
         assert [item.status for item in usage] == ['succeeded', 'failed']
         assert usage[-1].error_code == 'content_filter' and SECRET not in usage[-1].error_message
+
+
+@pytest.mark.parametrize('streaming', [True, False])
+@pytest.mark.parametrize('arguments', ['{"answer":"first","answer":"last"}', '{"task":{"state":"first","state":"last"}}'])
+async def test_full_tool_validation_rejects_duplicate_keys_even_without_preview(monkeypatch, streaming, arguments):
+    call = {'index': 0, 'id': 'complete', 'type': 'function', 'function': {'name': 'finish_task', 'arguments': arguments}}
+    def response(_):
+        if streaming:
+            return stream({'choices': [{'delta': {'tool_calls': [call]}, 'finish_reason': 'tool_calls'}]})
+        return httpx.Response(200, json={'choices': [{'message': {'content': '', 'tool_calls': [call]}, 'finish_reason': 'tool_calls'}]})
+    client_for(monkeypatch, response)
+    with pytest.raises(ProviderError) as failure:
+        await chat(SimpleNamespace(model_allowed_origins=()), {**CONFIG, 'streaming': streaming}, SECRET, [{'role': 'user', 'content': '普通请求'}])
+    assert failure.value.code == 'invalid_response'
+
+
+async def test_nonstream_response_does_not_invent_incremental_events(monkeypatch):
+    client_for(monkeypatch, lambda _: httpx.Response(200, json={'choices': [{'message': {'content': '完整文字'}, 'finish_reason': 'stop'}]}))
+    fragments = []
+    async def receive(delta):
+        fragments.append(delta)
+    result = await chat(SimpleNamespace(model_allowed_origins=()), {**CONFIG, 'streaming': False}, SECRET,
+                        [{'role': 'user', 'content': '普通请求'}], on_delta=receive)
+    assert result['choices'][0]['message']['content'] == '完整文字' and not fragments

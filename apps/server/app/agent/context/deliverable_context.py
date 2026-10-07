@@ -1,10 +1,10 @@
 """Small private-result index, shared by planning and independent authorization."""
-from app.modules.deliverables.queries import conversation_deliverables, available_revision, check_reference
+from app.modules.deliverables.queries import conversation_deliverables, available_revision, check_reference, remember_source
 from app.modules.deliverables.serializers import summary
 from app.security.access import valid
 
 
-async def deliverable_context(db, actor, message):
+async def deliverable_context(db, actor, message, *, job=None):
     if not message.conversation_id:
         return {}
     rows = await conversation_deliverables(db, actor, message.conversation_id)
@@ -14,8 +14,12 @@ async def deliverable_context(db, actor, message):
             continue
         record = await available_revision(db, actor, row.id)
         if record:
+            if job is not None:
+                remember_source(job, actor, row, record)
             result['items'].append(summary(row, record))
     if message.deliverable_reference:
-        _, record = await check_reference(db, actor, message.deliverable_reference, message.conversation_id)
+        item, record = await check_reference(db, actor, message.deliverable_reference, message.conversation_id)
+        if job is not None:
+            remember_source(job, actor, item, record)
         result['selected'] = {**message.deliverable_reference, 'title': record.title}
     return result

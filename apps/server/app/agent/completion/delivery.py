@@ -6,12 +6,13 @@ from app.modules.conversations.task.task_schemas import TaskInterpretation
 from app.agent.completion.reply_review import ReviewedReply
 
 DELIVERY_VERSION = 1
+MAX_ANSWER_LENGTH = 16000
 
 
 class Delivery(BaseModel):
     model_config = ConfigDict(extra='forbid')
     version: Literal[1] = DELIVERY_VERSION
-    answer: str = Field(max_length=16000)
+    answer: str = Field(max_length=MAX_ANSWER_LENGTH)
     task: TaskInterpretation
     business_requested: bool
     operation_ids: list[str] = Field(default_factory=list, max_length=16)
@@ -76,6 +77,8 @@ def validate_completion_response(message, *, required=False):
     calls = message.tool_calls
     if required and (len(calls) != 1 or calls[0]['name'] != 'finish_task'):
         raise ValueError('Expected the single required completion tool')
+    if any(call['name'] == 'finish_task' for call in calls) and len(calls) != 1:
+        raise ValueError('Completion must be the only tool')
     for call in calls:
         if call['name'] == 'finish_task':
             arguments = call['args']

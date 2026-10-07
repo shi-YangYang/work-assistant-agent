@@ -36,6 +36,8 @@ async def claim(sessions, owner_id=None, *, company_id=None):
             if job.state != 'running' or job.lease_until is None or job.lease_until >= now():
                 continue
             await interrupt_usage(db, job)
+            from app.tasks.feedback.reply_stream import transition
+            transition(job, 'interrupted')
             update_feedback(job)
             job.state = await interrupted_state(db, job)
             if job.state == 'queued':

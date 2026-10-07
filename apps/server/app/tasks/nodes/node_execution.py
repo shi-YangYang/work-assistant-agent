@@ -173,6 +173,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row['totalRetries'] += max(0, current.count - max(1, row['attempts']))
             row.update(state=status, attempts=current.count, nextAt=current.next_at,
                        errorCode=failure.code if failure else '', error=failure.message[:240] if failure else '')
+            if kind == 'model' and status == 'retry_wait':
+                from app.tasks.feedback.reply_stream import transition
+                transition(job, 'withdrawn', new=True)
             if kind == 'compaction' and job.result.get('contextUsage'):
                 job.result = {**job.result, 'contextUsage': {**job.result['contextUsage'], 'state': 'retry_wait' if status == 'retry_wait' else 'failed' if status in ('failed', 'cancelled') else 'compacting'}}
             save(job, state)

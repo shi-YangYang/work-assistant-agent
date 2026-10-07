@@ -39,6 +39,8 @@ async def cancel_job(db, actor, identifier, body):
         return item
     if item.attempt != body.expectedAttempt or item.fence != body.expectedFence:
         problem(409, '任务执行版本已变化，请刷新后中断', 'job_version_changed')
+    from app.tasks.feedback.reply_stream import transition
+    transition(item, 'interrupted')
     await interrupt_usage(db, item)
     item.state, item.phase, item.error = 'cancelled', 'cancelled', '已中断'
     item.fence, item.lease_until, item.updated_at = item.fence + 1, None, now()

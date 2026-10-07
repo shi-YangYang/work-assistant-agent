@@ -23,6 +23,7 @@ from app.tasks.context import BudgetExceeded, LostLease, RunContext
 from app.tasks.processing.documents import prepare_document
 from app.tasks.feedback.feedback import publish
 from app.tasks.feedback.feedback_state import update_feedback
+from app.tasks.feedback.reply_stream import transition as reply_transition, retire as retire_reply, failure_state
 from app.tasks.lease import lease
 from app.tasks.runtime.cancellation import run_until_interrupted
 from app.tasks.models import Job
@@ -52,6 +53,7 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
             current = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
             if current.state == 'running' and current.fence == job.fence:
                 await interrupt_usage(db, current)
+                reply_transition(current, 'interrupted')
                 update_feedback(current)
                 current.state = 'awaiting_retry' if current.request_started else 'failed'
                 current.error = '处理超时，原始内容已保存；服务可能已计费，请确认后重试'
@@ -80,6 +82,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
             live = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
             if live.fence == context.fence and live.state == 'running':
                 await interrupt_usage(db, live)
+                reply_transition(live, failure_state(error))
                 update_feedback(live)
                 revoked = (isinstance(error, HTTPException) and isinstance(error.detail, dict) and error.detail.get('code') in ('business_access_changed', 'task_superseded', 'task_source_changed', 'task_input_changed')) or (isinstance(error, ValueError) and str(error).startswith('账号权限已变化'))
                 live.state = 'cancelled' if revoked else 'awaiting_retry' if live.request_started else 'failed'
@@ -231,6 +234,9 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             if repair:
                 live.result = {**{key: value for key, value in live.result.items() if key != 'pendingReply'}, 'completionRepairAttempted': True, 'deliveryRepairs': [*live.result.get('deliveryRepairs', []), 'action']}
     if repair:
+        async with sessions.begin() as db:
+            live, _ = await lease(db, context)
+            reply_transition(live, 'withdrawn', new=True)
         await publish(context, 'generating', force=True)
         answer = await invoke_harness(context, checkpointer, blocks, model, repair_missing_action=True)
         async with sessions.begin() as db:
@@ -246,6 +252,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             from app.tasks.retry import NodeFailed
             async with sessions.begin() as db:
                 live, _ = await lease(db, context)
+                reply_transition(live, 'withdrawn', new=True)
                 live.result = {**live.result, 'pendingReply': {**live.result['pendingReply'], 'safeReply': review.text}}
             try:
                 answer = await repair_response(context, answer, review.response_reason, model=model)
@@ -331,5 +338,9 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             await references(db, actor, live, message, include_current=True)
             from app.tasks.nodes.node_state import release_outputs
             release_outputs(live)
+        if review.verified:
+            retire_reply(live)
+        else:
+            reply_transition(live, review.preview_state)
         update_feedback(live, 'complete' if review.verified else 'reviewing', '')
         live.lease_until, live.updated_at = None, now()

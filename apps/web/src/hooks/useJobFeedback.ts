@@ -16,6 +16,7 @@ export function useJobFeedback(
   const generation = epoch
   const [snapshot, setSnapshot] = useState<{
     generation: number
+    jobId: string | null
     value: JobFeedback | null
   } | null>(null)
   const [failure, setFailure] = useState<{
@@ -42,6 +43,7 @@ export function useJobFeedback(
         (incoming) =>
           setSnapshot((previous) => ({
             generation,
+            jobId,
             value:
               incoming && jobId
                 ? acceptFeedback(
@@ -72,6 +74,8 @@ export function useJobFeedback(
   )
   return {
     feedback,
+    unavailable:
+      snapshot?.generation === generation && snapshot.jobId === jobId && snapshot.value === null,
     reconnect: () => reconnectJobFeedback(jobId),
     error:
       job &&

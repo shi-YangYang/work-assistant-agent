@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from app.core.errors import problem
 from app.modules.conversations.models import Conversation
-from app.modules.deliverables.queries import get_deliverable
+from app.modules.deliverables.queries import get_deliverable, remember_source
 from app.modules.deliverables.serializers import summary as delivery_summary
 from app.modules.executions.models import SandboxExecution
 from app.modules.executions.sources import check_sources, remember_sources
@@ -54,7 +54,7 @@ async def delivery_reference(db, actor, job, row):
         if error.status_code not in (403, 404):
             raise
         return 'unavailable', ''
-    job.access = merge_access(job.access or scope(actor), item.access)
+    remember_source(job, actor, item, record)
     # Rebuild references from the authorized immutable revision, never replay saved URLs/body.
     return 'available', json.dumps(delivery_summary(item, record), ensure_ascii=False)
 

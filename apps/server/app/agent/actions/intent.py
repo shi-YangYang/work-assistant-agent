@@ -210,7 +210,7 @@ async def authorize_intent(context, proposal):
                 'state': 'succeeded' if draft.status == 'confirmed' else 'pending' if draft.status == 'pending' else 'cancelled',
                 'objectId': draft.work_id, 'details': draft.content})
         from app.agent.context.deliverable_context import deliverable_context
-        results = await deliverable_context(db, actor, message)
+        results = await deliverable_context(db, actor, message, job=job)
         request = {'conversationTask': task, 'privateDeliverables': results, 'completedOrPendingSteps': prior, 'verifiedReads': await verified_read_context(db, actor, job, proposal, context.read_versions), 'currentUserText': current, 'conversationForReferenceOnly': previous, 'messageTime': message.created_at.astimezone(ZoneInfo(company.rules['timezone'])).isoformat(), 'timezone': company.rules['timezone'], 'proposedOperation': proposal}
     from app.agent.actions.task_outcomes import blocked, barrier
     stopped = await blocked(context, proposal)

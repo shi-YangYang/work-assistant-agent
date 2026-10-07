@@ -90,6 +90,14 @@ class BoundedChatModel(ChatOpenAI):
         record = RequestRecord(context.sessions, usage_id)
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
         is_reply = bool(payload.get('tools')) and context.model_purpose == 'assistant'
+        publisher = candidate = None
+        if is_reply and not self._verification:
+            from app.tasks.feedback.reply_stream import ReplyPublisher
+            publisher = ReplyPublisher(context, usage_id)
+            await publisher.start()
+            from app.agent.runtime.reply_stream import ReplyCandidate, allows_reply_stream
+            if config.get('streaming', False) and not context.access.get('team') and allows_reply_stream(messages, context.job_id, payload):
+                candidate = ReplyCandidate(publisher)
         if is_reply:
             await publish(context, 'generating', call_id=usage_id, force=True)
         try:
@@ -102,9 +110,8 @@ class BoundedChatModel(ChatOpenAI):
             elif is_reply:
                 from app.modules.model_services.parameters import business_model_config
                 config = business_model_config(config, (context.model_binding or {}).get('assistant') or {})
-            # Publish phase transitions, not an identical empty snapshot for each
-            # token. Prose still passes review before becoming user-visible.
-            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=output_limit, on_event=record.event), min(60, max(.01, context.node_deadline - time.time())) if context.node_retry else 60)
+            # The optional callback publishes prose only; framework tools remain buffered.
+            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=output_limit, on_event=record.event, on_delta=candidate.feed if candidate else None), min(60, max(.01, context.node_deadline - time.time())) if context.node_retry else 60)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
             try:
@@ -124,8 +131,12 @@ class BoundedChatModel(ChatOpenAI):
                 from app.tasks.nodes.node_execution import active_node
                 for index, generation in enumerate(result.generations):
                     generation.message.id = f'node:{active_node.get()[0]}:{index}'
+            if candidate:
+                await candidate.finish()
             await record.finish()
         except BaseException as error:
+            if publisher:
+                await publisher.fail(error, candidate.parser.text if candidate and candidate.parser else None)
             await record.finish(error)
             import httpx
             from app.integrations.models.transport import ProviderError

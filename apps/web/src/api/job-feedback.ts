@@ -21,13 +21,33 @@ export function acceptFeedback(
       return current
     for (const field of ['attempt', 'fence', 'seq'] as const) {
       if (incoming[field] < current[field]) return current
-      if (incoming[field] > current[field]) return incoming
+      if (incoming[field] > current[field]) {
+        if (field !== 'seq') return incoming
+        break
+      }
     }
+    if (
+      incoming.replyStream &&
+      current.replyStream &&
+      incoming.replyStream.generation < current.replyStream.generation
+    )
+      return current
+    // The final message request may fail or arrive later than the terminal event.
+    // Keep the last prefix until that persisted message replaces it.
+    if (
+      !incoming.replyStream &&
+      current.replyStream &&
+      ['succeeded', 'awaiting_input'].includes(incoming.state)
+    )
+      incoming = { ...incoming, replyStream: current.replyStream }
     if (incoming.updatedAt < current.updatedAt) return current
     // Cards can change independently of the worker's feedback version. Match the
     // server's snapshot identity so retries deduplicate without hiding card updates.
     if (
+      incoming.seq === current.seq &&
       incoming.updatedAt === current.updatedAt &&
+      JSON.stringify(incoming.replyStream ?? null) ===
+        JSON.stringify(current.replyStream ?? null) &&
       incoming.state === current.state &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
       JSON.stringify(incoming.interactions ?? []) === JSON.stringify(current.interactions ?? []) &&
@@ -50,7 +70,8 @@ export function visibleFeedback(job: Job | null, value: JobFeedback | null) {
     value.fence < (job.fence ?? 0)
   )
     return null
-  if (['succeeded', 'awaiting_input', 'cancelled'].includes(job.state)) return null
+  if (['succeeded', 'awaiting_input', 'cancelled'].includes(job.state) && !value.replyStream)
+    return null
   if (
     terminalJob(job.state) &&
     value.attempt === (job.attempt ?? 0) &&

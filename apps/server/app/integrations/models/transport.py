@@ -8,9 +8,10 @@ from urllib.parse import urlsplit, urlunsplit
 
 
 class ProviderError(ValueError):
-    def __init__(self, code, message, status=None, retry_after=None, *, sent=None):
+    def __init__(self, code, message, status=None, retry_after=None, *, sent=None, output_limit=False):
         super().__init__(message)
         self.code, self.status, self.retry_after, self.sent = code, status, retry_after, sent
+        self.output_limit = output_limit
 
 
 RATE_LIMIT_CODES = frozenset(('rate_limit_exceeded', 'rate_limit_error', 'too_many_requests', 'throttled', 'throttling', 'throttling.ratequota'))

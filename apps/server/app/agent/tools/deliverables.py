@@ -2,7 +2,7 @@ import json
 from fastapi import HTTPException
 from langchain.tools import ToolRuntime, tool
 from pydantic import ValidationError
-from app.modules.deliverables.queries import conversation_deliverables, get_deliverable, available_revision
+from app.modules.deliverables.queries import conversation_deliverables, get_deliverable, available_revision, remember_source
 from app.modules.deliverables.serializers import detail, summary
 from app.modules.deliverables.service import save
 from app.modules.messages.models import Message
@@ -72,9 +72,11 @@ async def read_deliverable(runtime: ToolRuntime[RunContext], deliverable_id: str
                     if await valid(db, actor, row.access):
                         record = await available_revision(db, actor, row.id)
                         if record:
+                            remember_source(job, actor, row, record)
                             results.append(summary(row, record))
                 return json.dumps({'items': results, 'nextOffset': offset + 20 if len(rows) > 20 else None}, ensure_ascii=False)
             item, record = await get_deliverable(db, actor, deliverable_id, revision or None, conversation_id=message.conversation_id)
+            remember_source(job, actor, item, record)
             result = await detail(db, actor, item, record)
             from app.modules.executions.sources import remember_sources
             remember_sources(job, context, [source for file in record.files or [] for source in file.get('sources', [])])

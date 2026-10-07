@@ -7,7 +7,7 @@ from app.core.errors import problem
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
 from app.modules.messages.service import active_message
-from app.modules.deliverables.queries import get_deliverable
+from app.modules.deliverables.queries import get_deliverable, remember_source
 from app.security.ownership import owned
 from app.security.access import require
 from app.modules.executions.sources import check_sources
@@ -60,7 +60,7 @@ async def prepare_inputs(db, actor, job, message, settings, references):
             if not item:
                 problem(404, '成果文件不存在')
             await check_sources(db, actor, item.get('sources', []))
-            inherit(actor, job, owner)
+            remember_source(job, actor, owner, record)
             sources.extend(item.get('sources', []))
             path, name = file_path(settings, item['storageKey']), item['name']
         else:
