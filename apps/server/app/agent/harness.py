@@ -1,3 +1,5 @@
+from app.agent.memory.prompt import MEMORY_POLICY
+from app.agent.memory.middleware import prepare as prepare_memory, validate_completed as validate_memory_completed
 from app.modules.executions.builtin.schemas import EXECUTION_TOOLS
 import asyncio
 import hashlib
@@ -38,7 +40,7 @@ def build_graph(settings, checkpointer, context, model=None):
     if isinstance(model, BoundedChatModel):
         model._completion_validator = validate_completion_response
     from app.agent.prompts.execution_mode import mode_prompt
-    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name not in EXECUTION_TOOLS or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name not in EXECUTION_TOOLS or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + MEMORY_POLICY + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -62,6 +64,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         from app.agent.context.request_clock import instruction as clock_instruction
         clock_note = clock_instruction(clock, company.rules['timezone'])
     context.request_clock = clock_note
+    await prepare_memory(context)
     graph = build_graph(context.settings, GuardedSaver(checkpointer, context), context, model)
     async with context.sessions() as db:
         job, actor = await lease(db, context)
@@ -111,6 +114,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         else:
             inputs = {'messages': [*history, HumanMessage(id=f'job:{job.id}', content=content)]}
             result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+    await validate_memory_completed(context)
     messages = result.get('messages', [])
     answer = next((m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None)
     delivery = from_messages(messages)

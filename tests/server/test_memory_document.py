@@ -1,0 +1,109 @@
+from datetime import datetime, timezone
+import pytest
+from fastapi import HTTPException
+from app.modules.memories.document import annotations_after, patch, injection, validate, forget_fragment
+
+
+def test_patch_preserves_manual_markdown_and_moved_provenance():
+    doc = annotations_after({}, '# 自定义标题\n\n第一段 **人工** 内容。\n\n- 第二段\n- 原顺序\n', 'manual')
+    changed = patch(doc, '第二段', '新段落', explicit=True, source='current')
+    assert changed['markdown'] == doc['markdown'].replace('第二段', '新段落')
+    with pytest.raises(HTTPException, match='409'):
+        patch(changed, '人工', '模型猜测', explicit=False, source='current')
+    moved = annotations_after(doc, '- 第二段\n- 原顺序\n\n# 自定义标题\n\n第一段 **人工** 内容。\n', 'manual')
+    assert all(row['origin'] == 'manual' for row in moved['annotations'])
+    # Unrelated durable self-disclosure is still allowed after manual editing.
+    appended = patch(doc, '', '最近在推进一个新项目。', explicit=False, source='current')
+    assert appended['markdown'].startswith(doc['markdown'])
+
+
+def test_unique_patch_dedup_capacity_and_credentials():
+    doc = annotations_after({}, '同一内容\n\n同一内容', 'inferred')
+    with pytest.raises(HTTPException):
+        patch(doc, '同一内容', '替换', explicit=True, source='current')
+    assert patch(doc, '', '同一内容', explicit=False, source='current') == doc
+    for value in ('x' * 6001, '密码：abc123456', 'sk-' + 'abcdef' * 8):
+        with pytest.raises(HTTPException):
+            validate(value)
+
+
+def test_injection_preserves_heading_scope_whole_lists_and_expiration():
+    doc = annotations_after({}, '# 此项目\n\n- 人工偏好一\n- 人工偏好二\n', 'manual')
+    doc = patch(doc, '', '临时目标', explicit=False, source='current', expires='2020-01-01T00:00:00+00:00')
+    value = injection(doc, 200, clock=datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert '# 此项目' in value and '人工偏好二' in value and '临时目标' not in value
+    assert injection(doc, 8) == ''
+    with pytest.raises(HTTPException):
+        patch(doc, '人工偏好一', '短期', explicit=True, source='current', expires='2030-01-01T00:00:00+00:00')
+
+
+def test_disabled_forget_keeps_unrelated_facts_in_same_paragraph():
+    markdown = '我负责运营，我喜欢简洁。\n\n别的段落保持原样。'
+    assert forget_fragment('我负责运营。我喜欢简洁。', '我负责运营。') == '我负责运营。'
+    fragment = forget_fragment(markdown, '我负责运营')
+    assert markdown.replace(fragment, '') == '我喜欢简洁。\n\n别的段落保持原样。'
+    with pytest.raises(HTTPException):
+        forget_fragment('运营一。运营二。', '运营')
+
+
+def test_manual_save_preserves_distinct_expiry_and_source_on_noop_and_move():
+    empty = {'schemaVersion': 1, 'markdown': '', 'annotations': []}
+    document = patch(empty, '', '临时负责上线。偏好简洁。', explicit=False,
+                     source='temporary', expires='2027-01-01T00:00:00+00:00')
+    document = patch(document, '偏好简洁。', '偏好详细。', explicit=True, source='preference')
+    clock = datetime(2028, 1, 1, tzinfo=timezone.utc)
+    unchanged = annotations_after(document, document['markdown'], 'manual')
+    assert unchanged['annotations'] == document['annotations']
+    assert injection(unchanged, 200, clock=clock).strip() == '偏好详细。'
+
+    moved = annotations_after(document, '# 约定\n\n偏好详细。临时负责上线。', 'manual')
+    spans = {moved['markdown'][row['start']:row['end']]: row for row in moved['annotations']}
+    assert spans['临时负责上线。']['sourceMessage'] == 'temporary'
+    assert spans['临时负责上线。']['expiresAt'] == '2027-01-01T00:00:00+00:00'
+    assert spans['偏好详细。']['sourceMessage'] == 'preference'
+    assert spans['偏好详细。']['origin'] == 'explicit'
+    assert '临时负责上线' not in injection(moved, 200, clock=clock)
+    assert '偏好详细。' in injection(moved, 200, clock=clock)
+
+
+def test_manual_edit_marks_whole_changed_annotation_and_keeps_its_neighbor():
+    empty = {'schemaVersion': 1, 'markdown': '', 'annotations': []}
+    document = patch(empty, '', '临时负责上线。我喜欢黑色。', explicit=False,
+                     source='temporary', expires='2027-01-01T00:00:00+00:00')
+    changed = annotations_after(document, '临时负责上线。我喜欢蓝色。', 'manual')
+    assert injection(changed, 200, clock=datetime(2028, 1, 1, tzinfo=timezone.utc)) == changed['markdown']
+    assert all(row['origin'] == 'manual' and 'expiresAt' not in row for row in changed['annotations'])
+
+    # Independent annotations in the same paragraph must not share that reset.
+    document = patch(document, '我喜欢黑色。', '我喜欢黑色。', explicit=True, source='preference')
+    changed = annotations_after(document, '临时负责上线。我喜欢蓝色。', 'manual')
+    clock = datetime(2028, 1, 1, tzinfo=timezone.utc)
+    assert injection(changed, 200, clock=clock).strip() == '我喜欢蓝色。'
+    assert changed['annotations'][0]['expiresAt'] == '2027-01-01T00:00:00+00:00'
+    assert changed['annotations'][1]['origin'] == 'manual'
+
+
+@pytest.mark.parametrize(('markdown', 'target', 'remaining'), [
+    ('I own Alpha. I prefer concise answers.', 'I own Alpha', 'I prefer concise answers.'),
+    ('我负责飞鹭615。\n\n我喜欢简洁的回答。', '我负责飞鹭615', '我喜欢简洁的回答。'),
+    ('第一条。\n\n我负责飞鹭615。\n\n最后一条。', '我负责飞鹭615', '第一条。\n\n最后一条。'),
+    ('我喜欢简洁。\n\n我负责飞鹭615。', '我负责飞鹭615。', '我喜欢简洁。'),
+    ('- 我负责飞鹭615。\n- 我喜欢简洁。', '我负责飞鹭615', '- 我喜欢简洁。'),
+    ('1. 我负责飞鹭615。\n2. 我喜欢简洁。', '我负责飞鹭615', '2. 我喜欢简洁。'),
+])
+def test_forget_removes_only_complete_fact_with_adjacent_formatting(markdown, target, remaining):
+    fragment = forget_fragment(markdown, target)
+    assert markdown.replace(fragment, '', 1) == remaining
+
+
+@pytest.mark.parametrize(('markdown', 'target'), [
+    ('I own Alpha. I prefer concise answers.', 'Alpha'),
+    ('我负责A和B两个项目。', 'A'),
+    ('我负责A和B两个项目。', '我负责A'),
+    ('我负责运营，我喜欢简洁。', '负责运营'),
+])
+def test_incomplete_forget_target_requests_clarity_without_expanding(markdown, target):
+    with pytest.raises(HTTPException) as error:
+        forget_fragment(markdown, target)
+    assert error.value.status_code == 409
+    assert '未删除任何内容' in error.value.detail['message']

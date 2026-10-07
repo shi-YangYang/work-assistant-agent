@@ -31,7 +31,7 @@ class Delivery(BaseModel):
         return self
 
 
-COMPLETION_POLICY = '''完成当前任务时，最后单独调用 finish_task，answer 填写给用户的完整自然答复，task 填本轮目标、new/continue 承接关系、状态、具体未完成项及持续指令变化。工具会直接交付，不会再让你复述。不能与读取或写入工具同批调用。
+COMPLETION_POLICY = '''完成当前任务时，最后单独调用 finish_task，answer 填写给用户的完整自然答复，task 填本轮目标、new/continue 承接关系、状态、具体未完成项及持续指令变化。工具会直接交付，不会再让你复述。不能与读取或写入工具同批调用。只有 answer 会展示为本轮最终正文；过程草稿和同次工具调用消息的 content 都不代表已向用户交付。所需解释、表格和代码必须完整放入 answer，不能用“已在对话中给出”的总结代替。
 普通聊天、写作、分析、搜索可以充分完成所求内容，无需为可选字段反复澄清；可合理假设并说明。仅有道歉、处理承诺或“查好了”不算交付结果。能交付部分时保留实际结果，说明未完成项；确缺必要输入用 needs_input，权限、产品能力或外部阻碍且用户补话无法解决用 blocked，不要把已明确的拒绝标成 completed 或 needs_input；说明具体限制即可，不要求用户反复确认无权操作。不得用记忆冒充实际检索。
 business_requested 表示本轮用户要求保存/修改/提交/删除真实业务记录，或本轮答复声明执行了这些操作；无成功回执也要如实标 true。operation_ids 只能填写本轮工具实际返回的业务回执 ID；不能把工作 ID、未来计划或工具成功当工作已完成。私人成果和生成文件不属于公司业务记录，deliverable_id、文件 ID 和沙盒执行 ID 都不能填入 operation_ids；仅要求生成文件时 business_requested=false、operation_ids=[]。待确认是 needs_confirmation，报告入队是 processing。普通分析、虚构示例、只读查询不属于业务执行。
 verification_requested 仅在用户要求核验其给出的既有主张或材料真假时为 true，verification_quote 填这项核验要求的用户原文。首次搜索、查新闻、查资料、要求来源链接/发布日期、要求准确或总结多来源，都不是专项核验，必须 false；检索本身就应提供准确来源，不需要另加审稿。response_complete 表示所要求正文已提供；缺失时 response_issue 写具体原因，不能只靠节点结束宣称完成。

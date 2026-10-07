@@ -48,3 +48,10 @@ it('uses a supplied semantic fallback only when no valid return context exists',
     '/work/w',
   )
 })
+
+it('exposes personal memory settings to both employee and administrator accounts', async () => {
+  const { settingsPages } = await import('../../apps/web/src/app/layout/navigation-items')
+  const entry = settingsPages.find((page) => page.path === '/settings/memory')
+  expect(entry?.title).toBe('记忆')
+  expect(entry?.admin).not.toBe(true)
+})

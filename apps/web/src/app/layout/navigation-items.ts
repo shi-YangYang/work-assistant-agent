@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Brain,
   BriefcaseBusiness,
   CalendarClock,
   ChartColumn,
@@ -44,6 +45,12 @@ export const pages = [
 ]
 
 export const settingsPages = [
+  {
+    path: '/settings/memory',
+    title: '记忆',
+    detail: '管理跨会话使用的个人偏好与背景',
+    icon: Brain,
+  },
   {
     path: '/settings/voiceprints',
     title: '公司声纹',

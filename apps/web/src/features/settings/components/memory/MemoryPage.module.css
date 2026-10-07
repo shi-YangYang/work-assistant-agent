@@ -1,0 +1,67 @@
+.content {
+  width: 100%;
+  min-width: 0;
+}
+.setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 8px 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.setting > div {
+  min-width: 0;
+}
+.setting h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.setting p {
+  margin: 0;
+  max-width: 70ch;
+  color: var(--secondary);
+  line-height: 1.7;
+}
+.switch {
+  --button-disabled-opacity: 1;
+  --button-disabled-cursor: wait;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.track {
+  display: inline-flex;
+  width: 34px;
+  padding: 3px;
+  background: var(--muted);
+  border-radius: 20px;
+}
+.track span {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 150ms;
+}
+.switch[aria-checked='true'] .track {
+  background: var(--text);
+}
+.switch[aria-checked='true'] .track span {
+  transform: translateX(14px);
+}
+@media (max-width: 600px) {
+  .setting {
+    align-items: flex-start;
+    gap: 12px;
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .track span {
+    transition: none;
+  }
+}

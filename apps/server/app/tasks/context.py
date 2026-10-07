@@ -21,6 +21,16 @@ class InputChanged(ValueError):
 
 
 @dataclass
+class MemorySnapshot:
+    revision: int
+    generation: int
+    source_revision: int | None
+    message_id: str
+    input_hash: str
+    writable: bool = True
+
+
+@dataclass
 class RunContext:
     owner_id: str
     company_id: str
@@ -28,6 +38,8 @@ class RunContext:
     fence: int
     sessions: Any
     settings: Any
+    memory_snapshot: MemorySnapshot | None = None
+    memory_loaded: bool = False
     persona_id: PersonaId = LEGACY_PERSONA
     source_revision: int | None = None
     document_snapshot: str = ''

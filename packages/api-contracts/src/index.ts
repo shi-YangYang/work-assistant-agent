@@ -742,3 +742,11 @@ export interface VoiceprintCleanupSummary {
   pending: number
   failed: number
 }
+
+export interface AssistantMemory {
+  enabled: boolean
+  revision: number
+  markdown: string
+  updatedAt: string | null
+  maxCharacters: number
+}

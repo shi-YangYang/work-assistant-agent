@@ -7,6 +7,7 @@ from app.agent.runtime.progress.tools import tool_presentation
 
 # Replay safety is an execution policy, independent of display-label registration.
 REPLAYABLE_TOOLS = frozenset({
+    'save_memory', 'forget_memory',
     'inspect_table', 'export_table', 'create_chart', 'create_document', 'create_slides',
     'run_python', 'request_user_input', 'find_work_items', 'get_work_item',
     'list_work_updates', 'list_work_materials', 'read_work_material', 'get_message_context', 'get_business_actions', 'query_reports', 'query_report_obligations',
@@ -58,6 +59,10 @@ async def tool_node(context, request, operation):
             row = await owned(db, BusinessAction, result['id'], actor)
             return {**value, 'content': json.dumps(await action_dto(db, actor, row), ensure_ascii=False)}
         return value
+    async def restore_memory(db, actor, value):
+        from app.modules.memories.service import restore
+        result = await restore(db, actor, json.loads(value['content']))
+        return {**value, 'content': json.dumps(result, ensure_ascii=False)}
     async def unavailable_web(error):
         if error.failure.code != 'web_network' or error.failure.cancelled:
             raise error
@@ -73,6 +78,6 @@ async def tool_node(context, request, operation):
                               decode=lambda data: ToolMessage(**data),
                               safe_replay=call['name'] in REPLAYABLE_TOOLS,
                               allow_work_refresh=refreshing_work,
-                              restore=restore_receipt if call['name'] == 'execute_business_action' else None,
+                              restore=restore_receipt if call['name'] == 'execute_business_action' else restore_memory if call['name'] in ('save_memory', 'forget_memory') else None,
                               on_failure=unavailable_web if call['name'] in ('web_search', 'web_fetch') else None,
                               receipt_output=lambda result: ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=call['id'], name=call['name']))

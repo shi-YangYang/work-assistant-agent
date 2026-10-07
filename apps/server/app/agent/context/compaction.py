@@ -98,7 +98,8 @@ class ContextCompaction(AgentMiddleware):
     async def summarize(self, context, removed, target):
         # Summarize bounded chunks using the same model/request protections. No
         # framework with_retry(): execute_node is the sole retry owner.
-        serialized = json.dumps(messages_to_dict(removed), ensure_ascii=False)
+        from app.agent.memory.middleware import without_memory
+        serialized = json.dumps(messages_to_dict(without_memory(removed, summaries=True)), ensure_ascii=False)
         budget = input_budget(context, 4000)
         chunk_size = max(256, min(int((budget or len(serialized)) * .65), 1500000))
         summaries = []
@@ -126,23 +127,28 @@ class ContextCompaction(AgentMiddleware):
         schemas = tool_schemas(request.tools)
         system = request.system_message.content if request.system_message else None
         output = output_reserve(context, getattr(request.model, 'max_tokens', None))
+        from app.agent.memory.middleware import request_memory, without_memory
+        messages, memory = await request_memory(context, messages, output)
+        memory_tokens = estimate_request([memory]) - estimate_request([]) if memory else 0
+        def estimate(rows):
+            return estimate_request(rows, schemas, system) + memory_tokens
         prior = await saved_packet(context)
         if prior:
             # A crash after checkpoint but before JSONB publication resumes here.
             await publish_packet(context, prior)
             messages = apply_packet(messages, prior)
             context.context_evidence = prior.get('evidence', [])
-        used = estimate_request(messages, schemas, system)
+        used = estimate(messages)
         reason = compression_reason(context, used, output)
         packet = None
         if reason:
             removed, retained = removable(messages, context)
             budget = input_budget(context, output)
             target = int(min(budget, capacity(context)['contextWindow'] * .7) if capacity(context).get('contextWindow') else budget * .7)
-            overhead = estimate_request(retained, schemas, system)
+            overhead = estimate(retained)
             if overhead >= target:
                 removed, retained = removable(messages, context, keep_recent=False)
-                overhead = estimate_request(retained, schemas, system)
+                overhead = estimate(retained)
                 # The 70% target is headroom, not the model's hard limit. Large
                 # required tool schemas can exceed it while a summary still fits.
                 window = capacity(context).get('contextWindow')
@@ -166,9 +172,9 @@ class ContextCompaction(AgentMiddleware):
                              'access': context.access,
                              'dependencies': {'business': dict(context.read_versions), 'documents': dict(context.document_versions)},
                              'covered': [r['id'] for r in context.conversation_references or [] if r['id'] != 'context-summary' and f"history:{r['id']}" in {m.id for m in removed}],
-                             'evidence': [*context.context_evidence, *[{'key': m.tool_call_id, 'tool': m.name, 'result': m.content} for m in removed if isinstance(m, ToolMessage) and m.name != 'finish_task']]}
+                             'evidence': [*context.context_evidence, *[{'key': m.tool_call_id, 'tool': m.name, 'result': m.content} for m in without_memory(removed, summaries=True) if isinstance(m, ToolMessage) and m.name != 'finish_task']]}
                 candidate['covered'] = list(dict.fromkeys([*context.context_sources.get('summarySources', {}), *(prior.get('covered', []) if prior else []), *candidate['covered']]))
-                after = estimate_request(apply_packet(messages, candidate), schemas, system)
+                after = estimate(apply_packet(messages, candidate))
                 if after >= used or compression_reason(context, after, output):
                     raise BudgetExceeded('压缩后仍超过模型上下文，请缩短本次内容或选择更大窗口的模型')
                 candidate.update(beforeTokens=used, afterTokens=after)
@@ -184,7 +190,7 @@ class ContextCompaction(AgentMiddleware):
                     packet = await saved_packet(context)
                     await publish_packet(context, packet)
                 messages = apply_packet(messages, packet)
-                used = estimate_request(messages, schemas, system)
+                used = estimate(messages)
                 context.context_evidence = packet['evidence']
                 # Keep independent authorization/review on the same summary as
                 # the main model, while authoritative tools still query live data.
@@ -210,7 +216,7 @@ class ContextCompaction(AgentMiddleware):
         else:
             await publish_usage(context, used, output_reserve=output)
         ensure_input(context, used, output)
-        response = await handler(request.override(messages=messages))
+        response = await handler(request.override(messages=([memory, *messages] if memory else messages)))
         # Remove specific old IDs so the model response, applied by the graph's
         # reducer in the same step, cannot accidentally be deleted.
         original_ids = {m.id for m in request.messages}

@@ -1,6 +1,6 @@
 from app.modules.executions.builtin.schemas import EXECUTION_TOOLS
 
-ALLOWED_TOOLS = frozenset({'run_python', 'read_execution', 'finish_task', 'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'list_work_updates', 'list_work_materials', 'read_work_material', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'}) | EXECUTION_TOOLS
+ALLOWED_TOOLS = frozenset({'save_memory', 'forget_memory', 'run_python', 'read_execution', 'finish_task', 'request_user_input', 'save_deliverable', 'read_deliverable', 'web_search', 'web_fetch', 'find_work_items', 'get_work_item', 'list_work_updates', 'list_work_materials', 'read_work_material', 'get_message_context', 'propose_progress', 'find_documents', 'read_document', 'read_file', 'execute_business_action', 'get_business_actions', 'query_reports', 'query_report_obligations'}) | EXECUTION_TOOLS
 
 
 TEAM_TOOL_NAMES = frozenset({'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})

@@ -5,6 +5,7 @@ import unicodedata
 from urllib.parse import urlsplit
 
 LABELS = {
+    'save_memory': '保存记忆', 'forget_memory': '忘记指定内容',
     'inspect_table': '检查表格', 'export_table': '导出表格',
     'create_chart': '生成图表', 'create_document': '生成文档', 'create_slides': '生成幻灯片',
     'run_python': '运行代码', 'request_user_input': '等待用户回答', 'finish_task': '整理答复',

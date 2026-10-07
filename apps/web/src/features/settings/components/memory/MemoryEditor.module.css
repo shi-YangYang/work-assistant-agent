@@ -1,0 +1,50 @@
+.document {
+  min-width: 0;
+  padding: 20px 0;
+  display: grid;
+  gap: 12px;
+}
+.heading,
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.heading {
+  justify-content: space-between;
+}
+.heading h2 {
+  font-size: 16px;
+  margin: 0;
+}
+.hint,
+.updated {
+  color: var(--secondary);
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 0;
+}
+.updated {
+  font-size: 12px;
+}
+.empty {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  margin: 0;
+  padding: 16px 0;
+  color: var(--secondary);
+}
+.conflict {
+  padding: 16px;
+  background: var(--subtle);
+  border-radius: 14px;
+}
+.document > button {
+  justify-self: start;
+}
+@media (max-width: 600px) {
+  .document button {
+    min-height: 44px;
+  }
+}

@@ -189,6 +189,8 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         context.read_versions.setdefault(reference['id'], reference['revision'])
     async with sessions.begin() as db:
         live, _ = await lease(db, context)
+        from app.modules.memories.service import validate_job as validate_memory_job
+        await validate_memory_job(db, actor, live)
         pending = live.result.get('pendingReply', {})
     if pending.get('input') == review_input:
         answer = pending['answer']
@@ -264,6 +266,8 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         live, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor, lock=True)
         from app.modules.operations.receipts import message_actions, receipt_reply, receipt_summary
+        from app.modules.memories.service import validate_job as validate_memory_job
+        await validate_memory_job(db, actor, live)
         cards = await message_actions(db, actor, message)
         from app.modules.work.draft_receipts import message_drafts
         drafts = await message_drafts(db, actor, message, live)
