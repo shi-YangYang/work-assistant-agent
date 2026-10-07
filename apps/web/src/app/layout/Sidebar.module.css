@@ -74,6 +74,7 @@
   gap: 6px;
 }
 .sidebar nav a,
+.sidebar nav .disabled-entry,
 .sidebar-bottom > a {
   display: flex;
   align-items: center;
@@ -87,6 +88,22 @@
   color: var(--secondary);
   border-radius: 10px;
   text-decoration: none;
+}
+.sidebar nav .disabled-entry {
+  justify-content: flex-start;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 400;
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.beta-badge {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--control);
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 1.5;
 }
 .sidebar nav a:hover,
 .sidebar-bottom > a:hover {
@@ -201,6 +218,7 @@
   }
   .sidebar:not([data-expanded='true']) .search-launch,
   .sidebar:not([data-expanded='true']) .settings-toggle,
+  .sidebar:not([data-expanded='true']) nav .disabled-entry,
   .sidebar:not([data-expanded='true']) nav a {
     justify-content: center;
     padding: 10px;
@@ -239,6 +257,7 @@
     padding-bottom: max(16px, env(safe-area-inset-bottom));
   }
   .sidebar nav a,
+  .sidebar nav .disabled-entry,
   .settings-toggle,
   .sidebar .settings-popover nav a {
     min-height: 44px;

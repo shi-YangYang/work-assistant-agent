@@ -64,7 +64,7 @@ export function DeleteMember({
             try {
               const result = await deleteMember(member, undefined)
               if (result.cleanupPending)
-                notify('账号已删除，声纹文件正在清理；可在公司声纹中查看进度。')
+                notify('账号已删除，声纹文件正在清理；可在用户声纹中查看进度。')
               onDeleted()
             } catch (error) {
               setFailure(error as Error)

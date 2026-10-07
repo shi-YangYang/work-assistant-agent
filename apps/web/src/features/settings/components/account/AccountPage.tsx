@@ -80,16 +80,16 @@ export function DingTalkAccountPage({
     },
   }
   return (
-    <div className={`${layoutStyles['settings-page']} ${styles['account-page']}`}>
+    <div
+      className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']} ${styles['account-page']}`}
+    >
       <PageHeader
         title="账户"
         description={<Link to="/settings/support">问题反馈与处理结果</Link>}
       />
       <DingTalkResult />
       <ErrorNotice retry={account.refresh}>{error || account.error}</ErrorNotice>
-      <div
-        className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']}`}
-      >
+      <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
         <PanelSection
           bodyClassName={styles['settings-section-body']}
           title="账号信息"

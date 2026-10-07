@@ -90,12 +90,14 @@ export function SupportPage() {
     setError('')
   }
   return (
-    <div className={`${layoutStyles['settings-page']} ${styles['support-page']}`}>
+    <div
+      className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']} ${styles['support-page']}`}
+    >
       <PageHeader title="问题反馈" description="描述遇到的问题，由本公司管理员处理。" />
       <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
         <PanelSection title="提交反馈" defaultOpen>
           <form
-            className={`${styles['support-compose']} ${layoutStyles['form-width']}`}
+            className={`${styles['support-compose']}`}
             aria-label="提交反馈"
             onSubmit={(event) => {
               event.preventDefault()

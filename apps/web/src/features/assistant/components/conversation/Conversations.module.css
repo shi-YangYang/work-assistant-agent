@@ -21,7 +21,7 @@
   border-bottom: 0;
   flex-shrink: 0;
 }
-.conversation-heading h2 {
+.conversation-heading > h2 {
   max-width: calc(50% - 64px);
   font-size: 14px;
   color: var(--secondary);
@@ -78,7 +78,7 @@
   .conversation-heading > svg {
     display: none;
   }
-  .conversation-heading h2 {
+  .conversation-heading > h2 {
     grid-area: 1 / 1;
     margin-left: 44px;
     max-width: calc(50vw - 100px);

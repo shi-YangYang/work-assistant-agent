@@ -53,7 +53,7 @@ export const settingsPages = [
   },
   {
     path: '/settings/voiceprints',
-    title: '公司声纹',
+    title: '用户声纹',
     detail: '登记成员声音，供桌面会议识别发言者',
     icon: AudioLines,
     admin: true,

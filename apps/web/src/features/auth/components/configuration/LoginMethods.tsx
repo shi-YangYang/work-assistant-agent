@@ -14,7 +14,7 @@ export function LoginMethods() {
   const [notice, setNotice] = useState('')
   return (
     <div
-      className={`${layoutStyles['settings-page']} ${loginConfigurationStyles['login-methods']}`}
+      className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']} ${loginConfigurationStyles['login-methods']}`}
     >
       <PageHeader
         title="登录方式"

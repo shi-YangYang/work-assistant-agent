@@ -66,7 +66,7 @@ export function VoiceprintsPage() {
   return (
     <div className={layoutStyles['settings-page']}>
       <PageHeader
-        title="公司声纹"
+        title="用户声纹"
         description="登记成员的声音，让 Noria 桌面端识别发言者。"
         actions={
           <button

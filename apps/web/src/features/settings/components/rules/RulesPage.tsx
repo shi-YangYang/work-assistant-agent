@@ -40,12 +40,12 @@ export function RulesPage() {
     if (value) setDraft('rules', { ...value, [kind]: schedule })
   }
   return (
-    <div className={layoutStyles['settings-page']}>
+    <div className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']}`}>
       <PageHeader title="汇报规则" />
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && !canEdit && (
         <div
-          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']} ${styles['rule-summary']}`}
+          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${styles['rule-summary']}`}
         >
           <div className={`${layoutStyles['panel-intro']} ${utilitiesStyles['muted']}`}>
             公司时区：{timezoneLabel(value.timezone)}
@@ -100,7 +100,7 @@ export function RulesPage() {
         <form
           ref={form}
           noValidate
-          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']}`}
+          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}
           onSubmit={async (e) => {
             e.preventDefault()
             setAttempted((previous) => previous + 1)

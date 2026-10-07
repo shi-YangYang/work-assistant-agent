@@ -231,6 +231,11 @@
 .settings-page > p {
   margin: 8px 0 24px;
 }
+@media (min-width: 1024px) {
+  .settings-form-page > header[data-layout-context='page'] {
+    max-width: calc(50% - 56px);
+  }
+}
 .two-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
