@@ -128,6 +128,7 @@ export function useModelServiceController() {
             }
       const saved = await saveModelService(target, payload, target.revision ? 'PATCH' : 'POST')
       if (!alive.current || generation !== generationRef.current) return false
+      session.rememberSaved(saved)
       workspace.setDraft('modelServices', (previous: Record<string, ServiceDraft> = {}) => {
         const next = { ...previous }
         delete next[target.id]

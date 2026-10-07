@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import utilitiesStyles from '../../../styles/utilities.module.css'
@@ -78,23 +79,24 @@ export function ModelServices() {
 
   return (
     <div className={`${layoutStyles['settings-page']} ${modelServicesStyles['model-management']}`}>
-      <div
-        className={`${layoutStyles['page-heading']} ${modelServicesStyles['slot-page-heading']}`}
-      >
-        <div>
-          <h2>模型服务管理</h2>
-          <p>连接你信任的模型，为不同工作选择合适的能力。</p>
-        </div>
-        {tab === 'services' && (
-          <button
-            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
-            disabled={!!busy || !resource.data}
-            onClick={createService}
-          >
-            <Plus size={16} /> 添加服务
-          </button>
-        )}
-      </div>
+      <PageHeader
+        placement="below"
+        title="模型服务管理"
+        description="连接你信任的模型，为不同工作选择合适的能力。"
+        actions={
+          tab === 'services' &&
+          draft && (
+            <button
+              className={controlsStyles.primary}
+              disabled={!!busy || !resource.data}
+              onClick={createService}
+            >
+              <Plus size={16} />
+              添加服务
+            </button>
+          )
+        }
+      />
       <div
         className={`${layoutStyles['tabs']} ${modelServicesStyles['slot-tabs']}`}
         role="tablist"

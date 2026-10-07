@@ -1,4 +1,4 @@
-import layoutStyles from '../../../../styles/layout.module.css'
+import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
 import controlsStyles from '../../../../styles/controls.module.css'
 import searchInputStyles from '../../../../styles/patterns/SearchInput.module.css'
 import styles from './WorkFilters.module.css'
@@ -19,7 +19,7 @@ export function WorkFilters({
 }) {
   const [resetKey, resetSearch] = useState(0)
   return (
-    <div className={`${layoutStyles['filters']} ${styles['work-filters']}`} data-toolbar={compact}>
+    <ListToolbar className={`${styles['work-filters']} ${compact ? styles.compact : ''}`}>
       <div className={searchInputStyles['work-search']}>
         <Search size={17} aria-hidden="true" />
         <SearchInput
@@ -53,6 +53,6 @@ export function WorkFilters({
           清除筛选
         </button>
       )}
-    </div>
+    </ListToolbar>
   )
 }

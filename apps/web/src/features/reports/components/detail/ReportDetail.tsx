@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import recordDetailStyles from '../../../../styles/patterns/RecordDetail.module.css'
@@ -105,54 +106,63 @@ export function ReportDetail({
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {data && (
         <>
-          <div className={`${layoutStyles['page-heading']} ${recordDetailStyles['heading']}`}>
-            <div>
-              <span className={layoutStyles['eyebrow']}>
-                {data.kind === 'daily' ? '日报' : '周报'} · {timezoneLabel(data.timezone)}
-              </span>
-              {data.ownerName && <p className={styles['report-owner']}>{data.ownerName}</p>}
-              <h2>
+          <PageHeader
+            context={compact ? 'embedded' : 'detail'}
+            title={
+              <>
                 {data.period}
                 {data.kind === 'weekly' ? ` — ${data.periodEnd}` : ''}
-              </h2>
-              <p>
-                {data.publishedRevision
-                  ? `已提交第 ${data.historical ? data.revision : data.publishedRevision} 版`
-                  : '草稿'}
-              </p>
-            </div>
-            {(identity.member.role === 'admin' || (own && !data.publishedRevision)) && (
-              <Actions label="管理报告">
-                <button
-                  role="menuitem"
-                  className={controlsStyles['danger']}
-                  onClick={() => setDeleting(true)}
-                >
-                  删除报告
-                </button>
-              </Actions>
-            )}
-            {own && !editing && (
-              <div className={layoutStyles['inline']}>
-                <button onClick={() => setEditing(!editing)}>编辑草稿</button>
-                <button
-                  className={controlsStyles['primary']}
-                  disabled={editing || !!saved || data.revision === data.publishedRevision}
-                  onClick={() => {
-                    if (!reportHasContent(data.content)) {
-                      setFailure('请先填写报告内容')
-                      setEditing(true)
-                      return
-                    }
-                    setFailure('')
-                    setSubmit(true)
-                  }}
-                >
-                  提交报告
-                </button>
-              </div>
-            )}
-          </div>
+              </>
+            }
+            description={
+              <>
+                <span>
+                  {data.kind === 'daily' ? '日报' : '周报'} · {timezoneLabel(data.timezone)}
+                </span>
+                {data.ownerName && <p className={styles['report-owner']}>{data.ownerName}</p>}
+                <p>
+                  {data.publishedRevision
+                    ? `已提交第 ${data.historical ? data.revision : data.publishedRevision} 版`
+                    : '草稿'}
+                </p>
+              </>
+            }
+            actions={
+              <>
+                {(identity.member.role === 'admin' || (own && !data.publishedRevision)) && (
+                  <Actions label="管理报告">
+                    <button
+                      role="menuitem"
+                      className={controlsStyles['danger']}
+                      onClick={() => setDeleting(true)}
+                    >
+                      删除报告
+                    </button>
+                  </Actions>
+                )}
+                {own && !editing && (
+                  <div className={layoutStyles['inline']}>
+                    <button onClick={() => setEditing(!editing)}>编辑草稿</button>
+                    <button
+                      className={controlsStyles['primary']}
+                      disabled={editing || !!saved || data.revision === data.publishedRevision}
+                      onClick={() => {
+                        if (!reportHasContent(data.content)) {
+                          setFailure('请先填写报告内容')
+                          setEditing(true)
+                          return
+                        }
+                        setFailure('')
+                        setSubmit(true)
+                      }}
+                    >
+                      提交报告
+                    </button>
+                  </div>
+                )}
+              </>
+            }
+          />
           {deleting && (
             <DeleteRecord
               kind="reports"

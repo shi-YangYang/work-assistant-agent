@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import teamStyles from '../styles/team.module.css'
@@ -94,20 +95,21 @@ export function TeamWorkspace({
   return (
     <div className={layoutStyles['page']} data-scroll-container>
       {fromMembers && <DetailBackLink />}
-      <div className={layoutStyles['page-heading']}>
-        <div>
-          <h2>团队看板</h2>
-          <p>看见团队的每一步，让需要关注的事更清晰。</p>
-        </div>
-        <button
-          className={controlsStyles['icon-button']}
-          aria-label="刷新团队看板"
-          title="刷新"
-          onClick={list.refresh}
-        >
-          <RefreshCw size={18} />
-        </button>
-      </div>
+      <PageHeader
+        title="团队看板"
+        context={fromMembers ? 'detail' : 'page'}
+        description="看见团队的每一步，让需要关注的事更清晰。"
+        actions={
+          <button
+            className={controlsStyles['icon-button']}
+            aria-label="刷新团队看板"
+            title="刷新"
+            onClick={list.refresh}
+          >
+            <RefreshCw size={18} />
+          </button>
+        }
+      />
       <div
         className={teamStyles['team-counts']}
         data-view={view}

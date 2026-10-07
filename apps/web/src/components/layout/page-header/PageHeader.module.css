@@ -1,0 +1,109 @@
+.header {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin-bottom: 24px;
+  min-width: 0;
+}
+.heading {
+  min-width: 0;
+  flex: 1;
+}
+.title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.title h2 {
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+.meta {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.description {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.actions > button {
+  min-height: 36px;
+}
+.header[data-layout-context='embedded'] .title h2 {
+  font-size: 22px;
+}
+@media (min-width: 761px) and (max-width: 1023px) {
+  .header[data-layout-context='page'] .heading {
+    padding-left: 32px;
+    max-width: calc(50% - 52px);
+  }
+}
+@media (max-width: 760px) {
+  .header {
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .title h2 {
+    font-size: 21px;
+  }
+  .header[data-layout-context='page'] {
+    min-height: 88px;
+  }
+  .header[data-layout-context='page'][data-placement='beside'] .title {
+    padding-left: 44px;
+    padding-right: calc(50% + 20px);
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .header[data-layout-context='page'][data-placement='beside'] .title h2 {
+    font-size: 20px;
+    white-space: nowrap;
+  }
+  .header[data-layout-context='page'][data-placement='beside'] .meta {
+    position: absolute;
+    left: 44px;
+    top: 36px;
+  }
+  .header[data-layout-context='page'][data-placement='beside'] .description {
+    margin-top: 64px;
+  }
+  .header[data-layout-context='page'][data-placement='below'] {
+    padding-top: 88px;
+  }
+  .header[data-layout-context='page'] > .actions {
+    position: absolute;
+    right: 0;
+    top: 0;
+    max-width: calc(50% - 44px);
+  }
+  .heading {
+    flex-basis: 100%;
+  }
+  .actions {
+    max-width: 100%;
+    gap: 8px;
+  }
+  .actions > button {
+    min-height: 44px;
+  }
+  .description {
+    margin-top: 4px;
+  }
+  .header[data-layout-context='embedded'] .title h2 {
+    font-size: 21px;
+  }
+}

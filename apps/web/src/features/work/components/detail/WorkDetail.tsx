@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
@@ -21,7 +22,6 @@ import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { detailReturn } from '@web/utils/navigation'
 import { useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
 export function WorkDetail({
@@ -57,62 +57,67 @@ export function WorkDetail({
       {data && (
         <>
           {data.historical && (
-            <div className={styles.version}>
-              <Link to={back.path} state={back.state} replace>
-                <ArrowLeft size={15} />
-                {back.path === latestPath ? '返回最新版本' : '返回上一步'}
-              </Link>
-              <span>历史版本 · 第 {data.revision} 版</span>
-              {back.path !== latestPath && (
-                <Link to={latestPath} replace>
-                  查看最新版本
-                </Link>
-              )}
-            </div>
+            <>
+              <DetailBackLink
+                destination={back}
+                label={back.path === latestPath ? '返回最新版本' : '返回上一步'}
+                replace
+                embedded={compact}
+              />
+              <div className={styles.version}>
+                <span>历史版本 · 第 {data.revision} 版</span>
+                {back.path !== latestPath && (
+                  <Link to={latestPath} replace>
+                    查看最新版本
+                  </Link>
+                )}
+              </div>
+            </>
           )}
-          <div
-            className={`${layoutStyles['page-heading']} ${recordDetailStyles['heading']} ${styles.header}`}
-          >
-            <div className={styles.title}>
-              <h2>{data.title}</h2>
+          <PageHeader
+            title={data.title}
+            context={compact ? 'embedded' : 'detail'}
+            description={
               <div className={styles.metadata}>
                 <Status value={data.status} />
                 {data.dueDate && <span>截止 {data.dueDate}</span>}
               </div>
-            </div>
-            {(own || !!data.materialIds?.length) && (
-              <div className={styles.actions}>
-                {own && (
-                  <button
-                    onClick={() => navigate(`/assistant?workId=${encodeURIComponent(data.id)}`)}
-                  >
-                    让助手协助
-                  </button>
-                )}
-                <Actions label="管理工作">
-                  {own && (
-                    <button role="menuitem" onClick={() => setEditing(true)}>
-                      编辑工作属性
-                    </button>
-                  )}
-                  {!!data.materialIds?.length && (
-                    <button role="menuitem" onClick={() => setMaterialsOpen(true)}>
-                      全部附件 · {data.materialIds.length}
-                    </button>
-                  )}
+            }
+            actions={
+              (own || !!data.materialIds?.length) && (
+                <div className={styles.actions}>
                   {own && (
                     <button
-                      role="menuitem"
-                      className={controlsStyles['danger']}
-                      onClick={() => setDeleting(true)}
+                      onClick={() => navigate(`/assistant?workId=${encodeURIComponent(data.id)}`)}
                     >
-                      删除工作
+                      让助手协助
                     </button>
                   )}
-                </Actions>
-              </div>
-            )}
-          </div>
+                  <Actions label="管理工作">
+                    {own && (
+                      <button role="menuitem" onClick={() => setEditing(true)}>
+                        编辑工作属性
+                      </button>
+                    )}
+                    {!!data.materialIds?.length && (
+                      <button role="menuitem" onClick={() => setMaterialsOpen(true)}>
+                        全部附件 · {data.materialIds.length}
+                      </button>
+                    )}
+                    {own && (
+                      <button
+                        role="menuitem"
+                        className={controlsStyles['danger']}
+                        onClick={() => setDeleting(true)}
+                      >
+                        删除工作
+                      </button>
+                    )}
+                  </Actions>
+                </div>
+              )
+            }
+          />
           <WorkContent
             key={`content:${identity.company.id}:${identity.member.id}:${data.id}:${!!data.historical}`}
             work={data}

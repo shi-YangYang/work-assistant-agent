@@ -71,7 +71,9 @@ export function LoginConfiguration({
   return (
     <>
       <ErrorNotice>{error}</ErrorNotice>
-      <div className={layoutStyles['sectioned-panel']}>
+      <div
+        className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']}`}
+      >
         <PanelSection
           bodyClassName={loginConfigurationStyles['settings-section-body']}
           title="钉钉企业内部应用"

@@ -1,7 +1,7 @@
 .record-list {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 0;
+  border-radius: 0;
   overflow: visible;
   margin-top: 0;
 }
@@ -147,24 +147,10 @@
     flex-wrap: wrap;
   }
 }
-.records-page > .slot-page-heading {
-  align-items: center;
-  margin-bottom: 28px;
-}
-.records-page > .slot-page-heading h2 {
-  font-size: 26px;
-}
-.records-page > .slot-page-heading > .slot-card-actions {
-  margin: 0;
-}
-.records-page > .slot-page-heading > .slot-card-actions button {
-  font-size: 14px;
-  padding: 7px 12px;
-}
 .records-surface {
   min-width: 0;
-  border: 1px solid var(--control);
-  border-radius: 16px;
+  border: 0;
+  border-radius: 0;
   background: var(--surface);
 }
 .records-navigation,
@@ -174,11 +160,11 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--line);
 }
 .records-navigation {
-  padding: 14px 18px;
+  padding: 0 0 12px;
   border-bottom: 0;
 }
 .records-navigation .slot-tabs {
@@ -187,7 +173,7 @@
   gap: 4px;
 }
 .records-navigation .slot-tabs button {
-  min-height: 34px;
+  min-height: 36px;
   padding: 7px 14px;
 }
 .report-kind-switch {
@@ -199,7 +185,7 @@
   border-radius: 10px;
 }
 .report-kind-switch button {
-  min-height: 28px;
+  min-height: 36px;
   padding: 3px 14px;
   border: 0;
   border-radius: 7px;
@@ -254,7 +240,7 @@
   border-radius: 0 0 12px 12px;
 }
 .records-surface .record-row {
-  padding: 16px 20px;
+  padding: 16px 0;
 }
 .records-surface .work-row {
   align-items: center;
@@ -322,7 +308,7 @@
   .records-navigation,
   .records-toolbar,
   .records-surface .record-row {
-    padding-inline: 14px;
+    padding-inline: 0;
   }
   .records-surface .work-row {
     gap: 8px 12px;
@@ -372,7 +358,7 @@
     gap: 8px;
   }
   .records-navigation .slot-tabs {
-    gap: 14px;
+    gap: 4px;
   }
   .records-navigation .slot-tabs button {
     font-size: 13px;
@@ -396,9 +382,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 100px 110px 36px;
   gap: 24px;
-  padding: 10px 20px 10px 60px;
+  padding: 10px 0 10px 30px;
   border-bottom: 1px solid var(--line);
-  background: var(--subtle);
+  background: transparent;
   color: var(--muted);
   font-size: 12px;
 }
@@ -444,4 +430,21 @@
 .records-results:last-child > .record-list,
 .records-results:last-child > .record-list > .record-row:last-child {
   border-radius: 0 0 15px 15px;
+}
+
+.record-main h3 {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+  .records-navigation {
+    gap: 8px;
+  }
+  .records-navigation .slot-tabs button,
+  .report-kind-switch button {
+    min-height: 44px;
+  }
+  .records-toolbar {
+    gap: 8px;
+    padding-block: 8px 12px;
+  }
 }

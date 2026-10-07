@@ -1,3 +1,7 @@
+import { SearchInput } from '@web/components/forms/SearchInput'
+import searchStyles from '@web/styles/patterns/SearchInput.module.css'
+import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import utilitiesStyles from '../../../styles/utilities.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
@@ -10,7 +14,15 @@ import { VoiceprintCleanup } from '@web/features/voiceprints/components/Voicepri
 import { EnrollmentForm } from '@web/features/voiceprints/components/EnrollmentForm'
 import { useResource } from '@web/hooks/useResource'
 import { dateLabel } from '@web/utils/date'
-import { AudioLines, CheckCircle2, CircleUserRound, RefreshCw, Trash2, Upload } from 'lucide-react'
+import {
+  Search,
+  AudioLines,
+  CheckCircle2,
+  CircleUserRound,
+  RefreshCw,
+  Trash2,
+  Upload,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 export function VoiceprintsPage() {
@@ -53,31 +65,39 @@ export function VoiceprintsPage() {
   }
   return (
     <div className={layoutStyles['settings-page']}>
-      <header className={voiceprintsStyles['voiceprint-heading']}>
-        <div>
-          <h2>公司声纹</h2>
-          <p className={utilitiesStyles['muted']}>登记成员的声音，让 Noria 桌面端识别发言者。</p>
-        </div>
-        <button onClick={resource.refresh} aria-label="刷新声纹">
-          <RefreshCw size={16} />
-          刷新
-        </button>
-      </header>
+      <PageHeader
+        title="公司声纹"
+        description="登记成员的声音，让 Noria 桌面端识别发言者。"
+        actions={
+          <button
+            className={controlsStyles['icon-button']}
+            onClick={resource.refresh}
+            aria-label="刷新声纹"
+          >
+            <RefreshCw size={16} />
+          </button>
+        }
+      />
       <ErrorNotice retry={resource.refresh}>{resource.error || error}</ErrorNotice>
-      <section className={`${layoutStyles['panel']} ${voiceprintsStyles['voiceprint-library']}`}>
-        <div className={voiceprintsStyles['voiceprint-toolbar']}>
-          <span>
-            <AudioLines size={18} /> {resource.data?.items.filter((v) => v.ready).length ?? 0}{' '}
-            位成员已登记
-          </span>
-          <input
-            type="search"
-            aria-label="搜索声纹成员"
-            placeholder="搜索成员"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      <section className={voiceprintsStyles['voiceprint-library']}>
+        <ListToolbar
+          actions={
+            <span className={voiceprintsStyles['voiceprint-count']}>
+              <AudioLines size={18} /> {resource.data?.items.filter((v) => v.ready).length ?? 0}{' '}
+              位成员已登记
+            </span>
+          }
+        >
+          <div className={searchStyles['work-search']}>
+            <Search size={17} aria-hidden="true" />
+            <SearchInput
+              aria-label="搜索声纹成员"
+              placeholder="搜索姓名或账号"
+              value={search}
+              onSearch={setSearch}
+            />
+          </div>
+        </ListToolbar>
         <div>
           {items.map((item) => {
             const processing = ['queued', 'processing'].includes(item.state)

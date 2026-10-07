@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
@@ -40,10 +41,12 @@ export function RulesPage() {
   }
   return (
     <div className={layoutStyles['settings-page']}>
-      <h2>汇报规则</h2>
+      <PageHeader title="汇报规则" />
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && !canEdit && (
-        <div className={`${layoutStyles['sectioned-panel']} ${styles['rule-summary']}`}>
+        <div
+          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']} ${styles['rule-summary']}`}
+        >
           <div className={`${layoutStyles['panel-intro']} ${utilitiesStyles['muted']}`}>
             公司时区：{timezoneLabel(value.timezone)}
           </div>
@@ -97,7 +100,7 @@ export function RulesPage() {
         <form
           ref={form}
           noValidate
-          className={layoutStyles['sectioned-panel']}
+          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']}`}
           onSubmit={async (e) => {
             e.preventDefault()
             setAttempted((previous) => previous + 1)

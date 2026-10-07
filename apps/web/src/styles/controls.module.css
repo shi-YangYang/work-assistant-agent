@@ -1,3 +1,14 @@
+.primary,
+.secondary,
+.danger,
+.text-button {
+  min-height: 36px;
+}
+.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--control);
+}
 button.primary {
   background: var(--accent);
   color: var(--accent-ink);
@@ -46,5 +57,13 @@ button.danger {
   .text-button {
     min-height: 44px;
     min-width: 44px;
+  }
+}
+
+@media (max-width: 760px) {
+  .primary,
+  .secondary,
+  .danger {
+    min-height: 44px;
   }
 }

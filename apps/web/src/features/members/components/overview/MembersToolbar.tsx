@@ -1,3 +1,5 @@
+import searchStyles from '@web/styles/patterns/SearchInput.module.css'
+import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
 import { Search, X } from 'lucide-react'
 import styles from './MembersPage.module.css'
 import controls from '@web/styles/controls.module.css'
@@ -14,8 +16,8 @@ export function MembersToolbar({
   matched?: number
 }) {
   return (
-    <div className={styles.toolbar}>
-      <div className={styles.search}>
+    <ListToolbar>
+      <div className={searchStyles['work-search']}>
         <Search size={16} aria-hidden="true" />
         <input
           aria-label="搜索成员"
@@ -38,6 +40,6 @@ export function MembersToolbar({
           找到 {matched} 人，共 {total} 人
         </span>
       )}
-    </div>
+    </ListToolbar>
   )
 }

@@ -1,4 +1,5 @@
 import { modelServicesPath } from '@web/features/model-services/api/requests'
+import type { CompanyService } from '@paa/api-contracts'
 import type { Listing } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import {
@@ -42,8 +43,32 @@ export function useServiceDraftSession() {
   const workspace = useWorkspace()
   const resource = useResource<Listing>(modelServicesPath())
   const selectionKey = `paa:model-service:${identityScope(workspace.identity)}`
+  const [savedListing, setSavedListing] = useState<{
+    scope: string
+    source: Listing | null
+    services: CompanyService[]
+  } | null>(null)
   const drafts = (workspace.drafts.modelServices as Record<string, ServiceDraft>) || {}
-  const services = resource.data?.services ?? []
+  // Retain confirmed writes until the next list response replaces the old snapshot.
+  const services =
+    savedListing?.scope === selectionKey && savedListing.source === resource.data
+      ? savedListing.services
+      : (resource.data?.services ?? [])
+  const rememberSaved = (saved: CompanyService) => {
+    setSavedListing((previous) => {
+      const current =
+        previous?.scope === selectionKey && previous.source === resource.data
+          ? previous.services
+          : (resource.data?.services ?? [])
+      return {
+        scope: selectionKey,
+        source: resource.data,
+        services: current.some((service) => service.id === saved.id)
+          ? current.map((service) => (service.id === saved.id ? saved : service))
+          : [...current, saved],
+      }
+    })
+  }
   const allServices = [
     ...services,
     ...Object.values(drafts).filter((d) => !d.revision && !services.some((s) => s.id === d.id)),
@@ -163,5 +188,6 @@ export function useServiceDraftSession() {
     update,
     changeAddress,
     capture,
+    rememberSaved,
   }
 }

@@ -1,3 +1,4 @@
+import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
 import searchInputStyles from '../../../styles/patterns/SearchInput.module.css'
 import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
@@ -45,7 +46,7 @@ export function TeamFilters({
           ['done', '已完成'],
         ]
   return (
-    <div className={teamStyles['team-toolbar']}>
+    <ListToolbar className={teamStyles['team-toolbar']}>
       <div className={`${searchInputStyles['work-search']} ${teamStyles['slot-work-search']}`}>
         <Search size={17} aria-hidden="true" />
         <SearchInput
@@ -113,6 +114,6 @@ export function TeamFilters({
           ))}
         </select>
       </div>
-    </div>
+    </ListToolbar>
   )
 }

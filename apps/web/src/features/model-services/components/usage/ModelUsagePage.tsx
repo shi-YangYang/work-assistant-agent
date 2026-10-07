@@ -1,38 +1,18 @@
+import { purposeNames, stateNames, number, duration } from './usage-display'
+import { UsageTable } from './UsageTable'
+import controlsStyles from '@web/styles/controls.module.css'
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import styles from './ModelUsagePage.module.css'
 import type { ModelUsage, UsageRecord } from '@paa/api-contracts'
-import { Empty } from '@web/components/feedback/Empty'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Pagination } from '@web/components/actions/Pagination'
 import { PeriodFilter } from '@web/components/forms/PeriodFilter'
 import { modelUsagePath } from '@web/features/model-services/api/requests'
 import { useCursorPage } from '@web/hooks/useCursorPage'
-import { dateLabel } from '@web/utils/date'
 import { RefreshCw } from 'lucide-react'
 import { useSearchParams } from 'react-router'
-
-const purposeNames: Record<string, string> = {
-  assistant: '工作助手',
-  report: '报告生成',
-  asr: '语音转写',
-  admin_test: '配置测试',
-}
-
-const stateNames: Record<string, string> = {
-  reserved: '尚未发出',
-  running: '进行中',
-  succeeded: '成功',
-  failed: '失败',
-  unknown: '结果未知',
-  legacy: '历史未知',
-  not_sent: '未发出',
-}
-
-const number = (value: number | null) => (value === null ? '未知' : value.toLocaleString('zh-CN'))
-
-const duration = (value: number | null) =>
-  value === null ? '未知' : `${(value / 1000).toFixed(2)} 秒`
 
 export function ModelUsagePage() {
   const [params] = useSearchParams()
@@ -44,12 +24,18 @@ export function ModelUsagePage() {
   const data = list.data
   return (
     <div className={layoutStyles['settings-page']}>
-      <div className={layoutStyles['page-heading']}>
-        <h2>模型用量</h2>
-        <button aria-label="刷新模型用量" onClick={list.refresh}>
-          <RefreshCw size={16} />
-        </button>
-      </div>
+      <PageHeader
+        title="模型用量"
+        actions={
+          <button
+            className={controlsStyles['icon-button']}
+            aria-label="刷新模型用量"
+            onClick={list.refresh}
+          >
+            <RefreshCw size={16} />
+          </button>
+        }
+      />
       <div className={`${layoutStyles['filters']} ${styles['usage-filters']}`}>
         <PeriodFilter params={params} range={data?.range} change={list.filter} />
         <select
@@ -144,49 +130,7 @@ export function ModelUsagePage() {
               次；历史未知记录不计入请求总数。
             </span>
           </div>
-          {data.items.length ? (
-            <div className={styles['usage-table-wrap']}>
-              <table className={styles['usage-table']}>
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>服务 / 模型</th>
-                    <th>用途</th>
-                    <th>结果</th>
-                    <th>耗时</th>
-                    <th>输入 / 输出 Token</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((row) => (
-                    <tr key={row.id}>
-                      <td>{dateLabel(row.createdAt)}</td>
-                      <td>
-                        <span>
-                          {row.service ||
-                            (row.purpose === 'admin_test' ? '未保存配置' : '历史未知')}
-                        </span>
-                        <small>{row.model || '历史未知'}</small>
-                      </td>
-                      <td>{purposeNames[row.purpose] || '历史未知'}</td>
-                      <td>
-                        <span className={styles['usage-state']} data-status={row.state}>
-                          {stateNames[row.state] || '未知'}
-                        </span>
-                        {row.error && <small>{row.error}</small>}
-                      </td>
-                      <td>{duration(row.elapsedMs)}</td>
-                      <td>
-                        {number(row.inputTokens)} / {number(row.outputTokens)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <Empty title="本期没有符合条件的调用" />
-          )}
+          <UsageTable items={data.items} />
           <Pagination
             page={list.page}
             hasNext={!!data.nextCursor}

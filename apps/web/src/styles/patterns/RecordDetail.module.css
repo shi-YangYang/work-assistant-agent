@@ -37,3 +37,12 @@
 .detail[data-compact='true'] > section {
   margin-top: 16px;
 }
+
+.detail .panel {
+  border: 0;
+  border-radius: 0;
+  padding-inline: 0;
+}
+.detail[data-compact='true'] {
+  overflow: visible;
+}

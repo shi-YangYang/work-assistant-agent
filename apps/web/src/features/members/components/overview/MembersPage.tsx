@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layout from '@web/styles/layout.module.css'
 import controls from '@web/styles/controls.module.css'
 import styles from './MembersPage.module.css'
@@ -67,26 +68,30 @@ export function MembersPage() {
   }
   return (
     <div className={`${layout.page} ${styles.page}`} data-scroll-container>
-      <div className={`${layout['page-heading']} ${styles.heading}`}>
-        <div className={styles.title}>
-          <h2>成员管理</h2>
-          {data && <span className={styles.total}>{data.items.length} 人</span>}
-        </div>
-        <div className={styles.actions}>
-          <button
-            className={controls['icon-button']}
-            aria-label="刷新成员"
-            title="刷新成员"
-            onClick={refresh}
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button className={controls.primary} onClick={() => setAction({ kind: 'create' })}>
-            <UserPlus size={16} />
-            添加成员
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="成员管理"
+        meta={data && `${data.items.length} 人`}
+        actions={
+          <>
+            <button
+              className={controls['icon-button']}
+              aria-label="刷新成员"
+              title="刷新成员"
+              onClick={refresh}
+            >
+              <RefreshCw size={16} />
+            </button>
+            <button
+              className={controls.primary}
+              aria-label="添加成员"
+              onClick={() => setAction({ kind: 'create' })}
+            >
+              <UserPlus size={16} />
+              <span className={styles['add-label']}>添加成员</span>
+            </button>
+          </>
+        }
+      />
       <MembersToolbar
         query={query}
         change={search}

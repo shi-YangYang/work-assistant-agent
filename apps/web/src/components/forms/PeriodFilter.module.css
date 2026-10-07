@@ -36,6 +36,7 @@
   min-width: 0;
 }
 .period-filter > select {
+  min-height: 36px;
   min-width: 110px;
   width: auto;
 }
@@ -50,5 +51,11 @@
   .period-filter .team-date-range {
     width: 100%;
     min-width: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .period-filter > select {
+    min-height: 44px;
   }
 }

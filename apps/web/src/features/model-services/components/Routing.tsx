@@ -36,7 +36,7 @@ export function Routing({
   }
   return (
     <section
-      className={`${layoutStyles['sectioned-panel']} ${modelServicesStyles['model-routing']}`}
+      className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['form-width']} ${modelServicesStyles['model-routing']}`}
     >
       {(['assistant', 'report', 'asr'] as const).map((purpose) => {
         const choice = value[purpose]

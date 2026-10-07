@@ -1,0 +1,43 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.filters,
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.filters {
+  flex: 1;
+}
+.actions {
+  margin-left: auto;
+}
+.filters > :is(input, select, button),
+.actions > button {
+  min-height: 36px;
+}
+.filters > select {
+  width: auto;
+  max-width: 220px;
+}
+@media (max-width: 760px) {
+  .toolbar {
+    gap: 8px;
+  }
+  .filters {
+    flex-basis: 100%;
+  }
+  .filters > :is(input, select, button),
+  .actions > button {
+    min-height: 44px;
+  }
+}

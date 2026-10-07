@@ -5,23 +5,32 @@
   gap: 6px;
   font-size: 13px;
   margin: 0 0 12px;
-  padding-left: 0;
+  padding: 0;
+  min-height: 36px;
   color: var(--muted);
   text-decoration: none;
+  max-width: 100%;
 }
 .back:hover {
   color: var(--text);
 }
-@media (max-width: 1023px) {
+@media (min-width: 761px) {
+  .back:has(+ [data-layout-context='detail']) {
+    margin-bottom: 44px;
+  }
+}
+@media (min-width: 761px) and (max-width: 1023px) {
   .back {
-    margin-left: 44px;
-    max-width: calc(50% - 76px);
-    min-height: 36px;
+    margin-left: 32px;
   }
 }
 @media (max-width: 760px) {
   .back {
-    min-height: 52px;
-    margin-bottom: 12px;
+    margin-top: 88px;
+    min-height: 44px;
   }
+}
+.embedded {
+  margin-top: 0;
+  margin-left: 0;
 }

@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import recordLayoutStyles from '../../../../styles/patterns/RecordLayout.module.css'
@@ -27,33 +28,29 @@ export function WorkPage() {
       className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']} ${styles.page}`}
       data-scroll-container
     >
-      <div
-        className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']} ${styles.heading}`}
-      >
-        <div>
-          <h2>我的工作</h2>
-        </div>
-        <div
-          className={`${layoutStyles['card-actions']} ${recordLayoutStyles['slot-card-actions']}`}
-        >
-          <button
-            className={controlsStyles['icon-button']}
-            aria-label="刷新工作"
-            title="刷新工作"
-            onClick={list.refresh}
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button
-            className={controlsStyles['primary']}
-            aria-label="新建工作"
-            onClick={() => setCreating(true)}
-          >
-            <Plus size={16} />
-            <span className={styles['create-label']}>新建工作</span>
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="我的工作"
+        actions={
+          <>
+            <button
+              className={controlsStyles['icon-button']}
+              aria-label="刷新工作"
+              title="刷新工作"
+              onClick={list.refresh}
+            >
+              <RefreshCw size={16} />
+            </button>
+            <button
+              className={controlsStyles.primary}
+              aria-label="新建工作"
+              onClick={() => setCreating(true)}
+            >
+              <Plus size={16} />
+              <span className={styles['create-label']}>新建工作</span>
+            </button>
+          </>
+        }
+      />
       {creating && (
         <CreateWork
           onClose={() => setCreating(false)}
