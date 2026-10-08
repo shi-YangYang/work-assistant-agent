@@ -579,6 +579,19 @@ export interface ModelCheck {
   requestId: string
 }
 
+export interface ReplyEvent {
+  type: 'delta' | 'sync' | 'withdrawn'
+  jobId: string
+  attempt: number
+  fence: number
+  generation: number
+  seq: number
+  callId?: string
+  state?: string
+  text?: string
+  delta?: string
+}
+
 export interface ReplyStream {
   version: 1
   generation: number

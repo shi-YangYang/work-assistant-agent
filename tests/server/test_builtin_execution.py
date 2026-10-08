@@ -331,12 +331,14 @@ async def test_harness_exposes_all_execution_tools_only_when_sandbox_is_configur
     settings = replace(settings, sandbox_url='http://sandbox.invalid:8010' if enabled else '',
                        sandbox_token='isolated-test-not-a-real-credential' if enabled else '')
     sent = await send(clients['employee'])
-    model = await run_target(settings, sessions, users, sent)
+    model = await run_target(settings, sessions, users, sent, scenario='execution_tools')
+    assert model.seen_tools[0] == 'load_tools'
     visible = set(model.seen_tools)
     assert EXECUTION_NAMES <= visible if enabled else not EXECUTION_NAMES & visible
     assert 'read_execution' in visible
     result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-    assert result['job']['state'] == 'succeeded', result
+    assert result['job']['taskOutcome']['state'] == 'completed', result
+    assert result['reply'] == '可用能力已加载。' and not result['actions']
 
 
 async def test_disabled_sandbox_rejects_all_execution_calls_at_boundary(setup):

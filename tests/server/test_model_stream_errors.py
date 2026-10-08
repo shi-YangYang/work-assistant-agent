@@ -97,7 +97,7 @@ async def test_web_search_then_review_rejection_reaches_job_nodes_and_usage(setu
     routing = await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))
     assert routing.status_code == 200, routing.text
     calls, searches = [], []
-    async def search(query):
+    async def search(query, *, domains=None):
         searches.append(query)
         return {'query': query, 'items': [{'title': '公开信息', 'url': 'https://example.org/news', 'snippet': '公开新闻摘要'}]}
     monkeypatch.setattr('app.integrations.web_research.web_search', search)

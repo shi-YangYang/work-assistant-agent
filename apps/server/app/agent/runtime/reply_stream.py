@@ -4,27 +4,11 @@ from app.integrations.models.transport import ProviderError
 
 
 def allows_reply_stream(messages, job_id, payload):
-    """Stream pure prose wrapping, but keep corrective model calls private."""
-    from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-    private_repairs = {f'delivery-references:{job_id}', f'completion-repair:{job_id}'}
-    latest = next((index for index in range(len(messages) - 1, -1, -1)
-                   if isinstance(messages[index], HumanMessage)), None)
-    if latest is None:
-        return True
-    if messages[latest].id in private_repairs:
-        return False
-    if messages[latest].id != f'delivery-repair:{job_id}':
-        return True
-    # The same marker also repairs invalid terminal references/arguments. Only
-    # the first, forced wrapping of ordinary prose is eligible for preview.
-    original = next((message for message in reversed(messages[:latest]) if isinstance(message, AIMessage)), None)
-    return bool(original and original.text.strip() and not original.tool_calls and not original.invalid_tool_calls
-                and not any(isinstance(message, HumanMessage) and message.id in private_repairs
-                            or isinstance(message, ToolMessage) and message.additional_kwargs.get('completion_reference_error')
-                            for message in messages)
-                and not any(isinstance(message, (AIMessage, ToolMessage)) for message in messages[latest + 1:])
-                and [tool.get('function', {}).get('name') for tool in payload.get('tools', [])] == ['finish_task']
-                and payload.get('tool_choice') == {'type': 'function', 'function': {'name': 'finish_task'}})
+    """Corrective responses remain private until final validation."""
+    from langchain_core.messages import HumanMessage
+    private_repairs = {f'delivery-repair:{job_id}', f'delivery-references:{job_id}', f'completion-repair:{job_id}'}
+    latest = next((message for message in reversed(messages) if isinstance(message, HumanMessage)), None)
+    return latest is None or latest.id not in private_repairs
 
 
 class JsonStringPrefix:
@@ -173,19 +157,36 @@ class JsonStringPrefix:
 
 
 class ReplyCandidate:
-    """Only a unique finish_task exposes answer; every full call remains guarded."""
+    """Preview marked final prose or a legacy completion; tool batches stay private."""
     def __init__(self, publisher):
         self.publisher = publisher
         self.calls = {}
         self.parser = None
         self.invalid = False
+        self.prose = ''
+        self.prose_visible = False
+        self.mixed_prose = False
 
     async def feed(self, delta):
         try:
+            self.prose += delta.text
+            if delta.tools and self.prose_visible:
+                # A premature final-answer marker cannot make tool preamble a
+                # final reply. Retire its preview, but still validate/execute tools.
+                self.mixed_prose = True
+                await self.publisher.withdraw()
+                self.prose_visible = False
             for fragment in delta.tools:
                 call = self.calls.setdefault(fragment.index, {'name': '', 'arguments': ''})
                 call['name'] += fragment.name
                 call['arguments'] += fragment.arguments
+            if not self.calls:
+                from app.agent.completion.prose import parse_header
+                text, _, marked = parse_header(self.prose)
+                if marked and text:
+                    self.prose_visible = True
+                    await self.publisher.write(text)
+                return
             if len(self.calls) != 1:
                 if self.parser or any(c['name'] == 'finish_task' for c in self.calls.values()):
                     raise ValueError('Mixed completion')
@@ -206,7 +207,25 @@ class ReplyCandidate:
             await self.publisher.withdraw()
             raise ProviderError('invalid_response', '模型未返回完整有效的收尾参数') from None
 
+    @property
+    def text(self):
+        if self.parser:
+            return self.parser.text
+        if self.prose_visible and not self.calls:
+            from app.agent.completion.prose import parse_header
+            return parse_header(self.prose)[0]
+        return None
+
     async def finish(self):
+        if not self.calls:
+            from app.agent.completion.prose import parse_header
+            try:
+                text, _, _ = parse_header(self.prose, complete=True)
+            except ValueError:
+                await self.publisher.withdraw()
+                raise ProviderError('invalid_response', '模型未返回完整有效的正文标记') from None
+            if text:
+                await self.publisher.write(text, state='finalizing', force=True)
         if self.parser:
             try:
                 self.parser.finish()

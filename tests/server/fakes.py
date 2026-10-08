@@ -39,7 +39,7 @@ class ControlledModel(ReviewedFixtureModel):
     summaries: list = Field(default_factory=list, exclude=True)
 
     def bind_tools(self, tools, **kwargs):
-        self.seen_tools.extend(t.name if hasattr(t, 'name') else t.get('name') for t in tools)
+        self.seen_tools.extend(t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name')) for t in tools)
         return super().bind_tools(tools, **kwargs)
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -62,7 +62,18 @@ class ControlledModel(ReviewedFixtureModel):
             reply = AIMessage(content=json.dumps({'completed': '已完成方案初稿', 'ongoing': '项目继续推进', 'blockers': '等待报价', 'next': '核对报价'}, ensure_ascii=False))
         elif self.scenario == 'clarify':
             reply = AIMessage(content='这是哪个工作事项的进展？请补充名称。')
+        elif self.scenario == 'execution_tools':
+            names = {tool['function']['name'] for tool in kwargs.get('tools', [])}
+            if names == {'load_tools'}:
+                groups = kwargs['tools'][0]['function']['parameters']['properties']['groups']['items']['enum']
+                reply = call('load_tools', {'groups': ['files' if 'files' in groups else 'documents']})
+            else:
+                reply = AIMessage(content='可用能力已加载。')
         elif isinstance(last, HumanMessage):
+            assert {tool['function']['name'] for tool in kwargs.get('tools', [])} == {'load_tools'}
+            reply = call('load_tools', {'groups': ['work']})
+        elif isinstance(last, ToolMessage) and last.name == 'load_tools':
+            assert 'find_work_items' in {tool['function']['name'] for tool in kwargs.get('tools', [])}
             reply = call('find_work_items', {'query': ''})
         elif isinstance(last, ToolMessage) and last.name == 'find_work_items':
             works = json.loads(last.content)['items']

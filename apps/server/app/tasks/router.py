@@ -44,7 +44,7 @@ async def job_events(identifier: str, request: Request, settings=SETTINGS, sessi
         problem(403, '请求来源不被允许')
     token_hash = hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest()
     await snapshot(sessions, token_hash, identifier)
-    return StreamingResponse(events(sessions, token_hash, identifier), media_type='text/event-stream', headers={'Cache-Control':'no-store, no-transform', 'X-Accel-Buffering':'no'})
+    return StreamingResponse(events(sessions, token_hash, identifier, settings=settings, version=2 if request.query_params.get('version') == '2' else 1), media_type='text/event-stream', headers={'Cache-Control':'no-store, no-transform', 'X-Accel-Buffering':'no'})
 
 
 @router.post('/api/v1/jobs/{identifier}/retry')
@@ -100,8 +100,21 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB, settings=SET
 
 
 @router.post('/api/v1/jobs/{identifier}/cancel')
-async def cancel(identifier: str, body: CancelJob, actor=AUTH, db=DB):
-    item = await cancel_job(db, actor, identifier, body)
+async def cancel(identifier: str, body: CancelJob, actor=AUTH, db=DB, settings=SETTINGS):
+    from app.tasks.streaming.redis_store import store_for, StreamUnavailable
+    from app.tasks.streaming.protocol import Identity
+    identity = Identity(actor.company_id, actor.id, identifier, body.expectedAttempt, body.expectedFence)
+    store = store_for(settings)
+    try:
+        temporary = await store.snapshot(identity)
+    except StreamUnavailable:
+        temporary = None
+    item = await cancel_job(db, actor, identifier, body, temporary=temporary)
+    await db.commit()
+    try:
+        await store.seal(identity)
+    except StreamUnavailable:
+        pass
     message = await active_message(db, item.target_id, actor)
     from app.tasks.feedback.reply_stream import dto as reply_dto
     # This response owns the new fence, so carry its authorized sealed prefix

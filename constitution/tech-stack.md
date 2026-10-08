@@ -11,7 +11,7 @@
 | 桌面核心 | Python、sounddevice、SQLite、PCM16 WAV；JSON Lines／stdio 通信 |
 | 本地转写 | faster-whisper／CTranslate2；Apple Silicon 使用 MLX Whisper |
 | 说话人与声纹 | pyannote Community-1、WeSpeaker、PyTorch；固定权重及预处理版本 |
-| 公司服务端 | FastAPI、Uvicorn、SQLAlchemy async、psycopg、Alembic、PostgreSQL 17 |
+| 公司服务端 | FastAPI、Uvicorn、SQLAlchemy async、psycopg、Alembic、PostgreSQL 17；Redis 7.4.2 临时正文流 |
 | Agent | Deep Agents、LangGraph、PostgreSQL checkpoint；业务工具、来源校验、操作回执和人工确认 |
 | 模型接入 | Chat Completions、独立语音协议适配；公司凭证使用 AES-GCM，桌面使用 safeStorage |
 | 文档与媒体 | pypdf、python-docx、python-pptx、openpyxl、Pillow／pillow-heif、PDF.js、FFmpeg |

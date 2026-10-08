@@ -535,11 +535,15 @@ async def test_required_response_is_repaired_once_without_repeating_saved_operat
     async def repair(context, answer, reason, *, model=None):
         calls.append(reason)
         return '按计划推进仍在进行中。'
+    import fakes
+    original_completion = fakes.completion
+    def declared_incomplete(answer, **options):
+        return original_completion(answer, **options, response_complete=False,
+            response_issue='还需说明创建工作与工作完成不同，当前工作仍在进行中')
+    monkeypatch.setattr(fakes, 'completion', declared_incomplete)
     class Judge:
         async def ainvoke(self, messages):
-            payload = json.loads(messages[-1].content)
-            fixed = payload['answer'] == '按计划推进仍在进行中。'
-            return AIMessage(content=json.dumps({'issues': [] if fixed else [{'kind': 'fact', 'quote': payload['answer'], 'reason': '不能把创建工作当作工作完成', 'receipt_ids': [payload['currentActions'][0]['id']]}]}))
+            raise AssertionError('A concrete response issue needs only its targeted correction')
     monkeypatch.setattr('app.agent.completion.response_repair.repair_response', repair)
     data = await run_reply(setup, '创建一个进行中的任务并解释状态', '已经做完了。', Judge(), before=saved)
     assert len(calls) == 1 and len(data['actions']) == 1

@@ -96,6 +96,8 @@ async def submit_message(db, actor, body, idempotency_key, settings):
     await db.flush()
     from app.modules.model_services.bindings import bind_job
     await bind_job(db, job, settings)
+    from app.tasks.timing import Timing
+    Timing(job.id, job.attempt, job.fence).mark('api.accepted')
     return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})
 
 

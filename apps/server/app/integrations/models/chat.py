@@ -11,7 +11,20 @@ def token_usage(value):
     return result or None
 
 
-async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, text_tools=(), on_event=None, on_text=None, on_delta=None, on_progress=None, stream_timeout=None):
+async def chat(*args, tool_choice=None, on_timing=None, **kwargs):
+    try:
+        return await _chat(*args, tool_choice=tool_choice, on_timing=on_timing, **kwargs)
+    except ProviderError as error:
+        if error.code != 'tool_choice_unsupported' or tool_choice != 'required':
+            raise
+        if on_timing:
+            on_timing('model.compatibility', reason='tool_choice_unsupported')
+        # Only a provider's explicit parameter rejection permits this one retry;
+        # no received content/tool action is replayed and no authorization inferred.
+        return await _chat(*args, tool_choice='auto', on_timing=on_timing, **kwargs)
+
+
+async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, text_tools=(), on_event=None, on_text=None, on_delta=None, on_progress=None, stream_timeout=None, on_timing=None):
     # The caller may carry prose in designated tools; their output length also
     # follows the provider. Ordinary tool arguments retain their existing cap.
     body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming']}
@@ -31,10 +44,22 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
     if config['streaming'] and stream_timeout is not None:
         extensions['paa_model_stream_timeout'] = stream_timeout
     options = {'extensions': extensions} if extensions else {}
+    if on_timing:
+        on_timing('model.send')
+    first_event = False
     async with transport.client(settings) as http:
         async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body, **options) as response:
             if response.is_error:
                 await response.aread()
+            if response.status_code in (400, 422) and tool_choice == 'required':
+                try:
+                    detail = response.json().get('error', {})
+                    message = str(detail.get('message', '')).lower() if isinstance(detail, dict) else ''
+                    if ('tool_choice' in message or 'tool choice' in message) and any(word in message for word in ('unsupported', 'not support', 'invalid', 'required')):
+                        raise ProviderError('tool_choice_unsupported', '服务不支持 required 工具选择', response.status_code)
+                except (ValueError, AttributeError) as error:
+                    if isinstance(error, ProviderError):
+                        raise
             status_error(response)
             if not config['streaming']:
                 await response.aread()
@@ -46,6 +71,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                     raise ProviderError('invalid_response', '模型返回内容结构无效')
                 if result.get('error'):
                     raise structured_error(result) or ProviderError('provider_error', '模型服务报告请求失败，请联系管理员查看服务调用记录')
+                if on_timing and result.get('choices'):
+                    on_timing('model.first_event')
                 if on_event:
                     await on_event('usage', result.get('usage'))
             else:
@@ -78,6 +105,10 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                     if item.get('finish_reason') == 'content_filter':
                         raise structured_error({'code': 'content_filter'})
                     delta = item.get('delta', {})
+                    if not first_event and (delta.get('content') or delta.get('tool_calls') or delta.get('reasoning_content') or item.get('finish_reason')):
+                        if on_timing:
+                            on_timing('model.first_event')
+                        first_event = True
                     fragment_text = delta.get('content') or ''
                     if not isinstance(fragment_text, str):
                         raise ProviderError('invalid_response', '模型正文无效')
@@ -113,6 +144,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                 if not done or not finish:
                     raise ProviderError('interrupted', '流式响应未完整结束，已停止执行；请核对后重试')
                 result = {'choices': [{'message': {'role': 'assistant', 'content': content, 'tool_calls': [calls[i] for i in sorted(calls)]}, 'finish_reason': finish}], 'usage': usage or {}}
+    if on_timing:
+        on_timing('model.received')
     try:
         choice = result['choices'][0]
         if choice.get('finish_reason') == 'content_filter':
@@ -129,6 +162,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
             if not call['id'] or len(call['id']) > 200 or not call['function']['name'] or len(call['function']['name']) > 80 or (call['function']['name'] not in text_tools and len(call['function']['arguments']) > 32000) or not isinstance(tool_arguments(call['function']['arguments']), dict):
                 raise ValueError()
         result['usage'] = token_usage(result.get('usage')) or {}
+        if on_timing:
+            on_timing('model.usage', input_tokens=result['usage'].get('prompt_tokens'), output_tokens=result['usage'].get('completion_tokens'))
         return result
     except ProviderError:
         raise

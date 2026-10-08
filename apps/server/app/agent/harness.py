@@ -1,4 +1,3 @@
-from app.agent.memory.prompt import MEMORY_POLICY
 from app.agent.memory.middleware import prepare as prepare_memory, validate_completed as validate_memory_completed
 from app.modules.executions.builtin.schemas import EXECUTION_TOOLS
 import asyncio
@@ -12,13 +11,12 @@ from app.agent.context.compaction import ContextCompaction
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langsmith import tracing_context
 from app.agent.context.history import conversation_history
-from app.agent.context.task_context import TASK_POLICY
-from app.agent.completion.delivery import COMPLETION_POLICY, from_messages, reference_repair_needed, take_repair, validate_completion_response
-from app.agent.runtime.middleware import ToolBoundary
+from app.agent.completion.delivery import PUBLIC_REPLY_POLICY, from_messages, take_repair, validate_completion_response
+from app.agent.runtime.middleware import ToolBoundary, repairing_delivery
 from app.agent.runtime.model import BoundedChatModel, approximate_tokens
-from app.agent.prompts.persona import persona_prompt
-from app.agent.prompts.evidence import EVIDENCE_POLICY
-from app.agent.prompts.policies import ADMIN_POLICY, ALLOWED_TOOLS, EXCLUDED_TOOLS, POLICY, TEAM_TOOL_NAMES, action_policy
+from app.agent.prompts.persona import runtime_persona_prompt
+from app.agent.prompts.main import main_policy
+from app.agent.prompts.policies import ALLOWED_TOOLS, EXCLUDED_TOOLS, TEAM_TOOL_NAMES
 from app.agent.tools.registry import BUSINESS_TOOLS
 from app.agent.tools.team import TEAM_TOOLS
 from app.core.personas import LEGACY_PERSONA
@@ -40,7 +38,7 @@ def build_graph(settings, checkpointer, context, model=None):
     if isinstance(model, BoundedChatModel):
         model._completion_validator = validate_completion_response
     from app.agent.prompts.execution_mode import mode_prompt
-    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name not in EXECUTION_TOOLS or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=(ADMIN_POLICY if context.role == 'admin' else POLICY) + action_policy(context.role) + '\n' + EVIDENCE_POLICY + '\n' + persona_prompt(context.persona_id) + '\n' + MEMORY_POLICY + '\n' + TASK_POLICY + '\n' + COMPLETION_POLICY + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ContextCompaction(model), ToolBoundary()], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
+    graph = create_deep_agent(model, tools=[tool for tool in BUSINESS_TOOLS if tool.name not in EXECUTION_TOOLS or (getattr(context.settings, 'sandbox_url', '') and getattr(context.settings, 'sandbox_token', ''))] + (TEAM_TOOLS if context.role == 'admin' else []), system_prompt=main_policy(context.role) + '\n' + runtime_persona_prompt(context.persona_id) + '\n' + mode_prompt(getattr(context, 'execution_mode', 'auto')) + '\n' + getattr(context, 'request_clock', ''), middleware=[ToolBoundary(), ContextCompaction(model)], subagents=[], backend=StateBackend(), context_schema=RunContext, checkpointer=checkpointer)
     return graph
 
 
@@ -105,7 +103,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         repair_id = f'completion-repair:{job.id}'
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
-            instruction = '内部纠错（不是用户新请求）：收尾标记与实际操作可能不一致。先 get_business_actions 读取当前回执，逐项对照用户原请求，判断是否真的遗漏操作。若原请求仅查询、整理、生成私人成果，或明确不要保存业务记录，则无业务回执是正常的；修正 business_requested/operation_ids 等收尾字段并保留正确正文，不添加业务写入。确有遗漏时，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。最终 answer 仍只交付用户原请求的结果，不汇报本次内部纠错。'
+            instruction = '内部纠错（不是用户新请求）：收尾标记与实际操作可能不一致。先 get_business_actions 读取当前回执，逐项对照用户原请求，判断是否真的遗漏操作。若原请求仅查询、整理、生成私人成果，或明确不要保存业务记录，则无业务回执是正常的；保留正确正文，不添加业务写入。确有遗漏时，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。最终正文仍只交付用户原请求的结果，不汇报本次内部纠错。'
             result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         elif state.values:
             # The worker already checked retry authorization and lease. Resume this
@@ -116,33 +114,42 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     await validate_memory_completed(context)
     messages = result.get('messages', [])
-    answer = next((m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None)
-    delivery = from_messages(messages)
-    shortcut = answer and (answer.id or '').startswith(('receipt-completion:', 'interaction-wait:'))
-    if delivery is None and not shortcut:
-        # Old checkpoints and providers returning plain text get one bounded
-        # protocol repair. This is not a universal second-pass answer review.
-        if await take_repair(context, 'protocol'):
-            instruction = '请使用 finish_task 单独交付刚才的完整答复和本轮任务摘要，不重做工具或业务操作。若上一工具参数无效，修正结构；保持真实未完成项。' + COMPLETION_POLICY
-            if job.kind == 'message':
-                from app.modules.messages.input_text import request_text
-                async with context.sessions() as db:
-                    current_job, _ = await lease(db, context)
-                    current_message = await db.get(Message, current_job.target_id)
-                    instruction += '\n以下是当前用户请求的数据；verification_quote 只能逐字引用其中的核验要求，不能引用此前消息或本条服务端提醒：\n' + json.dumps({'currentUserRequest': request_text(current_message, current_job)}, ensure_ascii=False)
-            with tracing_context(enabled=False):
-                result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
-            messages = result.get('messages', [])
-            delivery = from_messages(messages)
-        if delivery is None and reference_repair_needed(messages, job.id) and await take_repair(context, 'references'):
-            # Plain text has no receipt fields to validate. Its first terminal
-            # call may reveal a reference error that the model has not seen yet.
-            # Use the existing shared semantic-repair budget, never replay tools.
-            instruction = '刚才 finish_task 的引用校验未通过。依据工具错误只纠正本轮收尾字段及相关措辞，单独调用 finish_task；不得重做工具或业务操作。保留真实未完成项。' + COMPLETION_POLICY
-            with tracing_context(enabled=False):
-                result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-references:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
-            messages = result.get('messages', [])
-            delivery = from_messages(messages)
+    from app.agent.completion.prose import delivery_for
+
+    async def read_delivery(items):
+        last = next((m for m in reversed(items) if isinstance(m, AIMessage)), None)
+        answer = last if last and not last.tool_calls and not last.invalid_tool_calls else None
+        delivery = from_messages(items)
+        shortcut = answer and (answer.id or '').startswith(('receipt-completion:', 'interaction-wait:'))
+        if delivery is None and answer is not None and not shortcut:
+            # The checkpoint retains the rejected completion across worker
+            # restarts. Preserve only its coherent unfinished state, not an
+            # unchecked directive or receipt/authorization declaration.
+            pending_task = None
+            repair = next((i for i in range(len(items) - 1, -1, -1)
+                           if isinstance(items[i], HumanMessage)), None)
+            if repair is not None and repairing_delivery(items, job.id):
+                previous = next((m for m in reversed(items[:repair]) if isinstance(m, AIMessage)), None)
+                if previous and len(previous.tool_calls) == 1 and previous.tool_calls[0]['name'] == 'finish_task':
+                    from app.modules.conversations.task.task_schemas import TaskInterpretation
+                    try:
+                        task = TaskInterpretation.model_validate(previous.tool_calls[0]['args'].get('task', {}))
+                        if task.state != 'completed':
+                            pending_task = {'state': task.state, 'remaining': task.remaining}
+                    except (ValueError, TypeError):
+                        pass
+            delivery = await delivery_for(context, answer.text, pending_task=pending_task)
+        return delivery, answer, shortcut
+
+    delivery, answer, shortcut = await read_delivery(messages)
+    if delivery is None and not shortcut and await take_repair(context, 'protocol'):
+        # A broken legacy completion gets one prose-only repair. Never require
+        # another task form or replay a write to fix answer metadata.
+        instruction = '刚才的答复格式或引用无效。依据已有真实结果和工具错误，直接交付修正后的完整正文，不填写内部表单，不再调用工具或重做业务操作；保留真实未完成项。' + PUBLIC_REPLY_POLICY
+        with tracing_context(enabled=False):
+            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+        messages = result.get('messages', [])
+        delivery, answer, shortcut = await read_delivery(messages)
     context.delivery = delivery.model_dump() if delivery else None
     if delivery is None and answer is None:
         raise ValueError('模型未返回有效收尾，请重试；已保存操作不会重复执行')

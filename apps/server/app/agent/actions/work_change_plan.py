@@ -183,7 +183,12 @@ async def work_change_plan(context, request, proposal, message_id, judge):
             raise ProviderError('invalid_response', '工作变更计划格式不完整，本次尚未修改') from error
     async def extract():
         messages = prompt if not error_detail else [*prompt, HumanMessage(content='修正输出结构：' + error_detail + '。Schema 中十字段全部明确，包括 body、update、materials、removeMaterial；引文只能来自 userSources。')]
-        return parse(await judge.ainvoke(messages))
+        from app.tasks.timing import call_kind
+        token = call_kind.set('change_scope')
+        try:
+            return parse(await judge.ainvoke(messages))
+        finally:
+            call_kind.reset(token)
     # Existing bounded provider/node retry and call accounting apply. The plan
     # is cached independently of tool arguments, so corrected patches reuse it.
     previous_validator = getattr(judge, '_response_validator', None)

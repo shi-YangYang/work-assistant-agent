@@ -35,6 +35,8 @@ async def main():
             timer.cancel()
             voiceprints.cancel()
             await asyncio.gather(timer, voiceprints, return_exceptions=True)
+            from app.tasks.streaming.redis_store import close_stores
+            await close_stores()
             await engine.dispose()
 
 if __name__ == '__main__':

@@ -225,7 +225,17 @@ def literal_match(text, query, index):
             return count, original_start, position + 1
 
 
-async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
+async def read_page(url, *, transport=None):
+    from datetime import datetime, timezone
+    final, raw, mime = await fetch_html(url, transport=transport)
+    title, text, anchors = extract_page(raw, include_links=True) if mime != 'text/plain' else ('', raw, [])
+    if not text.strip():
+        raise WebResearchError('网页没有可读取正文，可能需要登录或 JavaScript')
+    return {'final': final, 'title': title, 'text': text, 'anchors': anchors,
+            'fetchedAt': datetime.now(timezone.utc).isoformat()}
+
+
+async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None, cache=None, refresh=False):
     if type(offset) is not int or offset < 0:
         raise WebResearchError('网页阅读位置无效')
     if not isinstance(find, str) or len(find) > 200 or (find and not find.strip()):
@@ -234,12 +244,15 @@ async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
         raise WebResearchError('网页匹配序号无效；从 0 开始，需同时提供查找词')
     if find and offset:
         raise WebResearchError('查找词与阅读位置不能同时指定；查找下一处请使用 match_index')
-    final, raw, mime = await fetch_html(url, transport=transport)
-    title, text, anchors = extract_page(raw, include_links=True) if mime != 'text/plain' else ('', raw, [])
-    if not text.strip():
-        raise WebResearchError('网页没有可读取正文，可能需要登录或 JavaScript')
+    normalized = str(public_url(url))
+    if cache is None:
+        page, hit = await read_page(normalized, transport=transport), False
+    else:
+        page, hit = await cache.get(normalized, lambda: read_page(normalized, transport=transport), refresh=refresh)
+    final, title, text, anchors = (page[key] for key in ('final', 'title', 'text', 'anchors'))
     source = {'url': final, 'title': title or urlsplit(final).hostname,
-              'sourceType': 'public_web', 'untrusted': True}
+              'sourceType': 'public_web', 'untrusted': True, 'requestedUrl': url,
+              'fetchedAt': page['fetchedAt'], 'cacheHit': hit}
     if httpx.URL(url).fragment:
         source['requestedUrl'] = str(httpx.URL(url))
     match = {}

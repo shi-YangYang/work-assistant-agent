@@ -14,7 +14,7 @@ from app.integrations.models.transport import ProviderError
 from app.modules.messages.models import Message
 from app.tasks.context import LostLease
 from app.tasks.feedback.feedback import events, snapshot, publish
-from app.tasks.feedback.reply_stream import ReplyPublisher, presentation_text
+from app.tasks.feedback.reply_stream import ReplyPublisher, presentation_text, temporary_snapshot, persist_snapshot
 from app.tasks.models import Job
 from app.tasks.processing.handlers import process_job
 from app.tasks.runtime.queue import claim
@@ -77,6 +77,160 @@ class CapturingPublisher:
         self.values.append(None)
 
 
+@pytest.mark.parametrize(('history_repeat', 'target', 'merge_error'), [
+    pytest.param(1, 2000, None, id='single-chunk'),
+    pytest.param(150, 20, None, id='merged-chunks'),
+    pytest.param(150, 20, RuntimeError, id='merge-error'),
+    pytest.param(150, 20, asyncio.CancelledError, id='merge-cancelled'),
+])
+async def test_compaction_stays_private_while_toolless_reply_uses_shared_adapter(monkeypatch, history_repeat, target, merge_error):
+    import time
+    from types import SimpleNamespace
+    from langchain_core.messages import HumanMessage
+    from app.agent.completion.delivery import validate_completion_response
+    from app.agent.context.compaction import ContextCompaction
+    from app.agent.runtime import model as adapter
+    from app.tasks.timing import Timing
+
+    summary_text = '内部压缩摘要：用户尚未完成的目标与历史资料。'
+    reply_text = '<!--noria:{}-->\n已完成查询；剩余查询达到工具额度，尚未执行。'
+    usage, lifecycle, published, validated, timings, deadlines = {}, [], [], [], [], []
+    summary_phases, restored_kinds = [], []
+    summary_started, release_summary = asyncio.Event(), asyncio.Event()
+    merge_started = asyncio.Event()
+    job = SimpleNamespace(result={}, attempt=0, fence=0, kind='message')
+
+    class Sessions:
+        def __call__(self):
+            return self
+        def begin(self):
+            return self
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            pass
+        def add(self, row):
+            row.id = f'call-{len(usage) + 1}'
+            usage[row.id] = row
+        async def flush(self):
+            pass
+        async def get(self, model, identifier):
+            return usage[identifier]
+
+    class Publisher:
+        def __init__(self, context, identifier):
+            self.identifier = identifier
+            lifecycle.append(('created', identifier))
+        async def start(self):
+            lifecycle.append(('started', self.identifier))
+        async def write(self, text, **options):
+            published.append((self.identifier, text, options))
+        async def flush(self):
+            lifecycle.append(('flushed', self.identifier))
+
+    class Record:
+        def __init__(self, sessions, identifier):
+            self.identifier = identifier
+        def event(self, *args, **kwargs):
+            pass
+        async def finish(self, error=None):
+            usage[self.identifier].status = 'failed' if error else 'succeeded'
+
+    async def lease(*args):
+        return job, SimpleNamespace()
+
+    async def resolve(*args):
+        return {'baseUrl': 'https://no-network.invalid', 'model': 'controlled', 'streaming': True, 'parameters': {}}, 'unused'
+
+    async def publish(context, stage, *, call_id, **kwargs):
+        lifecycle.append((stage, call_id))
+
+    original_deadline = adapter.request_with_deadline
+    async def request_with_deadline(request, **options):
+        deadlines.append(options)
+        return await original_deadline(request, **options)
+
+    async def chat(settings, config, key, messages, **kwargs):
+        assert not kwargs.get('tools')
+        internal = messages[0]['role'] == 'system'
+        if internal:
+            merging = '合并摘要' in messages[0]['content']
+            summary_phases.append('merge' if merging else 'chunk')
+            summary_started.set()
+            await release_summary.wait()
+            if merging and merge_error:
+                if merge_error is asyncio.CancelledError:
+                    merge_started.set()
+                    await asyncio.Event().wait()
+                raise merge_error('controlled merge failure')
+        text = summary_text if internal else reply_text
+        if kwargs.get('on_delta'):
+            await kwargs['on_delta'](ModelDelta(text))
+        return {'id': 'controlled', 'model': 'controlled', 'choices': [{'index': 0, 'message': {'role': 'assistant', 'content': text}, 'finish_reason': 'stop'}]}
+
+    def validate(message, **options):
+        validated.append(message.text)
+        validate_completion_response(message, **options)
+
+    monkeypatch.setattr(adapter, 'lease', lease)
+    monkeypatch.setattr(adapter, 'request_with_deadline', request_with_deadline)
+    monkeypatch.setattr('app.modules.model_services.bindings.resolve_bound', resolve)
+    monkeypatch.setattr('app.modules.model_services.usage.usage.RequestRecord', Record)
+    monkeypatch.setattr('app.tasks.feedback.feedback.publish', publish)
+    monkeypatch.setattr('app.tasks.feedback.reply_stream.ReplyPublisher', Publisher)
+    monkeypatch.setattr('app.integrations.models.chat.chat', chat)
+    clock = Timing('isolated')
+    monkeypatch.setattr(clock, 'mark', lambda event, **fields: timings.append((event, fields)))
+    context = SimpleNamespace(sessions=Sessions(), settings=SimpleNamespace(), model_binding={},
+        model_purpose='assistant', node_retry=False, started=time.monotonic(), calls=0, tools=16,
+        input_tokens=0, output_tokens=0, company_id='isolated', owner_id='isolated', job_id='isolated', access={}, timing=clock)
+    model = adapter.BoundedChatModel(model='controlled', api_key='unused')
+    model._run_context = context
+    model._completion_validator = validate
+    async def summarize():
+        try:
+            return await ContextCompaction(model).summarize(context, [HumanMessage(content='供压缩的历史文本' * history_repeat)], target)
+        finally:
+            # Observe restoration in the summary task itself, including when
+            # the final merge raises or is cancelled.
+            restored_kinds.append(adapter.internal_call_kind.get())
+    summary = asyncio.create_task(summarize())
+    try:
+        await asyncio.wait_for(summary_started.wait(), 2)
+        # The same model instance must still preview/validate a tools=[] reply
+        # while compaction is suspended in a different task.
+        reply = await model.ainvoke([HumanMessage(id='job:isolated', content='说明查询结果')], tools=[])
+    finally:
+        release_summary.set()
+        if merge_error is asyncio.CancelledError:
+            await asyncio.wait_for(merge_started.wait(), 2)
+            summary.cancel('controlled merge failure')
+        if merge_error:
+            with pytest.raises(merge_error, match='controlled merge failure'):
+                await summary
+        else:
+            assert await summary == summary_text
+    assert reply.text == reply_text
+    assert summary_phases == (['chunk'] if history_repeat == 1 else ['chunk', 'chunk', 'merge'])
+    assert restored_kinds == [None]
+    assert validated == [reply_text]
+    assert lifecycle == [('created', 'call-2'), ('started', 'call-2'), ('generating', 'call-2'), ('flushed', 'call-2')]
+    assert published and all(identifier == 'call-2' and text == reply_text.split('\n', 1)[1] for identifier, text, _ in published)
+    assert published[-1][2] == {'state': 'finalizing', 'force': True}
+    assert context.calls == len(summary_phases) + 1
+    assert context.input_tokens == sum(row.input_tokens for row in usage.values()) > 0
+    assert context.output_tokens == sum(row.output_tokens or 0 for row in usage.values()) > 0
+    assert [row.status for row in usage.values()] == ['succeeded'] * (context.calls - bool(merge_error)) + (['failed'] if merge_error else [])
+    assert deadlines == [{'timeout': 60, 'idle_timeout': 60}] * context.calls
+    summary_timings = [fields for event, fields in timings if event == 'model.end' and fields['call'] != 'call-2']
+    assert len(summary_timings) == len(summary_phases)
+    assert all(fields['kind'] == 'compaction' for fields in summary_timings)
+    if merge_error:
+        assert summary_timings[-1]['state'] == 'failed'
+        assert summary_timings[-1]['error'] == merge_error.__name__
+    assert adapter.internal_call_kind.get() is None
+
+
 async def test_candidate_selects_only_answer_and_retracts_late_mixed_tools():
     publisher = CapturingPublisher()
     candidate = ReplyCandidate(publisher)
@@ -111,31 +265,35 @@ def packet(arguments, *, first=False, finish=None):
 
 
 class PausedStream(httpx.AsyncByteStream):
-    def __init__(self, answer):
+    def __init__(self, answer, *, prose=False):
+        self.prose = prose
         raw = wire_completion(answer)['tool_calls'][0]['function']['arguments']
+        if prose:
+            raw = '<!--noria:{}-->\n' + answer
         self.chunks = [raw[:20], raw[20:35], raw[35:]]
         self.arrived = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
         self.release = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
         self.done = False
     async def __aiter__(self):
         for i, chunk in enumerate(self.chunks):
-            yield packet(chunk, first=i == 0)
+            yield (('data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]}) + '\n\n').encode() if self.prose else packet(chunk, first=i == 0))
             self.arrived[i].set()
             await self.release[i].wait()
-        yield b'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}\n\ndata: [DONE]\n\n'
+        finish = 'stop' if self.prose else 'tool_calls'
+        yield ('data: ' + json.dumps({'choices': [{'delta': {}, 'finish_reason': finish}]}) + '\n\ndata: [DONE]\n\n').encode()
         self.done = True
     def unblock(self):
         for gate in self.release:
             gate.set()
 
 
-@pytest.mark.parametrize('scenario', ['chat', 'search', 'document', 'protocol', 'search_protocol'])
+@pytest.mark.parametrize('scenario', ['chat', 'search', 'document', 'prose', 'search_prose'])
 async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_saved(setup, monkeypatch, scenario):
     settings, sessions, users, clients = setup
     saved = await create(clients['admin'])
     assert (await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))).status_code == 200
     answer = '# 你好，正在生成中文回答。\n\n这是一段公开或本人可见的完整分析。'
-    upstream = PausedStream(answer)
+    upstream = PausedStream(answer, prose=scenario.endswith('prose'))
     requests, searches = [], []
     async def search(query, *, domains=None):
         assert domains is None
@@ -146,8 +304,6 @@ async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_sav
         requests.append(json.loads(request.content))
         if scenario.startswith('search') and len(requests) == 1:
             return stream({'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'search', 'function': {'name': 'web_search', 'arguments': '{"query":"公开资料"}'}}]}, 'finish_reason': 'tool_calls'}]})
-        if scenario.endswith('protocol') and len(requests) == (2 if scenario.startswith('search') else 1):
-            return stream({'choices': [{'delta': {'content': answer}, 'finish_reason': 'stop'}]})
         return httpx.Response(200, stream=upstream, headers={'Content-Type': 'text/event-stream'})
     client_for(monkeypatch, response)
     if scenario == 'document':
@@ -159,19 +315,21 @@ async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_sav
     token = hashlib.sha256(clients['employee'].cookies.get('paa_company_session').encode()).hexdigest()
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         task = asyncio.create_task(process_job(await claim(sessions, users['employee'].id), sessions, settings, saver))
-        received = events(sessions, token, sent['jobId'])
+        received = events(sessions, token, sent['jobId'], settings=settings)
         try:
             await asyncio.wait_for(upstream.arrived[0].wait(), 10)
-            first = json.loads((await asyncio.wait_for(anext(received), 1)).split('data: ', 1)[1])
+            first = await next_reply(received)
             assert first['replyStream']['text'] and not upstream.done
             assert first['replyStream']['state'] == 'streaming'
             # HTTP stream is still paused; it cannot have delivered a final reply.
             detail = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-            assert detail['replyStream'] == first['replyStream'] and detail['reply'] == ''
+            assert detail['replyStream'] is None and detail['reply'] == ''
+            async with sessions() as db:
+                assert (await db.get(Job, sent['jobId'])).feedback['replyStream']['text'] == ''
             await asyncio.sleep(.21)
             upstream.release[0].set()
             await asyncio.wait_for(upstream.arrived[1].wait(), 5)
-            second = json.loads((await anext(received)).split('data: ', 1)[1])
+            second = await next_reply(received, after=first['replyStream']['text'])
             assert second['replyStream']['text'].startswith(first['replyStream']['text'])
             assert len(second['replyStream']['text']) > len(first['replyStream']['text']) and not upstream.done
             assert '不可显示' not in json.dumps(second, ensure_ascii=False)
@@ -182,14 +340,14 @@ async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_sav
     detail = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert detail['job']['state'] in ('succeeded', 'awaiting_input'), detail
     assert answer in detail['reply'] and not detail['replyStream']
-    assert len(requests) == 1 + int(scenario.startswith('search')) + int(scenario.endswith('protocol'))
+    assert len(requests) == 1 + int(scenario.startswith('search'))
     assert len(searches) == int(scenario.startswith('search'))
-    if scenario.endswith('protocol'):
-        assert [tool['function']['name'] for tool in requests[-1]['tools']] == ['finish_task']
-        assert requests[-1]['tool_choice'] == {'type': 'function', 'function': {'name': 'finish_task'}}
+    if scenario.endswith('prose'):
+        assert 'finish_task' not in [tool['function']['name'] for tool in requests[-1]['tools']]
+        assert requests[-1]['tool_choice'] == 'auto'
         async with sessions() as db:
             job = await db.get(Job, sent['jobId'])
-            assert job.result['deliveryRepairs'] == ['protocol'] and not job.result.get('toolOutcomes')
+            assert not job.result.get('deliveryRepairs') and not job.result.get('toolOutcomes')
         assert not detail['actions'] and not detail['drafts']
     terminal = await snapshot(sessions, token, sent['jobId'])
     assert terminal['state'] == detail['job']['state'] and terminal['replyStream'] is None
@@ -256,6 +414,7 @@ async def test_publisher_throttles_preserves_phases_and_cancel_fences_late_write
     publisher = ReplyPublisher(context, 'call')
     await publisher.start()
     await publisher.write('第一段')
+    await publisher.drain()
     async with context.sessions() as db:
         before = (await db.get(Job, context.job_id)).feedback['seq']
     for i in range(30):
@@ -264,18 +423,20 @@ async def test_publisher_throttles_preserves_phases_and_cancel_fences_late_write
         assert (await db.get(Job, context.job_id)).feedback['seq'] == before
     await publish(context, 'reviewing', force=True)
     client = setup[3]['employee']
-    value = (await client.get(f"/api/v1/jobs/{sent['jobId']}/feedback")).json()
-    assert value['replyStream']['text'] == '第一段' and value['stage'] == 'reviewing'
+    value = await live_reply(setup, context)
+    assert value['replyStream']['text'].startswith('第一段') and value['stage'] == 'reviewing'
     cancelled = await client.post(f"/api/v1/jobs/{sent['jobId']}/cancel", json={'expectedAttempt': 0, 'expectedFence': context.fence})
     assert cancelled.status_code == 200
     assert cancelled.json()['replyStream'] == {**value['replyStream'], 'state': 'interrupted'}
     for role in ('peer', 'outsider'):
         forbidden = await setup[3][role].post(f"/api/v1/jobs/{sent['jobId']}/cancel", json={'expectedAttempt': 0, 'expectedFence': context.fence})
         assert forbidden.status_code == 404 and '第一段' not in forbidden.text
+    await publisher.write('迟到内容', force=True)
     with pytest.raises(LostLease):
-        await publisher.write('迟到内容', force=True)
+        await publisher.drain()
+    await publisher.close()
     value = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
-    assert value['replyStream']['state'] == 'interrupted' and value['replyStream']['text'] == '第一段'
+    assert value['replyStream']['state'] == 'interrupted' and value['replyStream']['text'].startswith('第一段')
     assert not value['reply']
     async with context.sessions() as db:
         result = (await db.get(Job, context.job_id)).result
@@ -289,8 +450,13 @@ async def test_failure_retention_and_manual_retry_replace_in_place(setup, failur
     await publisher.start()
     await publisher.write('可以保留的片段')
     await publisher.fail(ProviderError(failure, '受控故障'), '可以保留的片段和末尾')
+    temporary = await temporary_snapshot(context.settings, SimpleNamespace(company_id=context.company_id, owner_id=context.owner_id, id=context.job_id, attempt=0, fence=context.fence))
     async with context.sessions.begin() as db:
         job = await db.get(Job, context.job_id)
+        from app.modules.members.models import Member
+        await persist_snapshot(db, await db.get(Member, context.owner_id), job, await db.get(Message, sent['messageId']), temporary, state=expected)
+        from app.tasks.feedback.reply_stream import transition
+        transition(job, expected)
         job.state, job.lease_until = 'awaiting_retry', None
     client = setup[3]['employee']
     value = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
@@ -309,6 +475,8 @@ async def test_preview_never_survives_authorization_or_source_changes(setup, cha
     publisher = ReplyPublisher(context, 'call')
     await publisher.start()
     await publisher.write('私有片段')
+    await publisher.drain()
+    await publisher.close()
     client = setup[3]['employee']
     if change == 'logout':
         await client.post('/api/v1/auth/logout')
@@ -338,16 +506,20 @@ async def test_expired_worker_seals_prefix_and_old_fence_cannot_write(setup):
     publisher = ReplyPublisher(context, 'call')
     await publisher.start()
     await publisher.write('中断前的片段')
+    await publisher.drain()
     async with context.sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         job.lease_until = now() - timedelta(seconds=1)
         job.request_started = True
     await claim(context.sessions, context.owner_id)
+    await publisher.write('旧worker', force=True)
     with pytest.raises(LostLease):
-        await publisher.write('旧worker', force=True)
+        await publisher.drain()
+    await publisher.close()
     value = (await setup[3]['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert value['replyStream']['state'] == 'interrupted'
-    assert value['replyStream']['text'] == '中断前的片段'
+    # A crashed worker has no guaranteed durable tail; cached prose is disposable.
+    assert value['replyStream']['text'] == ''
 
 
 async def test_team_prefixes_do_not_write_per_token(setup):
@@ -365,6 +537,7 @@ async def test_team_prefixes_do_not_write_per_token(setup):
     async with context.sessions() as db:
         job = await db.get(Job, context.job_id)
         assert job.feedback['seq'] == before and job.feedback['replyStream']['text'] == ''
+    await publisher.close()
 
 
 from test_task_retry import fast_nodes  # shared deterministic retry clock
@@ -429,3 +602,46 @@ async def test_streamed_answer_finishes_without_contacting_unavailable_judge(set
     assert detail['job']['taskOutcome']['state'] == 'completed'
     assert detail['reply'] == answer
     assert not any(node['kind'] == 'review' for node in detail['job']['nodes'])
+
+
+from types import SimpleNamespace
+
+
+async def next_reply(received, after=''):
+    async with asyncio.timeout(2):
+        async for event in received:
+            if event.startswith('event: snapshot'):
+                value = json.loads(event.split('data: ', 1)[1])
+                if (value.get('replyStream') or {}).get('text') not in ('', after, None):
+                    return value
+    raise AssertionError('No new reply prefix')
+
+
+async def live_reply(setup, context):
+    await asyncio.sleep(.08)
+    value = await temporary_snapshot(context.settings, SimpleNamespace(company_id=context.company_id, owner_id=context.owner_id, id=context.job_id, attempt=0, fence=context.fence))
+    token = hashlib.sha256(setup[3]['employee'].cookies.get('paa_company_session').encode()).hexdigest()
+    return await snapshot(context.sessions, token, context.job_id, temporary=value)
+
+
+@pytest.mark.parametrize('ending', ['network', 'content_filter'])
+async def test_prose_failure_keeps_only_authorized_prefix_without_header(setup, monkeypatch, fast_nodes, ending):
+    settings,sessions,users,clients=setup
+    saved=await create(clients['admin'])
+    await clients['admin'].put('/api/v1/settings/model-routing',json=route(saved))
+    class BrokenProse(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for value in ['<!--no','ria:{}-->\n','尚未完成的正文']:
+                yield ('data: '+json.dumps({'choices':[{'delta':{'content':value}}]})+'\n\n').encode()
+            if ending=='network':
+                raise httpx.ReadError('controlled disconnect')
+            yield b'data: {"choices":[{"delta":{},"finish_reason":"content_filter"}]}\n\ndata: [DONE]\n\n'
+    client_for(monkeypatch,lambda _:httpx.Response(200,stream=BrokenProse()))
+    sent=await send(clients['employee'],'解释概念')
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(await claim(sessions,users['employee'].id),sessions,settings,saver)
+    detail=(await clients['employee'].get('/api/v1/messages/'+sent['messageId'])).json()
+    assert detail['reply']=='' and not detail['actions']
+    assert detail['job']['state']=='awaiting_retry'
+    assert detail['replyStream']['state']==('interrupted' if ending=='network' else 'withdrawn')
+    assert detail['replyStream']['text']==('尚未完成的正文' if ending=='network' else '')

@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 async def verified_receipt(context, db, actor, job):
     """A receipt-only shortcut must still match the entire current request."""
-    if job.kind != 'message' or job.result.get('operationFeedback'):
+    if job.kind != 'message' or job.result.get('operationFeedback') or job.result.get('nodeExecution', {}).get('budgetBlockedTools'):
         return None
     interpretation = job.result.get('intentTaskInterpretation') or {}
     # Authorization describes the scope before execution. A missing input or

@@ -7,7 +7,7 @@ from app.agent.runtime.progress.tools import tool_presentation
 
 # Replay safety is an execution policy, independent of display-label registration.
 REPLAYABLE_TOOLS = frozenset({
-    'save_memory', 'forget_memory',
+    'save_memory', 'forget_memory', 'set_task_context',
     'inspect_table', 'export_table', 'create_chart', 'create_document', 'create_slides',
     'run_python', 'request_user_input', 'find_work_items', 'get_work_item',
     'list_work_updates', 'list_work_materials', 'read_work_material', 'get_message_context', 'get_business_actions', 'query_reports', 'query_report_obligations',
@@ -15,6 +15,27 @@ REPLAYABLE_TOOLS = frozenset({
     'read_team_source', 'propose_progress', 'propose_followup', 'save_deliverable',
     'read_deliverable', 'read_execution', 'web_search', 'web_fetch', 'execute_business_action',
 })
+
+
+async def reject_tool_budget(context, call):
+    """Keep known unexecuted steps even when the next reply has no metadata."""
+    from app.tasks.lease import lease
+    from app.tasks.nodes.node_state import execution, save
+    label, presentation = tool_presentation(call['name'], call.get('args'))
+    subject = presentation.get('subject')
+    remaining = label + (f'：{subject}' if subject else '') + '（本轮工具额度已用完，未执行）'
+    async with context.sessions.begin() as db:
+        job, _ = await lease(db, context)
+        state = execution(job)
+        blocked = list(dict.fromkeys([*state.get('budgetBlockedTools', []), remaining]))
+        # Keep bounded display summaries, never full tool arguments or outputs.
+        if len(blocked) > 16:
+            blocked = [*blocked[:15], '其他工具步骤因本轮额度已用完而未执行']
+        state['budgetBlockedTools'] = blocked
+        save(job, state)
+    return ToolMessage(tool_call_id=call['id'], name=call['name'], content=json.dumps({
+        'state': 'unavailable', 'message': '本轮工具额度已用完；此工具未执行。请立即用已有结果直接答复，说明未完成范围。',
+    }, ensure_ascii=False))
 
 
 def outcome(message):

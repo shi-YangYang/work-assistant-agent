@@ -99,27 +99,32 @@ class ContextCompaction(AgentMiddleware):
         # Summarize bounded chunks using the same model/request protections. No
         # framework with_retry(): execute_node is the sole retry owner.
         from app.agent.memory.middleware import without_memory
+        from app.agent.runtime.model import internal_call_kind
         serialized = json.dumps(messages_to_dict(without_memory(removed, summaries=True)), ensure_ascii=False)
         budget = input_budget(context, 4000)
         chunk_size = max(256, min(int((budget or len(serialized)) * .65), 1500000))
-        summaries = []
-        for start in range(0, len(serialized), chunk_size):
-            prompt = [SystemMessage(content=SUMMARY_PROMPT + f' 摘要尽量不超过 {max(200, target // 2)} 字。'),
-                      HumanMessage(content=serialized[start:start + chunk_size])]
-            ensure_input(context, estimate_request(prompt), 4000)
-            response = await self.model.ainvoke(prompt)
-            value = response.text.strip()
-            if not value:
+        token = internal_call_kind.set('compaction')
+        try:
+            summaries = []
+            for start in range(0, len(serialized), chunk_size):
+                prompt = [SystemMessage(content=SUMMARY_PROMPT + f' 摘要尽量不超过 {max(200, target // 2)} 字。'),
+                          HumanMessage(content=serialized[start:start + chunk_size])]
+                ensure_input(context, estimate_request(prompt), 4000)
+                response = await self.model.ainvoke(prompt)
+                value = response.text.strip()
+                if not value:
+                    raise ValueError('上下文压缩未返回有效摘要，请重试')
+                summaries.append(value)
+            combined = '\n'.join(summaries)
+            if len(summaries) > 1 and len(combined) > target:
+                prompt = [SystemMessage(content=SUMMARY_PROMPT + f' 合并摘要，不超过 {max(200, target)} 字。'), HumanMessage(content=combined)]
+                ensure_input(context, estimate_request(prompt), 4000)
+                combined = (await self.model.ainvoke(prompt)).text.strip()
+            if not combined:
                 raise ValueError('上下文压缩未返回有效摘要，请重试')
-            summaries.append(value)
-        combined = '\n'.join(summaries)
-        if len(summaries) > 1 and len(combined) > target:
-            prompt = [SystemMessage(content=SUMMARY_PROMPT + f' 合并摘要，不超过 {max(200, target)} 字。'), HumanMessage(content=combined)]
-            ensure_input(context, estimate_request(prompt), 4000)
-            combined = (await self.model.ainvoke(prompt)).text.strip()
-        if not combined:
-            raise ValueError('上下文压缩未返回有效摘要，请重试')
-        return combined
+            return combined
+        finally:
+            internal_call_kind.reset(token)
 
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context

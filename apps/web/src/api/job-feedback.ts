@@ -1,4 +1,5 @@
-import type { Job, JobFeedback, Report } from '@paa/api-contracts'
+import type { Job, JobFeedback, Report, ReplyEvent } from '@paa/api-contracts'
+import { reduceReply, type ReplyCursor } from '@web/api/reply-stream'
 import { api, ApiError, epoch, expireSession, isCancelled } from '@web/api/client'
 
 const terminalJob = (state: string) => !['queued', 'running'].includes(state)
@@ -105,6 +106,9 @@ function connectJobFeedback(
   refresh: (feedback?: JobFeedback) => void,
   active: () => boolean,
 ) {
+  let latest: JobFeedback | null = null
+  let reply: ReplyCursor | null = null
+  let previewUnavailable = false
   let closed = false
   let completed = false
   let recovering = false
@@ -126,11 +130,20 @@ function connectJobFeedback(
       incoming.fence < fence
     )
       return
+    if (
+      reply &&
+      reply.attempt === incoming.attempt &&
+      reply.fence === incoming.fence &&
+      !incoming.replyStream &&
+      !terminalJob(incoming.state)
+    )
+      incoming = { ...incoming, replyStream: reply.reply }
     if (receiveValue(incoming) === false) return
+    latest = incoming
     const stageChanged = previousStage !== undefined && previousStage !== incoming.stage
     const completedMedia = previousStage === 'parsing' || previousStage === 'transcribing'
     previousStage = incoming.stage
-    setError('')
+    setError(previewUnavailable ? '实时预览暂不可用，任务仍在后台处理。' : '')
     if (terminalJob(incoming.state)) {
       completed = true
       closeSource()
@@ -163,7 +176,7 @@ function connectJobFeedback(
       setError(feedbackDisconnected)
       return
     }
-    const opened = new EventSource(`/api/v1/jobs/${jobId}/events`)
+    const opened = new EventSource(`/api/v1/jobs/${jobId}/events?version=2`)
     source = opened
     opened.addEventListener('snapshot', (event) => {
       if (!active() || source !== opened || closed || completed) return
@@ -172,6 +185,25 @@ function connectJobFeedback(
       } catch {
         disconnect()
       }
+    })
+    for (const type of ['sync', 'delta', 'withdrawn'] as const) {
+      opened.addEventListener(`reply_${type}`, (event) => {
+        if (!active() || source !== opened || closed || completed || !latest) return
+        try {
+          const incoming = { ...JSON.parse((event as MessageEvent).data), type } as ReplyEvent
+          const next = reduceReply(reply, incoming, latest)
+          if (next === reply) return
+          reply = next
+          if (reply) receiveValue({ ...latest, replyStream: reply.reply })
+        } catch {
+          disconnect()
+        }
+      })
+    }
+    opened.addEventListener('reply_unavailable', () => {
+      if (!active() || source !== opened || closed || completed) return
+      previewUnavailable = true
+      setError('实时预览暂不可用，任务仍在后台处理。')
     })
     opened.addEventListener('unavailable', (event) => {
       if (!active() || source !== opened || closed || completed) return

@@ -11,7 +11,7 @@ export function isolatedEnvironment() {
       : null
   if (!manifestPath) throw new Error('SPEC054_ENVIRONMENT or SPEC044_STATE is required')
   const metadata = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  if (!['spec044', 'spec054'].includes(metadata.suite ?? 'spec044'))
+  if (!['spec044', 'spec054', 'spec055'].includes(metadata.suite ?? 'spec044'))
     throw new Error('Unrecognized acceptance suite')
   if (metadata.purpose !== 'web') throw new Error('Not a browser acceptance environment')
   const suite = metadata.suite ?? 'spec044'
@@ -48,7 +48,11 @@ export function isolatedEnvironment() {
     state.apiOrigin !== metadata.apiOrigin
   )
     throw new Error('Credentials and manifest identity differ')
-  if (state.origin !== 'http://127.0.0.1:5196' || state.apiOrigin !== 'http://127.0.0.1:8016')
+  const ports = suite === 'spec055' ? [5198, 8020] : [5196, 8016]
+  if (
+    state.origin !== `http://127.0.0.1:${ports[0]}` ||
+    state.apiOrigin !== `http://127.0.0.1:${ports[1]}`
+  )
     throw new Error('Only the dedicated browser API and UI are allowed')
   for (const role of ['admin', 'employee']) {
     if (

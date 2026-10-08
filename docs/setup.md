@@ -43,7 +43,7 @@ npm run admin:company
 npm run dev:web
 ```
 
-访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令自动启动本地 PostgreSQL，等待健康检查通过后启动 Web、API、worker 和已启用的沙盒。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用，数据库继续运行。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；单独运行 API／worker 时仍需先启动数据库。
+访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令自动启动本地 PostgreSQL 和正文流 Redis，等待健康检查通过后启动 Web、API、worker 和已启用的沙盒。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用及本次启动的 Redis，数据库继续运行；原已运行的 Redis 不会被停止。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；单独运行 API／worker 时仍需先启动数据库和 Redis（`docker compose --env-file apps/server/.env.web -f deploy/company/compose.dev.yml up -d redis`）。
 
 ### 本地代码执行与文件生成
 
@@ -129,7 +129,7 @@ npm run dev:electron
 
 ## Web 部署
 
-[生产 Compose](../deploy/company/compose.yml) 在 Linux 运行 Caddy、API、worker 和 PostgreSQL，启动前执行迁移。Web／API 同源 HTTPS，数据库不暴露公网；聊天和 ASR 调用外部服务。
+[生产 Compose](../deploy/company/compose.yml) 在 Linux 运行 Caddy、API、worker、PostgreSQL 和 Redis，启动前执行迁移。Web／API 同源 HTTPS，数据库与 Redis 不暴露公网；聊天和 ASR 调用外部服务。
 
 部署前准备固定公网 IPv4 或域名、Docker Compose 和 `apps/server/.env.web`：
 
@@ -225,7 +225,7 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 3. 默认使用腾讯云 Debian／PyPI、npmmirror npm、南京大学 PyTorch CPU 源。地址在 `deploy/company/Dockerfile` 的 `ARG` 中，依赖锁和 HTTPS 校验保留；不改开发机源，不安装 CUDA。
 4. 首次发布后创建管理员：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec api python -m app.cli bootstrap-admin`。
 
-发布顺序：构建镜像／拉取 PostgreSQL → 检查配置和密钥 → 停写备份 → 迁移 → 启动 → 检查 HTTPS、数据库与 worker。备份位于部署目录 `backups/`、`key-backups/`，需另外异机保存。
+发布顺序：构建镜像／拉取 PostgreSQL 和 Redis → 检查配置和密钥 → 停止 Web／API 接收新请求，最多等待 480 秒排空任务 → 停写备份 → 迁移／Redis 健康检查 → 启动 API／worker／Web → 检查 HTTPS、数据库与 worker。排空超时保持维护状态，由运维检查，不把混合版本部署当作无损滚动升级。回滚同样先停入口并排空任务，沿用已有备份恢复流程。备份位于部署目录 `backups/`、`key-backups/`，需另外异机保存。
 
 首次构建下载依赖，后续复用 Docker 缓存；构建会占用服务器资源。工作流超时 60 分钟，服务器发布超时 50 分钟。镜像按本地 image ID 固定，勿清理 `current/`、`previous/` 引用的镜像。
 
@@ -388,3 +388,9 @@ Noria 桌面端沿用旧内部名称对应的目录和密钥身份，品牌更�
 | 公司密钥 | 数据库保存密文，主密钥单独保管；本地默认为 `data/company/model-master.key` |
 
 桌面备份须关闭应用并复制整个资料目录；公司备份保留数据库、附件及独立主密钥。环境文件、密钥和业务资料不入 Git。
+
+### 正文流缓存
+
+API／worker 使用 `PAA_REPLY_STREAM_REDIS_URL`（开发默认 `redis://127.0.0.1:6379/0`，Compose 使用私网服务名）。Redis 7.4.2 关闭持久化，最大内存 64 MiB、容器 128 MiB、拒绝容量外的新写入。每次生成快照和增量各最多 480 KiB、最多 256 个事件，另预留 64 KiB 元数据空间，活跃 TTL 15 分钟；终态清除正文并留下短期防迟到写入标记。可用 `PAA_REPLY_STREAM_NAMESPACE` 隔离测试键，禁止清空共享实例。
+
+Redis 不可用或预览达到预算时，界面提示实时预览不可用；任务继续生成并保存最终答案，不截短答案、不退回高频正文写库。刷新／离开页面不取消任务；明确点击中断才封存仍有权限的片段。API 重启可恢复 Redis 中尚存的快照；worker 或 Redis 崩溃可能丢失未保存尾部，已保存回复和工具回执不受影响。诊断日志 `paa.latency` 仅包含关联编号、阶段及计时，不记录正文或密钥；不同进程的单调时钟不能直接相减。

@@ -1,11 +1,16 @@
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from app.integrations.web_page_cache import WebPageCache
 from app.core.personas import LEGACY_PERSONA, PersonaId
 
 
 class BudgetExceeded(Exception):
     pass
+
+
+class ToolBudgetExceeded(BudgetExceeded):
+    """A tool was refused before execution because its node quota is full."""
 
 
 class LostLease(Exception):
@@ -38,6 +43,10 @@ class RunContext:
     fence: int
     sessions: Any
     settings: Any
+    web_pages: WebPageCache = field(default_factory=WebPageCache)
+    reply_publishers: list = field(default_factory=list)
+    timing: Any = None
+    attempt: int = 0
     memory_snapshot: MemorySnapshot | None = None
     memory_loaded: bool = False
     persona_id: PersonaId = LEGACY_PERSONA

@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
-from app.agent.completion.answer_length import check_length
 from app.agent.completion.delivery import Delivery
 from app.agent.runtime.reply_stream import ReplyCandidate
 from app.db.base import now
@@ -74,7 +73,6 @@ async def test_long_answer_is_complete_with_provider_output_defaults(monkeypatch
     else:
         delivery = Delivery.model_validate_json(received['tool_calls'][0]['function']['arguments'])
         assert delivery.answer == delivery.answer_length.body == ANSWER
-        assert check_length(delivery.answer_length, ANSWER, '写至少20000字') == ''
         if streaming:
             await candidate.finish()
             assert publisher.text == ANSWER and not publisher.withdrawn

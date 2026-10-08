@@ -190,8 +190,8 @@ async def test_fetch_tool_exposes_and_passes_find_arguments(monkeypatch):
     schema = web.web_fetch.tool_call_schema.model_json_schema()['properties']
     assert schema['find']['type'] == 'string' and schema['find']['default'] == ''
     assert schema['match_index']['type'] == 'integer' and schema['match_index']['default'] == 0
-    result = await web.web_fetch.coroutine('https://example.org/docs', SimpleNamespace(context=object()), find='needle', match_index=2)
-    assert calls == [('https://example.org/docs', {'offset': 0, 'find': 'needle', 'match_index': 2})]
+    result = await web.web_fetch.coroutine('https://example.org/docs', SimpleNamespace(context=SimpleNamespace(web_pages='cache')), find='needle', match_index=2)
+    assert calls == [('https://example.org/docs', {'offset': 0, 'find': 'needle', 'match_index': 2, 'cache': 'cache', 'refresh': False})]
     assert result['text'] == 'relevant passage'
 
 

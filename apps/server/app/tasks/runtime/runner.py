@@ -19,6 +19,8 @@ async def worker_slot(sessions, settings, stop, *, saver_factory=None, runner=pr
             try:
                 job = await claim(sessions)
                 if job:
+                    from app.tasks.timing import Timing
+                    Timing(job.id, job.attempt, job.fence).mark('task.claimed')
                     await runner(job, sessions, settings, saver)
                 else:
                     try:

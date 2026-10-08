@@ -1,6 +1,5 @@
 """Authorized latest-prefix snapshots, independent from node/phase feedback."""
 import re
-import time
 from datetime import timedelta
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -28,7 +27,7 @@ def transition(job, state, *, new=False):
     if not old:
         return
     withdrawn = state == 'withdrawn' or job.access.get('team', False)
-    value = {**old, 'state': 'withdrawn' if withdrawn else state,
+    value = {**old, 'version': 1, 'state': 'withdrawn' if withdrawn else state,
              'text': '' if withdrawn else old['text'],
              'generation': old['generation'] + int(new)}
     job.feedback = {**job.feedback, 'replyStream': value}
@@ -49,6 +48,9 @@ def failure_state(error):
     import httpx
     from app.integrations.models.transport import ProviderError
     from app.tasks.retry import NodeFailed
+    from sqlalchemy.exc import OperationalError, InterfaceError
+    if isinstance(error, (OperationalError, InterfaceError, asyncio.CancelledError)):
+        return 'interrupted'
     if isinstance(error, NodeFailed):
         code = error.failure.code
     elif isinstance(error, ProviderError):
@@ -122,52 +124,58 @@ async def dto(db, actor, job, message):
             'text': presentation_text(value.get('text', '')) if state != 'withdrawn' else ''}
 
 
-class ReplyPublisher:
-    def __init__(self, context, call_id):
-        self.context, self.call_id = context, call_id
-        self.generation = None
-        self.at = 0
-        self.text = ''
+# Kept at this import path for existing callers and old checkpoint fixtures.
+from app.tasks.streaming.publisher import ReplyPublisher
 
-    async def start(self):
-        from app.tasks.lease import lease
-        async with self.context.sessions.begin() as db:
-            job, _ = await lease(db, self.context)
-            old = (job.feedback or {}).get('replyStream', {})
-            self.generation = old.get('generation', 0) + 1
-            job.feedback = {**(job.feedback or {}), 'replyStreamCall': self.call_id,
-                            'replyStreamSource': source_snapshot(self.context, job),
-                            'replyStream': {'version': 1, 'generation': self.generation, 'state': 'withdrawn', 'text': ''}}
-            update_feedback(job)
 
-    async def write(self, text, *, state='streaming', force=False):
-        instant = time.monotonic()
-        if not force and (text == self.text or instant - self.at < .2):
-            return
-        from app.tasks.lease import lease
-        from app.modules.messages.models import Message
-        async with self.context.sessions.begin() as db:
-            job, actor = await lease(db, self.context)
-            if job.feedback.get('replyStreamCall') != self.call_id:
-                return
-            message = await db.get(Message, job.target_id)
-            source = source_snapshot(self.context, job)
-            team = await validate_sources(db, actor, job, message, source)
-            if team or job.access.get('team') or message.access.get('team'):
-                text, state = '', 'withdrawn'
-            job.feedback = {**job.feedback, 'replyStreamSource': source,
-                            'replyStream': {'version': 1, 'generation': self.generation, 'state': state, 'text': text}}
-            update_feedback(job)
-        self.at, self.text = instant, text
+async def persist_snapshot(db, actor, job, message, value, *, state='interrupted'):
+    """Called under the current job lock. No Redis/network wait inside transaction."""
+    if not value or value.get('sealed') or (value.get('attempt'), value.get('fence')) != (job.attempt, job.fence):
+        return
+    if value.get('callId') != (job.feedback or {}).get('replyStreamCall'):
+        return
+    if value.get('generation') != (job.feedback or {}).get('replyStream', {}).get('generation'):
+        return
+    allowed = (state == 'interrupted' and actor.active and actor.role == job.access.get('role', actor.role)
+               and not job.access.get('team') and not message.access.get('team'))
+    try:
+        from app.security.access import valid
+        if not await valid(db, actor, job.access) or not await valid(db, actor, message.access):
+            allowed = False
+        if await validate_sources(db, actor, job, message, value.get('source', {})):
+            allowed = False
+    except (ValueError, HTTPException):
+        allowed = False
+    job.feedback = {**job.feedback, 'replyStreamSource': value.get('source', {}),
+                    'replyStream': {'version': 1, 'generation': value['generation'],
+                                    'state': 'interrupted' if allowed else 'withdrawn',
+                                    'text': value.get('text', '') if allowed else ''}}
+    update_feedback(job)
 
-    async def withdraw(self):
-        await self.write('', state='withdrawn', force=True)
 
-    async def fail(self, error, text=None):
-        # Cancellation/lease loss is sealed by the owner of the new fence.
-        from app.tasks.context import LostLease
-        try:
-            await self.write((self.text if text is None else text) if failure_state(error) == 'interrupted' else '',
-                             state=failure_state(error), force=True)
-        except (LostLease, InputChanged, HTTPException, ValueError):
-            pass
+async def temporary_snapshot(settings, job):
+    from app.tasks.streaming.protocol import Identity
+    from app.tasks.streaming.redis_store import store_for, StreamUnavailable
+    identity = Identity(job.company_id, job.owner_id, job.id, job.attempt, job.fence)
+    try:
+        return await store_for(settings).snapshot(identity)
+    except StreamUnavailable:
+        return None
+
+
+async def clear_temporary(settings, job):
+    from app.tasks.streaming.protocol import Identity
+    from app.tasks.streaming.redis_store import store_for, StreamUnavailable
+    try:
+        await store_for(settings).seal(Identity(job.company_id, job.owner_id, job.id, job.attempt, job.fence))
+    except StreamUnavailable:
+        pass
+
+
+async def freeze_temporary(settings, job):
+    from app.tasks.streaming.protocol import Identity
+    from app.tasks.streaming.redis_store import store_for, StreamUnavailable
+    try:
+        await store_for(settings).freeze(Identity(job.company_id, job.owner_id, job.id, job.attempt, job.fence))
+    except StreamUnavailable:
+        pass

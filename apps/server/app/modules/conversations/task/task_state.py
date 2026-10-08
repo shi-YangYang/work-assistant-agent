@@ -157,11 +157,20 @@ async def apply_directive(db, actor, job, message, interpretation):
     job.result = {**job.result, 'taskSnapshot': snapshot, 'appliedDirective': key}
 
 
-async def finish(db, actor, job, message, interpretation, outcome):
+async def finish(db, actor, job, message, interpretation, outcome, *, delivery_version=1):
     row = await store_for(db, actor, message.conversation_id)
     if not row or row.payload.get('latestMessageId') != message.id:
         return
     value = TaskInterpretation.model_validate(interpretation or {})
+    # An unrelated ordinary reply does not resolve/erase an older pending task.
+    # Its current message still advances the scope version, but the unfinished
+    # task retains its own user sources and authoritative receipts for continuation.
+    previous = job.result.get('taskSnapshot', {}).get('previousTask')
+    if delivery_version == 2 and previous and value.state == 'completed' and not job.result.get('explicitTaskContext') and not job.result.get('intentTaskInterpretation') and not job.result.get('continuation') and not job.result.get('toolOutcomes'):
+        row.revision += 1
+        row.updated_at = now()
+        job.result = {**job.result, 'taskSnapshot': {**job.result['taskSnapshot'], 'version': row.revision}}
+        return
     if job.result.get('continuation'):
         value = value.model_copy(update={'relation': 'continue'})
     # The same verified instruction may have been applied and bound to a target
@@ -258,6 +267,6 @@ async def prepare_retry(db, actor, job, message):
     if snapshot.get('inputRevision') != message.transcript_revision:
         # An explicit retry of corrected current input may take a new snapshot;
         # previously committed business receipts still retain their identities.
-        job.result = {key: value for key, value in job.result.items() if key not in ('taskSnapshot', 'taskBarriers', 'toolOutcomes', 'taskInterpretation', 'intentTaskInterpretation')}
+        job.result = {key: value for key, value in job.result.items() if key not in ('taskSnapshot', 'taskBarriers', 'toolOutcomes', 'taskInterpretation', 'intentTaskInterpretation', 'explicitTaskContext', 'explicitBusinessRequest')}
     else:
         await assert_current(db, actor, job, message)

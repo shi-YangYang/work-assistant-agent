@@ -62,12 +62,32 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
 
 
 async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
-    context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings, intent_model=model)
+    context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings, intent_model=model, attempt=job.attempt)
+    from app.tasks.timing import Timing
+    context.timing = Timing(job.id, job.attempt, job.fence)
+    context.timing.mark('prepare.start')
+    clear_reply = False
     try:
         await run_until_interrupted(context, _execute_job(context, job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model))
+        clear_reply = True
+    except asyncio.CancelledError:
+        from app.tasks.feedback.reply_stream import temporary_snapshot, persist_snapshot
+        temporary = await temporary_snapshot(settings, job)
+        try:
+            async with sessions.begin() as db:
+                live, actor = await lease(db, context)
+                if live.kind == 'message':
+                    await persist_snapshot(db, actor, live, await db.get(Message, live.target_id), temporary)
+                    clear_reply = live.feedback.get('replyStream', {}).get('state') == 'withdrawn'
+            clear_reply = True
+        except (LostLease, ValueError, HTTPException):
+            clear_reply = True
+        raise
     except LostLease:
+        clear_reply = True
         log.info('job=%s lost lease', job.id)
     except Exception as error:
+        clear_reply = failure_state(error) == 'withdrawn'
         from app.agent.actions.intent import IntentCheckFailed
         from app.tasks.retry import NodeFailed
         if isinstance(error, (ValueError, BudgetExceeded, IntentCheckFailed, NodeFailed)):
@@ -79,15 +99,41 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         else:
             reason = '本次处理未完成，请重试或联系管理员'
         log.warning('job=%s failure_type=%s', job.id, type(error).__name__)
+        from app.tasks.feedback.reply_stream import temporary_snapshot
+        temporary = await temporary_snapshot(settings, job)
         async with sessions.begin() as db:
             live = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
             if live.fence == context.fence and live.state == 'running':
                 await interrupt_usage(db, live)
+                from app.tasks.feedback.reply_stream import persist_snapshot
+                from app.modules.members.models import Member
+                actor = await db.get(Member, live.owner_id)
+                message = await db.get(Message, live.target_id) if live.kind == 'message' else None
+                if message:
+                    await persist_snapshot(db, actor, live, message, temporary, state=failure_state(error))
+                    clear_reply = clear_reply or live.feedback.get('replyStream', {}).get('state') == 'withdrawn'
                 reply_transition(live, failure_state(error))
                 update_feedback(live)
                 revoked = (isinstance(error, HTTPException) and isinstance(error.detail, dict) and error.detail.get('code') in ('business_access_changed', 'task_superseded', 'task_source_changed', 'task_input_changed')) or (isinstance(error, ValueError) and str(error).startswith('账号权限已变化'))
                 live.state = 'cancelled' if revoked else 'awaiting_retry' if live.request_started else 'failed'
                 live.error, live.lease_until, live.updated_at = reason, None, now()
+            else:
+                # A replaced lease or already committed terminal state retires
+                # this execution even if its recovery transaction later fails.
+                clear_reply = True
+        clear_reply = True
+
+    finally:
+        for publisher in context.reply_publishers:
+            await publisher.close()
+        if job.kind == 'message':
+            from app.tasks.feedback.reply_stream import clear_temporary, freeze_temporary
+            if clear_reply:
+                await clear_temporary(settings, job)
+            else:
+                await freeze_temporary(settings, job)
+        await context.web_pages.close()
+        context.timing.mark('task.end')
 
 
 async def _execute_job(context, job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
@@ -196,11 +242,12 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         from app.modules.memories.service import validate_job as validate_memory_job
         await validate_memory_job(db, actor, live)
         pending = live.result.get('pendingReply', {})
+    context.timing.mark('prepare.end')
     if pending.get('input') == review_input:
         answer = pending['answer']
         context.reply_evidence = pending['evidence']
         context.request_clock = pending.get('requestClock', '')
-        context.delivery = pending.get('delivery') if pending.get('deliveryVersion') == 1 else None
+        context.delivery = pending.get('delivery') if pending.get('deliveryVersion') in (1, 2) else None
         if context.delivery is None:
             # Old cached prose must acquire the new summary without replaying writes.
             answer = await invoke_harness(context, checkpointer, blocks, model)
@@ -211,7 +258,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
     # Persist the upgraded completion as well as newly generated responses.
     async with sessions.begin() as db:
         live, _ = await lease(db, context)
-        live.result = {**live.result, 'pendingReply': {'safeReply': pending.get('safeReply', '') if pending.get('input') == review_input else '', 'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': 1, 'delivery': context.delivery}}
+        live.result = {**live.result, 'pendingReply': {'safeReply': pending.get('safeReply', '') if pending.get('input') == review_input else '', 'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': (context.delivery or {}).get('version', 1), 'delivery': context.delivery}}
     from app.agent.actions.interactions import finish_waiting
     if await finish_waiting(context, answer):
         return
@@ -242,7 +289,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         answer = await invoke_harness(context, checkpointer, blocks, model, repair_missing_action=True)
         async with sessions.begin() as db:
             live, _ = await lease(db, context)
-            live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': 1, 'delivery': context.delivery}}
+            live.result = {**live.result, 'pendingReply': {'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': (context.delivery or {}).get('version', 1), 'delivery': context.delivery}}
         review = await assess(context, answer, model=reply_model or model)
     if review.verified and review.needs_response:
         async with sessions.begin() as db:
@@ -267,81 +314,96 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
                     context.delivery = {**context.delivery, 'answer': answer, 'response_complete': True, 'response_issue': ''}
                 async with sessions.begin() as db:
                     live, _ = await lease(db, context)
-                    live.result = {**live.result, 'responseRepairComplete': True, 'pendingReply': {'safeReply': review.text, 'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': 1, 'delivery': context.delivery}}
+                    live.result = {**live.result, 'responseRepairComplete': True, 'pendingReply': {'safeReply': review.text, 'input': review_input, 'answer': answer, 'evidence': context.reply_evidence, 'requestClock': getattr(context, 'request_clock', ''), 'deliveryVersion': (context.delivery or {}).get('version', 1), 'delivery': context.delivery}}
                 corrected = await assess(context, answer, model=reply_model or model)
                 review = corrected if corrected.verified else replace(corrected, text=review.text)
-    async with sessions.begin() as db:
-        live, actor = await lease(db, context)
-        message = await owned(db, Message, job.target_id, actor, lock=True)
-        from app.modules.operations.receipts import message_actions, receipt_reply, receipt_summary
-        from app.modules.memories.service import validate_job as validate_memory_job
-        await validate_memory_job(db, actor, live)
-        cards = await message_actions(db, actor, message)
-        from app.modules.work.draft_receipts import message_drafts
-        drafts = await message_drafts(db, actor, message, live)
-        for draft in drafts:
-            if draft.message_id == message.id:
-                business_inherit(actor, draft, live)
-            await business_require(db, actor, draft.access)
-        from app.modules.deliverables.serializers import delivery_summary
-        deliverable_reply = await delivery_summary(db, actor, message)
-        answer = receipt_reply(review, cards, drafts, deliverable_reply)
-        message.reply, message.citations = await verified_citations(db, context, answer)
-        message.access = live.access
-        # Validate markers even when no team tool ran; models can invent
-        # business markers from ordinary work IDs without a read receipt.
-        message.reply, references = await business_citations(db, actor, live.access, message.reply, fallback_tokens=current_source_tokens(context.reply_evidence))
-        message.citations = [*message.citations, *references, *web_citations(live.result)]
-        # The appended receipt is server-owned. Preserve its surrounding
-        # prose separately so future reads can render current card states.
-        summary = receipt_summary(cards, drafts)
-        prefix, separator, _ = message.reply.rpartition(summary) if summary else ('', '', '')
-        receipt_end = len(prefix) + len(summary)
-        live.result = {key: value for key, value in live.result.items() if key != 'replyReceipt'}
-        if live.access.get('team'):
-            from app.modules.team.agent_queries import append_query_summary
-            message.reply = append_query_summary(message.reply, await business_query_summary(db, live.result.get('businessQueries', [])))
-        source_ids = set(context.document_versions) | {row['id'] for row in documents}
-        if source_ids:
-            source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
-            from app.modules.attachments.documents import material_coverage, append_material_coverage
-            coverage, legacy = await material_coverage(db, actor, live, source_documents, context.document_reads)
-            message.reply = append_material_coverage(message.reply, coverage, legacy)
-        image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
-        if image_warnings:
-            message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)
-        if separator:
-            live.result = {**live.result, 'replyReceipt': {'prefix': prefix, 'suffix': message.reply[receipt_end:]}}
-        has_actions = await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == message.id, BusinessAction.state.in_(['succeeded', 'pending', 'running'])).limit(1))
-        if review.verified:
-            live.result = {key: value for key, value in live.result.items() if key not in ('pendingReply', 'replyReviewError')}
-            live.result = {**live.result, 'conversationReply': review.text}
-            incomplete = review.needs_action or review.needs_response or any(card['state'] in ('failed', 'conflict', 'unavailable') for card in cards) or bool(live.result.get('operationFeedback'))
-            live.state = 'succeeded' if not incomplete and (message.suggestions or has_actions or deliverable_reply) else 'awaiting_input'
-            live.result = {**live.result, 'incompleteTask': incomplete, 'completionIssue': 'response' if review.needs_response else 'action' if review.needs_action else '', 'taskInterpretation': review.task or {}}
-            from app.tasks.feedback.outcomes import derive
-            outcome = derive(live, cards, drafts, interpretation=review.task)
-            live.result = {**live.result, 'taskOutcome': outcome}
-            from app.modules.conversations.task.task_state import finish
-            await finish(db, actor, live, message, review.task, outcome)
-            from app.modules.interactions.lifecycle import settle_natural_reply
-            await settle_natural_reply(db, actor, live, review.task or {})
-            live.phase, live.error = 'awaiting_confirmation' if any(card['state'] == 'pending' for card in cards) else 'complete', ''
-            if live.phase == 'awaiting_confirmation':
-                live.state = 'awaiting_input'
-        else:
-            live.result = {**live.result, 'replyReviewError': review.error_code or 'UnverifiedReply'}
-            live.state, live.phase = 'awaiting_retry', 'reply_review'
-            live.error = review.error_message or '答复核对暂时失败。可重试核对，已保存的业务操作不会重复执行。'
-        if review.verified:
-            from app.modules.conversations.context.context_store import references
-            await db.flush()
-            await references(db, actor, live, message, include_current=True)
-            from app.tasks.nodes.node_state import release_outputs
-            release_outputs(live)
-        if review.verified:
-            retire_reply(live)
-        else:
-            reply_transition(live, review.preview_state)
-        update_feedback(live, 'complete' if review.verified else 'reviewing', '')
-        live.lease_until, live.updated_at = None, now()
+    context.timing.mark('persist.start')
+    async def persist_final():
+        nonlocal answer
+        async with sessions.begin() as db:
+            live, actor = await lease(db, context)
+            message = await owned(db, Message, job.target_id, actor, lock=True)
+            from app.modules.operations.receipts import message_actions, receipt_reply, receipt_summary
+            from app.modules.memories.service import validate_job as validate_memory_job
+            await validate_memory_job(db, actor, live)
+            cards = await message_actions(db, actor, message)
+            from app.modules.work.draft_receipts import message_drafts
+            drafts = await message_drafts(db, actor, message, live)
+            for draft in drafts:
+                if draft.message_id == message.id:
+                    business_inherit(actor, draft, live)
+                await business_require(db, actor, draft.access)
+            from app.modules.deliverables.serializers import delivery_summary
+            deliverable_reply = await delivery_summary(db, actor, message)
+            answer = receipt_reply(review, cards, drafts, deliverable_reply)
+            message.reply, message.citations = await verified_citations(db, context, answer)
+            message.access = live.access
+            # Validate markers even when no team tool ran; models can invent
+            # business markers from ordinary work IDs without a read receipt.
+            message.reply, references = await business_citations(db, actor, live.access, message.reply, fallback_tokens=current_source_tokens(context.reply_evidence))
+            message.citations = [*message.citations, *references, *web_citations(live.result)]
+            # The appended receipt is server-owned. Preserve its surrounding
+            # prose separately so future reads can render current card states.
+            summary = receipt_summary(cards, drafts)
+            prefix, separator, _ = message.reply.rpartition(summary) if summary else ('', '', '')
+            receipt_end = len(prefix) + len(summary)
+            live.result = {key: value for key, value in live.result.items() if key != 'replyReceipt'}
+            if live.access.get('team'):
+                from app.modules.team.agent_queries import append_query_summary
+                message.reply = append_query_summary(message.reply, await business_query_summary(db, live.result.get('businessQueries', [])))
+            source_ids = set(context.document_versions) | {row['id'] for row in documents}
+            if source_ids:
+                source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
+                from app.modules.attachments.documents import material_coverage, append_material_coverage
+                coverage, legacy = await material_coverage(db, actor, live, source_documents, context.document_reads)
+                message.reply = append_material_coverage(message.reply, coverage, legacy)
+            image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
+            if image_warnings:
+                message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)
+            if separator:
+                live.result = {**live.result, 'replyReceipt': {'prefix': prefix, 'suffix': message.reply[receipt_end:]}}
+            has_actions = await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == message.id, BusinessAction.state.in_(['succeeded', 'pending', 'running'])).limit(1))
+            if review.verified:
+                live.result = {key: value for key, value in live.result.items() if key not in ('pendingReply', 'replyReviewError')}
+                live.result = {**live.result, 'conversationReply': review.text}
+                incomplete = review.needs_action or review.needs_response or any(card['state'] in ('failed', 'conflict', 'unavailable') for card in cards) or bool(live.result.get('operationFeedback')) or (review.task or {}).get('state') in ('needs_input', 'blocked')
+                live.state = 'succeeded' if not incomplete and (message.suggestions or has_actions or deliverable_reply) else 'awaiting_input'
+                live.result = {**live.result, 'incompleteTask': incomplete, 'completionIssue': 'response' if review.needs_response else 'action' if review.needs_action else '', 'taskInterpretation': review.task or {}}
+                from app.tasks.feedback.outcomes import derive
+                outcome = derive(live, cards, drafts, interpretation=review.task)
+                live.result = {**live.result, 'taskOutcome': outcome}
+                from app.modules.conversations.task.task_state import finish
+                await finish(db, actor, live, message, review.task, outcome, delivery_version=(context.delivery or {}).get('version', 1))
+                from app.modules.interactions.lifecycle import settle_natural_reply
+                await settle_natural_reply(db, actor, live, review.task or {})
+                live.phase, live.error = 'awaiting_confirmation' if any(card['state'] == 'pending' for card in cards) else 'complete', ''
+                if live.phase == 'awaiting_confirmation':
+                    live.state = 'awaiting_input'
+            else:
+                live.result = {**live.result, 'replyReviewError': review.error_code or 'UnverifiedReply'}
+                live.state, live.phase = 'awaiting_retry', 'reply_review'
+                live.error = review.error_message or '答复核对暂时失败。可重试核对，已保存的业务操作不会重复执行。'
+            if review.verified:
+                from app.modules.conversations.context.context_store import references
+                await db.flush()
+                await references(db, actor, live, message, include_current=True)
+                from app.tasks.nodes.node_state import release_outputs
+                release_outputs(live)
+            if review.verified:
+                retire_reply(live)
+            else:
+                reply_transition(live, review.preview_state)
+            update_feedback(live, 'complete' if review.verified else 'reviewing', '')
+            live.lease_until, live.updated_at = None, now()
+
+    from sqlalchemy.exc import OperationalError, InterfaceError
+    for attempt in range(2):
+        try:
+            await persist_final()
+            break
+        except (OperationalError, InterfaceError):
+            if attempt:
+                raise
+            context.timing.mark('persist.retry', reason='database_transport')
+            await asyncio.sleep(.1)
+    context.timing.mark('persist.end')

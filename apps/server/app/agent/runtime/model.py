@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from contextvars import ContextVar
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
@@ -9,6 +10,10 @@ from app.modules.model_services.models import ModelUsage
 from app.tasks.context import BudgetExceeded, RunContext
 from app.tasks.lease import lease
 from pydantic import PrivateAttr
+
+
+# A shared model may serve internal work and user replies concurrently.
+internal_call_kind = ContextVar('internal_model_call_kind', default=None)
 
 
 def approximate_tokens(messages):
@@ -105,8 +110,22 @@ class BoundedChatModel(ChatOpenAI):
             config, key = await resolve_bound(db, context.settings, context.company_id, context.model_binding or {}, context.model_purpose)
         usage_id = await reserve_call(context, context.model_purpose, estimate)
         record = RequestRecord(context.sessions, usage_id)
+        from app.tasks.nodes.node_execution import active_node
+        parent = active_node.get()
+        from langchain_core.messages import HumanMessage
+        marker = next((str(m.id or '') for m in reversed(messages) if isinstance(m, HumanMessage)), '')
+        kind = ('protocol' if marker.startswith(('delivery-repair:', 'delivery-references:')) else
+                'completion_repair' if marker.startswith('completion-repair:') else
+                parent[1] if parent and parent[1] in ('authorization', 'compaction', 'review') else
+                'main' if payload.get('tools') else 'response_repair')
+        from app.tasks.timing import call_kind
+        internal_kind = internal_call_kind.get()
+        kind = internal_kind or call_kind.get() or kind
+        def timing(event, **fields):
+            if context.timing:
+                context.timing.mark(event, call=usage_id, kind=kind, **fields)
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
-        is_reply = bool(payload.get('tools')) and context.model_purpose == 'assistant'
+        is_reply = not internal_kind and bool(payload.get('tools') or self._completion_validator) and context.model_purpose == 'assistant'
         publisher = candidate = None
         if is_reply and not self._verification:
             from app.tasks.feedback.reply_stream import ReplyPublisher
@@ -131,7 +150,7 @@ class BoundedChatModel(ChatOpenAI):
             streaming = config.get('streaming', False)
             timeout = response_timeout(context, streaming)
             async def request(progress):
-                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=record.event, on_delta=candidate.feed if candidate else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
+                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=record.event, on_timing=timing, on_delta=candidate.feed if candidate else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
             response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
@@ -140,7 +159,7 @@ class BoundedChatModel(ChatOpenAI):
                 if any(g.message.invalid_tool_calls for g in result.generations):
                     raise ValueError('Incomplete tool call')
                 required_completion = payload.get('tool_choice') == {'type': 'function', 'function': {'name': 'finish_task'}}
-                if self._completion_validator:
+                if self._completion_validator and not internal_kind:
                     for generation in result.generations:
                         self._completion_validator(generation.message, required=required_completion)
             except (ValueError, TypeError, KeyError):
@@ -154,16 +173,20 @@ class BoundedChatModel(ChatOpenAI):
                     generation.message.id = f'node:{active_node.get()[0]}:{index}'
             if candidate:
                 await candidate.finish()
+            if publisher:
+                await publisher.flush()
             await record.finish()
         except BaseException as error:
+            timing('model.end', state='failed', error=type(error).__name__)
             if publisher:
-                await publisher.fail(error, candidate.parser.text if candidate and candidate.parser else None)
+                await publisher.fail(error, candidate.text if candidate else None)
             await record.finish(error)
             import httpx
             from app.integrations.models.transport import ProviderError
             if isinstance(error, (ProviderError, httpx.TransportError, asyncio.TimeoutError, json.JSONDecodeError)):
                 raise safe_error(error) from None
             raise
+        timing('model.end')
         output = sum((g.message.usage_metadata or {}).get('output_tokens', 0) or len(str(g.message.content)) + len(json.dumps(g.message.tool_calls, ensure_ascii=False)) for g in result.generations)
         context.output_tokens += output
         async with context.sessions.begin() as db:

@@ -25,7 +25,7 @@ class CancelJob(Input):
     expectedFence: int = Field(ge=0, strict=True)
 
 
-async def cancel_job(db, actor, identifier, body):
+async def cancel_job(db, actor, identifier, body, *, temporary=None):
     await company_lock(db, actor.company_id)
     item = await owned(db, Job, identifier, actor, lock=True)
     if item.kind != 'message':
@@ -40,6 +40,9 @@ async def cancel_job(db, actor, identifier, body):
     if item.attempt != body.expectedAttempt or item.fence != body.expectedFence:
         problem(409, '任务执行版本已变化，请刷新后中断', 'job_version_changed')
     from app.tasks.feedback.reply_stream import transition
+    if temporary is not None:
+        from app.tasks.feedback.reply_stream import persist_snapshot
+        await persist_snapshot(db, actor, item, message, temporary)
     transition(item, 'interrupted')
     await interrupt_usage(db, item)
     item.state, item.phase, item.error = 'cancelled', 'cancelled', '已中断'

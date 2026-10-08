@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { delimiter, dirname, join, resolve } from 'node:path'
 import { startLocalSandbox } from './sandbox-local.mjs'
+import { startLocalReplyStream } from './reply-stream-local.mjs'
 import { startLocalDatabase } from './database-local.mjs'
 const root = resolve(import.meta.dirname, '../..')
 const webRequire = createRequire(join(root, 'apps/web/package.json'))
@@ -37,6 +38,7 @@ function launch(command, args) {
 }
 let stopping = false
 let sandbox = null
+let replyStream = null
 const startup = new AbortController()
 function stop(code) {
   if (stopping) return
@@ -44,6 +46,7 @@ function stop(code) {
   startup.abort()
   for (const child of children) child.kill('SIGTERM')
   process.exitCode = code
+  if (replyStream) void replyStream.stop().catch((error) => console.error(error.message))
   if (sandbox)
     void sandbox.stop().catch((error) => {
       console.error(error.message)
@@ -56,10 +59,13 @@ if (action === 'all') {
   try {
     await startLocalDatabase({ signal: startup.signal })
     startup.signal.throwIfAborted()
+    replyStream = await startLocalReplyStream({ signal: startup.signal })
+    env.PAA_REPLY_STREAM_REDIS_URL = replyStream.url
     sandbox = await startLocalSandbox({ signal: startup.signal })
   } catch (error) {
     if (!stopping) console.error(error.message)
     process.exitCode = stopping ? process.exitCode : 1
+    await replyStream?.stop()
     stopping = true
   }
   if (stopping) process.exit(process.exitCode ?? 0)

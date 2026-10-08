@@ -1,4 +1,4 @@
-"""One conditional text correction for a concrete completion or length issue."""
+"""One conditional text correction for a concrete missing response."""
 import json
 from langchain_core.messages import HumanMessage, SystemMessage
 from app.agent.runtime.model import BoundedChatModel
@@ -22,8 +22,6 @@ async def repair_response(context, answer, reason, *, model=None):
         actions = await message_actions(db, actor, message)
         payload = {'request': request_text(message, job), 'candidate': answer, 'correction': reason,
             'currentActions': actions, 'workRecordEvidence': await work_record_evidence(db, actor, actions), 'evidence': context.reply_evidence}
-        if (context.delivery or {}).get('answer_length'):
-            payload['lengthRequirement'] = context.delivery['answer_length']
     messages = [SystemMessage(content=PUBLIC_REPLY_POLICY + '只修正当前用户要求的必要答复正文。没有工具执行权限，不创建、修改或承诺额外操作。以逐项 currentActions.details/changedFields 和 evidence 为准；操作保存成功不等于工作已完成。补足 correction 指出的必要内容，保留正确的其它答复。实际程序输入与 stdout 对应核对，注释和预期不是观察。资料没有覆盖的部分不因此判错或要求用户补话。没有依据不编造，也不把工具的系统问题推给用户重复授权。确缺用户输入时只补最小必要问题，已有查询中的对象候选与区分字段原样准确呈现；没有查到候选就请用户提供定位信息，不能自行造选项或替用户回答。\n' + WORK_RECEIPT_POLICY + persona_prompt(context.persona_id)), HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str))]
     ensure_input(context, estimate_request(messages))
     if model is None:
@@ -32,12 +30,16 @@ async def repair_response(context, answer, reason, *, model=None):
         model._run_context = context
     async def generate():
         from app.integrations.models.transport import ProviderError
-        response = await model.ainvoke(messages)
+        from app.tasks.timing import call_kind
+        token = call_kind.set('response_repair')
+        if context.timing:
+            context.timing.mark('model.repair', kind='response_repair', reason='response_contract')
+        try:
+            response = await model.ainvoke(messages)
+        finally:
+            call_kind.reset(token)
         if response.tool_calls or not response.text.strip():
             raise ProviderError('invalid_response', '正文修正未返回有效文本')
         return response.text
     corrected = await execute_node(context, identity='response-repair:' + digest(payload), kind='model', label='完善答复中', operation=generate)
-    if payload.get('lengthRequirement'):
-        from app.agent.completion.answer_length import rebind_body
-        context.delivery = {**context.delivery, 'answer_length': rebind_body(payload['lengthRequirement'], answer, corrected)}
     return corrected

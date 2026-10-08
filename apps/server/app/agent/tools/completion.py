@@ -2,13 +2,14 @@
 from langchain.tools import tool
 from app.agent.completion.delivery import Delivery
 from app.agent.completion.answer_length import AnswerLength
+from pydantic.json_schema import SkipJsonSchema
 from app.modules.conversations.task.task_schemas import TaskInterpretation
 
 
 @tool(return_direct=True)
 async def finish_task(answer: str, task: TaskInterpretation, business_requested: bool, verification_requested: bool,
                       operation_ids: list[str] | None = None, verification_quote: str = '',
-                      response_complete: bool = True, response_issue: str = '', answer_length: AnswerLength | None = None) -> str:
+                      response_complete: bool = True, response_issue: str = '', answer_length: SkipJsonSchema[AnswerLength | None] = None) -> str:
     """Deliver the actual answer and task summary, then end this turn.
 
     Call alone after all tools finished. This tool never writes business data.
@@ -23,9 +24,6 @@ async def finish_task(answer: str, task: TaskInterpretation, business_requested:
     claim/material the user supplied; verification_quote must quote that request.
     Complete requested verification as part of your task using actual evidence.
     The server validates delivery and receipts locally, without another model judge.
-    For an explicit current-request length requirement, answer_length quotes its
-    exact numeric phrase and supplies the unit and the entire answer body to count.
-    Omit for ordinary replies; never invent limits or count only a convenient excerpt.
     """
     return Delivery(answer=answer, task=task, business_requested=business_requested,
                     operation_ids=operation_ids or [], verification_requested=verification_requested, verification_quote=verification_quote,

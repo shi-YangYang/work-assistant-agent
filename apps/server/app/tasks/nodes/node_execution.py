@@ -6,7 +6,7 @@ import random
 import time
 from app.core.digests import digest
 from app.security.versions import validate_cached_versions
-from app.tasks.context import BudgetExceeded, LostLease
+from app.tasks.context import BudgetExceeded, LostLease, ToolBudgetExceeded
 from app.tasks.lease import lease
 from app.tasks.nodes.node_failures import classify
 from app.tasks.nodes.node_state import MAX_NODES, MAX_OUTPUT_BYTES, execution, save
@@ -125,7 +125,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             # 32-call provider budget. A second aggregate cap of eight nodes
             # could reject the final review after valid multi-step writes.
             if len(state['nodes']) >= MAX_NODES or kind == 'tool' and count >= 16:
-                raise BudgetExceeded('本次处理步骤已达到限制，请补充说明后继续')
+                error = ToolBudgetExceeded if kind == 'tool' else BudgetExceeded
+                raise error('本次处理步骤已达到限制，请补充说明后继续')
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,
                    'round': job.attempt, 'totalRetries': 0, 'resumable': True}

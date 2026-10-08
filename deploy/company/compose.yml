@@ -1,5 +1,16 @@
 name: paa-company
 services:
+  redis:
+    image: redis:7.4.2-alpine
+    command: ['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory', '64mb', '--maxmemory-policy', 'noeviction']
+    mem_limit: 128m
+    memswap_limit: 128m
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
   postgres:
     image: postgres:17.11-bookworm
     environment:
@@ -21,6 +32,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-paa}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-paa_company}
       PAA_MEDIA_DIR: /data/media
       PAA_FFMPEG: ffmpeg
+      PAA_REPLY_STREAM_REDIS_URL: redis://redis:6379/0
       PAA_COOKIE_SECURE: 'true'
       PAA_MODEL_KEY_FILE: /run/paa/model-master.key
     command: ['python', '-m', 'app.cli', 'migrate']
@@ -36,7 +48,7 @@ services:
         target: /run/paa/model-master.key
         read_only: true
         bind: { create_host_path: false }
-    depends_on: { migrate: { condition: service_completed_successfully } }
+    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
     restart: unless-stopped
   worker:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: worker }
@@ -54,7 +66,7 @@ services:
         target: /run/paa/model-master.key
         read_only: true
         bind: { create_host_path: false }
-    depends_on: { migrate: { condition: service_completed_successfully } }
+    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
     restart: unless-stopped
   sandbox:
     profiles: [sandbox]

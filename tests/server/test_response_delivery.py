@@ -21,6 +21,7 @@ class DeliveryModel(ReviewedFixtureModel):
     raw_first: bool = False
     invalid: bool = False
     mixed: bool = False
+    repeat_invalid_protocol: bool = False
     verification_requested: bool = False
     verification_quote: str = ''
     task: dict = Field(default_factory=lambda: {'state': 'completed'})
@@ -31,7 +32,8 @@ class DeliveryModel(ReviewedFixtureModel):
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls += 1
         self.requests.append({'tools': [tool['function']['name'] for tool in kwargs.get('tools', [])], 'tool_choice': kwargs.get('tool_choice')})
-        if self.invalid or self.raw_first and self.calls == 1:
+        recovering = any(isinstance(message, HumanMessage) and (message.id or '').startswith('delivery-repair:') for message in messages)
+        if self.invalid or self.raw_first and self.calls == 1 or recovering and not self.repeat_invalid_protocol:
             result = AIMessage(content=self.answer)
         else:
             result = completion(self.answer, task=self.task, verification_requested=self.verification_requested, verification_quote=self.verification_quote)
@@ -69,20 +71,20 @@ async def test_ordinary_answer_is_delivered_whole_without_second_model_call(setu
     assert fake.calls == 1 and not stored.get('replyReview')
 
 
-async def test_plain_text_is_recovered_once_into_completion_without_business_replay(setup):
+async def test_plain_text_is_delivered_once_without_business_replay_or_wrapping(setup):
     fake = model(raw_first=True)
     result, stored = await run(setup, fake)
-    assert result['reply'] == fake.answer and fake.calls == 2, result
-    assert stored['deliveryRepairs'] == ['protocol']
+    assert result['reply'] == fake.answer and fake.calls == 1, result
+    assert not stored.get('deliveryRepairs')
     assert result['job']['taskOutcome']['state'] == 'completed'
-    assert fake.requests[1] == {'tools': ['finish_task'], 'tool_choice': {'type': 'function', 'function': {'name': 'finish_task'}}}
+    assert 'finish_task' not in fake.requests[0]['tools'] and fake.requests[0]['tool_choice'] == 'auto'
 
 
 async def test_missing_completion_protocol_fails_boundedly_instead_of_false_success(setup):
-    fake = model(invalid=True)
+    fake = model(invalid=True, answer='<!--noria:{broken-->invalid')
     result, stored = await run(setup, fake)
-    assert fake.calls == 2 and stored['deliveryRepairs'] == ['protocol']
-    assert result['job']['state'] == 'awaiting_retry' and result['job']['taskOutcome']['state'] == 'blocked'
+    assert fake.calls == 1 and not stored.get('deliveryRepairs')
+    assert result['job']['state'] == 'failed' and result['job']['taskOutcome']['state'] == 'blocked'
     assert fake.answer not in result['reply']
 
 
@@ -102,9 +104,10 @@ class PreviousReceiptModel(DeliveryModel):
             if errors:
                 self.repair_errors = [message.content for message in errors]
                 assert '此前消息' in errors[-1].content
-                assert self.requests[-1] == {'tools': ['finish_task'], 'tool_choice': {'type': 'function', 'function': {'name': 'finish_task'}}}
+                assert self.requests[-1]['tools'] == [] and self.requests[-1]['tool_choice'] in (None, 'none')
             invalid = not errors or self.repeat_invalid
-            result = completion(self.answer, business=invalid, operation_ids=[self.receipt_id] if invalid else [])
+            result = (completion(self.answer, business=True, operation_ids=[self.receipt_id])
+                      if invalid else AIMessage(content=self.answer))
         return ChatResult(generations=[ChatGeneration(message=result)])
 
 
@@ -125,7 +128,12 @@ async def test_previous_message_receipt_repairs_first_terminal_reference_without
         receipt_id=receipt['id'], raw_first=raw_first, repeat_invalid=repeat_invalid)
     result, stored = await run(setup, fake, '状态保持原样，告诉我最后设置的是哪一天，不要新增进展',
         conversationId=sent['conversationId'], workReference={'workId': receipt['objectId']})
-    assert fake.calls == (3 if raw_first else 2) and fake.repair_errors
+    if raw_first:
+        assert fake.calls == 1 and not stored.get('deliveryRepairs')
+        assert result['reply'] == answer and not result['actions']
+        assert (await client.get(path)).json() == before
+        return
+    assert fake.calls == 2 and fake.repair_errors
     assert stored['deliveryRepairs'] == (['protocol', 'references'] if raw_first else ['protocol'])
     assert not result['actions'] and not stored.get('toolOutcomes')
     assert (await client.get(path)).json() == before
@@ -165,24 +173,118 @@ async def test_summary_does_not_accept_empty_success_or_incoherent_state():
 
 class ExhaustingModel(DeliveryModel):
     offered: list = Field(default_factory=list)
+    query_count: int = 18
+    with_receipt: bool = False
+    answer: str = '本轮已查到的工作列表为空；最后两次查询未执行。'
+
+    async def ainvoke(self, input, config=None, *, stop=None, **kwargs):
+        if self.with_receipt and isinstance(input, list) and isinstance(input[-1], HumanMessage):
+            try:
+                payload = json.loads(input[-1].content)
+            except (ValueError, TypeError):
+                payload = {}
+            if payload.get('proposedOperation'):
+                return AIMessage(content=json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '', 'receiptOnly': False}))
+        return await super().ainvoke(input, config, stop=stop, **kwargs)
+
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls += 1
-        self.offered.append([tool['function']['name'] for tool in kwargs['tools']])
+        self.offered.append([tool['function']['name'] for tool in kwargs.get('tools', [])])
         if self.calls == 1:
-            answer = AIMessage(content='', tool_calls=[{'id': f'query-{i}', 'name': 'find_work_items', 'args': {'query': f'项目{i}'}} for i in range(18)])
+            assert self.offered[-1] == ['load_tools']
+            answer = AIMessage(content='', tool_calls=[{'id': 'load-work', 'name': 'load_tools', 'args': {'groups': ['work']}}])
+        elif self.with_receipt and self.calls == 2:
+            assert 'execute_business_action' in self.offered[-1]
+            answer = AIMessage(content='', tool_calls=[{'id': 'create-once', 'name': 'execute_business_action', 'args': {'step': 1, 'action': 'create_work', 'changes': {'title': '已保存工作'}}}])
+        elif self.calls == (3 if self.with_receipt else 2):
+            assert 'find_work_items' in self.offered[-1]
+            answer = AIMessage(content='', tool_calls=[{'id': f'query-{i}', 'name': 'find_work_items', 'args': {'query': f'项目{i}'}} for i in range(self.query_count)])
         else:
-            answer = completion('本轮已查到的工作列表为空；最后两次查询未执行。', task={'state': 'blocked', 'remaining': ['最后两次查询超出本轮额度']})
+            # LangChain skips tool binding entirely for an empty visible set.
+            assert self.offered[-1] == [] and kwargs.get('tool_choice') in (None, 'none')
+            answer = AIMessage(content='<!--noria:{}-->\n' + self.answer)
         return ChatResult(generations=[ChatGeneration(message=answer)])
 
 
-async def test_parallel_tool_batch_exhaustion_still_delivers_without_raising_budget(setup):
-    fake = ExhaustingModel(model='controlled', api_key='controlled')
-    result, _ = await run(setup, fake, '请分别查询十八个不同项目')
-    assert fake.calls == 2 and fake.offered[-1] == ['finish_task'], result
-    assert '最后两次查询未执行' in result['reply']
+@pytest.mark.parametrize('previous_pending', [False, True])
+async def test_parallel_tool_batch_exhaustion_still_delivers_without_raising_budget(setup, previous_pending):
+    from app.modules.conversations.models import ConversationTaskState
+    from sqlalchemy import select
+    conversation = {}
+    if previous_pending:
+        from test_prose_delivery import ProseModel
+        prior, _ = await run(setup, ProseModel(model='controlled', api_key='controlled', answer='请提供文件。', task_value={'state': 'needs_input', 'remaining': ['缺少指定文件']}))
+        conversation['conversationId'] = prior['conversationId']
+    # One branch omits any prose explanation: status must come from the refusal.
+    answer = '本轮已查到的工作列表为空。' if previous_pending else '本轮已查到的工作列表为空；最后两次查询未执行。'
+    fake = ExhaustingModel(model='controlled', api_key='controlled', answer=answer)
+    result, stored = await run(setup, fake, '请分别查询十八个不同项目', **conversation)
+    assert fake.calls == 3 and fake.offered[-1] == [], result
+    assert answer in result['reply']
     assert result['job']['taskOutcome']['state'] == 'blocked'
     assert len([node for node in result['job']['nodes'] if node['kind'] == 'tool']) == 16
+    remaining = stored['nodeExecution']['budgetBlockedTools']
+    assert len(remaining) == 2 and all('查找工作：项目' in step and '未执行' in step for step in remaining)
+    assert result['job']['incompleteTask'] and result['job']['taskOutcome']['remaining'] == remaining
+    assert stored['taskInterpretation']['state'] == 'blocked' and stored['taskInterpretation']['remaining'] == remaining
+    assert not stored.get('deliveryRepairs')
     assert not result['job']['error']
+    async with setup[1]() as db:
+        state = await db.scalar(select(ConversationTaskState).where(ConversationTaskState.conversation_id == result['conversationId']))
+        assert state.payload['task']['state'] == 'blocked'
+        assert state.payload['task']['remaining'] == remaining
+        assert state.payload['task']['messageId'] == result['id']
+
+
+@pytest.mark.parametrize('query_count', [14, 16])
+async def test_budget_closeout_after_all_reads_does_not_invent_unfinished_steps(setup, query_count):
+    fake = ExhaustingModel(model='controlled', api_key='controlled', query_count=query_count, answer='全部查询均已完成，没有匹配的工作。')
+    result, stored = await run(setup, fake, f'请分别查询{query_count}个不同项目')
+    assert fake.calls == 3 and fake.offered[-1] == []
+    assert len([node for node in result['job']['nodes'] if node['kind'] == 'tool']) == query_count
+    assert result['job']['taskOutcome']['state'] == 'completed'
+    assert result['job']['taskOutcome']['remaining'] == [] and not result['job']['incompleteTask']
+    assert not stored['nodeExecution'].get('budgetBlockedTools')
+
+
+async def test_budget_prose_keeps_committed_receipt_without_replaying_write(setup):
+    fake = ExhaustingModel(model='controlled', api_key='controlled', with_receipt=True, answer='已保存工作；查询尚未全部完成。')
+    result, stored = await run(setup, fake, '创建工作“已保存工作”，然后分别查询十八个不同项目')
+    assert fake.calls == 4 and fake.offered[-1] == []
+    tools = [node for node in result['job']['nodes'] if node['kind'] == 'tool']
+    assert len(tools) == 16 and sum(node['label'] == '创建工作' for node in tools) == 1
+    assert len(result['actions']) == 1 and result['actions'][0]['state'] == 'succeeded'
+    works = (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
+    assert len(works) == 1 and works[0]['id'] == result['actions'][0]['objectId']
+    outcome = result['job']['taskOutcome']
+    assert result['job']['incompleteTask'] and outcome['state'] == 'partial'
+    assert len(outcome['completed']) == 1 and len(outcome['remaining']) == 3
+    assert outcome['remaining'] == stored['nodeExecution']['budgetBlockedTools']
+    assert not stored.get('deliveryRepairs')
+
+
+async def test_budget_refusals_survive_same_scope_recovery_but_not_new_input(setup):
+    from app.agent.completion.prose import task_for
+    from app.agent.runtime.tool_nodes import reject_tool_budget
+    from app.tasks.nodes.node_execution import initialize
+    from test_business_actions import runtime
+    context, _ = await runtime(setup, '查询项目甲')
+    context.node_retry = True
+    await initialize(context, 'original-input')
+    call = {'id': 'refused-query', 'name': 'find_work_items', 'args': {'query': '项目甲'}}
+    await reject_tool_budget(context, call)
+    await initialize(context, 'original-input')
+    async with context.sessions() as db:
+        stored = await db.get(Job, context.job_id)
+        task = task_for(stored, {'state': 'completed'})
+        assert task.state == 'blocked' and len(task.remaining) == 1
+        merged = task_for(stored, {'state': 'needs_input', 'remaining': ['缺少文件']})
+        assert merged.state == 'blocked' and merged.remaining == ['缺少文件', *task.remaining]
+    await initialize(context, 'corrected-input')
+    async with context.sessions() as db:
+        stored = await db.get(Job, context.job_id)
+        assert task_for(stored).state == 'completed'
+        assert not stored.result['nodeExecution'].get('budgetBlockedTools')
 
 
 @pytest.mark.parametrize('legacy', [True, False])
@@ -339,7 +441,7 @@ async def test_reading_and_explicit_verification_deliver_without_an_extra_judge(
     (True, '用户从没说过的核验要求', 0, 'failed'),
 ])
 async def test_explicit_verification_is_delivered_directly_but_quote_must_match_request(setup, verify, quote, count, state):
-    fake = RoutingModel(model='controlled', api_key='controlled', verification_requested=verify, verification_quote=quote)
+    fake = RoutingModel(model='controlled', api_key='controlled', verification_requested=verify, verification_quote=quote, repeat_invalid_protocol=state == 'failed')
     result, _ = await run(setup, fake, '请核验这份材料的结论' if verify else '查公开资料并附来源')
     assert fake.reviews == count and fake.calls == (2 if state == 'failed' else 1)
     assert len([node for node in result['job']['nodes'] if node['kind'] == 'review']) == count
@@ -474,14 +576,14 @@ class FileReceiptModel(RoutingModel):
             output = next(message for message in reversed(messages) if isinstance(message, ToolMessage) and message.name == 'run_python')
             self.file_receipt = json.loads(output.content)
             if self.calls == 3:
-                assert [tool['function']['name'] for tool in kwargs['tools']] == ['finish_task']
-                assert kwargs['tool_choice'] == {'type': 'function', 'function': {'name': 'finish_task'}}
+                assert not kwargs.get('tools') and kwargs.get('tool_choice') in (None, 'none')
                 errors = [message.content for message in messages if isinstance(message, ToolMessage) and message.name == 'finish_task' and message.status == 'error']
                 assert len(errors) == 1 and '私人成果' in errors[0]
                 self.repair_errors = errors
             invalid = self.calls == 2 or self.repeat_invalid
-            result = completion('CSV 文件已生成，可在本轮成果中下载。', business=invalid,
-                operation_ids=[self.file_receipt['delivery']['id']] if invalid else [])
+            result = (completion('CSV 文件已生成，可在本轮成果中下载。', business=True,
+                operation_ids=[self.file_receipt['delivery']['id']]) if invalid
+                else AIMessage(content='CSV 文件已生成，可在本轮成果中下载。'))
         return ChatResult(generations=[ChatGeneration(message=result)])
 
 
@@ -542,6 +644,8 @@ class ProtocolThenActionModel(DeliveryModel):
             result = AIMessage(content='', tool_calls=[{'name': 'execute_business_action', 'id': 'create-' + str(step),
                 'args': {'step': step, 'action': 'create_work', 'changes': {'title': '工作' + str(step)}}}])
         elif self.calls == 2:
+            result = AIMessage(content='', tool_calls=[{'name': 'set_task_context', 'id': 'remaining', 'args': {'business_requested': True, 'task': {'state': 'blocked', 'remaining': ['第二项还未保存']}}}])
+        elif self.calls == 3:
             result = AIMessage(content='已保存第一项，第二项还未保存。')
         elif self.calls == 4:
             result = AIMessage(content='', tool_calls=[{'name': 'get_business_actions', 'id': 'receipts', 'args': {}}])
@@ -556,7 +660,7 @@ async def test_partial_business_completion_keeps_receipt_without_a_judge_reopeni
     fake = ProtocolThenActionModel(model='controlled', api_key='unused')
     result, stored = await run(setup, fake, '创建工作1和工作2')
     assert fake.calls == 3 and fake.reviews == 0
-    assert stored['deliveryRepairs'] == ['protocol']
+    assert not stored.get('deliveryRepairs')
     assert len(result['actions']) == 1 and result['actions'][0]['state'] == 'succeeded'
     works = (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
     assert len(works) == 1 and works[0]['title'] == '工作1' and works[0]['revision'] == 1
@@ -576,3 +680,103 @@ async def test_protocol_and_semantic_repairs_have_separate_persistent_budgets(se
     assert await take_repair(context, 'response', resume=True)
     async with context.sessions() as db:
         assert (await db.get(Job, context.job_id)).result['deliveryRepairs'] == ['protocol', 'response']
+
+
+@pytest.mark.parametrize('reject', [False, True])
+async def test_required_tool_choice_has_one_explicit_unsupported_fallback(monkeypatch, reject):
+    import httpx
+    from types import SimpleNamespace
+    from app.integrations.models.chat import chat
+    from test_model_stream_errors import client_for, stream
+    from fakes import wire_completion
+    calls, timing = [], []
+    def response(request):
+        payload = json.loads(request.content)
+        calls.append(payload)
+        if reject and len(calls) == 1:
+            return httpx.Response(400, json={'error': {'message': 'tool_choice required is not supported', 'code': 'invalid_parameter'}})
+        arguments = wire_completion('正常单次正文')['tool_calls'][0]['function']['arguments']
+        return stream({'choices': [{'delta': {'tool_calls': [{'index': 0, 'id': 'c', 'function': {'name': 'finish_task', 'arguments': arguments}}]}, 'finish_reason': 'tool_calls'}]})
+    client_for(monkeypatch, response)
+    result = await chat(SimpleNamespace(model_allowed_origins=()), {'baseUrl': 'https://example.org/v1', 'model': 'controlled', 'streaming': True}, 'unused',
+                        [{'role': 'user', 'content': '解释概念'}], tools=[{'type': 'function', 'function': {'name': 'finish_task'}}], tool_choice='required',
+                        on_timing=lambda event, **fields: timing.append((event, fields)))
+    assert len(calls) == 1 + int(reject)
+    assert calls[0]['tool_choice'] == 'required'
+    if reject:
+        assert calls[1]['tool_choice'] == 'auto'
+        assert any(event == 'model.compatibility' for event, _ in timing)
+    assert result['choices'][0]['message']['tool_calls'][0]['function']['name'] == 'finish_task'
+
+
+@pytest.mark.parametrize('malicious_retry', [False, True])
+async def test_legacy_prose_recovery_keeps_unfinished_state_and_never_replays_tools(setup, malicious_retry):
+    class Recovering(DeliveryModel):
+        async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                reply = completion('已读第一份材料，另一份尚不可用。', operation_ids=['invalid-receipt'],
+                                   task={'state': 'blocked', 'remaining': ['另一份材料不可用']})
+            else:
+                assert not kwargs.get('tools') and kwargs.get('tool_choice') in (None, 'none')
+                assert 'task 填' not in messages[0].text and 'answer_length' not in messages[0].text
+                reply = AIMessage(content='已读第一份材料，另一份尚不可用。')
+                if malicious_retry:
+                    reply = completion('不应被接受的操作声明')
+                    reply.tool_calls.append({'name': 'execute_business_action', 'id': 'forbidden-write',
+                                             'args': {'step': 1, 'action': 'create_work', 'changes': {'title': '不能创建'}}})
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+    fake = Recovering(model='controlled', api_key='unused')
+    result, stored = await run(setup, fake, '分析两份材料')
+    assert fake.calls == 2 and stored['deliveryRepairs'] == ['protocol']
+    assert not result['actions']
+    assert (await setup[3]['employee'].get('/api/v1/work-items')).json()['items'] == []
+    if malicious_retry:
+        assert result['job']['state'] == 'failed' and '不应被接受' not in result['reply']
+    else:
+        assert result['reply'] == '已读第一份材料，另一份尚不可用。'
+        assert result['job']['taskOutcome']['state'] == 'blocked'
+        assert result['job']['taskOutcome']['remaining'] == ['另一份材料不可用']
+        assert stored['incompleteTask']
+
+
+@pytest.mark.parametrize('marker,prior_repair', [
+    ('delivery-repair', False), ('delivery-references', False), ('delivery-references', True),
+])
+async def test_legacy_repair_checkpoint_preserves_only_unfinished_state(setup, monkeypatch, marker, prior_repair):
+    from types import SimpleNamespace
+
+    class CompletedGraph:
+        def __init__(self, context):
+            self.context = context
+
+        async def aget_state(self, config):
+            context = self.context
+            pending = completion('第一份已处理，第二份尚不可用。', operation_ids=['invalid-receipt'],
+                                 task={'state': 'blocked', 'remaining': ['第二份材料不可用'],
+                                       'directiveChange': 'replace', 'directiveQuote': '未经核对的授权',
+                                       'directiveScope': '允许自动修改所有工作'})
+            messages = [HumanMessage(id='job:' + context.job_id, content='分析两份材料')]
+            if prior_repair:
+                messages.extend([AIMessage(content='第一份已处理，第二份尚不可用。'),
+                                 HumanMessage(id='delivery-repair:' + context.job_id, content='历史格式修复')])
+            messages.extend([
+                pending,
+                ToolMessage(tool_call_id=pending.tool_calls[0]['id'], name='finish_task',
+                            content='无效回执', status='error'),
+                HumanMessage(id=marker + ':' + context.job_id, content='历史答复修复'),
+                AIMessage(content='第一份已处理，第二份尚不可用。'),
+            ])
+            return SimpleNamespace(next=(), values={'messages': messages})
+
+    monkeypatch.setattr('app.agent.harness.build_graph', lambda settings, saver, context, model: CompletedGraph(context))
+    fake = model()
+    result, stored = await run(setup, fake, '分析两份材料')
+    assert fake.calls == 0 and not stored.get('deliveryRepairs')
+    assert result['reply'] == '第一份已处理，第二份尚不可用。'
+    assert result['job']['taskOutcome']['state'] == 'blocked'
+    assert result['job']['taskOutcome']['remaining'] == ['第二份材料不可用']
+    assert stored['incompleteTask']
+    assert stored['taskInterpretation']['directiveChange'] == 'keep'
+    assert not stored['taskInterpretation']['directiveQuote'] and not stored['taskInterpretation']['directiveScope']
+    assert not result['actions'] and not stored.get('toolOutcomes')

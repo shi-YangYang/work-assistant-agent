@@ -132,6 +132,8 @@ def receipt_reply(review, cards, drafts=(), deliverables=''):
         parts.append(summary)
     if review.verified and review.needs_action:
         parts.append('本次请求仍有操作未完成；已保存的结果会保留。')
+    elif review.verified and cards and (review.task or {}).get('state') in ('needs_input', 'blocked') and (review.task or {}).get('remaining'):
+        parts.append('本次请求仍有操作未完成：' + '；'.join(review.task['remaining']) + '。')
     if review.verified and review.needs_response:
         parts.append('所需答复尚未完成核对，暂时无法提供完整结果。')
     if not review.verified:
