@@ -123,11 +123,11 @@ export function Sidebar({
           type="button"
           className={styles['disabled-entry']}
           disabled
-          aria-label="云助手 beta"
-          title="云助手 beta · 即将开放"
+          aria-label="云搭子 beta"
+          title="云搭子 beta · 即将开放"
         >
           <Cloud size={18} aria-hidden="true" />
-          <span className={styles['nav-label']}>云助手</span>
+          <span className={styles['nav-label']}>云搭子</span>
           <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
         </button>
       </nav>

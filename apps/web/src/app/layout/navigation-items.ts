@@ -17,7 +17,7 @@ import {
 export const pages = [
   {
     path: '/assistant',
-    title: '工作助手',
+    title: '聊天搭子',
     detail: '继续对话，记录进展与查询资料',
     icon: MessageSquare,
   },
