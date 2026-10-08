@@ -35,6 +35,52 @@ const job: Job = {
 }
 afterEach(cleanup)
 
+it('moves reply generation into the existing progress without losing expansion or inflating operation counts', () => {
+  const value = { ...job, nodes: [{ ...node, state: 'succeeded' as const }] }
+  const view = render(
+    <JobNotice job={value} refresh={vi.fn()} showNodes replyActivity="生成回复" />,
+  )
+  const details = view.container.querySelector('details')!
+  fireEvent.click(details.querySelector('summary')!)
+  const activity = details.querySelector('[data-reply-activity]')
+  expect(details.open).toBe(true)
+  expect(activity?.textContent).toBe('生成回复处理中')
+  expect(details.querySelectorAll('li')).toHaveLength(2)
+  view.rerender(
+    <JobNotice
+      job={{ ...value, updatedAt: '2026-01-02' }}
+      refresh={vi.fn()}
+      showNodes
+      replyActivity="核对并保存回复"
+    />,
+  )
+  expect(view.container.querySelector('details')).toBe(details)
+  expect(details.open).toBe(true)
+  expect(details.querySelector('[data-reply-activity]')).toBe(activity)
+  expect(activity?.textContent).toBe('核对并保存回复处理中')
+  view.rerender(<JobNotice job={{ ...value, state: 'succeeded' }} refresh={vi.fn()} showNodes />)
+  expect(details.open).toBe(true)
+  expect(details.querySelector('summary')?.textContent).toBe('已完成 · 1 项操作')
+  expect(details.querySelector('[data-reply-activity]')).toBeNull()
+})
+
+it.each(['cancelled', 'awaiting_retry'] as const)(
+  'stops the reply activity on %s even if its last label is still present',
+  (state) => {
+    const view = render(
+      <JobNotice
+        job={{ ...job, state, error: state === 'awaiting_retry' ? '服务中断' : '' }}
+        refresh={vi.fn()}
+        showNodes
+        replyActivity="生成回复"
+      />,
+    )
+    expect(view.container.querySelector('[data-reply-activity]')).toBeNull()
+    expect(view.container.querySelector('[data-running="true"]')).toBeNull()
+    expect(view.container.textContent).toContain(state === 'cancelled' ? '已中断' : '服务中断')
+  },
+)
+
 it('keeps the same expanded operation row when the subject resolves and processing advances', () => {
   const view = (value: Job) => <JobNotice job={value} refresh={vi.fn()} showNodes />
   const mounted = render(view(job))

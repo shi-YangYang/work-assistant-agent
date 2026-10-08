@@ -4,9 +4,3 @@
   margin-top: 14px;
   line-height: 1.75;
 }
-.status {
-  display: block;
-  margin-bottom: 8px;
-  color: var(--muted);
-  font-size: 12px;
-}

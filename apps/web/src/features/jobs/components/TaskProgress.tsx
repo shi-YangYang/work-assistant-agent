@@ -1,5 +1,5 @@
 import type { Job } from '@paa/api-contracts'
-import { ChevronRight, ListChecks } from 'lucide-react'
+import { ChevronRight, ListChecks, LoaderCircle } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { TaskNode, nodeStatus } from './TaskNode'
 import { completionSummary, nodeName, progressView } from '../utils/progress'
@@ -12,6 +12,7 @@ export function TaskProgress({
   disabled = false,
   expanded,
   onExpandedChange,
+  replyActivity,
 }: {
   job: Job
   busy: boolean
@@ -19,6 +20,7 @@ export function TaskProgress({
   onRetry: () => void
   expanded?: boolean
   onExpandedChange?: (expanded: boolean) => void
+  replyActivity?: string
 }) {
   const { nodes, rows, active, current, parallel, completed, retries } = progressView(job)
   const [now, setNow] = useState(Date.now)
@@ -31,18 +33,24 @@ export function TaskProgress({
   const failed = [...nodes].reverse().find((node) => node.canRetry)
   const complete = ['succeeded', 'awaiting_input'].includes(job.state)
   const outcome = complete ? job.taskOutcome : null
-  const summary = complete
-    ? completionSummary(job, completed, retries)
-    : job.state === 'queued'
-      ? '等待继续处理'
-      : job.state === 'cancelled'
-        ? `已中断${completed ? ` · 已完成 ${completed} 项操作` : ''}`
-        : parallel
-          ? '多项操作处理中'
-          : current
-            ? `${nodeName(current)} · ${nodeStatus(current, now)}`
-            : '处理请求'
-  const running = job.state === 'running' && active.some((node) => node.state === 'running')
+  const activity = ['running', 'succeeded', 'awaiting_input'].includes(job.state)
+    ? replyActivity
+    : undefined
+  const summary = activity
+    ? `${activity} · 处理中`
+    : complete
+      ? completionSummary(job, completed, retries)
+      : job.state === 'queued'
+        ? '等待继续处理'
+        : job.state === 'cancelled'
+          ? `已中断${completed ? ` · 已完成 ${completed} 项操作` : ''}`
+          : parallel
+            ? '多项操作处理中'
+            : current
+              ? `${nodeName(current)} · ${nodeStatus(current, now)}`
+              : '处理请求'
+  const running =
+    !!activity || (job.state === 'running' && active.some((node) => node.state === 'running'))
   if (['failed', 'awaiting_retry'].includes(job.state))
     return (
       <div className={`${styles.progress} ${styles.failure}`} role="status">
@@ -55,7 +63,13 @@ export function TaskProgress({
       </div>
     )
   if (!rows.length) {
-    if (complete && (!outcome || outcome.state === 'completed') && !job.incompleteTask && !retries)
+    if (
+      !activity &&
+      complete &&
+      (!outcome || outcome.state === 'completed') &&
+      !job.incompleteTask &&
+      !retries
+    )
       return null
     return (
       <div className={`${styles.progress} ${styles.activity}`} data-running={running} role="status">
@@ -91,6 +105,15 @@ export function TaskProgress({
               running={job.state === 'running' && node.state === 'running'}
             />
           ))}
+          {activity && (
+            <li className={styles.node} data-reply-activity data-running="true">
+              <LoaderCircle size={14} aria-hidden="true" className={styles.icon} />
+              <div className={styles.nodeContent}>
+                <span className={styles.name}>{activity}</span>
+                <span className={styles.status}>处理中</span>
+              </div>
+            </li>
+          )}
         </ol>
       </details>
       {outcome &&

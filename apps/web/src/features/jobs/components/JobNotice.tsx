@@ -29,6 +29,7 @@ interface JobNoticeProps {
   job: NonNullable<WorkMessage['job']>
   refresh: () => void
   showNodes?: boolean
+  replyActivity?: string
   retryBlocked?: boolean
   onRetryStart?: () => boolean
   onRetrySettled?: (job: Job | null) => void
@@ -61,6 +62,7 @@ function JobRetryNotice({
   job: sourceJob,
   refresh,
   showNodes = false,
+  replyActivity,
   onRetryJob,
   retryBlocked = false,
   onRetryStart,
@@ -101,8 +103,12 @@ function JobRetryNotice({
   const assistant = showNodes && job.kind === 'message'
   const progress =
     showNodes &&
-    !!job.nodes?.length &&
-    !(job.state === 'running' && ['preparing', 'parsing', 'transcribing'].includes(job.stage || ''))
+    (!!replyActivity ||
+      (!!job.nodes?.length &&
+        !(
+          job.state === 'running' &&
+          ['preparing', 'parsing', 'transcribing'].includes(job.stage || '')
+        )))
   const reviewOnly = job.phase === 'reply_review'
   const retryLabel = progress ? '重试此步骤' : reviewOnly ? '重试答复核对' : '重试处理'
   const retry = async (useCurrentConfig = false) => {
@@ -154,7 +160,7 @@ function JobRetryNotice({
   const confirmRetry = (mode: 'original' | 'current') => {
     update({ error: '', confirmation: mode })
   }
-  if (assistant && isConversationalClarification(job)) return null
+  if (assistant && !replyActivity && isConversationalClarification(job)) return null
   if (progress || (assistant && ['failed', 'awaiting_retry'].includes(job.state)))
     return (
       <TaskProgress
@@ -164,6 +170,7 @@ function JobRetryNotice({
         onRetry={() => void retry()}
         expanded={expanded}
         onExpandedChange={onExpandedChange}
+        replyActivity={assistant ? replyActivity : undefined}
       />
     )
   if (job.state === 'cancelled')

@@ -3,6 +3,9 @@ import type { Job, JobFeedback, ReplyStream, WorkMessage } from '@paa/api-contra
 import { act, cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AssistantReply } from '../../../apps/web/src/features/assistant/components/messages/reply/AssistantReply'
+import type { ComponentProps } from 'react'
+import { replyPresentation } from '../../../apps/web/src/features/assistant/components/messages/reply/reply-presentation'
+import { JobNotice } from '../../../apps/web/src/features/jobs/components/JobNotice'
 import { useJobFeedback } from '../../../apps/web/src/hooks/useJobFeedback'
 
 const job: Job = {
@@ -53,6 +56,24 @@ const feedback = (text: string, seq = 1): JobFeedback => ({
   updatedAt: job.updatedAt,
   replyStream: stream(text),
 })
+
+function ReplyWithProgress(props: ComponentProps<typeof AssistantReply>) {
+  const { message, job, feedback, own, unavailable } = props
+  return (
+    <>
+      {job && (
+        <JobNotice
+          job={{ ...job, ...feedback }}
+          refresh={vi.fn()}
+          showNodes
+          replyActivity={replyPresentation(message, job, feedback, own, unavailable).activity}
+        />
+      )}
+      <AssistantReply {...props} />
+    </>
+  )
+}
+
 function animationFrames() {
   let time = 0
   let nextId = 0
@@ -116,7 +137,7 @@ it('retains preview through terminal feedback and only replaces it with a persis
     replyStream: stream('未完成前缀', 1, 'finalizing'),
   }
   const view = render(
-    <AssistantReply
+    <ReplyWithProgress
       message={message}
       job={{ ...job, state: 'awaiting_input' }}
       feedback={terminal}
@@ -124,10 +145,11 @@ it('retains preview through terminal feedback and only replaces it with a persis
     />,
   )
   expect(screen.getByText('未完成前缀')).toBeTruthy()
-  expect(screen.getByText('正在核对并保存回复…')).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe('核对并保存回复 · 处理中')
+  expect(view.container.querySelector('[data-reply-state] [role="status"]')).toBeNull()
   // An old message returned from a cache must not win during the final GET.
   view.rerender(
-    <AssistantReply
+    <ReplyWithProgress
       message={{
         ...message,
         reply: '旧答复',
@@ -141,7 +163,7 @@ it('retains preview through terminal feedback and only replaces it with a persis
   expect(screen.queryByText('旧答复')).toBeNull()
   expect(screen.getByText('未完成前缀')).toBeTruthy()
   view.rerender(
-    <AssistantReply
+    <ReplyWithProgress
       message={{ ...message, reply: '**正式答复**', job: { ...job, state: 'awaiting_input' } }}
       job={job}
       feedback={terminal}
@@ -150,12 +172,13 @@ it('retains preview through terminal feedback and only replaces it with a persis
   )
   expect(screen.getByText('正式答复').tagName).toBe('STRONG')
   expect(screen.queryByText('未完成前缀')).toBeNull()
+  expect(screen.queryByText('核对并保存回复 · 处理中')).toBeNull()
 })
 
 it('restores interrupted prefix from message DTO and labels cancellation without showing success', () => {
   const cancelled = { ...job, fence: 3, state: 'cancelled' as const }
   render(
-    <AssistantReply
+    <ReplyWithProgress
       message={{ ...message, job: cancelled, replyStream: stream('已生成片段', 1, 'interrupted') }}
       job={cancelled}
       feedback={null}
@@ -168,14 +191,16 @@ it('restores interrupted prefix from message DTO and labels cancellation without
 
 it('clears retry, withdrawn, unavailable and foreign-account previews', () => {
   const restored = { ...message, replyStream: stream('旧片段') }
-  const view = render(<AssistantReply message={restored} job={job} feedback={null} own />)
+  const view = render(<ReplyWithProgress message={restored} job={job} feedback={null} own />)
   expect(screen.getByText('旧片段')).toBeTruthy()
+  expect(screen.getByRole('status').textContent).toBe('生成回复 · 处理中')
   view.rerender(
-    <AssistantReply message={restored} job={{ ...job, attempt: 2 }} feedback={null} own />,
+    <ReplyWithProgress message={restored} job={{ ...job, attempt: 2 }} feedback={null} own />,
   )
   expect(screen.queryByText('旧片段')).toBeNull()
+  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
   view.rerender(
-    <AssistantReply
+    <ReplyWithProgress
       message={restored}
       job={job}
       feedback={{ ...feedback(''), replyStream: stream('', 2, 'withdrawn') }}
@@ -183,10 +208,13 @@ it('clears retry, withdrawn, unavailable and foreign-account previews', () => {
     />,
   )
   expect(screen.queryByText('旧片段')).toBeNull()
-  view.rerender(<AssistantReply message={restored} job={job} feedback={null} own unavailable />)
+  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
+  view.rerender(<ReplyWithProgress message={restored} job={job} feedback={null} own unavailable />)
   expect(screen.queryByText('旧片段')).toBeNull()
-  view.rerender(<AssistantReply message={restored} job={job} feedback={null} own={false} />)
+  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
+  view.rerender(<ReplyWithProgress message={restored} job={job} feedback={null} own={false} />)
   expect(screen.queryByText('旧片段')).toBeNull()
+  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
 })
 
 it('shares one connection, adds no request per prefix, and withdraws DTO fallback on access loss', () => {
@@ -249,11 +277,11 @@ it('shows the server-sealed cancellation response while final message GET is del
   }
   // The POST has advanced the fence and closed SSE, while history still carries
   // the running execution. Only the POST's authorized snapshot may bridge it.
-  const view = render(<AssistantReply message={message} job={sealed} feedback={null} own />)
+  const view = render(<ReplyWithProgress message={message} job={sealed} feedback={null} own />)
   expect(screen.getByText('中断前最后一段')).toBeTruthy()
   expect(screen.getByText('已中断')).toBeTruthy()
   view.rerender(
-    <AssistantReply
+    <ReplyWithProgress
       message={{ ...message, job: sealed, replyStream: sealed.replyStream }}
       job={sealed}
       feedback={null}
@@ -261,7 +289,9 @@ it('shows the server-sealed cancellation response while final message GET is del
     />,
   )
   expect(screen.getAllByText('中断前最后一段')).toHaveLength(1)
-  view.rerender(<AssistantReply message={message} job={sealed} feedback={null} own unavailable />)
+  view.rerender(
+    <ReplyWithProgress message={message} job={sealed} feedback={null} own unavailable />,
+  )
   expect(screen.queryByText('中断前最后一段')).toBeNull()
 })
 

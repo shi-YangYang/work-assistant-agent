@@ -16,6 +16,7 @@ import { BusinessActionCard } from '@web/features/assistant/components/interacti
 import { DocumentCard } from '@web/components/media/Documents'
 import { ImageGallery } from '@web/components/media/ImageGallery'
 import { AssistantReply } from './reply/AssistantReply'
+import { replyPresentation } from './reply/reply-presentation'
 import { MessageTranscript } from '@web/features/assistant/components/messages/MessageTranscript'
 import { TranscriptEditor } from '@web/features/assistant/components/messages/TranscriptEditor'
 import { JobNotice } from '@web/features/jobs/components/JobNotice'
@@ -226,6 +227,9 @@ export function MessageCard({
               onRetryStart={onRetryStart}
               onRetrySettled={onRetrySettled}
               showNodes
+              replyActivity={
+                replyPresentation(message, job, live.feedback, own, live.unavailable).activity
+              }
             />
           )}
           {own &&
