@@ -3,14 +3,13 @@ import math
 import re
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
-from app.agent.completion.limits import MAX_ANSWER_LENGTH
 
 
 class AnswerLength(BaseModel):
     model_config = ConfigDict(extra='forbid')
     quote: str = Field(min_length=1, max_length=160)
     unit: Literal['cjk_characters', 'words']
-    body: str = Field(min_length=1, max_length=MAX_ANSWER_LENGTH)
+    body: str = Field(min_length=1)
 
 
 NUMBER = r'([1-9]\d{0,5})'

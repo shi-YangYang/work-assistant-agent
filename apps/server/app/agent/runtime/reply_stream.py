@@ -1,6 +1,5 @@
-"""Lexically decode a bounded JSON string without executing partial tool calls."""
+"""Lexically decode a JSON string without executing partial tool calls."""
 import json
-from app.agent.completion.limits import MAX_ANSWER_LENGTH
 from app.integrations.models.transport import ProviderError
 
 
@@ -30,8 +29,8 @@ def allows_reply_stream(messages, job_id, payload):
 
 class JsonStringPrefix:
     """Incremental JSON lexer/grammar; expose only a named root string value."""
-    def __init__(self, key, *, limit=MAX_ANSWER_LENGTH):
-        self.key, self.limit = key, limit
+    def __init__(self, key):
+        self.key = key
         self.raw, self.text, self.token = '', '', ''
         self.stack = []
         self.mode, self.escape, self.unicode = '', False, None
@@ -65,11 +64,9 @@ class JsonStringPrefix:
         self.token += char
         if self.target:
             self.text += char
-            if len(self.text) > self.limit:
-                self.fail()
 
     def feed(self, chunk):
-        if not isinstance(chunk, str) or len(self.raw) + len(chunk) > 32000:
+        if not isinstance(chunk, str):
             self.fail()
         self.raw += chunk
         for char in chunk:

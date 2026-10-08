@@ -119,7 +119,7 @@ async def dto(db, actor, job, message):
     if state not in ('streaming', 'finalizing', 'interrupted', 'withdrawn'):
         return None
     return {'version': 1, 'generation': value['generation'], 'state': state,
-            'text': presentation_text(value.get('text', '')[:16000]) if state != 'withdrawn' else ''}
+            'text': presentation_text(value.get('text', '')) if state != 'withdrawn' else ''}
 
 
 class ReplyPublisher:

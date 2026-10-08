@@ -60,11 +60,9 @@ async def test_json_lexer_rejects_ambiguous_or_damaged_parameters(raw):
         parser.finish()
 
 
-async def test_json_lexer_bounds_answer_arguments_and_nesting():
-    for raw in ('{"answer":"' + 'x' * 16001, '{"other":"' + 'x' * 32000,
-                '{"other":' + '[' * 65):
-        with pytest.raises(ValueError):
-            JsonStringPrefix('answer').feed(raw)
+async def test_json_lexer_keeps_nesting_bound_without_capping_answer_length():
+    with pytest.raises(ValueError):
+        JsonStringPrefix('answer').feed('{"other":' + '[' * 65)
     parser = JsonStringPrefix('answer')
     parser.feed('{"answer":""}')
     assert parser.finish() == {'answer': ''}

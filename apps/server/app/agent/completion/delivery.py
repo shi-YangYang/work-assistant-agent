@@ -3,7 +3,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.conversations.task.task_schemas import TaskInterpretation
 from app.agent.completion.reply_review import ReviewedReply
-from app.agent.completion.limits import MAX_ANSWER_LENGTH
 from app.agent.completion.answer_length import AnswerLength, LENGTH_POLICY, check_length
 
 DELIVERY_VERSION = 1
@@ -12,7 +11,7 @@ DELIVERY_VERSION = 1
 class Delivery(BaseModel):
     model_config = ConfigDict(extra='forbid')
     version: Literal[1] = DELIVERY_VERSION
-    answer: str = Field(max_length=MAX_ANSWER_LENGTH)
+    answer: str
     task: TaskInterpretation
     business_requested: bool
     operation_ids: list[str] = Field(default_factory=list, max_length=16)

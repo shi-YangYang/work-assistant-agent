@@ -1,6 +1,7 @@
 import asyncio
 import httpx
 import ipaddress
+import re
 import socket
 import time
 from httpcore._backends.auto import AutoBackend
@@ -89,15 +90,30 @@ class CheckedBackend(AutoBackend):
 
 
 class LimitedStream(httpx.AsyncByteStream):
-    def __init__(self, stream, max_seconds=65):
+    def __init__(self, stream, max_seconds=65, *, streaming=False):
         self.stream, self.max_seconds = stream, max_seconds
+        self.streaming = streaming
 
     async def __aiter__(self):
         size, start = 0, time.monotonic()
         async for chunk in self.stream:
-            size += len(chunk)
-            if size > 2 * 1024 * 1024 or time.monotonic() - start > self.max_seconds:
-                raise ProviderError('limit', '模型响应超过大小或时间限制')
+            if time.monotonic() - start > self.max_seconds:
+                raise ProviderError('timeout', '模型响应超过本次处理时限，请稍后重试')
+            # SSE records are consumed incrementally. Repeated envelopes and
+            # discarded reasoning must not exhaust the buffered JSON limit.
+            # Bound each line before httpx's line decoder can accumulate it,
+            # without imposing a cumulative answer-length limit.
+            offset = 0
+            if self.streaming:
+                for newline in re.finditer(b'[\r\n]', chunk):
+                    size += newline.start() - offset
+                    if size > 2 * 1024 * 1024:
+                        raise ProviderError('limit', '模型单段流式响应过大，已停止接收')
+                    size, offset = 0, newline.end()
+            size += len(chunk) - offset
+            if size > 2 * 1024 * 1024:
+                message = '模型单段流式响应过大，已停止接收' if self.streaming else '模型响应内容过大，已停止接收'
+                raise ProviderError('limit', message)
             yield chunk
 
     async def aclose(self):
@@ -118,7 +134,8 @@ class SafeTransport(httpx.AsyncHTTPTransport):
             raise ProviderError('protocol', '模型服务返回了不受支持的压缩响应')
         # Only the bounded streaming chat path supplies its existing node deadline.
         # Other model endpoints retain the original 65-second response cap.
-        response.stream = LimitedStream(response.stream, request.extensions.get('paa_model_stream_timeout', 65))
+        response.stream = LimitedStream(response.stream, request.extensions.get('paa_model_stream_timeout', 65),
+                                        streaming=request.extensions.get('paa_model_streaming', False) and response.is_success)
         return response
 
 

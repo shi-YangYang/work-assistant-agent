@@ -11,7 +11,9 @@ def token_usage(value):
     return result or None
 
 
-async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None, on_delta=None, on_progress=None, stream_timeout=None):
+async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, text_tools=(), on_event=None, on_text=None, on_delta=None, on_progress=None, stream_timeout=None):
+    # The caller may carry prose in designated tools; their output length also
+    # follows the provider. Ordinary tool arguments retain their existing cap.
     body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming']}
     if max_tokens is not None:
         body['max_tokens'] = max_tokens
@@ -25,7 +27,10 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
     endpoint = normalize_url(config['baseUrl'], settings) + '/chat/completions'
     if on_event:
         await on_event('started')
-    options = {'extensions': {'paa_model_stream_timeout': stream_timeout}} if config['streaming'] and stream_timeout is not None else {}
+    extensions = {'paa_model_streaming': True} if config['streaming'] else {}
+    if config['streaming'] and stream_timeout is not None:
+        extensions['paa_model_stream_timeout'] = stream_timeout
+    options = {'extensions': extensions} if extensions else {}
     async with transport.client(settings) as http:
         async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body, **options) as response:
             if response.is_error:
@@ -74,8 +79,8 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         raise structured_error({'code': 'content_filter'})
                     delta = item.get('delta', {})
                     fragment_text = delta.get('content') or ''
-                    if not isinstance(fragment_text, str) or len(content) + len(fragment_text) > 32000:
-                        raise ProviderError('invalid_response', '模型正文无效或过长')
+                    if not isinstance(fragment_text, str):
+                        raise ProviderError('invalid_response', '模型正文无效')
                     content += fragment_text
                     fragments = []
                     for fragment in delta.get('tool_calls') or []:
@@ -92,7 +97,7 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         call['id'] += fragment.get('id') or ''
                         call['function']['name'] += fragment.get('function', {}).get('name') or ''
                         call['function']['arguments'] += fragment.get('function', {}).get('arguments') or ''
-                        if len(call['id']) > 200 or len(call['function']['name']) > 80 or len(call['function']['arguments']) > 32000:
+                        if len(call['id']) > 200 or len(call['function']['name']) > 80 or (call['function']['name'] not in text_tools and len(call['function']['arguments']) > 32000):
                             raise ProviderError('invalid_response', '工具调用无效或过长')
                     # Reasoning only signals liveness; its contents never enter
                     # callbacks, replies, usage records or persisted node output.
@@ -115,13 +120,13 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
         if choice.get('finish_reason') not in ('stop', 'tool_calls'):
             raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制', output_limit=choice.get('finish_reason') == 'length')
         message = choice['message']
-        if not isinstance(message.get('content') or '', str) or len(message.get('content') or '') > 32000:
+        if not isinstance(message.get('content') or '', str):
             raise ValueError()
         calls = message.get('tool_calls') or []
         if len(calls) > 16 or (not calls and not (message.get('content') or '').strip()):
             raise ValueError()
         for call in calls:
-            if not call['id'] or len(call['id']) > 200 or not call['function']['name'] or len(call['function']['name']) > 80 or len(call['function']['arguments']) > 32000 or not isinstance(tool_arguments(call['function']['arguments']), dict):
+            if not call['id'] or len(call['id']) > 200 or not call['function']['name'] or len(call['function']['name']) > 80 or (call['function']['name'] not in text_tools and len(call['function']['arguments']) > 32000) or not isinstance(tool_arguments(call['function']['arguments']), dict):
                 raise ValueError()
         result['usage'] = token_usage(result.get('usage')) or {}
         return result

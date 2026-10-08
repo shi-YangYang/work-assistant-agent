@@ -156,4 +156,4 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         row for row in tool_evidence(messages, context.job_id) if row['tool'] in ALLOWED_TOOLS | TEAM_TOOL_NAMES
     ]]
     context.reply_evidence = [{**row, 'id': index} for index, row in enumerate(context.reply_evidence)]
-    return delivery.answer if delivery else answer.text[:16000]
+    return delivery.answer if delivery else answer.text

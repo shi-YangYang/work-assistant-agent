@@ -131,7 +131,7 @@ class BoundedChatModel(ChatOpenAI):
             streaming = config.get('streaming', False)
             timeout = response_timeout(context, streaming)
             async def request(progress):
-                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, on_event=record.event, on_delta=candidate.feed if candidate else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
+                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=record.event, on_delta=candidate.feed if candidate else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
             response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.

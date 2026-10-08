@@ -147,11 +147,76 @@ async def test_transport_duration_override_is_explicit_and_retains_size_bound(mo
         if explicit:
             assert b''.join([part async for part in response.stream]) == b'chunk'
         else:
-            with pytest.raises(ProviderError, match='时间限制'):
+            with pytest.raises(ProviderError, match='处理时限') as caught:
                 _ = [part async for part in response.stream]
+            assert caught.value.code == 'timeout'
         clock = iter([0, 1])
-        with pytest.raises(ProviderError, match='大小或时间限制'):
+        with pytest.raises(ProviderError, match='响应内容过大'):
             _ = [part async for part in LimitedStream(Bytes(b'x' * (2 * 1024 * 1024 + 1)), 180 if explicit else 65)]
     finally:
         monkeypatch.undo()
         await transport.aclose()
+
+
+class Chunks(httpx.AsyncByteStream):
+    def __init__(self, values):
+        self.values, self.closed = values, False
+
+    async def __aiter__(self):
+        for value in self.values:
+            yield value
+
+    async def aclose(self):
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_long_reasoning_stream_exceeds_json_size_without_losing_answer(monkeypatch):
+    # Reproduce accumulated SSE envelopes crossing 2 MiB while every record
+    # and the retained answer are small. Reasoning is consumed, never retained.
+    hidden = 'private reasoning ' * 30
+    frame = ('data: ' + json.dumps({'choices': [{'delta': {'reasoning_content': hidden}}]}) + '\n\n').encode()
+    assert len(frame) * 4000 > 2 * 1024 * 1024
+    final = b'data: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+    stream = Chunks([frame] * 4000 + [final])
+    async def response(self, request):
+        assert request.extensions['paa_model_streaming'] is True
+        return httpx.Response(200, stream=stream)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', response)
+    fragments, records = [], []
+    async def delta(value):
+        fragments.append(value)
+    async def event(*values):
+        records.append(values)
+    result = await chat(SimpleNamespace(model_allowed_origins=()),
+        {'baseUrl': 'https://example.com/v1', 'model': 'controlled', 'streaming': True}, 'test',
+        [{'role': 'user', 'content': 'request'}], on_delta=delta, on_event=event)
+    assert result['choices'][0]['message']['content'] == 'answer'
+    assert hidden not in str((result, fragments, records))
+    assert len(fragments) == 1
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('ending', [b'\n', b'\r', b'\r\n'])
+async def test_stream_line_limit_spans_network_chunks_and_resets_at_newline(ending):
+    block = b'x' * (1024 * 1024)
+    stream = LimitedStream(Chunks([block, ending, block, block, ending]), streaming=True)
+    assert sum([len(part) async for part in stream]) == 3 * len(block) + 2 * len(ending)
+    for chunks in ([block, block, b'x'], [block, block + b'x' + ending]):
+        with pytest.raises(ProviderError, match='单段流式响应过大') as caught:
+            _ = [part async for part in LimitedStream(Chunks(chunks), streaming=True)]
+        assert caught.value.code == 'limit'
+
+
+@pytest.mark.asyncio
+async def test_error_body_keeps_cumulative_limit_even_for_stream_request(monkeypatch):
+    async def response(self, request):
+        return httpx.Response(500, stream=Chunks([b'x\n' * (1024 * 1024), b'x']))
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', response)
+    async with SafeTransport(SimpleNamespace(model_allowed_origins=())) as transport:
+        response = await transport.handle_async_request(httpx.Request('POST', 'https://example.com',
+            extensions={'paa_model_streaming': True}))
+        with pytest.raises(ProviderError, match='响应内容过大'):
+            await response.aread()
+        await response.aclose()
