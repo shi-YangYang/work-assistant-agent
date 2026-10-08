@@ -164,9 +164,11 @@ async def test_message_snapshots_idempotency_and_default_conversation_entry(setu
 async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup, monkeypatch, fast_nodes, role, persona):
     settings, sessions, users, clients = setup
     client = clients[role]
-    service = await create(clients['admin'])
+    from test_model_services import payload
+    body = payload()
+    body['models'][0]['streaming'] = False
+    service = await create(clients['admin'], body)
     routing = route(service)
-    routing['assistant']['streaming'] = False
     assert (await clients['admin'].put('/api/v1/settings/model-routing', json=routing)).status_code == 200
     sent = (await client.post('/api/v1/messages', json={'newConversation': True, 'personaId': persona, 'text': '今天忙得脑子打结了'}, headers=keyed())).json()
     path = '/api/v1/conversations/' + sent['conversationId']
@@ -200,7 +202,7 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
         assert failed['job']['state'] == 'awaiting_retry', failed
         assert len(calls) == 2
         # Retry retains message persona but deliberately uses the latest model binding.
-        changed = await clients['admin'].patch('/api/v1/settings/model-services/' + service['id'], json={**payload(url='https://latest.example/v1'), 'apiKey': 'controlled-latest', 'expectedRevision': 1})
+        changed = await clients['admin'].patch('/api/v1/settings/model-services/' + service['id'], json={**payload(url='https://latest.example/v1'), 'models': body['models'], 'apiKey': 'controlled-latest', 'expectedRevision': 1})
         assert changed.status_code == 200
         assert (await client.post('/api/v1/jobs/' + sent['jobId'] + '/retry', json={})).status_code == 200
         retried = await claim(sessions, users[role].id)

@@ -387,11 +387,10 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
         config['baseUrl']='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
         config['models'][0]['model']='deepseek-v4.1-flash'
     if reasoning_check == 'explicit':
-        config['models'][0]['presets'] = [{'id': 'chosen', 'name': '显式推理', 'mode': 'advanced', 'parameters': {'enable_thinking': True, 'reasoning_effort': 'high'}}]
+        config['models'][0]['parameters'] = {'enable_thinking': True, 'reasoning_effort': 'high'}
+    config['models'][0]['streaming'] = False
     saved=await create(c['admin'], config)
-    routing=route(saved);routing['assistant']['streaming']=False
-    if reasoning_check == 'explicit':
-        routing['assistant']['presetId'] = 'chosen'
+    routing=route(saved)
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     report,job,_=await prepared(setup)
     requests=[]
@@ -510,7 +509,7 @@ async def test_report_default_mode_preserves_unknown_protocol_and_explicit_param
     config = {'baseUrl': host, 'model': model, 'parameters': {'temperature': .2}}
     assert report_model_config(config, {})['parameters'] == {'temperature': .2, **expected}
     assert config['parameters'] == {'temperature': .2}
-    assert report_model_config(config, {'presetId': 'selected'}) is config
+    assert report_model_config(config, {'explicitReasoning': True}) is config
     for parameters in ({'enable_thinking': True}, {'thinking': {'type': 'enabled'}}, {'reasoning_effort': 'high'}, {'thinking_budget': 3000}):
         explicit = {**config, 'parameters': parameters}
         assert report_model_config(explicit, {}) is explicit

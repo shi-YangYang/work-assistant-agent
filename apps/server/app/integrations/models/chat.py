@@ -12,7 +12,12 @@ def token_usage(value):
 
 
 async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None, on_delta=None):
-    body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming'], 'max_tokens': max_tokens}
+    body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming']}
+    if max_tokens is not None:
+        body['max_tokens'] = max_tokens
+    else:
+        for field in ('max_tokens', 'max_completion_tokens', 'max_output_tokens'):
+            body.pop(field, None)
     if tools:
         body['tools'] = tools
     if tool_choice:

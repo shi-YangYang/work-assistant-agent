@@ -490,12 +490,24 @@ export interface Page<T> {
   nextCursor?: string | null
 }
 
-export interface CompanyPreset {
-  id: string
-  name: string
-  mode: 'simple' | 'advanced'
-  value: string
-  parameters: Record<string, import('@paa/model-config').JsonValue>
+export interface ReasoningOption {
+  effort: string
+}
+export interface ReasoningReference {
+  effort: string | null
+  preferenceRevision: number
+  configVersion: string
+}
+export interface ReasoningSettings {
+  options: ReasoningOption[]
+  selected: ReasoningOption | null
+  preferenceRevision: number
+  configVersion: string
+}
+export interface ModelReasoning {
+  efforts: string[]
+  initial: string | null
+  parameterOverrides?: Record<string, Record<string, import('@paa/model-config').JsonValue>>
 }
 export interface ContextCapability {
   contextWindow: number | null
@@ -510,8 +522,9 @@ export interface CompanyModel {
   model: string
   protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
   protocolMode?: 'auto' | 'manual'
-  presets: CompanyPreset[]
-  selectedPresetId: string | null
+  reasoning: ModelReasoning
+  parameters: Record<string, import('@paa/model-config').JsonValue>
+  explicitReasoning?: boolean
   streaming: boolean
   language: string
 }
@@ -527,8 +540,8 @@ export interface CompanyService {
 export interface ModelSelection {
   serviceId: string
   modelId: string
-  presetId: string | null
-  streaming: boolean
+  parameters?: Record<string, import('@paa/model-config').JsonValue> | null
+  explicitReasoning?: boolean
 }
 export interface ModelRouting {
   revision: number

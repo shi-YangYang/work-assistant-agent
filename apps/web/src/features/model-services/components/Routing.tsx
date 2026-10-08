@@ -29,7 +29,38 @@ export function Routing({
   const { busy, submit } = useDraftSubmission('modelRouting')
   const [error, setError] = useState<Error | string>('')
   const [conflict, setConflict] = useState(false)
+  const [recovering, setRecovering] = useState(false)
   if (!value) return <p>正在读取用途…</p>
+  if (
+    [value.assistant, value.report, value.asr].some(
+      (choice) => choice && typeof choice === 'object' && 'presetId' in choice,
+    )
+  )
+    return (
+      <section>
+        <p>
+          旧版用途草稿包含已移除的推理预设，无法直接保存。读取当前配置将放弃这份未保存的用途草稿，已保存的配置不受影响。
+        </p>
+        <ErrorNotice>{error}</ErrorNotice>
+        <BusyButton
+          busy={recovering}
+          onClick={async () => {
+            setRecovering(true)
+            setError('')
+            try {
+              setDraft('modelRouting', await readModelRouting())
+            } catch (issue) {
+              setError(issue as Error)
+            } finally {
+              setRecovering(false)
+            }
+          }}
+        >
+          放弃旧草稿并读取当前配置
+        </BusyButton>
+      </section>
+    )
+
   const change = (purpose: Purpose, choice: ModelSelection | 'follow' | null) => {
     setDraft('modelRouting', { ...value, [purpose]: choice })
     setError('')
@@ -88,8 +119,6 @@ export function Routing({
                           ? {
                               serviceId: option.service.id,
                               modelId: option.model.id,
-                              presetId: option.model.selectedPresetId,
-                              streaming: option.model.streaming,
                             }
                           : null,
                     )
@@ -106,40 +135,8 @@ export function Routing({
               </label>
               {choice === 'follow' && (
                 <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
-                  使用工作助手当前分配的模型、推理预设和请求方式。
+                  使用工作助手当前分配的模型、初始思考强度和请求方式。
                 </p>
-              )}
-              {selected && typeof choice === 'object' && choice && purpose !== 'asr' && (
-                <>
-                  <label>
-                    推理预设
-                    <select
-                      disabled={busy}
-                      value={choice.presetId || ''}
-                      onChange={(e) =>
-                        change(purpose, { ...choice, presetId: e.target.value || null })
-                      }
-                    >
-                      <option value="">服务默认</option>
-                      {selected.model.presets.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label
-                    className={`${layoutStyles['check-label']} ${modelServicesStyles['slot-check-label']}`}
-                  >
-                    <input
-                      disabled={busy}
-                      type="checkbox"
-                      checked={choice.streaming}
-                      onChange={(e) => change(purpose, { ...choice, streaming: e.target.checked })}
-                    />
-                    使用流式接口
-                  </label>
-                </>
               )}
             </div>
           </PanelSection>

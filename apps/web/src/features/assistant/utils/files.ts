@@ -1,4 +1,4 @@
-import type { ExecutionMode, PersonaId } from '@paa/api-contracts'
+import type { ExecutionMode, PersonaId, ReasoningReference } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 export * from '@web/utils/attachments'
 
@@ -16,6 +16,7 @@ export function messageSubmission(
   conversationId?: string,
   personaId?: PersonaId,
   executionMode?: ExecutionMode,
+  reasoning?: ReasoningReference,
 ): NonNullable<Composer['pending']> {
   if (composer.pending) return composer.pending
   return {
@@ -25,6 +26,7 @@ export function messageSubmission(
       personaId: composer.submissionPersonaId ?? personaId,
       ...(!conversationId ? { newConversation: true } : {}),
       ...(executionMode ? { executionMode } : {}),
+      ...(reasoning ? { reasoning } : {}),
       text: composer.text,
       attachmentIds: composer.files.map((file) => {
         if (!file.attachment) throw new Error('附件尚未上传完成')

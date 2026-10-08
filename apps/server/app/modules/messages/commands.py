@@ -16,8 +16,10 @@ from app.tasks.runtime.conversation_activity import require_idle
 from sqlalchemy import select
 
 
-async def submit_message(db, actor, body, idempotency_key):
+async def submit_message(db, actor, body, idempotency_key, settings):
     payload = body.model_dump()
+    if body.reasoning is None:
+        payload.pop('reasoning')
     if body.workReference is None:
         payload.pop('workReference')
     if body.executionMode is None:
@@ -40,6 +42,8 @@ async def submit_message(db, actor, body, idempotency_key):
     if prior:
         await active_message(db, prior['messageId'], actor)
         return prior
+    from app.modules.model_services.reasoning.settings import validate_message_settings
+    await validate_message_settings(db, actor, body.reasoning)
     if body.workReference:
         from app.modules.messages.work_references import require_work
         await require_work(db, actor, body.workReference.workId)
@@ -90,6 +94,8 @@ async def submit_message(db, actor, body, idempotency_key):
         job.result = {**job.result, 'questionCandidate': waiting.id}
     db.add(job)
     await db.flush()
+    from app.modules.model_services.bindings import bind_job
+    await bind_job(db, job, settings)
     return idem_save(db, actor, 'message', idempotency_key, digest, {'messageId': item.id, 'jobId': job.id, 'conversationId': conversation.id})
 
 

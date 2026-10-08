@@ -100,6 +100,16 @@
   min-width: 0;
   container-type: inline-size;
 }
+.model-settings-dialog {
+  --form-field-margin: 0;
+}
+.model-settings-dialog .slot-field-grid {
+  margin-top: 0;
+  gap: 16px;
+}
+.model-settings-dialog label {
+  margin: 0;
+}
 .model-editor fieldset,
 .model-settings-dialog fieldset {
   margin: 0;

@@ -179,7 +179,7 @@ export function ContextUsage({
                       </dd>
                     </div>
                     <div>
-                      <dt>本次输出预留</dt>
+                      <dt>输出空间估算</dt>
                       <dd>{number(usage.outputReserve)} tokens</dd>
                     </div>
                     {usage.inputLimit != null && usage.inputLimit !== usage.contextWindow && (
@@ -205,7 +205,7 @@ export function ContextUsage({
                       </p>
                     )}
                   <p className={styles.caption}>
-                    最近一次助手上下文估算，不含未发送的草稿。
+                    最近一次助手上下文估算，不含未发送的草稿。输出预留仅用于输入规划，不是输出上限。
                     {usage.contextWindow ? '达到窗口的 90% 时自动压缩。' : ''}
                   </p>
                 </>

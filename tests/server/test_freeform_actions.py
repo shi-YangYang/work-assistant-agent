@@ -35,9 +35,9 @@ async def test_query_in_parallel_write_batch_is_deferred_until_next_model_step(s
 async def test_business_planning_default_preserves_explicit_reasoning_and_unknown_providers():
     from app.modules.model_services.parameters import business_model_config
     config = {'baseUrl': 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'model': 'deepseek-v4.1-flash', 'parameters': {'temperature': .2}}
-    assert business_model_config(config, {})['parameters'] == {'temperature': .2, 'enable_thinking': True, 'reasoning_effort': 'low'}
+    assert business_model_config(config, {}) is config
     assert config['parameters'] == {'temperature': .2}
-    assert business_model_config(config, {'presetId': 'chosen'}) is config
+    assert business_model_config(config, {'effort': 'high'}) is config
     for key, value in [('enable_thinking', True), ('thinking', {'type': 'enabled'}), ('thinking_budget', 2048), ('reasoning_effort', 'high')]:
         explicit = {**config, 'parameters': {key: value}}
         assert business_model_config(explicit, {}) is explicit
@@ -194,8 +194,9 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
     settings, sessions, _, c = setup
     service = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1')
     service['models'][0]['model'] = 'deepseek-v4.1-flash'
+    service['models'][0]['streaming'] = False
     saved = await service_create(c['admin'], service)
-    routing = route(saved); routing['assistant']['streaming'] = False
+    routing = route(saved)
     await c['admin'].put('/api/v1/settings/model-routing', json=routing)
     context, _ = await runtime(setup, '生成今天日报，交之前让我看一眼')
     async with sessions.begin() as db:
@@ -205,7 +206,7 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
     calls = []
     async def respond(request):
         body = json.loads(request.content); calls.append(body)
-        assert body['max_tokens'] == 2000 and body['enable_thinking'] is False and 'reasoning_effort' not in body
+        assert 'max_tokens' not in body and body['enable_thinking'] is False and 'reasoning_effort' not in body
         assert not body.get('tools')
         result = {'allowed': True, 'quote': '生成今天日报，交之前让我看一眼', 'reason': ''}
         return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': json.dumps(result)}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 120, 'completion_tokens': 40, 'total_tokens': 160}})

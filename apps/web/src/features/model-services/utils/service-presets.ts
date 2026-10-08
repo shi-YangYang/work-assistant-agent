@@ -103,8 +103,9 @@ export function changeModelProtocol(model: CompanyModel, protocol: Protocol): Co
   return {
     ...model,
     protocol,
-    presets: [],
-    selectedPresetId: null,
+    reasoning: { efforts: [], initial: null },
+    parameters: {},
+    explicitReasoning: false,
     streaming: protocol === 'chat',
     language: protocol === 'dashscope-asr' ? '' : model.language,
   }

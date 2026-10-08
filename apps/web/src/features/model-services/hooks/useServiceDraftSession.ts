@@ -48,7 +48,11 @@ export function useServiceDraftSession() {
     source: Listing | null
     services: CompanyService[]
   } | null>(null)
-  const drafts = (workspace.drafts.modelServices as Record<string, ServiceDraft>) || {}
+  const drafts = Object.fromEntries(
+    Object.entries((workspace.drafts.modelServices as Record<string, ServiceDraft>) || {}).map(
+      ([key, draft]) => [key, cleanServiceDraft(draft)],
+    ),
+  )
   // Retain confirmed writes until the next list response replaces the old snapshot.
   const services =
     savedListing?.scope === selectionKey && savedListing.source === resource.data

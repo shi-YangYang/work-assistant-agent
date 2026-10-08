@@ -12,7 +12,10 @@ from app.modules.model_services.schemas import ConfigRequest, RoutingInput, Serv
 from app.modules.model_services.service import get_service, import_environment, remove_service, routing_dto, save_routing, save_service, service_dto
 from sqlalchemy import select, text
 
+from app.modules.model_services.reasoning.router import router as reasoning_router
+
 router = APIRouter()
+router.include_router(reasoning_router)
 
 
 @router.get('/api/v1/settings/model-services')

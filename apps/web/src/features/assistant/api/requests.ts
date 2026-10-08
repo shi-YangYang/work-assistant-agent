@@ -1,5 +1,6 @@
 import type {
   DeliverableReference,
+  ReasoningReference,
   ExecutionMode,
   BusinessAction,
   Conversation,
@@ -60,6 +61,7 @@ export function sendMessage(
     conversationId?: string
     newConversation?: boolean
     personaId?: PersonaId
+    reasoning?: ReasoningReference
     executionMode?: ExecutionMode
     fullAccessConfirmed?: boolean
     text: string

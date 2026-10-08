@@ -27,6 +27,8 @@ import { PdfPreview } from '@web/components/media/PdfPreview'
 import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
 import { useAssistantInteraction } from '../../hooks/useAssistantInteraction'
 import type { useExecutionMode } from '../../hooks/useExecutionMode'
+import { useReasoningEffort } from '../../hooks/useReasoningEffort'
+import { ReasoningEffortPicker } from '../composer/reasoning/ReasoningEffortPicker'
 import { ExecutionModePicker } from '../composer/ExecutionModePicker'
 import { QuestionPanel } from '../interactions/QuestionPanel'
 import { useAssistantTask } from '@web/features/assistant/hooks/useAssistantTask'
@@ -74,6 +76,7 @@ export function ConversationChat({
   registerRefresh?: RegisterConversationRefresh
   pageNotice?: AssistantNoticeData
 }) {
+  const reasoning = useReasoningEffort()
   const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
   const storedComposer = drafts[composerKey] as Composer | undefined
@@ -169,6 +172,7 @@ export function ConversationChat({
     personaId,
     interaction,
     execution,
+    reasoning,
     onSent,
     previewUploading,
     capturing,
@@ -333,13 +337,14 @@ export function ConversationChat({
   const empty = !messages.length && !error && (!conversationId || !!data)
   const retryPage = () => {
     void execution.refresh()
+    void reasoning.refresh()
     refreshChat()
   }
   const notice = (
     [
       {
-        error: sendError || execution.error,
-        retry: execution.error ? retryPage : undefined,
+        error: sendError || execution.error || reasoning.error,
+        retry: execution.error || reasoning.error ? retryPage : undefined,
       },
       { error: workReference.error ?? '', retry: workReference.retry },
       {
@@ -482,6 +487,16 @@ export function ConversationChat({
           busy={busy}
           previewUploading={previewUploading}
           personaSaving={interaction.busy === 'persona' || execution.saving || !execution.ready}
+          reasoningSaving={!reasoning.ready}
+          reasoningControl={
+            <ReasoningEffortPicker
+              options={reasoning.options}
+              selected={reasoning.selected}
+              saving={reasoning.saving}
+              disabled={busy || pending}
+              onChange={(id) => void reasoning.choose(id)}
+            />
+          }
           executionControl={
             <ExecutionModePicker
               value={execution.selected}

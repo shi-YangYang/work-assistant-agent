@@ -10,7 +10,12 @@ class WorkReference(Input):
     workId: str = Field(min_length=1, max_length=36)
 
 
+from app.modules.model_services.reasoning.schemas import ReasoningReference
+from app.modules.model_services.reasoning.legacy import LegacyReasoningReference
+
+
 class SendMessage(Input):
+    reasoning: ReasoningReference | LegacyReasoningReference | None = None
     conversationId: str | None = None
     personaId: PersonaId | None = None
     executionMode: ExecutionMode | None = None

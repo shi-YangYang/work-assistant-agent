@@ -25,8 +25,8 @@ ANSWER = '# 会议安排\n' + '提前准备议程，会后记录结论。\n' * 9
 def response_for(body, content, finish='stop'):
     # Complete-looking JSON is still invalid when the provider reports length.
     message = {'content': content, 'reasoning_content': 'private reasoning'}
-    usage = {'prompt_tokens': 2100, 'completion_tokens': body['max_tokens'] if finish == 'length' else 60,
-             'completion_tokens_details': {'reasoning_tokens': body['max_tokens'] if finish == 'length' else 0}}
+    usage = {'prompt_tokens': 2100, 'completion_tokens': 6000 if finish == 'length' else 60,
+             'completion_tokens_details': {'reasoning_tokens': 6000 if finish == 'length' else 0}}
     if body['stream']:
         return stream({'choices': [{'delta': message, 'finish_reason': finish}], 'usage': usage})
     return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', **message}, 'finish_reason': finish}], 'usage': usage})
@@ -69,9 +69,9 @@ async def test_review_recovers_output_limit_in_existing_retry_and_still_reports_
     assert result.verified and result.needs_response and WRONG not in result.text and not result.needs_action
     assert result.text.startswith('# 会议安排') and len(calls) == context.calls == 2
     first, second = calls
-    assert first['enable_thinking'] is True and first['reasoning_effort'] == 'low'
-    assert second['enable_thinking'] is False and 'reasoning_effort' not in second
-    assert first['max_tokens'] == second['max_tokens'] == (4000 if scope == 'facts' else 2000)
+    assert first['enable_thinking'] is True and first['reasoning_effort'] == 'high'
+    assert second['enable_thinking'] is True and second['reasoning_effort'] == 'high'
+    assert 'max_tokens' not in first and 'max_tokens' not in second
     assert first['messages'] == second['messages'] and original == preserved
     payload = json.loads(second['messages'][-1]['content'])
     assert payload['answer'] == ANSWER
@@ -88,7 +88,7 @@ async def test_review_recovers_output_limit_in_existing_retry_and_still_reports_
         assert 'private reasoning' not in json.dumps(job.result)
         usage = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == job.id).order_by(ModelUsage.created_at))).all()
         assert [row.status for row in usage] == ['failed', 'succeeded']
-        assert usage[0].actual_output_tokens == first['max_tokens'] and usage[0].error_code == 'invalid_response'
+        assert usage[0].actual_output_tokens == 6000 and usage[0].error_code == 'invalid_response'
     # Cache only the validated verdict; another read does not call the provider.
     cached = await review_reply(context, ANSWER, **options)
     assert cached == result and len(calls) == 2
@@ -113,8 +113,8 @@ async def test_review_errors_keep_strict_validation_classification_and_original_
     result = await review_reply(context, ANSWER, business=False, quantitative={'kind': 'quantitative_consistency'})
     assert not result.verified and result.text == '' and result.preview_state == 'withdrawn'
     assert len(calls) == context.calls == expected_calls and original == preserved
-    assert all(call['max_tokens'] == 2000 for call in calls)
-    assert [call['enable_thinking'] for call in calls] == ([True] + [False] * (expected_calls - 1) if mode in ('length', 'malformed_after_length') else [True] * expected_calls)
+    assert all('max_tokens' not in call for call in calls)
+    assert [call['enable_thinking'] for call in calls] == [True] * expected_calls
     async with context.sessions() as db:
         job = await db.get(Job, context.job_id)
         node = job.result['nodeExecution']['nodes'][0]
@@ -135,7 +135,7 @@ async def test_output_limit_profile_survives_review_reentry_but_not_a_changed_an
     for answer in (ANSWER, ANSWER, ANSWER + '\n请继续核对。'):
         result = await review_reply(context, answer, **options)
         assert not result.verified
-    assert [call['enable_thinking'] for call in calls] == [True, False, True]
+    assert [call['enable_thinking'] for call in calls] == [True, True, True]
 
 
 async def test_output_limit_does_not_invent_unknown_gateway_parameters(setup, fast_nodes, monkeypatch):

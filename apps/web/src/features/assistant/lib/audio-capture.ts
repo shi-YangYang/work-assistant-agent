@@ -3,6 +3,7 @@ import type {
   DeliverableReference,
   ExecutionMode,
   PersonaId,
+  ReasoningReference,
   WorkReference,
   WorkReferenceView,
 } from '@paa/api-contracts'
@@ -32,6 +33,7 @@ export type Composer = {
   pending?: {
     key: string
     body: {
+      reasoning?: ReasoningReference
       conversationId?: string
       newConversation?: boolean
       personaId?: PersonaId

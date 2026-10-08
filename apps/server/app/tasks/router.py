@@ -48,7 +48,7 @@ async def job_events(identifier: str, request: Request, settings=SETTINGS, sessi
 
 
 @router.post('/api/v1/jobs/{identifier}/retry')
-async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
+async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB, settings=SETTINGS):
     from app.security.locks import company_lock
     await company_lock(db, actor.company_id)
     item = await owned(db, Job, identifier, actor, lock=True)
@@ -76,6 +76,10 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         message.reply, message.citations = '', []
         item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'replyReceipt', 'operationFeedback', 'operationFeedbackKeys')}
         item.result = {**item.result, 'refreshModelBinding': True}
+        from app.modules.model_services.reasoning.settings import reasoning_state
+        await reasoning_state(db, actor)
+        from app.modules.model_services.bindings import bind_job
+        await bind_job(db, item, settings)
     elif item.kind == 'report':
         # Resolve the latest settings when this run starts; unchanged settings
         # retain correction checkpoints and committed report receipts.

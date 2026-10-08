@@ -121,9 +121,9 @@ async def test_quantitative_review_uses_bounded_reasoning_and_cache_without_muta
     calls = []
     async def chat(settings, config, key, messages, *, on_event, max_tokens, **kwargs):
         calls.append(json.loads(messages[-1]['content']))
-        assert max_tokens == 2000
+        assert max_tokens is None
         assert config['parameters']['enable_thinking'] is True
-        assert config['parameters']['reasoning_effort'] == 'low'
+        assert config['parameters']['reasoning_effort'] == 'high'
         await on_event('started')
         return {'choices': [{'message': {'role': 'assistant', 'content': '{"issues":[]}'}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)

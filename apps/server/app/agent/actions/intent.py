@@ -236,7 +236,7 @@ async def authorize_intent(context, proposal):
     judge = context.intent_model
     if judge is None:
         choice = (context.model_binding or {}).get('assistant') or {}
-        judge = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=2000, streaming=False, use_responses_api=False, stream_usage=False)
+        judge = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=None, streaming=False, use_responses_api=False, stream_usage=False)
         judge._run_context = context
         judge._verification = True
         # Long briefs can mix an early "reference only" instruction with later

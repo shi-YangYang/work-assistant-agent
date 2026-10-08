@@ -1,6 +1,6 @@
 from .commands import correct_transcript, submit_message
 from fastapi import APIRouter, Header, Query
-from app.http.dependencies import AUTH, DB
+from app.http.dependencies import AUTH, DB, SETTINGS
 from app.modules.conversations.models import Conversation
 from app.modules.messages.models import Message
 from app.modules.messages.queries import list_messages
@@ -13,8 +13,8 @@ router = APIRouter()
 
 
 @router.post('/api/v1/messages', status_code=202)
-async def send_message(body: SendMessage, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
-    return await submit_message(db, actor, body, idempotency_key)
+async def send_message(body: SendMessage, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB, settings=SETTINGS):
+    return await submit_message(db, actor, body, idempotency_key, settings)
 
 
 @router.get('/api/v1/messages')

@@ -75,6 +75,7 @@ async def select_continuation(context, requested):
         context.task_snapshot = await resume(db, actor, job, message, requested=True)
         from app.modules.interactions.lifecycle import settle_natural_reply
         await settle_natural_reply(db, actor, job, {'relation': 'continue'})
+        context.model_binding = job.model_binding
 
 
 def instruction(value):

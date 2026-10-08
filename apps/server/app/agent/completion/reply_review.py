@@ -17,7 +17,7 @@ from app.tasks.lease import lease
 
 log = logging.getLogger('paa.company')
 REVIEW_TASK = 'business_reply_review'
-REVIEW_VERSION = 40
+REVIEW_VERSION = 41
 
 
 @dataclass(frozen=True)
@@ -152,10 +152,10 @@ missing_response：用户还要求的解释/分析等实质内容缺失，仅有
         judge = model
         if judge is None:
             choice = (context.model_binding or {}).get('assistant') or {}
-            judge = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=output_limit, streaming=False, use_responses_api=False, stream_usage=False)
+            judge = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=None, streaming=False, use_responses_api=False, stream_usage=False)
             judge._run_context = context
             judge._verification = True
-            judge._verification_reasoning = bool(quantitative or verification) and not (cached.get('digest') == fingerprint and cached.get('outputLimited'))
+            judge._verification_reasoning = bool(quantitative or verification)
         from app.tasks.nodes.node_execution import execute_node
         invalid_format = False
         allowed_kinds = {'execution', 'fact', 'missing_action', 'missing_response', 'capability'} if business else {'fact', 'missing_response'} if verification else {'fact'}
@@ -175,18 +175,7 @@ missing_response：用户还要求的解释/分析等实质内容缺失，仅有
             judge._response_validator = parse
         async def check():
             messages = [*prompt, HumanMessage(content='上次返回不符合问题契约。仅返回 JSON {"issues":[]}，每项 kind 只允许 ' + '/'.join(sorted(allowed_kinds)) + '，reason 必填；execution/fact/capability 的 quote 必须逐字来自候选正文，证据及回执 ID 只能用本轮实际值。不改变本次核对范围。')] if invalid_format else prompt
-            try:
-                return parse(await judge.ainvoke(messages))
-            except ProviderError as error:
-                if error.output_limit and isinstance(judge, BoundedChatModel) and judge._verification_reasoning:
-                    # A reasoning effort is not a token cap. Retry the same full
-                    # review without thinking only on known hybrid protocols;
-                    # never accept a truncated verdict or add another retry loop.
-                    judge._verification_reasoning = False
-                    async with context.sessions.begin() as db:
-                        job, _ = await lease(db, context)
-                        job.result = {**job.result, 'replyReview': {'digest': fingerprint, 'outputLimited': True}}
-                raise
+            return parse(await judge.ainvoke(messages))
         raw = await execute_node(context, identity=fingerprint, kind='review', label='核验事实中' if verification else '核对数值关系中' if quantitative and not business else '核对操作结果中', operation=check)
         reviewed = check_issues(answer, raw, review_evidence, payload['currentActions'], task, draft_values)
         async with context.sessions.begin() as db:

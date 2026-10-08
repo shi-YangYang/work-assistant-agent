@@ -42,6 +42,8 @@ export function MessageComposer({
   children,
   workReference,
   executionControl,
+  reasoningControl,
+  reasoningSaving = false,
   questionPanel,
   contextKey,
   contextUsage = null,
@@ -51,6 +53,8 @@ export function MessageComposer({
 }: {
   workReference?: ReturnType<typeof useWorkReference>
   executionControl?: React.ReactNode
+  reasoningControl?: React.ReactNode
+  reasoningSaving?: boolean
   questionPanel?: React.ReactNode
   task?: ReturnType<typeof useAssistantTask>
   containerRef: React.RefObject<HTMLDivElement | null>
@@ -276,6 +280,7 @@ export function MessageComposer({
               unavailable={contextUnavailable}
               loading={contextLoading}
             />
+            {reasoningControl}
             <button
               type="button"
               className={`${controlsStyles['icon-button']} ${styles['recording-slot']}`}
@@ -325,6 +330,7 @@ export function MessageComposer({
                     !!retryWait ||
                     previewUploading ||
                     personaSaving ||
+                    reasoningSaving ||
                     capturing ||
                     (!pending && task?.blocked) ||
                     (!composer.text.trim() && !composer.files.length)

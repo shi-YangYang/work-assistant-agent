@@ -20,7 +20,7 @@ async def reserve_call(context, kind, estimate=0):
     retry = context.node_retry
     from app.agent.context.context_usage import input_budget, MAX_CONTEXT_BYTES
     cumulative = (input_budget(context, 0) or MAX_CONTEXT_BYTES) * (32 if retry else 8)
-    if context.calls >= (32 if retry else 8) or context.tools > 16 or (time.time() >= context.node_deadline if retry else time.monotonic() - context.started > 180) or context.input_tokens + estimate > cumulative or context.output_tokens >= (32000 if retry else 8000):
+    if context.calls >= (32 if retry else 8) or context.tools > 16 or (time.time() >= context.node_deadline if retry else time.monotonic() - context.started > 180) or context.input_tokens + estimate > cumulative or (context.model_purpose != 'assistant' and context.output_tokens >= (32000 if retry else 8000)):
         raise BudgetExceeded('本次处理已达到限制，请缩短内容后重试或补充说明')
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
@@ -64,7 +64,7 @@ class BoundedChatModel(ChatOpenAI):
             return await operation()
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
         # Message ids are graph/checkpoint identities, not provider call counters.
-        identity = digest({'request': payload, 'messages': [getattr(m, 'id', None) for m in messages]})
+        identity = digest({'request': payload, 'binding': context.model_binding, 'messages': [getattr(m, 'id', None) for m in messages]})
         from app.agent.runtime.progress import model_phase
         label = model_phase(messages, context.job_id, nested=bool(parent))
         return await execute_node(context, identity=identity, kind='model', label=label, operation=operation,
@@ -111,7 +111,7 @@ class BoundedChatModel(ChatOpenAI):
                 from app.modules.model_services.parameters import business_model_config
                 config = business_model_config(config, (context.model_binding or {}).get('assistant') or {})
             # The optional callback publishes prose only; framework tools remain buffered.
-            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=output_limit, on_event=record.event, on_delta=candidate.feed if candidate else None), min(60, max(.01, context.node_deadline - time.time())) if context.node_retry else 60)
+            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, on_event=record.event, on_delta=candidate.feed if candidate else None), min(60, max(.01, context.node_deadline - time.time())) if context.node_retry else 60)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
             try:
@@ -154,7 +154,7 @@ class BoundedChatModel(ChatOpenAI):
                 save(job, state)
             usage = await db.get(ModelUsage, usage_id)
             usage.output_tokens = output
-        if context.output_tokens > (32000 if context.node_retry else 8000):
+        if context.model_purpose != 'assistant' and context.output_tokens > (32000 if context.node_retry else 8000):
             raise BudgetExceeded('模型响应超过本次输出限制，已停止后续处理')
         return result
 

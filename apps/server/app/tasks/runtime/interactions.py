@@ -20,6 +20,11 @@ async def continue_task(db, actor, source, text, *, reference, task_id):
     await begin_input(db, actor, message)
     result = {'executionMode': actor.execution_mode, 'modeRevision': actor.mode_revision, 'continuation': {'sourceMessageId': source.id, 'taskId': task_id, **reference}}
     job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=message.id, access=scope(actor), result=result)
+    # A human answer continues the accepted task, even if account settings changed.
+    from copy import deepcopy
+    source_job = await db.scalar(select(Job).where(Job.target_id == source.id, Job.kind == 'message', Job.company_id == actor.company_id, Job.owner_id == actor.id))
+    if source_job:
+        job.model_binding = deepcopy(source_job.model_binding)
     db.add(job)
     conversation.updated_at = now()
     await db.flush()

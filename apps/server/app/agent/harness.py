@@ -35,7 +35,7 @@ register_harness_profile('openai', HarnessProfile(excluded_tools=EXCLUDED_TOOLS,
 def build_graph(settings, checkpointer, context, model=None):
     if model is None:
         choice = (context.model_binding or {}).get(context.model_purpose) or {}
-        model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
+        model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=None, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
     if isinstance(model, BoundedChatModel):
         model._completion_validator = validate_completion_response

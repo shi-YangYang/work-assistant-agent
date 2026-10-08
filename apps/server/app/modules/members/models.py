@@ -23,6 +23,8 @@ class Member(Record, Base):
     execution_mode: Mapped[str] = mapped_column(String(8), server_default='auto')
     full_access_confirmed: Mapped[bool] = mapped_column(Boolean, server_default='false')
     mode_revision: Mapped[int] = mapped_column(Integer, server_default='1')
+    reasoning_preference: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    reasoning_revision: Mapped[int] = mapped_column(Integer, server_default='0')
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default='false')

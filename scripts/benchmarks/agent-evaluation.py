@@ -46,6 +46,7 @@ from app.db.session import database
 from app.modules.members.models import Member
 from app.modules.messages.models import Message
 from app.modules.model_services.bindings import bind_job
+from app.modules.model_services.reasoning.legacy import direct_model
 from app.modules.model_services.models import ModelRouting, ModelService, ModelServiceRevision, ModelUsage
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem
@@ -71,7 +72,7 @@ async def configuration(username, *, include_asr=False):
                 raise RuntimeError('Source username must identify one active local user')
             configs = {}
             for purpose in ('assistant', 'report'):
-                job = SimpleNamespace(kind='message' if purpose == 'assistant' else 'report', result={}, model_binding=None, config_attempt=0, company_id=users[0].company_id)
+                job = SimpleNamespace(kind='message' if purpose == 'assistant' else 'report', result={}, model_binding=None, config_attempt=0, company_id=users[0].company_id, owner_id=users[0].id)
                 binding = await bind_job(db, job, settings)
                 choice = binding.get(purpose)
                 if not choice:
@@ -94,11 +95,11 @@ async def install_models(configs, settings, sessions, company_id):
     async with sessions.begin() as db:
         for purpose, config in configs.items():
             sid = str(uuid4())
-            service = ModelService(id=sid, company_id=company_id, name='真实评测 ' + purpose, base_url=config['base'], models=[config['model']])
+            service = ModelService(id=sid, company_id=company_id, name='真实评测 ' + purpose, base_url=config['base'], models=[{**direct_model(config['model']), 'parameters': config['choice'].get('parameters', {}), 'reasoning': {'efforts': [], 'initial': None}}])
             db.add(service)
             await db.flush()
             db.add(ModelServiceRevision(company_id=company_id, service_id=sid, revision=1, name=service.name, base_url=service.base_url, models=service.models, credential=encrypt(settings.model_key_file, config['key'], company_id, sid, 1)))
-            choices[purpose] = {'serviceId': sid, 'modelId': config['model']['id'], 'presetId': config['choice']['presetId'], 'streaming': config['choice']['streaming']}
+            choices[purpose] = {'serviceId': sid, 'modelId': config['model']['id'], 'streaming': config['choice']['streaming']}
         db.add(ModelRouting(company_id=company_id, choices=choices))
 
 
@@ -112,8 +113,8 @@ async def grade(case, snapshot, config, settings):
     from app.integrations.models.chat import chat
     from app.integrations.models.transport import ProviderError
     from app.modules.model_services.parameters import request_options, reply_review_config
-    chosen = dict(config['model'], selectedPresetId=config['choice']['presetId'])
-    options = chosen['legacyParameters'] if 'legacyParameters' in chosen else request_options(chosen)
+    chosen = config['model']
+    options = config['choice'].get('parameters', request_options(chosen))
     wire = reply_review_config({'baseUrl': config['base'], 'model': chosen['model'], 'streaming': False, 'parameters': options}, reasoning=True)
     payload = grading_input(case, snapshot)
     try:
@@ -161,7 +162,7 @@ async def retry_after_controlled_failure(job, case, client, sessions, settings, 
 
 async def evaluate(case, configs, prepared=None):
     start = time.monotonic()
-    snapshot = {'models': {purpose: {'model': config['model']['model'], 'presetId': config['choice']['presetId'],
+    snapshot = {'models': {purpose: {'model': config['model']['model'], 'effort': config['choice'].get('effort'),
                                     'streaming': config['choice']['streaming']} for purpose, config in configs.items()}}
     with tempfile.TemporaryDirectory(prefix='paa-agent-eval-') as directory:
         fixture = prepared[0] if prepared else setup.__wrapped__(Path(directory))

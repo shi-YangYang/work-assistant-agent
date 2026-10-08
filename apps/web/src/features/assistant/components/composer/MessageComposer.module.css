@@ -208,6 +208,7 @@
 
 .composer-actions > .send-actions {
   flex-wrap: nowrap;
+  flex-shrink: 0;
   margin-left: auto;
   gap: 3px;
 }

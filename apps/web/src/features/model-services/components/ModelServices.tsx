@@ -9,7 +9,6 @@ import { ModelCheckResult } from '@web/features/model-services/components/testin
 import { ModelOptions } from '@web/features/model-services/components/catalog/ModelOptions'
 import { ModelPicker } from '@web/features/model-services/components/catalog/ModelPicker'
 import { ModelTestDialog } from '@web/features/model-services/components/testing/ModelTestDialog'
-import { ReasoningPresetEditor } from '@web/features/model-services/components/catalog/ReasoningPresetEditor'
 import { RemoveServiceDialog } from '@web/features/model-services/components/service/RemoveServiceDialog'
 import { Routing } from '@web/features/model-services/components/Routing'
 import { ServiceConnectionFields } from '@web/features/model-services/components/service/ServiceConnectionFields'
@@ -41,10 +40,6 @@ export function ModelServices() {
     setTestPurpose,
     removeOpen,
     setRemoveOpen,
-    preset,
-    setPreset,
-    presetJson,
-    setPresetJson,
     resource,
     services,
     drafts,
@@ -267,8 +262,6 @@ export function ModelServices() {
         updateModel={updateModel}
         automaticMatch={automaticMatch}
         setTestPurpose={setTestPurpose}
-        setPreset={setPreset}
-        setPresetJson={setPresetJson}
         update={update}
         setActiveModel={setActiveModel}
         error={error}
@@ -281,16 +274,6 @@ export function ModelServices() {
         setRemoveOpen={setRemoveOpen}
         error={error}
         remove={remove}
-      />
-      <ReasoningPresetEditor
-        preset={preset}
-        model={model}
-        setPreset={setPreset}
-        presetJson={presetJson}
-        updateModel={updateModel}
-        setError={setError}
-        setPresetJson={setPresetJson}
-        error={error}
       />
       <ModelTestDialog
         testOpen={testOpen}

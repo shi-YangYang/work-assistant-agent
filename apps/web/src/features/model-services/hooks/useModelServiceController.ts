@@ -1,4 +1,4 @@
-import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
+import type { CompanyModel } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { deleteModelService, saveModelService } from '@web/features/model-services/api/requests'
 import { useServiceCheck } from '@web/features/model-services/hooks/useServiceCheck'
@@ -32,8 +32,6 @@ export function useModelServiceController() {
   const [assignServiceId, setAssignServiceId] = useState('')
   const [testPurpose, setTestPurpose] = useState<Purpose>('assistant')
   const [removeOpen, setRemoveOpen] = useState(false)
-  const [preset, setPreset] = useState<CompanyPreset | null>(null)
-  const [presetJson, setPresetJson] = useState('{}')
   const session = useServiceDraftSession()
   const {
     resource,
@@ -256,10 +254,6 @@ export function useModelServiceController() {
     setTestPurpose,
     removeOpen,
     setRemoveOpen,
-    preset,
-    setPreset,
-    presetJson,
-    setPresetJson,
     resource,
     services,
     drafts,

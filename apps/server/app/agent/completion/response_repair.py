@@ -25,7 +25,7 @@ async def repair_response(context, answer, reason, *, model=None):
     ensure_input(context, estimate_request(messages))
     if model is None:
         choice = (context.model_binding or {}).get('assistant') or {}
-        model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=4000, streaming=False, use_responses_api=False, stream_usage=False)
+        model = BoundedChatModel(model=choice.get('model', 'unconfigured'), api_key='server-managed', max_retries=0, timeout=60, max_tokens=None, streaming=False, use_responses_api=False, stream_usage=False)
         model._run_context = context
     async def generate():
         from app.integrations.models.transport import ProviderError

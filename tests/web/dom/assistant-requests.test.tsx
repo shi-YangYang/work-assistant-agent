@@ -46,6 +46,7 @@ const resources = [
   '/conversations/chat/interactions',
   '/conversations/chat/context-usage',
   '/assistant/execution-settings',
+  '/assistant/reasoning-settings',
 ].map((path) => '/api/v1' + path)
 const sources: Source[] = []
 class Source extends EventTarget {
@@ -88,6 +89,15 @@ beforeEach(() => {
     'fetch',
     vi.fn(async (url: RequestInfo | URL) => {
       const path = String(url).replace('/api/v1', '')
+      if (path === '/assistant/reasoning-settings')
+        return new Response(
+          JSON.stringify({
+            options: [],
+            selected: null,
+            preferenceRevision: 0,
+            configVersion: 'v1',
+          }),
+        )
       if (path.startsWith('/messages?') && delayMessages) return delayMessages
       const data =
         path === '/assistant/execution-settings'
@@ -113,7 +123,7 @@ afterEach(() => {
 })
 async function ready() {
   await screen.findByRole('button', { name: '发送' })
-  await waitFor(() => expect(Object.keys(counts())).toHaveLength(7))
+  await waitFor(() => expect(Object.keys(counts())).toHaveLength(8))
 }
 
 it('deduplicates account settings and six conversation resources in a StrictMode-mounted assistant and stays idle', async () => {
@@ -198,7 +208,7 @@ it.each(['online', 'manual'] as const)(
       Object.fromEntries(
         resources.map((path, index) => [
           path,
-          index === 0 || (index === 6 && recovery === 'online') ? 2 : 1,
+          index === 0 || (index >= 6 && recovery === 'online') ? 2 : 1,
         ]),
       ),
     )
@@ -208,7 +218,7 @@ it.each(['online', 'manual'] as const)(
 it('does not read conversation resources or hidden pickers before a new conversation exists', async () => {
   view('/assistant?new=1')
   await screen.findByRole('button', { name: '发送' })
-  expect(counts()).toEqual({ [resources[6]]: 1 })
+  expect(counts()).toEqual({ [resources[6]]: 1, [resources[7]]: 1 })
   fireEvent.change(screen.getByRole('textbox', { name: '工作消息' }), {
     target: { value: '只编辑草稿' },
   })
@@ -216,7 +226,7 @@ it('does not read conversation resources or hidden pickers before a new conversa
     window.dispatchEvent(new Event('online'))
     document.dispatchEvent(new Event('visibilitychange'))
   })
-  expect(counts()).toEqual({ [resources[6]]: 2 })
+  expect(counts()).toEqual({ [resources[6]]: 2, [resources[7]]: 2 })
 })
 
 it('updates heading from a complete saved conversation without refetching chat resources', async () => {
@@ -382,7 +392,7 @@ it('uses streamed thinking, search, operation and review changes without refetch
   active = running
   view()
   await screen.findByRole('button', { name: '中断' })
-  await waitFor(() => expect(Object.keys(counts())).toHaveLength(7))
+  await waitFor(() => expect(Object.keys(counts())).toHaveLength(8))
   await act(async () => {
     for (const [seq, stage] of [
       'generating',

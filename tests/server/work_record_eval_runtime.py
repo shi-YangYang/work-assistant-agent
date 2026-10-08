@@ -328,7 +328,7 @@ async def evaluate_work_record(case, configs, evaluation):
     from work_record_eval_assertions import check_case
     started = time.monotonic()
     base = {'id': case.id, 'title': case.title, 'role': case.role, 'executionMode': case.mode, 'turns': case.turns, 'suiteRevision': SUITE_REVISION,
-            'models': {name: {'model': config['model']['model'], 'presetId': config['choice']['presetId'], 'streaming': config['choice']['streaming']} for name, config in configs.items()}}
+            'models': {name: {'model': config['model']['model'], 'effort': config['choice'].get('effort'), 'streaming': config['choice']['streaming']} for name, config in configs.items()}}
     run, fixture = None, None
     try:
         with tempfile.TemporaryDirectory(prefix='noria-work-record-eval-') as directory:
