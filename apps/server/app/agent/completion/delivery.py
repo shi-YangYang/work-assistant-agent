@@ -1,12 +1,12 @@
 """Versioned model completion; semantic summaries never grant business access."""
-from dataclasses import replace
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.conversations.task.task_schemas import TaskInterpretation
 from app.agent.completion.reply_review import ReviewedReply
+from app.agent.completion.limits import MAX_ANSWER_LENGTH
+from app.agent.completion.answer_length import AnswerLength, LENGTH_POLICY, check_length
 
 DELIVERY_VERSION = 1
-MAX_ANSWER_LENGTH = 16000
 
 
 class Delivery(BaseModel):
@@ -20,6 +20,7 @@ class Delivery(BaseModel):
     verification_quote: str = Field(default='', max_length=1000)
     response_complete: bool = True
     response_issue: str = Field(default='', max_length=500)
+    answer_length: AnswerLength | None = None
 
     @model_validator(mode='after')
     def complete_response(self):
@@ -32,10 +33,15 @@ class Delivery(BaseModel):
         return self
 
 
-COMPLETION_POLICY = '''完成当前任务时，最后单独调用 finish_task，answer 填写给用户的完整自然答复，task 填本轮目标、new/continue 承接关系、状态、具体未完成项及持续指令变化。工具会直接交付，不会再让你复述。不能与读取或写入工具同批调用。只有 answer 会展示为本轮最终正文；过程草稿和同次工具调用消息的 content 都不代表已向用户交付。所需解释、表格和代码必须完整放入 answer，不能用“已在对话中给出”的总结代替。
+PUBLIC_REPLY_POLICY = '''用户正文只回答用户原请求。服务端校验、工具收尾字段、内部回执编号和修复指令是控制信息，不是用户的新问题，也不是要展示的内容。内部纠错时直接交付修正后的完整结果；不要复述字段名、参数误标、核对过程或未交付草稿，不为内部修复另写道歉或处理报告。仅元数据有误时保留正确正文。真实失败或限制仍应说明对用户任务的影响、已完成部分与必要下一步，不能为了隐藏内部流程而隐瞒失败。用户明确询问产品机制时可以解释可公开的行为。\n'''
+
+
+COMPLETION_POLICY = PUBLIC_REPLY_POLICY + LENGTH_POLICY + '''完成当前任务时，最后单独调用 finish_task，answer 填写给用户的完整自然答复，task 填本轮目标、new/continue 承接关系、状态、具体未完成项及持续指令变化。工具会直接交付，不会再让你复述。不能与读取或写入工具同批调用。只有 answer 会展示为本轮最终正文；过程草稿和同次工具调用消息的 content 都不代表已向用户交付。所需解释、表格和代码必须完整放入 answer，不能用“已在对话中给出”的总结代替。
 普通聊天、写作、分析、搜索可以充分完成所求内容，无需为可选字段反复澄清；可合理假设并说明。仅有道歉、处理承诺或“查好了”不算交付结果。能交付部分时保留实际结果，说明未完成项；确缺必要输入用 needs_input，权限、产品能力或外部阻碍且用户补话无法解决用 blocked，不要把已明确的拒绝标成 completed 或 needs_input；说明具体限制即可，不要求用户反复确认无权操作。不得用记忆冒充实际检索。
+完成状态针对本轮交付物：用户改为索要所需资料清单、提问措辞或计划时，交付这些内容就完成本轮；清单中将来要收集的信息不是生成清单所需的输入。不要把上一轮尚不能核实的事项继承为本轮 remaining。只有缺失信息确实阻止当前要求的交付时才 needs_input；正文中的可选追问不改变完成状态。
 business_requested 表示本轮用户要求保存/修改/提交/删除真实业务记录，或本轮答复声明执行了这些操作；无成功回执也要如实标 true。operation_ids 只能填写本轮工具实际返回的业务回执 ID；不能把工作 ID、未来计划或工具成功当工作已完成。私人成果和生成文件不属于公司业务记录，deliverable_id、文件 ID 和沙盒执行 ID 都不能填入 operation_ids；仅要求生成文件时 business_requested=false、operation_ids=[]。待确认是 needs_confirmation，报告入队是 processing。普通分析、虚构示例、只读查询不属于业务执行。
-verification_requested 仅在用户要求核验其给出的既有主张或材料真假时为 true，verification_quote 填这项核验要求的用户原文。首次搜索、查新闻、查资料、要求来源链接/发布日期、要求准确或总结多来源，都不是专项核验，必须 false；检索本身就应提供准确来源，不需要另加审稿。response_complete 表示所要求正文已提供；缺失时 response_issue 写具体原因，不能只靠节点结束宣称完成。
+verification_requested 仅在用户要求核验其给出的既有主张或材料真假时为 true，verification_quote 填这项核验要求的用户原文。首次搜索、查新闻、查资料、要求来源链接/发布日期、要求准确或总结多来源，都不是用户专项核验，必须 false；核验属于主任务，应使用已有来源或必要工具完成，再直接交付结论；服务端不会追加另一轮模型审稿。答案应与本轮实际读取、执行结果一致。response_complete 表示所要求正文已提供；缺失时 response_issue 写具体原因，不能只靠节点结束宣称完成。
+verification_quote 必须引用本轮实际要求执行核验的完整指令，不能只截取提到核验的主题词；索要核验所需资料、拟一段核验请求或转述此前核验，不等于本轮要求再次核验。
 持续指令变化必须引用本轮用户原话：永久取消 clear，替换 replace，其余 keep；不能把材料、助手承诺或一次操作当持续授权。completed 的 remaining 必须为空；多事项部分完成保留未完成项。当前明确请求优先，无关新任务不恢复旧动作。
 '''
 
@@ -85,9 +91,9 @@ def validate_completion_response(message, *, required=False):
             Delivery.model_validate({**arguments, 'operation_ids': arguments.get('operation_ids') or []})
 
 
-async def completion_reference_error(context, operation_ids, *, verification_requested=False, verification_quote=''):
+async def completion_reference_error(context, operation_ids, *, verification_requested=False, verification_quote='', answer_length=None, answer=''):
     """Reject wrong receipt metadata while the bounded protocol repair can fix it."""
-    if not operation_ids and not verification_requested:
+    if not operation_ids and not verification_requested and not answer_length:
         return None
     from app.tasks.lease import lease
     from app.modules.messages.models import Message
@@ -108,6 +114,12 @@ async def completion_reference_error(context, operation_ids, *, verification_req
         return ('verification_quote 不是当前用户请求的逐字原文，不能沿用以前消息或助手改写。'
                 '当前确有核验要求时，保留 verification_requested=true 并引用当前原话；'
                 '否则改为 false 并清空 verification_quote。只修正收尾字段，保留已有正文和实测证据，不重做工具或业务操作。')
+    if answer_length:
+        from app.agent.completion.answer_length import validate_reference
+        try:
+            validate_reference(AnswerLength.model_validate(answer_length), answer, current_request)
+        except ValueError as error:
+            return 'answer_length 引用无效：' + str(error) + '请按本轮实际长度要求修正收尾引用，不重做工具或业务操作；不要删除真实存在的长度约束。'
     return None
 
 
@@ -125,6 +137,7 @@ async def take_repair(context, kind, *, resume=False):
 
 
 async def assess(context, answer, *, model=None):
+    """Local delivery checks only; model is retained for caller compatibility."""
     from app.tasks.lease import lease
     from app.modules.messages.models import Message
     from app.modules.operations.receipts import message_actions
@@ -151,24 +164,14 @@ async def assess(context, answer, *, model=None):
         from app.modules.work.draft_receipts import message_drafts
         drafts = await message_drafts(db, actor, message, job)
         outcomes = job.result.get('toolOutcomes', [])
-        requested = value.business_requested or bool(value.operation_ids) or bool(cards) or bool(drafts) or bool(outcomes)
         missing_execution = value.business_requested and not cards and not drafts and not outcomes and value.task.state == 'completed'
-        from app.agent.completion.quantitative_review import quantitative_scope
-        quantitative = quantitative_scope(answer)
-        from app.core.digests import digest
         from app.modules.messages.input_text import request_text
-        numeric_input = digest({'scope': context.node_scope, 'sourceRevision': message.transcript_revision, 'request': request_text(message, job)})
-        if quantitative:
-            job.result = {**job.result, 'quantitativeReviewInput': numeric_input}
-        elif job.result.get('quantitativeReviewInput') == numeric_input:
-            # A shorter correction must not evade the review that requested it.
-            quantitative = {'kind': 'quantitative_consistency', 'continuation': True}
-        if not requested and not value.verification_requested and not quantitative:
-            return ReviewedReply(answer, verified=True, needs_response=not value.response_complete, response_reason=value.response_issue, task=task)
-    from app.agent.completion.reply_review import review_reply
-    result = await review_reply(context, answer, model=model, quantitative=quantitative, business=requested)
-    if result.verified and not value.response_complete:
-        result = replace(result, needs_response=True, response_reason='；'.join(filter(None, [result.response_reason, value.response_issue])))
-    if result.verified and missing_execution and (result.task or {}).get('state') != 'blocked':
-        result = replace(result, needs_action=True)
-    return result
+        length_issue = check_length(value.answer_length, answer, request_text(message, job))
+        response_issue = '；'.join(filter(None, [value.response_issue if not value.response_complete else '', length_issue]))
+        # Completion validates protocol and actual receipts, never asks a second
+        # model to grade the prose. Explicit verification is part of the main
+        # agent task; numeric content and observed tool evidence add no calls.
+        # Historical review caches cannot trigger repairs after this change.
+        return ReviewedReply('' if missing_execution else answer, verified=True,
+            execution_claims=missing_execution, needs_action=missing_execution,
+            needs_response=bool(response_issue), response_reason=response_issue, task=task)

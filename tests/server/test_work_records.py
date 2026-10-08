@@ -220,3 +220,38 @@ async def test_reports_correct_only_selected_imported_entry_and_preserve_saved_f
         report = await db.get(Report, report_id)
         assert [report_source_content(row)['summary'] for row in await report_inputs(db, report)] == ['另一次旧进展']
         assert await report_fact_basis(db, users['employee'], report) == original_facts
+
+
+async def test_single_update_reads_current_and_history_without_cross_work_or_owner_leaks(setup):
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    work = await create(client)
+    another = await create(client, title='另一个独立工作')
+    path = '/api/v1/work-items/' + work['id']
+    created = await client.post(path + '/updates', json={'expectedRevision': 1, 'text': '初稿完成'}, headers=key())
+    assert created.status_code == 201
+    update = created.json()['update']
+    target = path + '/updates/' + update['id']
+    current = await client.get(target)
+    assert current.status_code == 200 and current.json() == update
+    for role in ('peer', 'outsider'):
+        for suffix in ('', '?revision=2'):
+            denied = await clients[role].get(target + suffix)
+            assert denied.status_code == 404 and '初稿完成' not in denied.text
+    assert (await clients['admin'].get(target)).json()['text'] == '初稿完成'
+    assert (await client.get('/api/v1/work-items/' + another['id'] + '/updates/' + update['id'])).status_code == 404
+    assert (await client.get(target + '?revision=1')).status_code == 404
+    changed = await client.patch(target, json={'expectedRevision': 2, 'expectedUpdateRevision': 1, 'text': '复核通过'}, headers=key())
+    assert changed.status_code == 200
+    assert (await client.get(target)).json()['text'] == '复核通过'
+    historical = await client.get(target + '?revision=2')
+    assert historical.status_code == 200 and historical.json()['text'] == '初稿完成'
+    assert historical.json()['revision'] == 1 and historical.json()['workRevision'] == 2
+    removed = await client.request('DELETE', target, json={'expectedRevision': 3, 'expectedUpdateRevision': 2}, headers=key())
+    assert removed.status_code == 200
+    assert (await client.get(target)).status_code == 404
+    assert (await client.get(target + '?revision=4')).status_code == 404
+    assert (await client.get(target + '?revision=3')).json()['text'] == '复核通过'
+    async with sessions() as db:
+        persisted = await db.get(WorkUpdate, update['id'])
+        assert persisted.deleted and persisted.revision == 3

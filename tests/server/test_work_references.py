@@ -276,7 +276,12 @@ async def test_retry_after_own_delete_recovers_reply_without_repeating_delete(se
     monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
-        await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information'], fail=True))
+        from app.agent.completion.delivery import ReviewedReply
+        async def interrupted_delivery(*args, **kwargs):
+            return ReviewedReply(error_code='ControlledDeliveryFailure', error_message='受控交付中断')
+        with monkeypatch.context() as patch:
+            patch.setattr('app.agent.completion.delivery.assess', interrupted_delivery)
+            await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information'], fail=True))
         failed = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
         assert failed['job']['state'] == 'awaiting_retry', failed
         assert failed['actions'][0]['state'] == 'succeeded'

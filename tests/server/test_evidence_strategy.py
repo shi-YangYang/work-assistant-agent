@@ -102,10 +102,10 @@ async def test_experiment_receipt_and_unavailable_paths_use_existing_graph_witho
                          verification_requested=verify, verification_quote=quote)
     result, stored = await run((settings, *setup[1:]), fake, (quote + '，' if quote else '') + '请做一个最小实验，观察集合排序。')
     assert ('run_python' in fake.requests[0]) is enabled
-    assert fake.calls == (2 if enabled else 1) and fake.reviews == int(verify)
+    assert fake.calls == (2 if enabled else 1) and fake.reviews == 0
     assert len(submissions) == int(enabled) and len(fake.evidence) == int(enabled)
     assert sum(node['kind'] == 'tool' for node in result['job']['nodes']) == int(enabled)
-    assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == int(verify)
+    assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == 0
     assert not stored.get('deliveryRepairs')
     assert not result['actions'] and not result['drafts'] and not result['deliverables']
     async with setup[1]() as db:
@@ -120,12 +120,7 @@ async def test_experiment_receipt_and_unavailable_paths_use_existing_graph_witho
     else:
         assert observed not in result['reply'] and '未完成实测' in result['reply']
         assert result['job']['taskOutcome']['state'] == 'blocked'
-    if verify:
-        actual = [row for row in fake.review_inputs[0]['toolEvidence'] if row['tool'] == 'run_python']
-        assert len(actual) == 1 and json.loads(actual[0]['result']) == fake.evidence[0]
-        assert fake.review_inputs[0]['reviewScope'] == 'facts_only'
-        assert 'currentActions' not in fake.review_inputs[0]
-        assert fake.review_inputs[0]['verificationQuote'] == quote
+    assert not fake.review_inputs
 
 
 class QuoteRepairModel(EvidenceModel):
@@ -167,7 +162,7 @@ async def test_current_verification_quote_is_repaired_once_without_reexecuting_e
     assert len(submissions) == 1 and fake.calls == 3
     assert fake.requests[-1] == ['finish_task']
     assert stored['deliveryRepairs'] == ['protocol']
-    assert fake.reviews == int(corrected_verification is True)
+    assert fake.reviews == 0
     if corrected_verification is None:
         # Controlled models do not reserve an external request; the existing
         # handler uses failed here (real provider calls use awaiting_retry).

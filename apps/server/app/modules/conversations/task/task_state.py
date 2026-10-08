@@ -44,7 +44,11 @@ async def begin_input(db, actor, message):
                     sources = [*sources, TaskSource(messageId=previous.id, revision=previous.transcript_revision, digest=digest(original), quote=original[:2000]).model_dump()]
                 sources = [sources[0], *sources[-15:]] if len(sources) > 16 else sources
                 from app.tasks.feedback.items import collect
-                row.payload = {**row.payload, 'task': {'id': snapshot.get('taskId', previous_id), 'messageId': previous_id, 'goal': original[:400], 'state': 'cancelled' if prior_job.state == 'cancelled' else 'blocked', 'remaining': ['上次请求尚未完成'], 'sources': sources, 'items': collect(prior_job)}}
+                scope = row.payload.get('task', {})
+                # Interruption is already represented by state. Preserve known
+                # requirements, without inventing a new request for user input.
+                remaining = scope.get('remaining', []) if scope.get('messageId') == previous_id else prior_job.result.get('taskOutcome', {}).get('remaining', [])
+                row.payload = {**row.payload, 'task': {'id': snapshot.get('taskId', previous_id), 'messageId': previous_id, 'goal': original[:400], 'state': 'cancelled' if prior_job.state == 'cancelled' else 'blocked', 'remaining': remaining, 'sources': sources, 'items': collect(prior_job)}}
         row.revision += 1
         row.payload = {**row.payload, 'latestMessageId': message.id}
         row.updated_at = now()

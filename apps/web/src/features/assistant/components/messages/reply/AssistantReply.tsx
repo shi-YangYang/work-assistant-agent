@@ -6,6 +6,7 @@ import { BusinessReply } from '@web/features/sources/components/BusinessSources'
 import styles from './AssistantReply.module.css'
 import { useStreamingText } from './useStreamingText'
 import { replyPresentation } from './reply-presentation'
+import { WebSources } from './WebSources'
 
 export function AssistantReply({
   message,
@@ -38,6 +39,7 @@ export function AssistantReply({
           endpoint={messageSourcesPath(message.id)}
         />
         <DocumentCitations citations={message.citations ?? []} />
+        <WebSources sources={message.webSources ?? []} />
       </div>
     ) : null
   }

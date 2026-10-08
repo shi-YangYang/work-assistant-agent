@@ -12,5 +12,5 @@ quote 必须逐字来自 answer；evidence 必须来自 toolEvidence，不编造
 
 def fact_payload(payload):
     return {**{key: payload[key] for key in ('task', 'version', 'currentUserText', 'verificationQuote', 'answer',
-            'toolEvidence', 'conversationForReferenceOnly', 'reviewScope', 'quantitativeConsistency')},
+            'toolEvidence', 'conversationForReferenceOnly', 'reviewScope', 'quantitativeConsistency', 'evidenceConsistency')},
             'responseCompleteness': {key: payload['delivery'].get(key) for key in ('response_complete', 'response_issue')}}

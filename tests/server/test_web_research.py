@@ -195,6 +195,84 @@ async def test_fetch_tool_exposes_and_passes_find_arguments(monkeypatch):
     assert result['text'] == 'relevant passage'
 
 
+async def test_page_links_allow_following_a_publisher_index_without_guessing_urls():
+    requests = []
+    def response(request):
+        requests.append(str(request.url))
+        if request.url.path == '/old':
+            return httpx.Response(302, headers={'location': '/press/'})
+        if request.url.path == '/press/news/42':
+            return httpx.Response(200, headers={'content-type': 'text/plain'}, text='Published 2026-10-08. The museum opens tomorrow.')
+        return httpx.Response(200, headers={'content-type': 'text/html'}, text='''
+            <nav><a href="/about">About</a></nav><main>
+            <h1>News</h1><a href="news/42">Museum opening</a>
+            <a href="https://new.publisher.example/products">Our new product website</a>
+            <a href="https://partner.example/story">Partner announcement</a>
+            <a href="news/42#details">Museum opening</a>
+            <a href="javascript:alert(1)">Bad script</a>
+            <a href="http://127.0.0.1/private">Private service</a>
+            <a href="http://localhost/private">Local service</a>
+            <a href="https://user:secret@example.org">Credentials</a>
+            <a href="#news">This page</a></main>''')
+    transport = httpx.MockTransport(response)
+    page = await web_fetch('https://publisher.example/old', transport=transport)
+    links = page['links']
+    assert links[0]['url'] == 'https://publisher.example/press/news/42'
+    assert links[0]['title'] == 'Museum opening'
+    assert links[0]['discoveredOn'] == 'https://publisher.example/press/'
+    assert all(link['evidenceType'] == 'page_link' and link['fetchState'] == 'not_read' for link in links)
+    assert [link['title'] for link in links] == ['Museum opening', 'Our new product website', 'Partner announcement', 'About']
+    # Discovering links never fetches their targets or grants them official status.
+    assert requests == ['https://publisher.example/old', 'https://publisher.example/press/']
+    assert all('official' not in link and 'text' not in link for link in links)
+    article = await web_fetch(links[0]['url'], transport=transport)
+    assert article['evidenceType'] == 'page_text' and '2026-10-08' in article['text']
+
+
+async def test_page_links_are_bounded_and_prioritize_the_current_excerpt():
+    import json
+    html = '<nav>' + ''.join(f'<a href="/nav/{i}">Navigation {i}</a>' for i in range(30)) + '</nav>'
+    html += '<main>' + 'Earlier sections. ' * 500 + '<a href="/research/new">Relevant finding</a></main>'
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'text/html'}, text=html))
+    page = await web_fetch('https://publisher.example', find='Relevant finding', transport=transport)
+    assert page['links'][0]['url'] == 'https://publisher.example/research/new'
+    assert len(page['links']) <= 8
+    assert sum(len(json.dumps(link, ensure_ascii=False)) for link in page['links']) <= 2500
+    short_index = '<main>' + ''.join(f'<a href="/news/{i}">Article {i}.</a>' for i in range(20)) + '</main>'
+    focused = await web_fetch('https://publisher.example', find='Article 19.', transport=httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'text/html'}, text=short_index)))
+    assert focused['truncated'] is False and focused['links'][0]['url'] == 'https://publisher.example/news/19'
+
+
+@pytest.mark.parametrize('domains,query', [(['publisher.example'], 'product'), (None, 'site:publisher.example product')])
+async def test_search_scope_filters_lookalike_hosts_and_preserves_real_subdomains(domains, query):
+    def results(request):
+        assert 'site:publisher.example' in request.url.params['q']
+        urls = ['https://publisher.example.fake.test/x', 'https://notpublisher.example/x',
+                'https://publisher.example/products', 'https://docs.publisher.example/guide',
+                'https://publisher.example/products']
+        xml = '<rss><channel>' + ''.join(f'<item><title>Product</title><link>{url}</link><description>Excerpt</description></item>' for url in urls) + '</channel></rss>'
+        return httpx.Response(200, headers={'content-type': 'application/rss+xml'}, text=xml)
+    found = await web_search(query, domains=domains, transport=httpx.MockTransport(results))
+    assert found['domains'] == ['publisher.example'] and found['filteredCount'] == 2
+    assert [item['url'] for item in found['items']] == ['https://publisher.example/products', 'https://docs.publisher.example/guide']
+    assert all(item['evidenceType'] == 'search_snippet' for item in found['items'])
+
+
+async def test_unavailable_scoped_search_does_not_present_an_unrelated_source_as_official():
+    xml = '<rss><channel><item><title>Official guide</title><link>https://thirdparty.example/</link></item></channel></rss>'
+    result = await web_search('museum news', domains=['museum.example'], transport=httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'application/rss+xml'}, text=xml)))
+    assert result['items'] == [] and result['filteredCount'] == 1
+    assert '不代表相关网页不存在' in result['coverage'] and '首页' in result['nextStep']
+
+
+@pytest.mark.parametrize('domains', ['example.org', ['https://example.org'], ['example.org/path'], ['localhost'], ['127.0.0.1'], ['a b'], ['a\nsite:b'], ['*.example.org'], [1], ['a.example'] * 6])
+async def test_invalid_search_scope_does_not_send_a_network_request(domains):
+    def unexpected(_):
+        raise AssertionError('Invalid domain filter must be rejected before network')
+    with pytest.raises(WebResearchError):
+        await web_search('product', domains=domains, transport=httpx.MockTransport(unexpected))
+
+
 async def test_temporary_web_failure_uses_shared_node_retry_and_visible_state(setup):
     import json
     from app.agent.tools.web import research

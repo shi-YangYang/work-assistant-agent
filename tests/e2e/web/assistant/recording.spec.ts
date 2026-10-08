@@ -1,14 +1,9 @@
 import { chromium } from '@playwright/test'
-import { resolve } from 'node:path'
 import { test, expect, login as signIn } from '../fixtures/test'
 
 test('W05 fixed microphone input produces playable recording with duration', async ({ state }) => {
   const browser = await chromium.launch({
-    args: [
-      '--use-fake-ui-for-media-stream',
-      '--use-fake-device-for-media-stream',
-      `--use-file-for-fake-audio-capture=${resolve('artifacts/spec044/agent/materials/audio.wav')}`,
-    ],
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
   })
   try {
     const context = await browser.newContext({ permissions: ['microphone'] })
@@ -20,6 +15,7 @@ test('W05 fixed microphone input produces playable recording with duration', asy
       timeout: 10_000,
     })
     await page.getByRole('button', { name: /停止录音/ }).click()
+    await page.getByRole('button', { name: /^展开语音 .*试听$/ }).click()
     const audio = page.getByLabel(/^试听/)
     await expect(audio).toBeVisible()
     await expect

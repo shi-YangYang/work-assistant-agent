@@ -139,7 +139,8 @@ async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_sav
     answer = '# 你好，正在生成中文回答。\n\n这是一段公开或本人可见的完整分析。'
     upstream = PausedStream(answer)
     requests, searches = [], []
-    async def search(query):
+    async def search(query, *, domains=None):
+        assert domains is None
         searches.append(query)
         return {'query': query, 'items': [{'title': '公开资料', 'url': 'https://example.org', 'snippet': '公开摘要'}]}
     monkeypatch.setattr('app.integrations.web_research.web_search', search)
@@ -413,12 +414,12 @@ async def test_upstream_failure_after_real_prefix_never_executes_incomplete_comp
         assert 'pendingReply' not in job.result and 'conversationReply' not in job.result
 
 
-async def test_ordinary_review_failure_keeps_prior_prose_but_not_internal_review(setup, monkeypatch, fast_nodes):
+async def test_streamed_answer_finishes_without_contacting_unavailable_judge(setup, monkeypatch, fast_nodes):
     settings, sessions, users, clients = setup
     saved = await create(clients['admin'])
     await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))
     answer = '已整理这段方案，可以继续完善内容。'
-    arguments = wire_completion(answer, business=True)['tool_calls'][0]['function']['arguments']
+    arguments = wire_completion(answer, business=False)['tool_calls'][0]['function']['arguments']
     client_for(monkeypatch, lambda _: httpx.Response(200, content=packet(arguments, first=True, finish='tool_calls') + b'data: [DONE]\n\n'))
     class UnavailableReview:
         async def ainvoke(self, messages):
@@ -427,5 +428,6 @@ async def test_ordinary_review_failure_keeps_prior_prose_but_not_internal_review
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         await process_job(await claim(sessions, users['employee'].id), sessions, settings, saver, reply_model=UnavailableReview())
     detail = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-    assert detail['job']['state'] == 'awaiting_retry'
-    assert detail['replyStream']['state'] == 'interrupted' and detail['replyStream']['text'] == answer
+    assert detail['job']['taskOutcome']['state'] == 'completed'
+    assert detail['reply'] == answer
+    assert not any(node['kind'] == 'review' for node in detail['job']['nodes'])

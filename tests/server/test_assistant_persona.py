@@ -58,19 +58,24 @@ def test_migration_preserves_history_and_separates_new_defaults(monkeypatch):
             connection.execute(old_message.insert().values(**message_values))
             before_conversation = dict(connection.execute(select(old_conversation)).mappings().one())
             before_message = dict(connection.execute(select(old_message)).mappings().one())
-        command.upgrade(config, 'head')
+        command.upgrade(config, '0015_assistant_persona')
         with scoped.begin() as connection:
             assert dict(connection.execute(select(Conversation.__table__)).mappings().one()) == {**before_conversation, 'persona_id': 'professional'}
-            assert dict(connection.execute(select(Message.__table__)).mappings().one()) == {**before_message, 'persona_id': 'professional', 'private_context': False, 'deliverable_reference': {}, 'work_reference': {}}
+            persona_message = Table('company_message', MetaData(), autoload_with=connection)
+            assert dict(connection.execute(select(persona_message)).mappings().one()) == {**before_message, 'persona_id': 'professional'}
             # New application-created conversations differ from historical backfills.
             fresh = connection.execute(Conversation.__table__.insert().values(company_id=company_id, owner_id=owner_id).returning(Conversation.persona_id)).scalar_one()
             assert fresh == 'dabao'
-            legacy_message = connection.execute(Message.__table__.insert().values(company_id=company_id, owner_id=owner_id).returning(Message.persona_id)).scalar_one()
+            legacy_message = connection.execute(persona_message.insert().values(**{**message_values, 'id': str(uuid4())}).returning(persona_message.c.persona_id)).scalar_one()
             assert legacy_message == 'professional'
         command.downgrade(config, '0014_voiceprint_cleanup')
         with scoped.connect() as connection:
             assert dict(connection.execute(select(old_conversation).where(old_conversation.c.id == before_conversation['id'])).mappings().one()) == before_conversation
             assert dict(connection.execute(select(old_message).where(old_message.c.id == before_message['id'])).mappings().one()) == before_message
+        # The whole forward chain remains covered without downgrading an explicitly irreversible later migration.
+        command.upgrade(config, 'head')
+        with scoped.connect() as connection:
+            assert dict(connection.execute(select(Message.__table__).where(Message.id == before_message['id'])).mappings().one()) == {**before_message, 'persona_id': 'professional', 'private_context': False, 'deliverable_reference': {}, 'work_reference': {}}
     finally:
         scoped.dispose()
         with engine.begin() as connection:
@@ -339,6 +344,7 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     graph = SimpleNamespace(aget_state=saved_state, ainvoke=AsyncMock(side_effect=AssertionError('completed checkpoint must not regenerate')))
     monkeypatch.setattr('app.agent.harness.lease', AsyncMock(return_value=(job, actor)))
     monkeypatch.setattr('app.tasks.lease.lease', AsyncMock(return_value=(job, actor)))
+    monkeypatch.setattr('app.agent.memory.middleware.lease', AsyncMock(return_value=(job, actor)))
     monkeypatch.setattr('app.agent.harness.conversation_history', AsyncMock(return_value=[]))
     monkeypatch.setattr('app.agent.harness.build_graph', lambda *args: graph)
     from langgraph.checkpoint.memory import InMemorySaver

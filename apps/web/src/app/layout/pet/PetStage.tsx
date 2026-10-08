@@ -38,7 +38,12 @@ export function PetStage({
           title="Noria 外观"
           aria-haspopup="dialog"
           aria-expanded={open}
-          onClick={() => setOpen(true)}
+          onClick={(event) => {
+            // Safari does not focus buttons on pointer clicks; Modal needs the
+            // trigger as its return target when the dialog closes.
+            event.currentTarget.focus()
+            setOpen(true)
+          }}
         >
           <NoriaPet animate={animate && !open} />
           <span className={styles.name}>Noria</span>

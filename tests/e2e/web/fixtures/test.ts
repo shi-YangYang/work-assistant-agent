@@ -1,5 +1,6 @@
 import { test as base, expect, type Page } from '@playwright/test'
-import { readFileSync, statSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
+import { isolatedEnvironment } from './environment.mjs'
 import { resolve } from 'node:path'
 
 type Account = { id: string; companyId: string; username: string; password: string; role: string }
@@ -12,14 +13,7 @@ type State = {
 }
 
 export function environment(): State {
-  const path = process.env.SPEC044_STATE
-  if (!path) throw new Error('SPEC044_STATE must identify isolated acceptance credentials')
-  if (statSync(path).mode & 0o077) throw new Error('Credentials must have mode 0600')
-  const state = JSON.parse(readFileSync(path, 'utf8')) as State
-  if (!/^spec044_web_[a-f0-9]{12}$/.test(state.schema)) throw new Error('Not a Spec044 schema')
-  const url = new URL(state.origin)
-  if (url.hostname !== '127.0.0.1' || url.port !== '5196') throw new Error('Not the test UI')
-  return state
+  return isolatedEnvironment() as State
 }
 
 type Fixtures = {
@@ -39,7 +33,9 @@ export async function login(page: Page, state: State, role = 'admin') {
   await page.getByLabel('账号', { exact: true }).fill(state.users[role].username)
   await page.getByLabel('密码', { exact: true }).fill(state.users[role].password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('navigation', { name: '工作空间' })).toBeAttached()
+  await expect(
+    page.getByRole('navigation', { name: '工作空间', includeHidden: true }),
+  ).toBeAttached()
 }
 
 export const test = base.extend<Fixtures>({

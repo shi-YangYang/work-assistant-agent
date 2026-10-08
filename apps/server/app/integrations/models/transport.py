@@ -89,14 +89,14 @@ class CheckedBackend(AutoBackend):
 
 
 class LimitedStream(httpx.AsyncByteStream):
-    def __init__(self, stream):
-        self.stream = stream
+    def __init__(self, stream, max_seconds=65):
+        self.stream, self.max_seconds = stream, max_seconds
 
     async def __aiter__(self):
         size, start = 0, time.monotonic()
         async for chunk in self.stream:
             size += len(chunk)
-            if size > 2 * 1024 * 1024 or time.monotonic() - start > 65:
+            if size > 2 * 1024 * 1024 or time.monotonic() - start > self.max_seconds:
                 raise ProviderError('limit', '模型响应超过大小或时间限制')
             yield chunk
 
@@ -116,7 +116,9 @@ class SafeTransport(httpx.AsyncHTTPTransport):
         if response.headers.get('content-encoding', 'identity').lower() != 'identity':
             await response.aclose()
             raise ProviderError('protocol', '模型服务返回了不受支持的压缩响应')
-        response.stream = LimitedStream(response.stream)
+        # Only the bounded streaming chat path supplies its existing node deadline.
+        # Other model endpoints retain the original 65-second response cap.
+        response.stream = LimitedStream(response.stream, request.extensions.get('paa_model_stream_timeout', 65))
         return response
 
 

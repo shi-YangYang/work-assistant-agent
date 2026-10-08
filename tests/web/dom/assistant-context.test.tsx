@@ -89,11 +89,12 @@ it('shows unknown rather than zero, supports focus/touch detail, Escape and outs
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-it('shows real 1M capacity, output reserve, unknown capacity and no premature 90% rounding', () => {
+it('shows real 1M capacity without obsolete output reserve, unknown capacity and no premature 90% rounding', () => {
   const view = render(<ContextUsage usage={usage} />)
   fireEvent.click(screen.getByRole('button', { name: '上下文使用情况：约 1%' }))
   expect(screen.getByText('1,048,576 tokens')).toBeTruthy()
-  expect(screen.getByText('4,096 tokens')).toBeTruthy()
+  expect(screen.queryByText('4,096 tokens')).toBeNull()
+  expect(screen.queryByText('输出预留')).toBeNull()
   expect(contextUsageLabel({ ...usage, usedTokens: 943718 })).toBe('约 89%')
   expect(contextUsageLabel({ ...usage, usedTokens: 1048577 })).toBe('约 100%')
   view.rerender(<ContextUsage usage={{ ...usage, contextWindow: null }} />)

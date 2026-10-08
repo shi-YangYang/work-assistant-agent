@@ -308,7 +308,7 @@ class MissingFollowupModel(TeamModel):
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         if self.step in (3, 4):
             self.inputs.append(str([m.content for m in messages]))
-            self.correction_seen = self.correction_seen or '服务端核对：原用户请求还有遗漏的操作' in str([message.content for message in messages])
+            self.correction_seen = self.correction_seen or '无业务回执是正常的' in str([message.content for message in messages])
             if self.step == 4 and self.repair_succeeds:
                 reply = AIMessage(content='', tool_calls=[{'id': 'repair-followup', 'name': 'propose_followup', 'args': {'title': '跟进采购报价', 'summary': '核对报价进度', 'status': 'in_progress', 'blocker': '', 'next_step': '明天询问', 'source_tokens': [self.token]}}])
             else:

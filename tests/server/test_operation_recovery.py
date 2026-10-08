@@ -106,11 +106,16 @@ async def test_retry_replaces_failed_response_in_place_without_repeating_busines
     settings, sessions, users, c = setup
     async def saved(context):
         await execute(context, step=1, action='create_work', changes={'title': '只创建一次'})
-    result = await run_reply(setup, '帮我创建工作，然后给建议', '下一步可以检查需求。', ReplyJudge(['information'], fail=True), before=saved)
+    from app.agent.completion.delivery import ReviewedReply
+    async def interrupted_delivery(*args, **kwargs):
+        return ReviewedReply(error_code='ControlledDeliveryFailure', error_message='受控交付中断')
+    with monkeypatch.context() as patch:
+        patch.setattr('app.agent.completion.delivery.assess', interrupted_delivery)
+        result = await run_reply(setup, '帮我创建工作，然后给建议', '下一步可以检查需求。', ReplyJudge(['information'], fail=True), before=saved)
     assert result['job']['state'] == 'awaiting_retry'
     async with sessions() as db:
         job = await db.get(Job, result['job']['id'])
-        assert job.result['replyReviewError'] == 'BudgetExceeded'
+        assert job.result['replyReviewError'] == 'ControlledDeliveryFailure'
     retry = await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={})
     assert retry.status_code == 200
     assert retry.json()['state'] == 'queued' and retry.json()['error'] == ''

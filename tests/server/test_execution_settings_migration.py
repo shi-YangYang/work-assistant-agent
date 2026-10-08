@@ -40,12 +40,13 @@ def test_execution_settings_migration_preserves_records_and_can_downgrade(monkey
                 connection.execute(Job.__table__.insert().values(company_id=company, owner_id=owner, kind='message', target_id=str(uuid4()), result={'executionMode': mode, 'modeRevision': 2}))
             before = list(connection.execute(select(Conversation.__table__).order_by(Conversation.id)).mappings())
             jobs = list(connection.execute(select(Job.__table__).order_by(Job.id)).mappings())
-        command.upgrade(config, 'head')
+        command.upgrade(config, '0024_account_execution_mode')
         with scoped.begin() as connection:
             assert list(connection.execute(select(Conversation.__table__).order_by(Conversation.id)).mappings()) == before
             assert list(connection.execute(select(Job.__table__).order_by(Job.id)).mappings()) == jobs
+            migrated_members = Table('company_member', MetaData(), autoload_with=connection)
             for old, owner in owners.items():
-                member = connection.execute(select(Member.__table__).where(Member.id == owner)).mappings().one()
+                member = connection.execute(select(migrated_members).where(migrated_members.c.id == owner)).mappings().one()
                 assert member['execution_mode'] == ('ask' if old == 'ask' else 'auto')
                 assert not member['full_access_confirmed'] and member['mode_revision'] == 1
             connection.execute(Member.__table__.update().where(Member.id == owners['full']).values(execution_mode='full', full_access_confirmed=True, mode_revision=2))

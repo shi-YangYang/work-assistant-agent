@@ -1,9 +1,14 @@
 import { defineConfig, devices } from '@playwright/test'
 import { resolve } from 'node:path'
 
-const run = process.env.SPEC044_RUN_ID ?? new Date().toISOString().replace(/[:.]/g, '-')
+const run =
+  process.env.SPEC054_RUN_ID ??
+  process.env.SPEC044_RUN_ID ??
+  new Date().toISOString().replace(/[:.]/g, '-')
 if (!/^[a-zA-Z0-9_-]+$/.test(run)) throw new Error('Invalid acceptance run ID')
-const evidence = resolve(__dirname, '../../artifacts/spec044/browser', run)
+const evidence = process.env.SPEC054_ENVIRONMENT
+  ? resolve(__dirname, '../../artifacts/spec054/20261008-full/ui/browser', run)
+  : resolve(__dirname, '../../artifacts/spec044/browser', run)
 
 export default defineConfig({
   testDir: resolve(__dirname, '../../tests/e2e/web'),

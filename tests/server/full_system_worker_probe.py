@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 if not os.environ.get('SPEC044_RUN_ID'):
-    raise SystemExit('Requires isolated Spec044 environment')
+    raise SystemExit('Requires isolated acceptance environment')
 
 from sqlalchemy.engine import make_url
 from app.core.config import Settings
@@ -22,7 +22,7 @@ from app.tasks.runtime.runner import run_slots
 async def main():
     settings = Settings()
     url = make_url(settings.database_url)
-    if url.database != 'paa_company_test' or not url.query.get('options', '').startswith('-csearch_path=spec044_'):
+    if url.database != 'paa_company_test' or not url.query.get('options', '').startswith(('-csearch_path=spec044_', '-csearch_path=spec054_')):
         raise SystemExit('Refusing unsafe DB target')
     control = json.loads(Path(sys.argv[1]).read_text())
     phase = sys.argv[2]

@@ -1,0 +1,33 @@
+.sources {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.sources p {
+  margin: 0;
+  color: var(--muted);
+}
+.sources a {
+  display: grid;
+  min-width: 0;
+  padding: 5px 0;
+  color: var(--secondary);
+  text-decoration: none;
+}
+.sources a:hover > span,
+.sources a:focus-visible > span {
+  text-decoration: underline;
+}
+.sources a > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.sources small {
+  color: var(--muted);
+}

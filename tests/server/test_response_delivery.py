@@ -319,7 +319,7 @@ class PageDeliveryModel(RoutingModel):
 
 
 @pytest.mark.parametrize('verify', [False, True])
-async def test_reading_technical_source_does_not_add_review_unless_user_requests_verification(setup, monkeypatch, verify):
+async def test_reading_and_explicit_verification_deliver_without_an_extra_judge(setup, monkeypatch, verify):
     async def fetch(url, **kwargs):
         return {'url': url, 'title': 'API reference', 'text': 'Widget.run() returns its result when finished.',
                 'evidenceType': 'page_text', 'offset': 0, 'truncated': False, 'nextOffset': None}
@@ -328,17 +328,17 @@ async def test_reading_technical_source_does_not_add_review_unless_user_requests
                              verification_requested=verify, verification_quote='核验这个方法的行为' if verify else '')
     result, stored = await run(setup, fake, '核验这个方法的行为' if verify else '阅读文档并解释这个方法')
     assert result['reply'] == fake.answer and result['job']['taskOutcome']['state'] == 'completed'
-    assert fake.calls == 2 and fake.reviews == int(verify)
-    assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == int(verify)
+    assert fake.calls == 2 and fake.reviews == 0
+    assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == 0
     assert stored['webSources']['https://example.org/reference']['fetchState'] == 'read'
 
 
 @pytest.mark.parametrize('verify,quote,count,state', [
     (False, '', 0, 'awaiting_input'),
-    (True, '核验这份材料的结论', 1, 'awaiting_input'),
+    (True, '核验这份材料的结论', 0, 'awaiting_input'),
     (True, '用户从没说过的核验要求', 0, 'failed'),
 ])
-async def test_only_explicit_fact_verification_with_current_user_quote_routes_to_review(setup, verify, quote, count, state):
+async def test_explicit_verification_is_delivered_directly_but_quote_must_match_request(setup, verify, quote, count, state):
     fake = RoutingModel(model='controlled', api_key='controlled', verification_requested=verify, verification_quote=quote)
     result, _ = await run(setup, fake, '请核验这份材料的结论' if verify else '查公开资料并附来源')
     assert fake.reviews == count and fake.calls == (2 if state == 'failed' else 1)
@@ -366,8 +366,8 @@ async def test_readonly_metadata_cannot_hide_actual_suggestion_or_failed_attempt
     monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     fake = RoutingModel(model='controlled', api_key='controlled')
     result, stored = await run(setup, fake, '先为工作甲准备待确认建议')
-    assert fake.reviews == 1
-    assert any(node['kind'] == 'review' for node in result['job']['nodes']), result
+    assert fake.reviews == 0
+    assert not stored.get('replyReview')
     assert result['drafts'] if suggestion else stored['toolOutcomes']
     assert result['job']['taskOutcome']['state'] != 'completed'
 
@@ -411,14 +411,13 @@ class IncompleteResponseModel(ReviewedFixtureModel):
 
 
 @pytest.mark.parametrize('business', [True, False])
-@pytest.mark.parametrize('correction', ['complete', 'incomplete', 'failure'])
-async def test_known_incomplete_response_survives_empty_targeted_review_and_repairs_once(setup, business, correction):
+@pytest.mark.parametrize('correction', ['complete', 'failure'])
+async def test_declared_incomplete_response_repairs_once_without_a_second_judge(setup, business, correction):
     fake = IncompleteResponseModel(model='controlled', api_key='controlled', business=business, correction=correction)
     text = '创建工作待分析方案，并提供分析说明。' if business else '请核验这份材料的结论，并解释判断依据。'
     result, stored = await run(setup, fake, text)
     assert fake.calls == (2 if business else 1)
-    assert len(fake.corrections) == 1 and len(fake.reviews) == (1 if correction == 'failure' else 2)
-    assert not fake.reviews[0]['delivery' if business else 'responseCompleteness']['response_complete']
+    assert len(fake.corrections) == 1 and not fake.reviews
     assert fake.corrections[0]['correction'] == '还未提供用户要求的分析说明'
     assert stored['deliveryRepairs'] == ['response']
     assert (result['job']['taskOutcome']['state'] == 'completed') is (correction == 'complete'), result
@@ -443,30 +442,25 @@ async def test_known_incomplete_response_survives_empty_targeted_review_and_repa
     assert len(works) == len(result['actions']) == int(business)
     if business:
         assert result['actions'][0]['state'] == 'succeeded' and works[0]['revision'] == 1
-        assert fake.reviews[0]['delivery']['operation_ids'] == [result['actions'][0]['id']]
+        assert not stored.get('replyReview')
 
 
-@pytest.mark.parametrize('verified', [True, False])
-async def test_known_response_issue_merges_without_overriding_targeted_review_state(setup, monkeypatch, verified):
-    from dataclasses import replace
-    from app.agent.completion.delivery import ReviewedReply, assess
+async def test_declared_response_issue_preserves_task_without_calling_a_judge(setup, monkeypatch):
+    from app.agent.completion.delivery import assess
     from fakes import set_delivery
     from test_business_actions import runtime
     context, _ = await runtime(setup, '核验这份材料的结论')
-    await set_delivery(context, '候选正文')
+    await set_delivery(context, '候选正文', task={'state': 'blocked', 'remaining': ['资料未覆盖']})
     context.delivery.update(verification_requested=True, verification_quote='核验这份材料的结论', response_complete=False, response_issue='缺少分析说明')
-    reviewed = ReviewedReply('无争议正文', execution_claims=True, verified=verified, needs_action=True, needs_response=True,
-        response_reason='核对发现事实冲突', error_code='' if verified else 'ControlledReviewFailure',
-        error_message='' if verified else '专项核对失败', task={'state': 'blocked'})
-    async def review(*args, **kwargs):
-        return reviewed
-    monkeypatch.setattr('app.agent.completion.reply_review.review_reply', review)
+    async def forbidden(*args, **kwargs):
+        pytest.fail('Online completion must not call a model reviewer')
+    monkeypatch.setattr('app.agent.completion.reply_review.review_reply', forbidden)
     result = await assess(context, context.delivery['answer'])
-    expected = replace(reviewed, response_reason='核对发现事实冲突；缺少分析说明') if verified else reviewed
-    assert result == expected
+    assert result.verified and result.text == '候选正文' and result.needs_response
+    assert result.response_reason == '缺少分析说明' and result.task == Delivery.model_validate(context.delivery).task.model_dump()
 
 
-class FileReceiptModel(DeliveryModel):
+class FileReceiptModel(RoutingModel):
     repeat_invalid: bool = False
     file_receipt: dict = Field(default_factory=dict)
     repair_errors: list = Field(default_factory=list)
@@ -507,7 +501,7 @@ async def test_file_id_in_business_receipts_repairs_metadata_once_without_reexec
     result, stored = await run((settings, sessions, users, clients), fake, '生成 CSV 文件，不要创建工作')
     assert fake.calls == 3 and fake.repair_errors
     assert stored['deliveryRepairs'] == ['protocol'] and not stored.get('responseRepairComplete')
-    assert not any(node['kind'] == 'review' for node in result['job']['nodes'])
+    assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == 0
     assert ReceiptClient.count == 1 and len(result['deliverables']) == 1
     file = result['deliverables'][0]['files'][0]
     assert (await clients['employee'].get(file['url'])).content == ReceiptClient.data
@@ -554,20 +548,20 @@ class ProtocolThenActionModel(DeliveryModel):
         else:
             receipts = [json.loads(item.content)['id'] for item in messages if isinstance(item, ToolMessage) and item.name == 'execute_business_action']
             result = completion('已保存第一项，第二项还未保存。' if self.calls == 3 else '两项工作均已保存。',
-                                business=True, operation_ids=receipts)
+                                business=True, operation_ids=receipts, task={'state': 'blocked', 'remaining': ['第二项还未保存']} if self.calls == 3 else {'state': 'completed'})
         return ChatResult(generations=[ChatGeneration(message=result)])
 
 
-async def test_protocol_repair_does_not_consume_missing_action_repair_or_replay_receipts(setup):
+async def test_partial_business_completion_keeps_receipt_without_a_judge_reopening_the_graph(setup):
     fake = ProtocolThenActionModel(model='controlled', api_key='unused')
     result, stored = await run(setup, fake, '创建工作1和工作2')
-    assert fake.calls == 6 and fake.reviews == 2
-    assert stored['deliveryRepairs'] == ['protocol', 'action']
-    assert len(result['actions']) == 2 and all(item['state'] == 'succeeded' for item in result['actions'])
+    assert fake.calls == 3 and fake.reviews == 0
+    assert stored['deliveryRepairs'] == ['protocol']
+    assert len(result['actions']) == 1 and result['actions'][0]['state'] == 'succeeded'
     works = (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
-    assert sorted(item['title'] for item in works) == ['工作1', '工作2']
-    assert all(item['revision'] == 1 for item in works)
-    assert result['job']['taskOutcome']['state'] == 'completed'
+    assert len(works) == 1 and works[0]['title'] == '工作1' and works[0]['revision'] == 1
+    assert result['job']['taskOutcome']['state'] == 'partial'
+    assert '第二项还未保存' in result['reply']
 
 
 async def test_protocol_and_semantic_repairs_have_separate_persistent_budgets(setup):

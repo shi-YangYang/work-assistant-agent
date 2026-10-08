@@ -1,18 +1,14 @@
 import { chromium, expect } from '@playwright/test'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { isolatedEnvironment } from '../../../tests/e2e/web/fixtures/environment.mjs'
 
 // Run only against environment.py's disposable database and synthetic records.
 // SPEC044_STATE=... UI_LAYOUT_RECORDS=... node scripts/company/web-acceptance/ui-layout.mjs
 // UI_LAYOUT_FILTER=work-history,team-work-drawer reruns selected cases without losing other evidence.
 // UI_LAYOUT_RESUME=1 skips captured role/case/viewport/theme entries and retries failures.
 const output = resolve(process.env.UI_LAYOUT_OUTPUT || 'artifacts/spec050')
-const statePath = process.env.SPEC044_STATE
-if (!statePath) throw new Error('SPEC044_STATE must identify isolated acceptance credentials')
-if ((await stat(statePath)).mode & 0o077) throw new Error('Credentials must have mode 0600')
-const state = JSON.parse(await readFile(statePath, 'utf8'))
-if (!/^spec044_web_[a-f0-9]{12}$/.test(state.schema)) throw new Error('Not an isolated schema')
-if (state.origin !== 'http://127.0.0.1:5196') throw new Error('Only the isolated UI is allowed')
+const state = isolatedEnvironment()
 const ids = JSON.parse(
   await readFile(process.env.UI_LAYOUT_RECORDS || resolve(output, 'records.json'), 'utf8'),
 )
@@ -76,6 +72,7 @@ const common = (role) => [
   routeCase('work-history', `${workPath(role)}?revision=1`, workReady),
   routeCase('account', '/settings/account', textReady('账户')),
   routeCase('appearance', '/settings/appearance', textReady('外观')),
+  routeCase('memory', '/settings/memory', textReady('记忆')),
   routeCase('rules', '/settings/rules', textReady('汇报规则')),
   routeCase('support', '/settings/support', textReady('问题反馈')),
 ]
@@ -87,7 +84,7 @@ const admin = [
   routeCase('models', '/settings/models', textReady('模型服务管理')),
   routeCase('models-routing', '/settings/models', textReady('模型服务管理'), tab('用途分配')),
   routeCase('model-usage', '/settings/usage', textReady('模型用量')),
-  routeCase('voiceprints', '/settings/voiceprints', textReady('公司声纹')),
+  routeCase('voiceprints', '/settings/voiceprints', textReady('用户声纹')),
   routeCase('login-methods', '/settings/login', textReady('登录方式')),
   routeCase('report-detail', reportPath(), workReady),
 ]
@@ -238,6 +235,19 @@ function supplementary(role) {
     await page.getByRole('menuitem', { name: '编辑工作属性', exact: true }).click()
   }
   const cases = [
+    routeCase('memory-editor', '/settings/memory', textReady('记忆'), async (page) => {
+      await button('编辑')(page)
+      await page
+        .getByRole('textbox', { name: '记忆 Markdown' })
+        .fill('# 工作习惯\n\n- 先说明结论\n- 用简明中文交流')
+    }),
+    routeCase('memory-preview', '/settings/memory', textReady('记忆'), async (page) => {
+      await button('编辑')(page)
+      await page
+        .getByRole('textbox', { name: '记忆 Markdown' })
+        .fill('# 工作习惯\n\n- 先说明结论\n- 用简明中文交流')
+      await button('预览')(page)
+    }),
     routeCase('work-create', '/work', textReady('我的工作'), button('新建工作')),
     routeCase('work-editor', workPath(role), workReady, button('编辑内容')),
     routeCase('work-properties', workPath(role), workReady, openWorkMenu),
@@ -311,7 +321,7 @@ function supplementary(role) {
       routeCase('models-new', '/settings/models', textReady('模型服务管理'), (page) =>
         page.getByRole('button', { name: '添加服务', exact: true }).first().click(),
       ),
-      routeCase('voiceprint-upload', '/settings/voiceprints', textReady('公司声纹'), (page) =>
+      routeCase('voiceprint-upload', '/settings/voiceprints', textReady('用户声纹'), (page) =>
         page.getByRole('button', { name: '上传录音', exact: true }).last().click(),
       ),
     )
@@ -355,7 +365,7 @@ async function configureSyntheticModel(page) {
             protocolMode: 'manual',
             streaming: true,
             contextWindow: 1000000,
-            presets: [],
+            reasoning: { efforts: ['low', 'high'], initial: 'high' },
           },
         ],
         expectedRevision: listing.revision ?? 0,
@@ -401,14 +411,14 @@ try {
     }
     for (const item of supplementary(role).filter(include)) {
       for (const viewport of ['desktop', 'mobile'])
-        for (const color of item.dark ? ['light', 'dark'] : ['light'])
-          await captureCase(page, role, item, viewport, color)
+        for (const color of ['light', 'dark']) await captureCase(page, role, item, viewport, color)
     }
     for (const item of pages.filter(
       (item) =>
         ['work-history', 'models', 'members', 'reports-todo'].includes(item.name) && include(item),
     )) {
-      for (const width of [360, 768, 1024]) await captureCase(page, role, item, width, 'light')
+      for (const width of [360, 768, 1280, 1920])
+        await captureCase(page, role, item, width, 'light')
     }
     if (role === 'admin') {
       await page.goto(state.origin + '/settings/models')
@@ -442,7 +452,7 @@ try {
       ]
       for (const item of configured.filter(include))
         for (const viewport of ['desktop', 'mobile'])
-          for (const color of item.name === 'model-test-dialog' ? ['light'] : ['light', 'dark'])
+          for (const color of ['light', 'dark'])
             await captureCase(page, role, item, viewport, color)
       const empty = routeCase('members-empty', '/members', textReady('成员管理'), undefined, {
         mock: intercept(/\/api\/v1\/members(?:\?|$)/, { items: [], nextCursor: null }),

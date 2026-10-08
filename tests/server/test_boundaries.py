@@ -47,6 +47,12 @@ async def test_queue_serializes_owner_fences_old_worker_and_stops_uncertain_retr
 
 async def test_voice_is_decoded_original_retained_and_corrected_asr_is_versioned(setup,monkeypatch):
     settings,sessions,users,c=setup
+    # Admission freezes model routing; configure the controlled ASR before sending.
+    from test_model_services import create, payload, route
+    body=payload(url='https://controlled.invalid/v1')
+    body['models'][1]['protocol']='qwen-asr'
+    service=await create(c['admin'],body)
+    assert (await c['admin'].put('/api/v1/settings/model-routing',json=route(service))).status_code==200
     audio=io.BytesIO()
     with wave.open(audio,'wb') as writer:
         writer.setnchannels(1);writer.setsampwidth(2);writer.setframerate(16000);writer.writeframes(b'\0\0'*16000)

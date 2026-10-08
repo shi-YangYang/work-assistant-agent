@@ -105,7 +105,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         repair_id = f'completion-repair:{job.id}'
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
-            instruction = '服务端核对：原用户请求还有遗漏的操作。先 get_business_actions 读取当前回执，逐项对照原请求，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。'
+            instruction = '内部纠错（不是用户新请求）：收尾标记与实际操作可能不一致。先 get_business_actions 读取当前回执，逐项对照用户原请求，判断是否真的遗漏操作。若原请求仅查询、整理、生成私人成果，或明确不要保存业务记录，则无业务回执是正常的；修正 business_requested/operation_ids 等收尾字段并保留正确正文，不添加业务写入。确有遗漏时，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。最终 answer 仍只交付用户原请求的结果，不汇报本次内部纠错。'
             result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         elif state.values:
             # The worker already checked retry authorization and lease. Resume this
@@ -151,10 +151,9 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
     from app.agent.context.work_context import reference_evidence
+    from app.agent.completion.evidence_consistency import tool_evidence
     context.reply_evidence = [*reference_evidence(context), *context.context_evidence, *[
-        {'id': index, 'tool': message.name, 'result': message.content}
-        for index, message in enumerate(messages)
-        if isinstance(message, ToolMessage) and message.name != 'finish_task' and message.name in ALLOWED_TOOLS | TEAM_TOOL_NAMES
+        row for row in tool_evidence(messages, context.job_id) if row['tool'] in ALLOWED_TOOLS | TEAM_TOOL_NAMES
     ]]
     context.reply_evidence = [{**row, 'id': index} for index, row in enumerate(context.reply_evidence)]
     return delivery.answer if delivery else answer.text[:16000]

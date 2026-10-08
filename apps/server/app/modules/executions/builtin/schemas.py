@@ -113,6 +113,7 @@ class DocumentArguments(Contract):
     format: Literal['docx', 'pdf'] = 'docx'
     title: str = Field(min_length=1, max_length=200)
     blocks: list[Block] = Field(min_length=1, max_length=200)
+    max_pages: Annotated[StrictInt, Field(ge=1, le=40)] | None = None
 
 
 class SlidesArguments(Contract):

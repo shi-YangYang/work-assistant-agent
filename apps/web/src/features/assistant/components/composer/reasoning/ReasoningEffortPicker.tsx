@@ -19,9 +19,17 @@ export function ReasoningEffortPicker({
 }) {
   const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
+  const restoreAfterSave = useRef(false)
   const menu = useRef<HTMLDivElement>(null)
   const items = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
+  useEffect(() => {
+    if (saving || !restoreAfterSave.current) return
+    restoreAfterSave.current = false
+    // Disabling the focused trigger during a save blurs it in the browser.
+    // Restore keyboard position only if the user has not focused another control.
+    if (!disabled && document.activeElement === document.body) trigger.current?.focus()
+  }, [saving, disabled])
   const open = !!position && !saving && !disabled
   const close = () => {
     setPosition(null)
@@ -131,6 +139,7 @@ export function ReasoningEffortPicker({
                 aria-checked={selected.effort === option.effort}
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
+                  restoreAfterSave.current = true
                   close()
                   onChange(option.effort)
                 }}

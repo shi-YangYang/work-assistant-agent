@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 054：Web 全量测试与先验验证](spec-054-web-comprehensive-testing/spec.md) — 决策已确认，可实施，尚未执行；[测试计划与目录](spec-054-web-comprehensive-testing/plan.md)、[测试矩阵](spec-054-web-comprehensive-testing/test-matrix.md)。
+
 - [Spec 053：工作助手思考强度与输出限制调整](spec-053-assistant-reasoning-controls/spec.md) — 已实施直接强度配置，独立验收通过；[改造计划与目录](spec-053-assistant-reasoning-controls/plan.md)、[验收报告](spec-053-assistant-reasoning-controls/acceptance.md)。
 
 - [Spec 052：工作助手正文流式输出](spec-052-assistant-streaming-replies/spec.md) — 已完成；[改造计划与目录](spec-052-assistant-streaming-replies/plan.md)、[验收报告](spec-052-assistant-streaming-replies/acceptance.md)。
@@ -19,4 +21,4 @@
 
 ## 生命周期
 
-新 Spec 从 **054** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **055** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

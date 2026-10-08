@@ -33,7 +33,7 @@ test('W04 W06 W07 @cross draft, persona, execution mode and attachment previews'
     .click()
   await page
     .getByRole('navigation', { name: '工作空间' })
-    .getByRole('link', { name: '工作助手', exact: true })
+    .getByRole('link', { name: '聊天搭子', exact: true })
     .click()
   await expect(text).toHaveValue(/请帮我阅读附件/)
   await expect(page.getByRole('button', { name: '移除需求.txt', exact: true })).toBeVisible()

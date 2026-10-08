@@ -17,10 +17,10 @@ RESULTS = defaultdict(dict)
 
 @pytest.fixture(scope='session', autouse=True)
 def record_api_operations():
-    if not os.environ.get('SPEC044_REQUEST_COVERAGE'):
+    if not (os.environ.get('ACCEPTANCE_REQUEST_COVERAGE') or os.environ.get('SPEC044_REQUEST_COVERAGE')):
         yield
         return
-    inventory = json.loads((ROOT / 'artifacts/spec044/server/inventory.json').read_text())
+    inventory = json.loads(Path(os.environ.get('ACCEPTANCE_INVENTORY', ROOT / 'artifacts/spec044/server/inventory.json')).read_text())
     operations = {row['id'] for row in inventory['operations']}
     # Static paths win over placeholders when middleware rejects before routing.
     patterns = []
@@ -65,10 +65,10 @@ def pytest_runtest_logreport(report):
 
 
 def pytest_sessionfinish(session, exitstatus):
-    output = os.environ.get('SPEC044_REQUEST_COVERAGE')
+    output = os.environ.get('ACCEPTANCE_REQUEST_COVERAGE') or os.environ.get('SPEC044_REQUEST_COVERAGE')
     if not output:
         return
-    inventory = json.loads((ROOT / 'artifacts/spec044/server/inventory.json').read_text())
+    inventory = json.loads(Path(os.environ.get('ACCEPTANCE_INVENTORY', ROOT / 'artifacts/spec044/server/inventory.json')).read_text())
     result = []
     for operation in inventory['operations']:
         key = operation['id']

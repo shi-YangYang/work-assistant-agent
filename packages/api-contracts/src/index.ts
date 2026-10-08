@@ -384,6 +384,11 @@ export interface WorkReferenceView extends WorkReference {
   title?: string
   unavailable?: boolean
 }
+export interface WebReadSource {
+  url: string
+  title: string
+  refetchFailed: boolean
+}
 export interface WorkMessage {
   replyStream?: ReplyStream | null
   workReference?: WorkReferenceView | null
@@ -396,6 +401,7 @@ export interface WorkMessage {
   text: string
   reply: string
   citations?: DocumentCitation[]
+  webSources?: WebReadSource[]
   businessCitations?: BusinessCitation[]
   businessUnavailable?: boolean
   replyTo: string | null

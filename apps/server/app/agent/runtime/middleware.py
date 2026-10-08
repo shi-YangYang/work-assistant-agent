@@ -81,7 +81,8 @@ class ToolBoundary(AgentMiddleware):
             args = request.tool_call['args']
             error = await completion_reference_error(context, args.get('operation_ids'),
                                                      verification_requested=args.get('verification_requested', False),
-                                                     verification_quote=args.get('verification_quote', ''))
+                                                     verification_quote=args.get('verification_quote', ''),
+                                                     answer_length=args.get('answer_length'), answer=args.get('answer', ''))
             if error:
                 return ToolMessage(tool_call_id=request.tool_call['id'], name='finish_task', content=error, status='error',
                                    additional_kwargs={'completion_reference_error': True})

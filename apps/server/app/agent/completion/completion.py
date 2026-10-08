@@ -13,6 +13,12 @@ async def verified_receipt(context, db, actor, job):
     """A receipt-only shortcut must still match the entire current request."""
     if job.kind != 'message' or job.result.get('operationFeedback'):
         return None
+    interpretation = job.result.get('intentTaskInterpretation') or {}
+    # Authorization describes the scope before execution. A missing input or
+    # blocked requirement contradicts "this one receipt answers everything".
+    # Finish normally instead of publishing stale state or discarding real work.
+    if interpretation.get('state') in ('needs_input', 'blocked') or interpretation.get('remaining'):
+        return None
     rows = (await db.scalars(select(BusinessAction).where(BusinessAction.message_id == job.target_id, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).limit(2))).all()
     if len(rows) != 1 or not rows[0].result.get('receiptOnly'):
         return None

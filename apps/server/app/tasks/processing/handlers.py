@@ -11,6 +11,7 @@ from app.modules.attachments.documents import verified_citations
 from app.modules.attachments.inventory import attachment_inventory
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
+from app.modules.messages.web_sources import web_citations
 from app.modules.model_services.usage.usage import interrupt_usage
 from app.modules.operations.models import BusinessAction
 from app.modules.team.agent_queries import query_summary as business_query_summary
@@ -290,7 +291,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         # Validate markers even when no team tool ran; models can invent
         # business markers from ordinary work IDs without a read receipt.
         message.reply, references = await business_citations(db, actor, live.access, message.reply, fallback_tokens=current_source_tokens(context.reply_evidence))
-        message.citations = [*message.citations, *references]
+        message.citations = [*message.citations, *references, *web_citations(live.result)]
         # The appended receipt is server-owned. Preserve its surrounding
         # prose separately so future reads can render current card states.
         summary = receipt_summary(cards, drafts)

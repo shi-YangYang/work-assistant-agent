@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -110,13 +111,16 @@ async def test_material_or_history_evidence_and_foreign_source_are_rejected(setu
 
 
 async def test_disabled_save_refused_explicit_forget_works_and_old_queued_input_stays_revoked(setup):
+    from app.agent.tools.memory import save_memory, forget_memory
     client = setup[3]['employee']
     await client.put(PATH + '/document', json={'expectedRevision': 0, 'markdown': '喜欢简洁\n\n我负责运营'})
     await client.patch(PATH + '/settings', json={'expectedRevision': 1, 'enabled': False})
     context, _ = await context_for(setup, '忘掉我负责运营，记住我喜欢长回答')
-    refused = await apply(context, evidence='记住我喜欢长回答', new='喜欢长回答', explicit=True)
+    refused = json.loads(await save_memory.coroutine(runtime=SimpleNamespace(context=context, tool_call_id='save'),
+        evidence='记住我喜欢长回答', new_text='喜欢长回答', explicit=True))
     assert refused['state'] == 'unavailable'
-    result = await apply(context, call_id='forget', evidence='忘掉我负责运营', old='我负责运营', explicit=True, forget=True)
+    result = json.loads(await forget_memory.coroutine(runtime=SimpleNamespace(context=context, tool_call_id='forget'),
+        evidence='忘掉我负责运营', target='我负责运营'))
     assert result['state'] == 'succeeded'
     current = (await client.get(PATH)).json()
     assert '运营' not in current['markdown'] and '简洁' in current['markdown'] and not current['enabled']

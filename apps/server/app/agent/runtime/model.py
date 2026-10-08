@@ -16,6 +16,23 @@ def approximate_tokens(messages):
     return estimate_request(messages)
 
 
+def response_timeout(context, streaming):
+    if not context.node_retry:
+        return 60
+    remaining = max(.01, context.node_deadline - time.time())
+    return remaining if streaming else min(60, remaining)
+
+
+async def request_with_deadline(request, *, timeout, idle_timeout=None):
+    """Only useful generation progress renews idle time, never the total deadline."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    async with asyncio.timeout_at(min(deadline, loop.time() + idle_timeout) if idle_timeout is not None else deadline) as guard:
+        def progress():
+            guard.reschedule(min(deadline, loop.time() + idle_timeout))
+        return await request(progress if idle_timeout is not None else None)
+
+
 async def reserve_call(context, kind, estimate=0):
     retry = context.node_retry
     from app.agent.context.context_usage import input_budget, MAX_CONTEXT_BYTES
@@ -111,7 +128,11 @@ class BoundedChatModel(ChatOpenAI):
                 from app.modules.model_services.parameters import business_model_config
                 config = business_model_config(config, (context.model_binding or {}).get('assistant') or {})
             # The optional callback publishes prose only; framework tools remain buffered.
-            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, on_event=record.event, on_delta=candidate.feed if candidate else None), min(60, max(.01, context.node_deadline - time.time())) if context.node_retry else 60)
+            streaming = config.get('streaming', False)
+            timeout = response_timeout(context, streaming)
+            async def request(progress):
+                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, on_event=record.event, on_delta=candidate.feed if candidate else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
+            response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
             try:

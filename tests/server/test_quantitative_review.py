@@ -20,6 +20,13 @@ pytestmark = pytest.mark.asyncio
     ('全体40人，其中已签约30人，未签约10人，两部分合计40人。', True),
     ('速度从12提高到18，增加了50%。', True),
     ('The total is 90, including 25 and 65.', True),
+    ('12-5=7', True),
+    ('结果：8 / 2 = 4。', True),
+    ('库存总共80件。\n甲需要50件。\n乙需要40件。', True),
+    ('改版完成1/4，其它样式按10px间距。\n\n（约90字，虚构示例。）', False),
+    ('本周（10-05起）没有日报待办，应报0人、已报0人。\n\n最近7天（10-02～10-08）未查到报告。', False),
+    ('第2点，也就是异常处理。\n\n第1点属于请求，第3点属于结果，第2点要区分不同分支。', False),
+    ('报告1已归档。\n\n报告2已提交。\n\n剩余报告3待整理。', False),
     ('1. 收集资料\n2. 讨论总额\n3. 形成结论', False),
     ('2026-09-30 10:30，2026-10-01 11:30，2026-10-02 12:30，共三次。', False),
     ('资料见 https://example.org/total/120/30/90', False),
@@ -57,53 +64,25 @@ class NumericModel(DeliveryModel):
 
 
 @pytest.mark.parametrize('raw_first', [False, True])
-async def test_inconsistent_nonfinancial_composition_is_corrected_once_without_business_writes(setup, raw_first):
-    wrong = '总共有80件，分给甲50件，分给乙40件，恰好全部分完。'
-    correct = '总共有80件，分给甲50件后，只剩30件可给乙；乙若要40件，还差10件。'
-    fake = NumericModel(model='controlled', api_key='unused', raw_first=raw_first, answer='按现有库存计算。\n' + wrong, invalid_quote=wrong, correction='按现有库存计算。\n' + correct)
+async def test_numeric_answer_does_not_trigger_post_generation_judge(setup, raw_first):
+    answer = '总共有80件，甲需要50件，乙需要40件，还差10件。'
+    fake = NumericModel(model='controlled', api_key='unused', raw_first=raw_first, answer=answer)
     result, stored = await run(setup, fake, '库存80件，甲需要50件，乙需要40件，够不够？不要修改工作。')
-    assert result['reply'] == fake.correction and result['job']['taskOutcome']['state'] == 'completed'
-    assert fake.calls == (2 if raw_first else 1) and len(fake.reviews) == 2 and fake.repairs == 1
-    assert all(item['reviewScope'] == 'quantitative_only' for item in fake.reviews)
-    assert stored['deliveryRepairs'] == (['protocol', 'response'] if raw_first else ['response'])
+    assert result['reply'] == answer and result['job']['taskOutcome']['state'] == 'completed'
+    assert fake.calls == (2 if raw_first else 1) and not fake.reviews and fake.repairs == 0
+    assert stored.get('deliveryRepairs', []) == (['protocol'] if raw_first else [])
     assert not result['actions'] and not result['drafts']
     assert (await setup[3]['employee'].get('/api/v1/work-items')).json()['items'] == []
 
 
-async def test_correct_hypothetical_quantity_answer_is_not_rewritten(setup):
-    answer = '如果每箱装12件，5箱就是60件；这是按箱子都装满的假设计算。小算盘拨好了。'
-    fake = NumericModel(model='controlled', api_key='unused', answer=answer)
-    result, stored = await run(setup, fake, '帮我举个装箱数量的假设例子，不需要查外部资料')
-    assert result['reply'] == answer and fake.repairs == 0 and fake.calls == 1
-    assert len(fake.reviews) == 1 and not stored.get('deliveryRepairs')
-
-
-async def test_short_correction_still_rechecked_and_repeated_error_exhausts_original_budget(setup):
-    wrong = '两部分合计90件。'
-    fake = NumericModel(model='controlled', api_key='unused', answer='总共80件，甲50件、乙30件。' + wrong, invalid_quote=wrong, correction='部分数量以刚才为准。' + wrong)
-    result, stored = await run(setup, fake, '核算这组数量')
-    assert fake.calls == 1 and fake.repairs == 1 and len(fake.reviews) == 2
-    assert fake.reviews[1]['quantitativeConsistency']['continuation']
-    assert stored['deliveryRepairs'] == ['response'] and result['job']['taskOutcome']['state'] != 'completed'
-    assert wrong not in result['reply'] and '部分数量以刚才为准' in result['reply']
-
-
-async def test_existing_review_is_shared_and_cached_while_numeric_scope_is_input_bound(setup):
+async def test_numeric_content_cannot_hide_missing_business_execution(setup):
     answer = '共100页，已读35页，剩余65页。'
-    context, _ = await runtime(setup, '请核验阅读数量')
+    context, _ = await runtime(setup, '请保存阅读进度')
     await set_delivery(context, answer, business=True)
     fake = NumericModel(model='controlled', api_key='unused', answer=answer)
-    first = await assess(context, answer, model=fake)
-    second = await assess(context, answer, model=fake)
-    assert first.text == second.text == answer and len(fake.reviews) == 1
-    assert fake.reviews[0]['reviewScope'] == 'business_and_quantitative'
-    assert first.needs_action  # numeric review cannot claim missing requested business was executed
-    async with context.sessions.begin() as db:
-        job = await db.get(Job, context.job_id)
-        job.result = {**job.result, 'quantitativeReviewInput': 'different-input'}
-    await set_delivery(context, '你好，欢迎回来。')
-    ordinary = await assess(context, '你好，欢迎回来。', model=fake)
-    assert ordinary.text == '你好，欢迎回来。' and len(fake.reviews) == 1
+    result = await assess(context, answer, model=fake)
+    assert result.needs_action and result.execution_claims and not result.text
+    assert not fake.reviews
 
 
 async def test_quantitative_review_uses_bounded_reasoning_and_cache_without_mutating_config(setup, monkeypatch):

@@ -1,6 +1,6 @@
 """Lexically decode a bounded JSON string without executing partial tool calls."""
 import json
-from app.agent.completion.delivery import MAX_ANSWER_LENGTH
+from app.agent.completion.limits import MAX_ANSWER_LENGTH
 from app.integrations.models.transport import ProviderError
 
 

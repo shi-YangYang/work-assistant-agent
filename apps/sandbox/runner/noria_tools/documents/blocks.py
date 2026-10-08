@@ -19,3 +19,11 @@ def validate_layout(title, blocks):
 
 def cell_text(value):
     return '' if value is None else str(value)
+
+
+def check_page_limit(pages, maximum):
+    if pages < 1:
+        raise ValueError('文档渲染未产生有效页面，未发布文件')
+    if maximum is not None and pages > maximum:
+        raise ValueError(f'完整内容按可读字号排版后为{pages}页，超过{maximum}页上限；未发布文件。'
+                         '请与用户确认调整篇幅或页数要求，不能省略页限、删除内容或继续缩小字号绕过。')

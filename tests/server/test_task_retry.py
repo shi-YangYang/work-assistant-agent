@@ -418,7 +418,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
         await process_job(resumed, sessions, settings, saver)
     detail = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert detail['job']['state'] == 'succeeded', detail['job']
-    assert counts == {'initial': 1, 'intent': 1, 'final': 5, 'review': 1}
+    assert counts == {'initial': 1, 'intent': 1, 'final': 5, 'review': 0}
     assert len(detail['actions']) == 1
     recovered_node = next(row for row in detail['job']['nodes'] if row['id'] == failed_id)
     assert recovered_node['state'] == 'succeeded' and recovered_node['attempts'] == 1 and recovered_node['totalRetries'] == 3

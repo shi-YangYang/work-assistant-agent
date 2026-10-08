@@ -18,11 +18,12 @@ const pages = [
   ['/members', '成员管理'],
   ['/settings/account', '账户'],
   ['/settings/appearance', '外观'],
+  ['/settings/memory', '记忆'],
   ['/settings/rules', '汇报规则'],
   ['/settings/support', '问题反馈'],
   ['/settings/models', '模型服务管理'],
   ['/settings/usage', '模型用量'],
-  ['/settings/voiceprints', '公司声纹'],
+  ['/settings/voiceprints', '用户声纹'],
   ['/settings/login', '登录方式'],
 ]
 
@@ -76,7 +77,7 @@ test('W03 @cross employee navigation, reports and role restricted deep links', a
     await page.goto(state.origin + path)
     await expect(page.getByRole('navigation', { name: '工作空间' })).toBeAttached()
     await expect(
-      page.getByRole('heading', { name: /成员管理|模型服务管理|公司声纹|登录方式|团队看板/ }),
+      page.getByRole('heading', { name: /成员管理|模型服务管理|用户声纹|登录方式|团队看板/ }),
     ).toHaveCount(0)
   }
   await page.goto(state.origin + '/reports')
@@ -129,7 +130,7 @@ test('W03 pet appearance preserves assistant and work drafts, navigation identit
   await expect(page.getByRole('heading', { name: '我的工作', exact: true })).toBeVisible()
   await expect(pet).toHaveAttribute('data-stability-check', 'same-pet')
   await expect(pet.locator('[data-animate]')).toHaveAttribute('data-animate', 'false')
-  await page.getByRole('link', { name: '工作助手', exact: true }).click()
+  await page.getByRole('link', { name: '聊天搭子', exact: true }).click()
   await expect(composer).toHaveValue('保留这条尚未发送的消息')
   const created = await http<Work>('/api/v1/work-items', 'POST', { title: '外观切换草稿验证' })
   await page.goto(state.origin + '/work/' + created.data.id)

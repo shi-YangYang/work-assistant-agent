@@ -40,14 +40,14 @@ class CapabilityModel(DeliveryModel):
 
 
 async def test_capability_refusal_closes_as_blocked_without_retrying_forbidden_work(setup):
-    # A bad completed summary must not override the independently classified
-    # refusal, force a repair action, or make the user answer an impossible ask.
-    fake = CapabilityModel(model='controlled', api_key='unused', answer='我不能修改同事的工作；需要由他本人操作。')
+    # The main agent owns task interpretation; the delivery gate must not
+    # reopen a correctly declared refusal or require an independent judge.
+    fake = CapabilityModel(model='controlled', api_key='unused', answer='我不能修改同事的工作；需要由他本人操作。', task={'state': 'blocked', 'remaining': ['无权修改同事工作']})
     result, stored = await run(setup, fake, '帮同事随便找个工作，改成完成')
     assert result['reply'] == fake.answer
     assert result['job']['taskOutcome']['state'] == 'blocked'
     assert result['job']['taskOutcome']['nextAction'] == 'none'
-    assert fake.calls == fake.review_calls == 1
+    assert fake.calls == 1 and fake.review_calls == 0
     assert not stored.get('deliveryRepairs') and not result['actions']
     assert (await setup[3]['employee'].get('/api/v1/work-items')).json()['items'] == []
 

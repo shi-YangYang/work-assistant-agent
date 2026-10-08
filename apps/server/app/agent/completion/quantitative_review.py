@@ -9,20 +9,23 @@ NON_QUANTITIES = re.compile(
 ORDINAL = re.compile(r'^\s*\d+[.)、．]\s*', re.MULTILINE)
 NUMBER = re.compile(r'(?<![A-Za-z0-9_])[-−+]?\d+(?:,\d{3})*(?:\.\d+)?(?:[%％])?(?![A-Za-z0-9_])')
 RELATION = re.compile(
-    r'[=＝+＋×÷]|(?<=\d)\s*[-−*/]\s*(?=\d)|'
     r'合计|总计|总共|共有|就是|得到|总额|净额|差额|相差|剩余|其中|里有|组成|构成|占比|比例|比率|等于|高于|低于|增加|减少|'
     r'\b(?:total|net|sum|difference|remaining|equals?|ratio|percent|comprises?|consists?|includes?)\b',
     re.IGNORECASE,
 )
+ARITHMETIC = re.compile(r'\d+(?:\.\d+)?(?:\s*[=＝+＋−*/×÷-]\s*\d+(?:\.\d+)?){2,}')
 
 
 def quantitative_scope(answer):
     prose = ORDINAL.sub('', NON_QUANTITIES.sub('', answer))
-    quantities = NUMBER.findall(prose)
-    if len(quantities) < 3 or len(set(quantities)) < 2 or not RELATION.search(prose):
-        return None
-    # This is a review trigger, never a statement that an answer is incorrect.
-    return {'kind': 'quantitative_consistency', 'numericTerms': quantities[:64]}
+    # Separate paragraphs can be unrelated examples. A fraction or calendar
+    # fragment alone is not an equation involving every number in the reply.
+    for block in re.split(r'\n\s*\n', prose):
+        quantities = NUMBER.findall(block)
+        if len(quantities) >= 3 and len(set(quantities)) >= 2 and (RELATION.search(block) or ARITHMETIC.search(block)):
+            # This is a review trigger, never a statement that an answer is incorrect.
+            return {'kind': 'quantitative_consistency', 'numericTerms': quantities[:64]}
+    return None
 
 
 QUANTITATIVE_POLICY = '''quantitativeConsistency 存在时，只增加答复内部量化一致性检查：从当前问题、对话中明确的已知条件与答复自己的假设出发，核对等式、总额/净额/余额、组成/占比、单位与期间是否一致。计算数值正确但解释把一个余额放进不相容的净额或把部分和整体混为一谈，也属于具体矛盾。把候选文本中的关系写成关系式再比对，不能仅因前一句计算正确就放过后面的解释。

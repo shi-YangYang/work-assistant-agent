@@ -11,7 +11,7 @@ def token_usage(value):
     return result or None
 
 
-async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None, on_delta=None):
+async def chat(settings, config, key, messages, *, tools=None, tool_choice=None, max_tokens=4000, on_event=None, on_text=None, on_delta=None, on_progress=None, stream_timeout=None):
     body = {**config.get('parameters', {}), 'model': config['model'], 'messages': messages, 'stream': config['streaming']}
     if max_tokens is not None:
         body['max_tokens'] = max_tokens
@@ -25,8 +25,9 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
     endpoint = normalize_url(config['baseUrl'], settings) + '/chat/completions'
     if on_event:
         await on_event('started')
+    options = {'extensions': {'paa_model_stream_timeout': stream_timeout}} if config['streaming'] and stream_timeout is not None else {}
     async with transport.client(settings) as http:
-        async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body) as response:
+        async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body, **options) as response:
             if response.is_error:
                 await response.aread()
             status_error(response)
@@ -93,6 +94,11 @@ async def chat(settings, config, key, messages, *, tools=None, tool_choice=None,
                         call['function']['arguments'] += fragment.get('function', {}).get('arguments') or ''
                         if len(call['id']) > 200 or len(call['function']['name']) > 80 or len(call['function']['arguments']) > 32000:
                             raise ProviderError('invalid_response', '工具调用无效或过长')
+                    # Reasoning only signals liveness; its contents never enter
+                    # callbacks, replies, usage records or persisted node output.
+                    reasoning = delta.get('reasoning_content')
+                    if on_progress and (fragment_text.strip() or any(fragment.arguments.strip() for fragment in fragments) or isinstance(reasoning, str) and reasoning.strip()):
+                        on_progress()
                     if on_delta and (fragment_text or fragments):
                         await on_delta(ModelDelta(fragment_text, tuple(fragments)))
                     if on_text and (fragment_text or delta.get('tool_calls')):

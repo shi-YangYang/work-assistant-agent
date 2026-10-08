@@ -172,6 +172,11 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
 async def query_report_obligations(runtime: ToolRuntime[RunContext], kind: Literal['daily', 'weekly'] = 'daily', status: Literal['', 'pending', 'overdue', 'submitted', 'cancelled'] = '', period: str = '', cursor: int = 0) -> str:
     """Read employee own reporting obligations or administrator company employee
     submission status. Pure read: never marks notifications read or sends reminders.
+    For an administrator an empty period means today in the company timezone;
+    weekly periods normalize to that week's start. Counts cover scheduled obligations,
+    not all active members: all-zero counts mean no obligations, not everyone submitted.
+    Empty items can mean no matches for the selected status. Do not repeat equivalent
+    queries or switch daily to weekly unless the user's requested scope requires it.
     Pass an employee obligation ID, kind and period to generate_report to prepare.
     """
     from app.modules.reports.scheduling.schedule import obligation_page

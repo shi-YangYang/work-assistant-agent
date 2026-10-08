@@ -177,6 +177,35 @@ async def test_agent_scope_forged_citations_and_revision_fence(setup):
         with pytest.raises(InputChanged): await lease(db, context)
 
 
+async def test_reference_recovery_returns_only_authorized_directory_and_keeps_real_id(setup):
+    from uuid import uuid4
+    settings, sessions, users, c = setup
+    first = await conversation(c['employee'])
+    private = await upload(c['employee'], 'private-source.txt', b'private text')
+    sent = await message(c['employee'], first, '', [private['id']])
+    await run(settings, sessions, users, sent, document_model())
+    current = await conversation(c['employee'])
+    allowed = await upload(c['employee'], 'orders.json', b'{"paid":100,"name":"A"}', 'application/json')
+    sent = await message(c['employee'], current, '读取订单', [allowed['id']])
+    context = await running_context(settings, sessions, users['employee'], sent)
+    await prepare_document(context, allowed['id'])
+    runtime = SimpleNamespace(context=context)
+    failures = []
+    for wrong_id in (private['id'], str(uuid4())):
+        result = json.loads(await read_document.coroutine(attachment_id=wrong_id, start=0, runtime=runtime))
+        assert result['error'] == 'document_reference_unavailable'
+        assert [row['id'] for row in result['availableDocuments']['items']] == [allowed['id']]
+        assert private['id'] not in json.dumps(result)
+        failures.append(result)
+    assert failures[0] == failures[1]  # does not reveal whether the rejected ID exists
+    bad_query = json.loads(await find_documents.coroutine(query='paid name orders', runtime=runtime))
+    assert bad_query['items'] == [] and bad_query['searchScope'] == 'filename'
+    actual = bad_query['availableDocuments']['items'][0]['id']
+    assert actual == allowed['id']
+    read = json.loads(await find_documents.coroutine(query='100', attachment_id=actual, runtime=runtime))
+    assert read['attachment']['id'] == allowed['id'] and read['items'][0]['text'] == '100'
+
+
 async def test_delete_during_real_extraction_cannot_publish_late_result(setup, monkeypatch):
     settings, sessions, users, c = setup
     conv = await conversation(c['employee'])

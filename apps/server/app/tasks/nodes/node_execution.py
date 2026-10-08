@@ -53,7 +53,7 @@ async def initialize(context, input_key):
             # scope as the graph. Business receipts remain for safe replay.
             stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete'}
             if previous_scope:
-                stale.update(('operationFeedback', 'operationFeedbackKeys'))
+                stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources'))
             job.result = {key: value for key, value in job.result.items() if key not in stale}
         state.setdefault('deadline', time.time() + 420)
         state.setdefault('nodes', [])

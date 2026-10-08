@@ -166,13 +166,14 @@ class ContextCompaction(AgentMiddleware):
                     return restored
                 summary = await self.summarize(context, removed, target - overhead)
                 from app.tasks.nodes.node_execution import active_node
+                from app.agent.completion.evidence_consistency import tool_evidence
                 candidate = {'id': identifier, 'nodeId': active_node.get()[0] if active_node.get() else None,
                              'summary': summary, 'removedIds': [m.id for m in removed],
                              'sources': context.context_sources,
                              'access': context.access,
                              'dependencies': {'business': dict(context.read_versions), 'documents': dict(context.document_versions)},
                              'covered': [r['id'] for r in context.conversation_references or [] if r['id'] != 'context-summary' and f"history:{r['id']}" in {m.id for m in removed}],
-                             'evidence': [*context.context_evidence, *[{'key': m.tool_call_id, 'tool': m.name, 'result': m.content} for m in without_memory(removed, summaries=True) if isinstance(m, ToolMessage) and m.name != 'finish_task']]}
+                             'evidence': [*context.context_evidence, *tool_evidence(without_memory(removed, summaries=True), context.job_id)]}
                 candidate['covered'] = list(dict.fromkeys([*context.context_sources.get('summarySources', {}), *(prior.get('covered', []) if prior else []), *candidate['covered']]))
                 after = estimate(apply_packet(messages, candidate))
                 if after >= used or compression_reason(context, after, output):
