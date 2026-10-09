@@ -172,6 +172,34 @@ it('only shows unknown after the server confirms no estimate', async () => {
   expect(screen.getByRole('button', { name: '上下文使用情况：尚未计算' })).toBe(button)
 })
 
+it('keeps live usage in an open tooltip when a late empty restore arrives', async () => {
+  const request = deferred<{ contextUsage: Usage | null }>()
+  vi.mocked(readConversationContext).mockReturnValue(request.promise)
+  const view = render(viewHook())
+  const button = screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })
+  fireEvent.focus(button)
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('tooltip').textContent).toBe('上下文使用情况 · 约 1%')
+  await act(async () => request.resolve({ contextUsage: null }))
+  expect(screen.getByRole('tooltip').textContent).toBe('上下文使用情况 · 约 1%')
+  view.rerender(
+    viewHook({
+      incoming: {
+        ...feedback,
+        state: 'succeeded',
+        seq: 5,
+        contextUsage: { ...usage, seq: 5, usedTokens: 210000 },
+      },
+    }),
+  )
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('tooltip').textContent).toBe('上下文使用情况 · 约 20%')
+  fireEvent.click(button)
+  expect(screen.getByRole('dialog').textContent).toContain('210,000 tokens')
+  expect(button.getAttribute('aria-label')).toBe('上下文使用情况：约 20%')
+  expect(readConversationContext).toHaveBeenCalledTimes(1)
+})
+
 it('retains the last estimate across acceptance and queued feedback, then ignores a late old restore', async () => {
   const request = deferred<{ contextUsage: Usage | null }>()
   vi.mocked(readConversationContext)

@@ -1,8 +1,8 @@
 import type { Job } from '@paa/api-contracts'
 import { ChevronRight, ListChecks, LoaderCircle } from 'lucide-react'
-import { useEffect, useState } from 'react'
 import { TaskNode, nodeStatus } from './TaskNode'
 import { completionSummary, nodeName, progressView } from '../utils/progress'
+import { useProgressClock } from './useProgressClock'
 import styles from './TaskProgress.module.css'
 
 export function TaskProgress({
@@ -22,26 +22,33 @@ export function TaskProgress({
   onExpandedChange?: (expanded: boolean) => void
   replyActivity?: string
 }) {
-  const { nodes, rows, active, current, parallel, completed, retries } = progressView(job)
-  const [now, setNow] = useState(Date.now)
+  const { nodes, rows: visibleRows, active, completed, retries } = progressView(job)
+  const rows = visibleRows.filter((node) => node.kind !== 'model' || node.state !== 'running')
   const waiting = job.state === 'running' && nodes.some((node) => node.state === 'retry_wait')
-  const modelActivity = current?.state === 'running' && current.activity
-  const ticking = waiting || !!modelActivity
-  useEffect(() => {
-    if (!ticking) return
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [ticking])
+  const retrying = active.length > 0 && active.every((node) => node.state === 'retry_wait')
+  const attention = !active.length
+    ? [...nodes]
+        .reverse()
+        .find((node) => ['awaiting_input', 'awaiting_confirmation'].includes(node.state))
+    : undefined
+  const reply = ['running', 'succeeded', 'awaiting_input'].includes(job.state) && !!replyActivity
+  // Keep transport/model phases in one visible activity. Delivery is part of
+  // generating the reply, so it does not introduce a brief third label.
+  const activity = reply
+    ? '生成回答'
+    : job.state === 'running' && !retrying && !attention
+      ? '思考中'
+      : undefined
+  const { now, seconds } = useProgressClock(
+    `${job.id}:${job.attempt}:${job.fence}`,
+    job.state === 'running' && (!!activity || waiting),
+    active.find((node) => node.kind === 'model')?.activity?.startedAt,
+  )
   const failed = [...nodes].reverse().find((node) => node.canRetry)
   const complete = ['succeeded', 'awaiting_input'].includes(job.state)
   const outcome = complete ? job.taskOutcome : null
-  const activity = ['running', 'succeeded', 'awaiting_input'].includes(job.state)
-    ? replyActivity ||
-      (modelActivity && rows.length && !rows.some((node) => node.id === current.id)
-        ? nodeName(current)
-        : undefined)
-    : undefined
-  const activityStatus = modelActivity ? nodeStatus(current, now) : '处理中'
+  const retryCount = active.reduce((count, node) => Math.max(count, node.retries), 0)
+  const activityStatus = `${activity === '思考中' ? `${seconds} 秒` : '处理中'}${retryCount ? ` · 第 ${retryCount}/3 次重试` : ''}`
   const summary = activity
     ? `${activity} · ${activityStatus}`
     : complete
@@ -50,10 +57,12 @@ export function TaskProgress({
         ? '等待继续处理'
         : job.state === 'cancelled'
           ? `已中断${completed ? ` · 已完成 ${completed} 项操作` : ''}`
-          : parallel
-            ? '多项操作处理中'
-            : current
-              ? `${nodeName(current)} · ${nodeStatus(current, now)}`
+          : retrying
+            ? active.length === 1
+              ? nodeStatus(active[0], now)
+              : '多项操作重试中'
+            : attention
+              ? `${nodeName(attention)} · ${nodeStatus(attention, now)}`
               : '处理请求'
   const running =
     !!activity || (job.state === 'running' && active.some((node) => node.state === 'running'))

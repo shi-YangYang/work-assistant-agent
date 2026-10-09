@@ -104,7 +104,7 @@ function JobRetryNotice({
   const progress =
     showNodes &&
     (!!replyActivity ||
-      (!!job.nodes?.length &&
+      ((!!job.nodes?.length || (assistant && job.state === 'running')) &&
         !(
           job.state === 'running' &&
           ['preparing', 'parsing', 'transcribing'].includes(job.stage || '')

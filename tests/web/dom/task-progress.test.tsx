@@ -35,7 +35,7 @@ const job: Job = {
 }
 afterEach(cleanup)
 
-it('shows real model phases with a local clock, preserves expanded steps and stops on termination', () => {
+it('keeps one immediate thinking label and clock through fast model phases, tools and model rounds', () => {
   vi.useFakeTimers()
   vi.setSystemTime(new Date('2026-10-09T00:00:00Z'))
   try {
@@ -47,36 +47,124 @@ it('shows real model phases with a local clock, preserves expanded steps and sto
       presentation: { type: 'activity' },
       activity: { phase: 'waiting', startedAt: new Date().toISOString() },
     }
-    const renderJob = (nodes: TaskNode[], state: Job['state'] = 'running') => (
-      <JobNotice job={{ ...job, nodes, state }} refresh={vi.fn()} showNodes />
+    const renderJob = (
+      nodes: TaskNode[],
+      state: Job['state'] = 'running',
+      replyActivity?: string,
+    ) => (
+      <JobNotice
+        job={{ ...job, nodes, state }}
+        refresh={vi.fn()}
+        showNodes
+        replyActivity={replyActivity}
+      />
     )
-    const view = render(renderJob([model]))
-    expect(view.container.textContent).toBe('等待模型响应 · 0 秒')
-    act(() => vi.advanceTimersByTime(3000))
-    expect(view.container.textContent).toBe('等待模型响应 · 3 秒')
-    const thinking = {
-      ...model,
-      activity: { phase: 'thinking' as const, startedAt: new Date().toISOString() },
+    const view = render(renderJob([]))
+    const status = view.getByRole('status')
+    expect(status.textContent).toBe('思考中 · 0 秒')
+    for (const phase of ['waiting', 'thinking', 'tool_call'] as const) {
+      act(() => vi.advanceTimersByTime(100))
+      view.rerender(
+        renderJob([{ ...model, activity: { phase, startedAt: new Date().toISOString() } }]),
+      )
+      expect(view.getByRole('status')).toBe(status)
+      expect(status.textContent).toBe('思考中 · 0 秒')
     }
-    const finished = { ...node, state: 'succeeded' as const }
-    view.rerender(renderJob([finished, thinking]))
+    act(() => vi.advanceTimersByTime(2700))
+    expect(status.textContent).toBe('思考中 · 3 秒')
+    // A fast real operation is retained, even when it completes in under a second.
+    view.rerender(renderJob([{ ...model, state: 'succeeded' }, node]))
     const details = view.container.querySelector('details')!
     fireEvent.click(details.querySelector('summary')!)
-    act(() => vi.advanceTimersByTime(28000))
-    expect(details.open).toBe(true)
-    expect(details.querySelector('summary')?.textContent).toBe('思考中 · 28 秒')
-    expect(details.querySelector('[data-reply-activity]')?.textContent).toBe('思考中28 秒')
-    const answering = {
+    const summary = details.querySelector('summary')!
+    const activity = details.querySelector('[data-reply-activity]')
+    const operation = details.querySelector('[data-node-id="read"]')
+    expect(summary.textContent).toBe('思考中 · 3 秒')
+    expect(operation?.textContent).toContain('读取工作执行中')
+    act(() => vi.advanceTimersByTime(100))
+    const finished = { ...node, state: 'succeeded' as const }
+    const nextModel = {
       ...model,
-      activity: { phase: 'answering' as const, startedAt: new Date().toISOString() },
+      id: 'model-2',
+      activity: { phase: 'waiting' as const, startedAt: new Date().toISOString() },
     }
-    view.rerender(renderJob([finished, answering]))
+    view.rerender(renderJob([finished, nextModel]))
+    expect(details.querySelector('[data-node-id="read"]')).toBe(operation)
+    expect(operation?.textContent).toContain('已完成')
+    expect(details.querySelector('[data-reply-activity]')).toBe(activity)
+    act(() => vi.advanceTimersByTime(27900))
     expect(details.open).toBe(true)
-    expect(details.querySelector('summary')?.textContent).toBe('生成回答 · 0 秒')
-    view.rerender(renderJob([finished, answering], 'cancelled'))
+    expect(summary.textContent).toBe('思考中 · 31 秒')
+    expect(activity?.textContent).toBe('思考中31 秒')
+    // An upstream answering signal alone is not yet visible answer text.
+    view.rerender(
+      renderJob([
+        finished,
+        { ...nextModel, activity: { phase: 'answering', startedAt: new Date().toISOString() } },
+      ]),
+    )
+    expect(summary.textContent).toBe('思考中 · 31 秒')
+    view.rerender(renderJob([finished, nextModel], 'running', '生成回答'))
+    expect(details.open).toBe(true)
+    expect(summary.textContent).toBe('生成回答 · 处理中')
+    expect(details.querySelector('[data-reply-activity]')).toBe(activity)
+    view.rerender(renderJob([finished, nextModel], 'cancelled'))
     expect(view.container.textContent).toContain('已中断')
     expect(view.container.querySelector('[data-running="true"]')).toBeNull()
     expect(vi.getTimerCount()).toBe(0)
+  } finally {
+    cleanup()
+    vi.useRealTimers()
+  }
+})
+
+it('shows retry and confirmation immediately and resets the clock only for a new attempt', () => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-10-09T00:00:00Z'))
+  try {
+    const model: TaskNode = {
+      ...node,
+      id: 'model',
+      kind: 'model',
+      label: '思考中',
+      presentation: { type: 'activity' },
+    }
+    const renderJob = (value: Job) => <JobNotice job={value} refresh={vi.fn()} showNodes />
+    const view = render(renderJob({ ...job, nodes: [model] }))
+    act(() => vi.advanceTimersByTime(2000))
+    expect(view.container.textContent).toBe('思考中 · 2 秒')
+    const retrying: TaskNode = {
+      ...model,
+      state: 'retry_wait',
+      nextRetryAt: new Date(Date.now() + 3000).toISOString(),
+    }
+    view.rerender(renderJob({ ...job, nodes: [retrying] }))
+    expect(view.container.querySelector('summary')?.textContent).toBe(
+      '模型暂未响应，3 秒后重试 · 1/3',
+    )
+    act(() => vi.advanceTimersByTime(3000))
+    view.rerender(renderJob({ ...job, nodes: [{ ...model, retries: 1, totalRetries: 1 }] }))
+    expect(view.container.textContent).toBe('思考中 · 5 秒 · 第 1/3 次重试')
+    view.rerender(renderJob({ ...job, nodes: [{ ...node, state: 'awaiting_confirmation' }] }))
+    expect(view.container.textContent).toContain('待确认')
+    expect(view.container.textContent).not.toContain('思考中')
+    expect(vi.getTimerCount()).toBe(0)
+    view.rerender(renderJob({ ...job, attempt: 1, fence: 2, nodes: [model] }))
+    expect(view.container.textContent).toBe('思考中 · 0 秒')
+    act(() => vi.advanceTimersByTime(100))
+    view.rerender(
+      renderJob({
+        ...job,
+        attempt: 1,
+        fence: 2,
+        state: 'succeeded',
+        nodes: [{ ...model, state: 'succeeded' }],
+      }),
+    )
+    expect(view.container.textContent).toBe('')
+    expect(vi.getTimerCount()).toBe(0)
+    act(() => vi.advanceTimersByTime(2000))
+    expect(view.container.textContent).toBe('')
   } finally {
     cleanup()
     vi.useRealTimers()
@@ -105,7 +193,7 @@ it('moves reply generation into the existing progress without losing expansion o
   expect(view.container.querySelector('details')).toBe(details)
   expect(details.open).toBe(true)
   expect(details.querySelector('[data-reply-activity]')).toBe(activity)
-  expect(activity?.textContent).toBe('核对并保存回复处理中')
+  expect(activity?.textContent).toBe('生成回答处理中')
   view.rerender(<JobNotice job={{ ...value, state: 'succeeded' }} refresh={vi.fn()} showNodes />)
   expect(details.open).toBe(true)
   expect(details.querySelector('summary')?.textContent).toBe('已完成 · 1 项操作')
@@ -155,8 +243,8 @@ it('keeps the same expanded operation row when the subject resolves and processi
   expect(details.open).toBe(true)
   expect(mounted.container.querySelector('[data-node-id="read"]')).toBe(row)
   expect(row?.textContent).toContain('读取工作：登录页优化')
-  expect(details.querySelectorAll('li')).toHaveLength(1)
-  expect(details.querySelector('summary')?.textContent).toContain('整理工具结果')
+  expect(details.querySelectorAll('li')).toHaveLength(2)
+  expect(details.querySelector('summary')?.textContent).toContain('思考中 · 0 秒')
   mounted.rerender(view({ ...job, state: 'succeeded', nodes: [{ ...node, state: 'succeeded' }] }))
   expect(details.open).toBe(true)
   expect(mounted.container.querySelector('summary')?.textContent).toContain('已完成 · 1 项操作')

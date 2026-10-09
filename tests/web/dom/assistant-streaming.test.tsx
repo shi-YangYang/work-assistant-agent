@@ -145,7 +145,7 @@ it('retains preview through terminal feedback and only replaces it with a persis
     />,
   )
   expect(screen.getByText('未完成前缀')).toBeTruthy()
-  expect(screen.getByRole('status').textContent).toBe('核对并保存回复 · 处理中')
+  expect(screen.getByRole('status').textContent).toBe('生成回答 · 处理中')
   expect(view.container.querySelector('[data-reply-state] [role="status"]')).toBeNull()
   // An old message returned from a cache must not win during the final GET.
   view.rerender(
@@ -172,7 +172,7 @@ it('retains preview through terminal feedback and only replaces it with a persis
   )
   expect(screen.getByText('正式答复').tagName).toBe('STRONG')
   expect(screen.queryByText('未完成前缀')).toBeNull()
-  expect(screen.queryByText('核对并保存回复 · 处理中')).toBeNull()
+  expect(screen.queryByText('生成回答 · 处理中')).toBeNull()
 })
 
 it('restores interrupted prefix from message DTO and labels cancellation without showing success', () => {

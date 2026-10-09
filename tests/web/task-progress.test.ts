@@ -58,7 +58,7 @@ it('renders compact accessible progress, completion totals, and in-place manual 
     )
   const running = render(job())
   expect(running).not.toContain('<summary>')
-  expect(running).toContain('处理请求')
+  expect(running).toContain('思考中 · 0 秒')
   expect(running).not.toContain('aria-live')
   const complete = render(
     job({
@@ -127,7 +127,7 @@ it('requires explicit assistant opt-in and preserves other JobNotice presentatio
   const assistant = renderToStaticMarkup(
     createElement(JobNotice, { job: job(), refresh: vi.fn(), showNodes: true }),
   )
-  expect(assistant).toContain('处理请求')
+  expect(assistant).toContain('思考中 · 0 秒')
   const legacy = renderToStaticMarkup(
     createElement(JobNotice, {
       job: job({ stage: 'transcribing' }),
@@ -287,7 +287,7 @@ it('prefers the live retry state and accepts outcome-only feedback updates', () 
   const html = renderToStaticMarkup(
     createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }),
   )
-  expect(html).toContain('处理请求')
+  expect(html).toContain('思考中 · 0 秒')
   expect(html).not.toContain('暂时无法继续')
   const base: JobFeedback = {
     jobId: 'job',

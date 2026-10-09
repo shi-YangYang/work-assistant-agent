@@ -44,7 +44,6 @@ export function useContextUsage(
     identityScope(identity),
     (signal) => readConversationContext(conversationId!, signal),
   )
-  const receivedUpdates = useRef(0)
   useLayoutEffect(() => {
     activeScope.current = scope
     return () => {
@@ -54,7 +53,6 @@ export function useContextUsage(
   const receive = useCallback(
     (job: Job, feedback: JobFeedback | null) => {
       if (activeScope.current !== scope || job.id !== latestId) return
-      receivedUpdates.current++
       const attempt = feedback?.attempt ?? job.attempt ?? 0
       const fence = feedback?.fence ?? job.fence ?? 0
       const candidate = feedback?.contextUsage ?? job.contextUsage ?? null
@@ -97,14 +95,15 @@ export function useContextUsage(
       controller?.abort()
       const request = new AbortController()
       controller = request
-      const receivedAtStart = receivedUpdates.current
       try {
         const { contextUsage } = await resource.get(request.signal)
         if (!active || request.signal.aborted) return
         setSnapshot((previous) => {
           const current = previous?.scope === scope ? previous : null
           if (!contextUsage)
-            return current?.usage && receivedUpdates.current !== receivedAtStart
+            // An empty restore means no estimate was available when it was read.
+            // It cannot invalidate usage already received for this conversation.
+            return current?.usage
               ? previous
               : {
                   scope,
