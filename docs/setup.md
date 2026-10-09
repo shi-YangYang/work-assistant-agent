@@ -43,7 +43,28 @@ npm run admin:company
 npm run dev:web
 ```
 
-访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令自动启动本地 PostgreSQL 和正文流 Redis，等待健康检查通过后启动 Web、API、worker 和已启用的沙盒。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用及本次启动的 Redis，数据库继续运行；原已运行的 Redis 不会被停止。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；单独运行 API／worker 时仍需先启动数据库和 Redis（`docker compose --env-file apps/server/.env.web -f deploy/company/compose.dev.yml up -d redis`）。
+访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令统一管理 Docker 的 `paa-company` 项目：PostgreSQL、正文流 Redis，以及可选的沙盒 control/runtime；等待健康检查通过后启动宿主机上的 Web、API、worker。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用及本次启动的 Redis，数据库继续运行；原已运行的 Redis 不会被停止。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；同一环境只允许一个开发管理命令运行，第二个终端不会接管服务。分开运行 API／worker 时，先在 Docker Desktop 启动已经创建的 postgres、redis 服务；独立命令不管理这些依赖。
+
+### 旧本地容器迁移
+
+升级前先退出 API、worker、Web 和独立沙盒命令，再执行：
+
+```sh
+npm run dev:web:migrate
+npm run dev:web
+```
+
+迁移器检查端口、数据库连接与在途任务，将数据库备份恢复到隔离容器核对，再用原数据库镜像、数据卷与沙盒持久卷创建统一项目。只有健康与数据核对成功后才移除旧容器外壳；不会删除数据卷或镜像。外部数据库、Redis 和远程沙盒不迁移。沙盒 socket 使用新卷，执行镜像缓存沿用原引擎数据。
+
+资源映射、旧配置、数据库备份和沙盒控制状态保存在 `data/company/local-infra/`，包含本机凭据，不要提交或公开。迁移完成后使用开发命令管理容器，不用未带资源映射的原始 Compose 命令重新创建数据库。
+
+失败会尝试恢复旧拓扑。中途强制退出或需要回退时，退出应用后执行：
+
+```sh
+npm run dev:web:migrate -- rollback
+```
+
+回滚继续使用原持久卷，保留迁移后的业务数据；它不把数据库还原到旧时间点。不要删除 `local-infra/` 或原卷。若报告仍有活动连接／任务，先退出对应进程或等待任务结束，不要强行清理卷。生产部署与 CD 不受此次本地迁移影响。
 
 ### 本地代码执行与文件生成
 
@@ -52,6 +73,8 @@ Docker 启动后，执行一次 `npm run sandbox:setup`。首次下载并构建�
 之后 `npm run dev:web` 会一起启动沙盒，`Ctrl+C` 停止本次启动的沙盒服务，保留镜像和缓存。沙盒使用独立 Docker 引擎和 gVisor，不修改系统 Docker 配置；接口仅监听本机 `127.0.0.1:8011`，默认同时执行 1 个任务。
 
 分开调试时可用 `npm run sandbox:start`、`npm run sandbox:status`、`npm run sandbox:stop`。已手动启动的沙盒不会随 `dev:web` 退出而停止。仅需普通聊天时，将 `PAA_SANDBOX_LOCAL=false` 并清空 `PAA_SANDBOX_URL` 后重启。
+
+已运行的沙盒仅在源码、镜像和配置一致时复用。若提示需要更新，等待任务结束并退出开发命令，执行 `npm run sandbox:stop`，再执行 `npm run sandbox:start`（或 `npm run dev:web`）；启动命令不会自动重建其他命令正在使用的沙盒。
 
 ### 跨会话记忆
 

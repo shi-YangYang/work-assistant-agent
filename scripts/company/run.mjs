@@ -5,6 +5,9 @@ import { delimiter, dirname, join, resolve } from 'node:path'
 import { startLocalSandbox } from './sandbox-local.mjs'
 import { startLocalReplyStream } from './reply-stream-local.mjs'
 import { startLocalDatabase } from './database-local.mjs'
+import { createInfra } from './local-infra/compose.mjs'
+import { createLifecycle } from './local-infra/lifecycle.mjs'
+import { signalOwnedChild } from './local-infra/processes.mjs'
 const root = resolve(import.meta.dirname, '../..')
 const webRequire = createRequire(join(root, 'apps/web/package.json'))
 const python =
@@ -27,7 +30,12 @@ if (!existsSync(python)) {
 }
 const children = []
 function launch(command, args) {
-  const child = spawn(command, args, { cwd: root, env, stdio: 'inherit' })
+  const child = spawn(command, args, {
+    cwd: root,
+    env,
+    stdio: 'inherit',
+    detached: process.platform !== 'win32',
+  })
   children.push(child)
   child.on('error', (error) => {
     console.error(error.message)
@@ -37,40 +45,62 @@ function launch(command, args) {
   return child
 }
 let stopping = false
-let sandbox = null
-let replyStream = null
+let lifecycle = null
+let stopPromise
+let startupPromise = Promise.resolve()
 const startup = new AbortController()
 function stop(code) {
-  if (stopping) return
+  if (stopPromise) return stopPromise
   stopping = true
   startup.abort()
-  for (const child of children) child.kill('SIGTERM')
   process.exitCode = code
-  if (replyStream) void replyStream.stop().catch((error) => console.error(error.message))
-  if (sandbox)
-    void sandbox.stop().catch((error) => {
-      console.error(error.message)
-      process.exitCode = 1
-    })
+  stopPromise = (async () => {
+    await Promise.all(
+      children.map(
+        (child) =>
+          new Promise((accept) => {
+            if (child.exitCode !== null || child.signalCode !== null || !child.pid) return accept()
+            const timer = setTimeout(() => signalOwnedChild(child, 'SIGKILL'), 15_000)
+            child.once('close', () => {
+              clearTimeout(timer)
+              accept()
+            })
+            signalOwnedChild(child, 'SIGTERM')
+          }),
+      ),
+    )
+    await startupPromise.catch(() => {})
+    await lifecycle?.stop()
+  })().catch((error) => {
+    console.error(error.message)
+    process.exitCode = 1
+  })
+  return stopPromise
 }
-process.on('SIGINT', () => stop(0))
-process.on('SIGTERM', () => stop(0))
+process.on('SIGINT', () => {
+  void stop(0)
+})
+process.on('SIGTERM', () => {
+  void stop(0)
+})
 if (action === 'all') {
-  try {
-    await startLocalDatabase({ signal: startup.signal })
+  startupPromise = (async () => {
+    const infra = await createInfra()
+    lifecycle = await createLifecycle(infra, { signal: startup.signal })
+    await startLocalDatabase({ signal: startup.signal, infra, lifecycle })
+    const reply = await startLocalReplyStream({ signal: startup.signal, infra, lifecycle })
+    env.PAA_REPLY_STREAM_REDIS_URL = reply.url
+    await startLocalSandbox({ signal: startup.signal, infra, lifecycle })
     startup.signal.throwIfAborted()
-    replyStream = await startLocalReplyStream({ signal: startup.signal })
-    env.PAA_REPLY_STREAM_REDIS_URL = replyStream.url
-    sandbox = await startLocalSandbox({ signal: startup.signal })
+  })()
+  try {
+    await startupPromise
   } catch (error) {
     if (!stopping) console.error(error.message)
-    process.exitCode = stopping ? process.exitCode : 1
-    await replyStream?.stop()
-    stopping = true
+    await stop(stopping ? (process.exitCode ?? 0) : 1)
   }
-  if (stopping) process.exit(process.exitCode ?? 0)
 }
-if (action === 'all' || action === 'api')
+if (!stopping && (action === 'all' || action === 'api'))
   launch(python, [
     '-m',
     'uvicorn',
@@ -85,8 +115,8 @@ if (action === 'all' || action === 'api')
     '--reload-dir',
     join(root, 'packages/voiceprint-engine/src'),
   ])
-if (action === 'all' || action === 'worker') launch(python, ['-m', 'app.worker'])
-if (action === 'all')
+if (!stopping && (action === 'all' || action === 'worker')) launch(python, ['-m', 'app.worker'])
+if (!stopping && action === 'all')
   launch(process.execPath, [
     join(dirname(webRequire.resolve('vite/package.json')), 'bin/vite.js'),
     '--config',

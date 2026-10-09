@@ -30,6 +30,12 @@ Electron renderer → 受限 preload → main → stdio → Python 本地核心
 
 渲染层在 `features/meetings/` 按列表、详情、转写、纪要、播放归组；设置在 `features/settings/`，导航在 `components/navigation/`。本地核心在 `paa_core/{audio,asr,speakers,models,minutes}/` 按能力组织，协议入口、公共仓储和会议查询保留在包根目录。
 
+## 本地基础设施
+
+`dev:web` 通过 `scripts/company/local-infra/` 统一编排 `paa-company`：数据库／Redis 位于 business 网络，沙盒 control／runtime 位于 sandbox 网络。API、worker、Vite 在宿主机运行。一个管理命令持有本机进程锁，只停止自己启动且容器 ID 仍匹配的 Redis／沙盒，数据库保持运行。
+
+旧环境通过一次性迁移复用原数据库镜像及持久卷；迁移映射和回滚记录只存在本机。沙盒 runner 镜像名称保留原身份，执行容器仍由私有 Docker 引擎与 gVisor 隔离。生产 Compose 和 CD 独立于本地覆盖文件。
+
 ## 公司业务与 Harness
 
 - API 负责身份、权限、输入校验和业务事务；worker 执行可恢复任务；harness 管理业务工具、来源、checkpoint 与人工确认。

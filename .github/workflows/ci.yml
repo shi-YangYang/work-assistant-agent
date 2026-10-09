@@ -105,7 +105,7 @@ jobs:
           PYTEST_ADDOPTS: --tb=short --durations=15
       - run: npm run typecheck:web
       - run: npm run test:web
-      - run: node --test tests/deploy/local-reply-stream.test.mjs
+      - run: node --test tests/deploy/local-*.test.mjs tests/sandbox/local-dev.test.mjs
       - run: npm run build:web
 
   desktop:

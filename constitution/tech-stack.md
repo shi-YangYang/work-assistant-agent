@@ -46,7 +46,8 @@
 | --- | --- |
 | 桌面开发／构建／预览 | `npm run dev:electron`／`npm run build`／`npm start` |
 | 桌面 Python 依赖 | 创建 `.venv` 后运行 `node scripts/desktop/install-python.mjs` |
-| 公司开发 | `npm run dev:web`：Web 5174、API 8000、worker |
+| 公司开发 | `npm run dev:web`：统一本地 Compose 项目及 Web 5174、API 8000、worker |
+| 旧本地容器迁移／回滚 | `npm run dev:web:migrate`／`npm run dev:web:migrate -- rollback` |
 | 分别启动前端／API／worker | `npm run dev:web:ui`／`npm run dev:server`／`npm run dev:worker` |
 | 数据库迁移／初始化管理员 | `npm run db:company`／`npm run admin:company` |
 | 公司声纹依赖 | `python3.12 scripts/company/install-voiceprints.py`；Windows 使用 `py -3.12` |
@@ -73,5 +74,5 @@
 - `apps/server/app/modules/executions/`：归属、输入授权、持久回执、租约与成果发布；`integrations/sandbox/` 为私有协议适配。
 - 生成 TXT、MD、JSON、CSV、XLSX、PNG、DOCX、PDF、PPTX，沿用个人成果版本与媒体存储。Python 固定依赖、中文字体、LibreOffice／Poppler 在独立执行镜像中，不加入业务 API 镜像。
 - 可选配置 `PAA_SANDBOX_URL`、`PAA_SANDBOX_TOKEN`，部署使用 `sandbox` profile；默认关闭，未启用不影响既有聊天与业务工具。
-- 本地执行一次 `npm run sandbox:setup`，配置写入 `apps/server/.env.web`。`dev:web` 管理本次启动的独立 Docker/gVisor 沙盒；停止保留镜像与缓存，不改宿主 Docker 配置。
+- 本地执行一次 `npm run sandbox:setup`，配置写入 `apps/server/.env.web`。`dev:web` 将数据库、Redis 与本地沙盒统一归入 `paa-company` 项目；只停止本次拥有的 Redis／沙盒，数据库继续运行。沙盒与业务网络隔离，停止保留镜像与缓存，不改宿主 Docker 配置。
 - `tests/sandbox/test_protocol.py` 验证控制协议；`tests/sandbox/real_execution.py` 仅显式启用时对本地隔离执行服务运行真实破坏性测试；真实模型评测入口 `scripts/benchmarks/sandbox-evaluation.py`。
