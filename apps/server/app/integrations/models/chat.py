@@ -1,4 +1,5 @@
 import json
+import time
 from app.integrations.models import transport
 from app.integrations.models.stream_events import ModelDelta, ToolDelta, tool_arguments
 from app.integrations.models.transport import ProviderError, normalize_url, status_error, structured_error, retry_after
@@ -12,6 +13,25 @@ def token_usage(value):
 
 
 async def chat(*args, tool_choice=None, on_timing=None, **kwargs):
+    last_progress = None
+    original_progress = kwargs.pop('on_progress', None)
+    def progress():
+        nonlocal last_progress
+        if last_progress is None and on_timing:
+            on_timing('model.first_progress')
+        last_progress = time.monotonic()
+        if original_progress:
+            original_progress()
+    kwargs['on_progress'] = progress
+    try:
+        async with transport.request_timing(on_timing):
+            return await _compatible_chat(*args, tool_choice=tool_choice, on_timing=on_timing, **kwargs)
+    finally:
+        if last_progress is not None and on_timing:
+            on_timing('model.progress.end', elapsed_ms=round((time.monotonic() - last_progress) * 1000, 3))
+
+
+async def _compatible_chat(*args, tool_choice=None, on_timing=None, **kwargs):
     try:
         return await _chat(*args, tool_choice=tool_choice, on_timing=on_timing, **kwargs)
     except ProviderError as error:
@@ -41,12 +61,22 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
     if on_event:
         await on_event('started')
     extensions = {'paa_model_streaming': True} if config['streaming'] else {}
+    if on_timing:
+        async def trace(event, info):
+            phases = {'connection.start_tls': 'tls', 'http11.send_request_headers': 'headers_sent',
+                      'http11.send_request_body': 'body_sent', 'http11.receive_response_headers': 'response_headers'}
+            phase, _, state = event.rpartition('.')
+            if phase in phases:
+                on_timing('network.' + phases[phase] + '.' + state,
+                          **({'error': type(info['exception']).__name__} if 'exception' in info else {}))
+        extensions['trace'] = trace
     if config['streaming'] and stream_timeout is not None:
         extensions['paa_model_stream_timeout'] = stream_timeout
     options = {'extensions': extensions} if extensions else {}
     if on_timing:
         on_timing('model.send')
     first_event = False
+    first_body = False
     async with transport.client(settings) as http:
         async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body, **options) as response:
             if response.is_error:
@@ -77,12 +107,15 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     await on_event('usage', result.get('usage'))
             else:
                 content, calls, finish, done, usage = '', {}, None, False, None
-                async for line in response.aiter_lines():
+                lines = response.aiter_lines()
+                async for line in lines:
                     if not line.startswith('data:'):
                         continue
                     raw = line[5:].strip()
                     if raw == '[DONE]':
                         done = True
+                        if finish:
+                            await transport.finish_stream(lines)
                         break
                     try:
                         part = json.loads(raw)
@@ -112,6 +145,10 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     fragment_text = delta.get('content') or ''
                     if not isinstance(fragment_text, str):
                         raise ProviderError('invalid_response', '模型正文无效')
+                    if fragment_text.strip() and not first_body:
+                        first_body = True
+                        if on_timing:
+                            on_timing('model.first_body')
                     content += fragment_text
                     fragments = []
                     for fragment in delta.get('tool_calls') or []:

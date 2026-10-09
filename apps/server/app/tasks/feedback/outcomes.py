@@ -16,14 +16,28 @@ def category(result):
 
 def record(job, action, arguments, result):
     key = digest({'action': action, **{k: v for k, v in arguments.items() if k not in ('step', 'expected_revision')}})
+    reference_fields = ('deliverable_id', 'deliverable_revision', 'item_id')
+    effect = digest({'action': action, **{k: v for k, v in arguments.items() if k not in ('step', 'expected_revision', *reference_fields)}})
+    has_reference = any(arguments.get(name) for name in reference_fields)
     item = {'key': key, 'action': action, 'category': category(result),
-        'step': arguments.get('step'), 'target': arguments.get('target_id') or '', 'label': LABELS.get(action, '进展建议'), 'message': str(result.get('message') or '')[:500]}
+        'step': arguments.get('step'), 'effect': effect, 'hasReference': has_reference,
+        'target': arguments.get('target_id') or '', 'label': LABELS.get(action, '进展建议'), 'message': str(result.get('message') or '')[:500]}
     if result.get('id') or result.get('draftId'):
         item['receiptId'] = result.get('id') or result['draftId']
     resolved = item['category'] in ('success', 'confirmation', 'processing')
-    values = [entry for entry in job.result.get('toolOutcomes', []) if entry['key'] != key and not (resolved and entry['action'] == action and entry.get('target') == item['target'] and entry.get('step') == item['step'] and entry['category'] in BLOCKING)]
+    resolved_keys = {key}
+    previous = job.result.get('toolOutcomes', [])
+    if action == 'create_work' and has_reference and item['category'] == 'success':
+        # The exact same operation may add a validated private-plan reference
+        # while correcting its prerequisite. A changed step must not leave the
+        # replaced failure visible; different contents or prior links remain.
+        resolved_keys.update(entry['key'] for entry in previous
+                             if entry.get('effect') == effect and entry.get('hasReference') is False
+                             and entry['category'] in BLOCKING)
+    values = [entry for entry in previous if entry['key'] not in resolved_keys and not (resolved and entry['action'] == action and entry.get('target') == item['target'] and entry.get('step') == item['step'] and entry['category'] in BLOCKING)]
     values.append(item)
     job.result = {**job.result, 'toolOutcomes': values[-32:]}
+    return resolved_keys if resolved else set()
 
 
 def derive(job, cards=(), drafts=(), *, interpretation=None):

@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 056：Agent 全流程性能优化](spec-056-agent-end-to-end-performance/spec.md) — 流程减负已实施；系统检查通过，总体性能目标未证实，max 长等待尚未解决；[计划与改造目录](spec-056-agent-end-to-end-performance/plan.md)、[覆盖矩阵](spec-056-agent-end-to-end-performance/test-matrix.md)。
+
 - [Spec 055：聊天搭子响应速度与等待优化](spec-055-assistant-response-latency/spec.md) — 已实施，传输与交付协议简化已验收；low／max 真实计时及质量、网络限制见[实施结果](spec-055-assistant-response-latency/implementation.md)；[实施计划与改造目录](spec-055-assistant-response-latency/plan.md)。
 
 - [Spec 054：Web 全量测试与先验验证](spec-054-web-comprehensive-testing/spec.md) — 已实施与多轮修复；原始成绩保留，剩余模型回答质量限制不再专项修补；[测试计划](spec-054-web-comprehensive-testing/plan.md)、[当前收尾方案与验证](spec-054-web-comprehensive-testing/rework.md#在线收尾简化)。
@@ -23,4 +25,4 @@
 
 ## 生命周期
 
-新 Spec 从 **056** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **057** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。

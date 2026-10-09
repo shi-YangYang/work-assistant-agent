@@ -18,7 +18,7 @@ class IntentCheckFailed(RuntimeError):
     pass
 
 
-INTENT_VERSION = 11
+INTENT_VERSION = 12
 AppendField = Literal['summary', 'nextStep', 'blocker']
 ChangeField = Literal['title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate', 'completed', 'ongoing', 'blockers', 'next', 'body', 'bodyEdits', 'update', 'materials', 'materialIds', 'removeMaterial']
 
@@ -176,6 +176,15 @@ async def verified_read_context(db, actor, job, proposal, read_versions):
     return {'ownWorkSearchCompleted': bool(job.result.get('ownWorkSearched')), 'ownWorkRead': own, 'ownWorkReadTruncated': truncated, 'teamQueries': queries, 'selectedTeamSources': targets}
 
 
+def classify(context, proposal, category, *, unrequested=False):
+    """Replace this proposal's classification after each current decision."""
+    key = digest(proposal)
+    context.authorization_outcomes[key] = category
+    context.unrequested_actions.discard(key)
+    if unrequested:
+        context.unrequested_actions.add(key)
+
+
 async def authorize_intent(context, proposal):
     """An independent semantic check sees user requests, not retrieved instructions.
 
@@ -195,6 +204,7 @@ async def authorize_intent(context, proposal):
         previous = await conversation_references(db, actor, job, message, context=context)
         current = request_text(message, job)
         if not current.strip():
+            classify(context, proposal, 'missing_info')
             return False, '请明确说明要执行的操作；上传材料本身不会授权修改。'
         from app.agent.context.task_context import projection
         task = await projection(db, actor, job, message, context)
@@ -212,12 +222,13 @@ async def authorize_intent(context, proposal):
         from app.agent.context.deliverable_context import deliverable_context
         results = await deliverable_context(db, actor, message, job=job)
         request = {'conversationTask': task, 'privateDeliverables': results, 'completedOrPendingSteps': prior, 'verifiedReads': await verified_read_context(db, actor, job, proposal, context.read_versions), 'currentUserText': current, 'conversationForReferenceOnly': previous, 'messageTime': message.created_at.astimezone(ZoneInfo(company.rules['timezone'])).isoformat(), 'timezone': company.rules['timezone'], 'proposedOperation': proposal}
-    from app.agent.actions.task_outcomes import blocked, barrier
-    stopped = await blocked(context, proposal)
+    from app.agent.actions.task_outcomes import authorization_evidence, blocked, barrier
+    # Only server-resolved facts invalidate a refusal. Rephrased proposals,
+    # model interpretations and changed call/step IDs are not new evidence.
+    evidence = authorization_evidence(request)
+    stopped = await blocked(context, proposal, evidence)
     if stopped:
-        context.authorization_outcomes[digest(proposal)] = stopped['category']
-        if stopped['category'] == 'not_requested':
-            context.unrequested_actions.add(digest(proposal))
+        classify(context, proposal, stopped['category'], unrequested=stopped['category'] == 'not_requested')
         return False, stopped['reason']
     def quote_valid(verdict):
         if not verdict.quote.strip():
@@ -248,7 +259,7 @@ async def authorize_intent(context, proposal):
         change_plan = await work_change_plan(context, request, proposal, message.id, context.work_change_model or judge)
         mismatch = patch_error(change_plan, proposal)
         if mismatch:
-            context.authorization_outcomes[digest(proposal)] = 'invalid_arguments'
+            classify(context, proposal, 'invalid_arguments')
             return False, mismatch
         request['workChangePlan'] = change_plan.model_dump()
         request['workChangeFields'] = sorted(operation_fields(change_plan, proposal))
@@ -338,21 +349,20 @@ async def authorize_intent(context, proposal):
             attempt_prompt = [*prompt, HumanMessage(content='上次核对输出不符合结构：' + contract_error + '只修正核对输出；这不是用户缺少授权，不要让用户重复确认。')]
         return parse(await judge.ainvoke(attempt_prompt))
     try:
-        verdict = await execute_node(context, identity=digest({'version': INTENT_VERSION, 'proposal': proposal}), kind='authorization', label='核对操作授权中', operation=check,
+        verdict = await execute_node(context, identity=digest({'version': INTENT_VERSION, 'proposal': proposal, 'evidence': evidence}), kind='authorization', label='核对操作授权中', operation=check,
                                      encode=lambda v: v.model_dump(), decode=verdict_model.model_validate,
                                      outcome=lambda v: ('cancelled', '本次未要求该操作') if v.notRequested else ('succeeded', '') if v.allowed and quote_valid(v) else ('failed', '当前权限无法执行') if v.failureKind == 'permission_denied' else ('awaiting_input', '需要补充操作授权'))
     except ProviderError as error:
         raise IntentCheckFailed('操作核对模型未返回完整有效结果，请重试；本次操作尚未执行。') from error
     allowed = verdict.allowed and not verdict.notRequested and quote_valid(verdict)
-    context.authorization_outcomes[digest(proposal)] = 'success' if allowed else 'not_requested' if verdict.notRequested else verdict.failureKind if not verdict.allowed else 'invalid_arguments'
-    if not verdict.allowed and verdict.notRequested and verdict.quote.strip() and verdict.quote in current:
-        context.unrequested_actions.add(digest(proposal))
+    category = 'success' if allowed else 'not_requested' if verdict.notRequested else verdict.failureKind if not verdict.allowed else 'invalid_arguments'
+    classify(context, proposal, category, unrequested=not verdict.allowed and verdict.notRequested and bool(verdict.quote.strip()) and verdict.quote in current)
     if allowed:
         from app.agent.actions.task_items import bind
         binding_error = await bind(context, proposal, continuing=verdict.resumeTask, item_id=proposal.get('taskItemId') or verdict.taskItemId, new_item=verdict.newTaskItem)
         if binding_error:
-            context.authorization_outcomes[digest(proposal)] = 'invalid_arguments'
-            await barrier(context, proposal, binding_error, kind='invalid_arguments')
+            classify(context, proposal, 'invalid_arguments')
+            await barrier(context, proposal, binding_error, evidence=evidence, kind='invalid_arguments')
             return False, binding_error
         if verdict.taskContext is not None:
             async with context.sessions.begin() as db:
@@ -375,11 +385,11 @@ async def authorize_intent(context, proposal):
             await bind_directive_target(context, message.id, verdict.directiveTargetId, [field for field in verdict.directiveFields if field in ('title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate', 'body', 'bodyEdits', 'update', 'materials', 'materialIds', 'removeMaterial')])
         await select_continuation(context, verdict.resumeTask and bool(task.get('previousTask')))
     elif verdict.notRequested:
-        await barrier(context, proposal, verdict.reason or '本次未要求此操作', kind='not_requested')
+        await barrier(context, proposal, verdict.reason or '本次未要求此操作', evidence=evidence, kind='not_requested')
     else:
         from app.agent.actions.task_items import bind
         await bind(context, proposal, continuing=verdict.resumeTask, item_id=proposal.get('taskItemId') or verdict.taskItemId)
-        await barrier(context, proposal, verdict.reason or '请补充具体的操作要求', kind=verdict.failureKind)
+        await barrier(context, proposal, verdict.reason or '请补充具体的操作要求', evidence=evidence, kind=verdict.failureKind)
     if allowed and verdict.receiptOnly and not prior:
         context.receipt_candidates.add(digest(proposal))
     return allowed, verdict.reason

@@ -303,6 +303,7 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     saved=await create(c['admin'], service); routing=route(saved)
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
+    call_kinds, reserved_ids = [], []
     from app.tasks.feedback.feedback import publish
     phases = []
     async def track_phase(context, stage, *args, **kwargs):
@@ -315,7 +316,17 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
         body=json.loads(request.content);calls.append((str(request.url),body))
         verification = json.loads(body['messages'][-1]['content']) if not body.get('tools') else None
         assert request.headers['Authorization']=='Bearer '+SECRET
+        assert body['model'] == service['models'][0]['model']
         assert body['stream']==streaming and 'max_tokens' not in body
+        assert verification is None or verification.get('task') != 'business_reply_review'
+        async with sessions() as db:
+            reservations = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == job.id))).all()
+            assert len(reservations) == len(calls)
+            running = [usage for usage in reservations if usage.status == 'running']
+            assert len(running) == 1
+            assert all(usage.status == 'succeeded' for usage in reservations if usage.id != running[0].id)
+            assert running[0].id not in reserved_ids and running[0].input_tokens > 0
+            reserved_ids.append(running[0].id)
         if fast_review:
             if verification is not None:
                 assert body['enable_thinking'] is False and 'reasoning_effort' not in body
@@ -324,28 +335,27 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
         else:
             assert 'enable_thinking' not in body
         if len(calls)==1:
-            changed=await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**payload(url='https://new.example/v1'),'apiKey':'new-test-secret','expectedRevision':1})
+            assert body.get('tools')
+            call_kinds.append('main')
+            replacement = payload(name='服务乙', url='https://new.example/v1')
+            replacement['models'][0].update(model='changed-chat', streaming=not streaming)
+            changed=await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**replacement,'apiKey':'new-test-secret','expectedRevision':1})
             assert changed.status_code==200,changed.text
             message={'role':'assistant','content':'','tool_calls':[{'id':'progress-test','type':'function','function':{'name':'propose_progress','arguments':json.dumps({'title':'真实预算路径','summary':'受控响应测试','status':'in_progress','blocker':'','next_step':'','work_id':None})}}]}
             finish='tool_calls'
         elif verification is not None and 'proposedOperation' in verification:
+            assert len(calls) == 2 and not body.get('tools')
+            call_kinds.append('authorization')
             assert verification['proposedOperation']['action'] == 'propose_progress'
             verdict={'allowed':True,'requireConfirmation':True,'quote':verification['currentUserText'],'reason':''}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         elif body.get('tools'):
+            assert len(calls) == 3
+            call_kinds.append('main')
             from fakes import wire_completion
             message=wire_completion(reply, task={'state': 'needs_confirmation'}, business=True);finish='tool_calls'
         else:
-            # Both authorization and reply review use the frozen service.
-            assert len(calls)==4 and not body.get('tools')
-            review=verification
-            assert review['task']=='business_reply_review'
-            assert review['answer']==reply
-            assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
-            assert 'persistedOperations' not in review
-            assert 'max_tokens' not in body
-            verdict={'issues': []}
-            message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
+            pytest.fail('Unexpected model call after the main answer and independent authorization')
         if streaming:
             delta=dict(message)
             if 'tool_calls' in delta: delta['tool_calls'][0]['index']=0
@@ -361,15 +371,33 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     assert result['job']['state']=='succeeded',result['job']
     assert len(result['suggestions'])==1 and all(url==service['baseUrl']+'/chat/completions' for url,_ in calls)
     assert result['reply']==reply+'\n\n进展建议：已保存，等待你的确认。'
-    assert len(calls)==4
+    assert len(calls) == 3 and call_kinds == ['main', 'authorization', 'main']
     # One initial phase and one per assistant call, no empty per-token writes.
     assert phases.count('generating') == 3
     async with sessions() as db:
         usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
-        assert len(usages)==4 and all(u.kind=='assistant' and u.status=='succeeded' and u.service_id==saved['id'] for u in usages)
+        assert len(usages) == 3 and {u.id for u in usages} == set(reserved_ids)
+        assert all(
+            u.kind == 'assistant' and u.status == 'succeeded' and u.service_id == saved['id']
+            and u.service_name == service['name'] and u.model_name == service['models'][0]['model']
+            and u.job_attempt == job.attempt and u.job_fence == job.fence
+            and u.started_at is not None and u.finished_at is not None
+            and u.input_tokens > 0 and u.output_tokens > 0
+            for u in usages
+        )
+        completed_job = await db.get(Job, job.id)
+        assert completed_job.model_binding['assistant']['revision'] == 1
+        assert (await db.get(ModelService, saved['id'])).revision == 2
+        budget = completed_job.result['nodeExecution']
+        assert budget['actualCalls'] == 3
+        assert budget['inputTokens'] == sum(u.input_tokens for u in usages)
+        assert budget['outputTokens'] == sum(u.output_tokens for u in usages)
         from sqlalchemy import text
         blobs=(await db.execute(text('SELECT blob FROM checkpoint_blobs WHERE thread_id LIKE :prefix'),{'prefix':job.company_id+':%'})).all()
-        assert not any(SECRET.encode() in bytes(b[0]) for b in blobs if b[0] is not None)
+        for secret in (SECRET, 'new-test-secret'):
+            assert secret not in json.dumps(result, ensure_ascii=False)
+            assert secret not in json.dumps(completed_job.model_binding)
+            assert not any(secret.encode() in bytes(b[0]) for b in blobs if b[0] is not None)
 
 
 @pytest.mark.parametrize('base,model,toggle', [

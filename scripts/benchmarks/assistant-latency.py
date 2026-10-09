@@ -1,4 +1,4 @@
-"""Seven frozen real-model turns through an explicitly owned acceptance API.
+"""Frozen real-model turns through an explicitly owned acceptance API.
 
 Each invocation refuses existing admissions/results and never retries a request.
 Timing is HTTP send to SSE body observation, not browser paint. Use the same
@@ -83,12 +83,19 @@ async def observe(client, receipt, began, path, protocol, metrics):
 
 async def execute(args):
     metadata, private = load_environment(args.metadata)
-    if metadata.get('suite') != 'spec055':
-        raise RuntimeError('This benchmark requires its explicitly owned spec055 environment')
+    if metadata.get('suite') not in ('spec055', 'spec056'):
+        raise RuntimeError('This benchmark requires its explicitly owned performance environment')
     cases_path = Path(args.cases).resolve()
     manifest = json.loads(cases_path.read_text())
-    if len(manifest['turns']) != 7:
-        raise RuntimeError('Expected exactly seven pre-frozen turns')
+    if 'journeys' in manifest:
+        choices = [item for item in manifest['journeys'] if item['id'] == args.journey]
+        if len(choices) != 1 or args.effort not in choices[0]['efforts']:
+            raise RuntimeError('Select a frozen journey and one of its configured efforts')
+        manifest = {**manifest, **choices[0], 'effort': args.effort}
+        if manifest.get('fixture') or manifest.get('workReference'):
+            raise RuntimeError('Fixture journeys require assistant-latency-browser.mjs and a prepared owned environment')
+    if not manifest.get('turns') or len({item['id'] for item in manifest['turns']}) != len(manifest['turns']):
+        raise RuntimeError('Frozen turns require unique IDs and at least one input')
     if args.only_case and not (args.output and args.correction_reason):
         raise RuntimeError('A correction requires a separate output directory and an explicit reason')
     output = Path(args.output).resolve() if args.output else Path(args.metadata).resolve().parent
@@ -176,6 +183,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--metadata', required=True)
     parser.add_argument('--cases', required=True)
+    parser.add_argument('--journey', help='Journey from a multi-capability manifest')
+    parser.add_argument('--effort', help='Frozen low/max stratum; never changes the daily account')
     parser.add_argument('--protocol', type=int, choices=(1, 2), required=True)
     parser.add_argument('--timeout', type=int, default=1200)
     parser.add_argument('--output', help='Separate immutable correction evidence directory')

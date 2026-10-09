@@ -48,7 +48,9 @@ def message_input_digest(context, blocks, transcript_revision, voice_command_att
 
 async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_provider=None, reply_model=None):
     try:
-        await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model), timeout=450)
+        from app.integrations.models.transport import task_connections
+        async with task_connections():
+            await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model), timeout=450)
     except asyncio.TimeoutError:
         async with sessions.begin() as db:
             current = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
@@ -161,10 +163,12 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         from app.agent.context.image_context import referenced_images
         historical_images = await referenced_images(db, actor, live, message, attachments)
         context.image_sources = {item.id: item.message_id for item in [*attachments, *historical_images] if item.kind == 'image'}
-    documents = []
-    for attachment in attachments:
-        if attachment.kind == 'document':
-            documents.append(await prepare_document(context, attachment.id))
+    from app.core.concurrency import map_limited
+    async def parse_document(attachment):
+        with context.timing.span('document', call=attachment.id):
+            return await prepare_document(context, attachment.id)
+    documents = await map_limited([item for item in attachments if item.kind == 'document'], parse_document)
+    context.current_document_ids = tuple(item['id'] for item in documents)
     # Parsing is independent of credentials and survives model configuration errors.
     from app.modules.model_services.bindings import bind_job
     context.model_purpose = 'assistant'

@@ -9,6 +9,10 @@ from app.modules.attachments.models import Attachment, DocumentChunk
 from app.security.ownership import owned
 from pathlib import Path
 from sqlalchemy import delete
+from weakref import WeakKeyDictionary
+
+
+_parse_limits = WeakKeyDictionary()
 
 
 async def prepare_document(context, identifier):
@@ -36,7 +40,9 @@ async def prepare_document(context, identifier):
         actual = await asyncio.to_thread(digest_file)
         if actual != checksum:
             raise ValueError('原文件校验失败，请重新上传')
-        result = await parse_process(path, Path(name).suffix.lower())
+        limit = _parse_limits.setdefault(asyncio.get_running_loop(), asyncio.Semaphore(2))
+        async with limit:
+            result = await parse_process(path, Path(name).suffix.lower())
     except asyncio.CancelledError:
         # An orderly worker shutdown/time budget must not leave a permanent
         # processing card. Hard crashes are recovered by the job lease instead.

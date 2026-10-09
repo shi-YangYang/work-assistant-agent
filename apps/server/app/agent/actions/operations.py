@@ -51,7 +51,7 @@ async def execute(context, **arguments):
     from app.tasks.lease import lease
     async def remember(result):
         from app.agent.actions.task_outcomes import remember as remember_outcome
-        await remember_outcome(context, arguments.get('action', ''), arguments, result)
+        resolved_keys = await remember_outcome(context, arguments.get('action', ''), arguments, result)
         step = arguments.get('step')
         if not isinstance(step, int) or not 1 <= step <= 8:
             return
@@ -69,7 +69,7 @@ async def execute(context, **arguments):
                     save(job, state)
             keys = job.result.get('operationFeedbackKeys', {})
             resolved = result.get('state') in ('succeeded', 'pending', 'running')
-            feedback = [item for item in job.result.get('operationFeedback', []) if item['step'] != step and not (resolved and keys.get(str(item['step'])) == request_key)]
+            feedback = [item for item in job.result.get('operationFeedback', []) if item['step'] != step and not (resolved and keys.get(str(item['step'])) in resolved_keys | {request_key})]
             keys = {str(item['step']): keys.get(str(item['step']), '') for item in feedback}
             if result.get('state') in ('failed', 'conflict', 'clarification', 'waiting'):
                 feedback.append({'step': step, 'action': arguments.get('action', ''), 'label': LABELS.get(arguments.get('action'), '业务操作'), 'state': result['state'], 'message': str(result.get('message', ''))[:500]})

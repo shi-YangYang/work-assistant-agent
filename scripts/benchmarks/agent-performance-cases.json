@@ -1,0 +1,904 @@
+{
+  "schemaVersion": 1,
+  "suite": "spec056",
+  "baselineCommit": "3d0a0d1",
+  "sampling": {
+    "variants": ["baseline", "candidate"],
+    "order": "paired alternating; odd baseline first, even candidate first",
+    "coreRepetitionsPerEffort": 3,
+    "extraRepetitions": 1,
+    "reruns": "only concrete environment/code correction with original retained",
+    "coreJourneys": 8,
+    "coreTurnsPerPass": 13,
+    "plannedUserTasks": 178,
+    "existingTaskBudgetsUnchanged": true,
+    "providerCallsBudget": "At most existing task tool/model retry budgets per planned user tasks; count actual separately. Pause batch on systematic network failure, never run until green."
+  },
+  "journeys": [
+    {
+      "id": "ordinary",
+      "category": "普通问答",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "identity",
+          "prompt": "你是谁？用两句话介绍你能怎样协助我的日常工作。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "prose",
+            "rubric": ["身份为Noria", "不冒称厂商官方模型", "不调用业务写入"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "writing",
+      "category": "写作",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "essay",
+          "prompt": "写一篇1000字作文。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "essay",
+            "bodyHanMinimum": 800,
+            "bodyHanMaximum": 1300,
+            "rubric": ["主题连贯", "结构完整", "不以标题或前言凑字数"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "work",
+      "category": "工作创建与修改",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "create",
+          "prompt": "请直接创建工作：标题“性能基准知识分享”，状态进行中，下一步“整理分享提纲”。正文写“目标：准备团队知识分享；范围：分享三个实际案例”。请保存。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "work_create",
+            "title": "性能基准知识分享",
+            "status": "in_progress",
+            "nextStep": "整理分享提纲"
+          }
+        },
+        {
+          "id": "update",
+          "prompt": "只把刚才工作的下一步改为“周五完成演示文稿”，其他信息保持不变，直接保存。",
+          "continuePrevious": true,
+          "quality": {
+            "kind": "work_update",
+            "onlyChanged": ["nextStep"],
+            "expectedNextStepContains": "完成演示文稿"
+          }
+        }
+      ]
+    },
+    {
+      "id": "report",
+      "category": "报告生成与提交",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": "report_work",
+      "turns": [
+        {
+          "id": "generate",
+          "prompt": "根据我现有的工作记录，生成今天的日报供我查看，先不要提交。区分已完成与下一步，不要编造进展。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "report_ready",
+            "rubric": ["实际报告子作业完成", "包含合成报告工作", "计划不算完成"]
+          }
+        },
+        {
+          "id": "submit",
+          "prompt": "就用刚才生成的日报，直接提交。",
+          "continuePrevious": true,
+          "quality": {
+            "kind": "report_submitted"
+          }
+        }
+      ]
+    },
+    {
+      "id": "research",
+      "category": "公开研究",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "search",
+          "prompt": "请联网搜索并读取Python官方文档：Python列表的append和extend有什么区别？用各一个最短例子说明，并附官方来源链接。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "research",
+            "requiredTerms": ["append", "extend"],
+            "requiredHost": "docs.python.org",
+            "rubric": [
+              "append追加单个对象，extend逐个追加可迭代元素",
+              "来源实际读取",
+              "不把本系统实现当知识答案"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "compute",
+      "category": "代码计算与导出",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "compute",
+          "prompt": "请在同一次Python运行中计算订单：A组金额10、20，B组金额5、15、25。按组给出订单数、总额、平均值，同时生成两个可下载文件：CSV（列group,count,total,mean）和TXT摘要（两组总额及总计）。不要只提供代码。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "file_csv",
+            "expectedRows": [
+              ["A", "2", "30", "15"],
+              ["B", "3", "45", "15"]
+            ],
+            "rubric": ["实际执行成功", "文件可下载且数据正确"],
+            "expectedFiles": 2,
+            "expectedGrandTotal": 75
+          }
+        }
+      ]
+    },
+    {
+      "id": "material",
+      "category": "需求材料到工作",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "plan",
+          "prompt": "客户需求材料：做一个内部知识分享页面，需有文章列表、按关键词搜索、查看详情。两周内上线，暂不做登录与评论。请整理3项实施计划，按1、2、3编号；先只给方案，不要写工作系统。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "plan",
+            "rubric": ["覆盖列表、搜索、详情", "不增加登录评论", "不创建工作"]
+          }
+        },
+        {
+          "id": "create_two",
+          "prompt": "把刚才计划的前两项分别创建为我的工作，状态进行中，不创建第三项。请直接保存。",
+          "continuePrevious": true,
+          "quality": {
+            "kind": "work_create_many",
+            "count": 2
+          }
+        },
+        {
+          "id": "change_second",
+          "prompt": "只把第二项工作的下一步改成“先完成搜索原型”，不要改第一项，直接保存。",
+          "continuePrevious": true,
+          "quality": {
+            "kind": "work_update_second",
+            "expectedNextStep": "先完成搜索原型"
+          }
+        }
+      ]
+    },
+    {
+      "id": "long_context",
+      "category": "长会话承接",
+      "core": true,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low", "max"],
+      "repetitions": 3,
+      "fixture": "long_history",
+      "turns": [
+        {
+          "id": "context",
+          "prompt": "结合已有资料，简要说出项目约束：项目代号、预算上限、不能做的功能。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "context",
+            "requiredTerms": ["北极星", "12000", "公开注册"]
+          }
+        },
+        {
+          "id": "context_followup",
+          "prompt": "现在给我3条实施建议，沿用刚才的预算和功能边界，最多200字，不要创建工作。",
+          "continuePrevious": true,
+          "quality": {
+            "kind": "context",
+            "rubric": ["预算不超过12000", "不加入公开注册", "不创建工作"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "code_explanation",
+      "category": "编码解释",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "code_explanation",
+          "prompt": "解释Python中可变默认参数的陷阱，修复 def add(x, items=[]): items.append(x); return items，并给出两个连续调用的预期结果。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "prose",
+            "requiredTerms": ["None"],
+            "rubric": ["解释共享列表", "不谎称执行"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "category": "跨会话记忆",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "memory",
+          "prompt": "请记住：我希望技术解释先给结论，再给一个简短示例。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "memory",
+            "rubric": ["记忆持久化", "未存多余敏感信息"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "work_query",
+      "category": "工作查询",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": "report_work",
+      "turns": [
+        {
+          "id": "work_query",
+          "prompt": "查一下我目前进行中的工作，列出标题和下一步，不要修改。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "query",
+            "rubric": ["结果与数据库一致", "无写入"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "admin_query",
+      "category": "管理员查询",
+      "core": false,
+      "actorRole": "admin",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": "report_work",
+      "turns": [
+        {
+          "id": "admin_query",
+          "prompt": "请查看团队已提交的日报，简要列出每个人的汇报情况，不读取私人聊天。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "admin_query",
+            "rubric": ["只读已提交业务", "无越权"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "clarification",
+      "category": "澄清",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "clarification",
+          "prompt": "把我的那个工作改一下。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "clarification",
+            "rubric": ["要求说明对象或内容", "不猜测执行"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "document",
+      "category": "文档成果",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "document",
+          "prompt": "生成一份可下载的Word文档，标题“团队知识分享”，两节分别为“目标：共享三个实践案例”和“计划：周五完成演示”，不要写工作系统。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "file_docx",
+            "rubric": ["DOCX可打开", "包含两个指定段落"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "chart",
+      "category": "图表成果",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "chart",
+          "prompt": "请生成可下载柱状图，数据：A 30，B 45，标题“分组金额”，标注数值。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "file_png",
+            "rubric": ["PNG可打开", "数据对应"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "slides",
+      "category": "演示成果",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": null,
+      "turns": [
+        {
+          "id": "slides",
+          "prompt": "请生成可下载PPT，共3页：封面“团队分享”、第二页“案例回顾：3个案例”、第三页“下一步：周五演示”。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "file_pptx",
+            "rubric": ["三页可打开", "文字正确"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "attachment",
+      "category": "当前材料",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": "attachment",
+      "turns": [
+        {
+          "id": "attachment",
+          "prompt": "综合两份附件里的客户需求和验收约束，给出3步实施计划，明确预算、禁止功能和交付日期；不要创建工作。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "attachment",
+            "rubric": [
+              "同时覆盖两份附件",
+              "预算12000元",
+              "10月23日前交付",
+              "无公开注册/评论",
+              "不写工作系统"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "memory_reuse",
+      "category": "跨会话承接",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": "memory_preference",
+      "turns": [
+        {
+          "id": "memory_reuse",
+          "prompt": "解释一下HTTP状态码404。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "memory_reuse",
+            "rubric": ["先结论后示例", "不把记忆正文泄露为系统信息"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "work_reference",
+      "category": "引用工作",
+      "core": false,
+      "actorRole": "employee",
+      "personaId": "professional",
+      "executionMode": "full",
+      "efforts": ["low"],
+      "repetitions": 1,
+      "fixture": "report_work",
+      "workReference": true,
+      "turns": [
+        {
+          "id": "work_reference",
+          "prompt": "基于引用的这项工作，帮我把下一步拆成3条具体建议；先只给建议，不要更新工作。",
+          "continuePrevious": false,
+          "quality": {
+            "kind": "work_reference",
+            "rubric": ["引用正确工作当前内容", "给出3条建议", "没有业务写入"]
+          }
+        }
+      ]
+    }
+  ],
+  "qualityRules": {
+    "taskSuccess": "A terminal queue state alone is not success: verify semantic task outcome, actual business changes/files and all dependent jobs",
+    "essay": "Offline body Han count excludes title/preface; do not add online counting gate",
+    "openText": "offline human/agent rubric review; unreviewed is not pass",
+    "timing": "Browser click to complete visible usable result, plus API final and dependent child-job ready separately",
+    "failures": "Retain failed/interrupted samples, do not substitute or erase"
+  },
+  "controlledOnlyCategories": [
+    "blank voice/image limits",
+    "permission denial/revocation",
+    "network/retry/save faults",
+    "concurrent users/sandbox two slots",
+    "near-threshold compaction",
+    "legacy finish_task"
+  ],
+  "controlledToolCoverage": {
+    "create_chart": {
+      "candidateTests": [
+        "tests/server/test_builtin_execution.py::test_each_tool_dispatches_native_task_and_persists_original_request",
+        "tests/server/test_builtin_execution.py::test_attachment_and_execution_never_cross_conversations_or_owners"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "create_document": {
+      "candidateTests": [
+        "tests/server/test_builtin_execution.py::test_each_tool_dispatches_native_task_and_persists_original_request",
+        "tests/server/test_builtin_execution.py::test_request_and_result_readback_are_bounded_and_reconstructable_without_sandbox",
+        "tests/server/test_document_constraints.py::test_omitted_page_limit_preserves_legacy_request_shape",
+        "tests/server/test_document_constraints.py::test_page_limit_rejects_invalid_values",
+        "tests/server/test_document_constraints.py::test_page_limit_reaches_execution_and_failed_result_is_not_success"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "create_slides": {
+      "candidateTests": [
+        "tests/server/test_builtin_execution.py::test_each_tool_dispatches_native_task_and_persists_original_request",
+        "tests/server/test_builtin_execution.py::test_attachment_and_execution_never_cross_conversations_or_owners"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "execute_business_action": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py::test_commit_survives_model_failure_replay_new_step_and_new_message",
+        "tests/server/test_tool_catalog.py::test_checkpoint_recovery_keeps_loaded_tools_and_does_not_replay_write",
+        "tests/server/test_agent_capabilities.py::test_chat_only_exposes_the_usable_report_entrypoint",
+        "tests/server/test_freeform_actions.py::test_query_in_parallel_write_batch_is_deferred_until_next_model_step",
+        "tests/server/test_assistant_interactions.py::test_harness_questions_stop_before_parallel_write_or_second_model_call",
+        "tests/server/test_task_retry.py::test_protocol_repair_retries_invalid_terminal_response_before_caching_success"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "export_table": {
+      "candidateTests": [
+        "tests/server/test_builtin_execution.py::test_each_tool_dispatches_native_task_and_persists_original_request",
+        "tests/server/test_builtin_execution.py::test_attachment_and_execution_never_cross_conversations_or_owners"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "find_documents": {
+      "candidateTests": [
+        "tests/server/test_documents.py::test_agent_scope_forged_citations_and_revision_fence",
+        "tests/server/test_documents.py::test_reference_recovery_returns_only_authorized_directory_and_keeps_real_id"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "find_team_members": {
+      "candidateTests": [
+        "tests/server/test_tool_catalog.py::test_load_read_then_prose_exposes_only_requested_full_schemas",
+        "tests/server/test_tool_catalog.py::test_role_and_sandbox_catalog_filtering_and_loading",
+        "tests/server/test_agent_audit_regressions.py::test_member_directory_cursor_covers_all_authorized_members"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "find_work_items": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py::test_version_permissions_and_field_patch",
+        "tests/server/test_business_actions.py::test_query_then_create_has_verified_reads_without_fake_write_predecessor",
+        "tests/server/test_context_compaction.py::test_real_graph_compacts_durably_and_next_task_reuses_snapshot",
+        "tests/server/test_agent_capabilities.py::test_dropped_query_uses_actual_rows_not_rejected_prose",
+        "tests/server/test_freeform_actions.py::test_query_in_parallel_write_batch_is_deferred_until_next_model_step",
+        "tests/server/test_freeform_actions.py::test_intent_judge_gets_actual_own_read_choices_without_stale_or_other_members"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "finish_task": {
+      "candidateTests": [
+        "tests/server/test_model_response_length.py::test_long_answer_is_complete_with_provider_output_defaults",
+        "tests/server/test_model_response_length.py::test_other_tool_arguments_keep_their_existing_bound",
+        "tests/server/test_assistant_persona.py::test_legacy_checkpoint_identity_resumes_without_regenerating",
+        "tests/server/test_task_retry.py::test_protocol_repair_retries_invalid_terminal_response_before_caching_success",
+        "tests/server/test_model_stream_errors.py::test_full_tool_validation_rejects_duplicate_keys_even_without_preview",
+        "tests/server/test_evidence_strategy.py::test_current_verification_quote_is_repaired_once_without_reexecuting_experiment"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "forget_memory": {
+      "candidateTests": [
+        "tests/server/test_assistant_memory.py::test_disabled_save_refused_explicit_forget_works_and_old_queued_input_stays_revoked"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "get_business_actions": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py::test_commit_survives_model_failure_replay_new_step_and_new_message",
+        "tests/server/test_task_progress.py::test_summary_uses_only_authorized_result_metadata"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "get_message_context": {
+      "candidateTests": [
+        "tests/server/test_agent_audit_regressions.py::test_complete_work_and_paged_message_preserve_tail",
+        "tests/server/test_recovery.py::test_work_search_and_message_context_use_confirmed_state_after_reply",
+        "tests/server/test_attachment_experience.py::test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure",
+        "tests/server/test_operation_recovery.py::test_saved_action_preserves_independent_followup_plan_in_history_and_tool",
+        "tests/server/test_operation_recovery.py::test_voice_instruction_requires_explicit_attached_audio_choice",
+        "tests/server/test_business_assistant.py::test_raw_context_tool_inherits_authorization_and_denies_revoked_reply_to"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "get_work_item": {
+      "candidateTests": [
+        "tests/server/test_work_materials.py::test_work_body_progress_and_material_pages_have_no_omissions_or_duplicates",
+        "tests/server/test_tool_catalog.py::test_legacy_tool_call_registers_capability_but_preserves_cached_node_and_acl",
+        "tests/server/test_work_references.py::test_compacted_history_keeps_reference_id_without_copying_mutable_work",
+        "tests/server/test_agent_audit_regressions.py::test_complete_work_and_paged_message_preserve_tail",
+        "tests/server/test_agent_audit_regressions.py::test_retry_refreshes_stale_reply_and_tool_reads",
+        "tests/server/test_recovery.py::test_work_tool_returns_bounded_previews_and_full_detail_with_a_continuation"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "inspect_table": {
+      "candidateTests": [
+        "tests/server/test_builtin_execution.py::test_each_tool_dispatches_native_task_and_persists_original_request",
+        "tests/server/test_builtin_execution.py::test_inspection_reuses_receipt_but_parameter_or_input_changes_execute_again",
+        "tests/server/test_builtin_execution.py::test_attachment_and_execution_never_cross_conversations_or_owners",
+        "tests/server/test_task_progress.py::test_summary_uses_only_authorized_result_metadata",
+        "tests/server/test_evidence_consistency.py::test_document_and_table_results_preserve_partial_coverage",
+        "tests/server/test_builtin_execution_migration.py::test_builtin_snapshot_migration_preserves_python_and_round_trips_json"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "list_work_materials": {
+      "candidateTests": [
+        "tests/server/test_work_materials.py::test_work_body_progress_and_material_pages_have_no_omissions_or_duplicates"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "list_work_updates": {
+      "candidateTests": [
+        "tests/server/test_work_materials.py::test_work_body_progress_and_material_pages_have_no_omissions_or_duplicates"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "load_tools": {
+      "candidateTests": [
+        "tests/server/test_company.py::test_real_harness_confirmation_followup_reports_and_visibility",
+        "tests/server/test_tool_catalog.py::test_ordinary_prose_has_only_catalog_once_and_keeps_clock_role_mode",
+        "tests/server/test_tool_catalog.py::test_load_read_then_prose_exposes_only_requested_full_schemas",
+        "tests/server/test_tool_catalog.py::test_role_and_sandbox_catalog_filtering_and_loading",
+        "tests/server/test_builtin_execution.py::test_harness_exposes_all_execution_tools_only_when_sandbox_is_configured",
+        "tests/server/test_sandbox_execution.py::test_enabled_sandbox_is_visible_to_model_without_weakening_tool_boundary"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "propose_followup": {
+      "candidateTests": [
+        "tests/server/test_tool_catalog.py::test_load_read_then_prose_exposes_only_requested_full_schemas",
+        "tests/server/test_tool_catalog.py::test_role_and_sandbox_catalog_filtering_and_loading",
+        "tests/server/test_work_execution_history.py::test_followup_full_saves_own_work_with_verified_team_source",
+        "tests/server/test_business_assistant.py::test_followup_guard_preserves_clarification_query_and_existing_budget",
+        "tests/server/test_business_assistant.py::test_source_update_blocks_pending_confirmation_but_preserves_old_citation"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "propose_progress": {
+      "candidateTests": [
+        "tests/server/test_work_change_plan.py::test_record_plan_contract_is_independent_of_proposed_fields",
+        "tests/server/test_assistant_write_scope.py::test_explicit_progress_confirmation_publishes_selected_content_only",
+        "tests/server/test_work_execution_history.py::test_progress_modes_preserve_append_date_and_replay_once",
+        "tests/server/test_work_execution_history.py::test_full_does_not_authorize_advice_or_another_owners_work",
+        "tests/server/test_work_execution_history.py::test_origin_migration_backfills_legacy_private_and_manual_revisions",
+        "tests/server/test_model_services.py::test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "query_report_obligations": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py::test_employee_obligation_query_and_admin_not_personal_report"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "query_reports": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py::test_report_prepare_edit_submit_and_no_serial_deadlock",
+        "tests/server/test_business_actions.py::test_admin_delete_cleans_sources_and_retains_minimal_receipt",
+        "tests/server/test_business_actions.py::test_admin_explicit_draft_deletion_metadata_never_reveals_content",
+        "tests/server/test_agent_audit_regressions.py::test_report_list_is_bounded_and_full_content_is_retrievable",
+        "tests/server/test_agent_capabilities.py::test_chat_cannot_race_its_own_queued_report_with_an_empty_draft_edit",
+        "tests/server/test_freeform_actions.py::test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected_milestone"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "query_team_business": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py::test_query_then_create_has_verified_reads_without_fake_write_predecessor",
+        "tests/server/test_tool_catalog.py::test_load_read_then_prose_exposes_only_requested_full_schemas",
+        "tests/server/test_tool_catalog.py::test_role_and_sandbox_catalog_filtering_and_loading",
+        "tests/server/test_assistant_write_scope.py::test_selected_material_survives_private_conversation_deletion",
+        "tests/server/test_agent_audit_regressions.py::test_admin_own_creation_after_team_history_is_not_rejected",
+        "tests/server/test_work_execution_history.py::test_followup_full_saves_own_work_with_verified_team_source"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "read_deliverable": {
+      "candidateTests": [
+        "tests/server/test_deliverables.py::test_private_versions_stable_items_links_and_dates",
+        "tests/server/test_deliverables.py::test_conflict_foreign_items_and_cross_conversation_reference"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "read_document": {
+      "candidateTests": [
+        "tests/server/test_work_materials.py::test_document_read_inherits_restricted_work_scope_into_saved_result",
+        "tests/server/test_assistant_write_scope.py::test_selected_material_survives_private_conversation_deletion",
+        "tests/server/test_agent_audit_regressions.py::test_report_gets_read_document_requirements_and_rechecks_them",
+        "tests/server/test_task_progress.py::test_summary_uses_only_authorized_result_metadata",
+        "tests/server/test_evidence_consistency.py::test_document_and_table_results_preserve_partial_coverage",
+        "tests/server/test_assistant_reply_stream.py::test_candidate_selects_only_answer_and_retracts_late_mixed_tools"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "read_execution": {
+      "candidateTests": [
+        "tests/server/test_tool_catalog.py::test_disabled_execution_history_has_discoverable_recovery_group",
+        "tests/server/test_builtin_execution.py::test_harness_exposes_all_execution_tools_only_when_sandbox_is_configured"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "read_file": {
+      "candidateTests": [
+        "tests/server/test_task_progress.py::test_summary_uses_only_authorized_result_metadata",
+        "tests/server/test_agent_virtual_files.py::test_read_file_uses_only_this_graph_virtual_files"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "read_team_source": {
+      "candidateTests": [
+        "tests/server/test_tool_catalog.py::test_load_read_then_prose_exposes_only_requested_full_schemas",
+        "tests/server/test_tool_catalog.py::test_role_and_sandbox_catalog_filtering_and_loading",
+        "tests/server/test_assistant_write_scope.py::test_selected_material_survives_private_conversation_deletion",
+        "tests/server/test_task_receipt_projection.py::test_team_tools_preserve_versioned_deadline_even_when_content_is_clipped",
+        "tests/server/test_business_assistant.py::test_employee_tool_forgery_and_source_link_restriction",
+        "tests/server/test_business_assistant.py::test_team_content_truncation_compares_only_public_fields_and_retains_real_clipping"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "read_work_material": {
+      "candidateTests": [
+        "tests/server/test_work_materials.py::test_saved_chat_file_survives_source_deletion_and_is_actually_readable",
+        "tests/server/test_work_record_tool_access.py::test_unavailable_work_tools_finish_without_reading_or_retrying",
+        "tests/server/test_work_record_tool_access.py::test_work_tool_does_not_swallow_task_permission_loss"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "request_user_input": {
+      "candidateTests": [
+        "tests/server/test_assistant_interactions.py::test_harness_questions_stop_before_parallel_write_or_second_model_call"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "run_python": {
+      "candidateTests": [
+        "tests/server/test_context_compaction.py::test_real_graph_compacts_durably_and_next_task_reuses_snapshot",
+        "tests/server/test_execution_history.py::test_message_only_failure_is_readable_in_bounded_chunks_without_sandbox",
+        "tests/server/test_execution_history.py::test_old_receipt_without_message_or_delivery_remains_readable",
+        "tests/server/test_builtin_execution.py::test_python_keeps_legacy_payload_identity_and_historical_readback",
+        "tests/server/test_evidence_strategy.py::test_ordinary_tasks_still_finish_in_one_call_with_sandbox_available",
+        "tests/server/test_evidence_strategy.py::test_experiment_receipt_and_unavailable_paths_use_existing_graph_without_extra_gate"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "save_deliverable": {
+      "candidateTests": [
+        "tests/server/test_work_materials.py::test_document_read_inherits_restricted_work_scope_into_saved_result"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "save_memory": {
+      "candidateTests": [
+        "tests/server/test_assistant_memory_runtime.py::test_memory_tool_payloads_removed_from_summary_and_old_success_revalidated",
+        "tests/server/test_assistant_memory.py::test_disabled_save_refused_explicit_forget_works_and_old_queued_input_stays_revoked"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "set_task_context": {
+      "candidateTests": [
+        "tests/server/test_prose_delivery.py::test_context_tool_cannot_install_directive_from_unquoted_material"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "web_fetch": {
+      "candidateTests": [
+        "tests/server/test_web_page_cache.py::test_one_download_for_three_slices_and_concurrent_requests",
+        "tests/server/test_web_page_cache.py::test_failures_oversize_and_blocked_urls_never_cached_as_success",
+        "tests/server/test_assistant_timing.py::test_metadata_only_monotonic_intervals_and_bound",
+        "tests/server/test_model_stream_errors.py::test_content_review_rejection_is_not_parameter_error_or_retryable",
+        "tests/server/test_web_research.py::test_web_sources_and_html_are_bounded_reference_only",
+        "tests/server/test_web_research.py::test_redirects_limits_invalid_search_and_empty_result"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "web_search": {
+      "candidateTests": [
+        "tests/server/test_model_stream_errors.py::test_web_search_then_review_rejection_reaches_job_nodes_and_usage",
+        "tests/server/test_web_research.py::test_web_sources_and_html_are_bounded_reference_only",
+        "tests/server/test_web_research.py::test_redirects_limits_invalid_search_and_empty_result",
+        "tests/server/test_web_research.py::test_search_scope_filters_lookalike_hosts_and_preserves_real_subdomains",
+        "tests/server/test_assistant_reply_stream.py::test_candidate_selects_only_answer_and_retracts_late_mixed_tools",
+        "tests/server/test_assistant_reply_stream.py::test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_saved"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    }
+  },
+  "businessActions": {
+    "create_work": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "update_work": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "delete_work": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "generate_report": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "edit_report": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "submit_report": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    },
+    "delete_report": {
+      "candidateTests": [
+        "tests/server/test_business_actions.py",
+        "tests/server/test_execution_permissions.py"
+      ],
+      "executionStatus": "not_run_in_spec056_yet"
+    }
+  },
+  "fixtures": {
+    "attachment": [
+      {
+        "name": "customer.txt",
+        "mimeType": "text/plain",
+        "content": "客户需求：内部知识分享页，需要文章列表、关键词搜索和文章详情。两周内上线；暂不做登录、评论。\n"
+      },
+      {
+        "name": "acceptance.txt",
+        "mimeType": "text/plain",
+        "content": "验收约束：预算上限12000元；2026年10月23日前交付。禁止公开注册和评论功能；内部员工可按关键词找到并查看文章详情。\n"
+      }
+    ],
+    "long_history": {
+      "turns": 20,
+      "requiredFacts": ["项目代号北极星", "预算上限12000元", "不能做公开注册"],
+      "recordRepeats": 20
+    },
+    "clock": {
+      "timezone": "Asia/Shanghai",
+      "businessDate": "2026-10-09",
+      "note": "同一配对必须同业务日期；跨日停止并记录，不把相对日期变化当模型错误"
+    }
+  }
+}

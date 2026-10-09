@@ -27,6 +27,10 @@ DESCRIPTIONS = {
     'memory': '保存或忘记用户直接自述的稳定个人背景',
     'task_context': '集中澄清，记录持续指令变更、承接任务与未完成项',
 }
+RECEIPT_GROUPS = {
+    'create_work': 'work', 'update_work': 'work', 'delete_work': 'work',
+    'generate_report': 'reports', 'edit_report': 'reports', 'submit_report': 'reports', 'delete_report': 'reports',
+}
 
 
 def allowed_tools(context):
@@ -57,12 +61,31 @@ def scope_key(context):
                    'config': context.model_binding, 'configAttempt': context.config_attempt})
 
 
+def previous_receipt_groups(context):
+    # Private source stamps identify the exact preceding turn and its own
+    # committed/accepted receipts. Revalidated history supplies visible states.
+    # Neither prose, inherited receipt links nor older business turns are seeds.
+    previous = context.context_sources.get('previousMessageId')
+    direct = set(context.context_sources.get('sources', {}).get(previous, {}).get('toolReceiptIds', ()))
+    reference = next((item for item in context.conversation_references or [] if item['id'] == previous), {})
+    return {RECEIPT_GROUPS[card['action']] for card in reference.get('currentActions', [])
+            if card.get('id') in direct and card.get('state') in ('succeeded', 'running')
+            and card.get('action') in RECEIPT_GROUPS}
+
+
 def loaded_groups(context, job):
     saved = job.result.get('toolCatalog', {})
-    if saved.get('scope') != scope_key(context):
-        return []
+    saved_groups = saved.get('groups', []) if saved.get('scope') == scope_key(context) else []
+    # Current UI inputs and revalidated adjacent receipts prepare schemas only.
+    # They grant no access or write authority; all original tools still check
+    # live identity, ownership, source versions and operation intent.
+    seeded = previous_receipt_groups(context)
+    if context.work_reference_snapshot and not context.work_reference_snapshot.get('unavailable'):
+        seeded.add('work')
+    if context.current_document_ids:
+        seeded.add('documents')
     available = available_groups(context)
-    return [group for group in saved.get('groups', []) if group in available]
+    return [group for group in available if group in saved_groups or group in seeded]
 
 
 def remember_groups(context, job, groups):

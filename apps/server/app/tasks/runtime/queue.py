@@ -59,6 +59,9 @@ async def claim(sessions, owner_id=None, *, company_id=None):
             return None
         if not job.access:
             job.access = business_scope(await db.get(Member, job.owner_id))
+        queued_at = job.updated_at
         job.state, job.fence, job.lease_until, job.updated_at = 'running', job.fence + 1, now() + timedelta(seconds=90), now()
         update_feedback(job, 'preparing', '')
+        from app.tasks.timing import Timing
+        Timing(job.id, job.attempt, job.fence).mark('task.claimed', queue_ms=max(0, round((job.updated_at - queued_at).total_seconds() * 1000, 3)))
         return job

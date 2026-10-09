@@ -52,6 +52,7 @@ class RunContext:
     persona_id: PersonaId = LEGACY_PERSONA
     source_revision: int | None = None
     document_snapshot: str = ''
+    current_document_ids: tuple[str, ...] = ()
     document_versions: dict[str, int] = field(default_factory=dict)
     deliverable_reads: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)

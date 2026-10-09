@@ -32,3 +32,15 @@ def test_long_stream_sampling_preserves_terminal_timings(caplog):
     rows = [json.loads(row.message.removeprefix('latency ')) for row in caplog.records]
     assert len(rows) == 130
     assert [row['event'] for row in rows[-2:]] == ['model.end', 'persist.end']
+
+
+def test_parent_spans_and_wall_clock_do_not_replace_monotonic_durations():
+    now = [10.0]
+    timing = Timing('task', clock=lambda: now[0])
+    with timing.span('tool', call='tool-call', kind='read_work'):
+        now[0] += .2
+        nested = timing.mark('model.send', call='model-call', kind='authorization')
+    terminal = timing.mark('task.end')
+    assert nested['parent_call'] == 'tool-call' and nested['parent_kind'] == 'read_work'
+    assert nested['at_ms'] == 200 and nested['at_unix_ms'] > 0
+    assert terminal['at_ms'] == 200 and 'parent_call' not in terminal
