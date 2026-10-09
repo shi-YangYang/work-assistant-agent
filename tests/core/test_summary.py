@@ -204,6 +204,36 @@ class SummaryTests(unittest.TestCase):
             with self.assertRaises(DomainError): validate(json.dumps(value), snapshot)
         with self.assertRaises(DomainError): validate('Here: ' + json.dumps(good), snapshot)
 
+    def test_long_meeting_preserves_all_valid_citations_without_accepting_unknown_or_duplicate_sources(self):
+        snapshot = self.service.store.snapshot(seed(self.repo))
+        good = content(snapshot['segments'])
+        identifiers = [item['id'] for item in snapshot['segments']]
+        good['overviewSources'] = identifiers
+        good['topics'][0]['sources'] = identifiers[:20]
+        self.assertEqual(validate(json.dumps(good), snapshot), good)
+        for refs, message in ((identifiers[:11] + ['unknown-private-reference'], '不存在'),
+                              (identifiers[:11] + identifiers[:1], '重复'), ([], '缺少')):
+            bad = copy.deepcopy(good)
+            bad['overviewSources'] = refs
+            with self.assertRaisesRegex(DomainError, '概览.*' + message) as caught:
+                validate(json.dumps(bad), snapshot)
+            self.assertEqual(caught.exception.code, 'invalid_summary')
+            self.assertNotIn('unknown-private-reference', str(caught.exception))
+
+    def test_detailed_validation_failure_preserves_previous_minutes(self):
+        mid = seed(self.repo)
+        self.service.configure(settings(), False)
+        self.service.generate(mid)
+        first = self.finish(mid)
+        invalid = copy.deepcopy(first['result']['content'])
+        invalid['actions'][0]['sources'] = ['missing']
+        with patch.object(self.provider, 'complete', return_value=json.dumps(invalid)):
+            self.service.generate(mid)
+            failed = self.finish(mid, 'failed')
+        self.assertEqual(failed['result'], first['result'])
+        self.assertIn('行动项引用了不存在的原文片段', failed['task']['error'])
+        self.assertNotIn('missing', failed['task']['error'])
+
     def test_schema2_backup_and_failed_migration_rolls_back(self):
         self.service.shutdown()
         mid = seed(self.repo)
@@ -283,10 +313,16 @@ class Handler(BaseHTTPRequestHandler):
         self.server.calls.append((self.path, self.headers.get('Authorization'), json.loads(body) if body else None))
         time.sleep(self.server.delay)
         self.send_response(self.server.status)
-        self.send_header('Content-Length', str(len(self.server.payload) + self.server.missing_tail))
+        payload = self.server.payload if self.server.chunks is None else b''.join(chunk for _, chunk in self.server.chunks)
+        self.send_header('Content-Length', str(len(payload) + self.server.missing_tail))
         self.end_headers()
         try:
-            if self.server.partial_stall:
+            if self.server.chunks is not None:
+                for delay, chunk in self.server.chunks:
+                    time.sleep(delay)
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+            elif self.server.partial_stall:
                 time.sleep(.4)
                 self.wfile.write(self.server.payload[:1])
                 self.wfile.flush()
@@ -303,6 +339,7 @@ class TransportTests(unittest.TestCase):
         self.server.daemon_threads = True
         self.server.calls = []; self.server.delay = 0; self.server.status = 200
         self.server.missing_tail = 0
+        self.server.chunks = None
         self.server.partial_stall = False; self.server.release = threading.Event()
         self.server.payload = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': 'OK'}}]}).encode()
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': .02}, daemon=True); self.thread.start()
@@ -339,6 +376,45 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'network_timeout')
         # Allow 150 ms for CI scheduling, but not a fresh 500 ms after the first byte.
         self.assertLess(time.monotonic() - started, .65)
+        self.assertEqual(len(self.server.calls), 1)
+
+    def test_active_stream_can_outlast_probe_budget_without_lowering_reasoning(self):
+        self.config.update(stream=True, parameters={'reasoning_effort': 'high'})
+        self.provider.limits = Limits(connect=.2, deadline=2, idle=.3, probe=.15)
+        reasoning = b'data: {"choices":[{"delta":{"reasoning_content":"working"}}]}\n\n'
+        answer = b'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\n'
+        self.server.chunks = [(0, reasoning)] + [(.06, reasoning)] * 5 + [(.06, answer), (0, b'data: [DONE]\n\n')]
+        self.assertEqual(self.provider.complete(self.config, [{'role': 'user', 'content': 'test'}]), 'OK')
+        self.assertEqual(self.server.calls[0][2]['reasoning_effort'], 'high')
+        with self.assertRaisesRegex(DomainError, '总等待时限'):
+            self.provider.check(self.config)
+        self.assertEqual(len(self.server.calls), 2)
+
+    def test_idle_stream_stops_before_total_deadline_without_retry(self):
+        self.config['stream'] = True
+        self.provider.limits = Limits(connect=.2, deadline=2, idle=.1)
+        self.server.chunks = [(0, b': heartbeat\n\n'), (.6, b'data: [DONE]\n\n')]
+        started = time.monotonic()
+        with self.assertRaisesRegex(DomainError, '长时间未返回数据') as caught:
+            self.provider.complete(self.config, [{'role': 'user', 'content': 'test'}])
+        self.assertEqual(caught.exception.code, 'network_timeout')
+        self.assertLess(time.monotonic() - started, .5)
+        self.assertEqual(len(self.server.calls), 1)
+
+    def test_continuous_stream_cannot_extend_total_deadline(self):
+        self.config['stream'] = True
+        self.provider.limits = Limits(connect=.2, deadline=.25, idle=.2)
+        self.server.chunks = [(0, b': heartbeat\n\n')] + [(.04, b': heartbeat\n\n')] * 20
+        started = time.monotonic()
+        with self.assertRaisesRegex(DomainError, '总等待时限'):
+            self.provider.complete(self.config, [{'role': 'user', 'content': 'test'}])
+        self.assertLess(time.monotonic() - started, .6)
+        self.assertEqual(len(self.server.calls), 1)
+
+    def test_nonstreaming_generation_can_wait_for_complete_answer(self):
+        self.provider.limits = Limits(connect=.2, deadline=1, idle=.05)
+        self.server.delay = .2
+        self.assertEqual(self.provider.complete(self.config, [{'role': 'user', 'content': 'test'}]), 'OK')
         self.assertEqual(len(self.server.calls), 1)
 
     def test_stalled_dns_is_bounded_without_retries_and_recovers_after_late_completion(self):

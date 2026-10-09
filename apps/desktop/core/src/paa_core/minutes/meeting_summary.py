@@ -85,79 +85,103 @@ def qualify_identities(value, snapshot):
         item['task'] = annotate(item['task'], identities)
 
 
+class _InvalidSummary(ValueError):
+    """Only fixed, non-sensitive explanations may be shown to the user."""
+
+
 def validate(raw, snapshot):
     if raw.startswith('```') and raw.endswith('```'):
         lines = raw.splitlines()
         if lines[0] not in ('```', '```json') or lines[-1] != '```':
             raise DomainError('invalid_summary', '纪要不是有效的 JSON，请检查模型后重试。')
         raw = '\n'.join(lines[1:-1])
+    area = '纪要'
+    labels = {'topics': '议题', 'agreements': '共识', 'decisions': '决策', 'disagreements': '分歧',
+              'risks': '风险', 'openQuestions': '待确认事项', 'suggestions': '建议'}
     try:
         value = json.loads(raw)
         required = {'version', 'title', 'abstract', 'overviewSources', 'topics', 'speakerSummaries',
                     'agreements', 'decisions', 'disagreements', 'actions', 'risks', 'openQuestions', 'suggestions'}
         if not isinstance(value, dict) or set(value) != required or type(value['version']) is not int or value['version'] != 2:
-            raise ValueError()
+            raise _InvalidSummary('结构不符合要求')
         def string(item, limit, nullable=False):
             if nullable and item is None:
                 return
             if not isinstance(item, str) or not item.strip() or len(item) > limit or '\x00' in item:
-                raise ValueError()
+                raise _InvalidSummary('文字内容或长度不符合要求')
         def items(values, limit=50):
             if not isinstance(values, list) or len(values) > limit:
-                raise ValueError()
+                raise _InvalidSummary('列表内容或数量不符合要求')
             return values
         sources = {item['id']: item for item in snapshot['segments']}
         def refs(values, speaker_id=None):
-            if not 1 <= len(items(values, 10)) or any(not isinstance(ref, str) or ref not in sources for ref in values) or len(set(values)) != len(values):
-                raise ValueError()
+            # Long meetings may need more than ten distinct citations. Bound them by
+            # the actual transcript and total document size, never discard references.
+            if not items(values, len(sources)):
+                raise _InvalidSummary('缺少原文引用')
+            if any(not isinstance(ref, str) or ref not in sources for ref in values):
+                raise _InvalidSummary('引用了不存在的原文片段')
+            if len(set(values)) != len(values):
+                raise _InvalidSummary('包含重复的原文引用')
             if speaker_id is not None and any(not sources[ref].get('speaker') or sources[ref]['speaker']['id'] != speaker_id for ref in values):
-                raise ValueError()
+                raise _InvalidSummary('引用了不属于该发言人的原文片段')
         def cited(item, speaker_id=None):
             if not isinstance(item, dict) or set(item) != {'text', 'sources'}:
-                raise ValueError()
+                raise _InvalidSummary('结构不符合要求')
             string(item['text'], 1500)
             refs(item['sources'], speaker_id)
+        area = '标题'
         string(value['title'], 200)
+        area = '概览'
         string(value['abstract'], 4000)
         refs(value['overviewSources'])
         for key in ('topics', 'agreements', 'decisions', 'disagreements', 'risks', 'openQuestions', 'suggestions'):
+            area = labels[key]
             for item in items(value[key]):
                 cited(item)
         speakers = {item['speaker']['id']: item['speaker'] for item in snapshot['segments'] if item.get('speaker')}
         seen = set()
+        area = '发言人摘要'
         for item in items(value['speakerSummaries']):
             if snapshot.get('inputMode', 'text') != 'speakers' or not isinstance(item, dict) or set(item) != {'speakerId', 'name', 'points', 'commitments'}:
-                raise ValueError()
+                raise _InvalidSummary('结构不符合要求')
             identifier = item['speakerId']
             if not isinstance(identifier, str) or identifier in seen or identifier not in speakers or item['name'] not in (speakers[identifier]['name'], speaker_label(speakers[identifier])):
-                raise ValueError()
+                raise _InvalidSummary('身份与原文不一致或重复')
             seen.add(identifier)
             for key in ('points', 'commitments'):
                 for point in items(item[key]):
                     cited(point, identifier)
             if not item['points'] and not item['commitments']:
-                raise ValueError()
+                raise _InvalidSummary('缺少观点或承诺')
+        area = '行动项'
         for item in items(value['actions']):
             if not isinstance(item, dict) or set(item) != {'task', 'owner', 'deadline', 'status', 'dependencies', 'blocker', 'sources'}:
-                raise ValueError()
+                raise _InvalidSummary('结构不符合要求')
             string(item['task'], 1500)
             for field in ('owner', 'deadline', 'status', 'dependencies', 'blocker'):
                 string(item[field], 300, True)
             refs(item['sources'])
         qualify_identities(value, snapshot)
         # Deterministic identity notes are subject to the same output bounds as model text.
+        area = '标题'
         string(value['title'], 200)
+        area = '概览'
         string(value['abstract'], 4000)
         for key in ('topics', 'agreements', 'decisions', 'disagreements', 'risks', 'openQuestions', 'suggestions'):
+            area = labels[key]
             for item in value[key]:
                 string(item['text'], 1500)
+        area = '行动项'
         for item in value['actions']:
             string(item['task'], 1500)
+        area = '纪要'
         if len(json.dumps(value, ensure_ascii=False).encode()) > 48 * 1024:
-            raise ValueError()
+            raise _InvalidSummary('内容过长')
         return value
-    except (ValueError, TypeError, KeyError):
-        raise DomainError('invalid_summary', '纪要结构、长度或原文引用不符合要求；未覆盖已有纪要，请检查模型后重试。') from None
+    except (ValueError, TypeError, KeyError) as error:
+        detail = str(error) if isinstance(error, _InvalidSummary) else '格式不符合要求'
+        raise DomainError('invalid_summary', f'{area}{detail}；未覆盖已有纪要，请重新生成。') from None
 
 
 class MeetingSummary:
