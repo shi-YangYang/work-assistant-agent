@@ -82,7 +82,9 @@ async def tool_node(context, request, operation):
         return value
     async def restore_memory(db, actor, value):
         from app.modules.memories.service import restore
-        result = await restore(db, actor, json.loads(value['content']))
+        from app.tasks.models import Job
+        job = await db.get(Job, context.job_id)
+        result = await restore(db, actor, json.loads(value['content']), job=job)
         return {**value, 'content': json.dumps(result, ensure_ascii=False)}
     async def unavailable_web(error):
         if error.failure.code != 'web_network' or error.failure.cancelled:

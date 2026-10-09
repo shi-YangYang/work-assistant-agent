@@ -51,20 +51,23 @@ async def test_read_failure_never_uses_previous_memory(setup, monkeypatch):
     assert block is None and len(clean) == 1
 
 
-async def test_memory_tool_payloads_removed_from_summary_and_old_success_revalidated(setup):
+@pytest.mark.parametrize('tool_name', ['save_memory', None])
+async def test_memory_tool_payloads_removed_from_summary_and_old_success_revalidated(setup, tool_name):
     context, _ = await context_for(setup)
     receipt = await apply(context, evidence='以后先给结论，少用表格', new='只在记忆出现的内容')
     messages = [HumanMessage(id='user', content='用户原文保留'),
         AIMessage(id='call', content='', tool_calls=[{'id':'save1','name':'save_memory','args':{'new_text':'只在记忆出现的内容'}}]),
-        ToolMessage(id='tool', name='save_memory', tool_call_id='save1', content=json.dumps(receipt))]
+        ToolMessage(id='tool', name=tool_name, tool_call_id='save1', content=json.dumps(receipt))]
     clean, _ = await request_memory(context, messages, 4000)
     assert json.loads(clean[-1].content)['state'] == 'succeeded'
+    assert clean[-2].tool_calls == messages[-2].tool_calls
     summary = without_memory(clean, summaries=True)
     assert '只在记忆出现的内容' not in json.dumps(messages_to_dict(summary), ensure_ascii=False)
     assert summary == [messages[0]]
     await setup[3]['employee'].delete(PATH + '/document?expectedRevision=1')
     clean, _ = await request_memory(context, messages, 4000)
     assert json.loads(clean[-1].content)['state'] == 'conflict'
+    assert clean[-2].tool_calls[0]['args'] == {}
     with pytest.raises(ValueError, match='旧任务结果已失效'):
         await validate_completed(context)
 

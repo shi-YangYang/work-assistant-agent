@@ -83,6 +83,44 @@ def annotations_after(old, markdown, origin, *, source=None, expires=None):
             **({'barrierAt': old['barrierAt']} if old.get('barrierAt') else {})}
 
 
+def fragment_key(text):
+    """Compare complete facts, ignoring only list markers and outer whitespace."""
+    return '\n'.join(re.sub(r'^(?:[-*+] |\d+[.)] )\s*', '', line.rstrip())
+                     for line in text.strip().splitlines())
+
+
+def already_present(document, new, expires):
+    text = document['markdown']
+    candidates = []
+    for start, end in blocks(text):
+        body = text[start:end].strip()
+        # A heading changes scope; identical words under different headings
+        # are not interchangeable. Code/quotes are not standalone facts.
+        headings = list(re.finditer(r'^#{1,6}\s+.+$', body, re.M))
+        if headings:
+            candidates.clear()
+            continue
+        if re.search(r'^(?:\s*[>`~]| {4}|\t)', text[start:end], re.M):
+            continue
+        candidates.append((start, end, body))
+        # Adjacent, single-line top-level list items are separate facts.
+        lines = text[start:end].splitlines(keepends=True)
+        if len(lines) > 1 and all(re.match(r'^(?:[-*+] |\d+[.)] )\S', line) for line in lines):
+            offset = start
+            for line in lines:
+                candidates.append((offset, offset + len(line), line.strip()))
+                offset += len(line)
+    if re.search(r'^(?:\s*[#>`~]| {4}|\t)', new, re.M):
+        # Rich/scoped fragments keep exact block equality; no semantic guessing.
+        return any(text[a:b].strip() == new.strip() and all(
+            row.get('expiresAt') == expires for row in document.get('annotations', [])
+            if row['start'] < b and row['end'] > a) for a, b in blocks(text))
+    key = fragment_key(new)
+    return any(fragment_key(body) == key and all(
+        row.get('expiresAt') == expires for row in document.get('annotations', [])
+        if row['start'] < b and row['end'] > a) for a, b, body in candidates)
+
+
 def patch(document, old, new, *, explicit, source, expires=None):
     text = document['markdown']
     if old:
@@ -99,7 +137,7 @@ def patch(document, old, new, *, explicit, source, expires=None):
     else:
         if not new.strip():
             problem(422, '请输入需要保存的记忆')
-        if new.strip() in text:
+        if already_present(document, new, expires):
             return document
         changed = text + ('\n\n' if text and not text.endswith('\n\n') else '') + new
     validate(changed)

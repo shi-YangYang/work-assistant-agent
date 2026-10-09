@@ -93,9 +93,15 @@ def stale_result():
     return {'state': 'conflict', 'message': '记忆已变化，旧操作结果不再代表当前状态；本次未重新写入'}
 
 
-async def restore(db, actor, receipt):
+async def restore(db, actor, receipt, *, job=None):
     row = await read(db, actor)
     if receipt.get('state') == 'succeeded' and (not row or row.revision != receipt.get('revision') or row.generation != receipt.get('generation')):
+        snapshot = (job.result.get('memorySnapshot') or {}) if job else {}
+        if (row and snapshot.get('revision') == row.revision
+                and snapshot.get('generation') == row.generation == receipt.get('generation')
+                and receipt in job.result.get('memoryOperations', {}).values()):
+            return {**receipt, 'superseded': True,
+                    'message': '此操作已成功，随后本轮又更新了记忆；以最新文档为准，不要重复保存旧内容。'}
         return stale_result()
     return receipt
 
@@ -111,7 +117,7 @@ async def change(db, actor, job, snapshot, *, call_id, evidence, old='', new='',
     key = digest({'job': job.id, 'input': snapshot.input_hash, 'revision': snapshot.source_revision, 'call': call_id})
     operations = job.result.get('memoryOperations', {})
     if key in operations:
-        return await restore(db, actor, operations[key])
+        return await restore(db, actor, operations[key], job=job)
     if not snapshot.writable or row.generation != snapshot.generation:
         problem(409, '记忆设置或文档已变化，旧输入不能重新写入，请重新说明要求', 'memory_stale_input')
     expected(row, snapshot.revision)
@@ -140,10 +146,13 @@ async def change(db, actor, job, snapshot, *, call_id, evidence, old='', new='',
         if not new.strip():
             problem(422, '删除记忆请使用明确的忘记操作，本次未修改')
         document = patch(row.document, old, new, explicit=explicit, source=message.id, expires=expires)
-    if document != row.document or forget:
+    changed = document != row.document
+    if changed or forget:
         row.document = document
         advance(row, barrier=forget)
     result = {'state': 'succeeded', 'operation': 'forgotten' if forget else 'saved',
+              'changed': changed,
+              'message': ('记忆已更新。' if changed else '记忆已是目标内容，本次无需修改。') + '本项已完成，不要重复调用；继续回答用户或处理其它独立事项。',
               'revision': row.revision, 'generation': row.generation, 'characters': len(row.document['markdown'])}
     snapshot.revision, snapshot.generation = row.revision, row.generation
     job.result = {**job.result, 'memorySnapshot': asdict(snapshot), 'memoryOperations': {**operations, key: result}}
@@ -154,5 +163,5 @@ async def validate_job(db, actor, job):
     operations = job.result.get('memoryOperations', {})
     if operations:
         latest = max(operations.values(), key=lambda value: value['revision'])
-        if (await restore(db, actor, latest)).get('state') != 'succeeded':
+        if (await restore(db, actor, latest, job=job)).get('state') != 'succeeded':
             raise ValueError('记忆已被修改或删除，旧任务结果已失效；请重新说明要求')

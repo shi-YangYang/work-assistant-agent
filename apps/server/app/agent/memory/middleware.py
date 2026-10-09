@@ -25,10 +25,14 @@ async def prepare(context):
         context.memory_snapshot = None
 
 
+def memory_call_ids(messages):
+    return {call['id'] for message in messages if isinstance(message, AIMessage)
+            for call in message.tool_calls if call['name'] in MEMORY_TOOLS}
+
+
 def without_memory(messages, *, summaries=False, receipts=None):
     cleaned = []
-    memory_calls = {call['id'] for message in messages if isinstance(message, AIMessage)
-                    for call in message.tool_calls if call['name'] in MEMORY_TOOLS}
+    memory_calls = memory_call_ids(messages)
     for message in messages:
         if (message.id or '').startswith(PREFIX):
             continue
@@ -37,7 +41,13 @@ def without_memory(messages, *, summaries=False, receipts=None):
                 cleaned.append(message.model_copy(update={'content': json.dumps((receipts or {}).get(message.tool_call_id, service.stale_result()), ensure_ascii=False)}))
             continue
         if isinstance(message, AIMessage) and any(call['name'] in MEMORY_TOOLS for call in message.tool_calls):
-            calls = [call for call in message.tool_calls if call['name'] not in MEMORY_TOOLS] if summaries else [{**call, 'args': {}} if call['name'] in MEMORY_TOOLS else call for call in message.tool_calls]
+            # Keep the current, validated exchange intelligible to the model.
+            # Removed/superseded facts and all summary inputs stay redacted.
+            calls = [call for call in message.tool_calls if call['name'] not in MEMORY_TOOLS] if summaries else [
+                {**call, 'args': {}} if call['name'] in MEMORY_TOOLS and (
+                    (receipts or {}).get(call['id'], {}).get('state') != 'succeeded'
+                    or (receipts or {}).get(call['id'], {}).get('superseded')) else call
+                for call in message.tool_calls]
             if calls or message.content:
                 cleaned.append(message.model_copy(update={'tool_calls': calls}))
         else:
@@ -52,10 +62,11 @@ async def request_memory(context, messages, output):
         async with context.sessions() as db:
             job, actor = await lease(db, context)
             row = await service.read(db, actor)
+            memory_calls = memory_call_ids(messages)
             for message in messages:
-                if isinstance(message, ToolMessage) and message.name in MEMORY_TOOLS:
+                if isinstance(message, ToolMessage) and (message.name in MEMORY_TOOLS or message.tool_call_id in memory_calls):
                     try:
-                        receipts[message.tool_call_id] = await service.restore(db, actor, json.loads(message.content))
+                        receipts[message.tool_call_id] = await service.restore(db, actor, json.loads(message.content), job=job)
                     except (ValueError, TypeError):
                         pass
             budget = input_budget(context, output)

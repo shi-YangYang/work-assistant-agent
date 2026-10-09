@@ -28,6 +28,8 @@ async def save_memory(new_text: str, evidence: str, runtime: ToolRuntime[RunCont
     request. No credentials, inferred sensitive traits or one-off instructions.
     Preserve scope; expires_at is optional future ISO time WITH timezone. Never
     supply ownership, manual origin or versions. Disabled/conflict is not success.
+    Once succeeded, this fact is saved: continue the reply, never save it again
+    to confirm success or change bullet formatting. changed=false is also success.
     """
     return await apply(runtime, new=new_text, old=old_text, evidence=evidence, explicit=explicit, expires=expires_at or None)
 

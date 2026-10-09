@@ -27,6 +27,41 @@ def test_unique_patch_dedup_capacity_and_credentials():
             validate(value)
 
 
+@pytest.mark.parametrize(('existing', 'incoming'), [
+    ('喜欢吃米饭。', '- 喜欢吃米饭。'),
+    ('- 喜欢吃米饭。', '喜欢吃米饭。'),
+    ('* 喜欢睡觉。', '1. 喜欢睡觉。'),
+    ('- 喜欢吃米饭。\n- 喜欢睡觉。', '- 喜欢睡觉。'),
+])
+def test_append_ignores_list_format_without_new_annotations(existing, incoming):
+    document = annotations_after({}, existing, 'manual')
+    assert patch(document, '', incoming, explicit=False, source='current') == document
+
+
+@pytest.mark.parametrize(('existing', 'incoming'), [
+    ('不喜欢吃米饭。', '喜欢吃米饭。'),
+    ('同事喜欢吃米饭。', '喜欢吃米饭。'),
+    ('此项目先给结论。', '先给结论。'),
+    ('# 以前\n\n- 喜欢吃米饭。\n\n# 现在\n\n喜欢面食。', '- 喜欢吃米饭。'),
+    ('```text\n喜欢吃米饭。\n```', '喜欢吃米饭。'),
+    ('    喜欢吃米饭。', '喜欢吃米饭。'),
+    ('- 工作偏好\n  - 先给结论', '- 工作偏好\n- 先给结论'),
+])
+def test_append_does_not_deduplicate_substrings_or_different_scope(existing, incoming):
+    document = annotations_after({}, existing, 'manual')
+    changed = patch(document, '', incoming, explicit=False, source='current')
+    assert changed['markdown'] == existing + '\n\n' + incoming
+    assert changed['annotations'][0] == document['annotations'][0]
+
+
+def test_append_expired_fact_does_not_hide_new_durable_fact():
+    document = patch({'markdown': '', 'annotations': []}, '', '- 负责上线。',
+                     explicit=False, source='old', expires='2020-01-01T00:00:00+00:00')
+    changed = patch(document, '', '负责上线。', explicit=False, source='current')
+    assert changed != document
+    assert injection(changed, 200).strip() == '负责上线。'
+
+
 def test_injection_preserves_heading_scope_whole_lists_and_expiration():
     doc = annotations_after({}, '# 此项目\n\n- 人工偏好一\n- 人工偏好二\n', 'manual')
     doc = patch(doc, '', '临时目标', explicit=False, source='current', expires='2020-01-01T00:00:00+00:00')

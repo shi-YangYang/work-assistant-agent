@@ -99,6 +99,38 @@ async def test_bound_source_idempotency_and_stale_write_after_manual_edit(setup)
     assert (await client.get(PATH)).json()['markdown'] == '人工新约定'
 
 
+async def test_repeated_calls_and_format_changes_do_not_add_memory_versions(setup):
+    context, _ = await context_for(setup, '我喜欢吃米饭，也喜欢睡觉')
+    first = await apply(context, call_id='rice', evidence='我喜欢吃米饭', new='喜欢吃米饭。')
+    duplicate = await apply(context, call_id='rice-list', evidence='我喜欢吃米饭', new='- 喜欢吃米饭。')
+    assert first['changed'] and not duplicate['changed']
+    assert duplicate['revision'] == first['revision'] == 1
+    for index in range(7):
+        result = await apply(context, call_id=f'sleep-{index}', evidence='喜欢睡觉', new='- 喜欢睡觉。')
+        assert result['state'] == 'succeeded' and result['changed'] == (index == 0)
+        assert result['revision'] == 2
+    current = (await setup[3]['employee'].get(PATH)).json()
+    assert current['markdown'] == '喜欢吃米饭。\n\n- 喜欢睡觉。'
+
+
+async def test_prior_success_within_same_task_is_not_a_new_conflict(setup):
+    context, _ = await context_for(setup, '记住喜欢米饭和睡觉；把喜欢米饭改为喜欢面条')
+    first = await apply(context, call_id='rice', evidence='喜欢米饭', new='喜欢米饭。')
+    await apply(context, call_id='sleep', evidence='睡觉', new='喜欢睡觉。')
+    async with context.sessions() as db:
+        job, actor = await lease(db, context)
+        restored = await service.restore(db, actor, first, job=job)
+    assert restored['state'] == 'succeeded' and restored['superseded']
+    await apply(context, call_id='noodles', evidence='把喜欢米饭改为喜欢面条',
+                old='喜欢米饭。', new='喜欢面条。', explicit=True)
+    replay = await apply(context, call_id='rice', evidence='喜欢米饭', new='喜欢米饭。')
+    assert replay['state'] == 'succeeded' and replay['superseded']
+    client = setup[3]['employee']
+    assert (await client.get(PATH)).json()['markdown'] == '喜欢面条。\n\n喜欢睡觉。'
+    await client.delete(PATH + '/document?expectedRevision=3')
+    assert (await apply(context, call_id='rice', evidence='喜欢米饭', new='喜欢米饭。'))['state'] == 'conflict'
+
+
 async def test_material_or_history_evidence_and_foreign_source_are_rejected(setup):
     context, _ = await context_for(setup, '请分析附件')
     with pytest.raises(HTTPException) as error:
