@@ -157,7 +157,7 @@ class JsonStringPrefix:
 
 
 class ReplyCandidate:
-    """Preview marked final prose or a legacy completion; tool batches stay private."""
+    """Preview prose or a legacy completion; retract prose if a tool call follows."""
     def __init__(self, publisher):
         self.publisher = publisher
         self.calls = {}
@@ -171,8 +171,8 @@ class ReplyCandidate:
         try:
             self.prose += delta.text
             if delta.tools and self.prose_visible:
-                # A premature final-answer marker cannot make tool preamble a
-                # final reply. Retire its preview, but still validate/execute tools.
+                # A preview is not a final reply. Retire a tool preamble,
+                # whether marked or plain, before validating/executing tools.
                 self.mixed_prose = True
                 await self.publisher.withdraw()
                 self.prose_visible = False
@@ -182,8 +182,8 @@ class ReplyCandidate:
                 call['arguments'] += fragment.arguments
             if not self.calls:
                 from app.agent.completion.prose import parse_header
-                text, _, marked = parse_header(self.prose)
-                if marked and text:
+                text, _, _ = parse_header(self.prose)
+                if text:
                     self.prose_visible = True
                     await self.publisher.write(text)
                 return

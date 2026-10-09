@@ -14,6 +14,7 @@ class ToolDelta:
 class ModelDelta:
     text: str = ''
     tools: tuple[ToolDelta, ...] = ()
+    reasoning: bool = False
 
 
 def tool_arguments(raw):

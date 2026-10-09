@@ -25,19 +25,25 @@ export function TaskProgress({
   const { nodes, rows, active, current, parallel, completed, retries } = progressView(job)
   const [now, setNow] = useState(Date.now)
   const waiting = job.state === 'running' && nodes.some((node) => node.state === 'retry_wait')
+  const modelActivity = current?.state === 'running' && current.activity
+  const ticking = waiting || !!modelActivity
   useEffect(() => {
-    if (!waiting) return
+    if (!ticking) return
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [waiting])
+  }, [ticking])
   const failed = [...nodes].reverse().find((node) => node.canRetry)
   const complete = ['succeeded', 'awaiting_input'].includes(job.state)
   const outcome = complete ? job.taskOutcome : null
   const activity = ['running', 'succeeded', 'awaiting_input'].includes(job.state)
-    ? replyActivity
+    ? replyActivity ||
+      (modelActivity && rows.length && !rows.some((node) => node.id === current.id)
+        ? nodeName(current)
+        : undefined)
     : undefined
+  const activityStatus = modelActivity ? nodeStatus(current, now) : '处理中'
   const summary = activity
-    ? `${activity} · 处理中`
+    ? `${activity} · ${activityStatus}`
     : complete
       ? completionSummary(job, completed, retries)
       : job.state === 'queued'
@@ -110,7 +116,7 @@ export function TaskProgress({
               <LoaderCircle size={14} aria-hidden="true" className={styles.icon} />
               <div className={styles.nodeContent}>
                 <span className={styles.name}>{activity}</span>
-                <span className={styles.status}>处理中</span>
+                <span className={styles.status}>{activityStatus}</span>
               </div>
             </li>
           )}

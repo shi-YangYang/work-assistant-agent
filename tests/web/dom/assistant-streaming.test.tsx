@@ -193,12 +193,12 @@ it('clears retry, withdrawn, unavailable and foreign-account previews', () => {
   const restored = { ...message, replyStream: stream('旧片段') }
   const view = render(<ReplyWithProgress message={restored} job={job} feedback={null} own />)
   expect(screen.getByText('旧片段')).toBeTruthy()
-  expect(screen.getByRole('status').textContent).toBe('生成回复 · 处理中')
+  expect(screen.getByRole('status').textContent).toBe('生成回答 · 处理中')
   view.rerender(
     <ReplyWithProgress message={restored} job={{ ...job, attempt: 2 }} feedback={null} own />,
   )
   expect(screen.queryByText('旧片段')).toBeNull()
-  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
+  expect(screen.queryByText('生成回答 · 处理中')).toBeNull()
   view.rerender(
     <ReplyWithProgress
       message={restored}
@@ -208,13 +208,13 @@ it('clears retry, withdrawn, unavailable and foreign-account previews', () => {
     />,
   )
   expect(screen.queryByText('旧片段')).toBeNull()
-  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
+  expect(screen.queryByText('生成回答 · 处理中')).toBeNull()
   view.rerender(<ReplyWithProgress message={restored} job={job} feedback={null} own unavailable />)
   expect(screen.queryByText('旧片段')).toBeNull()
-  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
+  expect(screen.queryByText('生成回答 · 处理中')).toBeNull()
   view.rerender(<ReplyWithProgress message={restored} job={job} feedback={null} own={false} />)
   expect(screen.queryByText('旧片段')).toBeNull()
-  expect(screen.queryByText('生成回复 · 处理中')).toBeNull()
+  expect(screen.queryByText('生成回答 · 处理中')).toBeNull()
 })
 
 it('shares one connection, adds no request per prefix, and withdraws DTO fallback on access loss', () => {

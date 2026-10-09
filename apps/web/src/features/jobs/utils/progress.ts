@@ -12,6 +12,13 @@ export function isOperation(node: TaskNode) {
 }
 
 export function nodeName(node: TaskNode) {
+  if (node.kind === 'model' && node.state === 'running' && node.activity)
+    return {
+      waiting: '等待模型响应',
+      thinking: '思考中',
+      answering: '生成回答',
+      tool_call: '准备调用工具',
+    }[node.activity.phase]
   const label = node.kind === 'model' && node.label === '思考中' ? '处理请求' : node.label
   return node.presentation?.subject ? `${label}：${node.presentation.subject}` : label
 }

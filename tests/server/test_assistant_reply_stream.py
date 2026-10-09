@@ -265,16 +265,26 @@ def packet(arguments, *, first=False, finish=None):
 
 
 class PausedStream(httpx.AsyncByteStream):
-    def __init__(self, answer, *, prose=False):
+    def __init__(self, answer, *, prose=False, marked=True, thinking=False):
         self.prose = prose
+        self.thinking = thinking
+        self.requested, self.begin = asyncio.Event(), asyncio.Event()
+        self.thought, self.continue_thought = asyncio.Event(), asyncio.Event()
         raw = wire_completion(answer)['tool_calls'][0]['function']['arguments']
         if prose:
-            raw = '<!--noria:{}-->\n' + answer
+            raw = ('<!--noria:{}-->\n' if marked else '') + answer
         self.chunks = [raw[:20], raw[20:35], raw[35:]]
         self.arrived = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
         self.release = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
         self.done = False
     async def __aiter__(self):
+        if self.thinking:
+            self.requested.set()
+            await self.begin.wait()
+            for _ in range(20):
+                yield b'data: {"choices":[{"delta":{"reasoning_content":"private reasoning"}}]}\n\n'
+            self.thought.set()
+            await self.continue_thought.wait()
         for i, chunk in enumerate(self.chunks):
             yield (('data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]}) + '\n\n').encode() if self.prose else packet(chunk, first=i == 0))
             self.arrived[i].set()
@@ -283,17 +293,19 @@ class PausedStream(httpx.AsyncByteStream):
         yield ('data: ' + json.dumps({'choices': [{'delta': {}, 'finish_reason': finish}]}) + '\n\ndata: [DONE]\n\n').encode()
         self.done = True
     def unblock(self):
+        self.begin.set()
+        self.continue_thought.set()
         for gate in self.release:
             gate.set()
 
 
-@pytest.mark.parametrize('scenario', ['chat', 'search', 'document', 'prose', 'search_prose'])
+@pytest.mark.parametrize('scenario', ['chat', 'search', 'document', 'prose', 'search_prose', 'unmarked_prose', 'thinking_prose'])
 async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_saved(setup, monkeypatch, scenario):
     settings, sessions, users, clients = setup
     saved = await create(clients['admin'])
     assert (await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))).status_code == 200
     answer = '# 你好，正在生成中文回答。\n\n这是一段公开或本人可见的完整分析。'
-    upstream = PausedStream(answer, prose=scenario.endswith('prose'))
+    upstream = PausedStream(answer, prose=scenario.endswith('prose'), marked=scenario not in ('unmarked_prose', 'thinking_prose'), thinking=scenario=='thinking_prose')
     requests, searches = [], []
     async def search(query, *, domains=None):
         assert domains is None
@@ -317,10 +329,26 @@ async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_sav
         task = asyncio.create_task(process_job(await claim(sessions, users['employee'].id), sessions, settings, saver))
         received = events(sessions, token, sent['jobId'], settings=settings)
         try:
+            if upstream.thinking:
+                await asyncio.wait_for(upstream.requested.wait(), 10)
+                waiting = await snapshot(sessions, token, sent['jobId'])
+                current = next(node for node in waiting['nodes'] if node['kind']=='model' and node['state']=='running')
+                assert current['activity']['phase']=='waiting'
+                upstream.begin.set()
+                await asyncio.wait_for(upstream.thought.wait(), 5)
+                thinking = await snapshot(sessions, token, sent['jobId'])
+                current = next(node for node in thinking['nodes'] if node['kind']=='model' and node['state']=='running')
+                assert current['activity']['phase']=='thinking' and current['activity']['startedAt']
+                assert thinking['seq']==waiting['seq']+1  # One phase write, not 20 token writes.
+                assert 'private reasoning' not in json.dumps(thinking)
+                upstream.continue_thought.set()
             await asyncio.wait_for(upstream.arrived[0].wait(), 10)
             first = await next_reply(received)
             assert first['replyStream']['text'] and not upstream.done
             assert first['replyStream']['state'] == 'streaming'
+            if upstream.thinking:
+                current = next(node for node in first['nodes'] if node['kind']=='model' and node['state']=='running')
+                assert current['activity']['phase']=='answering'
             # HTTP stream is still paused; it cannot have delivered a final reply.
             detail = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
             assert detail['replyStream'] is None and detail['reply'] == ''
@@ -351,6 +379,7 @@ async def test_live_prefixes_reach_sse_before_provider_finishes_and_final_is_sav
         assert not detail['actions'] and not detail['drafts']
     terminal = await snapshot(sessions, token, sent['jobId'])
     assert terminal['state'] == detail['job']['state'] and terminal['replyStream'] is None
+    assert all('activity' not in node for node in terminal['nodes'])
 
 
 @pytest.mark.parametrize('boundary', [

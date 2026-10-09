@@ -31,7 +31,7 @@ export function replyPresentation(
       ? stream?.state === 'finalizing' || ['succeeded', 'awaiting_input'].includes(state ?? '')
         ? '核对并保存回复'
         : state === 'running'
-          ? '生成回复'
+          ? '生成回答'
           : undefined
       : undefined
   return {

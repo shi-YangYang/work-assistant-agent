@@ -10,6 +10,10 @@ export function nodeStatus(node: Node, now = Date.now()) {
       return `压缩重试中 · ${Math.min(3, node.attempts)}/3${Number.isFinite(seconds) && seconds > 0 ? ` · ${seconds} 秒后继续` : ''}`
     return `${node.kind === 'tool' ? '暂未完成' : '模型暂未响应'}，${Number.isFinite(seconds) && seconds > 0 ? `${seconds} 秒后重试` : '即将重试'} · ${Math.min(3, node.attempts)}/3`
   }
+  if (node.state === 'running' && node.activity) {
+    const seconds = Math.max(0, Math.floor((now - Date.parse(node.activity.startedAt)) / 1000))
+    return `${Number.isFinite(seconds) ? `${seconds} 秒` : '处理中'}${node.retries ? ` · 第 ${node.retries}/3 次重试` : ''}`
+  }
   if (node.state === 'running')
     return node.kind === 'compaction' && node.retries
       ? `压缩重试中 · ${node.retries}/3`

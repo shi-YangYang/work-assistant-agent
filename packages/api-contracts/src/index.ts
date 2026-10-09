@@ -271,6 +271,10 @@ export interface TaskNode {
   parentId: string | null
   kind: 'model' | 'tool' | 'authorization' | 'review' | 'compaction'
   presentation?: { type: 'operation' | 'activity'; subject?: string }
+  activity?: {
+    phase: 'waiting' | 'thinking' | 'answering' | 'tool_call'
+    startedAt: string
+  }
   label: string
   state:
     | 'waiting'

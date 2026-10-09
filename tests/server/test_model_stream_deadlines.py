@@ -108,6 +108,8 @@ async def test_parser_counts_only_useful_progress_without_exporting_reasoning(mo
         [{'role': 'user', 'content': 'request'}], stream_timeout=180,
         on_progress=lambda: progress.append(True), on_event=event, on_delta=delta)
     assert progress == [True, True, True]
+    assert [fragment.reasoning for fragment in fragments].count(True) == 1
+    assert all(not fragment.text and not fragment.tools for fragment in fragments if fragment.reasoning)
     assert hidden not in str((result, records, fragments))
     assert result['choices'][0]['message']['content'] == ' answer'
 
@@ -193,7 +195,8 @@ async def test_long_reasoning_stream_exceeds_json_size_without_losing_answer(mon
         [{'role': 'user', 'content': 'request'}], on_delta=delta, on_event=event)
     assert result['choices'][0]['message']['content'] == 'answer'
     assert hidden not in str((result, fragments, records))
-    assert len(fragments) == 1
+    assert len(fragments) == 2
+    assert fragments[0].reasoning and not fragments[0].text and not fragments[0].tools
     assert stream.closed
 
 

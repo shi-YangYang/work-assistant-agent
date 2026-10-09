@@ -33,14 +33,16 @@ async def test_marker_every_split_never_exposes_control_text_and_preserves_liter
     assert parse_header('说明：<!--noria:{}-->',complete=True)[0]=='说明：<!--noria:{}-->'
 
 
-async def test_unmarked_preamble_is_held_and_late_tools_withdraw_marked_prose():
+@pytest.mark.parametrize('header', ['', '<!--noria:{}-->\n'])
+async def test_plain_and_marked_prefixes_stream_and_late_tools_withdraw_them(header):
     publisher=CapturingPublisher()
     candidate=ReplyCandidate(publisher)
-    await candidate.feed(ModelDelta('我先查询一下'))
-    assert publisher.values==[]
+    await candidate.feed(ModelDelta(header+'我先查询一下'))
+    assert publisher.values==['我先查询一下']
     await candidate.feed(ModelDelta(tools=(ToolDelta(0,'find_work_items','{"query":""}'),)))
     await candidate.finish()
-    assert publisher.values==[]
+    assert publisher.values==['我先查询一下',None]
+    assert candidate.text is None
     publisher=CapturingPublisher()
     candidate=ReplyCandidate(publisher)
     await candidate.feed(ModelDelta('<!--noria:{}-->\n暂时结果'))
@@ -49,6 +51,20 @@ async def test_unmarked_preamble_is_held_and_late_tools_withdraw_marked_prose():
     await candidate.finish()
     assert publisher.values==['暂时结果',None]
     assert candidate.text is None
+
+
+async def test_unmarked_answer_streams_before_finish_and_reasoning_never_becomes_prose():
+    publisher=CapturingPublisher()
+    candidate=ReplyCandidate(publisher)
+    await candidate.feed(ModelDelta(reasoning=True))
+    assert publisher.values==[]
+    await candidate.feed(ModelDelta('这是第一段。'))
+    assert publisher.values==['这是第一段。']
+    await candidate.feed(ModelDelta('这是第二段。'))
+    assert candidate.text=='这是第一段。这是第二段。'
+    assert publisher.values[-1]==candidate.text
+    await candidate.finish()
+    assert publisher.values[-1]=='这是第一段。这是第二段。'
 
 
 @pytest.mark.parametrize('raw', ['<!--noria:{"length":"1000字","length":"10字"}-->正文', '<!--noria:{"unknown":true}-->正文', '<!--noria:{"length":"1000字"}'])

@@ -136,6 +136,22 @@ class BoundedChatModel(ChatOpenAI):
                 candidate = ReplyCandidate(publisher)
         if is_reply:
             await publish(context, 'generating', call_id=usage_id, force=True)
+        activity_phase = None
+        async def activity(phase):
+            nonlocal activity_phase
+            if activity_phase != phase:
+                from app.agent.runtime.progress.phases import model_activity
+                await model_activity(context, phase)
+                activity_phase = phase
+        async def receive(delta):
+            if candidate:
+                await candidate.feed(delta)
+            if candidate and candidate.text or not candidate and delta.text.strip() and not delta.tools:
+                await activity('answering')
+            elif delta.tools:
+                await activity('tool_call')
+            elif delta.reasoning and activity_phase in (None, 'waiting'):
+                await activity('thinking')
         try:
             if self._verification:
                 from app.modules.model_services.parameters import reply_review_config
@@ -150,7 +166,9 @@ class BoundedChatModel(ChatOpenAI):
             streaming = config.get('streaming', False)
             timeout = response_timeout(context, streaming)
             async def request(progress):
-                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=record.event, on_timing=timing, on_delta=candidate.feed if candidate else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
+                if is_reply and not self._verification:
+                    await activity('waiting')
+                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=record.event, on_timing=timing, on_delta=receive if is_reply and not self._verification else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
             response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
