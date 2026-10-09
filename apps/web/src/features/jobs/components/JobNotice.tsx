@@ -261,9 +261,6 @@ function JobRetryNotice({
               : '将使用这条消息原来的模型配置重新处理。'}
           </p>
           {reviewOnly && <p>仅重新核对已有答复，已保存的业务操作不会重复执行。</p>}
-          <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-            模型服务可能已处理过上次请求，重试可能再次产生用量。
-          </p>
           <ErrorNotice>{error}</ErrorNotice>
           <div className={layoutStyles['form-actions']}>
             <button disabled={busy} onClick={() => update({ confirmation: null })}>

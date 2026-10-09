@@ -59,7 +59,7 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
                 reply_transition(current, 'interrupted')
                 update_feedback(current)
                 current.state = 'awaiting_retry' if current.request_started else 'failed'
-                current.error = '处理超时，原始内容已保存；服务可能已计费，请确认后重试'
+                current.error = '处理超时，原始内容已保存，请稍后重试'
                 current.lease_until, current.updated_at = None, now()
 
 
@@ -97,7 +97,7 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         elif isinstance(error, HTTPException):
             reason = error.detail.get('message', '媒体处理失败') if isinstance(error.detail, dict) else '媒体处理失败'
         elif isinstance(error, (httpx.HTTPError, asyncio.TimeoutError)):
-            reason = '模型服务未完成响应，请稍后重试；可能产生重复计费'
+            reason = '模型服务未完成响应，请稍后重试'
         else:
             reason = '本次处理未完成，请重试或联系管理员'
         log.warning('job=%s failure_type=%s', job.id, type(error).__name__)

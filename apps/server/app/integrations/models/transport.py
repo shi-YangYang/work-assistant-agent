@@ -277,7 +277,7 @@ def safe_error(error):
     if isinstance(error, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
         return ProviderError('network', '未能连接模型服务，请检查地址和网络', sent=False)
     if isinstance(error, (asyncio.TimeoutError, httpx.TimeoutException)):
-        return ProviderError('timeout', '请求超时，可能已产生调用费用；请核对后再重试')
+        return ProviderError('timeout', '模型响应超时，请稍后重试')
     if isinstance(error, httpx.HTTPError):
-        return ProviderError('network', '模型连接中断，请检查网络并核对调用记录')
+        return ProviderError('network', '模型连接中断，请检查网络后重试')
     return ProviderError('invalid_response', '模型返回内容不符合所选接口，请核对模型能力与参数')
