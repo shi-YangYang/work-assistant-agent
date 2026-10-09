@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 059：Agent 全量测试与工具循环排查](spec-059-agent-comprehensive-testing/spec.md) — 测试交付通过独立验收，产品问题未修复；[测试报告](spec-059-agent-comprehensive-testing/implementation.md)、[问题清单](spec-059-agent-comprehensive-testing/issues.md)、[验收](spec-059-agent-comprehensive-testing/acceptance.md)。
+
 - [Spec 058：Agent 统一任务预算与进度反馈](spec-058-agent-task-budget/spec.md) — 已实施，独立验收通过；统一内部预算、恢复计数与收尾，用户仅看执行进度和结果；[改造计划](spec-058-agent-task-budget/plan.md)、[测试与限制](spec-058-agent-task-budget/implementation.md)、[返工验收](spec-058-agent-task-budget/acceptance-rework.md)。
 
 - [Spec 057：本地启动与容器管理统一](spec-057-local-runtime-consolidation/spec.md) — 已实施并完成本机迁移，保留四个服务，CD 不变；[验收结果与限制](spec-057-local-runtime-consolidation/acceptance-rework.md)。
@@ -29,4 +31,4 @@
 
 ## 生命周期
 
-新 Spec 从 **059** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **060** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
