@@ -63,6 +63,7 @@ class RunContext:
     node_retry: bool = False
     node_scope: str = ''
     node_deadline: float = 0
+    task_budget: dict | None = None
     calls: int = 0
     tools: int = 0
     input_tokens: int = 0

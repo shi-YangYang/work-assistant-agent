@@ -233,9 +233,11 @@ async def test_discovery_keeps_existing_request_and_time_budgets(setup):
     context, _ = await runtime(setup, '查找资料')
     context.node_retry = True
     await initialize(context, 'discovery-budget')
-    context.calls = 32
-    # Loading a definition consumes no additional business/read slot, but a new
-    # model turn remains subject to exactly the original 32-request maximum.
+    from app.tasks.lease import lease
+    async with context.sessions.begin() as db:
+        job, _ = await lease(db, context)
+        job.result = {**job.result, 'taskBudget': {**job.result['taskBudget'], 'models': 96}}
+    # Discovery spends no logical tool slot and cannot replenish model requests.
     await load_tools.coroutine(['research'], SimpleNamespace(context=context))
     with pytest.raises(BudgetExceeded):
         await reserve_call(context, 'assistant')
@@ -246,6 +248,7 @@ async def test_discovery_keeps_existing_request_and_time_budgets(setup):
         job = await db.get(Job, context.job_id)
         assert loaded_groups(context, job) == ['research']
         assert job.result['nodeExecution']['nodes'] == []
+        assert job.result['taskBudget']['tools'] == 0 and job.result['taskBudget']['models'] == 96
 
 
 async def test_disabled_execution_history_has_discoverable_recovery_group(setup):

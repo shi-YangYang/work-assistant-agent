@@ -83,6 +83,11 @@ async def watch_cancellation(context):
             ))).one_or_none()
         if not row or row.state != 'running' or row.fence != context.fence or row.lease_until is None or row.lease_until < now():
             raise LostLease()
+        if context.task_budget:
+            from app.tasks.budget.service import current
+            from app.tasks.budget.state import TaskBudgetStopped
+            if current(context)['remainingSeconds'] <= 0:
+                raise TaskBudgetStopped('time')
         await asyncio.sleep(CANCEL_POLL_SECONDS)
 
 

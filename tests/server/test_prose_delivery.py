@@ -18,8 +18,9 @@ from test_business_actions import runtime
 pytestmark = pytest.mark.asyncio
 
 
-async def test_marker_every_split_never_exposes_control_text_and_preserves_literal_code():
-    raw='<!--noria:{"length":"约100字"}-->\n# 正文\n\n文字😀'
+@pytest.mark.parametrize('metadata', [{'length': '约100字'}, {'remaining': ['生成文件尚未完成']}])
+async def test_marker_every_split_never_exposes_control_text_and_preserves_literal_code(metadata):
+    raw='<!--noria:'+json.dumps(metadata, ensure_ascii=False)+'-->\n# 正文\n\n文字😀'
     for cut in range(len(raw)+1):
         publisher=CapturingPublisher()
         candidate=ReplyCandidate(publisher)
@@ -67,7 +68,7 @@ async def test_unmarked_answer_streams_before_finish_and_reasoning_never_becomes
     assert publisher.values[-1]=='这是第一段。这是第二段。'
 
 
-@pytest.mark.parametrize('raw', ['<!--noria:{"length":"1000字","length":"10字"}-->正文', '<!--noria:{"unknown":true}-->正文', '<!--noria:{"length":"1000字"}'])
+@pytest.mark.parametrize('raw', ['<!--noria:{"length":"1000字","length":"10字"}-->正文', '<!--noria:{"unknown":true}-->正文', '<!--noria:{"length":"1000字"}', '<!--noria:{"remaining":"missing"}-->正文', '<!--noria:{"remaining":[""]}-->正文'])
 async def test_invalid_header_is_not_silently_delivered(raw):
     with pytest.raises(ValueError):
         parse_header(raw,complete=True)

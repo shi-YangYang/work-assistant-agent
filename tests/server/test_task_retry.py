@@ -382,6 +382,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
     recovery = [False]
     async def chat(settings, config, key, messages, *, on_event, tools=None, **kwargs):
         await on_event('started')
+        messages = [m for m in messages if not (m['role'] == 'system' and m['content'].startswith('内部执行信息：'))]
         if not tools:
             payload = json.loads(messages[-1]['content'])
             if payload.get('task') == 'business_reply_review':

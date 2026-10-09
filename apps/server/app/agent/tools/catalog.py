@@ -139,7 +139,8 @@ async def load_tools(groups: Annotated[list[str], Field(min_length=1, max_length
     """Load named capabilities for this task; does not read data or grant access."""
     context = runtime.context
     if (time.time() >= context.node_deadline if context.node_retry else time.monotonic() - context.started > 180):
-        raise BudgetExceeded('本次处理已达到时间限制，已停止；可重试此步骤')
+        from app.tasks.budget.state import TaskBudgetStopped
+        raise TaskBudgetStopped('time')
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
         available = available_groups(context)

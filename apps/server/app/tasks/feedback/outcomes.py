@@ -43,7 +43,7 @@ def record(job, action, arguments, result):
 def derive(job, cards=(), drafts=(), *, interpretation=None):
     """Cards have already been resolved against live authorized business rows."""
     value = interpretation or job.result.get('taskInterpretation', {})
-    completed = []
+    completed = ['已交付部分内容'] if job.result.get('taskBudget', {}).get('partialDelivered') else []
     remaining = list(value.get('remaining', [])) if value.get('state') not in ('needs_confirmation', 'processing') else []
     pending = running = cancelled = generation_failed = generation_cancelled = False
     for card in cards:

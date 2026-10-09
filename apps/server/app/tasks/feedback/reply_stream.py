@@ -59,7 +59,7 @@ def failure_state(error):
         code = 'network'
     else:
         code = ''
-    return 'interrupted' if code in ('network', 'timeout', 'interrupted', 'rate_limit', 'provider_error') else 'withdrawn'
+    return 'interrupted' if code in ('network', 'timeout', 'interrupted', 'rate_limit', 'provider_error', 'stopped') else 'withdrawn'
 
 
 def source_snapshot(context, job):
@@ -130,6 +130,7 @@ from app.tasks.streaming.publisher import ReplyPublisher
 
 async def persist_snapshot(db, actor, job, message, value, *, state='interrupted'):
     """Called under the current job lock. No Redis/network wait inside transaction."""
+    from app.integrations.models.transport import ProviderError
     if not value or value.get('sealed') or (value.get('attempt'), value.get('fence')) != (job.attempt, job.fence):
         return
     if value.get('callId') != (job.feedback or {}).get('replyStreamCall'):
@@ -144,7 +145,7 @@ async def persist_snapshot(db, actor, job, message, value, *, state='interrupted
             allowed = False
         if await validate_sources(db, actor, job, message, value.get('source', {})):
             allowed = False
-    except (ValueError, HTTPException):
+    except (ValueError, HTTPException, ProviderError):
         allowed = False
     job.feedback = {**job.feedback, 'replyStreamSource': value.get('source', {}),
                     'replyStream': {'version': 1, 'generation': value['generation'],

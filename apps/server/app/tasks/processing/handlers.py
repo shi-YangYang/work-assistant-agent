@@ -50,7 +50,7 @@ async def process_job(job, sessions, settings, checkpointer, *, model=None, asr_
     try:
         from app.integrations.models.transport import task_connections
         async with task_connections():
-            await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model), timeout=450)
+            await asyncio.wait_for(_process_job(job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model), timeout=None if job.kind == 'message' else 450)
     except asyncio.TimeoutError:
         async with sessions.begin() as db:
             current = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
@@ -70,6 +70,11 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
     context.timing.mark('prepare.start')
     clear_reply = False
     try:
+        if job.kind == 'message':
+            from app.tasks.budget.service import ensure
+            async with sessions.begin() as db:
+                live, _ = await lease(db, context)
+                ensure(live, context)
         await run_until_interrupted(context, _execute_job(context, job, sessions, settings, checkpointer, model=model, asr_provider=asr_provider, reply_model=reply_model))
         clear_reply = True
     except asyncio.CancelledError:
@@ -89,6 +94,18 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         clear_reply = True
         log.info('job=%s lost lease', job.id)
     except Exception as error:
+        from app.agent.completion.budget import stopped, deliver
+        stop = stopped(error)
+        if stop and job.kind == 'message':
+            try:
+                await asyncio.wait_for(deliver(context, stop.reason), timeout=15)
+                clear_reply = True
+                return
+            except LostLease:
+                clear_reply = True
+                return
+            except Exception as delivery_error:
+                error = delivery_error
         clear_reply = failure_state(error) == 'withdrawn'
         from app.agent.actions.intent import IntentCheckFailed
         from app.tasks.retry import NodeFailed
@@ -126,6 +143,15 @@ async def _process_job(job, sessions, settings, checkpointer, *, model=None, asr
         clear_reply = True
 
     finally:
+        if job.kind == 'message':
+            from app.tasks.budget.service import finish
+            try:
+                async with sessions.begin() as db:
+                    live = await db.scalar(select(Job).where(Job.id == job.id).with_for_update())
+                    if live and live.fence == context.fence and live.state != 'running':
+                        finish(live)
+            except Exception:
+                log.warning('job=%s budget_finish_unavailable', job.id)
         for publisher in context.reply_publishers:
             await publisher.close()
         if job.kind == 'message':

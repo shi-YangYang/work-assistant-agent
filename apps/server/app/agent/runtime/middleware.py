@@ -16,18 +16,21 @@ def repairing_delivery(messages, job_id):
 class ToolBoundary(AgentMiddleware):
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
-        async with context.sessions() as db:
+        async with context.sessions.begin() as db:
             job, actor = await lease(db, context)
             groups = loaded_groups(context, job)
-            from app.tasks.nodes.node_state import execution
-            state = execution(job) if context.node_retry else {}
-            tool_count = sum(row['kind'] == 'tool' and row['scope'] == context.node_scope for row in state.get('nodes', [])) if context.node_retry else context.tools
-            finish_only = tool_count >= 14 or state.get('actualCalls', context.calls) >= (29 if context.node_retry else 6)
+            from app.tasks.budget import service as budget
+            from app.tasks.budget.state import TaskBudgetStopped
+            budget.ensure(job, context)
+            snapshot = budget.current(context)
+            if snapshot and snapshot['phase'] in ('exhausted', 'ended'):
+                raise TaskBudgetStopped(snapshot['reason'])
+            finish_only = snapshot and snapshot['phase'] == 'finalizing'
             if context.refresh_work_versions:
                 from app.security.versions import validate_cached_versions
                 await validate_cached_versions(db, actor, context.read_versions,
                                                refresh_work_versions=context.refresh_work_versions)
-        if context.refresh_work_versions:
+        if context.refresh_work_versions and not finish_only:
             reads = [tool for tool in request.tools if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) == 'get_work_item']
             system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n工作写入遇到版本冲突，旧正文不能继续用于保存或收尾。现在仅调用 get_work_item，work_id 从以下服务端确认的目标选择，body_start=0：' + json.dumps(sorted(context.refresh_work_versions), ensure_ascii=False) + '。读取最新内容后再按用户原请求修改，保留人工新增内容。')
             return await handler(request.override(tools=reads, system_message=system,
@@ -51,10 +54,20 @@ class ToolBoundary(AgentMiddleware):
         protocol_repair = repairing_delivery(request.messages, context.job_id)
         if protocol_repair:
             system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n本轮仅修复答复格式或引用。直接交付完整正文，保留真实未完成项；不填写内部表单，不再调用工具或重做业务操作。')
-            return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+            from app.agent.runtime.budget import final_answer_call
+            token = final_answer_call.set(True)
+            try:
+                return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+            finally:
+                final_answer_call.reset(token)
         if finish_only:
-            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n本轮探索额度已接近上限。直接交付已有结果与尚未完成的范围，不再调用工具，不编造结果。')
-            return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n直接交付已有结果与尚未完成的范围，不再调用工具，不编造结果。不向用户解释内部执行限制。')
+            from app.agent.runtime.budget import final_answer_call
+            token = final_answer_call.set(True)
+            try:
+                return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+            finally:
+                final_answer_call.reset(token)
         names = visible_tools(context, groups)
         offered = [tool for tool in visible if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) in names]
         policy = capability_policy(groups, context.role)

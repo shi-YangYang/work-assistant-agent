@@ -51,6 +51,8 @@ def node_dtos(job):
 
 
 def reopen_failed(job):
+    from app.tasks.budget.service import reset
+    reset(job)
     state = execution(job)
     for row in state.get('nodes', []):
         if row['state'] in ('failed', 'cancelled', 'running', 'retry_wait') and row.get('scope') == state.get('scope'):
@@ -58,12 +60,15 @@ def reopen_failed(job):
             row['history'] = [*row.get('history', []), {'round': row.get('round', 0), 'attempts': row['attempts'], 'errorCode': row.get('errorCode', '')}][-8:]
             row.update(state='waiting', attempts=0, nextAt=None, error='', errorCode='', round=job.attempt + 1)
     state.pop('deadline', None)
+    state.pop('budgetBlockedTools', None)
     state['actualCalls'] = state['inputTokens'] = state['outputTokens'] = 0
     if state:
         save(job, state)
 
 
 def cancel_unfinished(job):
+    from app.tasks.budget.service import finish
+    finish(job)
     state = execution(job)
     if state:
         for row in state.get('nodes', []):

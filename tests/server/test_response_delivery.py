@@ -173,7 +173,7 @@ async def test_summary_does_not_accept_empty_success_or_incoherent_state():
 
 class ExhaustingModel(DeliveryModel):
     offered: list = Field(default_factory=list)
-    query_count: int = 18
+    query_count: int = 66
     with_receipt: bool = False
     answer: str = '本轮已查到的工作列表为空；最后两次查询未执行。'
 
@@ -218,11 +218,11 @@ async def test_parallel_tool_batch_exhaustion_still_delivers_without_raising_bud
     # One branch omits any prose explanation: status must come from the refusal.
     answer = '本轮已查到的工作列表为空。' if previous_pending else '本轮已查到的工作列表为空；最后两次查询未执行。'
     fake = ExhaustingModel(model='controlled', api_key='controlled', answer=answer)
-    result, stored = await run(setup, fake, '请分别查询十八个不同项目', **conversation)
+    result, stored = await run(setup, fake, '请分别查询六十六个不同项目', **conversation)
     assert fake.calls == 3 and fake.offered[-1] == [], result
     assert answer in result['reply']
     assert result['job']['taskOutcome']['state'] == 'blocked'
-    assert len([node for node in result['job']['nodes'] if node['kind'] == 'tool']) == 16
+    assert len([node for node in result['job']['nodes'] if node['kind'] == 'tool']) == 64
     remaining = stored['nodeExecution']['budgetBlockedTools']
     assert len(remaining) == 2 and all('查找工作：项目' in step and '未执行' in step for step in remaining)
     assert result['job']['incompleteTask'] and result['job']['taskOutcome']['remaining'] == remaining
@@ -236,7 +236,7 @@ async def test_parallel_tool_batch_exhaustion_still_delivers_without_raising_bud
         assert state.payload['task']['messageId'] == result['id']
 
 
-@pytest.mark.parametrize('query_count', [14, 16])
+@pytest.mark.parametrize('query_count', [64])
 async def test_budget_closeout_after_all_reads_does_not_invent_unfinished_steps(setup, query_count):
     fake = ExhaustingModel(model='controlled', api_key='controlled', query_count=query_count, answer='全部查询均已完成，没有匹配的工作。')
     result, stored = await run(setup, fake, f'请分别查询{query_count}个不同项目')
@@ -249,10 +249,10 @@ async def test_budget_closeout_after_all_reads_does_not_invent_unfinished_steps(
 
 async def test_budget_prose_keeps_committed_receipt_without_replaying_write(setup):
     fake = ExhaustingModel(model='controlled', api_key='controlled', with_receipt=True, answer='已保存工作；查询尚未全部完成。')
-    result, stored = await run(setup, fake, '创建工作“已保存工作”，然后分别查询十八个不同项目')
+    result, stored = await run(setup, fake, '创建工作“已保存工作”，然后分别查询六十六个不同项目')
     assert fake.calls == 4 and fake.offered[-1] == []
     tools = [node for node in result['job']['nodes'] if node['kind'] == 'tool']
-    assert len(tools) == 16 and sum(node['label'] == '创建工作' for node in tools) == 1
+    assert len(tools) == 64 and sum(node['label'] == '创建工作' for node in tools) == 1
     assert len(result['actions']) == 1 and result['actions'][0]['state'] == 'succeeded'
     works = (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
     assert len(works) == 1 and works[0]['id'] == result['actions'][0]['objectId']

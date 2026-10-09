@@ -6,7 +6,7 @@ PROSE_POLICY = '''最终正文直接完整交付，首行 <!--noria:{}--> 后换
 
 
 def parse_header(raw, *, complete=False):
-    """Return (prose, unused legacy metadata, marked); hold incomplete headers."""
+    """Return (prose, optional unfinished scope, marked); hold incomplete headers."""
     value = raw.lstrip()
     if MARKER.startswith(value) and not value.startswith(MARKER):
         if complete and value:
@@ -23,11 +23,15 @@ def parse_header(raw, *, complete=False):
         raise ValueError('最终正文标记过长')
     from app.integrations.models.stream_events import tool_arguments
     header = tool_arguments(value[len(MARKER):end])
-    if not isinstance(header, dict) or set(header) - {'length'}:
+    if not isinstance(header, dict) or set(header) - {'length', 'remaining'}:
         raise ValueError('最终正文标记无效')
     # Read old preview headers without turning their metadata into a new
     # instruction, local length gate, or another model call.
-    return value[end + 3:].lstrip('\r\n'), None, True
+    remaining = header.get('remaining', [])
+    if not isinstance(remaining, list) or len(remaining) > 8 or any(not isinstance(item, str) or not item.strip() or len(item) > 240 for item in remaining):
+        raise ValueError('未完成范围无效')
+    task = {'state': 'blocked', 'remaining': remaining} if remaining else None
+    return value[end + 3:].lstrip('\r\n'), task, True
 
 
 def task_for(job, task=None):
@@ -49,7 +53,11 @@ async def delivery_for(context, raw, *, pending_task=None):
     from app.modules.operations.receipts import message_actions
     from app.security.ownership import owned
     from app.tasks.lease import lease
-    answer, _, _ = parse_header(raw, complete=True)
+    answer, unfinished, _ = parse_header(raw, complete=True)
+    from app.tasks.budget.service import current
+    budget = current(context)
+    if budget and budget['phase'] in ('finalizing', 'exhausted'):
+        pending_task = unfinished or pending_task
     if not answer.strip():
         raise ValueError('模型未返回有效正文')
     async with context.sessions() as db:

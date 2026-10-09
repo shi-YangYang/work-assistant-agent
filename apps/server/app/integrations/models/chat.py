@@ -31,7 +31,7 @@ async def chat(*args, tool_choice=None, on_timing=None, **kwargs):
             on_timing('model.progress.end', elapsed_ms=round((time.monotonic() - last_progress) * 1000, 3))
 
 
-async def _compatible_chat(*args, tool_choice=None, on_timing=None, **kwargs):
+async def _compatible_chat(*args, tool_choice=None, on_timing=None, on_retry=None, **kwargs):
     try:
         return await _chat(*args, tool_choice=tool_choice, on_timing=on_timing, **kwargs)
     except ProviderError as error:
@@ -41,6 +41,8 @@ async def _compatible_chat(*args, tool_choice=None, on_timing=None, **kwargs):
             on_timing('model.compatibility', reason='tool_choice_unsupported')
         # Only a provider's explicit parameter rejection permits this one retry;
         # no received content/tool action is replayed and no authorization inferred.
+        if on_retry:
+            await on_retry(error)
         return await _chat(*args, tool_choice='auto', on_timing=on_timing, **kwargs)
 
 

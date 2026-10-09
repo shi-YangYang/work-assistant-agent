@@ -13,6 +13,7 @@ from langsmith import tracing_context
 from app.agent.context.history import conversation_history
 from app.agent.completion.delivery import PUBLIC_REPLY_POLICY, from_messages, take_repair, validate_completion_response
 from app.agent.runtime.middleware import ToolBoundary, repairing_delivery
+from app.agent.runtime.budget import invoke as invoke_bounded
 from app.agent.runtime.model import BoundedChatModel, approximate_tokens
 from app.agent.prompts.persona import runtime_persona_prompt
 from app.agent.prompts.main import main_policy
@@ -90,7 +91,8 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
     context.compaction_packet, context.compaction_loaded = None, False
     context.context_checkpoint = GuardedSaver(checkpointer, context)
     context.context_checkpoint_config = {'configurable': {'thread_id': thread + ':context', 'checkpoint_ns': ''}}
-    config = {'configurable': {'thread_id': thread}, 'recursion_limit': 36, 'callbacks': []}
+    from app.tasks.budget.state import policy
+    config = {'configurable': {'thread_id': thread}, 'recursion_limit': policy(context.task_budget).graph_steps if context.task_budget else 36, 'callbacks': []}
     with tracing_context(enabled=False):
         state = await graph.aget_state(config)
         # Completed graphs bypass middleware. Recover compacted evidence as well
@@ -104,14 +106,14 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         repaired = any(m.id == repair_id for m in state.values.get('messages', []))
         if state.values and repair_missing_action and not repaired and not state.next:
             instruction = '内部纠错（不是用户新请求）：收尾标记与实际操作可能不一致。先 get_business_actions 读取当前回执，逐项对照用户原请求，判断是否真的遗漏操作。若原请求仅查询、整理、生成私人成果，或明确不要保存业务记录，则无业务回执是正常的；保留正确正文，不添加业务写入。确有遗漏时，仅补尚未执行且已获授权的独立步骤。已有 succeeded/pending/running 步骤不重做，不换 step 重复创建；保留原步骤编号，新增步骤避开已用编号。失败或冲突的步骤不盲目重试；依赖项未成功时不继续。用户委托挑选单条删除对象时只准备确认卡，不能直接删除或提交。管理员只写本人工作；跟进员工业务时关联已有真实 source_tokens，独立个人事项不要求员工来源。不得扩展范围，有歧义或剩余任务无法完成时明确说明。最终正文仍只交付用户原请求的结果，不汇报本次内部纠错。'
-            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+            result = await invoke_bounded(context, graph.ainvoke({'messages': [HumanMessage(id=repair_id, content=instruction)]}, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         elif state.values:
             # The worker already checked retry authorization and lease. Resume this
             # job's unchanged input; a completed graph needs no second external request.
-            result = await asyncio.wait_for(graph.ainvoke(None, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started))) if state.next else state.values
+            result = await invoke_bounded(context, graph.ainvoke(None, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started))) if state.next else state.values
         else:
             inputs = {'messages': [*history, HumanMessage(id=f'job:{job.id}', content=content)]}
-            result = await asyncio.wait_for(graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+            result = await invoke_bounded(context, graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     await validate_memory_completed(context)
     messages = result.get('messages', [])
     from app.agent.completion.prose import delivery_for
@@ -147,7 +149,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         # another task form or replay a write to fix answer metadata.
         instruction = '刚才的答复格式或引用无效。依据已有真实结果和工具错误，直接交付修正后的完整正文，不填写内部表单，不再调用工具或重做业务操作；保留真实未完成项。' + PUBLIC_REPLY_POLICY
         with tracing_context(enabled=False):
-            result = await asyncio.wait_for(graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
+            result = await invoke_bounded(context, graph.ainvoke({'messages': [HumanMessage(id=f'delivery-repair:{job.id}', content=instruction)]}, config, context=context), timeout=max(.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
         messages = result.get('messages', [])
         delivery, answer, shortcut = await read_delivery(messages)
     context.delivery = delivery.model_dump() if delivery else None

@@ -10,6 +10,8 @@ from app.tasks.context import BudgetExceeded, LostLease, ToolBudgetExceeded
 from app.tasks.lease import lease
 from app.tasks.nodes.node_failures import classify
 from app.tasks.nodes.node_state import MAX_NODES, MAX_OUTPUT_BYTES, execution, save
+from app.tasks.budget import service as budget
+from app.tasks.budget.state import TaskBudgetStopped, policy
 from app.tasks.retry import Attempt, Failure, NodeFailed, run
 
 active_node = contextvars.ContextVar('assistant_node', default=None)
@@ -20,6 +22,7 @@ async def initialize(context, input_key):
         return
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
+        budget.ensure(job, context)
         state = execution(job)
         previous_scope = state.get('scope')
         revision = state.get('dataRevision', 0)
@@ -46,7 +49,7 @@ async def initialize(context, input_key):
             # prior raw results must not become a second source of business truth.
             for row in state.get('nodes', []):
                 row.pop('output', None)
-            state = {'scope': scope, 'dataRevision': revision, 'nodes': state.get('nodes', [])[-32:]}
+            state = {**{key: state[key] for key in ('actualCalls', 'inputTokens', 'outputTokens') if key in state}, 'scope': scope, 'dataRevision': revision, 'nodes': state.get('nodes', [])[-32:]}
             context.read_versions.clear()
             context.refresh_work_versions.clear()
             # A reply and its evidence belong to the same data/configuration
@@ -55,13 +58,13 @@ async def initialize(context, input_key):
             if previous_scope:
                 stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources'))
             job.result = {key: value for key, value in job.result.items() if key not in stale}
-        state.setdefault('deadline', time.time() + 420)
+        state['deadline'] = context.node_deadline
         state.setdefault('nodes', [])
         save(job, state)
         context.node_scope, context.node_deadline = scope, state['deadline']
         context.read_versions.update(state.get('readVersions', {}))
         context.refresh_work_versions.update(state.get('refreshWorkVersions', {}))
-        context.calls = state.get('actualCalls', 0)
+        context.calls = context.task_budget['models']
         context.input_tokens = state.get('inputTokens', 0)
         context.output_tokens = state.get('outputTokens', 0)
 
@@ -79,7 +82,7 @@ async def check(context, *, allow_work_refresh=False):
         await validate_cached_versions(db, actor, context.read_versions,
                                        refresh_work_versions=context.refresh_work_versions if allow_work_refresh else None)
     if time.time() >= context.node_deadline:
-        raise BudgetExceeded('本次处理已达到时间限制，已停止；可重试此步骤')
+        raise TaskBudgetStopped('time')
 
 
 async def recover_receipt(db, context, job, actor, row):
@@ -119,14 +122,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
         state = execution(job)
         row = next((item for item in state['nodes'] if item['id'] == identifier), None)
         if row is None:
-            active = [item for item in state['nodes'] if item['scope'] == context.node_scope]
-            count = sum(item['kind'] == kind for item in active)
-            # Planning, authorization and final review share the durable
-            # 32-call provider budget. A second aggregate cap of eight nodes
-            # could reject the final review after valid multi-step writes.
-            if len(state['nodes']) >= MAX_NODES or kind == 'tool' and count >= 16:
-                error = ToolBudgetExceeded if kind == 'tool' else BudgetExceeded
-                raise error('本次处理步骤已达到限制，请补充说明后继续')
+            limits = policy(context.task_budget) if context.task_budget else None
+            if len(state['nodes']) >= (limits.nodes if limits else MAX_NODES):
+                raise TaskBudgetStopped('nodes')
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,
                    'round': job.attempt, 'totalRetries': 0, 'resumable': True}
@@ -148,6 +146,11 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                                                cancelled=row['state'] == 'cancelled'), identifier)
             if on_failure is None:
                 raise prior_failure
+        if kind == 'tool' and not row.get('receiptId') and not prior_failure:
+            try:
+                budget.consume(job, context, 'tool', identity=identifier)
+            except TaskBudgetStopped as error:
+                raise ToolBudgetExceeded(str(error)) from error
         attempt = Attempt(row['attempts'], row.get('nextAt'))
         if row['state'] == 'running':
             if not safe_replay and not row.get('receiptId'):
@@ -156,6 +159,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             # on a lease/fence change. Receipts are recovered before retrying.
             attempt.next_at = time.time() + 1
     token = active_node.set((identifier, kind))
+    tool_token = budget.active_tool.set(True) if kind == 'tool' else None
 
     async def recover():
         async with context.sessions.begin() as db:
@@ -235,3 +239,5 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
         raise
     finally:
         active_node.reset(token)
+        if tool_token is not None:
+            budget.active_tool.reset(tool_token)
