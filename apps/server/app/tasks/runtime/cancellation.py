@@ -25,7 +25,7 @@ class CancelJob(Input):
     expectedFence: int = Field(ge=0, strict=True)
 
 
-async def cancel_job(db, actor, identifier, body):
+async def cancel_job(db, actor, identifier, body, *, temporary=None):
     await company_lock(db, actor.company_id)
     item = await owned(db, Job, identifier, actor, lock=True)
     if item.kind != 'message':
@@ -39,6 +39,11 @@ async def cancel_job(db, actor, identifier, body):
         return item
     if item.attempt != body.expectedAttempt or item.fence != body.expectedFence:
         problem(409, '任务执行版本已变化，请刷新后中断', 'job_version_changed')
+    from app.tasks.feedback.reply_stream import transition
+    if temporary is not None:
+        from app.tasks.feedback.reply_stream import persist_snapshot
+        await persist_snapshot(db, actor, item, message, temporary)
+    transition(item, 'interrupted')
     await interrupt_usage(db, item)
     item.state, item.phase, item.error = 'cancelled', 'cancelled', '已中断'
     item.fence, item.lease_until, item.updated_at = item.fence + 1, None, now()
@@ -78,6 +83,11 @@ async def watch_cancellation(context):
             ))).one_or_none()
         if not row or row.state != 'running' or row.fence != context.fence or row.lease_until is None or row.lease_until < now():
             raise LostLease()
+        if context.task_budget:
+            from app.tasks.budget.service import current
+            from app.tasks.budget.state import TaskBudgetStopped
+            if current(context)['remainingSeconds'] <= 0:
+                raise TaskBudgetStopped('time')
         await asyncio.sleep(CANCEL_POLL_SECONDS)
 
 

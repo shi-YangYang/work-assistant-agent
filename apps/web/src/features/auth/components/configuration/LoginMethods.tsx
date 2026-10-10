@@ -1,5 +1,5 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
-import utilitiesStyles from '../../../../styles/utilities.module.css'
 import loginConfigurationStyles from '../../styles/login-settings.module.css'
 import type { DingTalkConfiguration } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
@@ -14,12 +14,12 @@ export function LoginMethods() {
   const [notice, setNotice] = useState('')
   return (
     <div
-      className={`${layoutStyles['settings-page']} ${loginConfigurationStyles['login-methods']}`}
+      className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']} ${loginConfigurationStyles['login-methods']}`}
     >
-      <h2>登录方式</h2>
-      <p className={utilitiesStyles['muted']}>
-        账号密码登录始终可用。钉钉按本公司的通讯录授权范围核验成员。
-      </p>
+      <PageHeader
+        title="登录方式"
+        description="账号密码登录始终可用。钉钉按本公司的通讯录授权范围核验成员。"
+      />
       <DingTalkResult />
       {notice && <p role="status">{notice}</p>}
       <ErrorNotice retry={resource.refresh}>{resource.error}</ErrorNotice>

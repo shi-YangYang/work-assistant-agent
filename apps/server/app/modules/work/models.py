@@ -41,3 +41,36 @@ class ProgressDraft(Owned, Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     status: Mapped[str] = mapped_column(String(16), default='pending')
     tool_key: Mapped[str] = mapped_column(String(200), unique=True)
+
+
+class WorkUpdate(Owned, Base):
+    __tablename__ = 'company_work_update'
+    work_id: Mapped[str] = mapped_column(ForeignKey('company_work_item.id'), index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    text: Mapped[str] = mapped_column(String(12000), default='')
+    material_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    origin: Mapped[str] = mapped_column(String(24), default='manual')
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    work_revision: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class WorkUpdateRevision(Owned, Base):
+    __tablename__ = 'company_work_update_revision'
+    update_id: Mapped[str] = mapped_column(ForeignKey('company_work_update.id'), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(String(12000), default='')
+    material_ids: Mapped[list] = mapped_column(JSONB, default=list)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    work_revision: Mapped[int] = mapped_column(Integer)
+    origin: Mapped[str] = mapped_column(String(24))
+    __table_args__ = (UniqueConstraint('update_id', 'revision'),)
+
+
+class WorkMaterial(Owned, Base):
+    __tablename__ = 'company_work_material'
+    work_id: Mapped[str] = mapped_column(ForeignKey('company_work_item.id'), index=True)
+    attachment_id: Mapped[str] = mapped_column(ForeignKey('company_attachment.id'), index=True)
+    source: Mapped[dict] = mapped_column(JSONB, default=dict)
+    removed: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)

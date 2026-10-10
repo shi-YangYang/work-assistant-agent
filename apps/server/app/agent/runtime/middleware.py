@@ -2,25 +2,39 @@ import json
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
-from app.agent.prompts.policies import ALLOWED_TOOLS, TEAM_TOOL_NAMES, EXECUTION_TOOLS
-from app.tasks.context import BudgetExceeded
+from app.agent.tools.catalog import allowed_tools, catalog_schema, loaded_groups, remember_call_capability, visible_tools
+from app.agent.prompts.main import capability_policy
+from app.tasks.context import ToolBudgetExceeded
 from app.tasks.lease import lease
 
 
 def repairing_delivery(messages, job_id):
     latest = next((message for message in reversed(messages) if isinstance(message, HumanMessage)), None)
-    return latest is not None and latest.id == f'delivery-repair:{job_id}'
+    return latest is not None and latest.id in (f'delivery-repair:{job_id}', f'delivery-references:{job_id}')
 
 
 class ToolBoundary(AgentMiddleware):
     async def awrap_model_call(self, request, handler):
         context = request.runtime.context
-        async with context.sessions() as db:
-            job, _ = await lease(db, context)
-            from app.tasks.nodes.node_state import execution
-            state = execution(job) if context.node_retry else {}
-            tool_count = sum(row['kind'] == 'tool' and row['scope'] == context.node_scope for row in state.get('nodes', [])) if context.node_retry else context.tools
-            finish_only = tool_count >= 14 or state.get('actualCalls', context.calls) >= (29 if context.node_retry else 6)
+        async with context.sessions.begin() as db:
+            job, actor = await lease(db, context)
+            groups = loaded_groups(context, job)
+            from app.tasks.budget import service as budget
+            from app.tasks.budget.state import TaskBudgetStopped
+            budget.ensure(job, context)
+            snapshot = budget.current(context)
+            if snapshot and snapshot['phase'] in ('exhausted', 'ended'):
+                raise TaskBudgetStopped(snapshot['reason'])
+            finish_only = snapshot and snapshot['phase'] == 'finalizing'
+            if context.refresh_work_versions:
+                from app.security.versions import validate_cached_versions
+                await validate_cached_versions(db, actor, context.read_versions,
+                                               refresh_work_versions=context.refresh_work_versions)
+        if context.refresh_work_versions and not finish_only:
+            reads = [tool for tool in request.tools if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) == 'get_work_item']
+            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n工作写入遇到版本冲突，旧正文不能继续用于保存或收尾。现在仅调用 get_work_item，work_id 从以下服务端确认的目标选择，body_start=0：' + json.dumps(sorted(context.refresh_work_versions), ensure_ascii=False) + '。读取最新内容后再按用户原请求修改，保留人工新增内容。')
+            return await handler(request.override(tools=reads, system_message=system,
+                                                  tool_choice={'type': 'function', 'function': {'name': 'get_work_item'}}))
         from app.agent.actions.interactions import waiting_text
         waiting = await waiting_text(context, include_actions=any(isinstance(message, ToolMessage) and message.name == 'execute_business_action' for message in request.messages))
         if waiting:
@@ -30,68 +44,96 @@ class ToolBoundary(AgentMiddleware):
             # Independent intent approval plus the committed receipt suffice
             # for operation-only requests; no success prose needs generating.
             return ModelResponse(result=[AIMessage(id=f'receipt-completion:{context.job_id}', content='')])
-        allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
-        if not getattr(context.settings, 'sandbox_url', '') or not getattr(context.settings, 'sandbox_token', ''):
-            allowed = allowed - EXECUTION_TOOLS
+        allowed = allowed_tools(context)
         names = {t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name')) for t in request.tools}
-        # Profiles tune model visibility; this middleware is the security boundary.
+        # All implementations remain registered for old checkpoints; every actual
+        # invocation still crosses the independent authorization boundary below.
         visible = [t for t in request.tools if (t.name if hasattr(t, 'name') else t.get('name', t.get('function', {}).get('name'))) in allowed]
         if not allowed.issubset(names):
             raise RuntimeError('Business tool set is incomplete')
         protocol_repair = repairing_delivery(request.messages, context.job_id)
-        if finish_only or protocol_repair:
-            terminal = [tool for tool in visible if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) == 'finish_task']
-            reason = '本轮仅修复收尾协议，不得重做工具或业务操作。' if protocol_repair else '本轮探索额度已接近上限。'
-            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n' + reason + '立即使用 finish_task 交付已有结果、实际来源及未完成范围，不再读取或执行工具。不能编造缺失内容，不能把尚未完成的事项标为完成。')
-            return await handler(request.override(tools=terminal, system_message=system, tool_choice={'type': 'function', 'function': {'name': 'finish_task'}}))
-        return await handler(request.override(tools=visible))
+        if protocol_repair:
+            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n本轮仅修复答复格式或引用。直接交付完整正文，保留真实未完成项；不填写内部表单，不再调用工具或重做业务操作。')
+            from app.agent.runtime.budget import final_answer_call
+            token = final_answer_call.set(True)
+            try:
+                return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+            finally:
+                final_answer_call.reset(token)
+        if finish_only:
+            system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n直接交付已有结果与尚未完成的范围，不再调用工具，不编造结果。不向用户解释内部执行限制。')
+            from app.agent.runtime.budget import final_answer_call
+            token = final_answer_call.set(True)
+            try:
+                return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+            finally:
+                final_answer_call.reset(token)
+        names = visible_tools(context, groups)
+        offered = [tool for tool in visible if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) in names]
+        policy = capability_policy(groups, context.role)
+        system = SystemMessage(content=(request.system_message.text if request.system_message else '') + ('\n' + policy if policy else ''))
+        return await handler(request.override(tools=[catalog_schema(context), *offered], system_message=system, tool_choice='auto'))
 
     async def awrap_tool_call(self, request, handler):
         context = request.runtime.context
         async with context.sessions() as db:
             await lease(db, context)
-        allowed = ALLOWED_TOOLS | (TEAM_TOOL_NAMES if context.role == 'admin' else frozenset())
-        if not getattr(context.settings, 'sandbox_url', '') or not getattr(context.settings, 'sandbox_token', ''):
-            allowed = allowed - EXECUTION_TOOLS
-        if request.tool_call['name'] not in allowed:
+        allowed = allowed_tools(context)
+        if request.tool_call['name'] not in allowed | {'load_tools'}:
             raise RuntimeError('Tool is not allowed')
-        if repairing_delivery(request.state.get('messages', []), context.job_id) and request.tool_call['name'] != 'finish_task':
-            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content='本轮仅修复收尾协议，此工具未执行。请单独调用 finish_task 交付已有结果。', status='error')
+        from app.agent.runtime.tool_progress import begin, end
+        from app.core.digests import digest
         batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
+        progress_call = {**request.tool_call, 'progressId': digest({'message': getattr(batch, 'id', None), 'call': request.tool_call['id']})}
+        stopped = await begin(context, progress_call)
+        if stopped is not None:
+            return stopped
+
+        async def reject(code, message, *, conflict=False, **extra):
+            result = ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], status='error',
+                content=json.dumps({'state': 'conflict' if conflict else 'not_executed', 'category': 'conflict' if conflict else 'invalid_arguments',
+                                    'executed': False, 'code': code, 'message': message}, ensure_ascii=False), **extra)
+            return await end(context, progress_call, result)
+
+        if context.refresh_work_versions and not (request.tool_call['name'] == 'get_work_item' and
+                                                 request.tool_call.get('args', {}).get('work_id') in context.refresh_work_versions and
+                                                 request.tool_call.get('args', {}).get('body_start', 0) == 0):
+            return await reject('work_refresh_required', '先用 get_work_item 从正文第一页读取冲突工作的最新版本，再继续保存或收尾。', conflict=True)
+        if repairing_delivery(request.state.get('messages', []), context.job_id):
+            return await reject('delivery_only', '本轮仅修复答复，此工具未执行。请直接交付完整正文，不调用工具。')
         if batch and len(batch.tool_calls) > 1 and any(call['name'] == 'finish_task' for call in batch.tool_calls):
-            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content='收尾必须单独调用；本批工具均未执行。先执行所需工具，观察结果后再 finish_task。', status='error')
+            return await reject('mixed_finish', '收尾必须单独调用；本批工具均未执行。先执行所需工具，观察结果后再 finish_task。')
+        if batch and any(call['name'] == 'set_task_context' for call in batch.tool_calls) and any(call['name'] in ('execute_business_action', 'propose_progress', 'propose_followup') for call in batch.tool_calls):
+            return await reject('mixed_context_write', '任务上下文变更与业务写入不能同批；本批未执行，请先记录上下文，再进行写入。')
         if request.tool_call['name'] == 'finish_task':
-            # A completion is metadata, not a business tool/node or a new model call.
             from app.agent.completion.delivery import completion_reference_error
             args = request.tool_call['args']
             error = await completion_reference_error(context, args.get('operation_ids'),
-                                                     verification_requested=args.get('verification_requested', False),
-                                                     verification_quote=args.get('verification_quote', ''))
+                verification_requested=args.get('verification_requested', False), verification_quote=args.get('verification_quote', ''))
             if error:
-                return ToolMessage(tool_call_id=request.tool_call['id'], name='finish_task', content=error, status='error')
-            return await handler(request)
+                return await reject('invalid_completion', error, additional_kwargs={'completion_reference_error': True})
+            return await end(context, progress_call, await handler(request))
+        if request.tool_call['name'] == 'load_tools':
+            return await end(context, progress_call, await handler(request))
+        if batch and request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')) and any(call['name'] == 'execute_business_action' for call in batch.tool_calls):
+            return await reject('mixed_read_write', '本批次含写操作，本查询尚未执行。请等写操作返回后，在下一批调用查询更新后的结果。')
+        if batch and any(call['name'] == 'request_user_input' for call in batch.tool_calls) and request.tool_call['name'] in ('execute_business_action', 'propose_progress', 'propose_followup'):
+            return await reject('mixed_question_write', '本批次正在提问，等待用户回答后再执行写操作')
+        async with context.sessions.begin() as db:
+            job, _ = await lease(db, context)
+            remember_call_capability(context, job, request.tool_call)
         if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')):
             from app.tasks.feedback.feedback import publish
             await publish(context, 'searching', force=True)
+        from app.agent.runtime.tool_nodes import reject_tool_budget, tool_node
         if not context.node_retry:
+            if context.tools >= 16:
+                return await end(context, progress_call, await reject_tool_budget(context, request.tool_call))
             context.tools += 1
-        if context.tools > 16:
-            raise BudgetExceeded('本次处理步骤已达到限制')
-        if request.tool_call['name'].startswith(('find_', 'get_', 'query_', 'read_', 'web_')):
-            batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
-            if batch and any(call['name'] == 'execute_business_action' for call in batch.tool_calls):
-                return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content=json.dumps({'error': '本批次含写操作，本查询尚未执行。请等写操作返回后，在下一批调用查询更新后的结果。'}, ensure_ascii=False))
-        batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
-        if batch and any(call['name'] == 'request_user_input' for call in batch.tool_calls) and request.tool_call['name'] in ('execute_business_action', 'propose_progress', 'propose_followup'):
-            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content=json.dumps({'state': 'waiting', 'message': '本批次正在提问，等待用户回答后再执行写操作'}, ensure_ascii=False))
-        from app.agent.runtime.tool_nodes import tool_node
         try:
-            return await tool_node(context, request, lambda: handler(request))
-        except BudgetExceeded:
-            async with context.sessions() as db:
-                job, _ = await lease(db, context)
-                from app.tasks.nodes.node_state import execution
-                count = sum(row['kind'] == 'tool' and row['scope'] == context.node_scope for row in execution(job).get('nodes', []))
-            if count < 16:
-                raise
-            return ToolMessage(tool_call_id=request.tool_call['id'], name=request.tool_call['name'], content=json.dumps({'state': 'unavailable', 'message': '本轮工具额度已用完；此工具未执行。请立即用已有结果 finish_task，说明未完成范围。'}, ensure_ascii=False))
+            if context.timing:
+                with context.timing.span('tool', call=request.tool_call['id'], kind=request.tool_call['name']):
+                    return await end(context, progress_call, await tool_node(context, request, lambda: handler(request)))
+            return await end(context, progress_call, await tool_node(context, request, lambda: handler(request)))
+        except ToolBudgetExceeded:
+            return await end(context, progress_call, await reject_tool_budget(context, request.tool_call))

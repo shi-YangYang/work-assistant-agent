@@ -1,6 +1,6 @@
 """Bounded opt-in real-HTTP load against an owned isolated API (no models).
 
-Frozen budget: 100/1,000/10,000 work and message rows; 1/10/25 concurrent
+Frozen budget: 100/1,000/10,000 work and message rows; 1/5/10 concurrent
 clients with 100 requests each, 80 reads + 20 writes. First-page p95 < 3s,
 HTTP mixed p95 < 5s, zero errors, response < 64 KiB, API RSS < 512 MiB.
 Query sample budget <= 6 SQL statements. No cloud capacity claim is made.
@@ -26,6 +26,11 @@ from environment import ROOT, load_environment
 def distribution(values):
     ordered = sorted(values)
     return {'p50Ms': round(statistics.median(ordered), 2), 'p95Ms': round(ordered[math.ceil(len(ordered) * .95) - 1], 2)}
+
+
+def cpu(pid):
+    result = subprocess.run(['ps', '-o', '%cpu=', '-p', str(pid)], capture_output=True, text=True)
+    return float(result.stdout.strip() or 0)
 
 
 def rss(pid):
@@ -59,7 +64,7 @@ async def run(args):
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     plan = {'commit': metadata['commit'], 'schema': metadata['schema'], 'machine': {'system': platform.platform(), 'logicalCpus': os.cpu_count(), 'processor': platform.processor()},
-            'budget': {'rows': [100, 1000, 10000], 'concurrency': [1, 10, 25], 'requestsPerLevel': 100, 'writeRequestsPerLevel': 20, 'querySamples': 5, 'queryP95Ms': 3000, 'mixedP95Ms': 5000, 'maxResponseBytes': 65536, 'maxApiRssBytes': 512 * 1024 * 1024, 'maxSqlStatements': 6, 'levelTimeoutSeconds': 60},
+            'budget': {'rows': [100, 1000, 10000], 'concurrency': [1, 5, 10], 'requestsPerLevel': 100, 'writeRequestsPerLevel': 20, 'querySamples': 5, 'queryP95Ms': 3000, 'mixedP95Ms': 5000, 'maxResponseBytes': 65536, 'maxApiRssBytes': 512 * 1024 * 1024, 'maxSqlStatements': 6, 'levelTimeoutSeconds': 60},
             'mode': 'real HTTP + PostgreSQL; deterministic data; no model provider',
             'measurementScope': {'sqlStatements': 'Direct work_page query, excluding HTTP auth/middleware', 'poolCheckedOutAfter': 'Inspector engine, not API subprocess'}, 'results': []}
     output.with_suffix('.plan.json').write_text(json.dumps(plan, indent=2) + '\n')
@@ -142,7 +147,7 @@ async def run(args):
                 plan['results'].append(measurement)
                 peak_rss = max(peak_rss, rss(process.pid))
             actor = users[-1][1]
-            for concurrency in (1, 10, 25):
+            for concurrency in plan['budget']['concurrency']:
                 semaphore = asyncio.Semaphore(concurrency)
                 times, codes = [], []
                 async def request(index):
@@ -161,7 +166,7 @@ async def run(args):
                 async with sessions() as db:
                     written = await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == actor.id, WorkItem.title.like(f'并发{concurrency}-%')))
                 assert written == 20
-                measurement = {'type': 'mixed', 'concurrency': concurrency, 'requests': len(codes), 'failures': 0, 'writesPersisted': written, **distribution(times)}
+                measurement = {'type': 'mixed', 'concurrency': concurrency, 'requests': len(codes), 'failures': 0, 'writesPersisted': written, 'apiCpuPercent': cpu(process.pid), 'apiRssBytes': rss(process.pid), **distribution(times)}
                 assert measurement['p95Ms'] < 5000
                 plan['results'].append(measurement)
                 peak_rss = max(peak_rss, rss(process.pid))

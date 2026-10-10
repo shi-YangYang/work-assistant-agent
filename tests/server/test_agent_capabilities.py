@@ -105,7 +105,7 @@ async def test_dropped_query_uses_actual_rows_not_rejected_prose(setup):
         assert await work_query_fallback(db, users['employee'], context) == ''
 
 
-async def test_multi_step_authorization_does_not_starve_final_review(setup):
+async def test_multi_step_authorization_preserves_reserved_final_answer_budget(setup):
     from app.tasks.nodes.node_execution import initialize, execute_node
     from app.agent.runtime.model import reserve_call
     from app.tasks.context import BudgetExceeded
@@ -115,13 +115,19 @@ async def test_multi_step_authorization_does_not_starve_final_review(setup):
     async def operation():
         await reserve_call(context, 'assistant', 10)
         return 'checked'
-    # Planning and authorization must leave room for the final result review.
+    # Planning and authorization share the persisted budget; final delivery has reserved capacity.
     for index, kind in enumerate(['model'] * 5 + ['authorization'] * 3 + ['review']):
         assert await execute_node(context, identity=str(index), kind=kind, label=kind, operation=operation) == 'checked'
     assert context.calls == 9
-    context.calls = 32
+    async with context.sessions.begin() as db:
+        live = await db.get(Job, context.job_id)
+        budget = live.result['taskBudget']
+        regular_limit = budget['policy']['models'] - budget['policy']['reserve_models']
+        live.result = {**live.result, 'taskBudget': {**budget, 'models': regular_limit}}
     with pytest.raises(BudgetExceeded):
         await reserve_call(context, 'assistant', 10)
+    await reserve_call(context, 'assistant', 10, final_answer=True)
+    assert context.calls == regular_limit + 1
 
 
 @pytest.mark.parametrize('repaired', [True, False])

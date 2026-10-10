@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 """Fixed-response report commits, bounded dispatch and durable report schedules."""
 import asyncio
 import json
@@ -386,11 +387,10 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
         config['baseUrl']='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
         config['models'][0]['model']='deepseek-v4.1-flash'
     if reasoning_check == 'explicit':
-        config['models'][0]['presets'] = [{'id': 'chosen', 'name': '显式推理', 'mode': 'advanced', 'parameters': {'enable_thinking': True, 'reasoning_effort': 'high'}}]
+        config['models'][0]['parameters'] = {'enable_thinking': True, 'reasoning_effort': 'high'}
+    config['models'][0]['streaming'] = False
     saved=await create(c['admin'], config)
-    routing=route(saved);routing['assistant']['streaming']=False
-    if reasoning_check == 'explicit':
-        routing['assistant']['presetId'] = 'chosen'
+    routing=route(saved)
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     report,job,_=await prepared(setup)
     requests=[]
@@ -441,9 +441,8 @@ async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(
     from test_company import send
     await send(c['employee'])
     current=await claim(sessions,users['employee'].id)
-    response=await c['admin'].patch('/api/v1/members/'+users['employee'].id,json={'active':False})
-    assert response.status_code==200
-    assert (await c['admin'].patch('/api/v1/members/'+users['employee'].id,json={'active':True})).status_code==200
+    await set_legacy_active(sessions, users['employee'])
+    await set_legacy_active(sessions, users['employee'], True)
     async with sessions() as db:
         live=await db.get(Job,current.id)
         assert live.state=='cancelled' and live.fence>current.fence
@@ -510,7 +509,7 @@ async def test_report_default_mode_preserves_unknown_protocol_and_explicit_param
     config = {'baseUrl': host, 'model': model, 'parameters': {'temperature': .2}}
     assert report_model_config(config, {})['parameters'] == {'temperature': .2, **expected}
     assert config['parameters'] == {'temperature': .2}
-    assert report_model_config(config, {'presetId': 'selected'}) is config
+    assert report_model_config(config, {'explicitReasoning': True}) is config
     for parameters in ({'enable_thinking': True}, {'thinking': {'type': 'enabled'}}, {'reasoning_effort': 'high'}, {'thinking_budget': 3000}):
         explicit = {**config, 'parameters': parameters}
         assert report_model_config(explicit, {}) is explicit

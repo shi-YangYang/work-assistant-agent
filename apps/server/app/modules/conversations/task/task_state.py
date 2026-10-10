@@ -36,7 +36,7 @@ async def begin_input(db, actor, message):
         if previous_id and previous_id != message.id:
             previous = await db.get(Message, previous_id)
             prior_job = await db.scalar(select(Job).where(Job.target_id == previous_id, Job.kind == 'message', Job.owner_id == actor.id))
-            if previous and not previous.deleted and prior_job and prior_job.state in ('failed', 'awaiting_retry'):
+            if previous and not previous.deleted and prior_job and prior_job.state in ('failed', 'awaiting_retry', 'cancelled'):
                 original = request_text(previous, prior_job)
                 snapshot = prior_job.result.get('taskSnapshot', {})
                 sources = snapshot.get('previousTask', {}).get('sources', []) if snapshot.get('relation') == 'continue' else []
@@ -44,7 +44,11 @@ async def begin_input(db, actor, message):
                     sources = [*sources, TaskSource(messageId=previous.id, revision=previous.transcript_revision, digest=digest(original), quote=original[:2000]).model_dump()]
                 sources = [sources[0], *sources[-15:]] if len(sources) > 16 else sources
                 from app.tasks.feedback.items import collect
-                row.payload = {**row.payload, 'task': {'id': snapshot.get('taskId', previous_id), 'messageId': previous_id, 'goal': original[:400], 'state': 'blocked', 'remaining': ['上次请求尚未完成'], 'sources': sources, 'items': collect(prior_job)}}
+                scope = row.payload.get('task', {})
+                # Interruption is already represented by state. Preserve known
+                # requirements, without inventing a new request for user input.
+                remaining = scope.get('remaining', []) if scope.get('messageId') == previous_id else prior_job.result.get('taskOutcome', {}).get('remaining', [])
+                row.payload = {**row.payload, 'task': {'id': snapshot.get('taskId', previous_id), 'messageId': previous_id, 'goal': original[:400], 'state': 'cancelled' if prior_job.state == 'cancelled' else 'blocked', 'remaining': remaining, 'sources': sources, 'items': collect(prior_job)}}
         row.revision += 1
         row.payload = {**row.payload, 'latestMessageId': message.id}
         row.updated_at = now()
@@ -102,14 +106,14 @@ async def freeze(db, actor, job, message):
         row.revision += 1
     directives = [source for source in payload.get('directives', []) if await source_text(db, actor, message.conversation_id, source) is not None]
     previous = payload.get('task', {})
-    previous = previous if previous.get('state') in ('needs_input', 'partial', 'needs_confirmation', 'processing', 'blocked') else {}
+    previous = previous if previous.get('state') in ('needs_input', 'partial', 'needs_confirmation', 'processing', 'blocked', 'cancelled') else {}
     if previous and any([await source_text(db, actor, message.conversation_id, source) is None for source in previous.get('sources', [])]):
         previous = {}
     snapshot = {'version': row.revision if row else 1, 'taskId': message.id, 'messageId': message.id,
                 'inputRevision': message.transcript_revision, 'directives': directives,
                 'previousTask': deepcopy(previous), 'relation': 'new', 'allowLegacy': 'task' not in payload}
     continuation = job.result.get('continuation', {})
-    if continuation and previous and continuation.get('taskId') == previous.get('id'):
+    if continuation and previous and previous.get('state') != 'cancelled' and continuation.get('taskId') == previous.get('id'):
         snapshot = {**snapshot, 'relation': 'continue', 'taskId': previous['id']}
     job.result = {**job.result, 'taskSnapshot': snapshot}
     return deepcopy(snapshot)
@@ -118,8 +122,16 @@ async def freeze(db, actor, job, message):
 async def resume(db, actor, job, message, *, requested):
     snapshot = await freeze(db, actor, job, message)
     previous = snapshot.get('previousTask', {})
-    if requested and previous and previous.get('state') != 'cancelled':
+    if requested and previous:
         snapshot = {**snapshot, 'relation': 'continue', 'taskId': previous['id']}
+        if previous.get('state') == 'cancelled':
+            # The old job and cancelled approval cards remain cancelled. Only
+            # this newly authorized input resumes the logical task scope.
+            row = await store_for(db, actor, message.conversation_id)
+            row.payload = {**row.payload, 'task': {**previous, 'messageId': message.id, 'state': 'partial'}}
+            row.revision += 1
+            row.updated_at = now()
+            snapshot['version'] = row.revision
         job.result = {**job.result, 'taskSnapshot': snapshot}
     return snapshot
 
@@ -145,11 +157,20 @@ async def apply_directive(db, actor, job, message, interpretation):
     job.result = {**job.result, 'taskSnapshot': snapshot, 'appliedDirective': key}
 
 
-async def finish(db, actor, job, message, interpretation, outcome):
+async def finish(db, actor, job, message, interpretation, outcome, *, delivery_version=1):
     row = await store_for(db, actor, message.conversation_id)
     if not row or row.payload.get('latestMessageId') != message.id:
         return
     value = TaskInterpretation.model_validate(interpretation or {})
+    # An unrelated ordinary reply does not resolve/erase an older pending task.
+    # Its current message still advances the scope version, but the unfinished
+    # task retains its own user sources and authoritative receipts for continuation.
+    previous = job.result.get('taskSnapshot', {}).get('previousTask')
+    if delivery_version == 2 and previous and value.state == 'completed' and not job.result.get('explicitTaskContext') and not job.result.get('intentTaskInterpretation') and not job.result.get('continuation') and not job.result.get('toolOutcomes'):
+        row.revision += 1
+        row.updated_at = now()
+        job.result = {**job.result, 'taskSnapshot': {**job.result['taskSnapshot'], 'version': row.revision}}
+        return
     if job.result.get('continuation'):
         value = value.model_copy(update={'relation': 'continue'})
     # The same verified instruction may have been applied and bound to a target
@@ -183,7 +204,8 @@ async def finish(db, actor, job, message, interpretation, outcome):
 
 async def cancel(db, actor, job, message):
     from app.modules.operations.models import BusinessAction
-    task_id = job.result.get('taskSnapshot', {}).get('taskId', message.id)
+    snapshot = job.result.get('taskSnapshot', {})
+    task_id = snapshot.get('taskId', message.id)
     pending = (await db.scalars(select(BusinessAction).where(
         BusinessAction.company_id == actor.company_id, BusinessAction.owner_id == actor.id,
         BusinessAction.task_id == task_id, BusinessAction.state == 'pending').with_for_update())).all()
@@ -193,8 +215,14 @@ async def cancel(db, actor, job, message):
         action.updated_at = now()
     row = await store_for(db, actor, message.conversation_id)
     if row and row.payload.get('latestMessageId') == message.id:
-        row.payload = {**row.payload, 'task': {'id': job.result.get('taskSnapshot', {}).get('taskId', message.id),
-            'messageId': message.id, 'state': 'cancelled', 'remaining': []}}
+        original = request_text(message, job)
+        sources = snapshot.get('previousTask', {}).get('sources', []) if snapshot.get('relation') == 'continue' else []
+        if original.strip():
+            sources = [*sources, TaskSource(messageId=message.id, revision=message.transcript_revision, digest=digest(original), quote=original[:2000]).model_dump()]
+        sources = [sources[0], *sources[-15:]] if len(sources) > 16 else sources
+        from app.tasks.feedback.items import collect
+        row.payload = {**row.payload, 'task': {'id': task_id, 'messageId': message.id,
+            'goal': original[:400], 'state': 'cancelled', 'remaining': [], 'sources': sources, 'items': collect(job)}}
         row.revision += 1
         row.updated_at = now()
 
@@ -239,6 +267,6 @@ async def prepare_retry(db, actor, job, message):
     if snapshot.get('inputRevision') != message.transcript_revision:
         # An explicit retry of corrected current input may take a new snapshot;
         # previously committed business receipts still retain their identities.
-        job.result = {key: value for key, value in job.result.items() if key not in ('taskSnapshot', 'taskBarriers', 'toolOutcomes', 'taskInterpretation', 'intentTaskInterpretation')}
+        job.result = {key: value for key, value in job.result.items() if key not in ('taskSnapshot', 'taskBarriers', 'toolOutcomes', 'taskInterpretation', 'intentTaskInterpretation', 'explicitTaskContext', 'explicitBusinessRequest')}
     else:
         await assert_current(db, actor, job, message)

@@ -3,6 +3,8 @@
   color: var(--muted);
   font-size: 13px;
   max-width: 680px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
 }
 .details > summary {
   display: flex;

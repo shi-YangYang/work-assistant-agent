@@ -116,11 +116,13 @@ def validate(name, args):
             for key in ('x_label', 'y_label'):
                 text(args.get(key, ''), 120)
     elif name == 'create_document':
-        obj(args, ('filename', 'format', 'title', 'blocks'), ('filename', 'title', 'blocks'))
+        obj(args, ('filename', 'format', 'title', 'blocks', 'max_pages'), ('filename', 'title', 'blocks'))
         filename(args['filename']); text(args['title'], 200, 1)
         if args.get('format', 'docx') not in ('docx', 'pdf'):
             raise ValueError('不支持的文档格式')
         blocks(args['blocks'])
+        if args.get('max_pages') is not None:
+            integer(args['max_pages'], 1, 40)
     else:
         obj(args, ('filename', 'title', 'pages'), ('filename', 'title', 'pages'))
         filename(args['filename']); text(args['title'], 200, 1)

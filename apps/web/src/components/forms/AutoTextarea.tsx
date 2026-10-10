@@ -3,7 +3,7 @@ import type { RefObject, TextareaHTMLAttributes } from 'react'
 import { useLayoutEffect, useRef } from 'react'
 
 function resizeTextarea(node: HTMLTextAreaElement | null) {
-  if (!node) return
+  if (!node || !node.getClientRects().length) return
   node.style.height = 'auto'
   const style = getComputedStyle(node)
   const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth)

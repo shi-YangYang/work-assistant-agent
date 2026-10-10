@@ -1,6 +1,10 @@
 import { test, expect } from '../fixtures/test'
 
 test('W17 real voiceprint upload, extract and removal', async ({ page, state, login, capture }) => {
+  test.skip(
+    !process.env.VOICEPRINT_ENROLLMENT,
+    'Requires declared audio and an active local inference worker',
+  )
   test.setTimeout(240_000)
   await login()
   await page.goto(state.origin + '/settings/voiceprints')
@@ -9,7 +13,7 @@ test('W17 real voiceprint upload, extract and removal', async ({ page, state, lo
   const form = page.getByRole('dialog')
   await form
     .getByLabel('登记录音', { exact: true })
-    .setInputFiles('artifacts/spec044/agent/materials/enrollment.wav')
+    .setInputFiles(process.env.VOICEPRINT_ENROLLMENT!)
   await expect(form.getByRole('button', { name: '上传并提取声纹' })).toBeDisabled()
   await form.getByRole('checkbox').check()
   await form.getByRole('button', { name: '上传并提取声纹' }).click()

@@ -18,9 +18,13 @@ from app.security.locks import company_lock as business_company_lock
 from app.security.ownership import owned
 
 
-async def perform(db, actor, row, job=None, *, confirmed=False):
+async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
     p = row.params
-    if row.action in ('create_work', 'update_work'):
+    if row.action in ('create_work', 'update_work') and (set(p['changes']) & {'body', 'bodyEdits', 'materials', 'materialIds', 'update', 'removeMaterial'} or p.get('sharedAttachmentIds')):
+        from app.modules.work.agent_commands import apply_action
+        from app.core.config import Settings
+        row.result = await apply_action(db, actor, row, settings or Settings(), confirmed=confirmed, job=job)
+    elif row.action in ('create_work', 'update_work'):
         links = []
         if p['sourceTokens'] and actor.role != 'admin':
             problem(403, '当前账号不能建立团队督办关联')
@@ -99,7 +103,7 @@ async def perform(db, actor, row, job=None, *, confirmed=False):
     row.updated_at = now()
 
 
-async def confirm(db, actor, identifier, expected, *, cancel=False):
+async def confirm(db, actor, identifier, expected, *, cancel=False, settings=None):
     await business_company_lock(db, actor.company_id)
     row = await owned(db, BusinessAction, identifier, actor, lock=True)
     if row.state in ('succeeded', 'running', 'cancelled'):
@@ -122,7 +126,7 @@ async def confirm(db, actor, identifier, expected, *, cancel=False):
     from app.tasks.models import Job
     from sqlalchemy import select
     source_job = await db.scalar(select(Job).where(Job.target_id == row.message_id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
-    await perform(db, actor, row, source_job, confirmed=True)
+    await perform(db, actor, row, source_job, confirmed=True, settings=settings)
     row.revision += 1
     await db.flush()
     return await action_dto(db, actor, row)

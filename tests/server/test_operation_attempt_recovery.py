@@ -12,6 +12,49 @@ from test_conversation_task_state import ScopedJudge, close_task
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.mark.parametrize('resume', [True, False])
+async def test_cancelled_task_confirmation_requires_explicit_resume_and_new_card(setup, resume):
+    from test_execution_permissions import mode_runtime
+    from test_conversation_task_state import cancel_running
+    _, sessions, _, clients = setup
+    work = await create(clients['employee'], '培训协调', summary='原有说明')
+    original_text = '把培训协调的说明改成正确说明，先让我确认'
+    first, sent = await mode_runtime(setup, 'ask', original_text)
+    await read_work(first, work['id'])
+    args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'summary': '正确说明'})
+    pending = await execute(first, **args)
+    assert pending['state'] == 'pending'
+    await cancel_running(setup, first)
+    context, newer = await runtime(setup, '明确继续刚才中断的修改，请重新让我确认' if resume else '好')
+    context.intent_model = ScopedJudge(source=sent['messageId'], quote=original_text, resume=resume, preview=True)
+    await read_work(context, work['id'])
+    result = await execute(context, **args, task_item_id=pending['taskItemId'])
+    if not resume:
+        assert result['state'] == 'failed' and result['category'] == 'invalid_arguments'
+    else:
+        assert result['state'] == 'pending' and result['id'] != pending['id'], result
+        assert result['messageId'] == newer['messageId'] and result['taskItemId'] == pending['taskItemId']
+        assert result['canConfirm'] and result['preview']['revision'] == 1
+    async with sessions() as db:
+        old = await db.get(BusinessAction, pending['id'])
+        assert old.state == 'cancelled'
+        assert (await db.get(WorkItem, work['id'])).revision == 1
+        if resume:
+            assert old.task_item_key is None and old.result['originalTaskItemId'] == pending['taskItemId']
+        rows = (await db.scalars(select(BusinessAction).where(BusinessAction.conversation_id == sent['conversationId']))).all()
+        assert len(rows) == (2 if resume else 1)
+    old_confirm = await clients['employee'].post('/api/v1/business-actions/' + pending['id'] + '/confirm', json={'expectedRevision': pending['revision']})
+    assert old_confirm.status_code == 200 and old_confirm.json()['state'] == 'cancelled'
+    if resume:
+        await close_task(context, state='needs_confirmation', relation='continue')
+        confirmed = await clients['employee'].post('/api/v1/business-actions/' + result['id'] + '/confirm', json={'expectedRevision': result['revision']})
+        assert confirmed.status_code == 200 and confirmed.json()['state'] == 'succeeded', confirmed.text
+        async with sessions() as db:
+            saved = await db.get(WorkItem, work['id'])
+            assert saved.revision == 2 and saved.content['summary'] == '正确说明'
+            assert (await db.get(BusinessAction, pending['id'])).state == 'cancelled'
+
+
 @pytest.mark.parametrize('status, state', [(409, 'conflict'), (422, 'failed')])
 async def test_new_authorized_message_recovers_failed_atomic_item_once(setup, monkeypatch, status, state):
     from app.agent.actions import operations

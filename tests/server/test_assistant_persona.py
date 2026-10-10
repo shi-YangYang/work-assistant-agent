@@ -58,19 +58,24 @@ def test_migration_preserves_history_and_separates_new_defaults(monkeypatch):
             connection.execute(old_message.insert().values(**message_values))
             before_conversation = dict(connection.execute(select(old_conversation)).mappings().one())
             before_message = dict(connection.execute(select(old_message)).mappings().one())
-        command.upgrade(config, 'head')
+        command.upgrade(config, '0015_assistant_persona')
         with scoped.begin() as connection:
-            assert dict(connection.execute(select(Conversation.__table__)).mappings().one()) == {**before_conversation, 'persona_id': 'professional', 'execution_mode': 'auto', 'mode_revision': 1, 'full_access_confirmed': False}
-            assert dict(connection.execute(select(Message.__table__)).mappings().one()) == {**before_message, 'persona_id': 'professional', 'private_context': False, 'deliverable_reference': {}, 'work_reference': {}}
+            assert dict(connection.execute(select(Conversation.__table__)).mappings().one()) == {**before_conversation, 'persona_id': 'professional'}
+            persona_message = Table('company_message', MetaData(), autoload_with=connection)
+            assert dict(connection.execute(select(persona_message)).mappings().one()) == {**before_message, 'persona_id': 'professional'}
             # New application-created conversations differ from historical backfills.
             fresh = connection.execute(Conversation.__table__.insert().values(company_id=company_id, owner_id=owner_id).returning(Conversation.persona_id)).scalar_one()
             assert fresh == 'dabao'
-            legacy_message = connection.execute(Message.__table__.insert().values(company_id=company_id, owner_id=owner_id).returning(Message.persona_id)).scalar_one()
+            legacy_message = connection.execute(persona_message.insert().values(**{**message_values, 'id': str(uuid4())}).returning(persona_message.c.persona_id)).scalar_one()
             assert legacy_message == 'professional'
         command.downgrade(config, '0014_voiceprint_cleanup')
         with scoped.connect() as connection:
             assert dict(connection.execute(select(old_conversation).where(old_conversation.c.id == before_conversation['id'])).mappings().one()) == before_conversation
             assert dict(connection.execute(select(old_message).where(old_message.c.id == before_message['id'])).mappings().one()) == before_message
+        # The whole forward chain remains covered without downgrading an explicitly irreversible later migration.
+        command.upgrade(config, 'head')
+        with scoped.connect() as connection:
+            assert dict(connection.execute(select(Message.__table__).where(Message.id == before_message['id'])).mappings().one()) == {**before_message, 'persona_id': 'professional', 'private_context': False, 'deliverable_reference': {}, 'work_reference': {}}
     finally:
         scoped.dispose()
         with engine.begin() as connection:
@@ -164,9 +169,11 @@ async def test_message_snapshots_idempotency_and_default_conversation_entry(setu
 async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup, monkeypatch, fast_nodes, role, persona):
     settings, sessions, users, clients = setup
     client = clients[role]
-    service = await create(clients['admin'])
+    from test_model_services import payload
+    body = payload()
+    body['models'][0]['streaming'] = False
+    service = await create(clients['admin'], body)
     routing = route(service)
-    routing['assistant']['streaming'] = False
     assert (await clients['admin'].put('/api/v1/settings/model-routing', json=routing)).status_code == 200
     sent = (await client.post('/api/v1/messages', json={'newConversation': True, 'personaId': persona, 'text': '今天忙得脑子打结了'}, headers=keyed())).json()
     path = '/api/v1/conversations/' + sent['conversationId']
@@ -174,7 +181,8 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
     other = 'professional' if persona == 'dabao' else 'dabao'
     await client.patch(path, json={'personaId': other, 'expectedRevision': conversation['revision']})
     calls = []
-    marker = '当前聊天风格是“Noria人设”' if persona == 'dabao' else '当前聊天风格是“专业人设”'
+    from app.agent.prompts.persona import runtime_persona_prompt
+    marker = runtime_persona_prompt(persona)
     answer = '脑内标签页开太多了。先说最卡的一件，我们一件件拆。' if persona == 'dabao' else '先处理最卡的一件。现在是哪项任务？'
     async def response(request):
         body = json.loads(request.content)
@@ -182,7 +190,8 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
         system = '\n'.join(str(item['content']) for item in body['messages'] if item['role'] == 'system')
         if body.get('tools'):
             assert marker in system
-            assert ('处理管理员本人工作和已授权员工业务问答' if role == 'admin' else '处理当前员工的工作请求') in system
+            assert runtime_persona_prompt(other) not in system
+            assert ('管理员：' if role == 'admin' else '员工：') in system
             if len(calls) == 1:
                 return httpx.Response(502, json={'error': {'message': 'controlled temporary error'}})
             if len(calls) == 2:
@@ -200,7 +209,7 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
         assert failed['job']['state'] == 'awaiting_retry', failed
         assert len(calls) == 2
         # Retry retains message persona but deliberately uses the latest model binding.
-        changed = await clients['admin'].patch('/api/v1/settings/model-services/' + service['id'], json={**payload(url='https://latest.example/v1'), 'apiKey': 'controlled-latest', 'expectedRevision': 1})
+        changed = await clients['admin'].patch('/api/v1/settings/model-services/' + service['id'], json={**payload(url='https://latest.example/v1'), 'models': body['models'], 'apiKey': 'controlled-latest', 'expectedRevision': 1})
         assert changed.status_code == 200
         assert (await client.post('/api/v1/jobs/' + sent['jobId'] + '/retry', json={})).status_code == 200
         retried = await claim(sessions, users[role].id)
@@ -300,6 +309,8 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     from app.tasks.processing.handlers import message_input_digest
 
     class Database:
+        async def scalar(self, statement):
+            return 'auto'
         async def get(self, model, identifier):
             return SimpleNamespace(rules={'timezone': 'Asia/Shanghai'}) if model is Company else SimpleNamespace(created_at=now(), conversation_id=None)
     @asynccontextmanager
@@ -308,7 +319,7 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     class Sessions:
         begin = staticmethod(session)
         __call__ = staticmethod(session)
-    job = SimpleNamespace(id='saved-job', kind='message', target_id='saved-message', access={'owner': 'member'}, result={})
+    job = SimpleNamespace(id='saved-job', owner_id='member', company_id='company', kind='message', target_id='saved-message', access={'owner': 'member'}, result={})
     actor = SimpleNamespace(id='member', company_id='company', role='employee')
     blocks = [{'type': 'text', 'text': '旧输入'}]
     context = RunContext(actor.id, actor.company_id, job.id, 1, Sessions(), None, persona_id=persona, source_revision=3, document_snapshot='saved-files', node_retry=True)
@@ -335,6 +346,7 @@ async def test_legacy_checkpoint_identity_resumes_without_regenerating(monkeypat
     graph = SimpleNamespace(aget_state=saved_state, ainvoke=AsyncMock(side_effect=AssertionError('completed checkpoint must not regenerate')))
     monkeypatch.setattr('app.agent.harness.lease', AsyncMock(return_value=(job, actor)))
     monkeypatch.setattr('app.tasks.lease.lease', AsyncMock(return_value=(job, actor)))
+    monkeypatch.setattr('app.agent.memory.middleware.lease', AsyncMock(return_value=(job, actor)))
     monkeypatch.setattr('app.agent.harness.conversation_history', AsyncMock(return_value=[]))
     monkeypatch.setattr('app.agent.harness.build_graph', lambda *args: graph)
     from langgraph.checkpoint.memory import InMemorySaver

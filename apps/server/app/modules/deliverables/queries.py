@@ -1,7 +1,7 @@
 from app.core.errors import problem
 from app.modules.conversations.models import Conversation
 from app.modules.deliverables.models import Deliverable, DeliverableRevision
-from app.security.access import require
+from app.security.access import inherit, require
 from app.security.ownership import owned
 from sqlalchemy import select
 
@@ -41,3 +41,26 @@ async def available_revision(db, actor, identifier, revision=None):
         if error.status_code not in (403, 404):
             raise
         return None
+
+
+def remember_source(job, actor, item, record):
+    """Track content/metadata actually supplied to a task, independently of edit reads."""
+    inherit(actor, job, item)
+    sources = job.result.get('deliverableSources', {})
+    previous = sources.get(item.id, {})
+    job.result = {**job.result, 'deliverableSources': {**sources, item.id: {
+        'revision': item.revision,
+        'readRevisions': sorted({*previous.get('readRevisions', []), record.revision}),
+    }}}
+
+
+async def validate_sources(db, actor, sources, conversation_id):
+    from app.tasks.context import InputChanged
+    team = False
+    for identifier, source in sources.items():
+        for revision in source['readRevisions']:
+            item, _ = await get_deliverable(db, actor, identifier, revision, conversation_id=conversation_id)
+            if item.revision != source['revision']:
+                raise InputChanged(context=True)
+            team = team or bool(item.access.get('team'))
+    return team

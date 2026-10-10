@@ -1,5 +1,4 @@
 import type { ContextUsage as Usage } from '@paa/api-contracts'
-import { capacitySourceLabel } from '@web/utils/model-capacity'
 import { X } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -178,10 +177,6 @@ export function ContextUsage({
                         {usage.contextWindow ? `${number(usage.contextWindow)} tokens` : '未配置'}
                       </dd>
                     </div>
-                    <div>
-                      <dt>本次输出预留</dt>
-                      <dd>{number(usage.outputReserve)} tokens</dd>
-                    </div>
                     {usage.inputLimit != null && usage.inputLimit !== usage.contextWindow && (
                       <div>
                         <dt>服务输入上限</dt>
@@ -190,10 +185,6 @@ export function ContextUsage({
                     )}
                   </dl>
                   <p className={styles.model}>{usage.model}</p>
-                  <p className={styles.caption}>
-                    容量来源：
-                    {capacitySourceLabel(usage.capacitySource)}
-                  </p>
                   {usage.reason && <p className={styles.note}>{usage.reason}</p>}
                   {usage.state === 'ready' &&
                     usage.compactionId &&
@@ -204,10 +195,6 @@ export function ContextUsage({
                         tokens
                       </p>
                     )}
-                  <p className={styles.caption}>
-                    最近一次助手上下文估算，不含未发送的草稿。
-                    {usage.contextWindow ? '达到窗口的 90% 时自动压缩。' : ''}
-                  </p>
                 </>
               )}
               {!usage && (

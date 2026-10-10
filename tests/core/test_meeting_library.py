@@ -5,7 +5,6 @@ import sqlite3
 import sys
 import tempfile
 import threading
-import time
 import unittest
 import uuid
 from pathlib import Path
@@ -17,6 +16,7 @@ from paa_core.meeting_library import MeetingLibrary, search, document_lines
 from paa_core.asr.transcript_store import TranscriptStore
 from paa_core.minutes.summary_store import SummaryStore
 from paa_core.protocol import CoreService, handle, MAX_LINE_BYTES
+from test_recording import wait_for
 
 
 class LibraryTests(unittest.TestCase):
@@ -50,12 +50,11 @@ class LibraryTests(unittest.TestCase):
     def query(self, text='', **changes):
         return search(self.repo, {'text': text, 'from': None, 'to': None, 'offset': 0, **changes})
     def finish(self, identifier):
-        for _ in range(100):
-            result = self.library.status(identifier)
-            if result['state'] not in ('queued', 'running'):
-                return result
-            time.sleep(.01)
-        self.fail('Background operation did not finish')
+        # Snapshot backup itself permits 10 seconds. This checks completeness,
+        # not a one-second disk/worker latency requirement on CI hosts.
+        wait_for(lambda: self.library.status(identifier)['state'] not in ('queued', 'running'),
+                 timeout=12, describe=lambda: self.library.status(identifier))
+        return self.library.status(identifier)
     def test_all_history_short_unicode_literal_and_visible_summary_search(self):
         for i in range(55): self.seed(f'普通会议{i}')
         mid = self.seed('📚 汉字 CPU %_ 资料', 61, '2020-01-01T00:00:00+00:00')

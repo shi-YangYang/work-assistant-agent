@@ -98,7 +98,8 @@ async def test_failed_intent_never_activates_shortcut(setup):
     context, _ = await runtime(setup, '不要创建')
     context.intent_model = ReceiptJudge(allowed=False)
     card = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
-    assert card['state'] == 'clarification' and not context.receipt_candidates
+    assert card['state'] == 'failed' and card['category'] == 'invalid_arguments'
+    assert not context.receipt_candidates
     assert not await receipt_completion(context, returned(card))
 
 
@@ -112,13 +113,17 @@ async def test_partial_update_cannot_write_or_shortcut_before_all_requested_fiel
     await read_work(context, work['id'])
     args = {'step': 1, 'action': 'update_work', 'target_id': work['id'], 'expected_revision': 1}
     rejected = await execute(context, **args, changes={key: value for key, value in changes.items() if key not in missing})
-    assert rejected['state'] == 'clarification' and rejected['category'] == 'invalid_arguments'
+    assert rejected['state'] == 'failed' and rejected['category'] == 'invalid_arguments'
     assert all(field in rejected['message'] for field in missing)
     assert not context.receipt_candidates
     before = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
     assert before['revision'] == 1 and before['status'] == 'in_progress' and before['summary'] == '准备培训材料'
     assert not (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()['actions']
+    # Correct the same atomic item, rather than proposing a separate update.
+    assert rejected['taskItemId']
+    args['task_item_id'] = rejected['taskItemId']
     saved = await execute(context, **args, changes=changes)
+    assert saved['taskItemId'] == rejected['taskItemId']
     assert saved['state'] == 'succeeded' and await receipt_completion(context, returned(saved))
     after = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
     assert after['revision'] == 2 and all(after[key] == value for key, value in changes.items())

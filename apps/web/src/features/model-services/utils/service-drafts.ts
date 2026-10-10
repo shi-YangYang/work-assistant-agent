@@ -1,9 +1,4 @@
-import type {
-  CompanyModel,
-  CompanyPreset,
-  CompanyService,
-  ContextCapability,
-} from '@paa/api-contracts'
+import type { CompanyModel, CompanyService, ContextCapability } from '@paa/api-contracts'
 import { validateParameters } from '@paa/model-config'
 import type { ServicePreset } from '@web/features/model-services/utils/service-presets'
 import { resolveModelProtocol } from '@web/features/model-services/utils/service-presets'
@@ -19,11 +14,49 @@ export function cleanServiceDraft(value: ServiceDraft): ServiceDraft {
     id: value.id,
     name: value.name,
     baseUrl: value.baseUrl,
-    models: structuredClone(value.models),
+    models: value.models.map(normalizeModelDraft),
     revision: value.revision,
     hasKey: value.hasKey,
     ...(value.providerPreset ? { providerPreset: value.providerPreset } : {}),
   }
+}
+
+// Only persisted browser drafts can still contain the obsolete wire shape.
+export function normalizeModelDraft(model: CompanyModel): CompanyModel {
+  const old = model as unknown as Record<string, unknown>
+  if (!Array.isArray(old.presets))
+    return {
+      ...model,
+      reasoning: model.reasoning ?? { efforts: [], initial: null },
+      parameters: model.parameters ?? {},
+    }
+  const presets = old.presets as {
+    id: string
+    mode: string
+    value: string
+    parameters: CompanyModel['parameters']
+    assistantEffort?: string
+  }[]
+  const chosen = presets.find((entry) => entry.id === old.selectedPresetId)
+  const options = (entry: typeof chosen) =>
+    entry ? (entry.mode === 'simple' ? { reasoning_effort: entry.value } : entry.parameters) : {}
+  const initial = chosen?.assistantEffort ?? null
+  const exposed = initial ? presets.filter((entry) => entry.assistantEffort) : []
+  const result = {
+    ...model,
+    explicitReasoning: !!chosen,
+    parameters: options(chosen),
+    reasoning: {
+      efforts: exposed.map((entry) => entry.assistantEffort!),
+      initial,
+      parameterOverrides: Object.fromEntries(
+        exposed.map((entry) => [entry.assistantEffort!, options(entry)]),
+      ),
+    },
+  }
+  delete (result as unknown as Record<string, unknown>).presets
+  delete (result as unknown as Record<string, unknown>).selectedPresetId
+  return result
 }
 
 export function newModel(model = '', baseUrl = ''): CompanyModel {
@@ -32,8 +65,8 @@ export function newModel(model = '', baseUrl = ''): CompanyModel {
     model,
     protocol: 'chat',
     protocolMode: 'auto',
-    presets: [],
-    selectedPresetId: null,
+    reasoning: { efforts: [], initial: null },
+    parameters: {},
     streaming: true,
     language: '',
   })
@@ -73,7 +106,14 @@ export function serviceHasChanges(draft: ServiceDraft, saved?: CompanyService): 
 }
 
 export function modelFieldErrors(model: CompanyModel) {
+  let reasoning = ''
+  try {
+    validateReasoning(model)
+  } catch (error) {
+    reasoning = (error as Error).message
+  }
   return {
+    reasoning,
     contextWindow:
       model.contextWindow != null &&
       (!Number.isInteger(model.contextWindow) ||
@@ -93,13 +133,50 @@ export function modelFieldErrors(model: CompanyModel) {
   }
 }
 
-export function presetFieldErrors(preset: CompanyPreset) {
-  return {
-    name: !preset.name.trim() || preset.name.length > 80 ? '预设名称需为 1–80 个字符。' : '',
-    value:
-      preset.mode === 'simple' && (!preset.value.trim() || preset.value.length > 512)
-        ? '请输入 1–512 个字符的推理强度，不能全为空白。'
-        : '',
+export function validateReasoning(model: CompanyModel) {
+  const { efforts, initial, parameterOverrides = {} } = model.reasoning
+  if (
+    efforts.length > 16 ||
+    new Set(efforts).size !== efforts.length ||
+    efforts.some((effort) => !/^[a-z][a-z0-9_-]{0,31}$/.test(effort))
+  )
+    throw new Error('可选强度最多 16 个，不能重复；请填写实际档位，例如 low、high。')
+  if ((efforts.length && !efforts.includes(initial ?? '')) || (!efforts.length && initial !== null))
+    throw new Error('初始强度必须属于可选强度。')
+  if (Object.keys(parameterOverrides).some((key) => !efforts.includes(key)))
+    throw new Error('参数覆盖只能使用已配置的强度。')
+  validateCompanyParameters(model.parameters)
+  if (
+    !parameterOverrides ||
+    typeof parameterOverrides !== 'object' ||
+    Array.isArray(parameterOverrides)
+  )
+    throw new Error('参数覆盖必须是 JSON 对象。')
+  if (model.protocol !== 'chat' && (efforts.length || Object.keys(model.parameters).length))
+    throw new Error('语音接口不接受聊天推理参数。')
+  for (const effort of efforts) {
+    const options = parameterOverrides[effort] ?? { ...model.parameters, reasoning_effort: effort }
+    validateCompanyParameters(options)
+    const reasoning = options.reasoning
+    const values = 'reasoning_effort' in options ? [options.reasoning_effort] : []
+    if (
+      reasoning &&
+      typeof reasoning === 'object' &&
+      !Array.isArray(reasoning) &&
+      'effort' in reasoning
+    )
+      values.push(parameterOverrides[effort] ? reasoning.effort : effort)
+    const thinking = options.thinking
+    if (
+      !values.length ||
+      values.some((value) => value !== effort) ||
+      options.enable_thinking === false ||
+      (thinking &&
+        typeof thinking === 'object' &&
+        !Array.isArray(thinking) &&
+        ['disabled', 'off'].includes(String(thinking.type)))
+    )
+      throw new Error('思考强度必须与实际推理参数一致，且不能关闭思考。')
   }
 }
 
@@ -107,20 +184,12 @@ export function validateServiceModels(models: CompanyModel[]) {
   const seen = new Set<string>()
   for (const model of models) {
     const errors = modelFieldErrors(model)
-    const message = errors.model || errors.language || errors.contextWindow
+    const message = errors.model || errors.language || errors.contextWindow || errors.reasoning
     if (message) throw new Error(`${model.model || '未命名模型'}：${message}`)
     const identity = JSON.stringify([model.model, model.protocol])
     if (seen.has(identity)) throw new Error(`模型 ${model.model} 的接口配置重复，请修改或移除。`)
     seen.add(identity)
-    for (const preset of model.presets) {
-      const errors = presetFieldErrors(preset)
-      const message = errors.name || errors.value
-      if (message)
-        throw new Error(`${model.model} 的预设 ${preset.name || '（未命名）'}：${message}`)
-      validateCompanyParameters(
-        preset.mode === 'simple' ? { reasoning_effort: preset.value } : preset.parameters,
-      )
-    }
+    validateReasoning(model)
   }
 }
 
@@ -162,7 +231,7 @@ export function validateCompanyParameters(value: unknown) {
 
 export function writableModels(models: CompanyModel[]): CompanyModel[] {
   return models.map((model) => {
-    const value = { ...model }
+    const value = normalizeModelDraft(model)
     delete value.contextCapability
     return value
   })

@@ -2,7 +2,7 @@
 import httpx
 import json
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from app.agent.actions.intent import authorize_intent
 from app.agent.runtime.middleware import ToolBoundary
 from app.agent.actions.operations import execute
@@ -23,21 +23,23 @@ async def test_query_in_parallel_write_batch_is_deferred_until_next_model_step(s
     read = {'id': 'query', 'name': 'find_work_items', 'args': {}}
     write = {'id': 'write', 'name': 'execute_business_action', 'args': {'action': 'update_work'}}
     request = SimpleNamespace(runtime=SimpleNamespace(context=context), tool_call=read, state={'messages': [AIMessage(content='', tool_calls=[write, read])]})
-    handler = AsyncMock(return_value='fresh-result')
+    fresh = ToolMessage(content='fresh-result', tool_call_id=read['id'], name=read['name'])
+    handler = AsyncMock(return_value=fresh)
     result = await ToolBoundary().awrap_tool_call(request, handler)
-    assert 'error' in json.loads(result.content)
+    refused = json.loads(result.content)
+    assert refused['state'] == 'not_executed' and refused['code'] == 'mixed_read_write'
     handler.assert_not_awaited()
     request.state['messages'].append(AIMessage(content='', tool_calls=[read]))
-    assert await ToolBoundary().awrap_tool_call(request, handler) == 'fresh-result'
+    assert await ToolBoundary().awrap_tool_call(request, handler) == fresh
     handler.assert_awaited_once()
 
 
 async def test_business_planning_default_preserves_explicit_reasoning_and_unknown_providers():
     from app.modules.model_services.parameters import business_model_config
     config = {'baseUrl': 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1', 'model': 'deepseek-v4.1-flash', 'parameters': {'temperature': .2}}
-    assert business_model_config(config, {})['parameters'] == {'temperature': .2, 'enable_thinking': True, 'reasoning_effort': 'low'}
+    assert business_model_config(config, {}) is config
     assert config['parameters'] == {'temperature': .2}
-    assert business_model_config(config, {'presetId': 'chosen'}) is config
+    assert business_model_config(config, {'effort': 'high'}) is config
     for key, value in [('enable_thinking', True), ('thinking', {'type': 'enabled'}), ('thinking_budget', 2048), ('reasoning_effort', 'high')]:
         explicit = {**config, 'parameters': {key: value}}
         assert business_model_config(explicit, {}) is explicit
@@ -55,7 +57,8 @@ async def test_rejected_action_cannot_bypass_barrier_by_changing_step(setup):
     await execute(context, step=1, **args)
     await execute(context, step=2, **{**args, 'changes': {'title': '新标题'}})
     context.intent_model = Judge()
-    assert (await execute(context, step=3, **args))['state'] == 'clarification'
+    rejected = await execute(context, step=3, **args)
+    assert rejected['state'] == 'failed' and rejected['category'] == 'invalid_arguments'
     detail = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert detail['job']['operationFeedback']
     assert not detail['actions']
@@ -102,12 +105,17 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
         assert calls[1] == {'repair_missing_action': True}
     assert len(data['actions']) == (1 if mode in ('repair', 'already_saved') else 0)
     if not data['actions']:
-        assert '已创建工作' not in data['reply']
-        assert data['job']['taskOutcome']['state'] != 'completed'
+        outcome = data['job']['taskOutcome']
+        assert outcome['state'] != 'completed' and outcome['completed'] == []
+        assert (await setup[3]['employee'].get('/api/v1/work-items')).json()['items'] == []
         if mode == 'rejected':
-            assert data['job']['operationFeedback']
+            # Keep the controlled model's complete prose; only real receipts
+            # may populate the server-owned operation result.
+            assert data['reply'] == '已创建工作。'
+            assert outcome['state'] == 'blocked' and outcome['nextAction'] == 'none'
+            assert outcome['remaining'] and data['job']['operationFeedback']
         else:
-            assert '未执行' in data['reply']
+            assert '已创建工作' not in data['reply'] and '未执行' in data['reply']
 
 
 async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected_milestone(setup):
@@ -122,7 +130,8 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
         db.add(report); await db.flush()
     context, _ = await runtime(setup, '把日报改成老板看得懂的简短版本，不要夸大成果')
     data = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id))
-    assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': source.content}]
+    assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': {key: source.content[key] for key in ('title', 'summary', 'status', 'dueDate', 'blocker', 'nextStep')}}]
+    assert 'body' not in data['items'][0]['sourceFacts']['items'][0]['content']
     assert not data['items'][0]['sourceFacts']['complete']
     rejected = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=1, changes={'ongoing': '保留计划'})
     assert rejected['state'] == 'clarification' and '来源不完整' in rejected['message']
@@ -193,8 +202,9 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
     settings, sessions, _, c = setup
     service = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1')
     service['models'][0]['model'] = 'deepseek-v4.1-flash'
+    service['models'][0]['streaming'] = False
     saved = await service_create(c['admin'], service)
-    routing = route(saved); routing['assistant']['streaming'] = False
+    routing = route(saved)
     await c['admin'].put('/api/v1/settings/model-routing', json=routing)
     context, _ = await runtime(setup, '生成今天日报，交之前让我看一眼')
     async with sessions.begin() as db:
@@ -204,7 +214,7 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
     calls = []
     async def respond(request):
         body = json.loads(request.content); calls.append(body)
-        assert body['max_tokens'] == 2000 and body['enable_thinking'] is False and 'reasoning_effort' not in body
+        assert 'max_tokens' not in body and body['enable_thinking'] is False and 'reasoning_effort' not in body
         assert not body.get('tools')
         result = {'allowed': True, 'quote': '生成今天日报，交之前让我看一眼', 'reason': ''}
         return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': json.dumps(result)}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 120, 'completion_tokens': 40, 'total_tokens': 160}})

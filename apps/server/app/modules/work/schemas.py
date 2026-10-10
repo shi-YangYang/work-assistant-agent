@@ -42,3 +42,12 @@ class Confirm(Input):
 
 class WorkEdit(Progress, Revision):
     sourceIds: list[str] = Field(default_factory=list, max_length=20)
+
+
+from app.modules.work.content.document import WorkDocument
+from app.modules.work.record_schemas import MaterialSource
+
+
+class WorkCreate(Progress):
+    body: WorkDocument | None = None
+    materials: list[MaterialSource] = Field(default_factory=list, max_length=9)

@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 import io
 import json
 import pytest
@@ -5,7 +6,8 @@ from PIL import Image
 from datetime import timedelta
 from fakes import controlled_model
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from app.agent.prompts.policies import ALLOWED_TOOLS, EXECUTION_TOOLS
+from app.agent.tools.catalog import GROUPS
+from app.agent.prompts.policies import TEAM_TOOL_NAMES
 from app.db.base import now
 from app.modules.members.models import Company, Member
 from app.modules.reports.models import Report, ReportRevision
@@ -50,7 +52,8 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     model = await run_target(settings, sessions, users, result)
     message = (await employee.get('/api/v1/messages/' + result['messageId'])).json()
     assert message['job']['state'] == 'succeeded', message
-    assert set(model.seen_tools) == ALLOWED_TOOLS - EXECUTION_TOOLS
+    assert model.seen_tools[0] == 'load_tools'
+    assert set(model.seen_tools) == {'load_tools'} | (GROUPS['work'] - TEAM_TOOL_NAMES)
     assert not (await employee.get('/api/v1/work-items')).json()['items']
     assert (await peer.get('/api/v1/messages/' + result['messageId'])).status_code == 404
     assert (await outsider.get('/api/v1/messages/' + result['messageId'])).status_code == 404
@@ -114,8 +117,8 @@ async def test_security_idempotency_disabled_account_and_request_validation(setu
     assert (await c['employee'].post('/api/v1/messages', json=payload, headers={**keyed(), 'X-CSRF-Token':'invalid'})).status_code == 403
     assert (await c['employee'].post('/api/v1/messages', json=payload, headers={**keyed(), 'Origin':'https://other.invalid'})).status_code == 403
     assert (await c['employee'].get('/api/v1/members')).status_code == 403
-    assert (await c['admin'].patch('/api/v1/members/' + users['admin'].id, json={'active':False})).status_code == 404
-    assert (await c['admin'].patch('/api/v1/members/' + users['employee'].id, json={'active':False})).status_code == 200
+    assert (await c['admin'].patch('/api/v1/members/' + users['admin'].id, json={'name': '不允许'})).status_code == 404
+    await set_legacy_active(sessions, users['employee'])
     assert (await c['employee'].get('/api/v1/messages')).status_code == 401
     duplicate = await c['peer'].post('/api/v1/progress-drafts/confirm', json={'items':[{'id':'same','expectedRevision':1}]*2}, headers=keyed())
     assert duplicate.status_code == 422

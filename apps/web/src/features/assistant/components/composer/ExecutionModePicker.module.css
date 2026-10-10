@@ -72,3 +72,19 @@
     display: none;
   }
 }
+
+@media (max-width: 440px) {
+  .trigger {
+    width: 44px;
+    justify-content: center;
+  }
+  .trigger > span {
+    display: none;
+  }
+  .trigger > svg:first-child {
+    display: block;
+  }
+  .trigger > svg:last-child {
+    display: none;
+  }
+}

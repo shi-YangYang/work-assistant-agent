@@ -80,8 +80,20 @@ def config(value, allow_loopback=False, require_model=True):
 
 
 class Limits:
-    def __init__(self, connect=10, deadline=180, response=1024 * 1024, request=256 * 1024):
+    def __init__(self, connect=10, deadline=900, response=1024 * 1024, request=256 * 1024,
+                 idle=180, probe=180):
         self.connect, self.deadline, self.response, self.request = connect, deadline, response, request
+        self.idle, self.probe = idle, probe
+
+
+def timeout_error(stage='total'):
+    message = {
+        'connect': '连接模型服务超时，请检查网络后重试。',
+        'read': '模型服务长时间未返回数据，请稍后手动重试。',
+        'write': '发送模型请求超时，请检查网络后重试。',
+        'total': '模型请求超过总等待时限，请稍后手动重试。',
+    }[stage]
+    return DomainError('network_timeout', message)
 
 
 def invalid_response():
@@ -218,16 +230,22 @@ class Provider:
         deadline = deadline or time.monotonic() + self.limits.deadline
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。')
+            raise timeout_error()
         try:
             return asyncio.run(self._request(settings, path, body, query, deadline))
+        except httpx.ConnectTimeout:
+            raise timeout_error('connect') from None
+        except httpx.ReadTimeout:
+            raise timeout_error('read') from None
+        except httpx.WriteTimeout:
+            raise timeout_error('write') from None
         except (TimeoutError, httpx.TimeoutException):
-            raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。') from None
+            raise timeout_error() from None
         except (httpx.ReadError, httpx.RemoteProtocolError):
             raise DomainError('response_interrupted', '模型服务在回复完成前断开了连接，请稍后手动重试；已有纪要和原文已保留。') from None
         except (httpx.HTTPError, RuntimeError, OSError):
             if time.monotonic() >= deadline:
-                raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。') from None
+                raise timeout_error() from None
             raise DomainError('network_error', '无法连接模型服务，请检查地址、网络和证书。') from None
 
     async def _request(self, settings, path, body, query, deadline):
@@ -238,7 +256,10 @@ class Provider:
         asyncio.get_running_loop().getaddrinfo = self.resolver.getaddrinfo
         remaining = max(0, deadline - time.monotonic())
         async with asyncio.timeout(remaining):
-            timeout = httpx.Timeout(remaining, connect=min(self.limits.connect, remaining))
+            # A non-streaming provider sends no bytes until its complete answer is ready.
+            read = min(self.limits.idle, remaining) if body is not None and settings['stream'] else remaining
+            timeout = httpx.Timeout(remaining, connect=min(self.limits.connect, remaining),
+                                    read=read, write=min(self.limits.idle, remaining))
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
                 return await self._read(client, settings, path, body, query, deadline)
 
@@ -261,7 +282,7 @@ class Provider:
             stream = _StreamReply(self.limits.response) if body is not None and settings['stream'] else None
             async for chunk in response.aiter_bytes():
                 if time.monotonic() > deadline:
-                    raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。')
+                    raise timeout_error()
                 if stream is not None:
                     if stream.feed(chunk):
                         # [DONE] ends the reply, even if a gateway keeps the HTTP
@@ -272,13 +293,13 @@ class Provider:
                 if len(content) > self.limits.response:
                     raise DomainError('response_too_large', '服务返回内容过大，请调整模型输出限制。')
             if time.monotonic() > deadline:
-                raise DomainError('network_timeout', '服务响应超时，请稍后手动重试。')
+                raise timeout_error()
             return stream.response() if stream is not None else bytes(content)
 
-    def complete(self, settings, messages):
+    def complete(self, settings, messages, *, deadline=None):
         settings = config(settings, self.allow_loopback)
         self.assert_text_model(settings)
-        data = self.request(settings, '/chat/completions', self.payload(settings, messages))
+        data = self.request(settings, '/chat/completions', self.payload(settings, messages), deadline=deadline)
         try:
             payload = json.loads(data)
             choices = payload['choices']
@@ -296,7 +317,8 @@ class Provider:
 
     def check(self, settings):
         started = time.monotonic()
-        self.complete(settings, [{'role': 'user', 'content': '请只回复：连接成功。'}])
+        self.complete(settings, [{'role': 'user', 'content': '请只回复：连接成功。'}],
+                      deadline=started + min(self.limits.deadline, self.limits.probe))
         return {'elapsedMs': round((time.monotonic() - started) * 1000), 'message': '已收到有效回复；自定义参数的实际效果由服务决定。'}
 
     def models(self, settings):
@@ -320,7 +342,7 @@ class Provider:
         alibaba = parsed.hostname in ('dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com', 'dashscope-us.aliyuncs.com', 'cn-hongkong.dashscope.aliyuncs.com') or bool(re.fullmatch(r'[a-zA-Z0-9-]+\.(cn-beijing|ap-northeast-1|eu-central-1|us-east-1)\.maas\.aliyuncs\.com', parsed.hostname or ''))
         if alibaba:
             settings = {**settings, 'baseUrl': f'{parsed.scheme}://{parsed.netloc}'}
-        deadline, values = time.monotonic() + self.limits.deadline, {}
+        deadline, values = time.monotonic() + min(self.limits.deadline, self.limits.probe), {}
         for page in range(1, 21):
             raw = self.request(settings, '/api/v1/models' if alibaba else '/models', deadline=deadline,
                                query={'page_no': page, 'page_size': 100} if alibaba else None)

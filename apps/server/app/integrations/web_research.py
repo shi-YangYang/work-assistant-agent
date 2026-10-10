@@ -2,6 +2,7 @@
 import asyncio
 import ipaddress
 import json
+import re
 import socket
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
@@ -30,6 +31,12 @@ def public_url(value):
         if url.scheme not in ('http', 'https') or not host or url.username or url.password or url.port not in (None, 80, 443) or len(value) > 2048:
             raise ValueError()
         if host.rstrip('.').lower() == 'localhost' or host.lower().endswith(('.localhost', '.local', '.internal')):
+            raise ValueError()
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            address = None
+        if address is not None and not address.is_global:
             raise ValueError()
         return url.copy_with(fragment=None)
     except (ValueError, httpx.InvalidURL) as error:
@@ -110,6 +117,8 @@ class TextPage(HTMLParser):
         self.parts = []
         self.regions = {'main': [], 'article': []}
         self.depths = dict.fromkeys(self.regions, 0)
+        self.links = []
+        self.anchor = None
 
     def append(self, value):
         self.parts.append(value)
@@ -118,6 +127,8 @@ class TextPage(HTMLParser):
                 self.regions[name].append(value)
 
     def handle_starttag(self, tag, attrs):
+        if tag == 'a':
+            self.anchor = {'href': dict(attrs).get('href', ''), 'parts': []}
         if tag in self.depths:
             self.depths[tag] += 1
         if tag in ('script', 'style', 'noscript', 'svg', 'template', 'nav', 'aside', 'footer'):
@@ -128,6 +139,10 @@ class TextPage(HTMLParser):
             self.append('\n')
 
     def handle_endtag(self, tag):
+        if tag == 'a' and self.anchor:
+            if len(self.links) < 300:
+                self.links.append(self.anchor)
+            self.anchor = None
         if tag in self.depths:
             self.depths[tag] = max(0, self.depths[tag] - 1)
         if tag in ('script', 'style', 'noscript', 'svg', 'template', 'nav', 'aside', 'footer') and self.skip:
@@ -136,6 +151,8 @@ class TextPage(HTMLParser):
             self.in_title = False
 
     def handle_data(self, data):
+        if self.anchor:
+            self.anchor['parts'].append(data)
         if self.skip:
             return
         if self.in_title:
@@ -144,12 +161,44 @@ class TextPage(HTMLParser):
             self.append(data)
 
 
-def extract_page(html):
+def extract_page(html, *, include_links=False):
     page = TextPage()
     page.feed(html)
     body = next((''.join(page.regions[name]) for name in ('article', 'main') if ''.join(page.regions[name]).strip()), ''.join(page.parts))
     text = '\n'.join(' '.join(line.split()) for line in body.splitlines() if line.strip())
-    return ' '.join(''.join(page.title).split())[:300], text
+    result = (' '.join(''.join(page.title).split())[:300], text)
+    return (*result, page.links) if include_links else result
+
+
+def page_links(anchors, base_url, excerpt, find=''):
+    """Expose observed link targets, never claim their destination was read."""
+    candidates, seen = [], {base_url}
+    for anchor in anchors:
+        title = ' '.join(''.join(anchor['parts']).split())[:120]
+        if not title or not anchor['href'] or anchor['href'].startswith('#'):
+            continue
+        try:
+            url = str(public_url(urljoin(base_url, anchor['href'])))
+        except WebResearchError:
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        candidates.append(((bool(find) and find.casefold() not in title.casefold(), title not in excerpt), {
+            'url': url, 'title': title, 'evidenceType': 'page_link',
+            'discoveredOn': base_url, 'fetchState': 'not_read',
+        }))
+    links, size = [], 0
+    # Relevant article links before site navigation, retaining document order.
+    for _, link in sorted(candidates, key=lambda value: value[0]):
+        length = len(json.dumps(link, ensure_ascii=False))
+        if size + length > 2500:
+            continue
+        links.append(link)
+        size += length
+        if len(links) == 8:
+            break
+    return links
 
 
 def literal_match(text, query, index):
@@ -176,7 +225,17 @@ def literal_match(text, query, index):
             return count, original_start, position + 1
 
 
-async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
+async def read_page(url, *, transport=None):
+    from datetime import datetime, timezone
+    final, raw, mime = await fetch_html(url, transport=transport)
+    title, text, anchors = extract_page(raw, include_links=True) if mime != 'text/plain' else ('', raw, [])
+    if not text.strip():
+        raise WebResearchError('网页没有可读取正文，可能需要登录或 JavaScript')
+    return {'final': final, 'title': title, 'text': text, 'anchors': anchors,
+            'fetchedAt': datetime.now(timezone.utc).isoformat()}
+
+
+async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None, cache=None, refresh=False):
     if type(offset) is not int or offset < 0:
         raise WebResearchError('网页阅读位置无效')
     if not isinstance(find, str) or len(find) > 200 or (find and not find.strip()):
@@ -185,12 +244,15 @@ async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
         raise WebResearchError('网页匹配序号无效；从 0 开始，需同时提供查找词')
     if find and offset:
         raise WebResearchError('查找词与阅读位置不能同时指定；查找下一处请使用 match_index')
-    final, raw, mime = await fetch_html(url, transport=transport)
-    title, text = extract_page(raw) if mime != 'text/plain' else ('', raw)
-    if not text.strip():
-        raise WebResearchError('网页没有可读取正文，可能需要登录或 JavaScript')
+    normalized = str(public_url(url))
+    if cache is None:
+        page, hit = await read_page(normalized, transport=transport), False
+    else:
+        page, hit = await cache.get(normalized, lambda: read_page(normalized, transport=transport), refresh=refresh)
+    final, title, text, anchors = (page[key] for key in ('final', 'title', 'text', 'anchors'))
     source = {'url': final, 'title': title or urlsplit(final).hostname,
-              'sourceType': 'public_web', 'untrusted': True}
+              'sourceType': 'public_web', 'untrusted': True, 'requestedUrl': url,
+              'fetchedAt': page['fetchedAt'], 'cacheHit': hit}
     if httpx.URL(url).fragment:
         source['requestedUrl'] = str(httpx.URL(url))
     match = {}
@@ -207,15 +269,36 @@ async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None):
     if offset >= len(text):
         raise WebResearchError('网页阅读位置已超出正文范围，请从头读取')
     end = min(offset + PAGE_CHARS, len(text))
-    return {**source, **match, 'text': text[offset:end], 'offset': offset, 'endOffset': end,
+    excerpt = text[offset:end]
+    links = page_links(anchors, final, excerpt, find)
+    return {**source, **match, **({'links': links, 'linkCoverage': '页面中实际出现的链接；未读取目标正文，也不据此认定目标为官方来源。'} if links else {}), 'text': excerpt, 'offset': offset, 'endOffset': end,
             'totalChars': len(text), 'nextOffset': end if end < len(text) else None,
             'truncated': offset > 0 or end < len(text), 'evidenceType': 'page_text'}
 
 
-async def web_search(query, *, transport=None):
+def search_domains(query, domains):
+    if domains is not None and (not isinstance(domains, list) or len(domains) > 5):
+        raise WebResearchError('搜索站点需为最多 5 个域名')
+    requested = domains or re.findall(r'(?<!\S)site:([^\s/]+)', query, re.IGNORECASE)
+    normalized = []
+    for domain in requested:
+        if not isinstance(domain, str) or not domain.strip() or any(c in domain for c in '/:@?#*') or any(c.isspace() for c in domain.strip()):
+            raise WebResearchError('搜索站点仅填写域名，不含路径或通配符')
+        parsed = public_url('https://' + domain.strip().rstrip('.'))
+        host = parsed.host.lower()
+        if host not in normalized:
+            normalized.append(host)
+    return normalized
+
+
+async def web_search(query, *, domains=None, transport=None):
     if not query.strip() or len(query) > 500:
         raise WebResearchError('搜索词需为 1～500 个字符')
-    url = str(httpx.URL('https://www.bing.com/search', params={'q': query.strip(), 'format': 'rss'}))
+    scope = search_domains(query, domains)
+    search_query = query.strip()
+    if domains:
+        search_query += ' (' + ' OR '.join('site:' + host for host in scope) + ')'
+    url = str(httpx.URL('https://www.bing.com/search', params={'q': search_query, 'format': 'rss'}))
     _, raw, _ = await fetch_html(url, transport=transport, xml=True)
     if '<!doctype' in raw.lower() or '<!entity' in raw.lower():
         raise WebResearchError('搜索来源返回了不支持的内容，暂时无法检索')
@@ -225,16 +308,29 @@ async def web_search(query, *, transport=None):
         raise WebResearchError('搜索来源未返回有效结果，可能要求验证或暂时限流') from error
     if root.tag != 'rss' or root.find('channel') is None:
         raise WebResearchError('搜索来源未返回有效结果，暂时无法检索')
-    results = []
+    results, filtered, seen = [], 0, set()
     for item in root.findall('./channel/item')[:10]:
         try:
             target = str(public_url(item.findtext('link', '')))
         except WebResearchError:
             continue
+        host = httpx.URL(target).host.lower()
+        if scope and not any(host == domain or host.endswith('.' + domain) for domain in scope):
+            filtered += 1
+            continue
+        if target in seen:
+            continue
+        seen.add(target)
         entry = {'title': ' '.join(item.findtext('title', '').split())[:200], 'url': target, 'snippet': extract_page(item.findtext('description', ''))[1][:400], 'evidenceType': 'search_snippet'}
         if len(json.dumps([*results, entry], ensure_ascii=False)) > 4000:
             break
         results.append(entry)
         if len(results) >= 5:
             break
-    return {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要，未读取正文；仅需要链接时可直接提供实际检索所得网址。摘要日期不能单独证明文章发布日期。', 'untrusted': True}
+    result = {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要，未读取正文；仅需要链接时可直接提供实际检索所得网址。摘要日期不能单独证明文章发布日期。', 'untrusted': True}
+    if scope:
+        result.update(domains=scope, filteredCount=filtered)
+        if not results:
+            result['coverage'] = '搜索服务未返回符合指定站点的结果；不代表相关网页不存在。不能以站外结果代替指定来源。'
+            result['nextStep'] = '可读取已知且可访问的发布机构首页，从返回的实际页面链接寻找正文或新的官网入口；不要猜测网址或反复请求被拒绝的页面。'
+    return result

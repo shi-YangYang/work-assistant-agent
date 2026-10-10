@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-import type { AssistantInteraction, Conversation, ExecutionMode } from '@paa/api-contracts'
+import type {
+  AssistantInteraction,
+  Conversation,
+  ExecutionMode,
+  ExecutionSettings,
+} from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { createRef, useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -17,6 +22,7 @@ import {
   answerInteraction,
   cancelInteraction,
 } from '../../../apps/web/src/features/assistant/api/interactions'
+import { clearQueryResources } from '../../../apps/web/src/lib/query-resource'
 import { messageSubmission } from '../../../apps/web/src/features/assistant/utils/files'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
 
@@ -66,12 +72,29 @@ const question: AssistantInteraction = {
     { id: 'date', prompt: '何时完成？', type: 'text', allowCustom: true, options: [] },
   ],
 }
+let storedMode: ExecutionSettings
 beforeEach(() => {
   dialogs()
-  vi.clearAllMocks()
+  vi.resetAllMocks()
+  storedMode = { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
+  vi.mocked(updateExecutionMode).mockImplementation(async (previous, mode, ack) => {
+    storedMode = {
+      executionMode: mode,
+      modeRevision: previous.modeRevision + 1,
+      fullAccessConfirmed: previous.fullAccessConfirmed || ack,
+    }
+    return storedMode
+  })
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => new Response(JSON.stringify({ items: [] }))),
+    vi.fn(
+      async (url: string) =>
+        new Response(
+          JSON.stringify(
+            url.endsWith('/assistant/execution-settings') ? storedMode : { items: [] },
+          ),
+        ),
+    ),
   )
 })
 afterEach(() => {
@@ -84,7 +107,7 @@ function choose(name: string) {
 }
 function ModeHarness({ value = null }: { value?: Conversation | null }) {
   const persona = useConversationPersona(value?.id, value, vi.fn())
-  const mode = useExecutionMode(value?.id, value, persona.interaction, vi.fn())
+  const mode = useExecutionMode(persona.interaction)
   return (
     <>
       <ExecutionModePicker
@@ -94,6 +117,7 @@ function ModeHarness({ value = null }: { value?: Conversation | null }) {
         onChange={(value, ack) => void mode.choose(value, ack)}
       />
       {mode.error && <p role="alert">{String(mode.error)}</p>}
+      <button onClick={() => void mode.refresh()}>刷新权限</button>
     </>
   )
 }
@@ -129,34 +153,78 @@ it('requires the full-mode explanation once and keeps keyboard navigation and fo
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   expect(document.activeElement).toBe(trigger)
 })
-it('keeps new-conversation mode in the account draft and freezes it in the first send body', () => {
+async function modeReady(name = '自动审核') {
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: `执行权限：${name}` }).hasAttribute('disabled')).toBe(
+      false,
+    ),
+  )
+}
+it('shares saved mode across new/existing conversations, remounts and full page reloads', async () => {
   const vault = createVault()
-  const view = (account = identity) => (
-    <TestWorkspace vault={vault} account={account}>
-      <ModeHarness />
+  const view = (value: Conversation | null) => (
+    <TestWorkspace vault={vault}>
+      <ModeHarness value={value} />
     </TestWorkspace>
   )
-  const mounted = render(view())
+  const mounted = render(view(null))
+  await modeReady()
   choose('逐项确认')
-  const draft = vault.getSnapshot()['composer:new'] as Parameters<typeof messageSubmission>[0]
-  expect(messageSubmission({ ...draft, text: '创建工作', key: 'key' }).body).toMatchObject({
-    executionMode: 'ask',
-    newConversation: true,
-    fullAccessConfirmed: false,
-  })
-  mounted.unmount()
-  render(view())
+  await modeReady('逐项确认')
+  expect(updateExecutionMode).toHaveBeenCalledWith(
+    { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false },
+    'ask',
+    false,
+  )
+  expect(vault.getSnapshot()['composer:new']).toBeUndefined()
+  mounted.rerender(view(conversation))
   expect(screen.getByRole('button', { name: '执行权限：逐项确认' })).toBeTruthy()
-  expect(updateExecutionMode).not.toHaveBeenCalled()
-  cleanup()
-  const other = { ...identity, member: { ...identity.member, id: 'another' } }
-  vault.resume(other)
-  render(view(other))
-  expect(screen.getByRole('button', { name: '执行权限：自动审核' })).toBeTruthy()
+  mounted.rerender(view({ ...conversation, id: 'second', executionMode: 'full' }))
+  expect(screen.getByRole('button', { name: '执行权限：逐项确认' })).toBeTruthy()
+  expect(fetch).toHaveBeenCalledTimes(1)
+  mounted.unmount()
+  clearQueryResources() // Refresh must restore the server setting, not a local draft.
+  render(view(null))
+  await modeReady('逐项确认')
+  expect(
+    messageSubmission({ text: '创建工作', files: [], key: 'key' }, undefined, undefined, 'ask')
+      .body,
+  ).toMatchObject({ executionMode: 'ask', newConversation: true })
+  expect(
+    messageSubmission({ text: '继续', files: [], key: 'next' }, 'second', undefined, 'ask').body,
+  ).toMatchObject({ executionMode: 'ask', conversationId: 'second' })
 })
-it('saves existing mode with the conversation revision, rolls back failed changes and ignores late account results', async () => {
+it('refreshes account preferences once after another tab changes them, without polling', async () => {
+  render(
+    <TestWorkspace vault={createVault()}>
+      <ModeHarness />
+    </TestWorkspace>,
+  )
+  await modeReady()
+  storedMode = { executionMode: 'full', modeRevision: 2, fullAccessConfirmed: true }
+  await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+  await modeReady('自主执行')
+  expect(fetch).toHaveBeenCalledTimes(2)
+  act(() => window.dispatchEvent(new Event('focus')))
+  expect(fetch).toHaveBeenCalledTimes(2)
+})
+it('keeps uncertain send retries unchanged even after the account mode changes', () => {
+  const pending = {
+    key: 'original',
+    body: { text: '原消息', attachmentIds: [], replyTo: null, executionMode: 'ask' as const },
+  }
+  expect(
+    messageSubmission(
+      { text: '原消息', files: [], key: 'original', pending },
+      'first',
+      undefined,
+      'full',
+    ),
+  ).toBe(pending)
+})
+it('rolls back failed account saves and ignores late results after switching accounts', async () => {
   const vault = createVault(),
-    request = deferred<Conversation>()
+    request = deferred<ExecutionSettings>()
   vi.mocked(updateExecutionMode)
     .mockRejectedValueOnce(new Error('保存失败'))
     .mockReturnValueOnce(request.promise)
@@ -166,16 +234,20 @@ it('saves existing mode with the conversation revision, rolls back failed change
     </TestWorkspace>
   )
   const mounted = render(view())
+  await modeReady()
   choose('逐项确认')
   await screen.findByRole('alert')
   expect(screen.getByRole('button', { name: '执行权限：自动审核' })).toBeTruthy()
-  expect(updateExecutionMode).toHaveBeenCalledWith(conversation, 'ask', false)
+  fireEvent.click(screen.getByRole('button', { name: '刷新权限' }))
+  await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
   choose('逐项确认')
   const other = { ...identity, member: { ...identity.member, id: 'another' } }
   act(() => vault.resume(other))
   mounted.rerender(view(other))
-  await act(async () => request.resolve({ ...conversation, executionMode: 'ask', revision: 2 }))
-  expect(screen.getByRole('button', { name: '执行权限：自动审核' })).toBeTruthy()
+  await act(async () =>
+    request.resolve({ executionMode: 'ask', modeRevision: 2, fullAccessConfirmed: false }),
+  )
+  await modeReady()
   expect(screen.queryByRole('alert')).toBeNull()
 })
 it('keeps the exact toolbar groups, same microphone slot, and disables mode without removing its button', () => {

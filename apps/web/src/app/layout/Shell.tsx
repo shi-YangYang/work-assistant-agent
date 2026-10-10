@@ -3,7 +3,7 @@ import type { Identity } from '@paa/api-contracts'
 import { AppRoutes } from '@web/app/AppRoutes'
 import { pages, settingsPages } from '@web/app/layout/navigation-items'
 import { Sidebar } from '@web/app/layout/Sidebar'
-import { Topbar } from '@web/app/layout/Topbar'
+import { PetStage } from '@web/app/layout/pet/PetStage'
 import { useNavigationDrawer } from '@web/app/layout/useNavigationDrawer'
 import type { WebCommand } from '@web/components/overlays/CommandPalette'
 import { CommandPalette } from '@web/components/overlays/CommandPalette'
@@ -214,9 +214,11 @@ export function Shell({
               logout={logout}
             />
             <section ref={mainRef} className={styles['main']}>
-              <Topbar
+              <PetStage
                 navTriggerRef={triggerRef}
-                setCommands={setCommands}
+                animate={
+                  location.pathname === '/assistant' || location.pathname.startsWith('/assistant/')
+                }
                 expandedNav={expandedNav}
                 setExpandedNav={setExpandedNav}
               />

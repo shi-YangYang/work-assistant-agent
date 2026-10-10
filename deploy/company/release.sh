@@ -28,7 +28,7 @@ mkdir -p "$release/apps/server"
 ln -s "$env_file" "$release/apps/server/.env.web"
 compose() { PAA_COMPOSE_ROOT="$release" sh "$release/deploy/company/compose.sh" "$@"; }
 compose config --quiet
-compose pull postgres
+compose pull postgres redis
 # Check the server-owned key and origin before touching the running services.
 compose run --rm --no-deps -T --entrypoint python api -c '
 import os
@@ -72,6 +72,30 @@ if [[ "$database_state" == initialized ]]; then
   fi
 fi
 if [[ -n "$previous" ]]; then
+  # Block new HTTP submissions, leave the existing worker alive until its
+  # queued/running jobs reach a durable boundary. Never mix old/new workers.
+  PAA_COMPOSE_ROOT="$previous" sh "$previous/deploy/company/compose.sh" stop -t 30 web api
+  PAA_COMPOSE_ROOT="$previous" sh "$previous/deploy/company/compose.sh" exec -T worker python -c '
+import asyncio, time
+from sqlalchemy import text
+from app.core.config import Settings
+from app.db.session import database
+async def drain():
+    engine, sessions = database(Settings())
+    deadline = time.monotonic() + 480
+    try:
+        while True:
+            async with sessions() as db:
+                pending = await db.scalar(text("SELECT count(*) FROM company_job WHERE state IN (\x27queued\x27, \x27running\x27)"))
+            if not pending:
+                return
+            if time.monotonic() >= deadline:
+                raise RuntimeError("Drain timed out; services remain stopped for operator inspection")
+            await asyncio.sleep(1)
+    finally:
+        await engine.dispose()
+asyncio.run(drain())
+'
   mkdir -p "$root/backups" "$root/key-backups"
   chmod 700 "$root/backups" "$root/key-backups"
   PAA_COMPOSE_ROOT="$previous" PAA_DEPLOY_MODE="$mode" \
@@ -96,7 +120,7 @@ finish() {
 trap finish EXIT
 trap 'exit 1' HUP INT TERM
 printf 'deploying\n' > "$release/deployment-status"
-compose up -d --no-build --wait --wait-timeout 90 postgres
+compose up -d --no-build --wait --wait-timeout 90 postgres redis
 compose run --rm --no-deps -T migrate
 if [[ ${PAA_BUILD_SANDBOX:-false} == true ]]; then
   compose up -d --no-build --no-deps --wait --wait-timeout 60 sandbox

@@ -214,11 +214,6 @@ const contracts: Contract[] = [
     () => assistant.readConversation(conversation),
     'conversation explicit read',
   ),
-  get(
-    '/conversations/chat',
-    () => assistant.readConversationForBreadcrumb('chat', { signal }),
-    'conversation breadcrumb read',
-  ),
   get('/conversations/chat/deletion', () => assistant.readConversationDeletion(conversation)),
   get('/conversations?order=last_message', () => restore.latestChat(signal)),
   write(
@@ -243,11 +238,16 @@ const contracts: Contract[] = [
   ),
   write(
     'PATCH',
-    '/conversations/chat',
-    () => interactions.updateExecutionMode(conversation, 'full', true),
+    '/assistant/execution-settings',
+    () =>
+      interactions.updateExecutionMode(
+        { executionMode: 'auto', modeRevision: 7, fullAccessConfirmed: false },
+        'full',
+        true,
+      ),
     { executionMode: 'full', fullAccessConfirmed: true, expectedRevision: 7 },
     undefined,
-    'conversation execution mode',
+    'account execution mode',
   ),
   write(
     'DELETE',
@@ -257,7 +257,6 @@ const contracts: Contract[] = [
   ),
   path('/messages?conversationId=chat', () => assistant.conversationMessagesPath('chat')),
   path('/messages/message', () => assistant.messagePath('message')),
-  get('/messages/message', () => assistant.readMessageForBreadcrumb('message', { signal })),
   write(
     'POST',
     '/messages',
@@ -332,11 +331,6 @@ const contracts: Contract[] = [
   ),
   path('/work-items/work?revision=2', () => work.workDetailPath('work', '?revision=2')),
   get('/work-items/work', () => work.readWork(record)),
-  get(
-    '/work-items/work',
-    () => work.readWorkForBreadcrumb('work', { signal }),
-    'work breadcrumb read',
-  ),
   write('POST', '/work-items', () => work.createWork(progress, 'work-key'), progress, 'work-key'),
   write(
     'POST',
@@ -371,11 +365,6 @@ const contracts: Contract[] = [
   path('/reports?kind=weekly', () => reports.reportListPath(false, 'weekly')),
   path('/reports/report?revision=2', () => reports.reportDetailPath('report', '?revision=2')),
   get('/reports/report', () => reports.readReport('report')),
-  get(
-    '/reports/report',
-    () => reports.readReportForBreadcrumb('report', { signal }),
-    'report breadcrumb read',
-  ),
   path('/reports/report/sources?revision=5', () => reports.reportSourcesPath(report)),
   path('/reports/report/deletion', () => records.deletionImpactPath('reports', 'report')),
   write(
@@ -434,7 +423,6 @@ const contracts: Contract[] = [
   ...(['work', 'reports'] as const).map((view) =>
     path(`/team/workspace/${view}?${query}`, () => team.teamWorkspacePath(view, query)),
   ),
-  get('/team/members/member/work', () => team.readMemberForBreadcrumb('member', { signal })),
   path('/business-sources/message/token', () => `${sources.messageSourcesPath('message')}/token`),
   path('/work-items/work/business-sources/token', () => `${sources.workSourcesPath('work')}/token`),
   path('/members', members.membersPath),
@@ -451,8 +439,8 @@ const contracts: Contract[] = [
       }),
     { name: '员工', username: 'user', role: 'employee', password: 'controlled' },
   ),
-  write('PATCH', '/members/member', () => members.updateMember(member, { active: false }), {
-    active: false,
+  write('PATCH', '/members/member', () => members.updateMember(member, { name: '新姓名' }), {
+    name: '新姓名',
   }),
   write(
     'POST',

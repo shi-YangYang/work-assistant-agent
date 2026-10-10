@@ -1,15 +1,16 @@
 import re
-from app.integrations.models.transport import ProviderError
 from app.modules.model_services.schemas import parameters
 from urllib.parse import urlsplit
 
 
-def request_options(model, preset_id=None):
-    selected = model.get('selectedPresetId') if preset_id is None else preset_id
-    preset = next((p for p in model.get('presets', []) if p['id'] == selected), None)
-    if selected and not preset:
-        raise ProviderError('protocol', '选择的推理预设不存在')
-    return parameters(({'reasoning_effort': preset['value']} if preset['mode'] == 'simple' else preset['parameters']) if preset else {})
+def request_options(model, effort=None):
+    from app.modules.model_services.reasoning.policy import effort_options
+    from app.modules.model_services.reasoning.legacy import direct_model
+    if 'legacyParameters' in model:
+        return parameters(model['legacyParameters'])
+    model = direct_model(model)
+    selected = model.get('reasoning', {}).get('initial') if effort is None else effort
+    return parameters(effort_options(model, selected) if selected else model.get('parameters', model.get('legacyParameters', {})))
 
 
 def reply_review_config(config, *, reasoning=False):
@@ -24,11 +25,7 @@ def reply_review_config(config, *, reasoning=False):
     hybrid_deepseek = bool(re.fullmatch(r'deepseek-v(?:3\.[12](?:-exp)?|4(?:\.1)?-(?:pro|flash)(?:-\d{4})?)', model))
     toggle = None
     # https://help.aliyun.com/zh/model-studio/deep-thinking
-    if reasoning and aliyun and model in ('deepseek-v4.1-flash', 'deepseek-v4-flash-0731', 'deepseek-v4-pro-0813'):
-        # Planning and complex authorization retain bounded reasoning.
-        # Simple authorization/presentation checks use the faster mode below.
-        toggle = {'enable_thinking': True, 'reasoning_effort': 'low'}
-    elif reasoning:
+    if reasoning:
         return config
     elif aliyun and hybrid_deepseek:
         toggle = {'enable_thinking': False}
@@ -42,19 +39,14 @@ def reply_review_config(config, *, reasoning=False):
 
 
 def business_model_config(config, choice):
-    """Default known hybrid models to bounded tool execution, respecting presets.
-
-    Explicit reasoning settings and unknown providers keep their own behavior.
-    Only the assistant planner uses this default; report generation is unchanged.
-    """
-    if choice.get('presetId') or any(key in config.get('parameters', {}) for key in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')):
-        return config
-    candidate = reply_review_config(config, reasoning=True)
-    return candidate if candidate.get('parameters', {}).get('reasoning_effort') == 'low' else config
+    """The accepted effort owns assistant reasoning; omitted settings use provider defaults."""
+    return config
 
 
 def report_model_config(config, choice):
     """Reserve bounded report output for its JSON unless reasoning was selected."""
-    if choice.get('presetId') or any(key in config.get('parameters', {}) for key in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')):
+    options = config.get('parameters', {})
+    nested = options.get('reasoning')
+    if choice.get('effort') or choice.get('explicitReasoning') or choice.get('presetId') or any(key in options for key in ('enable_thinking', 'thinking', 'thinking_budget', 'reasoning_effort')) or (isinstance(nested, dict) and 'effort' in nested):
         return config
     return reply_review_config(config)

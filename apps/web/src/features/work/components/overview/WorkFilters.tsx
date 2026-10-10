@@ -1,4 +1,4 @@
-import layoutStyles from '../../../../styles/layout.module.css'
+import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
 import controlsStyles from '../../../../styles/controls.module.css'
 import searchInputStyles from '../../../../styles/patterns/SearchInput.module.css'
 import styles from './WorkFilters.module.css'
@@ -19,13 +19,13 @@ export function WorkFilters({
 }) {
   const [resetKey, resetSearch] = useState(0)
   return (
-    <div className={`${layoutStyles['filters']} ${styles['work-filters']}`} data-toolbar={compact}>
+    <ListToolbar className={`${styles['work-filters']} ${compact ? styles.compact : ''}`}>
       <div className={searchInputStyles['work-search']}>
         <Search size={17} aria-hidden="true" />
         <SearchInput
           aria-label="搜索工作"
           placeholder="搜索工作…"
-          title="搜索标题、摘要、阻碍或下一步"
+          title="搜索工作标题、正文或进展"
           value={query}
           maxLength={200}
           onSearch={(q) => change({ q })}
@@ -53,6 +53,6 @@ export function WorkFilters({
           清除筛选
         </button>
       )}
-    </div>
+    </ListToolbar>
   )
 }

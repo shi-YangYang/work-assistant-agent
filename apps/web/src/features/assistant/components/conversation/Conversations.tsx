@@ -202,7 +202,7 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
     if (expanded) list.refresh()
   }
   const persona = useConversationPersona(conversationId, current.data, updated)
-  const execution = useExecutionMode(conversationId, current.data, persona.interaction, updated)
+  const execution = useExecutionMode(persona.interaction)
   const stopBeforeAction = () => {
     if (!drafts.recording) return true
     notify('请先停止录音，再管理会话；录音会保留在当前会话。')
@@ -299,7 +299,6 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
             onSent={(id, sentPersona) => {
               if (!conversationId) {
                 persona.adoptCreated(id, sentPersona)
-                execution.adoptCreated(id)
                 setChatSession((previous) => ({ ...previous, createdId: id }))
                 navigate(
                   `/assistant/${id}${workEntry ? `?workId=${encodeURIComponent(workEntry)}` : ''}`,
@@ -387,10 +386,13 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
                   )
                   setDraft(key, undefined)
                   setRemoved((previous) => [...previous, deleting.id])
+                  // Restoration must read a fresh list, not reopen the deleted conversation.
+                  for (const path of ['/conversations', '/conversations?order=last_message'])
+                    void assistantQuery(path, identityScope(identity))?.invalidate()
                   if (lastConversationId === deleting.id) rememberConversation(null)
                   if (conversationId === deleting.id) navigate('/assistant', { replace: true })
                   setDeleting(null)
-                  updated()
+                  if (expanded) list.refresh()
                   notify('会话已删除')
                 } catch (e) {
                   setFailure(e as Error)

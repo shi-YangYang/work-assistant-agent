@@ -13,7 +13,7 @@ def nonblank_title(value):
 class ConversationCreate(Input):
     title: str = Field(default='新会话', min_length=1, max_length=120)
     personaId: PersonaId = DEFAULT_PERSONA
-    executionMode: ExecutionMode = 'auto'
+    executionMode: ExecutionMode | None = None
     fullAccessConfirmed: bool = False
 
     _title = field_validator('title')(nonblank_title)

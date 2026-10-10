@@ -36,6 +36,8 @@ async def claim(sessions, owner_id=None, *, company_id=None):
             if job.state != 'running' or job.lease_until is None or job.lease_until >= now():
                 continue
             await interrupt_usage(db, job)
+            from app.tasks.feedback.reply_stream import transition
+            transition(job, 'interrupted')
             update_feedback(job)
             job.state = await interrupted_state(db, job)
             if job.state == 'queued':
@@ -57,6 +59,9 @@ async def claim(sessions, owner_id=None, *, company_id=None):
             return None
         if not job.access:
             job.access = business_scope(await db.get(Member, job.owner_id))
+        queued_at = job.updated_at
         job.state, job.fence, job.lease_until, job.updated_at = 'running', job.fence + 1, now() + timedelta(seconds=90), now()
         update_feedback(job, 'preparing', '')
+        from app.tasks.timing import Timing
+        Timing(job.id, job.attempt, job.fence).mark('task.claimed', queue_ms=max(0, round((job.updated_at - queued_at).total_seconds() * 1000, 3)))
         return job

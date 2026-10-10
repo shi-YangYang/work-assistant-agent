@@ -19,14 +19,16 @@ import { AssistantSuggestions } from '@web/features/assistant/components/compose
 import { exampleText } from '@web/features/assistant/utils/session'
 import { ChatHistory } from '@web/features/assistant/components/messages/ChatHistory'
 import { ComposerAttachments } from '@web/features/assistant/components/composer/ComposerAttachments'
-import type { PreviewImage } from '@web/features/assistant/components/attachments/ImageGallery'
-import { ImageGallery } from '@web/features/assistant/components/attachments/ImageGallery'
+import type { PreviewImage } from '@web/components/media/ImageGallery'
+import { ImageGallery } from '@web/components/media/ImageGallery'
 import { useWorkReference } from '../../hooks/useWorkReference'
 import { MessageComposer } from '@web/features/assistant/components/composer/MessageComposer'
-import { PdfPreview } from '@web/features/assistant/components/attachments/PdfPreview'
+import { PdfPreview } from '@web/components/media/PdfPreview'
 import type { PersonaInteraction } from '@web/features/assistant/hooks/useConversationPersona'
 import { useAssistantInteraction } from '../../hooks/useAssistantInteraction'
 import type { useExecutionMode } from '../../hooks/useExecutionMode'
+import { useReasoningEffort } from '../../hooks/useReasoningEffort'
+import { ReasoningEffortPicker } from '../composer/reasoning/ReasoningEffortPicker'
 import { ExecutionModePicker } from '../composer/ExecutionModePicker'
 import { QuestionPanel } from '../interactions/QuestionPanel'
 import { useAssistantTask } from '@web/features/assistant/hooks/useAssistantTask'
@@ -74,6 +76,7 @@ export function ConversationChat({
   registerRefresh?: RegisterConversationRefresh
   pageNotice?: AssistantNoticeData
 }) {
+  const reasoning = useReasoningEffort()
   const composerKey = `composer:${conversationId ?? 'new'}`
   const { drafts, setDraft, notify, identity } = useWorkspace()
   const storedComposer = drafts[composerKey] as Composer | undefined
@@ -168,6 +171,8 @@ export function ConversationChat({
     conversationId,
     personaId,
     interaction,
+    execution,
+    reasoning,
     onSent,
     previewUploading,
     capturing,
@@ -221,7 +226,6 @@ export function ConversationChat({
         next.replyTo ||
         next.pending ||
         next.personaId ||
-        next.executionMode ||
         next.deliverableReference ||
         next.workReference
         ? { ...next, key: next.key || crypto.randomUUID() }
@@ -316,6 +320,7 @@ export function ConversationChat({
       : latestJob
   const context = useContextUsage(conversationId, contextJob, true)
   const refreshChat = () => {
+    if (!conversationId) return
     void refresh()
     void actionReceipts.refresh()
     questions.refresh()
@@ -330,9 +335,17 @@ export function ConversationChat({
   }, [task.job, task.feedback, receiveContext])
   const nextCursor = data?.nextCursor
   const empty = !messages.length && !error && (!conversationId || !!data)
+  const retryPage = () => {
+    void execution.refresh()
+    void reasoning.refresh()
+    refreshChat()
+  }
   const notice = (
     [
-      { error: sendError || execution.error },
+      {
+        error: sendError || execution.error || reasoning.error,
+        retry: execution.error || reasoning.error ? retryPage : undefined,
+      },
       { error: workReference.error ?? '', retry: workReference.retry },
       {
         error:
@@ -340,7 +353,7 @@ export function ConversationChat({
           error ||
           actionReceipts.error ||
           (!questions.waiting ? questions.error : ''),
-        retry: refreshChat,
+        retry: retryPage,
       },
       ...(pageNotice ? [pageNotice] : []),
     ] satisfies AssistantNoticeData[]
@@ -473,7 +486,17 @@ export function ConversationChat({
           textInput={textInput}
           busy={busy}
           previewUploading={previewUploading}
-          personaSaving={interaction.busy === 'persona' || execution.saving}
+          personaSaving={interaction.busy === 'persona' || execution.saving || !execution.ready}
+          reasoningSaving={!reasoning.ready}
+          reasoningControl={
+            <ReasoningEffortPicker
+              options={reasoning.options}
+              selected={reasoning.selected}
+              saving={reasoning.saving}
+              disabled={busy || pending}
+              onChange={(id) => void reasoning.choose(id)}
+            />
+          }
           executionControl={
             <ExecutionModePicker
               value={execution.selected}

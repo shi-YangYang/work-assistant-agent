@@ -48,6 +48,12 @@ async def test_real_graph_compacts_durably_and_next_task_reuses_snapshot(setup):
         from app.agent.context.compaction import saved_packet, save_packet
         packet = await saved_packet(context)
         packet['evidence'] = [{'key': 'controlled-call', 'tool': 'find_work_items', 'result': '{"items": []}'}]
+        from langchain_core.messages import AIMessage, ToolMessage
+        from app.agent.completion.evidence_consistency import observed_evidence, tool_evidence
+        packet['evidence'] += tool_evidence([
+            AIMessage(content='', tool_calls=[{'id': 'observed-code', 'name': 'run_python', 'args': {'code': 'print(7)'}}]),
+            ToolMessage(name='run_python', tool_call_id='observed-code', content='{"state":"succeeded","stdout":"7"}'),
+        ], context.job_id)
         await save_packet(context, packet)
         # The task completed a write after summarizing its v1 read, then lost
         # the process before review. The real receipt authenticates v1 -> v2.
@@ -58,6 +64,8 @@ async def test_real_graph_compacts_durably_and_next_task_reuses_snapshot(setup):
                              model_binding=context.model_binding, read_versions={work['id']: 2})
         assert await invoke_harness(resumed, saver, '继续讨论方案，先不写入工作。', model) == answer
         assert any(row['tool'] == 'find_work_items' for row in resumed.reply_evidence)
+        assert observed_evidence(resumed)[0]['arguments'] == {'code': 'print(7)'}
+        assert observed_evidence(resumed)[0]['result']['stdout'] == '7'
         assert len(model.summaries) == count
         async with sessions() as db:
             assert (await db.get(ConversationContext, current.conversation_id)).payload['summaryDependencies']['business'][work['id']] == 2

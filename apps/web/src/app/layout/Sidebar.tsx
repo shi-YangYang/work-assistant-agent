@@ -1,10 +1,19 @@
+import { ReportNotifications } from '@web/features/reports/components/notifications/ReportNotifications'
 import brandMark from '@paa/ui-web/mark.png'
 import controlsStyles from '../../styles/controls.module.css'
 import layoutStyles from '../../styles/layout.module.css'
 import styles from './Sidebar.module.css'
 import type { Identity } from '@paa/api-contracts'
 import type { LucideIcon } from 'lucide-react'
-import { ChevronRight, Search, LogOut, PanelLeftClose, PanelLeftOpen, Settings } from 'lucide-react'
+import {
+  ChevronRight,
+  Cloud,
+  Search,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings,
+} from 'lucide-react'
 import type * as React from 'react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { Location } from 'react-router'
@@ -110,8 +119,23 @@ export function Sidebar({
             <span className={styles['nav-label']}>{p.title}</span>
           </NavLink>
         ))}
+        <button
+          type="button"
+          className={styles['disabled-entry']}
+          disabled
+          aria-label="云搭子 beta"
+          title="云搭子 beta · 即将开放"
+        >
+          <Cloud size={18} aria-hidden="true" />
+          <span className={styles['nav-label']}>云搭子</span>
+          <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
+        </button>
       </nav>
       <div className={styles['sidebar-bottom']}>
+        <ReportNotifications
+          className={styles['notification-entry']}
+          labelClassName={styles['nav-label']}
+        />
         <button
           ref={settingsTrigger}
           className={styles['settings-toggle']}

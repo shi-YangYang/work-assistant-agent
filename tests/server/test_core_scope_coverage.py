@@ -178,7 +178,7 @@ async def test_every_explicit_admin_route_rejects_employee_without_changing_real
     # Valid mutation bodies and real foreign objects distinguish tenant isolation
     # from missing-object or payload-validation failures.
     foreign = [
-        ('PATCH', '/api/v1/members/' + users['employee'].id, {'active': False}),
+        ('PATCH', '/api/v1/members/' + users['employee'].id, {'name': '越权修改'}),
         ('POST', '/api/v1/members/' + users['employee'].id + '/reset-password', {'password': 'controlled-new-password'}),
         ('PATCH', '/api/v1/settings/model-services/' + saved['id'], {**payload(), 'expectedRevision': 1}),
         ('DELETE', '/api/v1/settings/model-services/' + saved['id'], {'expectedRevision': 1}),

@@ -9,8 +9,9 @@ def capability(base_url, model, override=None):
     result = dict(UNKNOWN)
     aliyun = host in {'dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com', 'dashscope-us.aliyuncs.com', 'token-plan.cn-beijing.maas.aliyuncs.com'} or host.endswith('.maas.aliyuncs.com')
     # Official Model Studio specifications distinguish native and Vanchin entries.
-    if aliyun and model == 'deepseek-v4.1-flash':
-        result = {'contextWindow': 1000000, 'inputLimit': 1000000, 'maxOutput': 393216, 'source': 'official:aliyun/deepseek-v4.1-flash'}
+    # V4 Flash and its 0731 snapshot: https://help.aliyun.com/zh/model-studio/deepseek-v4-flash
+    if aliyun and model in {'deepseek-v4.1-flash', 'deepseek-v4-flash', 'deepseek-v4-flash-0731'}:
+        result = {'contextWindow': 1000000, 'inputLimit': 1000000, 'maxOutput': 393216, 'source': f'official:aliyun/{model}'}
     elif aliyun and model == 'vanchin/deepseek-v4.1-flash':
         result = {'contextWindow': 1048576, 'inputLimit': 1048576, 'maxOutput': 393216, 'source': 'official:aliyun/vanchin-deepseek-v4.1-flash'}
     elif host == 'api.deepseek.com' and model in {'deepseek-v4.1-flash', 'deepseek-flash'}:

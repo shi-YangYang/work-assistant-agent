@@ -4,6 +4,7 @@ services:
     build:
       context: ../..
       dockerfile: deploy/company/Dockerfile.sandbox-local
+    networks: [sandbox]
     privileged: true
     cpus: 2
     mem_limit: 3g
@@ -23,6 +24,7 @@ services:
       context: ../..
       dockerfile: deploy/company/Dockerfile.sandbox
       target: control
+    networks: [sandbox]
     depends_on:
       runtime:
         condition: service_healthy
@@ -69,3 +71,5 @@ volumes:
   engine-data:
   engine-socket:
   control-state:
+networks:
+  sandbox:

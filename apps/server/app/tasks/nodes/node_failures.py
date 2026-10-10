@@ -18,6 +18,9 @@ def classify(error):
     if isinstance(error, (LostLease, InputChanged, asyncio.CancelledError)):
         return Failure('input_changed' if isinstance(error, InputChanged) else 'cancelled',
                        str(error) or '处理已停止，任务或权限已变化', cancelled=True)
+    from app.tasks.budget.state import TaskBudgetStopped
+    if isinstance(error, TaskBudgetStopped):
+        return Failure('stopped', str(error))
     if isinstance(error, BudgetExceeded):
         return Failure('budget', str(error))
     if isinstance(error, ProviderError):

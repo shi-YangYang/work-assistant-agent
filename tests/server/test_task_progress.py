@@ -60,7 +60,7 @@ def test_summary_bounds_and_plain_text():
 
 def test_phases_use_the_current_turn_not_historical_tools_or_reasoning():
     tool = result({'title': '工作'})
-    assert model_phase([tool, HumanMessage(content='新问题', id='job:j')], 'j') == '理解请求'
+    assert model_phase([tool, HumanMessage(content='新问题', id='job:j')], 'j') == '等待模型响应'
     assert model_phase([HumanMessage(content='问题'), tool], 'j') == '整理工具结果'
     assert model_phase([HumanMessage(content='修复', id='delivery-repair:j')], 'j') == '完善答复'
     assert model_phase([], 'j') == '处理请求'
@@ -75,6 +75,14 @@ def test_optional_presentation_serializes_without_rewriting_old_records():
     assert 'presentation' not in values[0]
     assert values[1]['presentation'] == rows[1]['presentation']
     assert rows[0]['label'] == '思考中'
+
+
+@pytest.mark.parametrize('state', ['succeeded', 'awaiting_retry', 'cancelled'])
+def test_stale_activity_is_not_exposed_after_a_task_ends(state):
+    row={'id':'model','kind':'model','label':'等待模型响应','state':'running','attempts':1,'scope':'s',
+         'activity':{'phase':'thinking','startedAt':'2026-10-09T00:00:00+00:00'}}
+    job=SimpleNamespace(state=state,result={'nodeExecution':{'scope':'s','nodes':[row]}})
+    assert 'activity' not in node_dtos(job)[0]
 
 
 @pytest.mark.asyncio

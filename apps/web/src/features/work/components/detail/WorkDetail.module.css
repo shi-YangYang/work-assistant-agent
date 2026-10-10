@@ -1,7 +1,7 @@
 .timeline article {
   position: relative;
   border-left: 1px solid var(--control);
-  padding: 0 0 24px 20px;
+  padding: 0 0 16px 16px;
 }
 .timeline p {
   margin: 8px 0;
@@ -9,6 +9,55 @@
 .timeline a {
   font-size: 12px;
   display: block;
+}
+.history-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+.history-change {
+  margin-top: 6px;
+}
+.history-change summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.history-more {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 0;
+  font-size: 13px;
+}
+.history {
+  padding: 18px 0 0;
+}
+.history h3 {
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+.empty {
+  color: var(--muted);
+  font-size: 13px;
+}
+.version {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.version a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .timeline article::before {
@@ -38,8 +87,8 @@
 .changes {
   display: grid;
   gap: 8px;
-  margin: 12px 0;
-  font-size: 14px;
+  margin: 8px 0;
+  font-size: 13px;
 }
 .changes > div {
   display: grid;
@@ -58,4 +107,44 @@
 .arrow {
   margin: 0 8px;
   color: var(--muted);
+}
+
+.work-page {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+}
+.work-page > .header {
+  margin-bottom: 4px;
+}
+.work-page > section {
+  margin-top: 0;
+}
+.metadata {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 13px;
+}
+.title {
+  min-width: 0;
+}
+.title h2 {
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+  font-size: 24px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.supplement {
+  font-size: 14px;
+  color: var(--secondary);
+  line-height: 1.7;
+  margin-top: 12px;
 }

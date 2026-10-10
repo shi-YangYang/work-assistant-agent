@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 from docx import Document
 from pypdf import PdfReader
 from PIL import Image
@@ -31,6 +32,54 @@ class Documents(Workspace):
         reader = PdfReader('output/长文.pdf')
         self.assertGreater(value['data']['pageCount'], 2)
         self.assertIn('终点标记', reader.pages[-1].extract_text())
+
+    def test_page_limited_word_and_pdf_render_keep_all_content_and_readable_type(self):
+        blocks = [{'type': 'heading', 'text': '交付范围'},
+                  {'type': 'paragraph', 'text': '中文约束必须保留，不能靠删减满足页数。'},
+                  {'type': 'table', 'table': {'columns': ['任务', '数量'], 'rows': [['检查', 8]]}},
+                  {'type': 'list', 'items': ['核对原始材料', '终点标记']}]
+        for kind in ('docx', 'pdf'):
+            with self.subTest(kind=kind):
+                value = create_document(filename='计划.' + kind, format=kind, title='单页文档', blocks=blocks, max_pages=1)
+                self.assertEqual(value['data']['pageCount'], 1)
+                self.assertEqual(value['data']['maxPages'], 1)
+        document = Document('output/计划.docx')
+        self.assertIn('终点标记', [p.text for p in document.paragraphs])
+        self.assertEqual(document.tables[0].cell(1, 1).text, '8')
+        self.assertEqual(document.styles['Normal'].font.size.pt, 11)
+        self.assertEqual(document.tables[0].cell(1, 0).paragraphs[0].runs[0].font.size.pt, 10.5)
+        text = PdfReader('output/计划.pdf').pages[0].extract_text()
+        for phrase in ('中文约束必须保留', '检查', '核对原始材料', '终点标记'):
+            self.assertIn(phrase, text)
+
+    def test_impossible_page_limit_keeps_full_input_and_publishes_nothing(self):
+        blocks = [{'type': 'paragraph', 'text': '完整保留内容，不得截断。' * 600 + '终点标记'}]
+        for kind in ('pdf', 'docx'):
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, '超过1页上限；未发布文件'):
+                create_document(filename='长文.' + kind, format=kind, title='页限失败', blocks=blocks, max_pages=1)
+        self.assertTrue(blocks[0]['text'].endswith('终点标记'))
+        self.assertFalse(list(Path('output').iterdir()))
+        self.assertFalse(list(Path('tmp').iterdir()))
+
+    def test_missing_word_renderer_cannot_claim_page_limit_or_publish(self):
+        with patch('noria_tools.documents.word.subprocess.run', side_effect=FileNotFoundError), self.assertRaisesRegex(ValueError, '无法渲染DOCX'):
+            create_document(filename='未验证.docx', title='页数待核验',
+                            blocks=[{'type': 'paragraph', 'text': '完整内容'}], max_pages=1)
+        self.assertFalse(list(Path('output').iterdir()))
+        self.assertFalse(list(Path('tmp').iterdir()))
+
+    def test_unconstrained_word_does_not_require_renderer_or_claim_pages(self):
+        with patch('noria_tools.documents.word.subprocess.run', side_effect=AssertionError('must not render')):
+            value = create_document(filename='原行为.docx', title='未限制页数', blocks=[{'type': 'paragraph', 'text': '完整内容'}])
+        self.assertNotIn('pageCount', value['data'])
+        self.assertTrue(any('未渲染核验DOCX页数' in warning for warning in value['warnings']))
+
+    def test_page_limit_must_be_a_bounded_integer(self):
+        for maximum in (0, -1, 41, True, '1', 1.5):
+            with self.subTest(maximum=maximum), self.assertRaises(ValueError):
+                create_document(filename='无效.pdf', format='pdf', title='页限',
+                                blocks=[{'type': 'paragraph', 'text': '正文'}], max_pages=maximum)
+        self.assertFalse(list(Path('output').iterdir()))
 
     def test_unsupported_width_and_missing_image_do_not_publish(self):
         with self.assertRaises(ValueError):

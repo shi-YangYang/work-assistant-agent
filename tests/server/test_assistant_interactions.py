@@ -52,6 +52,32 @@ async def test_durable_questions_structured_answers_and_duplicate_continuation(s
         assert '开发' in answer.text and 'Web；桌面' in answer.text
 
 
+async def test_real_question_remains_answerable_alongside_permission_failure(setup):
+    from app.agent.actions.operations import execute
+    from fastapi import HTTPException
+    _, sessions, _, clients = setup
+    peer = await create(clients['peer'], '同事工作')
+    context, sent = await mode_runtime(setup, 'auto', '帮同事改工作，也帮我安排工作但先问方向')
+    with pytest.raises(HTTPException):
+        await execute(context, step=1, action='update_work', target_id=peer['id'], expected_revision=1, changes={'status': 'done'})
+    asked = await ask(context, [{'id': 'direction', 'prompt': '本人工作选择哪个方向？', 'type': 'text'}])
+    assert await finish_waiting(context)
+    endpoint = '/api/v1/messages/' + sent['messageId']
+    message = (await clients['employee'].get(endpoint)).json()
+    outcome = message['job']['taskOutcome']
+    assert outcome['state'] == 'needs_input' and outcome['nextAction'] == 'reply'
+    assert '本人工作选择哪个方向？' in outcome['remaining']
+    assert message['interactions'][0]['state'] == 'waiting'
+    async with sessions() as db:
+        stored = await db.get(Job, context.job_id)
+        assert any(item['category'] == 'permission_denied' for item in stored.result['toolOutcomes'])
+    answered = await clients['employee'].post('/api/v1/interactions/' + asked['interactionId'] + '/answer',
+        json={'expectedRevision': 1, 'answers': [{'questionId': 'direction', 'text': '测试'}]}, headers=keyed())
+    assert answered.status_code == 200, answered.text
+    refreshed = (await clients['employee'].get(endpoint)).json()['job']['taskOutcome']
+    assert refreshed['nextAction'] == 'none' and refreshed['state'] == 'blocked'
+
+
 async def test_question_owner_version_cancellation_and_source_changes(setup):
     _, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'full', '工作截止哪天需要确认')

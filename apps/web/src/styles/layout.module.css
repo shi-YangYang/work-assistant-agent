@@ -27,7 +27,7 @@
   font-weight: 650;
 }
 .page {
-  padding: 30px 32px;
+  padding: 24px 32px;
   container-type: inline-size;
   overflow: auto;
   flex: 1;
@@ -165,7 +165,7 @@
   padding: 7px 14px;
   color: var(--muted);
   background: transparent;
-  min-height: 34px;
+  min-height: 36px;
 }
 .tabs button[data-active='true'] {
   background: var(--active-segment);
@@ -225,11 +225,16 @@
 }
 .settings-page {
   flex: 1;
-  padding: 30px 32px;
+  padding: 24px 32px;
   min-width: 0;
 }
 .settings-page > p {
   margin: 8px 0 24px;
+}
+@media (min-width: 1024px) {
+  .settings-form-page > header[data-layout-context='page'] {
+    max-width: calc(50% - 56px);
+  }
 }
 .two-columns {
   display: grid;
@@ -372,12 +377,6 @@
 }
 
 @media (max-width: 760px) {
-  .page > .page-heading h2,
-  .settings-page > h2,
-  .settings-page > .page-heading h2,
-  .settings-page > header h2 {
-    display: none;
-  }
   .page > .page-heading,
   .settings-page > .page-heading {
     margin-bottom: 16px;
@@ -386,5 +385,32 @@
   .page > .page-heading p,
   .settings-page > .page-heading p {
     margin-top: 0;
+  }
+}
+
+.form-width {
+  width: 100%;
+  max-width: 640px;
+}
+.settings-sections {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  --panel-section-heading-padding: 16px 0;
+  --panel-section-body-padding: 0 0 24px;
+}
+.settings-sections > .panel-intro,
+.settings-sections > .panel-footer {
+  padding: 16px 0;
+}
+.page .filters :is(input:not([type='checkbox']), select, button) {
+  min-height: 36px;
+}
+@media (max-width: 760px) {
+  .page .filters :is(input:not([type='checkbox']), select, button) {
+    min-height: 44px;
+  }
+  .tabs button {
+    min-height: 44px;
   }
 }

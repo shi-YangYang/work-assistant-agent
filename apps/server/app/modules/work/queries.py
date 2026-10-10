@@ -2,7 +2,7 @@ from app.core.errors import problem
 from app.core.pagination import cursor_decode, cursor_encode
 from app.modules.messages.service import deleted_sources
 from app.modules.team.sources import business_link_dtos
-from app.modules.work.models import WorkItem, WorkRevision
+from app.modules.work.models import WorkItem, WorkRevision, WorkUpdate
 from app.modules.work.serializers import revision_origin, work_dto
 from app.security.access import require as business_require, valid as business_valid
 from app.security.ownership import owned
@@ -16,7 +16,7 @@ def status_filter(status):
 
 def work_search(query):
     term = query.strip()
-    return or_(WorkItem.title.icontains(term, autoescape=True), *(WorkItem.content[key].astext.icontains(term, autoescape=True) for key in ('summary', 'blocker', 'nextStep')))
+    return or_(WorkItem.title.icontains(term, autoescape=True), WorkItem.id.in_(select(WorkUpdate.work_id).where(WorkUpdate.deleted.is_(False), WorkUpdate.text.icontains(term, autoescape=True))), *(WorkItem.content[key].astext.icontains(term, autoescape=True) for key in ('summary', 'bodyText', 'blocker', 'nextStep')))
 
 
 async def work_page(db, actor, owner_id, q='', status='', cursor=None, limit=20):
@@ -44,7 +44,7 @@ async def work_page(db, actor, owner_id, q='', status='', cursor=None, limit=20)
         if len(rows) < 100 or len(visible) > limit:
             break
         boundary = rows[-1].updated_at, rows[-1].id
-    return {'items': [work_dto(row) for row in visible[:limit]], 'nextCursor': cursor_encode(visible[limit - 1].updated_at, visible[limit - 1].id) if len(visible) > limit else None}
+    return {'items': [work_dto(row, overview=True) for row in visible[:limit]], 'nextCursor': cursor_encode(visible[limit - 1].updated_at, visible[limit - 1].id) if len(visible) > limit else None}
 
 
 async def work_item_query(identifier, revision, actor, db):

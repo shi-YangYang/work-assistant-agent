@@ -7,7 +7,7 @@ from app.core.errors import problem
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
 from app.modules.messages.service import active_message
-from app.modules.deliverables.queries import get_deliverable
+from app.modules.deliverables.queries import get_deliverable, remember_source
 from app.security.ownership import owned
 from app.security.access import require
 from app.modules.executions.sources import check_sources
@@ -36,7 +36,12 @@ async def prepare_inputs(db, actor, job, message, settings, references):
             item = await db.get(Attachment, ref['attachment_id'])
             if not item or item.deleted:
                 problem(404, '文件不存在')
-            if item.owner_id == actor.id and item.company_id == actor.company_id:
+            from app.modules.work.materials.queries import work_for_material
+            work = await work_for_material(db, actor, item.id)
+            if work:
+                from app.modules.work.materials.queries import require_agent_work
+                await require_agent_work(db, actor, job, work)
+            elif item.owner_id == actor.id and item.company_id == actor.company_id:
                 parent = await active_message(db, item.message_id, actor)
                 if parent.conversation_id != message.conversation_id:
                     problem(403, '只能处理当前会话的附件')
@@ -55,7 +60,7 @@ async def prepare_inputs(db, actor, job, message, settings, references):
             if not item:
                 problem(404, '成果文件不存在')
             await check_sources(db, actor, item.get('sources', []))
-            inherit(actor, job, owner)
+            remember_source(job, actor, owner, record)
             sources.extend(item.get('sources', []))
             path, name = file_path(settings, item['storageKey']), item['name']
         else:

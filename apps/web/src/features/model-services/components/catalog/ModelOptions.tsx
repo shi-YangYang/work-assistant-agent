@@ -2,7 +2,7 @@ import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import modelServicesStyles from '../../styles/model-services.module.css'
-import type { CompanyModel, CompanyPreset } from '@paa/api-contracts'
+import type { CompanyModel } from '@paa/api-contracts'
 import { capacitySourceLabel } from '@web/utils/model-capacity'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { FormField } from '@web/components/forms/FormField'
@@ -12,6 +12,8 @@ import { protocolNames } from '@web/features/model-services/types'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import { modelFieldErrors } from '@web/features/model-services/utils/service-drafts'
 import { changeModelProtocol } from '@web/features/model-services/utils/service-presets'
+import { useState } from 'react'
+import { ReasoningSettings } from './ReasoningSettings'
 import type * as React from 'react'
 
 export function ModelOptions({
@@ -23,8 +25,6 @@ export function ModelOptions({
   updateModel,
   automaticMatch,
   setTestPurpose,
-  setPreset,
-  setPresetJson,
   update,
   setActiveModel,
   error,
@@ -40,13 +40,14 @@ export function ModelOptions({
     reason: string
   } | null
   setTestPurpose: React.Dispatch<React.SetStateAction<Purpose>>
-  setPreset: React.Dispatch<React.SetStateAction<CompanyPreset | null>>
-  setPresetJson: React.Dispatch<React.SetStateAction<string>>
   update: (next: ServiceDraft) => void
   setActiveModel: React.Dispatch<React.SetStateAction<string>>
   error: string | Error
 }) {
-  const fields = model ? modelFieldErrors(model) : { model: '', language: '', contextWindow: '' }
+  const [invalidParameters, setInvalidParameters] = useState(false)
+  const fields = model
+    ? modelFieldErrors(model)
+    : { model: '', language: '', contextWindow: '', reasoning: '' }
   return (
     <>
       {modelOpen && model && draft && (
@@ -54,7 +55,10 @@ export function ModelOptions({
           title={`设置 ${model.model || '模型'}`}
           className={modelServicesStyles['model-settings-dialog']}
           bodyClassName={modelServicesStyles['model-settings-body']}
-          onClose={() => setModelOpen(false)}
+          onClose={() => {
+            setInvalidParameters(false)
+            setModelOpen(false)
+          }}
         >
           <fieldset disabled={!!busy} aria-label="模型配置">
             <div
@@ -151,65 +155,12 @@ export function ModelOptions({
                     />
                     使用流式接口
                   </label>
-                  <label>
-                    推理预设
-                    <select
-                      value={model.selectedPresetId || ''}
-                      onChange={(e) =>
-                        updateModel({ ...model, selectedPresetId: e.target.value || null })
-                      }
-                    >
-                      <option value="">服务默认</option>
-                      {model.presets.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div
-                    className={`${layoutStyles['card-actions']} ${modelServicesStyles['slot-card-actions']} ${layoutStyles['full-field']}`}
-                  >
-                    <button
-                      disabled={model.presets.length >= 16}
-                      onClick={() => {
-                        setPreset({
-                          id: crypto.randomUUID(),
-                          name: '',
-                          mode: 'simple',
-                          value: '',
-                          parameters: {},
-                        })
-                        setPresetJson('{}')
-                      }}
-                    >
-                      添加预设
-                    </button>
-                    {model.selectedPresetId && (
-                      <>
-                        <button
-                          onClick={() => {
-                            const p = model.presets.find((p) => p.id === model.selectedPresetId)!
-                            setPreset(structuredClone(p))
-                            setPresetJson(JSON.stringify(p.parameters, null, 2))
-                          }}
-                        >
-                          编辑预设
-                        </button>
-                        <button
-                          onClick={() =>
-                            updateModel({
-                              ...model,
-                              presets: model.presets.filter((p) => p.id !== model.selectedPresetId),
-                              selectedPresetId: null,
-                            })
-                          }
-                        >
-                          删除预设
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  <ReasoningSettings
+                    key={model.id}
+                    model={model}
+                    updateModel={updateModel}
+                    onValidityChange={setInvalidParameters}
+                  />
                 </>
               ) : (
                 <FormField
@@ -243,7 +194,13 @@ export function ModelOptions({
             </span>
             <button
               className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
-              disabled={!!fields.model || !!fields.language || !!fields.contextWindow}
+              disabled={
+                !!fields.model ||
+                !!fields.language ||
+                !!fields.contextWindow ||
+                !!fields.reasoning ||
+                invalidParameters
+              }
               onClick={() => setModelOpen(false)}
             >
               完成

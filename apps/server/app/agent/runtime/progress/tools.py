@@ -5,12 +5,15 @@ import unicodedata
 from urllib.parse import urlsplit
 
 LABELS = {
+    'set_task_context': '更新任务状态',
+    'save_memory': '保存记忆', 'forget_memory': '忘记指定内容',
     'inspect_table': '检查表格', 'export_table': '导出表格',
     'create_chart': '生成图表', 'create_document': '生成文档', 'create_slides': '生成幻灯片',
     'run_python': '运行代码', 'request_user_input': '等待用户回答', 'finish_task': '整理答复',
     'find_work_items': '查找工作', 'get_work_item': '读取工作',
     'get_message_context': '读取消息', 'get_business_actions': '读取操作结果',
     'query_reports': '查找报告', 'query_report_obligations': '查找汇报待办',
+    'list_work_updates': '读取工作进展', 'list_work_materials': '查看工作材料', 'read_work_material': '读取工作材料',
     'find_documents': '查找文件', 'read_document': '读取文件', 'read_file': '读取材料',
     'find_team_members': '查找成员', 'query_team_business': '查询团队工作',
     'read_team_source': '读取团队来源', 'propose_progress': '整理进展建议',
@@ -21,7 +24,7 @@ LABELS = {
 ACTIONS = {'create_work': '创建工作', 'update_work': '更新工作', 'delete_work': '删除工作',
            'generate_report': '报告生成入队', 'edit_report': '修改报告',
            'submit_report': '提交报告', 'delete_report': '删除报告'}
-INTERNAL = frozenset({'get_business_actions', 'read_execution', 'finish_task', 'request_user_input'})
+INTERNAL = frozenset({'get_business_actions', 'read_execution', 'finish_task', 'request_user_input', 'set_task_context'})
 TITLE_INPUTS = frozenset({'run_python', 'propose_progress', 'propose_followup', 'save_deliverable'})
 FILE_OUTPUTS = frozenset({'export_table', 'create_chart', 'create_document', 'create_slides'})
 READ_TITLES = frozenset({'get_work_item', 'read_deliverable', 'read_team_source', 'read_execution'})
@@ -88,6 +91,16 @@ def tool_presentation(name, arguments, result=None):
         subject = ' · '.join(text(args.get(key)) for key in ('employee_name', 'query') if text(args.get(key)))
     elif name == 'execute_business_action':
         label = choice(ACTIONS, args.get('action'), label)
+        changes = mapping(args.get('changes'))
+        if args.get('action') == 'update_work':
+            if 'update' in changes:
+                label = choice({'create': '记录工作进展', 'edit': '更正工作进展', 'delete': '删除工作进展'}, mapping(changes['update']).get('action'), label)
+            elif 'body' in changes or 'bodyEdits' in changes:
+                label = '保存工作内容'
+            elif 'removeMaterial' in changes:
+                label = '移除工作材料'
+            elif 'materials' in changes or 'materialIds' in changes:
+                label = '保存工作材料'
         if args.get('action') == 'create_work':
             subject = mapping(args.get('changes')).get('title', '')
         elif args.get('action') == 'generate_report':

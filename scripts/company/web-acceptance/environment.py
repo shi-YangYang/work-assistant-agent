@@ -48,7 +48,7 @@ def load_environment(path):
     values = json.loads(secret.read_text())
     url = checked_url(values['environment']['DATABASE_URL'])
     schema = metadata['schema']
-    if not re.fullmatch(r'spec044_[a-z]+_[a-f0-9]{12}', schema):
+    if not re.fullmatch(r'spec[0-9]{3}_[a-z]+_[a-f0-9]{12}', schema):
         raise RuntimeError('Unexpected acceptance schema')
     if url.query.get('options') != '-csearch_path=' + schema:
         raise RuntimeError('Schema mismatch')
@@ -56,7 +56,7 @@ def load_environment(path):
     with engine.connect() as connection:
         marker = connection.scalar(text("SELECT obj_description(oid, 'pg_namespace') FROM pg_namespace WHERE nspname=:schema"), {'schema': schema})
     engine.dispose()
-    if marker != 'spec044:' + metadata['runId']:
+    if marker != metadata.get('suite', 'spec044') + ':' + metadata['runId']:
         raise RuntimeError('Ownership marker mismatch')
     return metadata, values
 
@@ -75,13 +75,13 @@ async def seed():
     accounts, companies = {}, {}
     async with sessions.begin() as db:
         for label in ('primary', 'other', 'real'):
-            company = Company(name='Spec044 合成公司 ' + label, environment_models=False)
+            company = Company(name=os.environ.get('ACCEPTANCE_SUITE', 'spec044') + ' 合成公司 ' + label, environment_models=False)
             db.add(company)
             await db.flush()
             companies[label] = company.id
             roles = ('admin', 'employee', 'peer', 'disabled', 'deleted') if label == 'primary' else (('other_admin', 'outsider') if label == 'other' else ('realAdmin', 'realEmployee'))
             for role in roles:
-                member = Member(company_id=company.id, username='spec044_' + role.lower() + '_' + uuid4().hex[:6], name='合成测试 ' + role, role='admin' if role.lower().endswith('admin') else 'employee', password_hash=hashed, active=role not in ('disabled', 'deleted'), deleted=role == 'deleted')
+                member = Member(company_id=company.id, username=os.environ.get('ACCEPTANCE_SUITE', 'spec044') + '_' + role.lower() + '_' + uuid4().hex[:6], name='合成测试 ' + role, role='admin' if role.lower().endswith('admin') else 'employee', password_hash=hashed, active=role not in ('disabled', 'deleted'), deleted=role == 'deleted')
                 db.add(member)
                 await db.flush()
                 accounts[role] = {'id': member.id, 'companyId': company.id, 'username': member.username, 'password': password, 'role': member.role}
@@ -99,7 +99,9 @@ def prepare(args):
     defaults = dotenv_values(ROOT / 'apps/server/.env.web')
     base = checked_url(os.environ.get('DATABASE_TEST_URL') or defaults.get('DATABASE_TEST_URL', ''))
     run_id = uuid4().hex
-    schema = 'spec044_' + args.purpose + '_' + run_id[:12]
+    if not re.fullmatch(r'spec[0-9]{3}', args.suite):
+        raise RuntimeError('Unexpected acceptance suite identifier')
+    schema = args.suite + '_' + args.purpose + '_' + run_id[:12]
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists() or (output.parent / 'credentials.json').exists():
@@ -114,8 +116,9 @@ def prepare(args):
         'PAA_AGENT_BASE_URL': '', 'PAA_AGENT_API_KEY': '', 'PAA_ASR_BASE_URL': '', 'PAA_ASR_API_KEY': '',
         'PAA_SANDBOX_URL': '', 'PAA_SANDBOX_TOKEN': '', 'PAA_MODEL_ALLOWED_ORIGINS': '',
         'PAA_WORKER_CONCURRENCY': '3', 'SPEC044_RUN_ID': run_id,
+        'ACCEPTANCE_SUITE': args.suite,
     }
-    metadata = {'runId': run_id, 'purpose': args.purpose, 'database': 'paa_company_test', 'schema': schema,
+    metadata = {'runId': run_id, 'suite': args.suite, 'purpose': args.purpose, 'database': 'paa_company_test', 'schema': schema,
                 'apiUrl': args.api_url, 'webUrl': args.web_origin, 'apiOrigin': args.api_url, 'origin': args.web_origin, 'privateDirectory': str(directory),
                 'secretFile': str(directory / 'environment.json'), 'secretEnvFile': str(directory / 'environment.env'),
                 'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'processes': []}
@@ -123,7 +126,7 @@ def prepare(args):
     try:
         with engine.begin() as connection:
             connection.execute(CreateSchema(schema))
-            connection.execute(text(f"COMMENT ON SCHEMA {schema} IS 'spec044:{run_id}'"))
+            connection.execute(text(f"COMMENT ON SCHEMA {schema} IS '{args.suite}:{run_id}'"))
         os.environ.update(env)
         with output.with_suffix('.setup.log').open('w') as log:
             subprocess.run([sys.executable, '-m', 'app.cli', 'migrate'], cwd=ROOT, env={**os.environ, **env}, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
@@ -175,6 +178,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
     prep = sub.add_parser('prepare')
+    prep.add_argument('--suite', default='spec044')
     prep.add_argument('--purpose', choices=['web', 'baseline', 'load', 'recovery'], required=True)
     prep.add_argument('--output', required=True)
     prep.add_argument('--web-origin', default='http://127.0.0.1:5196')

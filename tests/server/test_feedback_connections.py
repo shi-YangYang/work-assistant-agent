@@ -27,14 +27,14 @@ async def test_concurrent_feedback_does_not_hold_auth_connections(setup, monkeyp
     barrier = asyncio.Event()
     entered = 0
 
-    async def simultaneous(*args):
+    async def simultaneous(*args, **kwargs):
         nonlocal entered
         entered += 1
         if entered <= 3:
             if entered == 3:
                 barrier.set()
             await barrier.wait()
-        return await original(*args)
+        return await original(*args, **kwargs)
 
     monkeypatch.setattr(feedback, 'snapshot', simultaneous)
     # The application pool has only three connections. Holding AUTH's connection

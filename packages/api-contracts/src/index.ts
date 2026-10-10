@@ -11,12 +11,16 @@ export interface Member {
   deleted?: boolean
   hasPassword: boolean
 }
+export interface MemberListItem extends Member {
+  createdAt: string
+}
 export interface Identity {
   member: Member
   csrf: string
   company: { id: string; name: string }
 }
 export interface Attachment {
+  workRevision?: number
   id: string
   kind: 'image' | 'audio' | 'document'
   name: string
@@ -70,6 +74,11 @@ export interface ExtractionPage {
   nextCursor: number | null
 }
 export type ExecutionMode = 'ask' | 'auto' | 'full'
+export interface ExecutionSettings {
+  executionMode: ExecutionMode
+  fullAccessConfirmed: boolean
+  modeRevision: number
+}
 export interface AssistantContinuation {
   messageId: string
   jobId: string
@@ -113,12 +122,16 @@ export interface BusinessAction {
   objectType?: 'work' | 'report'
   objectId?: string
   objectRevision?: number
+  updateId?: string
+  updateRevision?: number
+  materialIds?: string[]
   title?: string
-  details?: Partial<Progress>
-  changedFields?: (keyof Progress)[]
+  details?: Partial<Progress & WorkRecordFields>
+  changedFields?: string[]
   message?: string
   canConfirm?: boolean
   preview?: {
+    materialNames?: Record<string, string>
     title: string
     content?: ReportContent
     before?: Record<string, unknown>
@@ -147,7 +160,77 @@ export interface Conversation {
   revision: number
   updatedAt: string
 }
-export interface Work extends Progress {
+export interface WorkNode {
+  type: string
+  attrs?: Record<string, unknown>
+  text?: string
+  marks?: { type: string; attrs?: Record<string, unknown> }[]
+  content?: WorkNode[]
+}
+export interface WorkDocument {
+  schemaVersion: 1
+  content: WorkNode[]
+}
+export interface WorkMaterialSource {
+  attachmentId?: string
+  deliverableId?: string
+  revision?: number
+  fileId?: string
+}
+export interface WorkMaterial {
+  id: string
+  workId: string
+  revision: number
+  attachment: Attachment
+  createdAt: string
+  removed: boolean
+}
+export interface WorkUpdate {
+  id: string
+  workId: string
+  revision: number
+  text: string
+  materialIds: string[]
+  origin: string
+  ownerId: string
+  createdAt: string
+  updatedAt: string
+  deleted: boolean
+  workRevision: number
+}
+export interface WorkRecordFields {
+  body?: WorkDocument
+  bodyText?: string
+  _changeKind?: string
+  _updateText?: string
+  _updateDeleted?: boolean
+  materialIds?: string[]
+}
+export interface WorkPatch extends Partial<Omit<Progress, 'summary'>>, WorkRecordFields {
+  expectedRevision: number
+  materials?: WorkMaterialSource[]
+}
+export interface WorkUpdateInput {
+  expectedRevision: number
+  expectedUpdateRevision?: number
+  text: string
+  materialIds: string[]
+  materials?: WorkMaterialSource[]
+  status?: Progress['status']
+  dueDate?: string | null
+  blocker?: string
+  nextStep?: string
+}
+export interface WorkWriteResult {
+  work: Work
+  materialIds: string[]
+  update?: WorkUpdate
+}
+export interface WorkPageResult<T> {
+  items: T[]
+  nextCursor: number | null
+}
+export interface Work extends Progress, WorkRecordFields {
   origin?: 'manual' | 'assistant' | 'suggestion'
   historical?: boolean
   businessLinks?: BusinessCitation[]
@@ -159,7 +242,7 @@ export interface Work extends Progress {
   history?: {
     id: string
     revision: number
-    content: Progress
+    content: Progress & WorkRecordFields
     origin?: 'manual' | 'assistant' | 'assistant_confirmed' | 'unknown'
     sourceIds: string[]
     deletedSourceIds?: string[]
@@ -177,6 +260,7 @@ export interface Draft {
   revision: number
 }
 export interface OperationFeedback {
+  key?: string
   step: number
   action: string
   label: string
@@ -188,6 +272,10 @@ export interface TaskNode {
   parentId: string | null
   kind: 'model' | 'tool' | 'authorization' | 'review' | 'compaction'
   presentation?: { type: 'operation' | 'activity'; subject?: string }
+  activity?: {
+    phase: 'waiting' | 'thinking' | 'answering' | 'tool_call'
+    startedAt: string
+  }
   label: string
   state:
     | 'waiting'
@@ -243,6 +331,7 @@ export interface TaskOutcome {
   nextAction: 'none' | 'reply' | 'confirm' | 'retry'
 }
 export interface Job {
+  replyStream?: ReplyStream | null
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
   incompleteTask?: boolean
@@ -300,7 +389,13 @@ export interface WorkReferenceView extends WorkReference {
   title?: string
   unavailable?: boolean
 }
+export interface WebReadSource {
+  url: string
+  title: string
+  refetchFailed: boolean
+}
 export interface WorkMessage {
+  replyStream?: ReplyStream | null
   workReference?: WorkReferenceView | null
   interactions?: AssistantInteraction[]
   deliverables?: DeliverableSummary[]
@@ -311,6 +406,7 @@ export interface WorkMessage {
   text: string
   reply: string
   citations?: DocumentCitation[]
+  webSources?: WebReadSource[]
   businessCitations?: BusinessCitation[]
   businessUnavailable?: boolean
   replyTo: string | null
@@ -405,12 +501,24 @@ export interface Page<T> {
   nextCursor?: string | null
 }
 
-export interface CompanyPreset {
-  id: string
-  name: string
-  mode: 'simple' | 'advanced'
-  value: string
-  parameters: Record<string, import('@paa/model-config').JsonValue>
+export interface ReasoningOption {
+  effort: string
+}
+export interface ReasoningReference {
+  effort: string | null
+  preferenceRevision: number
+  configVersion: string
+}
+export interface ReasoningSettings {
+  options: ReasoningOption[]
+  selected: ReasoningOption | null
+  preferenceRevision: number
+  configVersion: string
+}
+export interface ModelReasoning {
+  efforts: string[]
+  initial: string | null
+  parameterOverrides?: Record<string, Record<string, import('@paa/model-config').JsonValue>>
 }
 export interface ContextCapability {
   contextWindow: number | null
@@ -425,8 +533,9 @@ export interface CompanyModel {
   model: string
   protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
   protocolMode?: 'auto' | 'manual'
-  presets: CompanyPreset[]
-  selectedPresetId: string | null
+  reasoning: ModelReasoning
+  parameters: Record<string, import('@paa/model-config').JsonValue>
+  explicitReasoning?: boolean
   streaming: boolean
   language: string
 }
@@ -442,8 +551,8 @@ export interface CompanyService {
 export interface ModelSelection {
   serviceId: string
   modelId: string
-  presetId: string | null
-  streaming: boolean
+  parameters?: Record<string, import('@paa/model-config').JsonValue> | null
+  explicitReasoning?: boolean
 }
 export interface ModelRouting {
   revision: number
@@ -475,7 +584,28 @@ export interface ModelCheck {
   requestId: string
 }
 
+export interface ReplyEvent {
+  type: 'delta' | 'sync' | 'withdrawn'
+  jobId: string
+  attempt: number
+  fence: number
+  generation: number
+  seq: number
+  callId?: string
+  state?: string
+  text?: string
+  delta?: string
+}
+
+export interface ReplyStream {
+  version: 1
+  generation: number
+  state: 'streaming' | 'finalizing' | 'interrupted' | 'withdrawn'
+  text: string
+}
+
 export interface JobFeedback {
+  replyStream?: ReplyStream | null
   interactions?: AssistantInteraction[]
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
@@ -658,4 +788,12 @@ export interface VoiceprintCleanupSummary {
   legacy: MemberDeletionImpact & { members: number }
   pending: number
   failed: number
+}
+
+export interface AssistantMemory {
+  enabled: boolean
+  revision: number
+  markdown: string
+  updatedAt: string | null
+  maxCharacters: number
 }

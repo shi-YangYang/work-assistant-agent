@@ -7,6 +7,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.conversations.router import router as conversations_router
 from app.modules.deliverables.router import router as deliverables_router
 from app.modules.interactions.router import router as interactions_router
+from app.modules.memories.router import router as memories_router
 from app.modules.members.router import router as members_router
 from app.modules.messages.router import router as messages_router
 from app.modules.model_services.router import router as model_services_router
@@ -26,6 +27,7 @@ from app.tasks.router import router as tasks_router
 
 
 def register_routes(app):
+    app.include_router(memories_router)
     app.include_router(model_services_router)
     app.include_router(support_router)
     app.include_router(auth_dingtalk_router)

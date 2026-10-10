@@ -13,7 +13,10 @@ import { Bell } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 
-export function ReportNotifications() {
+export function ReportNotifications({
+  className = '',
+  labelClassName,
+}: { className?: string; labelClassName?: string } = {}) {
   const { identity, drafts } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [cursor, setCursor] = useState('0')
@@ -29,7 +32,7 @@ export function ReportNotifications() {
   return (
     <>
       <button
-        className={`${controlsStyles['icon-button']} ${styles['notification-launch']}`}
+        className={`${className || controlsStyles['icon-button']} ${styles['notification-launch']}`}
         aria-label={`汇报通知${list.data?.unread ? `，${list.data.unread} 条未读` : ''}`}
         title="汇报通知"
         onClick={() => {
@@ -38,6 +41,7 @@ export function ReportNotifications() {
         }}
       >
         <Bell size={19} />
+        {labelClassName && <span className={labelClassName}>汇报通知</span>}
         {!!list.data?.unread && (
           <span className={styles['notification-count']}>
             {list.data.unread > 99 ? '99+' : list.data.unread}

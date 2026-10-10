@@ -13,18 +13,33 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / 'apps/server'), str(ROOT / 'packages/voiceprint-engine/src')]
 
 MATRIX = {
-    'auth': ['W01', 'W02', 'D02'], 'conversations': ['W04', 'W09', 'D01', 'D05'],
-    'messages': ['W05', 'W07', 'W08', 'D04', 'D07'], 'attachments': ['W06', 'D01', 'D12', 'D13'],
-    'tasks': ['W08', 'D08', 'D09', 'D10'], 'jobs': ['W08', 'D08', 'D09', 'D10'],
-    'work-items': ['W12', 'D04', 'D05'], 'progress-drafts': ['W07', 'W12', 'D04'],
-    'reports': ['W13', 'D04', 'D05'], 'team': ['W14', 'D01'], 'members': ['W15', 'D11'],
-    'settings': ['W16', 'W18'], 'voiceprints': ['W17', 'D01'], 'support': ['W18'],
-    'feedback': ['W18'], 'support-feedback': ['W18'], 'notifications': ['W18'],
-    'desktop': ['W17', 'D01', 'D02'], 'health': ['W03'],
-    'uploads': ['W06', 'D01', 'D12', 'D13'], 'business-sources': ['W07', 'W14', 'D01'],
-    'report-obligations': ['W13', 'W18'], 'business-actions': ['W07', 'D04', 'D05'],
-    'interactions': ['W07', 'D04'], 'deliverables': ['W11', 'D01', 'D15'],
+    'auth': ['W01', 'W02', 'W16', 'D12'], 'conversations': ['W04', 'W09', 'D01', 'D05'],
+    'messages': ['W05', 'W07', 'W08', 'W10', 'D01', 'D07'], 'attachments': ['W06', 'W10', 'D08', 'D11'],
+    'tasks': ['W07', 'D03', 'D05'], 'jobs': ['W07', 'W09', 'D03', 'D05'],
+    'work-items': ['W11', 'W12', 'D04'], 'progress-drafts': ['W07', 'W12', 'D04'],
+    'reports': ['W13', 'D03', 'D04'], 'team': ['W14'], 'members': ['W15', 'D11'],
+    'settings': ['W16', 'W17', 'W18', 'W19', 'W20', 'W22'], 'voiceprints': ['W21', 'D08'],
+    'support': ['W23'], 'feedback': ['W23'], 'support-feedback': ['W23'], 'notifications': ['W03', 'W13'],
+    'desktop': ['W02'], 'health': ['W03', 'D06'], 'uploads': ['W06', 'D08'],
+    'business-sources': ['W10', 'W14'], 'report-obligations': ['W13', 'W18'],
+    'business-actions': ['W07', 'D03', 'D04'], 'interactions': ['W07', 'W08', 'D03'],
+    'deliverables': ['W10', 'D11'],
 }
+
+
+ASSISTANT_MATRIX = {
+    'execution-settings': ['W08', 'A25', 'D04', 'D12'],
+    'memory': ['W17', 'A22', 'A23', 'D04', 'D12'],
+    'reasoning-settings': ['W08', 'W19', 'A25', 'A28', 'D04', 'D12'],
+}
+
+
+def matrix_for(path):
+    parts = path.split('/')
+    prefix = parts[3] if path.startswith('/api/v1/') else 'health'
+    if prefix == 'assistant':
+        return ASSISTANT_MATRIX.get(parts[4] if len(parts) > 4 else '', ['UNMAPPED'])
+    return MATRIX.get(prefix, ['UNMAPPED'])
 
 
 def main(output):
@@ -37,10 +52,9 @@ def main(output):
     operations = []
     for path, methods in sorted(schema['paths'].items()):
         for method, operation in sorted(methods.items()):
-            prefix = path.split('/')[3] if path.startswith('/api/v1/') else 'health'
             constant = path.split('{')[0].rstrip('/')
             candidates = [name for name, source in test_sources.items() if constant in source]
-            operations.append({'id': method.upper() + ' ' + path, 'operationId': operation['operationId'], 'matrix': MATRIX.get(prefix, ['UNMAPPED']),
+            operations.append({'id': method.upper() + ' ' + path, 'operationId': operation['operationId'], 'matrix': matrix_for(path),
                                'candidateTestFiles': candidates, 'coverageStatus': 'UNTRACED',
                                'note': 'Source references are discovery aids; only executed assertions establish coverage.',
                                'parameters': operation.get('parameters', []), 'responses': sorted(operation.get('responses', {}))})

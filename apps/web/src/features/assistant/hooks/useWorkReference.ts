@@ -85,7 +85,6 @@ export function useWorkReference(
         next.replyTo ||
         next.deliverableReference ||
         next.personaId ||
-        next.executionMode ||
         next.workReference
         ? next
         : undefined

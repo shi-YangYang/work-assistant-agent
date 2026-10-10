@@ -11,6 +11,7 @@
   "scripts": {
     "postinstall": "npm exec --workspace apps/desktop -- install-electron",
     "dev:electron": "npm run dev --workspace apps/desktop",
+    "dev:web:migrate": "node scripts/company/local-infra/migrate.mjs",
     "dev:web": "node scripts/company/run.mjs all",
     "dev:web:ui": "npm run dev --workspace apps/web",
     "sandbox:setup": "node scripts/company/sandbox-local.mjs setup",

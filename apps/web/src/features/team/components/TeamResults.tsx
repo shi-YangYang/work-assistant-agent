@@ -85,7 +85,7 @@ export function TeamResults({
                     <h3>{row.work.title}</h3>
                     <Status value={row.work.status} />
                   </div>
-                  <p>{row.work.summary || '暂无工作说明'}</p>
+                  <p>{row.work.bodyText || row.work.summary || '暂无工作说明'}</p>
                   {row.work.blocker && row.work.status !== 'done' && (
                     <small className={teamStyles['team-blocker']}>阻碍：{row.work.blocker}</small>
                   )}

@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
@@ -43,16 +44,16 @@ export function ReportsPage() {
       className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
       data-scroll-container
     >
-      <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
-        <div>
-          <h2>我的报告</h2>
-          <p>把日常的推进，整理成清晰的工作记录。</p>
-        </div>
-        <button onClick={() => setShowRules(true)}>
-          <CalendarDays size={16} />
-          汇报安排
-        </button>
-      </div>
+      <PageHeader
+        title="我的报告"
+        description="把日常的推进，整理成清晰的工作记录。"
+        actions={
+          <button onClick={() => setShowRules(true)}>
+            <CalendarDays size={16} />
+            汇报安排
+          </button>
+        }
+      />
       <div className={recordLayoutStyles['records-surface']}>
         <div className={recordLayoutStyles['records-navigation']}>
           <div

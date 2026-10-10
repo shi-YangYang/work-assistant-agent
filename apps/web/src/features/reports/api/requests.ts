@@ -68,7 +68,3 @@ export function notificationsPath(identity: Identity, cursor: string) {
 export function markNotificationRead(item: ReportNotification, body: Record<string, never>) {
   return write(`/notifications/${item.id}/read`, body)
 }
-
-export function readReportForBreadcrumb(id: string, options: RequestInit) {
-  return api<Report>(`/reports/${id}`, options)
-}

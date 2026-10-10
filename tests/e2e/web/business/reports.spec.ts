@@ -8,7 +8,12 @@ test('W13 W14 edit submit and read employee report as manager', async ({
   capture,
   http,
 }) => {
-  const report = JSON.parse(readFileSync('artifacts/spec044/environment/report.json', 'utf8')) as {
+  const report = JSON.parse(
+    readFileSync(
+      process.env.UI_REPORT_RECORD || 'artifacts/spec044/environment/report.json',
+      'utf8',
+    ),
+  ) as {
     id: string
   }
   await login('employee')

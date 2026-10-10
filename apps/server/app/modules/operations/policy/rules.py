@@ -4,7 +4,7 @@ ACTIONS = frozenset({'create_work', 'update_work', 'delete_work', 'generate_repo
 CONFIRM = frozenset({'delete_work', 'submit_report', 'delete_report'})
 
 
-WORK_FIELDS = frozenset({'title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate'})
+WORK_FIELDS = frozenset({'title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate', 'body', 'bodyEdits', 'materials', 'materialIds', 'update', 'removeMaterial'})
 
 
 REPORT_FIELDS = frozenset({'completed', 'ongoing', 'blockers', 'next'})

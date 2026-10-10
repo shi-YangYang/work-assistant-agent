@@ -49,6 +49,9 @@ class Settings:
     sandbox_url: str = field(default_factory=lambda: os.getenv('PAA_SANDBOX_URL', ''))
     sandbox_token: str = field(repr=False, default_factory=lambda: os.getenv('PAA_SANDBOX_TOKEN', ''))
 
+    reply_stream_redis_url: str = field(repr=False, default_factory=lambda: os.getenv('PAA_REPLY_STREAM_REDIS_URL', ''))
+    reply_stream_namespace: str = field(default_factory=lambda: os.getenv('PAA_REPLY_STREAM_NAMESPACE', 'paa:reply:v2'))
+
     worker_concurrency: int = field(default_factory=lambda: int(os.getenv('PAA_WORKER_CONCURRENCY', '3')))
 
     def __post_init__(self):

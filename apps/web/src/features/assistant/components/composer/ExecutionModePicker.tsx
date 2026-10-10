@@ -69,7 +69,7 @@ export function ExecutionModePicker({
         type="button"
         className={styles.trigger}
         data-mode={value}
-        title={`执行权限：${name}`}
+        title={`执行权限：${name}，适用于所有会话`}
         aria-label={`执行权限：${name}`}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -156,7 +156,9 @@ export function ExecutionModePicker({
         )}
       {confirm && (
         <Modal title="开启自主执行" onClose={() => setConfirm(false)}>
-          <p>当前会话中，你明确要求的工作和报告操作将直接执行，包括提交与删除，不再逐项确认。</p>
+          <p>
+            此账号的所有会话中，你明确要求的工作和报告操作将直接执行，包括提交与删除，不再逐项确认。
+          </p>
           <p>缺少必要信息时仍会向你提问；可访问的数据和账号权限保持不变。</p>
           <div className={layoutStyles['form-actions']}>
             <button type="button" onClick={() => setConfirm(false)}>

@@ -11,7 +11,7 @@ from app.integrations.models.asr import transcribe
 from app.integrations.models.chat import chat
 from app.integrations.models.transport import CheckedBackend, ProviderError, SafeTransport, allowed_address, normalize_url
 from app.modules.model_services.bindings import bind_job, resolve_bound
-from app.modules.model_services.models import ModelService, ModelServiceRevision, ModelUsage
+from app.modules.model_services.models import ModelRouting, ModelService, ModelServiceRevision, ModelUsage
 from app.modules.model_services.parameters import reply_review_config, request_options
 from app.modules.model_services.probes import reserve_probe as model_services_reserve_probe
 from app.modules.model_services.schemas import ServiceInput, parameters
@@ -40,8 +40,8 @@ async def create(c, body=None):
 
 
 def route(saved, revision=0):
-    choice = {'serviceId': saved['id'], 'modelId': 'chat', 'presetId': None, 'streaming': True}
-    return {'expectedRevision': revision, 'assistant': choice, 'report': 'follow', 'asr': {**choice, 'modelId':'audio', 'streaming':False}}
+    choice = {'serviceId': saved['id'], 'modelId': 'chat'}
+    return {'expectedRevision': revision, 'assistant': choice, 'report': 'follow', 'asr': {**choice, 'modelId':'audio'}}
 
 
 async def test_model_service_auth_encryption_version_address_and_delete(setup):
@@ -112,21 +112,129 @@ async def test_bound_revision_survives_edit_and_manual_retry_uses_latest_config(
         await process_job(claimed,sessions,settings,saver,model=model('旧版本',fail_once=True))
         response=await c['employee'].post('/api/v1/jobs/'+claimed.id+'/retry',json={})
         assert response.status_code==200
-        # The selection is refreshed at execution time, not frozen at the click.
+        # Manual retry freezes the selection at acceptance, before it queues.
         changed=await c['admin'].patch('/api/v1/settings/model-services/'+first['id'],json={**payload(url='https://third.example/v1'),'apiKey':'latest-test-key','expectedRevision':2})
         assert changed.status_code==200
         retry=await claim(sessions,users['employee'].id)
         async with sessions() as db:
-            assert (await db.get(Job,retry.id)).result['refreshModelBinding']
+            assert 'refreshModelBinding' not in (await db.get(Job,retry.id)).result
         await process_job(retry,sessions,settings,saver,model=model('新版本'))
         async with sessions() as db:
             live=await db.get(Job,retry.id)
             assert live.state=='succeeded' and live.config_attempt==1
-            assert live.model_binding['assistant']['revision']==3
+            assert live.model_binding['assistant']['revision']==2
             assert 'refreshModelBinding' not in live.result
             config,key=await resolve_bound(db,settings,users['employee'].company_id,live.model_binding,'assistant')
-            assert config['baseUrl']=='https://third.example/v1' and key=='latest-test-key'
+            assert config['baseUrl']=='https://second.example/v1' and key=='replacement-test-key'
             assert SECRET not in json.dumps(live.model_binding)
+
+
+@pytest.mark.parametrize('follow_report', [True, False])
+async def test_readding_same_models_keeps_saved_purpose_bindings(setup, follow_report):
+    settings, sessions, users, clients = setup
+    saved = await create(clients['admin'])
+    routing = route(saved)
+    if not follow_report:
+        routing['report'] = dict(routing['assistant'])
+    assigned = (await clients['admin'].put('/api/v1/settings/model-routing', json=routing)).json()
+    # The catalog creates fresh IDs when models are removed and added again.
+    body = {**payload(), 'apiKey': '', 'expectedRevision': saved['revision']}
+    body['models'] = [{**model, 'id': 'readded-' + model['id']} for model in reversed(body['models'])]
+    response = await clients['admin'].patch('/api/v1/settings/model-services/' + saved['id'], json=body)
+    assert response.status_code == 200, response.text
+    assert {m['model']: m['id'] for m in response.json()['models']} == {m['model']: m['id'] for m in saved['models']}
+    assert response.json()['revision'] == saved['revision'] + 1
+    assert (await clients['admin'].get('/api/v1/settings/model-routing')).json() == assigned
+    async with sessions() as db:
+        revisions = (await db.scalars(select(ModelServiceRevision).where(ModelServiceRevision.service_id == saved['id']).order_by(ModelServiceRevision.revision))).all()
+        assert len(revisions) == 2
+        assert revisions[0].models == [{k: v for k, v in m.items() if k != 'contextCapability'} for m in saved['models']]
+        assert all({m['id'] for m in rev.models} == {'chat', 'audio'} for rev in revisions)
+
+
+@pytest.mark.parametrize('change', ['remove', 'replace', 'protocol'])
+async def test_saved_purpose_still_blocks_removing_or_incompatible_model(setup, change):
+    _, _, _, clients = setup
+    saved = await create(clients['admin'])
+    assert (await clients['admin'].put('/api/v1/settings/model-routing', json=route(saved))).status_code == 200
+    body = {**payload(), 'apiKey': '', 'expectedRevision': saved['revision']}
+    if change == 'remove':
+        body['models'] = body['models'][1:]
+    elif change == 'replace':
+        body['models'][0].update(id='different', model='different-chat')
+    else:
+        body['models'][0]['protocol'] = 'transcriptions'
+    response = await clients['admin'].patch('/api/v1/settings/model-services/' + saved['id'], json=body)
+    assert response.status_code == 422
+    if change != 'protocol':
+        assert '用途分配' in response.text and '工作助手' in response.text
+    assert (await clients['admin'].get('/api/v1/settings/model-services/' + saved['id'])).json() == saved
+
+
+async def test_readding_model_does_not_reuse_an_id_still_in_the_draft():
+    from app.modules.model_services.schemas import ServiceModel
+    from app.modules.model_services.service import retain_model_ids
+    previous = [{'id': 'original', 'model': 'first-chat', 'protocol': 'chat'}]
+    models = [ServiceModel(id='original', model='renamed-chat'), ServiceModel(id='new', model='first-chat')]
+    assert [m.id for m in retain_model_ids(models, previous)] == ['original', 'new']
+
+
+@pytest.mark.parametrize('streaming', [False, True])
+@pytest.mark.parametrize('follow_report', [False, True])
+async def test_model_streaming_is_the_only_setting_for_new_bindings(setup, streaming, follow_report):
+    from types import SimpleNamespace
+    settings, sessions, users, clients = setup
+    body = payload()
+    body['models'][0]['streaming'] = streaming
+    body['models'].append({'id': 'report-chat', 'model': 'report-chat', 'streaming': not streaming})
+    saved = await create(clients['admin'], body)
+    routing = route(saved)
+    # Older clients may submit the removed field; it must never override the model.
+    routing['assistant']['streaming'] = not streaming
+    if not follow_report:
+        routing['report'] = {'serviceId': saved['id'], 'modelId': 'report-chat', 'streaming': streaming}
+    assigned = await clients['admin'].put('/api/v1/settings/model-routing', json=routing)
+    assert assigned.status_code == 200, assigned.text
+    assert all('streaming' not in choice for choice in assigned.json().values() if isinstance(choice, dict))
+    async with sessions.begin() as db:
+        stored = await db.get(ModelRouting, users['admin'].company_id)
+        assert all('streaming' not in choice for choice in stored.choices.values() if isinstance(choice, dict))
+        # Simulate JSON saved before this change, without rewriting historical jobs.
+        stored.choices = {
+            purpose: {**choice, 'streaming': routing[purpose].get('streaming', False)} if isinstance(choice, dict) else choice
+            for purpose, choice in stored.choices.items()
+        }
+    assert (await clients['admin'].get('/api/v1/settings/model-routing')).json() == assigned.json()
+
+    jobs = {}
+    for purpose, kind in [('assistant', 'message'), ('report', 'report')]:
+        job = SimpleNamespace(kind=kind, result={}, model_binding=None, config_attempt=0,
+                              company_id=users['employee'].company_id, owner_id=users['employee'].id)
+        async with sessions.begin() as db:
+            binding = await bind_job(db, job, settings)
+            config, _ = await resolve_bound(db, settings, job.company_id, binding, purpose)
+        expected = streaming if purpose == 'assistant' or follow_report else not streaming
+        assert config['streaming'] is expected
+        if purpose == 'assistant':
+            assert binding['asr']['streaming'] is False
+        jobs[purpose] = (job, expected)
+
+    body.update(apiKey='', expectedRevision=saved['revision'])
+    for item in body['models']:
+        if item['id'] != 'audio':
+            item['streaming'] = not item['streaming']
+    changed = await clients['admin'].patch('/api/v1/settings/model-services/' + saved['id'], json=body)
+    assert changed.status_code == 200, changed.text
+    for purpose, (job, expected) in jobs.items():
+        async with sessions.begin() as db:
+            frozen = await bind_job(db, job, settings)
+            config, _ = await resolve_bound(db, settings, job.company_id, frozen, purpose)
+            assert config['streaming'] is expected
+            job.result = {'refreshModelBinding': True}
+            refreshed = await bind_job(db, job, settings)
+            config, _ = await resolve_bound(db, settings, job.company_id, refreshed, purpose)
+            assert config['streaming'] is not expected
+            assert frozen[purpose]['streaming'] is expected
 
 
 async def test_parameter_and_network_boundaries(setup,monkeypatch):
@@ -137,7 +245,7 @@ async def test_parameter_and_network_boundaries(setup,monkeypatch):
     assert not allowed_address('127.0.0.1') and not allowed_address('::ffff:127.0.0.1') and not allowed_address('169.254.169.254')
     for data in ({'max_tokens':200},{'thinking':{'headers':{}}},{'constructor':{}},{'reasoning_effort':'${secret}'},{'timeout':100}):
         with pytest.raises(ValueError): parameters(data)
-    assert request_options({'presets':[],'selectedPresetId':None})=={}
+    assert request_options({'reasoning': {'efforts': [], 'initial': None}, 'parameters': {}})=={}
     loop=asyncio.get_running_loop();connections=[]
     async def resolve(*args,**kwargs): return [(2,1,6,'',('8.8.8.8',443)),(2,1,6,'',('127.0.0.1',443))]
     monkeypatch.setattr(loop,'getaddrinfo',resolve)
@@ -191,9 +299,11 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     service = payload(url='https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1') if fast_review else payload()
     if fast_review:
         service['models'][0]['model'] = 'deepseek-v4.1-flash'
-    saved=await create(c['admin'], service); routing=route(saved);routing['assistant']['streaming']=streaming
+    service['models'][0]['streaming'] = streaming
+    saved=await create(c['admin'], service); routing=route(saved)
     await c['admin'].put('/api/v1/settings/model-routing',json=routing)
     calls=[]
+    call_kinds, reserved_ids = [], []
     from app.tasks.feedback.feedback import publish
     phases = []
     async def track_phase(context, stage, *args, **kwargs):
@@ -206,37 +316,46 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
         body=json.loads(request.content);calls.append((str(request.url),body))
         verification = json.loads(body['messages'][-1]['content']) if not body.get('tools') else None
         assert request.headers['Authorization']=='Bearer '+SECRET
-        assert body['stream']==streaming and body['max_tokens']<=4000
+        assert body['model'] == service['models'][0]['model']
+        assert body['stream']==streaming and 'max_tokens' not in body
+        assert verification is None or verification.get('task') != 'business_reply_review'
+        async with sessions() as db:
+            reservations = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == job.id))).all()
+            assert len(reservations) == len(calls)
+            running = [usage for usage in reservations if usage.status == 'running']
+            assert len(running) == 1
+            assert all(usage.status == 'succeeded' for usage in reservations if usage.id != running[0].id)
+            assert running[0].id not in reserved_ids and running[0].input_tokens > 0
+            reserved_ids.append(running[0].id)
         if fast_review:
             if verification is not None:
                 assert body['enable_thinking'] is False and 'reasoning_effort' not in body
             else:
-                assert body['enable_thinking'] is True and body['reasoning_effort'] == 'low'
+                assert 'enable_thinking' not in body and 'reasoning_effort' not in body
         else:
             assert 'enable_thinking' not in body
         if len(calls)==1:
-            changed=await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**payload(url='https://new.example/v1'),'apiKey':'new-test-secret','expectedRevision':1})
+            assert body.get('tools')
+            call_kinds.append('main')
+            replacement = payload(name='服务乙', url='https://new.example/v1')
+            replacement['models'][0].update(model='changed-chat', streaming=not streaming)
+            changed=await c['admin'].patch('/api/v1/settings/model-services/'+saved['id'],json={**replacement,'apiKey':'new-test-secret','expectedRevision':1})
             assert changed.status_code==200,changed.text
             message={'role':'assistant','content':'','tool_calls':[{'id':'progress-test','type':'function','function':{'name':'propose_progress','arguments':json.dumps({'title':'真实预算路径','summary':'受控响应测试','status':'in_progress','blocker':'','next_step':'','work_id':None})}}]}
             finish='tool_calls'
         elif verification is not None and 'proposedOperation' in verification:
+            assert len(calls) == 2 and not body.get('tools')
+            call_kinds.append('authorization')
             assert verification['proposedOperation']['action'] == 'propose_progress'
             verdict={'allowed':True,'requireConfirmation':True,'quote':verification['currentUserText'],'reason':''}
             message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
         elif body.get('tools'):
+            assert len(calls) == 3
+            call_kinds.append('main')
             from fakes import wire_completion
             message=wire_completion(reply, task={'state': 'needs_confirmation'}, business=True);finish='tool_calls'
         else:
-            # Both authorization and reply review use the frozen service.
-            assert len(calls)==4 and not body.get('tools')
-            review=verification
-            assert review['task']=='business_reply_review'
-            assert review['answer']==reply
-            assert any(item['tool']=='propose_progress' for item in review['toolEvidence'])
-            assert 'persistedOperations' not in review
-            assert body['max_tokens'] == 2000
-            verdict={'issues': []}
-            message={'role':'assistant','content':json.dumps(verdict)};finish='stop'
+            pytest.fail('Unexpected model call after the main answer and independent authorization')
         if streaming:
             delta=dict(message)
             if 'tool_calls' in delta: delta['tool_calls'][0]['index']=0
@@ -252,15 +371,33 @@ async def test_actual_bounded_harness_uses_frozen_service_and_reserves_each_call
     assert result['job']['state']=='succeeded',result['job']
     assert len(result['suggestions'])==1 and all(url==service['baseUrl']+'/chat/completions' for url,_ in calls)
     assert result['reply']==reply+'\n\n进展建议：已保存，等待你的确认。'
-    assert len(calls)==4
+    assert len(calls) == 3 and call_kinds == ['main', 'authorization', 'main']
     # One initial phase and one per assistant call, no empty per-token writes.
     assert phases.count('generating') == 3
     async with sessions() as db:
         usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
-        assert len(usages)==4 and all(u.kind=='assistant' and u.status=='succeeded' and u.service_id==saved['id'] for u in usages)
+        assert len(usages) == 3 and {u.id for u in usages} == set(reserved_ids)
+        assert all(
+            u.kind == 'assistant' and u.status == 'succeeded' and u.service_id == saved['id']
+            and u.service_name == service['name'] and u.model_name == service['models'][0]['model']
+            and u.job_attempt == job.attempt and u.job_fence == job.fence
+            and u.started_at is not None and u.finished_at is not None
+            and u.input_tokens > 0 and u.output_tokens > 0
+            for u in usages
+        )
+        completed_job = await db.get(Job, job.id)
+        assert completed_job.model_binding['assistant']['revision'] == 1
+        assert (await db.get(ModelService, saved['id'])).revision == 2
+        budget = completed_job.result['nodeExecution']
+        assert budget['actualCalls'] == 3
+        assert budget['inputTokens'] == sum(u.input_tokens for u in usages)
+        assert budget['outputTokens'] == sum(u.output_tokens for u in usages)
         from sqlalchemy import text
         blobs=(await db.execute(text('SELECT blob FROM checkpoint_blobs WHERE thread_id LIKE :prefix'),{'prefix':job.company_id+':%'})).all()
-        assert not any(SECRET.encode() in bytes(b[0]) for b in blobs if b[0] is not None)
+        for secret in (SECRET, 'new-test-secret'):
+            assert secret not in json.dumps(result, ensure_ascii=False)
+            assert secret not in json.dumps(completed_job.model_binding)
+            assert not any(secret.encode() in bytes(b[0]) for b in blobs if b[0] is not None)
 
 
 @pytest.mark.parametrize('base,model,toggle', [

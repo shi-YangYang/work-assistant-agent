@@ -38,23 +38,47 @@ async def validate_master_key(db, settings):
         decrypt(settings.model_key_file, witness.credential, witness.company_id, witness.service_id, witness.revision)
 
 
+def retain_model_ids(models, previous):
+    # Removing and re-adding the same model in an unsaved draft must not
+    # replace its durable identity and orphan existing purpose selections.
+    identities = {(m['model'], m['protocol']): m['id'] for m in previous}
+    previous_ids = set(identities.values())
+    submitted_ids = {m.id for m in models}
+    result = []
+    for model in models:
+        previous_id = identities.get((model.model, model.protocol))
+        if previous_id and model.id not in previous_ids and previous_id not in submitted_ids:
+            model = model.model_copy(update={'id': previous_id})
+        result.append(model)
+    return result
+
+
 async def save_service(db, settings, actor, body, identifier=None):
     await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
     url = normalize_url(body.baseUrl, settings)
     await validate_master_key(db, settings)
     row = await get_service(db, actor.company_id, identifier, lock=True) if identifier else None
+    models = body.models
     if row:
         version(row, body.expectedRevision)
+        models = retain_model_ids(models, row.models)
         old = await current_revision(db, row)
         if not body.apiKey and url != row.base_url:
             problem(422, '更换地址后必须重新输入密钥')
         key = body.apiKey or decrypt(settings.model_key_file, old.credential, actor.company_id, row.id, old.revision)
         routing = await db.get(ModelRouting, actor.company_id)
         if routing:
-            choices = routing.choices
+            choices = dict(routing.choices)
             for purpose, choice in choices.items():
                 if isinstance(choice, dict) and choice['serviceId'] == row.id:
-                    validate_choice(body.models, choice, purpose)
+                    model = next((model for model in models if model.id == choice['modelId']), None)
+                    if not model:
+                        label = {'assistant': '工作助手', 'report': '报告生成', 'asr': '语音转写'}[purpose]
+                        problem(422, f'模型仍用于{label}，请先在“用途分配”中更换或解除绑定，再移除此模型。')
+                    validate_choice(models, choice, purpose)
+            if choices != routing.choices:
+                routing.choices = choices
+                routing.revision += 1
         row.revision += 1
     else:
         if body.expectedRevision != 0:
@@ -67,7 +91,7 @@ async def save_service(db, settings, actor, body, identifier=None):
         key = body.apiKey
         row = ModelService(id=str(uuid4()), company_id=actor.company_id, revision=1)
         db.add(row)
-    row.name, row.base_url, row.models, row.updated_at = body.name.strip(), url, [m.model_dump() for m in body.models], now()
+    row.name, row.base_url, row.models, row.updated_at = body.name.strip(), url, [m.model_dump() for m in models], now()
     await db.flush()
     db.add(ModelServiceRevision(company_id=actor.company_id, service_id=row.id, revision=row.revision, name=row.name, base_url=url, models=row.models, credential=encrypt(settings.model_key_file, key, actor.company_id, row.id, row.revision)))
     await db.flush()
@@ -79,8 +103,8 @@ def validate_choice(models, choice, purpose):
     model = next((m for m in models if m['id'] == choice['modelId']), None)
     if not model or ((purpose == 'asr') != (model['protocol'] != 'chat')):
         problem(422, '所选模型不存在或协议不适用于该用途')
-    if choice.get('presetId') and not any(p['id'] == choice['presetId'] for p in model['presets']):
-        problem(422, '已分配的推理预设不存在，请先更改用途分配')
+    if purpose != 'report' and (choice.get('parameters') is not None or choice.get('explicitReasoning')):
+        problem(422, '只有独立报告用途可以保留专属参数')
     return model
 
 
@@ -88,7 +112,8 @@ async def routing_dto(db, company_id, settings):
     row = await db.get(ModelRouting, company_id)
     company = await db.get(Company, company_id)
     environment = bool(not row and company.environment_models)
-    return {'revision': row.revision if row else 0, 'source': 'environment' if environment else 'database', **(row.choices if row else EMPTY_CHOICES), 'environment': environment_summary(settings) if environment else None}
+    choices = {purpose: {key: value for key, value in choice.items() if key != 'streaming'} if isinstance(choice, dict) else choice for purpose, choice in (row.choices if row else EMPTY_CHOICES).items()}
+    return {'revision': row.revision if row else 0, 'source': 'environment' if environment else 'database', **choices, 'environment': environment_summary(settings) if environment else None}
 
 
 def environment_summary(settings):
@@ -141,7 +166,7 @@ async def import_environment(db, actor, settings):
             selections[purpose] = None
             continue
         options = settings.agent_options or {'enable_thinking': False}
-        entry = {'id': purpose, 'model': model, 'protocol': 'chat' if purpose == 'assistant' else 'qwen-asr', 'streaming': False, 'presets': [{'id': 'imported', 'name': '原环境参数', 'mode': 'advanced', 'parameters': options}] if purpose == 'assistant' else [], 'selectedPresetId': 'imported' if purpose == 'assistant' else None}
+        entry = {'id': purpose, 'model': model, 'protocol': 'chat' if purpose == 'assistant' else 'qwen-asr', 'streaming': False, 'parameters': options if purpose == 'assistant' else {}}
         # Imports remain explicit and only group credentials that are exactly equal.
         prior = next((x for x in created if x[0] == url and x[1] == key), None)
         if prior:
@@ -149,7 +174,7 @@ async def import_environment(db, actor, settings):
         else:
             saved = await save_service(db, settings, actor, ServiceInput(name='原工作助手服务' if purpose == 'assistant' else '原语音服务', baseUrl=url, apiKey=key, models=[entry]))
             created.append((url, key, saved))
-        selections[purpose] = {'serviceId': saved['id'], 'modelId': purpose, 'presetId': 'imported' if purpose == 'assistant' else None, 'streaming': False}
+        selections[purpose] = {'serviceId': saved['id'], 'modelId': purpose}
     if not any(selections.values()):
         problem(422, '原环境没有完整的服务地址和密钥，请直接添加服务')
     db.add(ModelRouting(company_id=actor.company_id, revision=1, choices={**selections, 'report': 'follow'}))

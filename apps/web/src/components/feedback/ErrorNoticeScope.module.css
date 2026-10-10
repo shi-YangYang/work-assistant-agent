@@ -3,7 +3,7 @@
   min-width: 0;
 }
 .error-outlet:not([data-placed]) {
-  margin: 12px 24px 0;
+  margin: 112px 32px 0;
 }
 .error-outlet > div {
   margin: 0;
@@ -16,5 +16,6 @@
 @media (max-width: 760px) {
   .error-outlet:not([data-placed]) {
     margin-inline: 12px;
+    margin-top: calc(88px + env(safe-area-inset-top));
   }
 }

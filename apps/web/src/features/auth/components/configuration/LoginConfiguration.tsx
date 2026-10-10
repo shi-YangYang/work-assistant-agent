@@ -71,7 +71,7 @@ export function LoginConfiguration({
   return (
     <>
       <ErrorNotice>{error}</ErrorNotice>
-      <div className={layoutStyles['sectioned-panel']}>
+      <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
         <PanelSection
           bodyClassName={loginConfigurationStyles['settings-section-body']}
           title="钉钉企业内部应用"
@@ -195,7 +195,7 @@ export function LoginConfiguration({
             权限并发布应用。请将通讯录授权范围设为允许登录的员工，并与应用可使用范围保持一致。
           </p>
           <p className={utilitiesStyles['muted']}>
-            每次钉钉登录都会重新核验成员。本地密码和已登录会话的访问回收，需要在成员管理中停用账号。
+            每次钉钉登录都会重新核验成员。删除账号会撤销已有登录；如需阻止再次通过钉钉注册，请在钉钉侧移除其应用授权。
           </p>
         </PanelSection>
       </div>

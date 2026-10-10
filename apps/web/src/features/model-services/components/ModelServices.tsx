@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import utilitiesStyles from '../../../styles/utilities.module.css'
@@ -8,7 +9,6 @@ import { ModelCheckResult } from '@web/features/model-services/components/testin
 import { ModelOptions } from '@web/features/model-services/components/catalog/ModelOptions'
 import { ModelPicker } from '@web/features/model-services/components/catalog/ModelPicker'
 import { ModelTestDialog } from '@web/features/model-services/components/testing/ModelTestDialog'
-import { ReasoningPresetEditor } from '@web/features/model-services/components/catalog/ReasoningPresetEditor'
 import { RemoveServiceDialog } from '@web/features/model-services/components/service/RemoveServiceDialog'
 import { Routing } from '@web/features/model-services/components/Routing'
 import { ServiceConnectionFields } from '@web/features/model-services/components/service/ServiceConnectionFields'
@@ -40,10 +40,6 @@ export function ModelServices() {
     setTestPurpose,
     removeOpen,
     setRemoveOpen,
-    preset,
-    setPreset,
-    presetJson,
-    setPresetJson,
     resource,
     services,
     drafts,
@@ -78,23 +74,24 @@ export function ModelServices() {
 
   return (
     <div className={`${layoutStyles['settings-page']} ${modelServicesStyles['model-management']}`}>
-      <div
-        className={`${layoutStyles['page-heading']} ${modelServicesStyles['slot-page-heading']}`}
-      >
-        <div>
-          <h2>模型服务管理</h2>
-          <p>连接你信任的模型，为不同工作选择合适的能力。</p>
-        </div>
-        {tab === 'services' && (
-          <button
-            className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
-            disabled={!!busy || !resource.data}
-            onClick={createService}
-          >
-            <Plus size={16} /> 添加服务
-          </button>
-        )}
-      </div>
+      <PageHeader
+        placement="below"
+        title="模型服务管理"
+        description="连接你信任的模型，为不同工作选择合适的能力。"
+        actions={
+          tab === 'services' &&
+          draft && (
+            <button
+              className={controlsStyles.primary}
+              disabled={!!busy || !resource.data}
+              onClick={createService}
+            >
+              <Plus size={16} />
+              添加服务
+            </button>
+          )
+        }
+      />
       <div
         className={`${layoutStyles['tabs']} ${modelServicesStyles['slot-tabs']}`}
         role="tablist"
@@ -265,8 +262,6 @@ export function ModelServices() {
         updateModel={updateModel}
         automaticMatch={automaticMatch}
         setTestPurpose={setTestPurpose}
-        setPreset={setPreset}
-        setPresetJson={setPresetJson}
         update={update}
         setActiveModel={setActiveModel}
         error={error}
@@ -279,16 +274,6 @@ export function ModelServices() {
         setRemoveOpen={setRemoveOpen}
         error={error}
         remove={remove}
-      />
-      <ReasoningPresetEditor
-        preset={preset}
-        model={model}
-        setPreset={setPreset}
-        presetJson={presetJson}
-        updateModel={updateModel}
-        setError={setError}
-        setPresetJson={setPresetJson}
-        error={error}
       />
       <ModelTestDialog
         testOpen={testOpen}

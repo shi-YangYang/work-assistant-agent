@@ -23,14 +23,14 @@ from test_full_system_acceptance import evidence
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(
     os.getenv('SPEC044_INFRASTRUCTURE_TEST') != '1',
-    reason='Opt-in infrastructure faults require an isolated Spec044 schema',
+    reason='Opt-in infrastructure faults require an owned acceptance schema',
 )]
 
 
 def isolated_url(settings):
     url = make_url(settings.database_url)
     assert url.database == 'paa_company_test' and url.host in ('127.0.0.1', 'localhost')
-    assert re.fullmatch(r'-csearch_path=spec044_[a-z]+_[a-f0-9]{12}', url.query.get('options', ''))
+    assert re.fullmatch(r'-csearch_path=spec(?:044|054)_[a-z]+_[a-f0-9]{12}', url.query.get('options', ''))
     return url
 
 

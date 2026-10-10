@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from app.db.base import now
 from app.modules.operations.models import BusinessAction
-from app.modules.operations.policy.execution_policy import effective, decide
+from app.modules.operations.policy.execution_policy import effective, decide, current_mode
 from app.modules.operations.receipts import refresh_generation
 from app.modules.operations.targets import source_check
 from app.modules.reports.service import submit_report
@@ -19,9 +19,7 @@ async def complete_action(db, actor, row):
     await refresh_generation(db, actor, row)
     if row.action != 'submit_report' or row.state != 'pending':
         return
-    from app.modules.conversations.models import Conversation
-    conversation = await db.get(Conversation, row.conversation_id) if row.conversation_id else None
-    mode = effective(row.execution_mode, conversation.execution_mode if conversation else 'auto')
+    mode = effective(row.execution_mode, await current_mode(db, row.owner_id, row.company_id))
     if decide(mode, 'submit_report', explicitly_confirm=row.params.get('explicitConfirmation', False)).outcome != 'allow':
         return
     try:

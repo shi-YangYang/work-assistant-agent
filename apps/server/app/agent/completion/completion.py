@@ -11,7 +11,13 @@ from sqlalchemy import select
 
 async def verified_receipt(context, db, actor, job):
     """A receipt-only shortcut must still match the entire current request."""
-    if job.kind != 'message' or job.result.get('operationFeedback'):
+    if job.kind != 'message' or job.result.get('operationFeedback') or job.result.get('nodeExecution', {}).get('budgetBlockedTools'):
+        return None
+    interpretation = job.result.get('intentTaskInterpretation') or {}
+    # Authorization describes the scope before execution. A missing input or
+    # blocked requirement contradicts "this one receipt answers everything".
+    # Finish normally instead of publishing stale state or discarding real work.
+    if interpretation.get('state') in ('needs_input', 'blocked') or interpretation.get('remaining'):
         return None
     rows = (await db.scalars(select(BusinessAction).where(BusinessAction.message_id == job.target_id, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).limit(2))).all()
     if len(rows) != 1 or not rows[0].result.get('receiptOnly'):
@@ -21,6 +27,9 @@ async def verified_receipt(context, db, actor, job):
     if rows[0].result.get('receiptInput') != request:
         return None
     card = await action_dto(db, actor, rows[0])
+    from app.tasks.feedback.work_requirements import remaining
+    if remaining(job, [card], include_pending=True):
+        return None
     return card if card['state'] in ('succeeded', 'pending', 'running') else None
 
 

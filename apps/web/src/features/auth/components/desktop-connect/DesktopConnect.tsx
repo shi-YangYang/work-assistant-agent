@@ -70,8 +70,8 @@ export function DesktopConnect({
                 </p>
                 <p className={utilitiesStyles['muted']}>
                   {identity.member.role === 'admin'
-                    ? '桌面可同步公司声纹并在本机识别发言者。会议录音不会自动上传。'
-                    : '当前账号可以登录桌面。公司声纹仅向管理员开放。'}
+                    ? '桌面可同步用户声纹并在本机识别发言者。会议录音不会自动上传。'
+                    : '当前账号可以登录桌面。用户声纹仅向管理员开放。'}
                 </p>
                 <p className={utilitiesStyles['muted']}>
                   仅当你刚刚在自己的桌面应用中发起连接时确认。

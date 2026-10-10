@@ -70,14 +70,15 @@ npm ci
 
 ### 公司 Web
 
-初始化完成后，启动数据库和应用：
+初始化完成并启动 Docker 后，运行：
 
 ```sh
-docker compose --env-file apps/server/.env.web -f deploy/company/compose.dev.yml up -d --wait
 npm run dev:web
 ```
 
-访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。管理员配置模型服务、添加成员后即可使用。
+命令会在 Docker 中统一管理 `paa-company` 项目：数据库、正文流 Redis，以及可选的沙盒服务，等待就绪后启动应用。访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。管理员配置模型服务、添加成员后即可使用。
+
+旧环境首次升级先退出开发服务，执行一次 `npm run dev:web:migrate`，保留原数据库与沙盒数据。
 
 需要代码执行和文件生成时，先启动 Docker，执行一次 `npm run sandbox:setup`，再启动 `npm run dev:web`。开发命令会管理本地沙盒的启动和停止；未启用沙盒也可使用普通聊天与业务功能。见[本地沙盒配置](docs/setup.md#公司-web)。
 

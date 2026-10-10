@@ -189,14 +189,16 @@ async def test_missing_input_wrong_version_and_storage_quota_fail_without_public
 
 async def test_enabled_sandbox_is_visible_to_model_without_weakening_tool_boundary(setup):
     from test_company import run_target, send
-    from app.agent.prompts.policies import ALLOWED_TOOLS
+    from app.agent.tools.catalog import GROUPS
     settings, sessions, users, clients = setup
     settings = replace(settings, sandbox_url='http://sandbox:8010', sandbox_token='isolated-test-not-a-real-credential')
     sent = await send(clients['employee'])
-    model = await run_target(settings, sessions, users, sent)
-    assert set(model.seen_tools) == ALLOWED_TOOLS
+    model = await run_target(settings, sessions, users, sent, scenario='execution_tools')
+    assert model.seen_tools[0] == 'load_tools'
+    assert set(model.seen_tools) == GROUPS['files'] | {'load_tools'}
     message = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-    assert message['job']['state'] == 'succeeded'
+    assert message['job']['taskOutcome']['state'] == 'completed'
+    assert message['reply'] == '可用能力已加载。' and not message['actions']
 
 
 async def test_storage_reservation_counts_global_orphans(setup, receipts):

@@ -58,7 +58,7 @@ it('renders compact accessible progress, completion totals, and in-place manual 
     )
   const running = render(job())
   expect(running).not.toContain('<summary>')
-  expect(running).toContain('处理请求')
+  expect(running).toContain('思考中 · 0 秒')
   expect(running).not.toContain('aria-live')
   const complete = render(
     job({
@@ -127,7 +127,7 @@ it('requires explicit assistant opt-in and preserves other JobNotice presentatio
   const assistant = renderToStaticMarkup(
     createElement(JobNotice, { job: job(), refresh: vi.fn(), showNodes: true }),
   )
-  expect(assistant).toContain('处理请求')
+  expect(assistant).toContain('思考中 · 0 秒')
   const legacy = renderToStaticMarkup(
     createElement(JobNotice, {
       job: job({ stage: 'transcribing' }),
@@ -287,7 +287,7 @@ it('prefers the live retry state and accepts outcome-only feedback updates', () 
   const html = renderToStaticMarkup(
     createElement(TaskProgress, { job: value, busy: false, onRetry: vi.fn() }),
   )
-  expect(html).toContain('处理请求')
+  expect(html).toContain('思考中 · 0 秒')
   expect(html).not.toContain('暂时无法继续')
   const base: JobFeedback = {
     jobId: 'job',
@@ -377,4 +377,40 @@ it('omits successful plain-question progress but retains cancellation and final 
   expect(failed).toContain('答复失败')
   expect(failed).not.toContain('已完成 ·')
   expect(render(job({ state: 'cancelled' }))).toContain('已中断')
+})
+
+it('shows conversational questions as replies without a task-waiting banner, including old records', () => {
+  const render = (value: Job) =>
+    renderToStaticMarkup(
+      createElement(JobNotice, { job: value, refresh: vi.fn(), showNodes: true }),
+    )
+  const clarification = job({
+    state: 'awaiting_input',
+    phase: 'complete',
+    nodes: [node({ label: '理解请求', state: 'succeeded', presentation: { type: 'activity' } })],
+    taskOutcome: {
+      state: 'needs_input',
+      completed: [],
+      remaining: ['请说明具体问题'],
+      nextAction: 'reply',
+    },
+  })
+  expect(render(clarification)).toBe('')
+  expect(render({ ...clarification, nodes: [] })).toBe('')
+  expect(render({ ...clarification, phase: 'awaiting_answer', nodes: [] })).toContain(
+    '等待补充信息',
+  )
+  expect(render({ ...clarification, incompleteTask: true })).toContain('等待补充信息')
+  expect(
+    render({
+      ...clarification,
+      nodes: [node({ kind: 'tool', label: '查找工作', state: 'succeeded' })],
+    }),
+  ).toContain('等待补充信息')
+  expect(
+    render({ ...clarification, nodes: [node({ state: 'succeeded', totalRetries: 1 })] }),
+  ).toContain('自动重试 1 次')
+  expect(render({ ...clarification, state: 'awaiting_retry', error: '模型暂未响应' })).toContain(
+    '模型暂未响应',
+  )
 })

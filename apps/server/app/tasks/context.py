@@ -1,11 +1,16 @@
 import time
 from dataclasses import dataclass, field
 from typing import Any
+from app.integrations.web_page_cache import WebPageCache
 from app.core.personas import LEGACY_PERSONA, PersonaId
 
 
 class BudgetExceeded(Exception):
     pass
+
+
+class ToolBudgetExceeded(BudgetExceeded):
+    """A tool was refused before execution because its node quota is full."""
 
 
 class LostLease(Exception):
@@ -21,6 +26,16 @@ class InputChanged(ValueError):
 
 
 @dataclass
+class MemorySnapshot:
+    revision: int
+    generation: int
+    source_revision: int | None
+    message_id: str
+    input_hash: str
+    writable: bool = True
+
+
+@dataclass
 class RunContext:
     owner_id: str
     company_id: str
@@ -28,9 +43,16 @@ class RunContext:
     fence: int
     sessions: Any
     settings: Any
+    web_pages: WebPageCache = field(default_factory=WebPageCache)
+    reply_publishers: list = field(default_factory=list)
+    timing: Any = None
+    attempt: int = 0
+    memory_snapshot: MemorySnapshot | None = None
+    memory_loaded: bool = False
     persona_id: PersonaId = LEGACY_PERSONA
     source_revision: int | None = None
     document_snapshot: str = ''
+    current_document_ids: tuple[str, ...] = ()
     document_versions: dict[str, int] = field(default_factory=dict)
     deliverable_reads: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)
@@ -41,12 +63,14 @@ class RunContext:
     node_retry: bool = False
     node_scope: str = ''
     node_deadline: float = 0
+    task_budget: dict | None = None
     calls: int = 0
     tools: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
     started: float = field(default_factory=time.monotonic)
     read_versions: dict[str, int] = field(default_factory=dict)
+    refresh_work_versions: dict[str, int] = field(default_factory=dict)
     role: str = 'employee'
     access: dict = field(default_factory=dict)
     own_work_searched: bool = False
@@ -65,6 +89,8 @@ class RunContext:
     context_checkpoint_config: dict = field(default_factory=dict)
     explicit_confirmations: set[str] = field(default_factory=set)
     authorization_outcomes: dict = field(default_factory=dict)
+    authorization_details: dict = field(default_factory=dict)
+    title_only_actions: set[str] = field(default_factory=set)
     append_values: dict = field(default_factory=dict)
     work_reference_snapshot: dict | None = None
     task_snapshot: dict = field(default_factory=dict)

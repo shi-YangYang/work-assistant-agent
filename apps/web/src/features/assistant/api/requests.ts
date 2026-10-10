@@ -1,6 +1,6 @@
 import type {
-  Attachment,
   DeliverableReference,
+  ReasoningReference,
   ExecutionMode,
   BusinessAction,
   Conversation,
@@ -12,7 +12,6 @@ import type {
   Work,
   WorkReference,
 } from '@paa/api-contracts'
-import { assistantQuery } from './queries'
 import { api, write } from '@web/api/client'
 
 export function resolveBusinessAction(
@@ -25,21 +24,12 @@ export function resolveBusinessAction(
   >(`/business-actions/${current.id}/${choice}`, body)
 }
 
-export function readAttachmentBytes(url: string | undefined, options: RequestInit) {
-  return api<ArrayBuffer>((url ?? '').replace(/^\/api\/v1/, ''), options, 'bytes')
-}
-
-export function retryDocument(attachment: Attachment, body: Record<string, never>) {
-  return write(`/uploads/${attachment.id}/retry`, body)
-}
-
-export function documentExtractionPath(
-  attachmentId: string,
-  start: number,
-  revision: number | undefined,
-) {
-  return `/uploads/${attachmentId}/extraction?start=${start}${revision !== undefined ? `&revision=${revision}` : ''}`
-}
+export {
+  readAttachmentBytes,
+  retryDocument,
+  documentExtractionPath,
+  uploadAttachment,
+} from '@web/api/attachments'
 
 export function correctTranscript(
   message: WorkMessage,
@@ -66,15 +56,12 @@ export function orphanActionsPath(conversationId: string | undefined) {
     : null
 }
 
-export function uploadAttachment(options: RequestInit) {
-  return api<Attachment>('/uploads', options)
-}
-
 export function sendMessage(
   body: {
     conversationId?: string
     newConversation?: boolean
     personaId?: PersonaId
+    reasoning?: ReasoningReference
     executionMode?: ExecutionMode
     fullAccessConfirmed?: boolean
     text: string
@@ -142,16 +129,6 @@ export function deleteConversation(deleting: Conversation, body: { expectedRevis
 
 export function messagePath(id: string | undefined) {
   return `/messages/${id}`
-}
-
-export function readConversationForBreadcrumb(id: string, options: RequestInit, owner?: string) {
-  return assistantQuery<Conversation>(`/conversations/${id}`, owner)!.get(
-    options.signal ?? undefined,
-  )
-}
-
-export function readMessageForBreadcrumb(id: string, options: RequestInit) {
-  return api<WorkMessage>(`/messages/${id}`, options)
 }
 
 export function readConversationContext(conversationId: string, signal?: AbortSignal) {

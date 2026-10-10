@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Brain,
   BriefcaseBusiness,
   CalendarClock,
   ChartColumn,
@@ -16,7 +17,7 @@ import {
 export const pages = [
   {
     path: '/assistant',
-    title: '工作助手',
+    title: '聊天搭子',
     detail: '继续对话，记录进展与查询资料',
     icon: MessageSquare,
   },
@@ -45,8 +46,14 @@ export const pages = [
 
 export const settingsPages = [
   {
+    path: '/settings/memory',
+    title: '记忆',
+    detail: '管理跨会话使用的个人偏好与背景',
+    icon: Brain,
+  },
+  {
     path: '/settings/voiceprints',
-    title: '公司声纹',
+    title: '用户声纹',
     detail: '登记成员声音，供桌面会议识别发言者',
     icon: AudioLines,
     admin: true,

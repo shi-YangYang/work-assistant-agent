@@ -185,8 +185,9 @@ async def test_cancel_preserves_committed_actions_independent_report_and_context
         assert (await db.scalar(select(ModelUsage).where(ModelUsage.job_id == context.job_id))).status == 'unknown'
 
 
-@pytest.mark.parametrize('stage', ['model', 'tool', 'compaction', 'retry_wait', 'review'])
+@pytest.mark.parametrize('stage', ['model', 'tool', 'compaction', 'retry_wait', 'delivery'])
 async def test_running_pipeline_cancels_wait_and_cannot_finish(setup, monkeypatch, stage):
+    from app.agent.completion import delivery
     from app.integrations.models.transport import ProviderError
     settings, sessions, users, clients = setup
     entered, cleaned = asyncio.Event(), asyncio.Event()
@@ -199,10 +200,10 @@ async def test_running_pipeline_cancels_wait_and_cannot_finish(setup, monkeypatc
         finally:
             cleaned.set()
     async def harness(context, *args, **kwargs):
-        if stage == 'review':
+        if stage == 'delivery':
             from fakes import set_delivery
-            await set_delivery(context, '等待核对的答案', business=True)
-            return '等待核对的答案'
+            await set_delivery(context, '等待交付的答案')
+            return '等待交付的答案'
         if stage == 'retry_wait':
             async def transient():
                 calls.append(True)
@@ -219,15 +220,24 @@ async def test_running_pipeline_cancels_wait_and_cannot_finish(setup, monkeypatc
             monkeypatch.setattr(node_execution, 'run', retry_run)
             return await node_execution.execute_node(context, identity='blocked', kind='model', label='思考中', operation=transient)
         return await node_execution.execute_node(context, identity='blocked', kind=stage, label='处理中', operation=blocked)
-    async def review(*args, **kwargs):
+    original_assess = delivery.assess
+    async def assess(*args, **kwargs):
         await blocked()
+        return await original_assess(*args, **kwargs)
     monkeypatch.setattr(handlers, 'invoke_harness', harness)
-    monkeypatch.setattr('app.agent.completion.reply_review.review_reply', review)
+    if stage == 'delivery':
+        monkeypatch.setattr(delivery, 'assess', assess)
     sent = await send(clients['employee'])
     job = await claim(sessions, users['employee'].id)
     task = asyncio.create_task(handlers.process_job(job, sessions, settings, None, model=object()))
     try:
         await asyncio.wait_for(entered.wait(), 5)
+        if stage == 'delivery':
+            async with sessions() as db:
+                saved = await db.get(Job, job.id)
+                assert saved.state == 'running'
+                assert saved.result['pendingReply']['answer'] == '等待交付的答案'
+                assert not (await db.get(Message, sent['messageId'])).reply
         started = time.monotonic()
         response = await cancel(clients['employee'], job.id, fence=job.fence)
         assert response.status_code == 200

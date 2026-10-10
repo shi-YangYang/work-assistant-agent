@@ -13,7 +13,7 @@ async def conversation_history(context, job, content):
         current = await owned(db, Message, job.target_id, actor)
         references = await conversation_references(db, actor, live, current, context=context)
         from app.agent.context.deliverable_context import deliverable_context
-        results = await deliverable_context(db, actor, current)
+        results = await deliverable_context(db, actor, current, job=live)
         from app.modules.executions.queries import read_executions
         executions = await read_executions(db, actor, live, current)
         from app.agent.context.task_context import projection, instruction

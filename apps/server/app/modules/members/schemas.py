@@ -24,7 +24,12 @@ class AdminBootstrap(MemberCreate):
 
 
 class MemberPatch(Input):
-    active: bool
+    name: str = Field(min_length=MEMBER_RULES['name']['min'], max_length=MEMBER_RULES['name']['max'])
+
+    @field_validator('name')
+    @classmethod
+    def nonblank_name(cls, value):
+        return MemberCreate.nonblank_name(value)
 
 
 class ResetPassword(Input):

@@ -30,4 +30,4 @@ async def conversations_query(q, cursor, actor, db, *, order='updated'):
         anchor = await owned(db, Conversation, cursor, actor)
         query = query.where((Conversation.updated_at < anchor.updated_at) | ((Conversation.updated_at == anchor.updated_at) & (Conversation.id < anchor.id)))
     rows = list((await db.scalars(query.order_by(*ordering).limit(51))).all())
-    return {'items': [conversation_dto(row) for row in rows[:50]], 'nextCursor': rows[49].id if len(rows) > 50 else None}
+    return {'items': [conversation_dto(row, actor) for row in rows[:50]], 'nextCursor': rows[49].id if len(rows) > 50 else None}

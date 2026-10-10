@@ -1,7 +1,8 @@
 from app.integrations.models.transport import ProviderError, normalize_url
-from app.modules.members.models import Company
+from app.modules.members.models import Company, Member
 from app.modules.model_services.models import ModelRouting, ModelService, ModelServiceRevision
 from app.modules.model_services.parameters import request_options
+from app.modules.model_services.reasoning.legacy import legacy_parameters
 from app.modules.model_services.schemas import ServiceModel, parameters
 from app.modules.model_services.service import current_revision, get_service, validate_choice, validate_master_key
 from app.security.secrets import decrypt, encrypt
@@ -15,6 +16,7 @@ async def bind_job(db, job, settings):
     if previous is not None and not refresh:
         await freeze_capacities(db, previous)
         return previous
+    await db.scalar(select(Company).where(Company.id == job.company_id).with_for_update())
     routing = await db.get(ModelRouting, job.company_id)
     company = await db.get(Company, job.company_id)
     purpose = 'report' if job.kind == 'report' else 'assistant'
@@ -29,8 +31,21 @@ async def bind_job(db, job, settings):
                 continue
             service = await get_service(db, job.company_id, selection['serviceId'])
             rev = await current_revision(db, service)
-            model = validate_choice(rev.models, selection, use)
-            binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': rev.revision, 'name': rev.name, 'modelId': model['id'], 'model': model['model'], 'protocol': model['protocol'], 'presetId': selection['presetId'], 'streaming': selection['streaming'] if use != 'asr' else False}
+            model = validate_choice(service.models, selection, use)
+            if use == 'assistant':
+                from app.modules.model_services.reasoning.policy import effective_selection
+                member = await db.get(Member, job.owner_id)
+                selection, options = effective_selection(selection, model, member.reasoning_preference if member else None)
+            if selection.get('parameters') is not None:
+                options = selection['parameters']
+                nested = options.get('reasoning')
+                effort = options.get('reasoning_effort') or (nested.get('effort') if isinstance(nested, dict) else None)
+                explicit_reasoning = selection.get('explicitReasoning', False)
+            else:
+                options = request_options(model, selection.get('effort'))
+                effort = selection.get('effort', model.get('reasoning', {}).get('initial'))
+                explicit_reasoning = model.get('explicitReasoning', False)
+            binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': rev.revision, 'name': rev.name, 'modelId': model['id'], 'model': model['model'], 'protocol': model['protocol'], 'effort': effort, 'parameters': options, 'explicitReasoning': explicit_reasoning, 'streaming': model['streaming'] if use != 'asr' else False}
         elif company.environment_models:
             url, key, name = (settings.asr_base_url, settings.asr_key, settings.asr_model) if use == 'asr' else (settings.agent_base_url, settings.agent_key, settings.agent_model)
             if not url or not key:
@@ -40,7 +55,7 @@ async def bind_job(db, job, settings):
             # A private immutable service revision snapshots legacy configuration too.
             environment_name = '环境语音快照' if use == 'asr' else '环境助手快照'
             service = ModelService(id=str(uuid4()), company_id=job.company_id, name=environment_name, base_url=normalize_url(url, settings), revision=1, models=[], revoked=False, internal=True)
-            model = ServiceModel(id='legacy', model=name, protocol='qwen-asr' if use == 'asr' else 'chat', streaming=False, presets=[]).model_dump()
+            model = ServiceModel(id='legacy', model=name, protocol='qwen-asr' if use == 'asr' else 'chat', streaming=False).model_dump()
             model['legacyParameters'] = settings.agent_options or {'enable_thinking': False} if use != 'asr' else {}
             service.models = [model]
             candidates = (await db.scalars(select(ModelService).where(ModelService.company_id == job.company_id, ModelService.internal.is_(True), ModelService.revoked.is_(False), ModelService.base_url == service.base_url))).all()
@@ -52,19 +67,19 @@ async def bind_job(db, job, settings):
                     service = candidate
                     break
             if matched:
-                binding[use] = {'serviceId': service.id, 'revisionId': matched.id, 'revision': matched.revision, 'name': matched.name, 'modelId': 'legacy', 'model': name, 'protocol': model['protocol'], 'presetId': None, 'streaming': False, 'environmentSnapshot': True}
+                binding[use] = {'serviceId': service.id, 'revisionId': matched.id, 'revision': matched.revision, 'name': matched.name, 'modelId': 'legacy', 'model': name, 'protocol': model['protocol'], 'effort': None, 'streaming': False, 'environmentSnapshot': True}
                 continue
             db.add(service)
             await db.flush()
             rev = ModelServiceRevision(company_id=job.company_id, service_id=service.id, revision=1, name=environment_name, base_url=service.base_url, models=[model], credential=encrypt(settings.model_key_file, key, job.company_id, service.id, 1))
             db.add(rev)
             await db.flush()
-            binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': 1, 'name': rev.name, 'modelId': 'legacy', 'model': name, 'protocol': model['protocol'], 'presetId': None, 'streaming': False, 'environmentSnapshot': True}
+            binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': 1, 'name': rev.name, 'modelId': 'legacy', 'model': name, 'protocol': model['protocol'], 'effort': None, 'streaming': False, 'environmentSnapshot': True}
         else:
             binding[use] = None
     await freeze_capacities(db, binding)
     if refresh:
-        # Manual retries use the latest configuration when the worker starts.
+        # Manual retries freeze the current configuration at admission.
         # Unchanged settings keep the checkpoint and completed node results.
         comparable = lambda value: {k: v for k, v in (value or {}).items() if k != 'attempt'}
         if comparable(previous) != comparable(binding):
@@ -86,8 +101,8 @@ async def resolve_bound(db, settings, company_id, binding, purpose):
     if not rev or not rev.credential:
         raise ProviderError('revoked', '模型配置已更新，请重试')
     model = next(m for m in rev.models if m['id'] == choice['modelId'])
-    chosen = dict(model, selectedPresetId=choice.get('presetId'))
-    config = {'baseUrl': rev.base_url, 'model': model['model'], 'protocol': model['protocol'], 'parameters': parameters(model['legacyParameters']) if 'legacyParameters' in model else request_options(chosen), 'streaming': choice['streaming'], 'language': model.get('language', '')}
+    options = (legacy_parameters(model, choice.get('presetId')) if 'presets' in model or 'legacyParameters' in model else request_options(model, choice.get('effort'))) if 'parameters' not in choice else choice['parameters']
+    config = {'baseUrl': rev.base_url, 'model': model['model'], 'protocol': model['protocol'], 'parameters': parameters(options), 'streaming': choice['streaming'], 'language': model.get('language', '')}
     key = decrypt(settings.model_key_file, rev.credential, company_id, service.id, rev.revision)
     return config, key
 

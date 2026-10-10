@@ -8,6 +8,7 @@ from app.integrations.models.chat import token_usage
 from app.integrations.models.transport import safe_error
 from app.modules.members.models import Company
 from app.modules.model_services.models import ModelUsage
+from app.tasks.models import Job
 from sqlalchemy import and_, case, func, select, tuple_
 
 
@@ -86,7 +87,9 @@ async def usage_page(db, actor, *, period='this_week', start=None, end=None, ser
         if value:
             query = query.where(column == value)
     cutoff = now() - timedelta(minutes=2)
-    effective = case((and_(ModelUsage.status == 'running', ModelUsage.started_at < cutoff), 'unknown'), else_=ModelUsage.status)
+    active_request = select(Job.id).where(Job.id == ModelUsage.job_id, Job.state == 'running',
+                                         Job.fence == ModelUsage.job_fence, Job.lease_until > now()).exists()
+    effective = case((and_(ModelUsage.status == 'running', ModelUsage.started_at < cutoff, ~active_request), 'unknown'), else_=ModelUsage.status)
     started = ModelUsage.started_at.is_not(None)
     states = ('reserved', 'running', 'succeeded', 'failed', 'unknown', 'legacy', 'not_sent')
     counts = [func.count().filter(effective == state).label(state) for state in states]

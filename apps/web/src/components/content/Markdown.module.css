@@ -61,5 +61,6 @@
 }
 .table-scroll th {
   font-weight: 600;
-  background: var(--surface-soft, #fafafa);
+  background: var(--subtle);
+  color: var(--text);
 }

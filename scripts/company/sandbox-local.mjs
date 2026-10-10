@@ -4,12 +4,18 @@ import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { parseEnv } from 'node:util'
 import { pathToFileURL } from 'node:url'
+import { createInfra, legacySandboxProject, rejectLegacy } from './local-infra/compose.mjs'
+import {
+  createLifecycle,
+  acquireLock,
+  assertReusableSandbox,
+  imageIdentityFormat,
+} from './local-infra/lifecycle.mjs'
 
 const root = resolve(import.meta.dirname, '../..')
 const envFile = join(root, 'apps/server/.env.web')
 const stateDir = join(root, 'data/company/sandbox-local')
-const project = `noria-sandbox-${createHash('sha256').update(root).digest('hex').slice(0, 10)}`
-const composeFile = 'deploy/company/compose.sandbox-local.yml'
+const project = legacySandboxProject
 
 export function localConfig(values) {
   const port = Number(values.PAA_SANDBOX_LOCAL_PORT || 8011)
@@ -43,49 +49,7 @@ async function settings() {
   return { source, values: { ...parseEnv(source), ...process.env } }
 }
 
-function command(args, env, { capture = false, signal } = {}) {
-  return new Promise((accept, reject) => {
-    const child = spawn('docker', args, {
-      cwd: root,
-      env,
-      signal,
-      stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
-    })
-    let output = ''
-    if (capture) {
-      child.stdout.on('data', (chunk) => {
-        output += chunk
-      })
-      child.stderr.resume()
-    }
-    child.on('error', reject)
-    child.on('close', (code) =>
-      code === 0
-        ? accept(output.trim())
-        : reject(
-            new Error(`Docker 命令失败（${code ?? '已中断'}）：${args.slice(0, 2).join(' ')}`),
-          ),
-    )
-  })
-}
-
-function commands(config) {
-  const env = {
-    ...process.env,
-    LOCAL_SANDBOX_PROJECT: project,
-    PAA_SANDBOX_TOKEN: config.token,
-    PAA_SANDBOX_LOCAL_PORT: String(config.port),
-  }
-  const base = ['compose', '--progress', 'plain', '-p', project, '-f', composeFile]
-  return {
-    env,
-    base,
-    docker: (args, options) => command(args, env, options),
-    compose: (args, options) => command([...base, ...args], env, options),
-  }
-}
-
-async function fingerprint() {
+export async function fingerprint({ legacyLayout = false } = {}) {
   const hash = createHash('sha256')
   async function visit(path) {
     const entries = await readdir(join(root, path), { withFileTypes: true })
@@ -97,8 +61,14 @@ async function fingerprint() {
     }
   }
   await visit('apps/sandbox')
+  if (legacyLayout) {
+    // Only the migration compares the former hash; Compose grouping is not an image input.
+    const former = (await readFile(join(root, 'deploy/company/compose.sandbox-local.yml'), 'utf8'))
+      .replaceAll('    networks: [sandbox]\n', '')
+      .replace('networks:\n  sandbox:\n', '')
+    hash.update(former)
+  }
   for (const file of [
-    composeFile,
     'deploy/company/Dockerfile.sandbox',
     'deploy/company/Dockerfile.sandbox-local',
   ])
@@ -138,26 +108,22 @@ async function loadRunner({ env, base }, signal) {
   })
 }
 
-export async function startLocalSandbox({ signal } = {}) {
-  const { values } = await settings()
+export async function startLocalSandbox({ signal, infra, lifecycle } = {}) {
+  infra ??= await createInfra()
+  const { values } = infra
   if (values.PAA_SANDBOX_LOCAL !== 'true') return null
   const config = localConfig(values)
   if (!values.PAA_SANDBOX_TOKEN || config.token.length < 32)
     throw new Error('请先执行 npm run sandbox:setup 初始化本地沙盒。')
-  const cli = commands(config)
+  const cli = infra
   const { docker, compose } = cli
-  if ((await docker(['info', '--format', '{{.OSType}}'], { capture: true, signal })) !== 'linux')
-    throw new Error('本地沙盒需要已启动的 Docker Linux 容器环境。')
-  const before = new Set(
-    (await compose(['ps', '--status', 'running', '--services'], { capture: true, signal })).split(
-      '\n',
-    ),
-  )
-  const owned = ['control', 'runtime'].filter((name) => !before.has(name))
-  const stop = async () => {
-    if (owned.length) await compose(['stop', ...owned])
-  }
+  const own = !lifecycle
+  lifecycle ??= await createLifecycle(infra, { signal })
+  const stop = own ? lifecycle.stop : async () => {}
   try {
+    if ((await docker(['info', '--format', '{{.OSType}}'], { capture: true, signal })) !== 'linux')
+      throw new Error('本地沙盒需要已启动的 Docker Linux 容器环境。')
+    await rejectLegacy(infra, signal, ['control', 'runtime'])
     const digest = await fingerprint()
     const cached = await readFile(join(stateDir, 'build.sha256'), 'utf8').catch(() => '')
     let images = false
@@ -174,35 +140,51 @@ export async function startLocalSandbox({ signal } = {}) {
     } catch {
       /* Missing images are rebuilt below. */
     }
-    if (cached !== digest || !images) {
+    const adopted = infra.mapping?.sandboxFingerprint === digest
+    const rebuildRequired = (cached !== digest && !adopted) || !images
+    await assertReusableSandbox(infra, { rebuildRequired, signal })
+    if (rebuildRequired) {
       console.log('正在准备本地沙盒镜像；首次需要下载运行环境…')
-      await compose(['build', 'runtime', 'control', 'runner-image'], { signal })
+      await compose(['build', 'runtime', 'control', 'runner-image'], {
+        signal,
+        capture: false,
+        timeout: 1_200_000,
+      })
       await mkdir(stateDir, { recursive: true, mode: 0o700 })
       await writeFile(join(stateDir, 'build.sha256'), digest)
     }
     signal?.throwIfAborted()
-    await compose(['up', '-d', '--wait', '--wait-timeout', '90', 'runtime'], { signal })
+    await lifecycle.start('runtime', 90)
     const image = `${project}-runner:dev`
     // Docker Desktop may report a manifest index ID while DinD reports a config ID.
     // Compare the actual image configuration and filesystem layers across engines.
-    const identity = '{{json .Config}} {{json .RootFS.Layers}} {{.Architecture}} {{.Os}}'
-    const outer = await docker(['image', 'inspect', '--format', identity, image], {
+    const outer = await docker(['image', 'inspect', '--format', imageIdentityFormat, image], {
       capture: true,
       signal,
     })
     const inner = await compose(
-      ['exec', '-T', 'runtime', 'docker', 'image', 'inspect', '--format', identity, image],
+      [
+        'exec',
+        '-T',
+        'runtime',
+        'docker',
+        'image',
+        'inspect',
+        '--format',
+        imageIdentityFormat,
+        image,
+      ],
       { capture: true, signal },
     ).catch(() => '')
     if (inner !== outer) await loadRunner(cli, signal)
-    await compose(['up', '-d', '--wait', '--wait-timeout', '90', 'control'], { signal })
+    await lifecycle.start('control', 90)
     const response = await fetch(`${config.url}/health`, {
       headers: { Authorization: `Bearer ${config.token}` },
       signal: AbortSignal.any([AbortSignal.timeout(10000), ...(signal ? [signal] : [])]),
     })
     if (!response.ok || !(await response.json()).ready) throw new Error('本地沙盒健康检查未通过。')
     console.log(`本地沙盒已就绪：${config.url}（gVisor，1 个并发任务）`)
-    return { stop }
+    return { stop, keepRunning: () => lifecycle.stop({ keepRunning: true }) }
   } catch (error) {
     await stop().catch(() => {})
     throw error
@@ -223,12 +205,20 @@ async function main(action) {
     process.once('SIGTERM', () => controller.abort())
     const local = await startLocalSandbox({ signal: controller.signal })
     if (!local) throw new Error('请先执行 npm run sandbox:setup。')
+    if (action === 'start') await local.keepRunning()
     if (action === 'setup') {
       await local.stop()
       console.log('初始化完成。之后使用 npm run dev:web 即可一起启动。')
     }
-  } else if (action === 'stop') await commands(config).compose(['stop', 'control', 'runtime'])
-  else if (action === 'status') await commands(config).compose(['ps', '-a'])
+  } else if (action === 'stop') {
+    const infra = await createInfra()
+    const release = await acquireLock(infra)
+    try {
+      await infra.compose(['stop', 'control', 'runtime'])
+    } finally {
+      await release()
+    }
+  } else if (action === 'status') await (await createInfra()).compose(['ps', '-a'])
   else throw new Error('Usage: sandbox-local.mjs setup | start | stop | status')
 }
 

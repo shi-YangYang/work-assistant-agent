@@ -1,0 +1,43 @@
+{
+  "revision": "060-1",
+  "baselineCommit": "9519b65",
+  "caseFile": "cases.json",
+  "browserCaseFile": "browser-cases.json",
+  "cases": 18,
+  "browserCases": 5,
+  "plannedHttpJourneys": 20,
+  "plannedBrowserJourneys": 9,
+  "plannedHttpTurns": 64,
+  "plannedBrowserTurns": 27,
+  "watchdogSeconds": 1920,
+  "highRiskRepetition": {
+    "caseIds": ["T73"],
+    "repetitions": 3,
+    "reset": "new conversation, memory reset; distinct user-requested objects per journey; never overwrite failures"
+  },
+  "browserRepetition": {
+    "caseIds": ["B04", "B06"],
+    "repetitions": 3
+  },
+  "matchedEffortComparison": {
+    "low": "T77",
+    "max": "T78",
+    "persona": "professional",
+    "mode": "auto"
+  },
+  "executionPolicy": {
+    "concurrency": 1,
+    "applicationCode": "root must declare stable before first real request; record application SHA and diff fingerprint",
+    "success": "manual semantic review plus persisted readback, tools, mutations, downloaded contents and live interaction; task state alone insufficient",
+    "failures": "preserve first results; no retry to green; followup only after relevant code change or declared harness/environment interruption",
+    "freeProse": "preserve; contradicted claims reported independently of deterministic state",
+    "catalog": "soft discovery; real permissions still checked"
+  },
+  "original059Files": {
+    "cases.json": "fc34f6bae9a8bd51ed9c7b2f1ab16ce41f7d12261924fad273a9d481ec4b9bcf",
+    "suite.json": "75df5261441eb70bd42cc3eacd5a9c8df55017f0fc56568e3323b8a9f24d92f2",
+    "browser-cases.json": "a226663659ab30962cb24e18d58dc1c163ef47dcdb1792f9327510259c88c63f"
+  },
+  "caseSha256": "df030e64ae8536d6fb0b42f9eb31c9d1ff7e2f01196df7a9de153f87dbe9441c",
+  "browserCaseSha256": "43f6e0da684cbff0eabc9df058ac0529863045760dd5ce11bd8b5b84fc579b9d"
+}

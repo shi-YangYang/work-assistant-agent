@@ -10,6 +10,9 @@ async def check_sources(db, actor, sources):
             item = await db.get(Attachment, ref['id'])
             if not item or item.deleted or item.company_id != actor.company_id or item.sha256 != ref['sha256'] or item.extraction_revision != ref['revision']:
                 problem(403, '生成文件的来源已变化或被删除')
+            from app.modules.work.materials.queries import work_for_material
+            if await work_for_material(db, actor, item.id):
+                continue
             if item.owner_id == actor.id:
                 parent = await active_message(db, item.message_id, actor)
                 await require(db, actor, parent.access)

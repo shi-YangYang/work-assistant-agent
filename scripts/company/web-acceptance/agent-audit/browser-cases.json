@@ -1,0 +1,205 @@
+[
+  {
+    "id": "B01",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "ordinary",
+    "expected": "三个普通问答均给出有效回答；没有工作或汇报写入、无无关工具循环。",
+    "maxWrites": 0,
+    "turns": [
+      { "prompt": "你好，用一句话介绍你能帮我什么。" },
+      { "prompt": "解释一下HTTP与HTTPS的区别，不用搜索，三句话即可。" },
+      { "prompt": "把刚才的解释改成适合初学者的一句话。" }
+    ]
+  },
+  {
+    "id": "B02",
+    "role": "admin",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "writing-stream",
+    "expected": "连续改稿保留主题、可见流式或渐进文字；无公司记录写入。",
+    "maxWrites": 0,
+    "turns": [
+      { "prompt": "写一篇500字左右的团队协作文案，主题是互相补位，不要保存到任何工作或报告。" },
+      { "prompt": "保留这个主题，改成一封给同事的邮件。" },
+      { "prompt": "把邮件压缩成三个要点，不要额外执行工具。" }
+    ]
+  },
+  {
+    "id": "B03",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "full",
+    "effort": "low",
+    "family": "memory",
+    "expected": "偏好保存一次，跨新会话可召回；忘记后不存在同义条目，观察工具调用与真实写入分别计数。",
+    "turns": [
+      { "prompt": "请记住，我喜欢吃米饭。" },
+      { "prompt": "我喜欢什么主食？只回答已知记忆，不要猜。", "newConversation": true },
+      { "prompt": "请忘记我喜欢吃米饭这条偏好，不要继续保存它。" }
+    ]
+  },
+  {
+    "id": "B04",
+    "role": "employee",
+    "persona": "professional",
+    "mode": "full",
+    "effort": "low",
+    "family": "work-multiturn",
+    "expected": "仅创建一个标题为B04客户走访的工作；更新同一工作内容，状态保持进行中，不重复创建。",
+    "maxWrites": 2,
+    "turns": [
+      {
+        "prompt": "帮我新建一项工作，标题B04客户走访，内容是整理三位客户的问题，状态进行中。请直接保存。"
+      },
+      { "prompt": "给刚才这项工作补充内容：已经收集到三份反馈，下一步归类。不要改变状态。" },
+      { "prompt": "读取这项工作，告诉我当前状态和完整内容，不要再次修改。" }
+    ]
+  },
+  {
+    "id": "B05",
+    "role": "admin",
+    "persona": "professional",
+    "mode": "ask",
+    "effort": "low",
+    "family": "confirmation",
+    "expected": "创建前展示确认卡；确认只写入一次；第二次更新取消后内容不变；终态与记录一致。",
+    "maxWrites": 1,
+    "turns": [
+      {
+        "prompt": "为我创建工作B05发布检查，内容是检查登录和上传功能，状态进行中。",
+        "confirmation": "confirm"
+      },
+      { "prompt": "把刚才工作状态改成已完成。", "confirmation": "cancel" },
+      { "prompt": "查看B05发布检查现在的状态和内容，不要做修改。" }
+    ]
+  },
+  {
+    "id": "B06",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "question",
+    "expected": "明确请求先以临时提问收集格式；回答后继续同一任务，不重复提问或写入工作。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "请帮我写一次内部分享的提纲，但先通过临时提问框让我选择主题：时间管理或者沟通技巧。收到我的选择后再写，不要自行选，不要保存为工作。",
+        "questionAnswer": "时间管理"
+      },
+      { "prompt": "把这个提纲变成五分钟的版本。" },
+      { "prompt": "最后只给我开场白，不要再次询问主题。" }
+    ]
+  },
+  {
+    "id": "B07",
+    "role": "admin",
+    "persona": "professional",
+    "mode": "full",
+    "effort": "low",
+    "family": "work-reference",
+    "fixture": "reference",
+    "expected": "UI引用B07工作、读取其特定内容；只在第二轮授权后更新同一工作，保持blocked状态。",
+    "maxWrites": 1,
+    "turns": [
+      {
+        "prompt": "根据引用的工作，告诉我现在的阻碍是什么，不要修改。",
+        "reference": "B07引用资料核对"
+      },
+      { "prompt": "给这项工作的内容补充一句：已联系供应商，等待回复。不要改变状态。" },
+      { "prompt": "再查看这项工作，确认刚才补充的内容和状态。" }
+    ]
+  },
+  {
+    "id": "B08",
+    "role": "employee",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "attachment",
+    "expected": "真实上传文本文件并根据其中限制生成计划，后续引用原材料，不凭空保存工作。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "读这份客户需求，列出三项实施步骤，不要录入工作系统。",
+        "attachment": {
+          "name": "B08需求.txt",
+          "text": "客户希望在14天内上线内部知识库，预算15000元。需要账号登录、全文搜索和附件上传，暂不做支付。"
+        }
+      },
+      { "prompt": "计划中有哪些已知限制？只按原文回答。" },
+      { "prompt": "把实施步骤改为一个简短表格，加上需客户确认的问题。" }
+    ]
+  },
+  {
+    "id": "B09",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "offline-retry",
+    "expected": "断网发送保留草稿，恢复网络不自动重发；用户点击重试/发送后成功接收一次，不产生重复消息。",
+    "maxWrites": 0,
+    "turns": [
+      { "prompt": "用一句话解释什么是缓存。", "offlineRetry": true },
+      { "prompt": "再给一个浏览器缓存的例子。" },
+      { "prompt": "不用查询资料，用一句话总结。" }
+    ]
+  },
+  {
+    "id": "B10",
+    "role": "admin",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "cancel",
+    "expected": "实际模型请求进行时中断，UI恢复可发送；后续任务可正常执行，取消轮没有迟到完整答复覆盖新轮。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "请写一篇详细的长篇技术培训讲义，约7000字，介绍数据库索引设计、索引失效和实践案例。不要用工具。",
+        "cancel": true
+      },
+      { "prompt": "不用继续刚才的讲义，只回答2加3等于几。" },
+      { "prompt": "确认你已经停止写那篇长讲义，现在只回复收到。" }
+    ]
+  },
+  {
+    "id": "B11",
+    "role": "admin",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "conversation-switch",
+    "expected": "切换会话不串内容或丢草稿；返回原会话仍能理解其标记。标记只作本对话测试，不写跨会话记忆。",
+    "maxWrites": 0,
+    "turns": [
+      { "prompt": "本段对话的测试代号是青竹314，只在本对话使用，不要保存记忆。请回复收到。" },
+      { "prompt": "这个新对话里请只解释什么是单元测试，不要调用工具。", "newConversation": true },
+      { "prompt": "我们这个对话刚才的测试代号是什么？", "returnFirstConversation": true }
+    ]
+  },
+  {
+    "id": "B12",
+    "role": "employee",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "reload-stream",
+    "expected": "流式输出中刷新后可恢复同一任务并完成；最终正文不丢失不重复，后续连续改稿成功。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "写一篇600字左右的文章，主题是耐心学习新技能，分成四段，不要查询或保存。",
+        "reloadDuringStream": true
+      },
+      { "prompt": "将刚才文章缩短为150字左右。" },
+      { "prompt": "把最关键的三个建议列出来。" }
+    ]
+  }
+]

@@ -1,11 +1,11 @@
 from html import escape
-from .blocks import validate_layout, cell_text
+from .blocks import validate_layout, cell_text, check_page_limit
 from ..common.paths import output_file, image_path
 from ..common.fonts import pdf_font
 from ..common.results import result
 
 
-def create_pdf(*, filename, title, blocks):
+def create_pdf(*, filename, title, blocks, max_pages=None):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
@@ -13,13 +13,17 @@ def create_pdf(*, filename, title, blocks):
     from pypdf import PdfReader
     validate_layout(title, blocks)
     font = pdf_font()
-    styles = {name: ParagraphStyle(name, fontName=font, fontSize=size, leading=size * 1.55, spaceAfter=8,
+    compact = max_pages is not None
+    sizes = [('title', 18), ('body', 10.5), ('heading1', 13), ('heading2', 12), ('heading3', 11), ('cell', 10.5)] if compact else [
+        ('title', 22), ('body', 10.5), ('heading1', 16), ('heading2', 13), ('heading3', 11), ('cell', 9)]
+    styles = {name: ParagraphStyle(name, fontName=font, fontSize=size,
+                                  leading=size * (1.2 if compact else 1.55), spaceAfter=3 if compact else 8,
                                   wordWrap='CJK', splitLongWords=True, textColor=colors.HexColor('#333333'),
                                   keepWithNext=name.startswith('heading'))
-              for name, size in [('title', 22), ('body', 10.5), ('heading1', 16), ('heading2', 13), ('heading3', 11), ('cell', 9)]}
+              for name, size in sizes}
     def paragraph(text, style='body'):
         return Paragraph(escape(text).replace('\n', '<br/>'), styles[style])
-    story = [paragraph(title, 'title'), Spacer(1, 10)]
+    story = [paragraph(title, 'title'), Spacer(1, 6 if compact else 10)]
     available = A4[0] - 88
     for block in blocks:
         kind = block['type']
@@ -37,9 +41,9 @@ def create_pdf(*, filename, title, blocks):
                               splitByRow=1, splitInRow=1)
             table.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eeeeee')),
                                        ('GRID', (0, 0), (-1, -1), .4, colors.HexColor('#cccccc')),
-                                       ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 7),
-                                       ('BOTTOMPADDING', (0, 0), (-1, -1), 7)]))
-            story.extend([table, Spacer(1, 10)])
+                                       ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('TOPPADDING', (0, 0), (-1, -1), 3 if compact else 7),
+                                       ('BOTTOMPADDING', (0, 0), (-1, -1), 3 if compact else 7)]))
+            story.extend([table, Spacer(1, 6 if compact else 10)])
         elif kind == 'image':
             path, width, height = image_path(block['input'])
             scale = min(available / width, 550 / height)
@@ -50,4 +54,8 @@ def create_pdf(*, filename, title, blocks):
         SimpleDocTemplate(str(path), pagesize=A4, rightMargin=44, leftMargin=44, topMargin=42, bottomMargin=42,
                           title=title, author='Noria').build(story)
         pages = len(PdfReader(path).pages)
-    return result({'filename': filename, 'pageCount': pages, 'fontEmbedded': True})
+        check_page_limit(pages, max_pages)
+    data = {'filename': filename, 'pageCount': pages, 'fontEmbedded': True}
+    if compact:
+        data.update(maxPages=max_pages, layout='compact')
+    return result(data)

@@ -1,7 +1,10 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
+import { DetailBackLink } from '@web/components/navigation/DetailBackLink'
+import { detailReturn } from '@web/utils/navigation'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { Pagination } from '@web/components/actions/Pagination'
@@ -27,6 +30,8 @@ export function TeamWorkspace({
   const [searchReset, resetSearch] = useState(0)
   const [params, setParams] = useSearchParams()
   const location = useLocation()
+  const fromMembers =
+    detailReturn(location.pathname, location.state).path.split('?')[0] === '/members'
   const view = params.get('view') === 'reports' ? 'reports' : 'work'
   const scope = params.get('scope') === 'updated' ? 'updated' : 'current'
   const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
@@ -89,20 +94,22 @@ export function TeamWorkspace({
         ]
   return (
     <div className={layoutStyles['page']} data-scroll-container>
-      <div className={layoutStyles['page-heading']}>
-        <div>
-          <h2>团队看板</h2>
-          <p>看见团队的每一步，让需要关注的事更清晰。</p>
-        </div>
-        <button
-          className={controlsStyles['icon-button']}
-          aria-label="刷新团队看板"
-          title="刷新"
-          onClick={list.refresh}
-        >
-          <RefreshCw size={18} />
-        </button>
-      </div>
+      {fromMembers && <DetailBackLink />}
+      <PageHeader
+        title="团队看板"
+        context={fromMembers ? 'detail' : 'page'}
+        description="看见团队的每一步，让需要关注的事更清晰。"
+        actions={
+          <button
+            className={controlsStyles['icon-button']}
+            aria-label="刷新团队看板"
+            title="刷新"
+            onClick={list.refresh}
+          >
+            <RefreshCw size={18} />
+          </button>
+        }
+      />
       <div
         className={teamStyles['team-counts']}
         data-view={view}

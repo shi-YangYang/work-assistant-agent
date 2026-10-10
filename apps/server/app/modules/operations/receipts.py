@@ -74,7 +74,7 @@ async def action_dto(db, actor, row):
             title = details.get('title', item.title)
         else:
             title, details = f'{item.period} {"日报" if item.kind == "daily" else "周报"}', {}
-        result = {**base, 'objectType': kind, 'objectId': identifier, 'objectRevision': row.result.get('revision'), 'title': title, 'details': details, 'changedFields': row.result.get('changedFields', []), 'message': row.result.get('message', '')}
+        result = {**base, 'objectType': kind, 'objectId': identifier, 'objectRevision': row.result.get('revision'), 'title': title, 'details': details, 'changedFields': row.result.get('changedFields', []), 'message': row.result.get('message', ''), 'updateId': row.result.get('updateId'), 'updateRevision': row.result.get('updateRevision'), 'materialIds': row.result.get('materialIds', [])}
         if row.result.get('jobId'):
             job = await owned(db, Job, row.result['jobId'], actor)
             result['job'] = job_dto(job)
@@ -105,7 +105,20 @@ def receipt_summary(cards, drafts=()):
         if state == 'running' and (card.get('job') or {}).get('state') in ('failed', 'awaiting_retry', 'cancelled'):
             state = 'cancelled' if card['job']['state'] == 'cancelled' else 'failed'
         target = f"《{card['title']}》" if card.get('title') else ''
-        parts.append(f"{card['label']}{target}：{statuses.get(state, '未完成')}")
+        label = card['label']
+        if card.get('action') == 'update_work':
+            fields = set(card.get('changedFields', []))
+            operations = []
+            if fields & {'body', 'bodyEdits'}:
+                operations.append('更新工作正文')
+            if 'update' in fields:
+                operations.append({'update_edit': '更正工作进展', 'update_delete': '删除工作进展'}.get(card.get('details', {}).get('_changeKind'), '记录工作进展'))
+            if fields & {'materials', 'materialIds'}:
+                operations.append('保存工作材料')
+            if 'removeMaterial' in fields:
+                operations.append('移除工作材料')
+            label = '、'.join(operations) or label
+        parts.append(f"{label}{target}：{statuses.get(state, '未完成')}")
     draft_statuses = {'pending': '已保存，等待你的确认', 'confirmed': '已确认', 'ignored': '已忽略'}
     parts.extend(dict.fromkeys(f"{'督办' if draft.business_links else '进展'}建议：{draft_statuses.get(draft.status, '当前不可用')}" for draft in drafts))
     return '；'.join(parts) + '。' if parts else ''
@@ -119,6 +132,8 @@ def receipt_reply(review, cards, drafts=(), deliverables=''):
         parts.append(summary)
     if review.verified and review.needs_action:
         parts.append('本次请求仍有操作未完成；已保存的结果会保留。')
+    elif review.verified and cards and (review.task or {}).get('state') in ('needs_input', 'blocked') and (review.task or {}).get('remaining'):
+        parts.append('本次请求仍有操作未完成：' + '；'.join(review.task['remaining']) + '。')
     if review.verified and review.needs_response:
         parts.append('所需答复尚未完成核对，暂时无法提供完整结果。')
     if not review.verified:

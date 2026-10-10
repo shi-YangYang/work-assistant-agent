@@ -18,15 +18,6 @@
   min-height: 140px;
   font-weight: 400;
 }
-.support-diagnostics {
-  margin-top: 16px;
-  font-size: 13px;
-  color: var(--muted);
-}
-.support-diagnostics summary {
-  cursor: pointer;
-  padding: 6px 0;
-}
 .support-compose .slot-form-actions {
   margin-top: 16px;
   padding-top: 16px;

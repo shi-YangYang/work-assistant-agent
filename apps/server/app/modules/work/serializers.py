@@ -1,5 +1,11 @@
-def work_dto(work):
-    return {'id': work.id, 'ownerId': work.owner_id, 'dueDate': None, 'origin': work.origin, **work.content, 'revision': work.revision, 'updatedAt': work.updated_at.isoformat(), 'hasBusinessLinks': bool(work.business_links)}
+def work_dto(work, *, overview=False):
+    content = {key: value for key, value in work.content.items() if not key.startswith("_")}
+    if overview:
+        content.pop("body", None)
+        content["bodyText"] = content.get("bodyText", "")[:240]
+        content["summary"] = content.get("summary", "")[:500]
+        content.pop("materialIds", None)
+    return {'id': work.id, 'ownerId': work.owner_id, 'dueDate': None, 'origin': work.origin, **content, 'revision': work.revision, 'updatedAt': work.updated_at.isoformat(), 'hasBusinessLinks': bool(work.business_links)}
 
 
 def draft_dto(draft):

@@ -1,3 +1,4 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
@@ -79,14 +80,16 @@ export function DingTalkAccountPage({
     },
   }
   return (
-    <div className={`${layoutStyles['settings-page']} ${styles['account-page']}`}>
-      <div className={`${layoutStyles['row-between']} ${styles['account-heading']}`}>
-        <h2>账户</h2>
-        <Link to="/settings/support">问题反馈与处理结果</Link>
-      </div>
+    <div
+      className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']} ${styles['account-page']}`}
+    >
+      <PageHeader
+        title="账户"
+        description={<Link to="/settings/support">问题反馈与处理结果</Link>}
+      />
       <DingTalkResult />
       <ErrorNotice retry={account.refresh}>{error || account.error}</ErrorNotice>
-      <div className={layoutStyles['sectioned-panel']}>
+      <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
         <PanelSection
           bodyClassName={styles['settings-section-body']}
           title="账号信息"

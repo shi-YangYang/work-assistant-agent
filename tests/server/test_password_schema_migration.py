@@ -46,11 +46,12 @@ def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
             ))
             work_before = list(connection.execute(select(WorkItem.__table__)).mappings())
 
-        command.upgrade(config, 'head')
+        command.upgrade(config, '0013_drop_password_change')
         with scoped.begin() as connection:
             assert 'must_change_password' not in {column['name'] for column in inspect(connection).get_columns('company_member')}
-            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == ScriptDirectory.from_config(config).get_current_head()
-            after = list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings())
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0013_drop_password_change'
+            current = Table('company_member', MetaData(), autoload_with=connection)
+            after = list(connection.execute(select(current).order_by(current.c.id)).mappings())
             assert after == [{key: value for key, value in row.items() if key != 'must_change_password'} for row in before]
             assert list(connection.execute(select(WorkItem.__table__)).mappings()) == work_before
             # New accounts no longer need a value for the old NOT NULL column.
@@ -66,6 +67,10 @@ def test_password_flag_migration_preserves_accounts_and_work(monkeypatch):
         with scoped.connect() as connection:
             assert 'must_change_password' not in {column['name'] for column in inspect(connection).get_columns('company_member')}
             assert connection.scalar(text('SELECT count(*) FROM company_member')) == 3
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == ScriptDirectory.from_config(config).get_current_head()
+            after = list(connection.execute(select(Member.__table__).where(Member.id.in_([row['id'] for row in before])).order_by(Member.id)).mappings())
+            assert after == [{**{key: value for key, value in row.items() if key != 'must_change_password'}, 'execution_mode': 'auto', 'mode_revision': 1, 'full_access_confirmed': False, 'reasoning_preference': None, 'reasoning_revision': 0} for row in before]
+            assert list(connection.execute(select(WorkItem.__table__)).mappings()) == [{**row, 'content': {**row['content'], 'body': {'schemaVersion': 1, 'content': []}, 'bodyText': '', 'materialIds': []}} for row in work_before]
     finally:
         scoped.dispose()
         with engine.begin() as connection:

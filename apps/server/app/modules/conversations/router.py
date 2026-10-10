@@ -11,7 +11,10 @@ from app.modules.conversations.serializers import conversation_dto
 from app.security.ownership import owned
 from app.tasks.maintenance.cleanup import finish_deletion
 
+from .execution_settings_router import router as execution_settings_router
+
 router = APIRouter()
+router.include_router(execution_settings_router)
 
 
 @router.get('/api/v1/conversations')
@@ -23,37 +26,31 @@ async def conversations(q: str = Query('', max_length=120), cursor: str | None =
 async def add_conversation(body: ConversationCreate, actor=AUTH, db=DB):
     if not body.title.strip():
         problem(422, '请输入会话名称')
-    if body.executionMode == 'full' and not body.fullAccessConfirmed:
-        problem(422, '请先确认自主执行的范围')
-    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId, execution_mode=body.executionMode, full_access_confirmed=body.fullAccessConfirmed)
+    if body.executionMode is not None and body.executionMode != actor.execution_mode:
+        problem(409, '执行权限已变化，请刷新账号设置', 'execution_settings_changed')
+    item = Conversation(company_id=actor.company_id, owner_id=actor.id, title=body.title.strip(), persona_id=body.personaId)
     db.add(item)
     await db.flush()
-    return conversation_dto(item)
+    return conversation_dto(item, actor)
 
 
 @router.get('/api/v1/conversations/{identifier}')
 async def get_conversation(identifier: str, actor=AUTH, db=DB):
-    return conversation_dto(await owned(db, Conversation, identifier, actor))
+    return conversation_dto(await owned(db, Conversation, identifier, actor), actor)
 
 
 @router.patch('/api/v1/conversations/{identifier}')
 async def rename_conversation(identifier: str, body: ConversationEdit, actor=AUTH, db=DB):
     item = await owned(db, Conversation, identifier, actor, lock=True)
     version(item, body.expectedRevision)
-    if 'executionMode' in body.model_fields_set and body.executionMode != item.execution_mode:
-        from app.tasks.runtime.conversation_activity import require_idle
-        await require_idle(db, actor, item.id)
-        if body.executionMode == 'full' and not item.full_access_confirmed and not body.fullAccessConfirmed:
-            problem(422, '请先确认自主执行的范围')
-        item.full_access_confirmed = item.full_access_confirmed or body.fullAccessConfirmed
-        item.execution_mode = body.executionMode
-        item.mode_revision += 1
+    if 'executionMode' in body.model_fields_set:
+        problem(422, '执行权限已改为账号设置，请刷新页面后重新选择')
     if 'title' in body.model_fields_set:
         item.title = body.title
     if 'personaId' in body.model_fields_set:
         item.persona_id = body.personaId
     item.revision += 1
-    return conversation_dto(item)
+    return conversation_dto(item, actor)
 
 
 @router.get('/api/v1/conversations/{identifier}/deletion')

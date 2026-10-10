@@ -27,9 +27,9 @@ async def test_fact_review_uses_evidence_only_reasoning_and_reuses_cached_verdic
     async def chat(settings, config, key, messages, *, on_event, max_tokens, **kwargs):
         payload = json.loads(messages[-1]['content'])
         calls.append(payload)
-        assert max_tokens == 4000
+        assert max_tokens is None
         assert config['parameters']['enable_thinking'] is True
-        assert config['parameters']['reasoning_effort'] == 'low'
+        assert config['parameters']['reasoning_effort'] == 'high'
         assert payload['reviewScope'] == ('facts_and_quantitative' if quantitative else 'facts_only')
         assert payload['verificationQuote'] == context.delivery['verification_quote']
         assert payload['toolEvidence'] == context.reply_evidence

@@ -2,7 +2,7 @@ from app.core.digests import digest
 from app.core.errors import problem
 from app.db.base import now, uid
 from app.modules.deliverables.models import Deliverable, DeliverableRevision, DeliverableLink
-from app.modules.deliverables.queries import get_deliverable, check_reference
+from app.modules.deliverables.queries import get_deliverable, check_reference, remember_source
 from app.modules.deliverables.schemas import DeliverableContent
 from app.security.access import inherit
 from app.security.locks import company_lock
@@ -19,7 +19,9 @@ async def save(db, actor, message, job, content, *, identifier='', expected_revi
     if prior:
         if prior.digest != fingerprint:
             problem(409, '该步骤已保存成果；请读取已保存版本，不重复创建')
-        return await get_deliverable(db, actor, prior.deliverable_id, prior.revision, conversation_id=message.conversation_id)
+        item, record = await get_deliverable(db, actor, prior.deliverable_id, prior.revision, conversation_id=message.conversation_id)
+        remember_source(job, actor, item, record)
+        return item, record
     if identifier:
         if read_revision != expected_revision:
             problem(409, '请先读取要修改的成果版本')
@@ -41,6 +43,7 @@ async def save(db, actor, message, job, content, *, identifier='', expected_revi
     record = DeliverableRevision(company_id=actor.company_id, owner_id=actor.id, deliverable_id=item.id, revision=item.revision, message_id=message.id, step=step, title=content.title, body=content.body, files=files if files is not None else (old.files if identifier else []), items=[{**entry.model_dump(), 'id': entry.id or uid()} for entry in content.items], digest=fingerprint)
     db.add(record)
     await db.flush()
+    remember_source(job, actor, item, record)
     return item, record
 
 

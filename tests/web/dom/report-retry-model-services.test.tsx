@@ -11,6 +11,7 @@ import { ModelServices } from '../../../apps/web/src/features/model-services/com
 import {
   checkServiceConfiguration,
   deleteModelService,
+  saveModelService,
 } from '../../../apps/web/src/features/model-services/api/requests'
 import { newModel } from '../../../apps/web/src/features/model-services/utils/service-drafts'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from './helpers'
@@ -24,6 +25,7 @@ vi.mock('@web/features/model-services/api/requests', async (load) => ({
   ...(await load<typeof import('../../../apps/web/src/features/model-services/api/requests')>()),
   checkServiceConfiguration: vi.fn(),
   deleteModelService: vi.fn(),
+  saveModelService: vi.fn(),
 }))
 const failed = {
   id: 'job',
@@ -158,6 +160,34 @@ it('selects and remembers the remaining service after the selected service is de
   expect(localStorage.getItem('paa:model-service:company:owner:admin')).toBe(service.id)
 })
 
+it('keeps a newly saved service selected while the list refresh is pending and after returning', async () => {
+  const mounted = models([service])
+  await screen.findByLabelText('服务名称')
+  fireEvent.click(screen.getByRole('button', { name: '添加服务' }))
+  fireEvent.change(screen.getByLabelText('服务名称'), { target: { value: other.name } })
+  fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: other.baseUrl } })
+  fireEvent.change(screen.getByLabelText('API 密钥'), { target: { value: 'unsaved-test-key' } })
+  const refresh = deferred<unknown>()
+  vi.mocked(api).mockReturnValue(refresh.promise)
+  vi.mocked(saveModelService).mockResolvedValueOnce(other)
+  fireEvent.click(screen.getByRole('button', { name: '保存服务' }))
+  await waitFor(() => expect(screen.getByLabelText('API 密钥')).toHaveProperty('value', ''))
+  expect(screen.getByLabelText('服务名称')).toHaveProperty('value', other.name)
+  expect(screen.getByRole('combobox', { name: '选择模型服务' })).toHaveProperty('value', other.id)
+  expect(localStorage.getItem('paa:model-service:company:owner:admin')).toBe(other.id)
+  expect(screen.getByText('已保存', { exact: true })).toBeTruthy()
+  await act(async () =>
+    refresh.resolve({
+      services: [service, other],
+      routing: { assistant: null, report: null, asr: null, revision: 1 },
+      environment: [],
+    }),
+  )
+  mounted.unmount()
+  models([service, other])
+  await waitFor(() => expect(screen.getByLabelText('服务名称')).toHaveProperty('value', other.name))
+})
+
 it('ignores a model test result from a different configuration version', async () => {
   const pending = deferred<ModelCheck>()
   vi.mocked(checkServiceConfiguration).mockReturnValueOnce(pending.promise)
@@ -184,4 +214,26 @@ it('ignores a model test result from a different configuration version', async (
   expect(
     (screen.getByRole('button', { name: '测试 gpt-test' }) as HTMLButtonElement).disabled,
   ).toBe(false)
+})
+
+it('switches services through the compact selector without discarding names or unsaved keys', async () => {
+  models([service, other])
+  const selector = await screen.findByRole('combobox', { name: '选择模型服务' })
+  fireEvent.change(selector, { target: { value: service.id } })
+  fireEvent.change(screen.getByLabelText('服务名称'), { target: { value: '保留我的草稿' } })
+  fireEvent.change(screen.getByLabelText('API 密钥'), { target: { value: 'draft-key-not-saved' } })
+  expect(within(selector).getByRole('option', { name: /保留我的草稿.*未保存/ })).toBeTruthy()
+  fireEvent.change(selector, { target: { value: other.id } })
+  expect((screen.getByLabelText('服务名称') as HTMLInputElement).value).toBe(other.name)
+  fireEvent.change(selector, { target: { value: service.id } })
+  expect((screen.getByLabelText('服务名称') as HTMLInputElement).value).toBe('保留我的草稿')
+  expect((screen.getByLabelText('API 密钥') as HTMLInputElement).value).toBe('draft-key-not-saved')
+})
+
+it('has one add-service action in the empty configuration state', async () => {
+  models([])
+  await screen.findByText('还没有模型服务', { selector: 'p' })
+  expect(screen.getAllByRole('button', { name: '添加服务' })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: '添加服务' }))
+  expect(screen.getByLabelText('服务名称')).toBeTruthy()
 })

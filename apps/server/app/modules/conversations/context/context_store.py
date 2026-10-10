@@ -56,11 +56,18 @@ async def manifest(db, actor, conversation_id):
     child_ids = [action.result['jobId'] for action in actions if action.result.get('jobId')]
     children = (await db.execute(select(Job.id, Job.state, Job.updated_at).where(Job.id.in_(child_ids)).order_by(Job.id))).all() if child_ids else []
     child_stamp = digest([list(row) for row in children])
+    child_states = {row.id: row.state for row in children}
+    tool_receipts = defaultdict(list)
+    for action in actions:
+        if action.state == 'succeeded' or (action.action == 'generate_report' and action.state == 'running'
+                and child_states.get(action.result.get('jobId')) in ('queued', 'running', 'succeeded')):
+            tool_receipts[action.message_id].append(action.id)
     result = {}
     for row in rows:
         result[row.id] = {'source': digest([row.source, row.transcript_revision, row.deleted, attachment_stamps[row.id]]),
                          'result': digest([row.reply, action_stamps[row.id], child_stamp]),
-                         'createdAt': row.created_at.isoformat(), 'access': row.access, 'deleted': row.deleted}
+                         'createdAt': row.created_at.isoformat(), 'access': row.access, 'deleted': row.deleted,
+                         'toolReceiptIds': tool_receipts[row.id]}
     return result
 
 
@@ -179,9 +186,13 @@ async def capture_sources(db, actor, current, selected=None):
     sources = {identifier: stamp for identifier, stamp in stamps.items()
                if identifier in identifiers and not stamp['deleted']
                and stamp['createdAt'] <= current.created_at.isoformat() and await check.valid(stamp['access'])}
+    # Find the actual adjacent user turn before filtering visibility/summary.
+    # A deleted or revoked turn is a boundary, never a reason to reuse older work.
+    previous = next((identifier for identifier, stamp in reversed(list(stamps.items()))
+                     if (stamp['createdAt'], identifier) < (current.created_at.isoformat(), current.id)), None)
     return {'invalidationVersion': store.invalidation_version, 'summarySources': summary_sources,
             'through': {'messageId': current.id, 'createdAt': current.created_at.isoformat()},
-            'sources': sources}
+            'sources': sources, 'previousMessageId': previous}
 
 
 async def publish_summary(context, packet):

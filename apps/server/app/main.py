@@ -24,8 +24,16 @@ def create_app(settings=None):
     async def lifespan(app):
         settings.media_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         yield
+        from app.tasks.streaming.redis_store import close_stores
+        await close_stores()
         await engine.dispose()
 
+    timing_log = logging.getLogger('paa.latency')
+    timing_log.setLevel(logging.INFO)
+    if not timing_log.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        timing_log.addHandler(handler)
     app = FastAPI(title='Company Work Assistant', version='0.1.0', lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.sessions = sessions
     app.state.settings = settings

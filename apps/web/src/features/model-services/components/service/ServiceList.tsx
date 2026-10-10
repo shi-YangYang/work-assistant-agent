@@ -38,6 +38,36 @@ export function ServiceList({
       className={`${layoutStyles['sectioned-panel']} ${compact ? modelServicesStyles['service-sidebar'] : ''}`}
       aria-label="模型服务列表"
     >
+      {compact && (
+        <label className={modelServicesStyles['service-select']}>
+          <span>模型服务</span>
+          <select
+            aria-label="选择模型服务"
+            value={selectedId ?? ''}
+            disabled={disabled || !allServices.length}
+            onChange={(event) => select(event.target.value || null)}
+          >
+            <option value="">{allServices.length ? '选择服务' : '还没有模型服务'}</option>
+            {allServices.map((service) => {
+              const current = drafts[service.id] ?? service
+              const changed =
+                serviceHasChanges(
+                  current,
+                  services.find((item) => item.id === service.id),
+                ) || !!keys[service.id]
+              return (
+                <option key={service.id} value={service.id}>
+                  {current.name || '新服务'} · {current.models.length} 个模型
+                  {changed ? ' · 未保存' : ''}
+                  {usesFor(service.id).length
+                    ? ` · ${usesFor(service.id).join('、')}`
+                    : ' · 未分配用途'}
+                </option>
+              )
+            })}
+          </select>
+        </label>
+      )}
       <header className={modelServicesStyles['service-overview-heading']}>
         <h3>
           已添加的服务{' '}

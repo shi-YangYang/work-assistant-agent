@@ -89,16 +89,30 @@ async def test_clarification_and_conflicts_survive_response_failure(setup):
     _, _, _, c = setup
     work = await create(c['employee'])
     context, sent = await runtime(setup, '改成之前提到的那种', allowed=False)
+    context.intent_model = Judge(False, failure_kind='missing_info')
     await read_work(context, work['id'])
     result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'title': '猜的标题'})
     detail = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-    assert result['state'] == 'clarification' and not detail['actions']
+    assert result['state'] == 'clarification' and result['category'] == 'missing_info'
+    assert not detail['actions']
+    assert (await c['employee'].get('/api/v1/work-items/' + work['id'])).json()['revision'] == 1
     assert detail['job']['operationFeedback'][0]['message'] == result['message']
     context.intent_model = Judge()
+    still_ambiguous = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'title': '确定标题'})
+    assert still_ambiguous['state'] == 'clarification' and still_ambiguous['category'] == 'missing_info'
+    assert context.intent_model.inputs == []
+    from test_conversation_task_state import ScopedJudge, close_task
+    await close_task(context, state='needs_input')
+    context, clarified = await runtime(setup, '继续刚才的修改，把报价方案标题改为确定标题，其他字段不变。')
+    context.intent_model = ScopedJudge(resume=True)
+    await read_work(context, work['id'])
     applied = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'title': '确定标题'})
     assert applied['state'] == 'succeeded'
-    detail = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    detail = (await c['employee'].get('/api/v1/messages/' + clarified['messageId'])).json()
     assert detail['job']['operationFeedback'] == []
+    assert len(detail['actions']) == 1 and detail['actions'][0]['id'] == applied['id']
+    saved = (await c['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert saved['revision'] == 2 and saved['title'] == '确定标题'
     assert (await c['peer'].get('/api/v1/messages/' + sent['messageId'])).status_code == 404
 
 
@@ -106,11 +120,16 @@ async def test_retry_replaces_failed_response_in_place_without_repeating_busines
     settings, sessions, users, c = setup
     async def saved(context):
         await execute(context, step=1, action='create_work', changes={'title': '只创建一次'})
-    result = await run_reply(setup, '帮我创建工作，然后给建议', '下一步可以检查需求。', ReplyJudge(['information'], fail=True), before=saved)
+    from app.agent.completion.delivery import ReviewedReply
+    async def interrupted_delivery(*args, **kwargs):
+        return ReviewedReply(error_code='ControlledDeliveryFailure', error_message='受控交付中断')
+    with monkeypatch.context() as patch:
+        patch.setattr('app.agent.completion.delivery.assess', interrupted_delivery)
+        result = await run_reply(setup, '帮我创建工作，然后给建议', '下一步可以检查需求。', ReplyJudge(['information'], fail=True), before=saved)
     assert result['job']['state'] == 'awaiting_retry'
     async with sessions() as db:
         job = await db.get(Job, result['job']['id'])
-        assert job.result['replyReviewError'] == 'BudgetExceeded'
+        assert job.result['replyReviewError'] == 'ControlledDeliveryFailure'
     retry = await c['employee'].post('/api/v1/jobs/' + result['job']['id'] + '/retry', json={})
     assert retry.status_code == 200
     assert retry.json()['state'] == 'queued' and retry.json()['error'] == ''

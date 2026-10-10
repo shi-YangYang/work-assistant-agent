@@ -1,4 +1,5 @@
-import type { Job, JobFeedback, Report } from '@paa/api-contracts'
+import type { Job, JobFeedback, Report, ReplyEvent } from '@paa/api-contracts'
+import { reduceReply, type ReplyCursor } from '@web/api/reply-stream'
 import { api, ApiError, epoch, expireSession, isCancelled } from '@web/api/client'
 
 const terminalJob = (state: string) => !['queued', 'running'].includes(state)
@@ -21,13 +22,33 @@ export function acceptFeedback(
       return current
     for (const field of ['attempt', 'fence', 'seq'] as const) {
       if (incoming[field] < current[field]) return current
-      if (incoming[field] > current[field]) return incoming
+      if (incoming[field] > current[field]) {
+        if (field !== 'seq') return incoming
+        break
+      }
     }
+    if (
+      incoming.replyStream &&
+      current.replyStream &&
+      incoming.replyStream.generation < current.replyStream.generation
+    )
+      return current
+    // The final message request may fail or arrive later than the terminal event.
+    // Keep the last prefix until that persisted message replaces it.
+    if (
+      !incoming.replyStream &&
+      current.replyStream &&
+      ['succeeded', 'awaiting_input'].includes(incoming.state)
+    )
+      incoming = { ...incoming, replyStream: current.replyStream }
     if (incoming.updatedAt < current.updatedAt) return current
     // Cards can change independently of the worker's feedback version. Match the
     // server's snapshot identity so retries deduplicate without hiding card updates.
     if (
+      incoming.seq === current.seq &&
       incoming.updatedAt === current.updatedAt &&
+      JSON.stringify(incoming.replyStream ?? null) ===
+        JSON.stringify(current.replyStream ?? null) &&
       incoming.state === current.state &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
       JSON.stringify(incoming.interactions ?? []) === JSON.stringify(current.interactions ?? []) &&
@@ -50,7 +71,8 @@ export function visibleFeedback(job: Job | null, value: JobFeedback | null) {
     value.fence < (job.fence ?? 0)
   )
     return null
-  if (['succeeded', 'awaiting_input', 'cancelled'].includes(job.state)) return null
+  if (['succeeded', 'awaiting_input', 'cancelled'].includes(job.state) && !value.replyStream)
+    return null
   if (
     terminalJob(job.state) &&
     value.attempt === (job.attempt ?? 0) &&
@@ -84,6 +106,9 @@ function connectJobFeedback(
   refresh: (feedback?: JobFeedback) => void,
   active: () => boolean,
 ) {
+  let latest: JobFeedback | null = null
+  let reply: ReplyCursor | null = null
+  let previewUnavailable = false
   let closed = false
   let completed = false
   let recovering = false
@@ -105,11 +130,20 @@ function connectJobFeedback(
       incoming.fence < fence
     )
       return
+    if (
+      reply &&
+      reply.attempt === incoming.attempt &&
+      reply.fence === incoming.fence &&
+      !incoming.replyStream &&
+      !terminalJob(incoming.state)
+    )
+      incoming = { ...incoming, replyStream: reply.reply }
     if (receiveValue(incoming) === false) return
+    latest = incoming
     const stageChanged = previousStage !== undefined && previousStage !== incoming.stage
     const completedMedia = previousStage === 'parsing' || previousStage === 'transcribing'
     previousStage = incoming.stage
-    setError('')
+    setError(previewUnavailable ? '实时预览暂不可用，任务仍在后台处理。' : '')
     if (terminalJob(incoming.state)) {
       completed = true
       closeSource()
@@ -142,7 +176,7 @@ function connectJobFeedback(
       setError(feedbackDisconnected)
       return
     }
-    const opened = new EventSource(`/api/v1/jobs/${jobId}/events`)
+    const opened = new EventSource(`/api/v1/jobs/${jobId}/events?version=2`)
     source = opened
     opened.addEventListener('snapshot', (event) => {
       if (!active() || source !== opened || closed || completed) return
@@ -151,6 +185,25 @@ function connectJobFeedback(
       } catch {
         disconnect()
       }
+    })
+    for (const type of ['sync', 'delta', 'withdrawn'] as const) {
+      opened.addEventListener(`reply_${type}`, (event) => {
+        if (!active() || source !== opened || closed || completed || !latest) return
+        try {
+          const incoming = { ...JSON.parse((event as MessageEvent).data), type } as ReplyEvent
+          const next = reduceReply(reply, incoming, latest)
+          if (next === reply) return
+          reply = next
+          if (reply) receiveValue({ ...latest, replyStream: reply.reply })
+        } catch {
+          disconnect()
+        }
+      })
+    }
+    opened.addEventListener('reply_unavailable', () => {
+      if (!active() || source !== opened || closed || completed) return
+      previewUnavailable = true
+      setError('实时预览暂不可用，任务仍在后台处理。')
     })
     opened.addEventListener('unavailable', (event) => {
       if (!active() || source !== opened || closed || completed) return

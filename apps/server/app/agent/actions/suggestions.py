@@ -14,7 +14,9 @@ async def authorize_suggestion(context, action, content, work_id=None, source_to
     from app.agent.actions.task_outcomes import remember
     result = await _authorize_suggestion(context, action, content, work_id, source_tokens)
     if result:
-        await remember(context, action, {'target_id': work_id, 'changes': content}, result)
+        changes = context.suggestion_options.get(digest([action, content, work_id, sorted(source_tokens)]), {}).get('outcomeChanges', content)
+        await remember(context, action, {'target_id': work_id, 'changes': changes, 'source_tokens': sorted(source_tokens),
+                                        'task_item_id': result.get('taskItemId', '')}, result)
     return result
 
 
@@ -28,6 +30,7 @@ async def _authorize_suggestion(context, action, content, work_id=None, source_t
             draft = await owned(db, ProgressDraft, saved['draftId'], actor)
             await business_require(db, actor, draft.access)
             context.suggestion_items[request_key] = saved['itemId']
+            context.suggestion_options[request_key] = {'outcomeChanges': saved.get('outcomeChanges', content)}
             return suggestion_receipt(context, job, action, draft, content, work_id, source_tokens)
         target = await referenced_record(db, WorkItem, work_id, actor) if work_id else None
         if work_id and target is None:
@@ -40,23 +43,26 @@ async def _authorize_suggestion(context, action, content, work_id=None, source_t
         if target:
             candidates = [{'id': row.id, 'title': row.title, 'summary': row.content.get('summary', '')} for row in (await db.scalars(select(WorkItem).where(WorkItem.company_id == actor.company_id, WorkItem.owner_id == actor.id, WorkItem.deleted.is_(False), WorkItem.title == target.title).limit(21))).all()]
         message = await owned(db, Message, job.target_id, actor)
-        mode = await mode_for(db, job, message.conversation_id)
+        mode = await mode_for(db, job)
         operation = 'update_work' if target else 'create_work'
         changes = {key: value for key, value in content.items() if not target or target.content.get(key) != value}
         proposal = {'action': action, 'operation': operation, 'effect': 'prepare_confirmation' if decide(mode, operation).outcome == 'ask' else 'save', 'changes': changes, 'targetId': work_id or '', 'target': target.title if target else '', 'targetCandidates': candidates, 'sourceTokens': list(source_tokens)}
         if target:
             proposal['targetContent'] = target.content
+    key = digest([action, content, work_id, sorted(source_tokens)])
+    context.suggestion_options[key] = {'outcomeChanges': changes}
     allowed, reason = await authorize_intent(context, proposal)
+    item_id = context.task_item_keys.get(digest(proposal), '')
+    if item_id:
+        context.suggestion_items[key] = item_id
     if allowed:
-        key = digest([action, content, work_id, sorted(source_tokens)])
-        context.suggestion_items[key] = context.task_item_keys[digest(proposal)]
         changes = dict(content)
         for name, addition in context.append_values.get(digest(proposal), {}).items():
             previous = str(proposal.get('targetContent', {}).get(name) or '')
             changes[name] = previous + ('\n' if previous and not previous.endswith('\n') else '') + addition
-        context.suggestion_options[key] = {'changes': changes, 'explicitConfirmation': digest(proposal) in context.explicit_confirmations}
+        context.suggestion_options[key] = {**context.suggestion_options[key], 'changes': changes, 'explicitConfirmation': digest(proposal) in context.explicit_confirmations}
         return None
-    return {'state': 'not_requested' if digest(proposal) in context.unrequested_actions else 'clarification', 'category': context.authorization_outcomes.get(digest(proposal), 'missing_info'), 'message': reason or '本次未保存进展；请明确是否要记录到工作中'}
+    return {'state': 'not_requested' if digest(proposal) in context.unrequested_actions else 'clarification', 'category': context.authorization_outcomes.get(digest(proposal), 'missing_info'), 'taskItemId': item_id, 'fieldIssues': context.authorization_details.get(digest(proposal), []), 'message': reason or '本次未保存进展；请明确是否要记录到工作中'}
 
 
 def suggestion_key(context, job, action, content, work_id=None, source_tokens=()):
@@ -67,9 +73,11 @@ def suggestion_key(context, job, action, content, work_id=None, source_tokens=()
 def suggestion_receipt(context, job, action, draft, content, work_id=None, source_tokens=()):
     from app.tasks.feedback.outcomes import record
     from app.tasks.feedback.items import record as record_item
-    result = {'draftId': draft.id, 'status': draft.status, 'state': 'pending' if draft.status == 'pending' else 'succeeded' if draft.status == 'confirmed' else 'cancelled'}
-    record(job, action, {'target_id': work_id, 'changes': content}, result)
-    record_item(job, context.suggestion_items[digest([action, content, work_id, sorted(source_tokens)])], result)
+    item_id = context.suggestion_items[digest([action, content, work_id, sorted(source_tokens)])]
+    result = {'draftId': draft.id, 'taskItemId': item_id, 'status': draft.status, 'state': 'pending' if draft.status == 'pending' else 'succeeded' if draft.status == 'confirmed' else 'cancelled'}
+    changes = context.suggestion_options.get(digest([action, content, work_id, sorted(source_tokens)]), {}).get('outcomeChanges', content)
+    record(job, action, {'target_id': work_id, 'changes': changes, 'source_tokens': sorted(source_tokens), 'task_item_id': item_id}, result)
+    record_item(job, item_id, result)
     return result
 
 
@@ -77,7 +85,7 @@ async def settle_suggestion(context, db, job, actor, message, draft, action, con
     """Tool naming does not decide approval; the active policy and user do."""
     options = context.suggestion_options[digest([action, content, work_id, sorted(source_tokens)])]
     draft.content = options['changes']
-    mode = await mode_for(db, job, message.conversation_id)
+    mode = await mode_for(db, job)
     decision = decide(mode, 'update_work' if work_id else 'create_work', explicitly_confirm=options['explicitConfirmation'])
     if decision.outcome == 'allow':
         from app.modules.work.progress import apply_draft
@@ -87,6 +95,6 @@ async def settle_suggestion(context, db, job, actor, message, draft, action, con
         context.read_versions[work.id] = work.revision
     key = digest([action, content, work_id, sorted(source_tokens)])
     job.result = {**job.result, 'suggestionRequests': {**job.result.get('suggestionRequests', {}),
-        key: {'draftId': draft.id, 'itemId': context.suggestion_items[key]}}}
+        key: {'draftId': draft.id, 'itemId': context.suggestion_items[key], 'outcomeChanges': options['outcomeChanges']}}}
     return {**suggestion_receipt(context, job, action, draft, content, work_id, source_tokens),
             'message': '工作已保存，无需再次确认' if draft.status == 'confirmed' else '等待确认'}

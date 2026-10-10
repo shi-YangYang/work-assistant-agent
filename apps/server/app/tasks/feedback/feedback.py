@@ -47,7 +47,7 @@ def presentation_text(text):
     return text[:marker.start() if marker else 16000]
 
 
-async def snapshot(sessions, token_hash, job_id):
+async def snapshot(sessions, token_hash, job_id, *, transport=False, temporary=None):
     # Short transactions only: no connection/row/advisory lock across SSE yield.
     async with sessions.begin() as db:
         session = await db.scalar(select(Session).where(Session.token_hash == token_hash, *live_session(now())))
@@ -82,28 +82,189 @@ async def snapshot(sessions, token_hash, job_id):
         refresh(job, actions, drafts)
         from app.modules.interactions.serializers import message_interactions
         interactions = await message_interactions(db, actor, message)
-        return {'interactions': interactions, 'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
+        from app.tasks.feedback.reply_stream import dto as reply_dto
+        reply_stream = await reply_dto(db, actor, job, message)
+        transport_metadata = {}
+        if transport:
+            transport_metadata = {'_reply': {'company': job.company_id, 'owner': job.owner_id,
+                                           'call': feedback.get('replyStreamCall'),
+                                           'control': feedback.get('replyStream', {})}}
+        if temporary is not None and job.state not in TERMINAL:
+            from app.tasks.feedback.reply_stream import validate_sources, presentation_text as reply_text
+            from app.integrations.models.transport import ProviderError
+            allowed = (job.state == 'running' and not temporary.get('sealed') and
+                       temporary.get('attempt') == job.attempt and temporary.get('fence') == job.fence and
+                       temporary.get('callId') == feedback.get('replyStreamCall') and
+                       temporary.get('generation') == feedback.get('replyStream', {}).get('generation') and
+                       not job.access.get('team') and not message.access.get('team'))
+            try:
+                if allowed and await validate_sources(db, actor, job, message, temporary.get('source', {})):
+                    allowed = False
+            except (ValueError, HTTPException, ProviderError):
+                allowed = False
+            reply_stream = {'version': 1, 'generation': temporary.get('generation', 0),
+                            'state': temporary.get('state', 'streaming') if allowed else 'withdrawn',
+                            'text': reply_text(temporary.get('text', '')) if allowed else ''}
+
+        return {**transport_metadata, 'replyStream': reply_stream, 'interactions': interactions, 'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
-async def events(sessions, token_hash, job_id):
+def event(name, value):
+    return 'event: ' + name + '\ndata: ' + json.dumps(value, ensure_ascii=False) + '\n\n'
+
+
+async def events(sessions, token_hash, job_id, *, settings=None, version=1):
+    if settings is None:
+        # Existing callers/tests that only exercise durable state.
+        async for value in legacy_events(sessions, token_hash, job_id):
+            yield value
+        return
+    from app.tasks.streaming.protocol import Identity
+    from app.tasks.streaming.redis_store import store_for, StreamUnavailable
+    store = store_for(settings)
+    from app.tasks.timing import Timing
+    timing = None
+    def emit(name, value):
+        if timing and name.startswith('reply_'):
+            timing.mark('sse.send', generation=value.get('generation'), seq=value.get('seq'), bytes=len(value.get('text', value.get('delta', '')).encode()))
+        return event(name, value)
+    previous, identity, cursor, generation, seq = None, None, '0-0', None, 0
+    cached_reply = cached_data = None
+    def withdraw(value, public):
+        nonlocal cached_reply, previous
+        cached_reply = {'version': 1, 'generation': public['generation'], 'state': 'withdrawn', 'text': ''}
+        if version == 1:
+            value = {**value, 'replyStream': cached_reply}
+            previous = json.dumps(value, sort_keys=True)
+            return emit('snapshot', value)
+        return emit('reply_withdrawn', {**public, 'state': 'withdrawn'})
+    disabled = False
+    next_state = 0
+    heartbeat_at = time.monotonic()
+    while True:
+        instant = time.monotonic()
+        if instant - heartbeat_at >= 10:
+            yield ': heartbeat\n\n'
+            heartbeat_at = instant
+        if instant >= next_state:
+            try:
+                value = await snapshot(sessions, token_hash, job_id, transport=True)
+            except HTTPException as error:
+                yield emit('unavailable', {'status': error.status_code})
+                return
+            metadata = value.pop('_reply')
+            current = Identity(metadata['company'], metadata['owner'], job_id, value['attempt'], value['fence'])
+            if current != identity:
+                identity, cursor, generation, seq, cached_reply = current, '0-0', None, 0, None
+                cached_data, disabled = None, False
+                timing = Timing(job_id, current.attempt, current.fence)
+            if value['state'] in TERMINAL:
+                yield emit('snapshot', value)
+                return
+            control = metadata['control']
+            if cached_data and cached_data.get('generation') != control.get('generation'):
+                cached_data = None
+                yield withdraw(value, {**identity.public(), 'generation': control.get('generation', 0), 'seq': 0})
+            elif cached_data:
+                try:
+                    checked = await snapshot(sessions, token_hash, job_id, temporary=cached_data)
+                except HTTPException as error:
+                    yield emit('unavailable', {'status': error.status_code})
+                    return
+                if checked['replyStream']['state'] == 'withdrawn':
+                    try:
+                        await store.seal(identity, closed=False, generation=cached_data['generation'])
+                    except StreamUnavailable:
+                        pass
+                    cached_data = None
+                    yield withdraw(checked, {**identity.public(), 'generation': generation, 'seq': seq + 1})
+            if control.get('state') == 'unavailable' and not disabled:
+                disabled = True
+                yield emit('reply_unavailable', {**identity.public(), 'generation': control.get('generation', 0), 'seq': seq + 1,
+                                                  'message': '实时预览暂不可用，任务仍在后台处理。'})
+            if version == 1 and cached_reply:
+                value['replyStream'] = cached_reply
+            stamp = json.dumps(value, sort_keys=True)
+            if stamp != previous:
+                yield emit('snapshot', value)
+                previous = stamp
+            next_state = time.monotonic() + .5
+        if disabled:
+            await asyncio.sleep(max(0, next_state - time.monotonic()))
+            continue
+        try:
+            rows = [] if cursor == '0-0' else await store.read(identity, cursor)
+            current = await store.snapshot(identity)
+            if not current and generation is not None:
+                raise StreamUnavailable('reply_stream_lost')
+            if current and current.get('sealed'):
+                finished = await snapshot(sessions, token_hash, job_id)
+                if finished['state'] in TERMINAL:
+                    yield emit('snapshot', finished)
+                    return
+            if not current or current.get('sealed'):
+                if generation is not None and cached_reply and cached_reply.get('text'):
+                    cached_data = None
+                    yield withdraw(finished, {**identity.public(), 'generation': generation, 'seq': seq + 1})
+                await asyncio.sleep(min(.05, max(0, next_state - time.monotonic())))
+                continue
+            if current['generation'] == generation and current['seq'] <= seq:
+                continue
+            # Permission/source validation is independent of the publisher and
+            # repeated before each exposed batch, with no transaction across yield.
+            authorized = await snapshot(sessions, token_hash, job_id, temporary=current)
+            if authorized['state'] in TERMINAL:
+                yield emit('snapshot', authorized)
+                return
+            reply = authorized['replyStream']
+            public = {key: current[key] for key in ('jobId', 'attempt', 'fence', 'generation', 'seq', 'callId', 'state')}
+            if reply['state'] == 'withdrawn':
+                await store.seal(identity, closed=False, generation=current['generation'])
+                yield withdraw(authorized, public)
+            elif version == 1:
+                authorized['replyStream'] = reply
+                yield emit('snapshot', authorized)
+                cached_reply = reply
+            else:
+                contiguous = bool(rows) and current['generation'] == generation
+                expected = seq + 1
+                for _, row in rows:
+                    if row.get('generation') != generation or row.get('seq') != expected or row.get('type') != 'delta':
+                        contiguous = False
+                        break
+                    expected += 1
+                contiguous = contiguous and expected - 1 == current['seq']
+                if contiguous:
+                    for _, row in rows:
+                        yield emit('reply_delta', row)
+                else:
+                    yield emit('reply_sync', {**public, 'text': reply['text'], 'state': reply['state']})
+                cached_reply = reply
+            generation, seq, cursor = current['generation'], current['seq'], current['cursor']
+            cached_data = None if reply['state'] == 'withdrawn' else current
+        except HTTPException as error:
+            yield emit('unavailable', {'status': error.status_code})
+            return
+        except StreamUnavailable:
+            disabled = True
+            yield emit('reply_unavailable', {**identity.public(), 'generation': generation or 0, 'seq': seq + 1,
+                                              'message': '实时预览暂不可用，任务仍在后台处理。'})
+
+
+async def legacy_events(sessions, token_hash, job_id):
     previous = None
-    # Each snapshot releases its connection before yielding or waiting. Keep the
-    # stream until completion/disconnect instead of forcing browser reconnects.
     for index in count():
         try:
             value = await snapshot(sessions, token_hash, job_id)
         except HTTPException as error:
-            detail = error.detail if isinstance(error.detail,dict) else {'message':'订阅已结束'}
-            yield 'event: unavailable\ndata: ' + json.dumps({'status':error.status_code, **detail},ensure_ascii=False) + '\n\n'
+            yield event('unavailable', {'status': error.status_code})
             return
-        # A target can become unavailable or a report can finish independently
-        # of the assistant's next phase. Do not keep a stale card on screen.
-        stamp = (value['attempt'],value['fence'],value['seq'],value['state'],value['updatedAt'],json.dumps([value['actions'], value['taskOutcome'], value['interactions']], sort_keys=True))
+        stamp = json.dumps(value, sort_keys=True)
         if stamp != previous:
-            yield 'event: snapshot\nid: ' + ':'.join(map(str, stamp[:3])) + '\ndata: ' + json.dumps(value,ensure_ascii=False) + '\n\n'
+            yield event('snapshot', value)
             previous = stamp
         elif index % 10 == 0:
             yield ': heartbeat\n\n'
         if value['state'] in TERMINAL:
             return
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(.5)

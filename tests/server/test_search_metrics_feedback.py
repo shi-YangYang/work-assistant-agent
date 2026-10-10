@@ -282,6 +282,34 @@ async def test_usage_actual_unknown_failure_legacy_and_snapshots(setup):
     assert (await c['outsider'].get('/api/v1/settings/model-usage')).json()['items']==[]
 
 
+@pytest.mark.parametrize('state', ['active', 'expired', 'no_lease', 'terminal', 'new_fence', 'no_job'])
+async def test_long_running_usage_requires_same_live_job_fence(setup, state):
+    from uuid import uuid4
+    _, sessions, users, clients = setup
+    actor, stamp = users['admin'], now()
+    async with sessions.begin() as db:
+        job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message', target_id=str(uuid4()),
+                  state='succeeded' if state == 'terminal' else 'running', fence=2,
+                  lease_until=None if state == 'no_lease' else stamp + timedelta(seconds=-1 if state == 'expired' else 30))
+        db.add(job)
+        await db.flush()
+        usage = ModelUsage(company_id=actor.company_id, owner_id=actor.id, kind='assistant',
+                           job_id=None if state == 'no_job' else job.id, job_fence=1 if state == 'new_fence' else 2,
+                           status='running', started_at=stamp - timedelta(minutes=3))
+        db.add(usage)
+        await db.flush()
+        identifier = usage.id
+    response = await clients['admin'].get('/api/v1/settings/model-usage')
+    assert response.status_code == 200
+    result = response.json()
+    expected = 'running' if state == 'active' else 'unknown'
+    assert result['items'][0]['state'] == expected
+    assert result['summary']['states'][expected] == 1
+    assert result['summary']['calls'] == 1 and result['summary']['successRate'] is None
+    async with sessions() as db:
+        assert (await db.get(ModelUsage, identifier)).status == 'running'
+
+
 @pytest.mark.parametrize('protocol', ['chat', 'transcriptions'])
 async def test_usage_address_rejection_not_sent_but_http_redirect_is_failed(setup, monkeypatch, protocol):
     from dataclasses import replace

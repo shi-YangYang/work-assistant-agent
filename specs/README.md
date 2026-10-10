@@ -1,30 +1,28 @@
 # Specs
 
-[Spec 001～025 摘要](history-001-025.md)
+[Spec 001～050 摘要](history-001-050.md)
 
-| Spec                                                    | 内容                                               | 状态与验证                                                                               |
-| ------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [026](spec-026-web-design-refresh/spec.md)              | Web 黑白灰设计、助手交互与响应式                   | 已实施；[验收 PASS](spec-026-web-design-refresh/acceptance.md)                           |
-| [027](spec-027-desktop-design-refresh/spec.md)          | Electron 黑白灰设计、全屏画布与会议交互            | 已实施；[macOS 验收 PASS，Windows 未实测](spec-027-desktop-design-refresh/acceptance.md) |
-| [028](spec-028-company-backend-architecture/spec.md)    | 公司后端迁入 apps/server，拆分业务模块与 harness   | [验收 PASS](spec-028-company-backend-architecture/acceptance.md)                         |
-| [029](spec-029-task-retry-progress/spec.md)             | 工作助手 Agent 节点重试与执行进度展示              | [验收 PASS](spec-029-task-retry-progress/acceptance.md)                                  |
-| [030](spec-030-project-quality-repair/spec.md)          | 功能代码、UI 设计、流程设计、目录结构四维修复      | [验收 PASS](spec-030-project-quality-repair/acceptance.md)                               |
-| [031](spec-031-assistant-persona/spec.md)               | 工作助手可切换“大包／专业”人设                     | [验收 PASS](spec-031-assistant-persona/acceptance.md)                                    |
-| [032](spec-032-work-assistant-task-delivery/spec.md)    | 工作助手任务协助、连续修改、轻量联网与自主汇报     | [验收 PASS](spec-032-work-assistant-task-delivery/acceptance.md)                         |
-| [033](spec-033-assistant-context-usage/spec.md)         | 会话 JSONB 上下文、模型窗口用量与 90% 自动压缩     | [验收 PASS](spec-033-assistant-context-usage/acceptance.md)                              |
-| [034](spec-034-assistant-interrupt-progress/spec.md)    | 工作助手单会话发送限制、中断与任务执行光带         | [验收 PASS](spec-034-assistant-interrupt-progress/acceptance.md)                         |
-| [035](spec-035-assistant-task-consistency/spec.md)      | 工作助手多轮任务、授权承接、恢复与完成判断统一     | 已完成，验收通过                                                                         |
-| [036](spec-036-assistant-permissions-questions/spec.md) | 工作助手三级执行权限与临时回答框                   | [验收 PASS](spec-036-assistant-permissions-questions/acceptance.md)                      |
-| [037](spec-037-assistant-work-reference/spec.md)        | 从工作或输入框引用工作，复用最近聊天并读取最新内容 | 已完成                                                                                   |
-| [038](spec-038-assistant-response-delivery/spec.md)     | 开放式任务直接交付、结构化收尾与按需核对           | 已完成，验收通过                                                                         |
-| [039](spec-039-assistant-request-efficiency/spec.md)   | 工作助手读请求共享、刷新去重与身份隔离             | 已完成；[验收通过](spec-039-assistant-request-efficiency/acceptance.md) |
-| [040](spec-040-company-cloud-assistant-brand/spec.md) | Noria 产品定义与 Web／Electron 全端品牌更新        | [验收 PASS，含实测范围与限制](spec-040-company-cloud-assistant-brand/acceptance.md) |
-| [041](spec-041-web-session-lifetime/spec.md) | Web 登录闲置续期与 30 天最长有效期 | [验收 PASS](spec-041-web-session-lifetime/acceptance.md) |
-| [042](spec-042-general-assistant-sandbox/spec.md) | 通用问答、隔离代码执行与文件成果交付 | 已完成 |
-| [043](spec-043-project-directory-organization/spec.md) | Web、公司后端与 Electron 代码按职责归组 | [验收 PASS](spec-043-project-directory-organization/acceptance.md) |
-| [044](spec-044-web-full-system-testing/spec.md) | Web 全功能、真实 Agent 多轮与破坏性测试 | 部分修复，2 类技术问答未通过 |
-| [045](spec-045-sandbox-built-in-toolkit/spec.md) | 沙盒结构化内置工具、自由 Python 与统一执行 | 已完成 |
-| [046](spec-046-assistant-progress-clarity/spec.md) | 工作助手具体操作名称、当前活动与精简进度列表 | [验收 PASS](spec-046-assistant-progress-clarity/acceptance.md) |
+## 当前规格
+
+- [Spec 060：Agent 可靠性专项修补](spec-060-agent-reliability-repair/spec.md) — 原功能验收完成；计划 Schema 与工具说明契约已修复并定向复验，max 对照波动较大，稳定提速仍未验证；[验收与限制](spec-060-agent-reliability-repair/acceptance.md)、[改造目录](spec-060-agent-reliability-repair/plan.md)。
+
+- [Spec 059：Agent 全量测试与工具循环排查](spec-059-agent-comprehensive-testing/spec.md) — 测试交付通过独立验收，产品问题未修复；[测试报告](spec-059-agent-comprehensive-testing/implementation.md)、[问题清单](spec-059-agent-comprehensive-testing/issues.md)、[验收](spec-059-agent-comprehensive-testing/acceptance.md)。
+
+- [Spec 058：Agent 统一任务预算与进度反馈](spec-058-agent-task-budget/spec.md) — 已实施，独立验收通过；统一内部预算、恢复计数与收尾，用户仅看执行进度和结果；[改造计划](spec-058-agent-task-budget/plan.md)、[测试与限制](spec-058-agent-task-budget/implementation.md)、[返工验收](spec-058-agent-task-budget/acceptance-rework.md)。
+
+- [Spec 057：本地启动与容器管理统一](spec-057-local-runtime-consolidation/spec.md) — 已实施并完成本机迁移，保留四个服务，CD 不变；[验收结果与限制](spec-057-local-runtime-consolidation/acceptance-rework.md)。
+
+- [Spec 056：Agent 全流程性能优化](spec-056-agent-end-to-end-performance/spec.md) — 流程减负已实施；系统检查通过，总体性能目标未证实，max 长等待尚未解决；[计划与改造目录](spec-056-agent-end-to-end-performance/plan.md)、[覆盖矩阵](spec-056-agent-end-to-end-performance/test-matrix.md)。
+
+- [Spec 055：聊天搭子响应速度与等待优化](spec-055-assistant-response-latency/spec.md) — 已实施，传输与交付协议简化已验收；low／max 真实计时及质量、网络限制见[实施结果](spec-055-assistant-response-latency/implementation.md)；[实施计划与改造目录](spec-055-assistant-response-latency/plan.md)。
+
+- [Spec 054：Web 全量测试与先验验证](spec-054-web-comprehensive-testing/spec.md) — 已实施与多轮修复；原始成绩保留，剩余模型回答质量限制不再专项修补；[测试计划](spec-054-web-comprehensive-testing/plan.md)、[当前收尾方案与验证](spec-054-web-comprehensive-testing/rework.md#在线收尾简化)。
+
+- [Spec 053：工作助手思考强度与输出限制调整](spec-053-assistant-reasoning-controls/spec.md) — 已实施直接强度配置，独立验收通过；[改造计划与目录](spec-053-assistant-reasoning-controls/plan.md)、[验收报告](spec-053-assistant-reasoning-controls/acceptance.md)。
+
+- [Spec 052：工作助手正文流式输出](spec-052-assistant-streaming-replies/spec.md) — 已完成；[改造计划与目录](spec-052-assistant-streaming-replies/plan.md)、[验收报告](spec-052-assistant-streaming-replies/acceptance.md)。
+
+- [Spec 051：工作助手跨会话记忆](spec-051-assistant-cross-conversation-memory/spec.md) — 已实施，独立验收通过；[改造计划与目录](spec-051-assistant-cross-conversation-memory/plan.md)、[验收报告](spec-051-assistant-cross-conversation-memory/acceptance.md)。
 
 ## 文档分工
 
@@ -35,4 +33,4 @@
 
 ## 生命周期
 
-新 Spec 从 **047** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。普通修改不额外建立 Spec。
+新 Spec 从 **061** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

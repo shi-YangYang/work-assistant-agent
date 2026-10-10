@@ -1,4 +1,5 @@
-import type { PersonaId } from '@paa/api-contracts'
+import type { ExecutionMode, PersonaId } from '@paa/api-contracts'
+import type { useReasoningEffort } from './useReasoningEffort'
 import type { PersonaInteraction } from './useConversationPersona'
 import { ApiError, isCancelled } from '@web/api/client'
 import { sendMessage, uploadAttachment } from '@web/features/assistant/api/requests'
@@ -18,6 +19,8 @@ export function useMessageSubmission({
   conversationId,
   personaId,
   interaction,
+  execution,
+  reasoning,
   onSent,
   previewUploading,
   capturing,
@@ -33,6 +36,8 @@ export function useMessageSubmission({
   conversationId?: string
   personaId: PersonaId
   interaction?: PersonaInteraction
+  reasoning?: ReturnType<typeof useReasoningEffort>
+  execution?: { ready: boolean; selected: ExecutionMode; refresh: () => Promise<void> }
   onSent: (id: string, personaId: PersonaId) => void
   previewUploading: boolean
   capturing: boolean
@@ -53,6 +58,8 @@ export function useMessageSubmission({
   const sendingRef = useRef(false)
   async function send() {
     if (
+      (execution && !execution.ready) ||
+      (reasoning && !reasoning.reference()) ||
       (!composer.pending && task && !task.canSubmit()) ||
       sendingRef.current ||
       retryWait ||
@@ -104,7 +111,17 @@ export function useMessageSubmission({
           )
         }
         uploading = undefined
-        current.pending = messageSubmission(current, conversationId, personaId)
+        const reasoningReference = reasoning?.reference()
+        // Another conversation may start saving while attachments are uploading.
+        // Keep the uploaded draft until its account-level preference is ready.
+        if (reasoning && !reasoningReference) return
+        current.pending = messageSubmission(
+          current,
+          conversationId,
+          personaId,
+          execution?.selected,
+          reasoningReference,
+        )
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: current.pending }),
         )
@@ -134,12 +151,21 @@ export function useMessageSubmission({
       // and an idempotency conflict. Network/5xx/invalid replies remain uncertain.
       if (
         e instanceof ApiError &&
-        ([400, 403, 404, 413, 415, 422, 429].includes(e.status) || e.code === 'conversation_busy')
+        ([400, 403, 404, 413, 415, 422, 429].includes(e.status) ||
+          [
+            'conversation_busy',
+            'execution_settings_changed',
+            'reasoning_settings_changed',
+          ].includes(e.code ?? ''))
       ) {
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: undefined }),
         )
       }
+      if (e instanceof ApiError && e.code === 'reasoning_settings_changed')
+        void reasoning?.refresh()
+      if (e instanceof ApiError && e.code === 'execution_settings_changed')
+        void execution?.refresh()
       if (e instanceof ApiError && e.code === 'conversation_busy') void task?.refresh()
       if (active.current && !isCancelled(e)) {
         if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)

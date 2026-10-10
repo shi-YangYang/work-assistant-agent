@@ -94,7 +94,12 @@ async def execute(context, *, code='', title, references=None, identifier='', re
         clean['fileChecks'] = [{'name': item['name'], 'formatReadable': True,
                                'fontCheck': '中文字体嵌入已检查；PDF标准字体无需嵌入' if item['mimeType'] == 'application/pdf' else '未检查字体嵌入，不可声称已嵌入',
                                'layoutCheck': '未进行自动视觉验收，不由格式校验保证'} for item in outputs]
-        payloads = [(item, await client.file(key, item)) for item in outputs] if result['state'] == 'succeeded' else []
+        from app.core.concurrency import map_limited
+        async def download(item):
+            return item, await client.file(key, item)
+        # Metadata and aggregate byte limits were checked above; each download
+        # still verifies its own size/hash before any durable file is published.
+        payloads = await map_limited(outputs, download) if result['state'] == 'succeeded' else []
         async with context.sessions.begin() as db:
             job, actor = await lease(db, context)
             message = await owned(db, Message, job.target_id, actor)

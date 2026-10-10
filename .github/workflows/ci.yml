@@ -60,8 +60,14 @@ jobs:
   company:
     name: Company API and Web
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
+      redis:
+        image: redis:7.4.2-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 2s --health-retries 10
       postgres:
         image: postgres:17.11-bookworm
         env:
@@ -74,6 +80,8 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company_test
+      PAA_REPLY_STREAM_REDIS_URL: redis://127.0.0.1:6379/0
+      PAA_REPLY_STREAM_TEST_URL: redis://127.0.0.1:6379/0
       DATABASE_TEST_URL: postgresql+psycopg://paa:controlled-ci-password@127.0.0.1:5432/paa_company_test
       PAA_COOKIE_SECURE: 'false'
       PAA_WEB_ORIGIN: http://test
@@ -92,11 +100,19 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run db:company
       - run: npm run test:server
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
-          PYTEST_ADDOPTS: --tb=short --durations=15
+          # run.mjs supplies -q; -vv keeps the active test visible on timeout.
+          PYTEST_ADDOPTS: -vv --tb=short --durations=20 -o faulthandler_timeout=90 --junitxml=artifacts/ci/server-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: company-server-tests
+          path: artifacts/ci/server-tests.xml
+          if-no-files-found: ignore
       - run: npm run typecheck:web
       - run: npm run test:web
+      - run: node --test tests/deploy/local-*.test.mjs tests/sandbox/local-dev.test.mjs
       - run: npm run build:web
 
   desktop:

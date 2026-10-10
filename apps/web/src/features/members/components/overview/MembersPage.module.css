@@ -1,0 +1,108 @@
+.page {
+  min-width: 0;
+}
+.count {
+  font-size: 13px;
+  color: var(--muted);
+}
+.loading {
+  padding: 28px 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.list {
+  width: 100%;
+}
+.columns,
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px 60px;
+  align-items: center;
+  gap: 24px;
+}
+.columns {
+  padding: 10px 0;
+  color: var(--muted);
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.columns > :last-child {
+  text-align: right;
+}
+.row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.member {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.identity {
+  min-width: 0;
+}
+.identity h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 550;
+}
+.identity p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.identity h3,
+.identity p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.created {
+  font-size: 13px;
+  color: var(--muted);
+}
+.date-label {
+  display: none;
+}
+.row-actions {
+  justify-self: end;
+}
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-top: 16px;
+}
+.pagination > nav {
+  margin-top: 0;
+}
+@media (max-width: 760px) {
+  .add-label {
+    display: none;
+  }
+  .columns {
+    display: none;
+  }
+  .row {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 4px 12px;
+  }
+  .member {
+    grid-column: 1;
+  }
+  .created {
+    grid-column: 1;
+    padding-left: 46px;
+    font-size: 12px;
+  }
+  .date-label {
+    display: inline;
+  }
+  .row-actions {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+}

@@ -26,6 +26,7 @@ async def ask(context, raw_questions, *, continue_task=False):
             snapshot = await resume(db, actor, job, source, requested=True)
             context.task_snapshot = snapshot
             await settle_natural_reply(db, actor, job, {'relation': 'continue'})
+            context.model_binding = job.model_binding
         values = [q.model_dump() for q in questions]
         for question in values:
             for option in question['options']:

@@ -9,6 +9,7 @@ import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { retryJob } from '@web/features/jobs/api/requests'
 import { TaskProgress } from './TaskProgress'
+import { isConversationalClarification } from '../utils/progress'
 import { LoaderCircle } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 
@@ -28,6 +29,7 @@ interface JobNoticeProps {
   job: NonNullable<WorkMessage['job']>
   refresh: () => void
   showNodes?: boolean
+  replyActivity?: string
   retryBlocked?: boolean
   onRetryStart?: () => boolean
   onRetrySettled?: (job: Job | null) => void
@@ -60,6 +62,7 @@ function JobRetryNotice({
   job: sourceJob,
   refresh,
   showNodes = false,
+  replyActivity,
   onRetryJob,
   retryBlocked = false,
   onRetryStart,
@@ -100,8 +103,12 @@ function JobRetryNotice({
   const assistant = showNodes && job.kind === 'message'
   const progress =
     showNodes &&
-    !!job.nodes?.length &&
-    !(job.state === 'running' && ['preparing', 'parsing', 'transcribing'].includes(job.stage || ''))
+    (!!replyActivity ||
+      ((!!job.nodes?.length || (assistant && job.state === 'running')) &&
+        !(
+          job.state === 'running' &&
+          ['preparing', 'parsing', 'transcribing'].includes(job.stage || '')
+        )))
   const reviewOnly = job.phase === 'reply_review'
   const retryLabel = progress ? '重试此步骤' : reviewOnly ? '重试答复核对' : '重试处理'
   const retry = async (useCurrentConfig = false) => {
@@ -153,6 +160,7 @@ function JobRetryNotice({
   const confirmRetry = (mode: 'original' | 'current') => {
     update({ error: '', confirmation: mode })
   }
+  if (assistant && !replyActivity && isConversationalClarification(job)) return null
   if (progress || (assistant && ['failed', 'awaiting_retry'].includes(job.state)))
     return (
       <TaskProgress
@@ -162,6 +170,7 @@ function JobRetryNotice({
         onRetry={() => void retry()}
         expanded={expanded}
         onExpandedChange={onExpandedChange}
+        replyActivity={assistant ? replyActivity : undefined}
       />
     )
   if (job.state === 'cancelled')
@@ -252,9 +261,6 @@ function JobRetryNotice({
               : '将使用这条消息原来的模型配置重新处理。'}
           </p>
           {reviewOnly && <p>仅重新核对已有答复，已保存的业务操作不会重复执行。</p>}
-          <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-            模型服务可能已处理过上次请求，重试可能再次产生用量。
-          </p>
           <ErrorNotice>{error}</ErrorNotice>
           <div className={layoutStyles['form-actions']}>
             <button disabled={busy} onClick={() => update({ confirmation: null })}>

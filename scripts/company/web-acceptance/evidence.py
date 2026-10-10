@@ -13,6 +13,7 @@ async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--metadata', required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--tool-results', help='Optional synthetic tool inputs/results for independent grading; excludes model reasoning')
     args = parser.parse_args()
     metadata, private = load_environment(args.metadata)
     output = Path(args.output)
@@ -29,15 +30,17 @@ async def main():
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     settings = Settings()
     engine, sessions = database(settings)
-    company = metadata['companies']['real']
+    companies = [metadata['companies'][key] for key in ('real', 'primary')]
     try:
         async with sessions() as db:
-            jobs = (await db.scalars(select(Job).where(Job.company_id == company))).all()
-            messages = (await db.scalars(select(Message).where(Message.company_id == company))).all()
-            usages = (await db.scalars(select(ModelUsage).where(ModelUsage.company_id == company))).all()
-            threads = (await db.execute(text('SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id LIKE :prefix'), {'prefix': company + ':%'})).scalars().all()
+            jobs = (await db.scalars(select(Job).where(Job.company_id.in_(companies)))).all()
+            messages = (await db.scalars(select(Message).where(Message.company_id.in_(companies)))).all()
+            usages = (await db.scalars(select(ModelUsage).where(ModelUsage.company_id.in_(companies)))).all()
+            threads = []
+            for company in companies:
+                threads.extend((await db.execute(text('SELECT DISTINCT thread_id FROM checkpoints WHERE thread_id LIKE :prefix'), {'prefix': company + ':%'})).scalars().all())
         result = {
-            'baseCommit': metadata['commit'], 'sourceState': 'Working tree with uncommitted Spec044 changes',
+            'baseCommit': metadata['commit'], 'sourceState': 'Working tree with ' + metadata.get('suite', 'spec044') + ' changes',
             'messages': len(messages), 'jobsByState': dict(Counter(j.state for j in jobs)),
             'activeJobs': [{'id': j.id, 'kind': j.kind, 'state': j.state} for j in jobs if j.state in ('queued', 'running')],
             'modelUsage': {
@@ -50,6 +53,7 @@ async def main():
         }
         tools = defaultdict(lambda: {'success': 0, 'error': 0, 'jobs': set()})
         seen = set()
+        tool_results = []
         from app.agent.harness import build_graph
         from app.tasks.context import RunContext
         from langchain_openai import ChatOpenAI
@@ -60,7 +64,7 @@ async def main():
                 job = by_id.get(job_id)
                 if not job or thread.endswith(':context'):
                     continue
-                context = RunContext(job.owner_id, company, job.id, job.fence, sessions, settings)
+                context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings)
                 graph = build_graph(settings, saver, context, model=ChatOpenAI(model='read-only-state', api_key='unused'))
                 # get_state reconstructs delta-backed channels. It never invokes
                 # a graph, model, tool or business write.
@@ -73,11 +77,19 @@ async def main():
                     if not identifier or not name or (job_id, identifier) in seen:
                         continue
                     seen.add((job_id, identifier))
+                    if args.tool_results:
+                        call = next((call for msg in values for call in getattr(msg, 'tool_calls', []) if call['id'] == identifier), {})
+                        tool_results.append({'jobId': job_id, 'name': name, 'arguments': call.get('args', {}), 'status': getattr(message, 'status', 'success'), 'content': message.content})
                     row = tools[name]
                     row['error' if getattr(message, 'status', 'success') == 'error' else 'success'] += 1
                     row['jobs'].add(job_id)
         result['toolOutcomes'] = {name: {**row, 'jobs': sorted(row['jobs'])} for name, row in sorted(tools.items())}
         result['toolOutcomeScope'] = 'Actual checkpoint ToolMessage status, not independent semantic acceptance'
+        if args.tool_results:
+            target = Path(args.tool_results)
+            if target.exists():
+                raise RuntimeError('Refusing to overwrite tool evidence')
+            target.write_text(json.dumps(tool_results, ensure_ascii=False, indent=2) + '\n')
         output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
         print({key: result[key] for key in ('messages', 'jobsByState', 'activeJobs', 'modelUsage')})
         print('Tool names observed:', ', '.join(tools))

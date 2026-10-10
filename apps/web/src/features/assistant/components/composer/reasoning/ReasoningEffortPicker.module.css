@@ -1,0 +1,64 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 36px;
+  max-width: 100px;
+  padding: 0 6px;
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.trigger:disabled {
+  opacity: 1;
+}
+.trigger[aria-busy='true'] {
+  color: var(--muted);
+}
+.menu {
+  position: fixed;
+  z-index: 1200;
+  width: 160px;
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid var(--control);
+  border-radius: 12px;
+  background: var(--glass);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px);
+}
+.menu button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+}
+.menu button span {
+  overflow-wrap: anywhere;
+}
+.menu button:hover,
+.menu button:focus-visible {
+  background: var(--subtle);
+}
+@media (max-width: 760px) {
+  .trigger {
+    min-height: 44px;
+    max-width: 70px;
+    padding-inline: 4px;
+  }
+}

@@ -1,11 +1,5 @@
 import { expect, it } from 'vitest'
-import {
-  breadcrumbPoints,
-  detailContext,
-  detailReturn,
-  detailState,
-  pageName,
-} from '../../apps/web/src/utils/navigation'
+import { detailReturn, detailState, pageName } from '../../apps/web/src/utils/navigation'
 
 it('preserves the team filters and selected member tab through nested report, work and source pages', () => {
   const team = { pathname: '/team', search: '?q=员工&status=blocked&start=2026-09-01', state: null }
@@ -19,7 +13,6 @@ it('preserves the team filters and selected member tab through nested report, wo
   const source = { pathname: '/messages/source', search: '', state: detailState(work) }
   let back = detailReturn(source.pathname, source.state)
   expect(back.path).toBe('/work/work')
-  expect(detailContext(back.state)).toBe('团队看板')
   back = detailReturn(back.path, back.state)
   expect(back.path).toBe('/reports/report')
   back = detailReturn(back.path, back.state)
@@ -48,24 +41,17 @@ it('has deterministic direct-entry fallbacks and rejects external or malformed r
   expect(pageName('/messages/source')).toBe('原始上报')
 })
 
-it('retains every distinct business ancestor and rejects cyclic breadcrumb histories', () => {
-  const team = { pathname: '/team', search: '?status=blocked', state: null }
-  const member = { pathname: '/team/employee', search: '?tab=reports', state: detailState(team) }
-  const report = { pathname: '/reports/r', search: '', state: detailState(member) }
-  const work = { pathname: '/work/w', search: '', state: detailState(report) }
-  expect(breadcrumbPoints('/messages/m', detailState(work)).map((point) => point.path)).toEqual([
-    '/team?status=blocked',
-    '/team/employee?tab=reports',
-    '/reports/r',
+it('uses a supplied semantic fallback only when no valid return context exists', () => {
+  const fallback = { path: '/assistant/chat', state: null, label: '会话' }
+  expect(detailReturn('/messages/m', null, fallback)).toEqual(fallback)
+  expect(detailReturn('/messages/m', { returnTo: { path: '/work/w' } }, fallback).path).toBe(
     '/work/w',
-    '/messages/m',
-  ])
-  const cycle: { returnTo: { path: string; state: unknown } } = {
-    returnTo: { path: '/work/w', state: null },
-  }
-  cycle.returnTo.state = cycle
-  expect(breadcrumbPoints('/messages/m', cycle)).toHaveLength(2)
-  expect(detailReturn('/messages/m', { returnTo: { path: '/assistant/conversation' } }).path).toBe(
-    '/assistant/conversation',
   )
+})
+
+it('exposes personal memory settings to both employee and administrator accounts', async () => {
+  const { settingsPages } = await import('../../apps/web/src/app/layout/navigation-items')
+  const entry = settingsPages.find((page) => page.path === '/settings/memory')
+  expect(entry?.title).toBe('记忆')
+  expect(entry?.admin).not.toBe(true)
 })

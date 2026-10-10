@@ -147,6 +147,8 @@ async def remove_work(db, item, *, executing_job=None):
     report_jobs = (await db.scalars(select(Job).where(Job.owner_id == item.owner_id, Job.kind == 'report', Job.state.in_(['queued', 'failed', 'awaiting_retry'])))).all()
     affected_reports = {job.target_id for job in report_jobs if revisions.intersection(job.result.get('sourceIds', []))}
     await invalidate_context(db, item.owner_id, item.company_id, {item.id, *affected_reports}, sources_changed=True, executing_job=executing_job)
+    from app.modules.work.materials.cleanup import retire_work_files
+    await retire_work_files(db, item)
     item.deleted, item.title, item.content = True, '', {}
     item.revision += 1
     await db.flush()

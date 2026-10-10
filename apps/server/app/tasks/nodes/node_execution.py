@@ -6,10 +6,12 @@ import random
 import time
 from app.core.digests import digest
 from app.security.versions import validate_cached_versions
-from app.tasks.context import BudgetExceeded, LostLease
+from app.tasks.context import BudgetExceeded, LostLease, ToolBudgetExceeded
 from app.tasks.lease import lease
 from app.tasks.nodes.node_failures import classify
 from app.tasks.nodes.node_state import MAX_NODES, MAX_OUTPUT_BYTES, execution, save
+from app.tasks.budget import service as budget
+from app.tasks.budget.state import TaskBudgetStopped, policy
 from app.tasks.retry import Attempt, Failure, NodeFailed, run
 
 active_node = contextvars.ContextVar('assistant_node', default=None)
@@ -20,6 +22,7 @@ async def initialize(context, input_key):
         return
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
+        budget.ensure(job, context)
         state = execution(job)
         previous_scope = state.get('scope')
         revision = state.get('dataRevision', 0)
@@ -31,7 +34,7 @@ async def initialize(context, input_key):
                                   and row.get('scope') == previous_scope
                                   for row in state.get('nodes', []))
             if not pending_receipt:
-                await validate_cached_versions(db, actor, state.get('readVersions', {}))
+                await validate_cached_versions(db, actor, state.get('readVersions', {}), refresh_work_versions=state.get('refreshWorkVersions', {}))
         except Exception as error:
             from fastapi import HTTPException
             from app.integrations.models.transport import ProviderError
@@ -46,20 +49,22 @@ async def initialize(context, input_key):
             # prior raw results must not become a second source of business truth.
             for row in state.get('nodes', []):
                 row.pop('output', None)
-            state = {'scope': scope, 'dataRevision': revision, 'nodes': state.get('nodes', [])[-32:]}
+            state = {**{key: state[key] for key in ('actualCalls', 'inputTokens', 'outputTokens') if key in state}, 'scope': scope, 'dataRevision': revision, 'nodes': state.get('nodes', [])[-32:]}
             context.read_versions.clear()
+            context.refresh_work_versions.clear()
             # A reply and its evidence belong to the same data/configuration
             # scope as the graph. Business receipts remain for safe replay.
-            stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete'}
+            stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete', 'workChangeRequirements'}
             if previous_scope:
-                stale.update(('operationFeedback', 'operationFeedbackKeys'))
+                stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources'))
             job.result = {key: value for key, value in job.result.items() if key not in stale}
-        state.setdefault('deadline', time.time() + 420)
+        state['deadline'] = context.node_deadline
         state.setdefault('nodes', [])
         save(job, state)
         context.node_scope, context.node_deadline = scope, state['deadline']
         context.read_versions.update(state.get('readVersions', {}))
-        context.calls = state.get('actualCalls', 0)
+        context.refresh_work_versions.update(state.get('refreshWorkVersions', {}))
+        context.calls = context.task_budget['models']
         context.input_tokens = state.get('inputTokens', 0)
         context.output_tokens = state.get('outputTokens', 0)
 
@@ -70,13 +75,14 @@ async def validate_config(db, context):
         await resolve_bound(db, context.settings, context.company_id, context.model_binding, 'assistant')
 
 
-async def check(context):
+async def check(context, *, allow_work_refresh=False):
     async with context.sessions() as db:
         _, actor = await lease(db, context)
         await validate_config(db, context)
-        await validate_cached_versions(db, actor, context.read_versions)
+        await validate_cached_versions(db, actor, context.read_versions,
+                                       refresh_work_versions=context.refresh_work_versions if allow_work_refresh else None)
     if time.time() >= context.node_deadline:
-        raise BudgetExceeded('本次处理已达到时间限制，已停止；可重试此步骤')
+        raise TaskBudgetStopped('time')
 
 
 async def recover_receipt(db, context, job, actor, row):
@@ -103,7 +109,8 @@ async def recover_receipt(db, context, job, actor, row):
 
 async def execute_node(context, *, identity, kind, label, operation, encode=lambda x: x,
                        decode=lambda x: x, outcome=None, safe_replay=True, restore=None,
-                       receipt_output=lambda x: x, on_failure=None, presentation=None, result_presentation=None):
+                       receipt_output=lambda x: x, on_failure=None, presentation=None, result_presentation=None,
+                       allow_work_refresh=False):
     if not context.node_retry:
         return await operation()
     parent = active_node.get()
@@ -115,13 +122,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
         state = execution(job)
         row = next((item for item in state['nodes'] if item['id'] == identifier), None)
         if row is None:
-            active = [item for item in state['nodes'] if item['scope'] == context.node_scope]
-            count = sum(item['kind'] == kind for item in active)
-            # Planning, authorization and final review share the durable
-            # 32-call provider budget. A second aggregate cap of eight nodes
-            # could reject the final review after valid multi-step writes.
-            if len(state['nodes']) >= MAX_NODES or kind == 'tool' and count >= 16:
-                raise BudgetExceeded('本次处理步骤已达到限制，请补充说明后继续')
+            limits = policy(context.task_budget) if context.task_budget else None
+            if len(state['nodes']) >= (limits.nodes if limits else MAX_NODES):
+                raise TaskBudgetStopped('nodes')
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,
                    'round': job.attempt, 'totalRetries': 0, 'resumable': True}
@@ -134,7 +137,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             # can reach the model, just as it does for graph checkpoint restores.
             if restore:
                 return decode(await restore(db, actor, row['output']))
-            await validate_cached_versions(db, actor, row.get('readVersions', {}))
+            await validate_cached_versions(db, actor, row.get('readVersions', {}),
+                                           refresh_work_versions=context.refresh_work_versions if kind == 'model' and allow_work_refresh else None)
             context.read_versions.update(state.get('readVersions', {}))
             return decode(row['output'])
         if row['state'] in ('failed', 'cancelled') and not row.get('receiptId'):
@@ -142,6 +146,11 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                                                cancelled=row['state'] == 'cancelled'), identifier)
             if on_failure is None:
                 raise prior_failure
+        if kind == 'tool' and not row.get('receiptId') and not prior_failure:
+            try:
+                budget.consume(job, context, 'tool', identity=identifier)
+            except TaskBudgetStopped as error:
+                raise ToolBudgetExceeded(str(error)) from error
         attempt = Attempt(row['attempts'], row.get('nextAt'))
         if row['state'] == 'running':
             if not safe_replay and not row.get('receiptId'):
@@ -150,6 +159,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             # on a lease/fence change. Receipts are recovered before retrying.
             attempt.next_at = time.time() + 1
     token = active_node.set((identifier, kind))
+    tool_token = budget.active_tool.set(True) if kind == 'tool' else None
 
     async def recover():
         async with context.sessions.begin() as db:
@@ -168,6 +178,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row['totalRetries'] += max(0, current.count - max(1, row['attempts']))
             row.update(state=status, attempts=current.count, nextAt=current.next_at,
                        errorCode=failure.code if failure else '', error=failure.message[:240] if failure else '')
+            if kind == 'model' and status == 'retry_wait':
+                from app.tasks.feedback.reply_stream import transition
+                transition(job, 'withdrawn', new=True)
             if kind == 'compaction' and job.result.get('contextUsage'):
                 job.result = {**job.result, 'contextUsage': {**job.result['contextUsage'], 'state': 'retry_wait' if status == 'retry_wait' else 'failed' if status in ('failed', 'cancelled') else 'compacting'}}
             save(job, state)
@@ -176,9 +189,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
         final_failure = None
         try:
             if prior_failure:
-                await check(context)
+                await check(context, allow_work_refresh=allow_work_refresh)
                 raise prior_failure
-            result = await run(operation, classify=classify, before=lambda: check(context), emit=emit,
+            result = await run(operation, classify=classify, before=lambda: check(context, allow_work_refresh=allow_work_refresh), emit=emit,
                                attempt=attempt, deadline=context.node_deadline, jitter=lambda: random.uniform(0, .2),
                                recover=recover if kind == 'tool' else None)
         except NodeFailed as error:
@@ -210,6 +223,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                 save(job, state)
                 raise BudgetExceeded('恢复数据超过本次限制，请缩小处理范围')
             state['readVersions'] = context.read_versions
+            state['refreshWorkVersions'] = dict(context.refresh_work_versions)
             save(job, state)
         return result
     except NodeFailed as error:
@@ -225,3 +239,5 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
         raise
     finally:
         active_node.reset(token)
+        if tool_token is not None:
+            budget.active_tool.reset(tool_token)

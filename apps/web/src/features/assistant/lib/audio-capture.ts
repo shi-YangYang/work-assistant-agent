@@ -3,6 +3,7 @@ import type {
   DeliverableReference,
   ExecutionMode,
   PersonaId,
+  ReasoningReference,
   WorkReference,
   WorkReferenceView,
 } from '@paa/api-contracts'
@@ -27,13 +28,12 @@ export type Composer = {
   replyTo?: string
   sending?: boolean
   personaId?: PersonaId
-  executionMode?: ExecutionMode
-  fullAccessConfirmed?: boolean
   submissionPersonaId?: PersonaId
   uploading?: string
   pending?: {
     key: string
     body: {
+      reasoning?: ReasoningReference
       conversationId?: string
       newConversation?: boolean
       personaId?: PersonaId

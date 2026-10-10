@@ -35,6 +35,11 @@ async def settle_natural_reply(db, actor, job, interpretation):
         return
     message = await owned(db, Message, job.target_id, actor)
     if interpretation.get('relation') == 'continue':
+        from copy import deepcopy
+        from app.tasks.models import Job
+        original = await db.scalar(select(Job).where(Job.id == row.job_id, Job.company_id == actor.company_id, Job.owner_id == actor.id))
+        if original and original.model_binding:
+            job.model_binding = deepcopy(original.model_binding)
         row.state, row.answers = 'answered', [{'questionId': question['id'], 'optionIds': [], 'text': message.text} for question in row.questions]
         row.continuation = {'messageId': message.id, 'jobId': job.id, 'conversationId': message.conversation_id}
     else:

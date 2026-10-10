@@ -1,0 +1,40 @@
+{
+  "revision": "059-1",
+  "applicationCommit": "12c4db10",
+  "caseFile": "cases.json",
+  "cases": 80,
+  "multiTurn": 62,
+  "roles": {
+    "realAdmin": 38,
+    "realEmployee": 42
+  },
+  "holdout": 20,
+  "loopFocus": 46,
+  "efforts": {
+    "high": 11,
+    "max": 9,
+    "low": 60
+  },
+  "highRiskRepetition": {
+    "caseIds": ["T10", "T24", "T25", "T51", "T52", "T55", "T61", "T62", "T63", "T64", "T65", "T70"],
+    "repetitions": 3,
+    "firstRun": "included in first80",
+    "additionalRunCount": 24,
+    "reset": "fresh conversations and reset synthetic memory; work fixtures get run-specific suffix, no retries of failed cases"
+  },
+  "watchdogSeconds": 1920,
+  "firstResults": "immutable",
+  "caseSha256": "fc34f6bae9a8bd51ed9c7b2f1ab16ce41f7d12261924fad273a9d481ec4b9bcf",
+  "allowProductionChanges": false,
+  "modelRequestsHardLimit": null,
+  "matchedEffortComparison": {
+    "low": "T77",
+    "max": "T78",
+    "persona": "professional",
+    "mode": "auto",
+    "change": "Aligned before any HTTP real calls"
+  },
+  "preRequestReview": "Corrected matched pair persona/mode; added explicit per-turn seven business mutation maxima and report submit/delete/multi-work followup before any HTTP case was run.",
+  "historicalHoldoutReused": 12,
+  "approvalPolicy": "Per-turn explicit mutation allowance only. No blind confirmation."
+}

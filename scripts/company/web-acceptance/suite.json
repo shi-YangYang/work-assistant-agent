@@ -1,0 +1,21 @@
+{
+  "revision": "054-1",
+  "baselineCommit": "48452f69c8cd6b79c3005f8a698ae63a42b8b9ad",
+  "caseFile": "cases.json",
+  "caseSha256": "c315b45cbfc13d8fb948930b8dc2528d52eb7091d3de9be7d97a621e8c471b78",
+  "roles": {
+    "realAdmin": 29,
+    "realEmployee": 31
+  },
+  "cases": 60,
+  "multiTurn": 42,
+  "browser": 12,
+  "holdout": 12,
+  "feeLimit": null,
+  "requestLimit": null,
+  "firstResults": "append-only",
+  "completion": "frozen coverage + necessary defect regression",
+  "grading": "individual goal + forbidden outcomes + records/files; model judge advisory only",
+  "firstRunFrozenSha256": "c82367512464d80bbcfc1fdc991beb7a558c22a6758a8c131e33e6d5ba647190",
+  "caseIdentity": "JSON content unchanged; first-run frozen file precedes formatting"
+}

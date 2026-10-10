@@ -1,6 +1,8 @@
 .work-search {
   position: relative;
-  flex: 1 1 240px;
+  width: 320px;
+  max-width: 100%;
+  flex: 0 1 320px;
   min-width: 0;
 }
 .work-search > svg {
@@ -12,15 +14,26 @@
   pointer-events: none;
 }
 .work-search > input {
-  padding-left: 36px;
-  min-height: 37px;
+  padding: 6px 44px 6px 36px;
+  min-height: 36px;
   font-size: 13px;
-  border-color: transparent;
-  border-radius: 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
   background: var(--subtle);
 }
-@container (max-width: 400px) {
+.work-search > button {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+@media (max-width: 760px) {
   .work-search {
+    width: 100%;
     flex-basis: 100%;
+  }
+  .work-search > input {
+    min-height: 44px;
+    font-size: 16px;
   }
 }

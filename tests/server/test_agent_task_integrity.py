@@ -31,29 +31,32 @@ pytestmark = pytest.mark.asyncio
 
 @pytest.mark.parametrize('complete', [True, False])
 @pytest.mark.parametrize('answer', ['已创建工作。', ''])
-async def test_partial_task_repairs_only_missing_step_and_never_claims_full_success(setup, monkeypatch, complete, answer):
+async def test_partial_task_preserves_missing_step_and_never_claims_full_success(setup, monkeypatch, complete, answer):
     calls, receipts = [], []
     async def graph(context, saver, content, model, **options):
         calls.append(options)
         context.intent_model = Judge()
-        # Replaying the first call must keep its receipt and object identity.
-        receipts.append(await execute(context, step=1, action='create_work', changes={'title': '任务A'}))
-        if options.get('repair_missing_action') and complete:
+        # A replay keeps the first operation's exact receipt and object identity.
+        for _ in range(2):
+            receipts.append(await execute(context, step=1, action='create_work', changes={'title': '任务A'}))
+        if complete:
             await execute(context, step=2, action='create_work', changes={'title': '任务B'})
         from fakes import set_delivery
-        await set_delivery(context, answer, business=True)
+        task = {'state': 'completed'} if complete else {'state': 'blocked', 'remaining': ['尚未创建任务B']}
+        await set_delivery(context, answer, business=True, task=task)
         return answer
-    class CompletionJudge:
+    class UnusedJudge:
         async def ainvoke(self, messages):
-            payload = json.loads(messages[-1].content)
-            return AIMessage(content=json.dumps({'issues': ([{'kind': 'execution', 'quote': payload['answer'], 'reason': '使用实际回执'}] if payload['answer'] else []) + ([{'kind': 'missing_action', 'reason': '尚未创建任务B'}] if len(payload['currentActions']) < 2 else [])}))
+            raise AssertionError('Explicit remaining state must not invoke a blanket prose judge')
     monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
-    data = await run_reply(setup, '分别创建任务A和任务B', '', CompletionJudge())
-    assert len(calls) == 2 and calls[1] == {'repair_missing_action': True}
+    data = await run_reply(setup, '分别创建任务A和任务B', '', UnusedJudge())
+    assert calls == [{}]
     assert receipts[0]['id'] == receipts[1]['id']
     assert len(data['actions']) == (2 if complete else 1)
     assert data['job']['state'] == ('succeeded' if complete else 'awaiting_input')
     assert data['job']['incompleteTask'] is not complete
+    assert data['job']['taskOutcome']['state'] == ('completed' if complete else 'partial')
+    assert data['job']['taskOutcome']['remaining'] == ([] if complete else ['尚未创建任务B'])
     feedback = await setup[3]['employee'].get('/api/v1/jobs/' + data['job']['id'] + '/feedback')
     assert feedback.json()['incompleteTask'] is not complete
     assert ('仍有操作未完成' in data['reply']) is not complete

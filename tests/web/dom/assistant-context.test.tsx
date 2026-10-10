@@ -89,11 +89,12 @@ it('shows unknown rather than zero, supports focus/touch detail, Escape and outs
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-it('shows real 1M capacity, output reserve, unknown capacity and no premature 90% rounding', () => {
+it('shows real 1M capacity without obsolete output reserve, unknown capacity and no premature 90% rounding', () => {
   const view = render(<ContextUsage usage={usage} />)
   fireEvent.click(screen.getByRole('button', { name: '上下文使用情况：约 1%' }))
   expect(screen.getByText('1,048,576 tokens')).toBeTruthy()
-  expect(screen.getByText('4,096 tokens')).toBeTruthy()
+  expect(screen.queryByText('4,096 tokens')).toBeNull()
+  expect(screen.queryByText('输出预留')).toBeNull()
   expect(contextUsageLabel({ ...usage, usedTokens: 943718 })).toBe('约 89%')
   expect(contextUsageLabel({ ...usage, usedTokens: 1048577 })).toBe('约 100%')
   view.rerender(<ContextUsage usage={{ ...usage, contextWindow: null }} />)
@@ -169,6 +170,34 @@ it('only shows unknown after the server confirms no estimate', async () => {
   const button = screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })
   await act(async () => request.resolve({ contextUsage: null }))
   expect(screen.getByRole('button', { name: '上下文使用情况：尚未计算' })).toBe(button)
+})
+
+it('keeps live usage in an open tooltip when a late empty restore arrives', async () => {
+  const request = deferred<{ contextUsage: Usage | null }>()
+  vi.mocked(readConversationContext).mockReturnValue(request.promise)
+  const view = render(viewHook())
+  const button = screen.getByRole('button', { name: '上下文使用情况：正在读取用量' })
+  fireEvent.focus(button)
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('tooltip').textContent).toBe('上下文使用情况 · 约 1%')
+  await act(async () => request.resolve({ contextUsage: null }))
+  expect(screen.getByRole('tooltip').textContent).toBe('上下文使用情况 · 约 1%')
+  view.rerender(
+    viewHook({
+      incoming: {
+        ...feedback,
+        state: 'succeeded',
+        seq: 5,
+        contextUsage: { ...usage, seq: 5, usedTokens: 210000 },
+      },
+    }),
+  )
+  fireEvent.click(screen.getByText('反馈'))
+  expect(screen.getByRole('tooltip').textContent).toBe('上下文使用情况 · 约 20%')
+  fireEvent.click(button)
+  expect(screen.getByRole('dialog').textContent).toContain('210,000 tokens')
+  expect(button.getAttribute('aria-label')).toBe('上下文使用情况：约 20%')
+  expect(readConversationContext).toHaveBeenCalledTimes(1)
 })
 
 it('retains the last estimate across acceptance and queued feedback, then ignores a late old restore', async () => {

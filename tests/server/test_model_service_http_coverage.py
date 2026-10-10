@@ -100,7 +100,7 @@ async def test_environment_import_http_is_explicit_encrypted_and_once_per_compan
         assert {(item['id'], item['model'], item['protocol']) for item in service.models} == {('assistant', 'legacy-chat', 'chat'), ('asr', 'legacy-asr', 'qwen-asr')}
         assert all(item['streaming'] is False for item in service.models)
         assistant = next(item for item in service.models if item['id'] == 'assistant')
-        assert assistant['presets'][0]['parameters'] == {'enable_thinking': False}
+        assert assistant['parameters'] == {'enable_thinking': False}
         revisions = (await db.scalars(select(ModelServiceRevision).where(ModelServiceRevision.service_id == service_id).order_by(ModelServiceRevision.revision))).all()
         assert [item.revision for item in revisions] == [1, 2]
         for item in revisions:

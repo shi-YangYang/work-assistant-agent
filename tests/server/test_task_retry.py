@@ -326,8 +326,8 @@ async def test_parallel_identical_tools_have_distinct_nodes_and_structured_refus
     assert outcome(ToolMessage(content='{"state":"running","job":{}}', tool_call_id='x'))[0] == 'succeeded'
 
 
-@pytest.mark.parametrize('malformed', ['missing_task', 'plain_text', 'unexpected_tool'])
-async def test_protocol_repair_retries_invalid_terminal_response_before_caching_success(setup, fast_nodes, monkeypatch, malformed):
+@pytest.mark.parametrize('malformed', ['missing_task', 'malformed_header', 'mixed_completion'])
+async def test_invalid_terminal_response_retries_before_caching_success(setup, fast_nodes, monkeypatch, malformed):
     from app.agent.harness import invoke_harness
     from fakes import wire_completion
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -342,32 +342,33 @@ async def test_protocol_repair_retries_invalid_terminal_response_before_caching_
         calls.append({'tools': [tool['function']['name'] for tool in tools or []], 'choice': tool_choice})
         await on_event('started')
         response = wire_completion(answer)
-        if len(calls) == 1 or len(calls) == 2 and malformed == 'plain_text':
-            response = {'role': 'assistant', 'content': answer}
-        elif len(calls) == 2 and malformed == 'missing_task':
-            function = response['tool_calls'][0]['function']
-            arguments = json.loads(function['arguments'])
-            arguments.pop('task')
-            arguments['answer'] += '</answer><parameter name="task">{"state":"completed"}'
-            function['arguments'] = json.dumps(arguments)
-        elif len(calls) == 2:
-            response['tool_calls'][0]['function'] = {'name': 'execute_business_action', 'arguments': json.dumps({'step': 1, 'action': 'create_work', 'changes': {'title': '不应创建'}})}
+        if len(calls) == 1:
+            if malformed == 'malformed_header':
+                response = {'role': 'assistant', 'content': '<!--noria:{broken-->invalid'}
+            elif malformed == 'missing_task':
+                function = response['tool_calls'][0]['function']
+                arguments = json.loads(function['arguments'])
+                arguments.pop('task')
+                function['arguments'] = json.dumps(arguments)
+            else:
+                response['tool_calls'].append({'type': 'function', 'id': 'forbidden-write', 'function': {
+                    'name': 'execute_business_action', 'arguments': json.dumps({
+                        'step': 1, 'action': 'create_work', 'changes': {'title': '不应创建'}})}})
         return {'choices': [{'message': response, 'finish_reason': 'tool_calls' if response.get('tool_calls') else 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         assert await invoke_harness(context, saver, '改成面对客户，更礼貌一点，时间地点不能改变。') == answer
         assert await invoke_harness(context, saver, '改成面对客户，更礼貌一点，时间地点不能改变。') == answer
-    assert len(calls) == 3
-    assert all(call == {'tools': ['finish_task'], 'choice': {'type': 'function', 'function': {'name': 'finish_task'}}} for call in calls[1:])
+    assert calls == [{'tools': ['load_tools'], 'choice': 'auto'}] * 2
     assert context.delivery['task']['state'] == 'completed'
     assert (await clients['employee'].get('/api/v1/work-items')).json()['items'] == []
     async with sessions() as db:
         job = await db.get(Job, context.job_id)
         nodes = [row for row in node_dtos(job) if row['kind'] == 'model']
-        assert len(nodes) == 2 and nodes[-1]['state'] == 'succeeded' and nodes[-1]['retries'] == 1
-        assert job.result['deliveryRepairs'] == ['protocol']
+        assert len(nodes) == 1 and nodes[0]['state'] == 'succeeded' and nodes[0]['retries'] == 1
+        assert not job.result.get('deliveryRepairs')
         usages = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == context.job_id).order_by(ModelUsage.created_at))).all()
-        assert [row.status for row in usages] == ['succeeded', 'failed', 'succeeded']
+        assert [row.status for row in usages] == ['failed', 'succeeded']
 
 
 async def test_harness_manual_resume_only_retries_failed_model_after_committed_tool(setup, fast_nodes, monkeypatch):
@@ -382,6 +383,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
     recovery = [False]
     async def chat(settings, config, key, messages, *, on_event, tools=None, **kwargs):
         await on_event('started')
+        messages = [m for m in messages if not (m['role'] == 'system' and m['content'].startswith('内部执行信息：'))]
         if not tools:
             payload = json.loads(messages[-1]['content'])
             if payload.get('task') == 'business_reply_review':
@@ -418,7 +420,7 @@ async def test_harness_manual_resume_only_retries_failed_model_after_committed_t
         await process_job(resumed, sessions, settings, saver)
     detail = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert detail['job']['state'] == 'succeeded', detail['job']
-    assert counts == {'initial': 1, 'intent': 1, 'final': 5, 'review': 1}
+    assert counts == {'initial': 1, 'intent': 1, 'final': 5, 'review': 0}
     assert len(detail['actions']) == 1
     recovered_node = next(row for row in detail['job']['nodes'] if row['id'] == failed_id)
     assert recovered_node['state'] == 'succeeded' and recovered_node['attempts'] == 1 and recovered_node['totalRetries'] == 3

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from contextvars import ContextVar
 from langchain_core.messages import AIMessage, AIMessageChunk
 from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_openai import ChatOpenAI
@@ -11,29 +12,56 @@ from app.tasks.lease import lease
 from pydantic import PrivateAttr
 
 
+# A shared model may serve internal work and user replies concurrently.
+from app.agent.runtime.budget import internal_call_kind
+
+
 def approximate_tokens(messages):
     from app.agent.context.context_usage import estimate_request
     return estimate_request(messages)
 
 
-async def reserve_call(context, kind, estimate=0):
-    retry = context.node_retry
+def response_timeout(context, streaming):
+    if not context.node_retry:
+        return 60
+    remaining = max(.01, context.node_deadline - time.time())
+    return remaining if streaming else min(60, remaining)
+
+
+async def request_with_deadline(request, *, timeout, idle_timeout=None):
+    """Only useful generation progress renews idle time, never the total deadline."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    async with asyncio.timeout_at(min(deadline, loop.time() + idle_timeout) if idle_timeout is not None else deadline) as guard:
+        def progress():
+            guard.reschedule(min(deadline, loop.time() + idle_timeout))
+        return await request(progress if idle_timeout is not None else None)
+
+
+async def reserve_call(context, kind, estimate=0, *, final_answer=False):
     from app.agent.context.context_usage import input_budget, MAX_CONTEXT_BYTES
-    cumulative = (input_budget(context, 0) or MAX_CONTEXT_BYTES) * (32 if retry else 8)
-    if context.calls >= (32 if retry else 8) or context.tools > 16 or (time.time() >= context.node_deadline if retry else time.monotonic() - context.started > 180) or context.input_tokens + estimate > cumulative or context.output_tokens >= (32000 if retry else 8000):
-        raise BudgetExceeded('本次处理已达到限制，请缩短内容后重试或补充说明')
+    from app.tasks.budget import service as budget
+    from app.tasks.budget.state import policy
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
+        state = budget.ensure(job, context)
+        maximum = policy(state).models if state else 8
+        cumulative = (input_budget(context, 0) or MAX_CONTEXT_BYTES) * maximum
+        consumed_input = job.result.get('nodeExecution', {}).get('inputTokens', 0) if context.node_retry else context.input_tokens
+        if consumed_input + estimate > cumulative:
+            raise BudgetExceeded('累计输入超出可用处理范围，请减少材料后重试')
+        if state:
+            budget.consume(job, context, 'model', final_answer=final_answer)
+        elif context.calls >= 8 or context.tools > 16 or time.monotonic() - context.started > 180 or context.output_tokens >= 8000:
+            raise BudgetExceeded('本次处理已达到限制，请缩短内容后重试或补充说明')
         from app.modules.model_services.usage.usage import usage_fields
         usage = ModelUsage(company_id=context.company_id, owner_id=context.owner_id, job_id=context.job_id, kind=kind, input_tokens=estimate, **usage_fields((context.model_binding or {}).get(kind), attempt=job.attempt, fence=job.fence))
-        if retry:
-            from app.tasks.nodes.node_state import execution, save
-            state = execution(job)
-            if state.get('actualCalls', 0) >= 32:
-                raise BudgetExceeded('本次实际模型调用已达到安全限制')
-            state['actualCalls'] = state.get('actualCalls', 0) + 1
-            state['inputTokens'] = state.get('inputTokens', 0) + estimate
-            save(job, state)
+        if context.node_retry:
+            from app.tasks.nodes.node_state import execution
+            nodes = execution(job)
+            nodes['actualCalls'] = context.calls
+            nodes['inputTokens'] = nodes.get('inputTokens', 0) + estimate
+            job.result = {**job.result, 'nodeExecution': nodes}
         db.add(usage)
         job.request_started, job.phase, job.updated_at = True, kind, now()
         if job.kind == 'report':
@@ -41,7 +69,8 @@ async def reserve_call(context, kind, estimate=0):
             update_feedback(job, 'generating', '')
         await db.flush()
         usage_id = usage.id
-    context.calls += 1
+    if not state:
+        context.calls += 1
     context.input_tokens += estimate
     return usage_id
 
@@ -64,17 +93,23 @@ class BoundedChatModel(ChatOpenAI):
             return await operation()
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
         # Message ids are graph/checkpoint identities, not provider call counters.
-        identity = digest({'request': payload, 'messages': [getattr(m, 'id', None) for m in messages]})
+        identity = digest({'request': payload, 'binding': context.model_binding, 'messages': [getattr(m, 'id', None) for m in messages]})
         from app.agent.runtime.progress import model_phase
-        label = model_phase(messages, context.job_id, nested=bool(parent))
+        from app.agent.runtime.budget import final_answer_call
+        label = '整理答复' if final_answer_call.get() else model_phase(messages, context.job_id, nested=bool(parent))
         return await execute_node(context, identity=identity, kind='model', label=label, operation=operation,
                                   presentation={'type': 'activity'},
-                                  encode=encode_result, decode=decode_result)
+                                  encode=encode_result, decode=decode_result, allow_work_refresh=True)
 
     async def _single(self, messages, stop=None, run_manager=None, **kwargs):
         context = self._run_context
         from app.agent.context.context_usage import estimate_request, ensure_input, output_reserve
         payload = self._get_request_payload(messages, stop=stop, **kwargs)
+        from app.agent.runtime.budget import final_answer_call, instruction
+        internal_kind = internal_call_kind.get()
+        note = instruction(context) if not internal_kind and self._completion_validator else None
+        if note:
+            payload['messages'] = [*payload['messages'], {'role': 'system', 'content': note}]
         estimate = estimate_request(payload['messages'], payload.get('tools', ()))
         output_limit = output_reserve(context, self.max_tokens)
         ensure_input(context, estimate, output_limit)
@@ -86,12 +121,62 @@ class BoundedChatModel(ChatOpenAI):
         async with context.sessions() as db:
             await lease(db, context)
             config, key = await resolve_bound(db, context.settings, context.company_id, context.model_binding or {}, context.model_purpose)
-        usage_id = await reserve_call(context, context.model_purpose, estimate)
+        usage_id = await reserve_call(context, context.model_purpose, estimate,
+                                      final_answer=final_answer_call.get() and not internal_kind and bool(self._completion_validator))
         record = RequestRecord(context.sessions, usage_id)
-        payload = self._get_request_payload(messages, stop=stop, **kwargs)
-        is_reply = bool(payload.get('tools')) and context.model_purpose == 'assistant'
+        async def usage_event(event, value=None):
+            await record.event(event, value)
+        async def compatibility_retry(error):
+            nonlocal record, usage_id
+            await record.finish(error)
+            usage_id = await reserve_call(context, context.model_purpose, estimate,
+                                          final_answer=final_answer_call.get() and not internal_kind and bool(self._completion_validator))
+            record = RequestRecord(context.sessions, usage_id)
+            if note:
+                payload['messages'][-1] = {'role': 'system', 'content': instruction(context)}
+        from app.tasks.nodes.node_execution import active_node
+        parent = active_node.get()
+        from langchain_core.messages import HumanMessage
+        marker = next((str(m.id or '') for m in reversed(messages) if isinstance(m, HumanMessage)), '')
+        kind = ('protocol' if marker.startswith(('delivery-repair:', 'delivery-references:')) else
+                'completion_repair' if marker.startswith('completion-repair:') else
+                parent[1] if parent and parent[1] in ('authorization', 'compaction', 'review') else
+                'main' if payload.get('tools') else 'response_repair')
+        from app.tasks.timing import call_kind
+        internal_kind = internal_call_kind.get()
+        kind = internal_kind or call_kind.get() or kind
+        def timing(event, **fields):
+            if context.timing:
+                context.timing.mark(event, call=usage_id, kind=kind, **fields)
+        if note:
+            payload['messages'][-1] = {'role': 'system', 'content': instruction(context)}
+        is_reply = not internal_kind and bool(payload.get('tools') or self._completion_validator) and context.model_purpose == 'assistant'
+        publisher = candidate = None
+        if is_reply and not self._verification:
+            from app.tasks.feedback.reply_stream import ReplyPublisher
+            publisher = ReplyPublisher(context, usage_id)
+            await publisher.start()
+            from app.agent.runtime.reply_stream import ReplyCandidate, allows_reply_stream
+            if config.get('streaming', False) and not context.access.get('team') and allows_reply_stream(messages, context.job_id, payload):
+                candidate = ReplyCandidate(publisher)
         if is_reply:
             await publish(context, 'generating', call_id=usage_id, force=True)
+        activity_phase = None
+        async def activity(phase):
+            nonlocal activity_phase
+            if activity_phase != phase:
+                from app.agent.runtime.progress.phases import model_activity
+                await model_activity(context, phase)
+                activity_phase = phase
+        async def receive(delta):
+            if candidate:
+                await candidate.feed(delta)
+            if candidate and candidate.text or not candidate and delta.text.strip() and not delta.tools:
+                await activity('answering')
+            elif delta.tools:
+                await activity('tool_call')
+            elif delta.reasoning and activity_phase in (None, 'waiting'):
+                await activity('thinking')
         try:
             if self._verification:
                 from app.modules.model_services.parameters import reply_review_config
@@ -102,9 +187,14 @@ class BoundedChatModel(ChatOpenAI):
             elif is_reply:
                 from app.modules.model_services.parameters import business_model_config
                 config = business_model_config(config, (context.model_binding or {}).get('assistant') or {})
-            # Publish phase transitions, not an identical empty snapshot for each
-            # token. Prose still passes review before becoming user-visible.
-            response = await asyncio.wait_for(chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=output_limit, on_event=record.event), min(60, max(.01, context.node_deadline - time.time())) if context.node_retry else 60)
+            # The optional callback publishes prose only; framework tools remain buffered.
+            streaming = config.get('streaming', False)
+            timeout = response_timeout(context, streaming)
+            async def request(progress):
+                if is_reply and not self._verification:
+                    await activity('waiting')
+                return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=usage_event, on_retry=compatibility_retry, on_timing=timing, on_delta=receive if is_reply and not self._verification else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
+            response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
             try:
@@ -112,7 +202,7 @@ class BoundedChatModel(ChatOpenAI):
                 if any(g.message.invalid_tool_calls for g in result.generations):
                     raise ValueError('Incomplete tool call')
                 required_completion = payload.get('tool_choice') == {'type': 'function', 'function': {'name': 'finish_task'}}
-                if self._completion_validator:
+                if self._completion_validator and not internal_kind:
                     for generation in result.generations:
                         self._completion_validator(generation.message, required=required_completion)
             except (ValueError, TypeError, KeyError):
@@ -124,14 +214,22 @@ class BoundedChatModel(ChatOpenAI):
                 from app.tasks.nodes.node_execution import active_node
                 for index, generation in enumerate(result.generations):
                     generation.message.id = f'node:{active_node.get()[0]}:{index}'
+            if candidate:
+                await candidate.finish()
+            if publisher:
+                await publisher.flush()
             await record.finish()
         except BaseException as error:
+            timing('model.end', state='failed', error=type(error).__name__)
+            if publisher:
+                await publisher.fail(error, candidate.text if candidate else None)
             await record.finish(error)
             import httpx
             from app.integrations.models.transport import ProviderError
             if isinstance(error, (ProviderError, httpx.TransportError, asyncio.TimeoutError, json.JSONDecodeError)):
                 raise safe_error(error) from None
             raise
+        timing('model.end')
         output = sum((g.message.usage_metadata or {}).get('output_tokens', 0) or len(str(g.message.content)) + len(json.dumps(g.message.tool_calls, ensure_ascii=False)) for g in result.generations)
         context.output_tokens += output
         async with context.sessions.begin() as db:
@@ -143,7 +241,7 @@ class BoundedChatModel(ChatOpenAI):
                 save(job, state)
             usage = await db.get(ModelUsage, usage_id)
             usage.output_tokens = output
-        if context.output_tokens > (32000 if context.node_retry else 8000):
+        if context.model_purpose != 'assistant' and context.output_tokens > (32000 if context.node_retry else 8000):
             raise BudgetExceeded('模型响应超过本次输出限制，已停止后续处理')
         return result
 

@@ -1,12 +1,17 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import recordDetailStyles from '../../../../styles/patterns/RecordDetail.module.css'
 import styles from './WorkDetail.module.css'
+import { WorkContent } from '../content/WorkContent'
+import { WorkMaterials } from '../materials/WorkMaterials'
 import type { Work } from '@paa/api-contracts'
+import { DetailBackLink } from '@web/components/navigation/DetailBackLink'
 import { Actions } from '@web/components/actions/Actions'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Status } from '@web/components/feedback/Status'
+import { Modal } from '@web/components/overlays/Modal'
 import { DeleteRecord } from '@web/features/records/components/DeleteRecord'
 import { workSourcesPath } from '@web/features/sources/api/requests'
 import { BusinessSources } from '@web/features/sources/components/BusinessSources'
@@ -15,8 +20,7 @@ import { WorkHistory } from './WorkHistory'
 import { WorkEditor } from '@web/features/work/components/editor/WorkEditor'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
-import { dateLabel } from '@web/utils/date'
-import { detailReturn, detailState } from '@web/utils/navigation'
+import { detailReturn } from '@web/utils/navigation'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 
@@ -31,71 +35,112 @@ export function WorkDetail({
   const id = recordId
   const { data, error, refresh } = useResource<Work>(
     workDetailPath(id, recordSearch ?? location.search),
-    5000,
   )
   const { identity } = useWorkspace()
   const [editing, setEditing] = useState(false)
+  const [materialsOpen, setMaterialsOpen] = useState(false)
+  const own = data?.ownerId === identity.member.id && !data?.historical
+  const previous = detailReturn(location.pathname + location.search, location.state)
+  const latestPath = `/work/${data?.id ?? id}`
+  const back =
+    previous.path === '/work' || previous.path === location.pathname + location.search
+      ? { path: latestPath, state: null }
+      : previous
   return (
     <div
-      className={`${layoutStyles['page']} ${layoutStyles['narrow']} ${recordDetailStyles['detail']}`}
+      className={`${layoutStyles['page']} ${styles['work-page']} ${recordDetailStyles['detail']}`}
       data-compact={compact}
       data-scroll-container
     >
+      {!compact && !data?.historical && <DetailBackLink />}
       <ErrorNotice retry={refresh}>{error}</ErrorNotice>
       {data && (
         <>
-          <div className={`${layoutStyles['page-heading']} ${recordDetailStyles['heading']}`}>
-            <div>
-              <Status value={data.status} />
-              {data.historical && (
-                <small>
-                  历史修订 · 第 {data.revision} 版{' '}
-                  <Link to={`/work/${data.id}`} state={detailState(location)}>
-                    查看最新工作
+          {data.historical && (
+            <>
+              <DetailBackLink
+                destination={back}
+                label={back.path === latestPath ? '返回最新版本' : '返回上一步'}
+                replace
+                embedded={compact}
+              />
+              <div className={styles.version}>
+                <span>历史版本 · 第 {data.revision} 版</span>
+                {back.path !== latestPath && (
+                  <Link to={latestPath} replace>
+                    查看最新版本
                   </Link>
-                </small>
-              )}
-              <h2>{data.title}</h2>
-            </div>
-            {data.ownerId === identity.member.id && !data.historical && (
-              <div className={layoutStyles['inline']}>
-                <button
-                  onClick={() => navigate(`/assistant?workId=${encodeURIComponent(data.id)}`)}
-                >
-                  让助手协助
-                </button>
-                <button onClick={() => setEditing(true)}>编辑工作</button>
-                <Actions label="管理工作">
-                  <button
-                    role="menuitem"
-                    className={controlsStyles['danger']}
-                    onClick={() => setDeleting(true)}
-                  >
-                    删除工作
-                  </button>
-                </Actions>
-              </div>
-            )}
-          </div>
-          <div className={`${layoutStyles['panel']} ${recordDetailStyles['panel']}`}>
-            {data.dueDate && <p>截止日期：{data.dueDate}</p>}
-            {data.summary && <p className={utilitiesStyles['preserve']}>{data.summary}</p>}
-            {!data.summary && !data.blocker && !data.nextStep && (
-              <div className={styles['empty-content']}>
-                <p>这项工作还没有填写具体内容</p>
-                {data.ownerId === identity.member.id && !data.historical && (
-                  <button onClick={() => setEditing(true)}>补充工作内容</button>
                 )}
               </div>
-            )}
-            {data.blocker && <p className={utilitiesStyles['error-text']}>阻碍：{data.blocker}</p>}
-            {data.nextStep && <p>下一步：{data.nextStep}</p>}
-            <small>
-              更新于 {dateLabel(data.updatedAt)} · 第 {data.revision} 版
-            </small>
-          </div>
-          <BusinessSources sources={data.businessLinks ?? []} endpoint={workSourcesPath(data.id)} />
-          {deleting && (
+            </>
+          )}
+          <PageHeader
+            title={data.title}
+            context={compact ? 'embedded' : 'detail'}
+            description={
+              <div className={styles.metadata}>
+                <Status value={data.status} />
+                {data.dueDate && <span>截止 {data.dueDate}</span>}
+              </div>
+            }
+            actions={
+              (own || !!data.materialIds?.length) && (
+                <div className={styles.actions}>
+                  {own && (
+                    <button
+                      onClick={() => navigate(`/assistant?workId=${encodeURIComponent(data.id)}`)}
+                    >
+                      让助手协助
+                    </button>
+                  )}
+                  <Actions label="管理工作">
+                    {own && (
+                      <button role="menuitem" onClick={() => setEditing(true)}>
+                        编辑工作属性
+                      </button>
+                    )}
+                    {!!data.materialIds?.length && (
+                      <button role="menuitem" onClick={() => setMaterialsOpen(true)}>
+                        全部附件 · {data.materialIds.length}
+                      </button>
+                    )}
+                    {own && (
+                      <button
+                        role="menuitem"
+                        className={controlsStyles['danger']}
+                        onClick={() => setDeleting(true)}
+                      >
+                        删除工作
+                      </button>
+                    )}
+                  </Actions>
+                </div>
+              )
+            }
+          />
+          <WorkContent
+            key={`content:${identity.company.id}:${identity.member.id}:${data.id}:${!!data.historical}`}
+            work={data}
+            own={data.ownerId === identity.member.id && !data.historical}
+            saved={refresh}
+          />
+          {(data.blocker || data.nextStep) && (
+            <div className={styles.supplement}>
+              {data.blocker && (
+                <p className={utilitiesStyles['error-text']}>阻碍：{data.blocker}</p>
+              )}
+              {data.nextStep && <p>下一步：{data.nextStep}</p>}
+            </div>
+          )}
+          <section className={styles.history} aria-label="修改记录">
+            <h3>修改记录</h3>
+            <WorkHistory key={`${data.id}:${data.revision}:${!!data.historical}`} work={data} />
+            <BusinessSources
+              sources={data.businessLinks ?? []}
+              endpoint={workSourcesPath(data.id)}
+            />
+          </section>
+          {deleting && data.ownerId === identity.member.id && !data.historical && (
             <DeleteRecord
               kind="work-items"
               id={data.id}
@@ -108,11 +153,12 @@ export function WorkDetail({
               }}
             />
           )}
-          <details className={recordDetailStyles['record-evidence']}>
-            <summary>进展记录与来源</summary>
-            <WorkHistory work={data} />
-          </details>
-          {editing && (
+          {materialsOpen && (
+            <Modal title="全部附件" onClose={() => setMaterialsOpen(false)}>
+              <WorkMaterials work={data} own={own} saved={refresh} />
+            </Modal>
+          )}
+          {editing && data.ownerId === identity.member.id && !data.historical && (
             <WorkEditor
               work={data}
               onClose={() => setEditing(false)}

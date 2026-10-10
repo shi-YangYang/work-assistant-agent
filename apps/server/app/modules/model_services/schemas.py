@@ -39,18 +39,25 @@ def parameters(value):
     return value
 
 
-class Preset(Input):
-    id: str = Field(min_length=1, max_length=80)
-    name: str = Field(min_length=1, max_length=80)
-    mode: Literal['simple', 'advanced'] = 'simple'
-    value: str = Field(default='', max_length=512)
-    parameters: dict = Field(default_factory=dict)
+class Reasoning(Input):
+    efforts: list[str] = Field(default_factory=list, max_length=16)
+    initial: str | None = None
+    parameterOverrides: dict[str, dict] = Field(default_factory=dict)
 
     @model_validator(mode='after')
     def valid(self):
-        if self.mode == 'simple' and not self.value.strip():
-            raise ValueError('请输入推理强度')
-        parameters({'reasoning_effort': self.value} if self.mode == 'simple' else self.parameters)
+        from app.modules.model_services.reasoning.policy import validate_effort
+        if len(set(self.efforts)) != len(self.efforts):
+            raise ValueError('思考强度不能重复')
+        if (self.efforts and self.initial not in self.efforts) or (not self.efforts and self.initial is not None):
+            raise ValueError('初始强度必须属于可选强度')
+        if set(self.parameterOverrides) - set(self.efforts):
+            raise ValueError('参数覆盖只能使用已配置的强度')
+        for effort in self.efforts:
+            if not re.fullmatch(r'[a-z][a-z0-9_-]{0,31}', effort):
+                raise ValueError('思考强度需为实际档位，例如 low、high 或 max')
+            if effort in self.parameterOverrides:
+                validate_effort(effort, parameters(self.parameterOverrides[effort]))
         return self
 
 
@@ -60,8 +67,9 @@ class ServiceModel(Input):
     protocol: Literal['chat', 'transcriptions', 'qwen-asr', 'dashscope-asr'] = 'chat'
     # UI selection mode; execution always uses the saved concrete protocol.
     protocolMode: Literal['auto', 'manual'] = 'manual'
-    presets: list[Preset] = Field(default_factory=list, max_length=16)
-    selectedPresetId: str | None = None
+    reasoning: Reasoning = Field(default_factory=Reasoning)
+    parameters: dict = Field(default_factory=dict)
+    explicitReasoning: bool = False
     streaming: bool = True
     language: str = Field(default='', pattern=r'^[a-zA-Z-]{0,20}$')
     contextWindow: int | None = Field(default=None, ge=1, le=10000000, strict=True)
@@ -71,11 +79,12 @@ class ServiceModel(Input):
     def valid(self):
         if any(ord(c) < 32 for c in self.model) or not self.model.strip():
             raise ValueError('模型 ID 无效')
-        ids = [p.id for p in self.presets]
-        if len(set(ids)) != len(ids) or (self.selectedPresetId is not None and self.selectedPresetId not in ids):
-            raise ValueError('推理预设不存在或重复')
-        if self.protocol != 'chat' and (self.presets or self.selectedPresetId):
-            raise ValueError('语音接口不接受聊天推理预设')
+        parameters(self.parameters)
+        if self.protocol != 'chat' and (self.reasoning.efforts or self.parameters):
+            raise ValueError('语音接口不接受聊天推理参数')
+        from app.modules.model_services.reasoning.policy import effort_options
+        for effort in self.reasoning.efforts:
+            effort_options(self.model_dump(), effort)
         if self.protocol == 'dashscope-asr' and self.language:
             raise ValueError('阿里原生语音转写使用自动语言识别，请清空识别语言')
         return self
@@ -112,8 +121,21 @@ class ConfigRequest(ServiceInput):
 class Selection(Input):
     serviceId: str
     modelId: str
-    presetId: str | None = None
-    streaming: bool = True
+    parameters: dict | None = None
+    explicitReasoning: bool = False
+
+    @model_validator(mode='before')
+    @classmethod
+    def discard_legacy_streaming(cls, value):
+        # Old clients and saved drafts may still send this former override.
+        # Model settings are now the only source for new task bindings.
+        return {key: item for key, item in value.items() if key != 'streaming'} if isinstance(value, dict) else value
+
+    @model_validator(mode='after')
+    def valid(self):
+        if self.parameters is not None:
+            parameters(self.parameters)
+        return self
 
 
 class RoutingInput(Input):

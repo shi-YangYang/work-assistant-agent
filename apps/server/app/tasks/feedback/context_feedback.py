@@ -34,6 +34,7 @@ async def publish_usage(context, used, *, state='ready', output_reserve=4000, **
         value = {**previous, 'jobId': job.id, 'attempt': job.attempt, 'fence': job.fence,
                  'seq': max(previous.get('seq', 0), (job.feedback or {}).get('seq', 0)) + 1, 'model': choice.get('model', ''),
                  'usedTokens': used, 'contextWindow': cap.get('contextWindow'),
+                 # This is input-planning headroom, not a provider output cap.
                  'inputLimit': cap.get('inputLimit'), 'outputReserve': output_reserve,
                  'capacitySource': cap.get('source', 'unknown'), 'thresholdRatio': THRESHOLD,
                  'estimated': True, 'state': state, 'updatedAt': now().isoformat(), **details}

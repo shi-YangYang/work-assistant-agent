@@ -6,13 +6,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'packages/voiceprin
 
 import httpx
 import os
+import pytest
 import pytest_asyncio
 from dataclasses import replace
+from fastapi import Response
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from app.main import create_app
 from app.core.config import Settings
 from app.db.base import Base
 from app.db.session import database
+from app.modules.auth.sessions import issue_session
 from app.modules.members.models import Company, Member
 from app.security.secrets import initialize_key
 from pwdlib import PasswordHash
@@ -23,36 +26,45 @@ from uuid import uuid4
 
 
 
+@pytest.fixture(scope='session')
+def member_password_hash():
+    # Reuse only the immutable hash; accounts and sessions stay isolated per test.
+    return PasswordHash.recommended().hash('controlled-test-password')
+
+
 @pytest_asyncio.fixture
-async def setup(tmp_path):
+async def setup(tmp_path, member_password_hash):
     base = Settings()
     test_url = os.getenv('DATABASE_TEST_URL')
     if not test_url:
         raise RuntimeError('Set DATABASE_TEST_URL to a dedicated migrated PostgreSQL test database')
     if make_url(test_url).database != 'paa_company_test':
         raise RuntimeError('Refusing tests outside the dedicated paa_company_test database')
-    settings = replace(base, database_url=test_url.replace('postgresql://', 'postgresql+psycopg://', 1), media_dir=tmp_path / 'media', cookie_secure=False, web_origin='http://test', agent_base_url='', agent_key='', asr_base_url='', asr_key='', model_key_file=tmp_path / 'master.key')
+    settings = replace(base, database_url=test_url.replace('postgresql://', 'postgresql+psycopg://', 1), media_dir=tmp_path / 'media', cookie_secure=False, web_origin='http://test', agent_base_url='', agent_key='', asr_base_url='', asr_key='', sandbox_url='', sandbox_token='', model_key_file=tmp_path / 'master.key')
     initialize_key(settings.model_key_file)
     engine, sessions = database(settings)
     company_ids, users = [], {}
-    hashed = PasswordHash.recommended().hash('controlled-test-password')
     async with sessions.begin() as db:
         for name in ('primary', 'other'):
             company = Company(name='受控测试公司 ' + uuid4().hex[:8], environment_models=name == 'primary')
             db.add(company); await db.flush(); company_ids.append(company.id)
             for role in (('admin', 'employee', 'peer') if name == 'primary' else ('outsider',)):
-                member = Member(company_id=company.id, username='test_' + uuid4().hex[:14], name='受控测试 ' + role, role='admin' if role == 'admin' else 'employee', password_hash=hashed)
+                member = Member(company_id=company.id, username='test_' + uuid4().hex[:14], name='受控测试 ' + role, role='admin' if role == 'admin' else 'employee', password_hash=member_password_hash)
                 db.add(member); await db.flush(); users[role] = member
     app = create_app(settings)
     lifespan = app.router.lifespan_context(app)
     await lifespan.__aenter__()
     clients = {}
-    for key, member in users.items():
-        client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers={'Origin': 'http://test'})
-        response = await client.post('/api/v1/auth/login', json={'username': member.username, 'password': 'controlled-test-password'})
-        assert response.status_code == 200, response.text
-        client.headers['X-CSRF-Token'] = response.json()['csrf']
-        clients[key] = client
+    # Business tests need authenticated sessions, not four password logins per
+    # case. Use real session issuance/cookies; HTTP authentication, CSRF and
+    # tenant checks remain active. Auth tests still call the real login endpoint.
+    async with sessions.begin() as db:
+        for key, member in users.items():
+            client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test', headers={'Origin': 'http://test'})
+            response = Response()
+            client.headers['X-CSRF-Token'] = issue_session(db, member, response, settings)
+            client.cookies.extract_cookies(httpx.Response(200, headers=response.headers, request=httpx.Request('POST', 'http://test/api/v1/auth/login')))
+            clients[key] = client
     yield settings, sessions, users, clients
     for client in clients.values():
         await client.aclose()

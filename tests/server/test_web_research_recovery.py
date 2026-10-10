@@ -170,3 +170,29 @@ async def test_missing_page_match_never_creates_or_overwrites_read_evidence(setu
         source = (await db.get(Job, context.job_id)).result['webSources'][url]
         assert source == previous and source['evidenceType'] == 'page_text'
         assert source['fetchState'] == 'read' and source['endOffset'] == len(found['text'])
+
+
+async def test_observed_page_link_is_durable_but_never_counts_as_a_read_target(setup):
+    context = await enabled(setup)
+    home, target = 'https://publisher.example/', 'https://publisher.example/product'
+    def response(req):
+        if str(req.url) == target:
+            return httpx.Response(403)
+        return httpx.Response(200, headers={'content-type': 'text/html'}, text='<main><a href="/product">New product</a></main>')
+    transport = httpx.MockTransport(response)
+    await fetch_node(context, home, transport, 'index')
+    unavailable = json.loads((await fetch_node(context, target, transport, 'denied-target')).content)
+    assert unavailable['sourceDiscovered'] and unavailable['evidenceLevel'] == 'page_link'
+    assert 'text' not in unavailable and '未取得网页正文' in unavailable['coverage']
+    async with context.sessions() as db:
+        source = (await db.get(Job, context.job_id)).result['webSources'][target]
+        assert source['evidenceType'] == 'page_link' and source['discoveredOn'] == home
+        assert source['fetchState'] == 'unavailable' and source['fetchError'] == 'http_403'
+    readable = httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'text/plain'}, text='Product description'))
+    await fetch_node(context, target, readable, 'read-target')
+    # Reading the index again must not downgrade or taint a previously read target.
+    await fetch_node(context, home, transport, 'index-again')
+    async with context.sessions() as db:
+        source = (await db.get(Job, context.job_id)).result['webSources'][target]
+        assert source['evidenceType'] == 'page_text' and source['fetchState'] == 'read'
+        assert 'fetchError' not in source

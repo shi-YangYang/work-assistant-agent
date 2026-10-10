@@ -18,8 +18,9 @@ from typing import Literal
 async def find_work_items(query: str, runtime: ToolRuntime[RunContext], status: Literal['', 'in_progress', 'blocked', 'done'] = '', cursor: str = '') -> str:
     """Find the current user's confirmed work, including administrators' own work.
 
-    query matches literal text in title, summary, blocker and nextStep, just like
-    the work list. Use query='' for a status/list question.
+    query matches literal text in title, body, all current progress entries,
+    summary, blocker and nextStep, just like the work list. Results are previews;
+    get_work_item reads the current body. Use query='' for a status/list question.
     status filters current business status. Returns items and nextCursor, up to
     20 items/page; follow nextCursor with unchanged filters for complete coverage.
     An empty first page with no nextCursor definitively has no matching work.
@@ -75,16 +76,26 @@ async def find_work_items(query: str, runtime: ToolRuntime[RunContext], status: 
 
 
 @tool
-async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext]) -> str:
-    """Read current confirmed progress and its authoritative revision for this employee."""
+async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext], body_start: int = 0) -> str:
+    """Read one's current work: authoritative revision, body blocks, recent progress
+    and saved materials. body_start is a zero-based top-level block offset; pass
+    nextBodyStart until null to read the body fully. Each page includes up to 20
+    whole blocks (roughly 12k characters; an indivisible block can exceed that,
+    bounded by the 250KB document limit). Stable attrs.id identifies local edits.
+    updates/materials are bounded previews with nextCursor. Continue through
+    list_work_updates/list_work_materials. Read actual files with read_work_material;
+    directory names and body text excerpts never count as reading those files.
+    """
     async with runtime.context.sessions.begin() as db:
         live, actor = await lease(db, runtime.context)
         item = await referenced_record(db, WorkItem, work_id, actor)
         if item is None:
             return '工作记录不存在或无权查看。请使用 find_work_items 返回的工作 ID，不要猜测 ID。'
         await business_require(db, actor, item.access, retained=True)
+        result = json.dumps(await business_work_for_model(db, actor, live, item, body_start=max(0, body_start), detail=True), ensure_ascii=False, default=str)
         runtime.context.read_versions[item.id] = item.revision
-        return json.dumps(await business_work_for_model(db, actor, live, item), ensure_ascii=False, default=str)
+        runtime.context.refresh_work_versions.pop(item.id, None)
+        return result
 
 
 @tool

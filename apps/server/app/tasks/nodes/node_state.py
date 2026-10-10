@@ -40,6 +40,7 @@ def node_dtos(job):
             'id': row['id'], 'parentId': row.get('parentId'), 'kind': row['kind'],
             'label': row['label'], 'state': status, 'attempts': row['attempts'],
             **({'presentation': row['presentation']} if row.get('presentation') else {}),
+            **({'activity': row['activity']} if row.get('activity') and status == 'running' else {}),
             'maxAttempts': 4, 'retries': max(0, row['attempts'] - 1),
             'totalRetries': row.get('totalRetries', 0), 'round': row.get('round', 0),
             'nextRetryAt': iso(row.get('nextAt')) if status == 'retry_wait' else None,
@@ -50,6 +51,8 @@ def node_dtos(job):
 
 
 def reopen_failed(job):
+    from app.tasks.budget.service import reset
+    reset(job)
     state = execution(job)
     for row in state.get('nodes', []):
         if row['state'] in ('failed', 'cancelled', 'running', 'retry_wait') and row.get('scope') == state.get('scope'):
@@ -57,12 +60,15 @@ def reopen_failed(job):
             row['history'] = [*row.get('history', []), {'round': row.get('round', 0), 'attempts': row['attempts'], 'errorCode': row.get('errorCode', '')}][-8:]
             row.update(state='waiting', attempts=0, nextAt=None, error='', errorCode='', round=job.attempt + 1)
     state.pop('deadline', None)
+    state.pop('budgetBlockedTools', None)
     state['actualCalls'] = state['inputTokens'] = state['outputTokens'] = 0
     if state:
         save(job, state)
 
 
 def cancel_unfinished(job):
+    from app.tasks.budget.service import finish
+    finish(job)
     state = execution(job)
     if state:
         for row in state.get('nodes', []):

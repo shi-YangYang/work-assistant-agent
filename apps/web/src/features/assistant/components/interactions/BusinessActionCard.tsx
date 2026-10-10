@@ -1,3 +1,4 @@
+import { workChangeText } from '../../utils/work-action-preview'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
@@ -31,11 +32,26 @@ const workLabels: Partial<Record<keyof Progress, string>> = {
 export function WorkActionDetails({ action }: { action: BusinessAction }) {
   return (
     <div className={styles['business-action-preview']}>
+      {action.changedFields?.some((key) => key === 'body' || key === 'bodyEdits') && (
+        <section>
+          <strong>工作内容已保存</strong>
+          <p className={utilitiesStyles.preserve}>{action.details?.bodyText?.slice(0, 500)}</p>
+        </section>
+      )}
+      {action.updateId && (
+        <section>
+          <strong>{action.details?._updateDeleted ? '进展已删除' : '进展已保存'}</strong>
+          <p className={utilitiesStyles.preserve}>
+            {action.details?._updateText?.slice(0, 500) || '附件进展'}
+          </p>
+        </section>
+      )}
+      {!!action.materialIds?.length && <p>已保存 {action.materialIds.length} 个材料</p>}
       {Object.entries(workLabels)
-        .filter(
-          ([key]) =>
-            action.details?.[key as keyof Progress] ||
-            action.changedFields?.includes(key as keyof Progress),
+        .filter(([key]) =>
+          action.changedFields?.length
+            ? action.changedFields.includes(key)
+            : !!action.details?.[key as keyof Progress],
         )
         .map(([key, label]) => (
           <section key={key}>
@@ -134,7 +150,11 @@ export function BusinessActionCard({
       {current.details?.status && <Status value={current.details.status} />}
       {current.details && !current.preview?.changes && <WorkActionDetails action={current} />}
       {current.preview?.changes && (
-        <ActionChanges before={current.preview.before} changes={current.preview.changes} />
+        <ActionChanges
+          before={current.preview.before}
+          changes={current.preview.changes}
+          names={current.preview.materialNames}
+        />
       )}
       {current.message && <p className={utilitiesStyles['muted']}>{current.message}</p>}
       {current.preview?.content && (
@@ -217,6 +237,13 @@ const fieldLabels: Record<string, string> = {
   period: '开始日期',
   periodEnd: '结束日期',
   summary: '摘要',
+  body: '工作内容',
+  bodyEdits: '修改工作内容',
+  materials: '添加材料',
+  materialIds: '材料',
+  update: '进展',
+  removeMaterial: '移除材料',
+  materialNames: '相关材料',
 }
 function previewValue(value: unknown): string {
   if (value === null || value === undefined || value === '') return '未设置'
@@ -240,9 +267,11 @@ function previewValue(value: unknown): string {
 function ActionChanges({
   before,
   changes,
+  names,
 }: {
   before?: Record<string, unknown>
   changes: Record<string, unknown>
+  names?: Record<string, string>
 }) {
   return (
     <div className={styles['business-action-preview']}>
@@ -251,10 +280,12 @@ function ActionChanges({
           <strong>{fieldLabels[key] ?? key}</strong>
           {before && Object.hasOwn(before, key) && (
             <p className={`${utilitiesStyles.preserve} ${styles.before}`}>
-              原内容：{previewValue(before[key])}
+              原内容：{workChangeText(key, before[key], names) ?? previewValue(before[key])}
             </p>
           )}
-          <p className={utilitiesStyles.preserve}>{previewValue(value)}</p>
+          <p className={utilitiesStyles.preserve}>
+            {workChangeText(key, value, names) ?? previewValue(value)}
+          </p>
         </section>
       ))}
     </div>

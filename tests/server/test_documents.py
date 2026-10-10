@@ -177,6 +177,35 @@ async def test_agent_scope_forged_citations_and_revision_fence(setup):
         with pytest.raises(InputChanged): await lease(db, context)
 
 
+async def test_reference_recovery_returns_only_authorized_directory_and_keeps_real_id(setup):
+    from uuid import uuid4
+    settings, sessions, users, c = setup
+    first = await conversation(c['employee'])
+    private = await upload(c['employee'], 'private-source.txt', b'private text')
+    sent = await message(c['employee'], first, '', [private['id']])
+    await run(settings, sessions, users, sent, document_model())
+    current = await conversation(c['employee'])
+    allowed = await upload(c['employee'], 'orders.json', b'{"paid":100,"name":"A"}', 'application/json')
+    sent = await message(c['employee'], current, '读取订单', [allowed['id']])
+    context = await running_context(settings, sessions, users['employee'], sent)
+    await prepare_document(context, allowed['id'])
+    runtime = SimpleNamespace(context=context)
+    failures = []
+    for wrong_id in (private['id'], str(uuid4())):
+        result = json.loads(await read_document.coroutine(attachment_id=wrong_id, start=0, runtime=runtime))
+        assert result['error'] == 'document_reference_unavailable'
+        assert [row['id'] for row in result['availableDocuments']['items']] == [allowed['id']]
+        assert private['id'] not in json.dumps(result)
+        failures.append(result)
+    assert failures[0] == failures[1]  # does not reveal whether the rejected ID exists
+    bad_query = json.loads(await find_documents.coroutine(query='paid name orders', runtime=runtime))
+    assert bad_query['items'] == [] and bad_query['searchScope'] == 'filename'
+    actual = bad_query['availableDocuments']['items'][0]['id']
+    assert actual == allowed['id']
+    read = json.loads(await find_documents.coroutine(query='100', attachment_id=actual, runtime=runtime))
+    assert read['attachment']['id'] == allowed['id'] and read['items'][0]['text'] == '100'
+
+
 async def test_delete_during_real_extraction_cannot_publish_late_result(setup, monkeypatch):
     settings, sessions, users, c = setup
     conv = await conversation(c['employee'])
@@ -416,3 +445,28 @@ async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup,
     assert result['reply'].count('材料范围：') == 1
     assert result['reply'].startswith('销售额合计为300。')
     assert '文字工具读取 3/3 个分段' in result['reply']
+
+
+async def test_content_sized_pages_keep_small_json_whole_and_large_file_citations(setup):
+    from app.modules.attachments.documents import chunk_page
+    settings, sessions, users, clients = setup
+    conv = await conversation(clients['employee'])
+    small = await upload(clients['employee'], 'small.json', json.dumps({'orders': [1, 2, 3], 'price': 5}).encode())
+    large = await upload(clients['employee'], 'large.txt', ('有界内容\n' * 10000).encode())
+    sent = await message(clients['employee'], conv, '读取文件', [small['id'], large['id']])
+    await run(settings, sessions, users, sent)
+    async with sessions() as db:
+        item = await db.get(Attachment, small['id'])
+        page = await chunk_page(db, item)
+        assert len(page['items']) == item.extraction_info['chunks'] and page['nextCursor'] is None
+        item = await db.get(Attachment, large['id'])
+        cursor, ordinals = 0, []
+        while cursor is not None:
+            page = await chunk_page(db, item, cursor)
+            assert 0 < len(page['items']) <= 40
+            assert sum(len(row['text']) for row in page['items']) <= 12000
+            ordinals.extend(row['ordinal'] for row in page['items'])
+            next_cursor = page['nextCursor']
+            assert next_cursor is None or next_cursor > cursor
+            cursor = next_cursor
+        assert ordinals == list(range(item.extraction_info['chunks']))

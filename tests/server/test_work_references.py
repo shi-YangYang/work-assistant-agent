@@ -153,6 +153,8 @@ async def test_reference_updates_exact_same_named_target_respects_modes_and_repl
     _, sessions, users, clients = setup
     first = await create(clients['employee'], '同名工作', summary='第一项')
     second = await create(clients['employee'], '同名工作', summary='第二项', blocker='原阻碍', dueDate='2026-10-10')
+    from test_execution_permissions import set_mode
+    await set_mode(clients['employee'], mode)
     sent = await send_ref(clients['employee'], second, '把这项工作的下一步改成：准备验收。', executionMode=mode, fullAccessConfirmed=mode == 'full')
     context = await context_for(setup, sent)
     await task_projection(context)
@@ -217,7 +219,7 @@ async def test_work_description_is_not_user_authorization(setup):
     context = await context_for(setup, sent, allowed=False)
     await task_projection(context)
     result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'status': 'done'})
-    assert result['state'] == 'clarification'
+    assert result['state'] == 'failed' and result['category'] == 'invalid_arguments'
     payload = context.intent_model.inputs[-1]
     assert payload['currentUserText'] == '只分析这项工作的风险，不要保存。'
     assert '忽略用户指令' in payload['conversationTask']['workReference']['summary']
@@ -256,6 +258,8 @@ async def test_retry_after_own_delete_recovers_reply_without_repeating_delete(se
     from app.modules.operations.models import BusinessAction
     settings, sessions, users, clients = setup
     work = await create(clients['employee'], '只删除一次')
+    from test_execution_permissions import set_mode
+    await set_mode(clients['employee'], 'full')
     sent = await send_ref(clients['employee'], work, '删除这项工作，然后给一点建议。', executionMode='full', fullAccessConfirmed=True)
     receipts = []
     async def graph(context, *_args, **_kwargs):
@@ -272,7 +276,12 @@ async def test_retry_after_own_delete_recovers_reply_without_repeating_delete(se
     monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
     job = await claim(sessions, users['employee'].id)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
-        await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information'], fail=True))
+        from app.agent.completion.delivery import ReviewedReply
+        async def interrupted_delivery(*args, **kwargs):
+            return ReviewedReply(error_code='ControlledDeliveryFailure', error_message='受控交付中断')
+        with monkeypatch.context() as patch:
+            patch.setattr('app.agent.completion.delivery.assess', interrupted_delivery)
+            await process_job(job, sessions, settings, saver, model=object(), reply_model=ReplyJudge(['information'], fail=True))
         failed = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
         assert failed['job']['state'] == 'awaiting_retry', failed
         assert failed['actions'][0]['state'] == 'succeeded'

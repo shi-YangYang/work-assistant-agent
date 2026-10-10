@@ -78,8 +78,8 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
 
 
 @router.get('/api/v1/uploads/{identifier}/content')
-async def content(identifier: str, actor=AUTH, db=DB, settings=SETTINGS):
-    item = await visible_attachment(db, identifier, actor)
+async def content(identifier: str, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB, settings=SETTINGS):
+    item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
     path = settings.media_dir / item.id
     if not path.is_file():
         problem(404, '附件文件暂不可用')
@@ -87,11 +87,11 @@ async def content(identifier: str, actor=AUTH, db=DB, settings=SETTINGS):
 
 
 @router.get('/api/v1/uploads/{identifier}/preview')
-async def media_preview(identifier: str, request: Request, actor=AUTH, db=DB, settings=SETTINGS):
+async def media_preview(identifier: str, request: Request, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB, settings=SETTINGS):
     import base64
     import os
     initial_company, initial_role = actor.company_id, actor.role
-    item = await visible_attachment(db, identifier, actor)
+    item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
     if item.kind not in ('image', 'audio'):
         problem(415, '此附件不支持媒体预览')
     source = settings.media_dir / item.id
@@ -116,7 +116,7 @@ async def media_preview(identifier: str, request: Request, actor=AUTH, db=DB, se
         problem(401, '登录已过期，请重新登录', 'login_required')
     if not current.active or current.company_id != initial_company or current.role != initial_role:
         problem(403, '账号权限已变化，请重新登录')
-    item = await visible_attachment(db, identifier, current, lock=True)
+    item = await visible_attachment(db, identifier, current, lock=True, work_revision=workRevision)
     if not (settings.media_dir / item.id).is_file():
         problem(404, '附件文件暂不可用')
     if data is not None and not path.is_file():
@@ -138,8 +138,8 @@ async def media_preview(identifier: str, request: Request, actor=AUTH, db=DB, se
 
 
 @router.get('/api/v1/uploads/{identifier}/extraction')
-async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, actor=AUTH, db=DB):
-    item = await visible_attachment(db, identifier, actor)
+async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
+    item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
     if item.kind != 'document':
         problem(422, '该附件没有文档提取内容')
     if revision is not None and revision != item.extraction_revision:
@@ -150,9 +150,14 @@ async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limi
 @router.post('/api/v1/uploads/{identifier}/retry', status_code=202)
 async def retry_extraction(identifier: str, actor=AUTH, db=DB):
     item = await owned(db, Attachment, identifier, actor, lock=True)
-    if item.kind != 'document' or not item.message_id:
-        problem(422, '请先发送文档')
-    await active_message(db, item.message_id, actor)
+    if item.kind != 'document':
+        problem(422, '该文件不支持文档解析')
+    if item.message_id:
+        await active_message(db, item.message_id, actor)
+    else:
+        from app.modules.work.materials.queries import work_for_material
+        if not await work_for_material(db, actor, item.id):
+            problem(422, '请先保存文档到工作')
     if item.extraction_status != 'failed':
         problem(409, '仅失败文档需要重新解析')
     active = await db.scalar(select(Job.id).where(Job.owner_id == actor.id, Job.target_id.in_([item.id, item.message_id]), Job.state.in_(['queued', 'running'])))

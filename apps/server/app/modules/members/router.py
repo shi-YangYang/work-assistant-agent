@@ -5,7 +5,7 @@ from app.http.dependencies import READ_ADMIN, ADMIN, DB, SESSIONS, SETTINGS
 from app.modules.auth.sessions import passwords, revoke_member
 from app.modules.members.models import Member
 from app.modules.members.schemas import MemberCreate, MemberPatch, ResetPassword
-from app.modules.members.serializers import member_dto
+from app.modules.members.serializers import member_list_dto
 from app.modules.members.service import visible_member
 from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
@@ -15,7 +15,7 @@ router = APIRouter()
 
 @router.get('/api/v1/members')
 async def members(actor=READ_ADMIN, db=DB):
-    return {'items': [member_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee', Member.deleted.is_(False)).order_by(Member.created_at))).all()]}
+    return {'items': [member_list_dto(m) for m in (await db.scalars(select(Member).where(Member.company_id == actor.company_id, Member.role == 'employee', Member.deleted.is_(False)).order_by(Member.created_at))).all()]}
 
 
 @router.post('/api/v1/members', status_code=201)

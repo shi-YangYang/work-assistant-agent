@@ -13,16 +13,15 @@ import { QuestionHistory } from '../interactions/QuestionPanel'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
 import { DeliverableEntry } from '../deliverables/Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/interactions/BusinessActionCard'
-import {
-  DocumentCard,
-  DocumentCitations,
-} from '@web/features/assistant/components/attachments/Documents'
-import { ImageGallery } from '@web/features/assistant/components/attachments/ImageGallery'
+import { DocumentCard } from '@web/components/media/Documents'
+import { ImageGallery } from '@web/components/media/ImageGallery'
+import { AssistantReply } from './reply/AssistantReply'
+import { replyPresentation } from './reply/reply-presentation'
 import { MessageTranscript } from '@web/features/assistant/components/messages/MessageTranscript'
 import { TranscriptEditor } from '@web/features/assistant/components/messages/TranscriptEditor'
 import { JobNotice } from '@web/features/jobs/components/JobNotice'
 import { messageSourcesPath } from '@web/features/sources/api/requests'
-import { BusinessReply, BusinessSources } from '@web/features/sources/components/BusinessSources'
+import { BusinessSources } from '@web/features/sources/components/BusinessSources'
 import { ProgressEditor } from '@web/features/work/components/editor/ProgressEditor'
 import { useJobFeedback } from '@web/hooks/useJobFeedback'
 import { useWorkspace } from '@web/lib/workspace'
@@ -228,13 +227,16 @@ export function MessageCard({
               onRetryStart={onRetryStart}
               onRetrySettled={onRetrySettled}
               showNodes
+              replyActivity={
+                replyPresentation(message, job, live.feedback, own, live.unavailable).activity
+              }
             />
           )}
           {own &&
             !message.businessUnavailable &&
             !failed &&
             job?.operationFeedback?.map((item) => (
-              <div className={noticeStyles['notice']} role="status" key={item.step}>
+              <div className={noticeStyles['notice']} role="status" key={item.key ?? item.step}>
                 <strong>
                   {item.label} ·{' '}
                   {item.state === 'clarification'
@@ -249,29 +251,13 @@ export function MessageCard({
           {live.error && !replacing && activeJob?.id !== job?.id && (
             <ErrorNotice retry={() => void live.reconnect()}>{live.error}</ErrorNotice>
           )}
-          {(!message.reply || replacing) &&
-            !failed &&
-            !message.businessUnavailable &&
-            live.feedback?.text && (
-              <div className={`${styles['assistant-reply']} ${styles['provisional-reply']}`}>
-                <small>
-                  {['queued', 'running'].includes(live.feedback.state)
-                    ? '生成中，内容尚未完成'
-                    : '回复未完成'}
-                </small>
-                <p className={utilitiesStyles['preserve']}>{live.feedback.text}</p>
-              </div>
-            )}
-          {message.reply && !replacing && !failed && (
-            <div className={styles['assistant-reply']}>
-              <BusinessReply
-                text={message.reply}
-                sources={message.businessCitations ?? []}
-                endpoint={messageSourcesPath(message.id)}
-              />
-              <DocumentCitations citations={message.citations ?? []} />
-            </div>
-          )}
+          <AssistantReply
+            message={message}
+            job={job}
+            feedback={live.feedback}
+            own={own}
+            unavailable={live.unavailable}
+          />
           {own &&
             !message.businessUnavailable &&
             message.deliverables?.map((item) => (

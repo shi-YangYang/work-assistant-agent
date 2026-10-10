@@ -10,7 +10,7 @@ const SupportPage = routePage(async () => ({
   default: (await import('@web/features/feedback/components/SupportPage')).SupportPage,
 }))
 const MembersPage = routePage(async () => ({
-  default: (await import('@web/features/members/components/MembersPage')).MembersPage,
+  default: (await import('@web/features/members/components/overview/MembersPage')).MembersPage,
 }))
 const ModelServices = routePage(async () => ({
   default: (await import('@web/features/model-services/components/ModelServices')).ModelServices,
@@ -26,6 +26,9 @@ const AccountPage = routePage(async () => ({
 const AppearancePage = routePage(async () => ({
   default: (await import('@web/features/settings/components/appearance/AppearancePage'))
     .AppearancePage,
+}))
+const MemoryPage = routePage(async () => ({
+  default: (await import('@web/features/settings/components/memory/MemoryPage')).MemoryPage,
 }))
 const RulesPage = routePage(async () => ({
   default: (await import('@web/features/settings/components/rules/RulesPage')).RulesPage,
@@ -99,6 +102,7 @@ export function AppRoutes({ identity, onLogout }: { identity: Identity; onLogout
               />
               <Route path="support" element={<SupportPage />} />
               <Route path="appearance" element={<AppearancePage />} />
+              <Route path="memory" element={<MemoryPage />} />
               <Route path="rules" element={<RulesPage />} />
               {identity.member.role === 'admin' && (
                 <>

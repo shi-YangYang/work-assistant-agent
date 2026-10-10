@@ -16,13 +16,15 @@ const conversation = {
 let disconnected = false
 function response(url: RequestInfo | URL) {
   const path = String(url)
-  const data = path.endsWith('/conversations/chat')
-    ? conversation
-    : path.endsWith('/active-job')
-      ? { job: null }
-      : path.endsWith('/context-usage')
-        ? { contextUsage: null }
-        : { items: [], nextCursor: null, unread: 0 }
+  const data = path.endsWith('/assistant/execution-settings')
+    ? { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
+    : path.endsWith('/conversations/chat')
+      ? conversation
+      : path.endsWith('/active-job')
+        ? { job: null }
+        : path.endsWith('/context-usage')
+          ? { contextUsage: null }
+          : { items: [], nextCursor: null, unread: 0 }
   return new Response(JSON.stringify(data))
 }
 function view(route = '/assistant/chat') {

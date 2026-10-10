@@ -48,8 +48,12 @@ def input_budget(context, output_reserve=4000):
 
 
 def output_reserve(context, requested=4000):
+    # Local input-planning estimate only, never an assistant output quota.
+    estimate = min(4000, requested or 4000, capacity(context).get('maxOutput') or 4000)
+    if context.model_purpose == 'assistant':
+        return estimate
     remaining = (32000 if context.node_retry else 8000) - context.output_tokens
-    return max(0, min(4000, requested or 4000, capacity(context).get('maxOutput') or 4000, remaining))
+    return max(0, min(estimate, remaining))
 
 
 def compression_reason(context, used, output_reserve=4000):

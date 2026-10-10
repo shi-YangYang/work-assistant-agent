@@ -44,11 +44,11 @@ async def job_events(identifier: str, request: Request, settings=SETTINGS, sessi
         problem(403, '请求来源不被允许')
     token_hash = hashlib.sha256(request.cookies.get(COOKIE, '').encode()).hexdigest()
     await snapshot(sessions, token_hash, identifier)
-    return StreamingResponse(events(sessions, token_hash, identifier), media_type='text/event-stream', headers={'Cache-Control':'no-store, no-transform', 'X-Accel-Buffering':'no'})
+    return StreamingResponse(events(sessions, token_hash, identifier, settings=settings, version=2 if request.query_params.get('version') == '2' else 1), media_type='text/event-stream', headers={'Cache-Control':'no-store, no-transform', 'X-Accel-Buffering':'no'})
 
 
 @router.post('/api/v1/jobs/{identifier}/retry')
-async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
+async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB, settings=SETTINGS):
     from app.security.locks import company_lock
     await company_lock(db, actor.company_id)
     item = await owned(db, Job, identifier, actor, lock=True)
@@ -76,6 +76,10 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
         message.reply, message.citations = '', []
         item.result = {k: v for k, v in item.result.items() if k not in ('conversationReply', 'replyReviewError', 'replyReceipt', 'operationFeedback', 'operationFeedbackKeys')}
         item.result = {**item.result, 'refreshModelBinding': True}
+        from app.modules.model_services.reasoning.settings import reasoning_state
+        await reasoning_state(db, actor)
+        from app.modules.model_services.bindings import bind_job
+        await bind_job(db, item, settings)
     elif item.kind == 'report':
         # Resolve the latest settings when this run starts; unchanged settings
         # retain correction checkpoints and committed report receipts.
@@ -86,6 +90,8 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
     if item.kind == 'message' and item.result.get('nodeExecution'):
         from app.tasks.nodes.node_state import reopen_failed
         reopen_failed(item)
+    from app.tasks.feedback.reply_stream import transition
+    transition(item, 'withdrawn', new=True)
     item.attempt += 1
     from app.tasks.feedback.feedback_state import update_feedback
     update_feedback(item, 'queued', '')
@@ -94,5 +100,23 @@ async def retry(identifier: str, body: RetryJob, actor=AUTH, db=DB):
 
 
 @router.post('/api/v1/jobs/{identifier}/cancel')
-async def cancel(identifier: str, body: CancelJob, actor=AUTH, db=DB):
-    return job_dto(await cancel_job(db, actor, identifier, body))
+async def cancel(identifier: str, body: CancelJob, actor=AUTH, db=DB, settings=SETTINGS):
+    from app.tasks.streaming.redis_store import store_for, StreamUnavailable
+    from app.tasks.streaming.protocol import Identity
+    identity = Identity(actor.company_id, actor.id, identifier, body.expectedAttempt, body.expectedFence)
+    store = store_for(settings)
+    try:
+        temporary = await store.snapshot(identity)
+    except StreamUnavailable:
+        temporary = None
+    item = await cancel_job(db, actor, identifier, body, temporary=temporary)
+    await db.commit()
+    try:
+        await store.seal(identity)
+    except StreamUnavailable:
+        pass
+    message = await active_message(db, item.target_id, actor)
+    from app.tasks.feedback.reply_stream import dto as reply_dto
+    # This response owns the new fence, so carry its authorized sealed prefix
+    # across the one final message refresh. Generic job DTOs never expose it.
+    return {**job_dto(item), 'replyStream': await reply_dto(db, actor, item, message)}

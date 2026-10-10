@@ -20,7 +20,7 @@ import {
 } from '../../apps/web/src/features/model-services/utils/service-presets'
 
 describe('company model drafts', () => {
-  it('rejects invalid edited models and presets before saving a service', () => {
+  it('rejects invalid edited models and efforts before saving a service', () => {
     const model = {
       ...newModel('whisper-1'),
       protocol: 'transcriptions' as const,
@@ -36,10 +36,10 @@ describe('company model drafts', () => {
       validateServiceModels([
         {
           ...newModel('chat'),
-          presets: [{ id: 'p', name: 'test', mode: 'simple', value: '   ', parameters: {} }],
+          reasoning: { efforts: ['  '], initial: '  ' },
         },
       ]),
-    ).toThrow('推理强度')
+    ).toThrow('实际档位')
   })
   it('checks header-safe API keys and preserves credentials for trailing-slash edits only', () => {
     for (const key of ['测试key', '   ', 'key\t', 'key\u007f'])
@@ -218,18 +218,16 @@ describe('service presets and protocol selection', () => {
   it('clears chat-only settings when auto matching changes the API family', () => {
     const chat = {
       ...newModel('deepseek-v4.1-flash', tokenPlan),
-      presets: [
-        { id: 'high', name: 'High', mode: 'simple' as const, value: 'high', parameters: {} },
-      ],
-      selectedPresetId: 'high',
+      reasoning: { efforts: ['high'], initial: 'high' },
+      parameters: { enable_thinking: true },
       language: 'zh',
     }
     const audio = resolveModelProtocol(tokenPlan, { ...chat, model: 'qwen-audio-3.0-asr-flash' })
     expect(audio).toMatchObject({
       protocol: 'dashscope-asr',
       streaming: false,
-      presets: [],
-      selectedPresetId: null,
+      reasoning: { efforts: [], initial: null },
+      parameters: {},
       language: '',
     })
     const custom = 'https://gateway.example/v1'
@@ -268,4 +266,42 @@ it('preserves automatic model capability separately from an explicit capacity ov
     )
   for (const contextWindow of [undefined, null, 1048576])
     expect(() => validateServiceModels([{ ...model, contextWindow }])).not.toThrow()
+})
+
+it('validates direct efforts and exact advanced overrides', () => {
+  const model = { ...newModel('chat'), reasoning: { efforts: ['high'], initial: 'high' } }
+  expect(() => validateServiceModels([model])).not.toThrow()
+  expect(() =>
+    validateServiceModels([
+      { ...model, reasoning: { efforts: ['high', 'high'], initial: 'high' } },
+    ]),
+  ).toThrow('重复')
+  expect(() =>
+    validateServiceModels([{ ...model, reasoning: { efforts: ['high'], initial: 'low' } }]),
+  ).toThrow('初始强度')
+  expect(() =>
+    validateServiceModels([
+      {
+        ...model,
+        reasoning: {
+          ...model.reasoning,
+          parameterOverrides: { high: { reasoning_effort: 'low' } },
+        },
+      },
+    ]),
+  ).toThrow('实际推理参数')
+  expect(() =>
+    validateServiceModels([{ ...model, parameters: { enable_thinking: false } }]),
+  ).toThrow('关闭思考')
+  expect(() =>
+    validateServiceModels([
+      {
+        ...model,
+        reasoning: {
+          ...model.reasoning,
+          parameterOverrides: { high: { reasoning: { effort: 'high' }, temperature: 0.5 } },
+        },
+      },
+    ]),
+  ).not.toThrow()
 })

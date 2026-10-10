@@ -1,6 +1,8 @@
+import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import recordLayoutStyles from '../../../../styles/patterns/RecordLayout.module.css'
+import styles from './WorkOverview.module.css'
 import type { Work } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Pagination } from '@web/components/actions/Pagination'
@@ -12,9 +14,10 @@ import { WorkList } from '@web/features/work/components/overview/WorkList'
 import { useCursorPage } from '@web/hooks/useCursorPage'
 import { ChevronRight, ClipboardList, Plus, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link, useNavigate, useSearchParams } from 'react-router'
 
 export function WorkPage() {
+  const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [search] = useSearchParams()
   const query = search.get('q') ?? ''
@@ -22,42 +25,44 @@ export function WorkPage() {
   const list = useCursorPage<Work>(workListPath(query, status))
   return (
     <div
-      className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
+      className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']} ${styles.page}`}
       data-scroll-container
     >
-      <div className={`${layoutStyles['page-heading']} ${recordLayoutStyles['slot-page-heading']}`}>
-        <div>
-          <h2>我的工作</h2>
-          <p>理清优先级，一件一件向前推进。</p>
-        </div>
-        <div
-          className={`${layoutStyles['card-actions']} ${recordLayoutStyles['slot-card-actions']}`}
-        >
-          <button
-            className={controlsStyles['icon-button']}
-            aria-label="刷新工作"
-            title="刷新工作"
-            onClick={list.refresh}
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button className={controlsStyles['primary']} onClick={() => setCreating(true)}>
-            <Plus size={16} />
-            新建工作
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="我的工作"
+        actions={
+          <>
+            <button
+              className={controlsStyles['icon-button']}
+              aria-label="刷新工作"
+              title="刷新工作"
+              onClick={list.refresh}
+            >
+              <RefreshCw size={16} />
+            </button>
+            <button
+              className={controlsStyles.primary}
+              aria-label="新建工作"
+              onClick={() => setCreating(true)}
+            >
+              <Plus size={16} />
+              <span className={styles['create-label']}>新建工作</span>
+            </button>
+          </>
+        }
+      />
       {creating && (
         <CreateWork
           onClose={() => setCreating(false)}
-          onSaved={() => {
+          onSaved={(work) => {
             setCreating(false)
             list.refresh()
+            navigate(`/work/${work.id}`)
           }}
         />
       )}
-      <div className={recordLayoutStyles['records-surface']}>
-        <div className={recordLayoutStyles['records-toolbar']}>
+      <div className={`${recordLayoutStyles['records-surface']} ${styles.surface}`}>
+        <div className={`${recordLayoutStyles['records-toolbar']} ${styles.toolbar}`}>
           <WorkFilters compact query={query} status={status} change={list.filter} />
         </div>
         <ErrorNotice className={recordLayoutStyles['record-notice']} retry={list.refresh}>

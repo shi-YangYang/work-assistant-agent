@@ -47,6 +47,12 @@ async def test_queue_serializes_owner_fences_old_worker_and_stops_uncertain_retr
 
 async def test_voice_is_decoded_original_retained_and_corrected_asr_is_versioned(setup,monkeypatch):
     settings,sessions,users,c=setup
+    # Admission freezes model routing; configure the controlled ASR before sending.
+    from test_model_services import create, payload, route
+    body=payload(url='https://controlled.invalid/v1')
+    body['models'][1]['protocol']='qwen-asr'
+    service=await create(c['admin'],body)
+    assert (await c['admin'].put('/api/v1/settings/model-routing',json=route(service))).status_code==200
     audio=io.BytesIO()
     with wave.open(audio,'wb') as writer:
         writer.setnchannels(1);writer.setsampwidth(2);writer.setframerate(16000);writer.writeframes(b'\0\0'*16000)
@@ -89,8 +95,13 @@ async def test_daily_usage_does_not_block_calls_but_per_run_budget_remains(setup
     assert first != second and context.calls == 2
     async with sessions() as db:
         assert (await db.get(ModelUsage,second)).job_id == job.id
-    context.calls=8
-    with pytest.raises(BudgetExceeded): await reserve_call(context,'agent')
+    async with sessions.begin() as db:
+        live = await db.get(Job, job.id)
+        budget = live.result['taskBudget']
+        maximum = budget['policy']['models']
+        live.result = {**live.result, 'taskBudget': {**budget, 'models': maximum}}
+    with pytest.raises(BudgetExceeded):
+        await reserve_call(context, 'assistant')
 
 
 async def test_concurrent_idempotent_send_returns_one_message(setup):

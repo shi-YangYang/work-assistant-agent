@@ -208,7 +208,8 @@ it.each([
   '/team',
   '/members',
   '/settings/account',
-  '/settings/support',
+  // The submit tab is local-only until submitted; records trigger the failing read.
+  '/settings/support?tab=records',
   '/settings/rules',
   '/settings/models',
   '/settings/voiceprints',

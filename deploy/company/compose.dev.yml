@@ -1,14 +1,36 @@
 name: paa-company
 services:
+  redis:
+    image: redis:7.4.2-alpine
+    command:
+      [
+        'redis-server',
+        '--save',
+        '',
+        '--appendonly',
+        'no',
+        '--maxmemory',
+        '64mb',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
+    mem_limit: 128m
+    memswap_limit: 128m
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 2s
+      retries: 10
+    ports: ['127.0.0.1:${PAA_LOCAL_REDIS_PORT:-6379}:6379']
+    networks: [business]
   postgres:
-    image: postgres:17.11-bookworm
-    container_name: paa-company-postgres
-    env_file: ../../apps/server/.env.web
+    image: ${PAA_LOCAL_POSTGRES_IMAGE:-postgres:17.11-bookworm}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-paa_company}
       POSTGRES_USER: ${POSTGRES_USER:-paa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-    ports: ['127.0.0.1:5432:5432']
+    ports: ['127.0.0.1:${PAA_LOCAL_POSTGRES_PORT:-5432}:5432']
+    networks: [business]
     volumes: [pgdata:/var/lib/postgresql/data]
     command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
     healthcheck:
@@ -18,4 +40,6 @@ services:
       retries: 10
 volumes:
   pgdata:
-    name: paa_company_pgdata
+    name: ${PAA_LOCAL_PG_VOLUME:-paa_company_pgdata}
+networks:
+  business:

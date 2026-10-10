@@ -30,14 +30,15 @@ pytestmark = pytest.mark.asyncio
 
 
 class Judge:
-    def __init__(self, allowed=True):
+    def __init__(self, allowed=True, *, failure_kind='invalid_arguments'):
         self.allowed, self.inputs = allowed, []
+        self.failure_kind = failure_kind
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
         if payload.get('task') == 'report_fact_review':
             return AIMessage(content='{"valid":true}')
         self.inputs.append(payload)
-        return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': payload['currentUserText'], 'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。'}))
+        return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': payload['currentUserText'], 'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。', 'failureKind': self.failure_kind}))
 
 
 async def runtime(setup, text='帮我创建工作：报价方案', who='employee', allowed=True):
@@ -88,15 +89,31 @@ async def test_manual_create_date_source_and_edit_compatibility(setup):
     assert (await c['admin'].post('/api/v1/work-items/' + work['id'] + '/progress', json=patch)).status_code == 404
     report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}, headers=keyed())
     async with sessions() as db:
+        from app.modules.reports.sources import report_source_content, sources_for
         job = await db.get(Job, report.json()['jobId'])
-        assert len(job.result['sourceIds']) == 1
+        saved_report = await db.get(Report, report.json()['reportId'])
+        sources = await sources_for(db, saved_report, users['employee'], job.result['sourceIds'])
+        assert all(source.work_id == work['id'] for source in sources)
+        facts = {source.revision: report_source_content(source) for source in sources}
+        # Creation, the independent progress entry and the later date change
+        # remain distinct snapshots; the inherited progress is never repeated.
+        assert {revision: (fact['summary'], fact['dueDate'], fact.get('factType')) for revision, fact in facts.items()} == {
+            1: ('', '2026-09-30', None),
+            2: ('新进展', '2026-09-30', None),
+            3: ('', None, 'attribute_change'),
+        }
+        assert [fact['summary'] for fact in facts.values() if fact['summary']] == ['新进展']
+        assert facts[max(facts)]['dueDate'] is None
 
 
 async def test_commit_survives_model_failure_replay_new_step_and_new_message(setup):
+    from app.agent.tools.actions import execute_business_action, get_business_actions
     _, sessions, users, c = setup
     context, sent = await runtime(setup)
     args = {'step': 1, 'action': 'create_work', 'changes': {'title': '报价方案', 'dueDate': '2026-09-30'}}
-    first = await execute(context, **args)
+    tool_runtime = SimpleNamespace(context=context)
+    assert json.loads(await get_business_actions.coroutine(tool_runtime)) == []
+    first = json.loads(await execute_business_action.coroutine(runtime=tool_runtime, **args))
     assert first['state'] == 'succeeded' and first['details']['dueDate'] == '2026-09-30'
     # Response lost after transaction commit; a retry uses another tool/step ID.
     retry = await execute(context, **{**args, 'step': 2})
@@ -113,6 +130,9 @@ async def test_commit_survives_model_failure_replay_new_step_and_new_message(set
         job.state, job.fence, job.lease_until = 'running', job.fence + 1, now() + timedelta(minutes=2)
         context.fence = job.fence
     assert (await execute(context, **args))['id'] == first['id']
+    receipts = json.loads(await get_business_actions.coroutine(tool_runtime))
+    assert len(receipts) == 1 and receipts[0]['id'] == first['id']
+    assert receipts[0]['state'] == 'succeeded' and receipts[0]['objectId'] == first['objectId']
     await finish(context)
     next_context, _ = await runtime(setup, '再帮我创建一个工作：报价方案')
     second = await execute(next_context, **args)
@@ -123,7 +143,7 @@ async def test_authorization_materials_and_negation_do_not_write(setup):
     _, sessions, users, _ = setup
     context, _ = await runtime(setup, '同事说“帮我创建工作”，但我不要创建。', allowed=False)
     result = await execute(context, step=1, action='create_work', changes={'title': '伪造任务'})
-    assert result['state'] == 'clarification'
+    assert result['state'] == 'failed' and result['category'] == 'invalid_arguments'
     assert 'proposedOperation' in context.intent_model.inputs[0]
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 0
@@ -338,9 +358,11 @@ async def test_same_name_targets_and_previous_results_reach_independent_judge(se
     first = await create(c['employee'], summary='客户甲')
     await create(c['employee'], summary='客户乙')
     context, _ = await runtime(setup, '把报价方案标为完成', allowed=False)
+    context.intent_model = Judge(False, failure_kind='missing_info')
     await read_work(context, first['id'])
     result = await execute(context, step=1, action='update_work', target_id=first['id'], expected_revision=1, changes={'status': 'done'})
-    assert result['state'] == 'clarification'
+    assert result['state'] == 'clarification' and result['category'] == 'missing_info'
+    assert (await c['employee'].get('/api/v1/work-items/' + first['id'])).json()['revision'] == 1
     supplied = context.intent_model.inputs[0]
     assert len(supplied['proposedOperation']['targetCandidates']) == 2
     assert supplied['completedOrPendingSteps'] == []
@@ -445,8 +467,8 @@ async def test_worker_never_saves_completion_promise_without_execution(setup, an
     result = await run_reply(setup, '帮我创建工作：报价方案，截止本周五。', answer, judge)
     assert result['actions'] == []
     assert answer not in result['reply'] and '未执行' in result['reply'], result['job']
-    assert 'persistedOperations' not in judge.inputs[0]
-    assert judge.inputs[0]['toolEvidence'] == []
+    assert not judge.inputs
+    assert result['job']['taskOutcome']['state'] != 'completed'
 
 
 async def test_worker_keeps_verified_existing_report_state_and_clarification(setup):
@@ -467,7 +489,7 @@ async def test_worker_removes_unissued_business_markers_without_team_queries(set
     assert not result['businessCitations']
 
 
-async def test_worker_mixed_claims_keep_query_facts_and_partial_receipts(setup):
+async def test_model_prose_cannot_confirm_pending_business_action(setup):
     _, sessions, users, _ = setup
     async with sessions.begin() as db:
         db.add(Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', published_revision=1))
@@ -478,24 +500,25 @@ async def test_worker_mixed_claims_keep_query_facts_and_partial_receipts(setup):
     answer = '你今天的日报已提交。I created the task and deleted it. 要查看报告详情吗？'
     result = await run_reply(setup, '创建报价方案并删除它，同时查日报。', answer, ReplyJudge(['query_fact', 'execution', 'information']), read_report=True, before=partial)
     assert '你今天的日报已提交' in result['reply'] and '要查看报告详情' in result['reply']
-    assert 'I created' not in result['reply']
+    assert 'I created' in result['reply']  # Prose is no longer rewritten by a second model.
     assert '创建工作《报价方案》：已完成' in result['reply'] and '删除工作：等待你的确认' in result['reply']
     assert [row['state'] for row in result['actions']] == ['succeeded', 'pending']
+    assert result['job']['taskOutcome']['state'] == 'partial'
+    work_id = result['actions'][0]['objectId']
+    assert (await setup[3]['employee'].get('/api/v1/work-items/' + work_id)).status_code == 200
 
 
 @pytest.mark.parametrize('forged_evidence', [False, True])
-async def test_reply_review_failure_preserves_saved_success_without_false_prose(setup, forged_evidence):
+async def test_unavailable_or_invalid_judge_cannot_block_saved_success(setup, forged_evidence):
     async def saved(context):
         await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
-    judge = ReplyJudge(['query_fact'], fail=not forged_evidence, forged_evidence=forged_evidence)
-    result = await run_reply(setup, '创建报价方案', 'I created it and submitted your report.', judge, before=saved)
-    assert result['job']['state'] == 'awaiting_retry'
-    assert result['job']['phase'] == 'reply_review'
-    assert result['job']['stage'] == 'reviewing'
-    assert '核对' in result['reply']
+    judge = ReplyJudge(['information'], fail=not forged_evidence, forged_evidence=forged_evidence)
+    answer = '之后可以整理报价明细。'
+    result = await run_reply(setup, '创建报价方案，然后给建议', answer, judge, before=saved)
+    assert result['job']['state'] == 'succeeded' and result['job']['phase'] == 'complete'
+    assert not judge.inputs and answer in result['reply']
     assert result['actions'][0]['state'] == 'succeeded'
     assert '创建工作《报价方案》：已完成' in result['reply']
-    assert 'submitted' not in result['reply']
 
 
 async def test_empty_reply_uses_persisted_receipts_without_another_model_request(setup):

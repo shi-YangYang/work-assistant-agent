@@ -1,3 +1,4 @@
+from member_fixtures import set_legacy_active
 import asyncio
 import json
 import math
@@ -74,7 +75,7 @@ async def test_legacy_cleanup_is_explicit_company_scoped_and_disable_preserves(s
     for key in ('employee', 'peer'):
         await enroll(c['admin'], users[key].id)
         await process_once(sessions, settings, extractor=fake_extract)
-    await c['admin'].patch('/api/v1/members/' + users['peer'].id, json={'active': False})
+    await set_legacy_active(sessions, users['peer'])
     async with sessions.begin() as db:
         old = await db.get(Member, users['employee'].id)
         old.deleted, old.active = True, False
