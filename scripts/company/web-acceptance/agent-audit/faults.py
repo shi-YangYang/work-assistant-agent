@@ -18,8 +18,16 @@ def isolated_url(settings):
     url = make_url(settings.database_url)
     if url.database != 'paa_company_test' or url.host not in ('127.0.0.1', 'localhost'):
         raise RuntimeError('Faults require the local test database')
-    if not re.fullmatch(r'-csearch_path=spec059_[a-z]+_[a-f0-9]{12}', url.query.get('options', '')):
-        raise RuntimeError('Faults require an owned Spec 059 schema')
+    declaration = os.getenv('PAA_AGENT_FAULT_ENVIRONMENT')
+    if declaration:
+        from environment import load_environment
+        metadata, private = load_environment(declaration)
+        expected = make_url(private['environment']['DATABASE_URL'])
+        if (metadata['suite'] not in ('spec059', 'spec060') or metadata['schema'] != f"{metadata['suite']}_{metadata['purpose']}_{metadata['runId'][:12]}"
+                or url.set(drivername='postgresql') != expected.set(drivername='postgresql') or url.query.get('options') != '-csearch_path=' + metadata['schema']):
+            raise RuntimeError('Fault target does not match the owned environment declaration')
+    elif not re.fullmatch(r'-csearch_path=spec059_[a-z]+_[a-f0-9]{12}', url.query.get('options', '')):
+        raise RuntimeError('Faults require an exact owned environment declaration')
     return url
 
 
@@ -39,13 +47,13 @@ def main():
     parser.add_argument('--cases', nargs='+')
     args = parser.parse_args()
     metadata, private = load_environment(args.metadata)
-    if metadata['suite'] != 'spec059':
+    if metadata['suite'] not in ('spec059', 'spec060'):
         raise RuntimeError('Refusing another suite environment')
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     env = {**os.environ, **private['environment'], 'SPEC044_PROCESS_RECOVERY': '1',
            'SPEC044_SERVER_EVIDENCE': str(output), 'SPEC059_FAULT_EVIDENCE': str(output),
-           'SPEC059_FIXED_EVIDENCE': str(output), 'PAA_REPLY_STREAM_REDIS_URL': '',
+           'SPEC059_FIXED_EVIDENCE': str(output), 'PAA_AGENT_FAULT_ENVIRONMENT': str(Path(args.metadata).resolve()),
            'PYTHONPATH': os.pathsep.join([str(Path(__file__).parent), private['environment']['PYTHONPATH']])}
     cases = args.cases or [
         'tests/server/test_agent_audit_faults.py',

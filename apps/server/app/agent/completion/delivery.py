@@ -124,6 +124,8 @@ async def assess(context, answer, *, model=None):
         value = Delivery.model_validate(value)
         from app.agent.completion.prose import task_for
         task = task_for(job, value.task.model_dump()).model_dump()
+        from app.tasks.feedback.work_requirements import task_with_remaining
+        task = task_with_remaining(job, cards, task)
         known = {card['id'] for card in cards}
         if set(value.operation_ids) - known:
             return ReviewedReply(needs_response=True, verified=True, response_reason='收尾引用了不存在或不可访问的业务回执；只能依据真实回执说明结果。', task=task)
@@ -143,3 +145,31 @@ async def assess(context, answer, *, model=None):
         return ReviewedReply('' if missing_execution else answer, verified=True,
             execution_claims=missing_execution, needs_action=missing_execution,
             needs_response=bool(response_issue), response_reason=response_issue, task=task)
+
+
+async def delivery_for(context, raw, *, pending_task=None):
+    from app.modules.messages.models import Message
+    from app.modules.operations.receipts import message_actions
+    from app.security.ownership import owned
+    from app.tasks.lease import lease
+    from app.agent.completion.prose import parse_header, task_for
+    answer, unfinished, _ = parse_header(raw, complete=True)
+    if not answer.strip():
+        raise ValueError('模型未返回有效正文')
+    async with context.sessions() as db:
+        job, actor = await lease(db, context)
+        message = await owned(db, Message, job.target_id, actor)
+        task = job.result.get('explicitTaskContext') or job.result.get('intentTaskInterpretation') or {}
+        for extra in (pending_task, unfinished):
+            if not extra:
+                continue
+            remaining = list(dict.fromkeys([*task.get('remaining', []), *extra.get('remaining', [])]))
+            state = task.get('state', 'completed')
+            if state == 'completed' or extra.get('state') == 'blocked':
+                state = extra['state']
+            task = {**task, 'state': state,
+                    'remaining': remaining[:7] + ['；'.join(remaining[7:])] if len(remaining) > 8 else remaining}
+        cards = await message_actions(db, actor, message)
+        return Delivery(version=2, answer=answer, task=task_for(job, task),
+                        business_requested=bool(cards or job.result.get('explicitBusinessRequest')),
+                        operation_ids=[card['id'] for card in cards], verification_requested=False)

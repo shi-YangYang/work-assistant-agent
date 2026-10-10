@@ -66,14 +66,20 @@ async def configure_case(case, state, directory):
 
 async def main(args):
     _, metadata, state = runner_environment(metadata_path=args.metadata)
-    suite = json.loads((BASE / 'suite.json').read_text())
-    cases_path = BASE / 'cases.json'
+    suite_path = Path(args.suite).resolve() if args.suite else BASE / 'suite.json'
+    suite = json.loads(suite_path.read_text())
+    cases_path = suite_path.parent / suite.get('caseFile', 'cases.json')
     sha = hashlib.sha256(cases_path.read_bytes()).hexdigest()
     if sha != suite['caseSha256']:
         raise RuntimeError('Frozen cases fingerprint mismatch')
     cases = json.loads(cases_path.read_text())
     if args.ids:
-        cases = [c for c in cases if c['id'] in args.ids.split(',')]
+        selected = set(args.ids.split(','))
+        if selected - {c['id'] for c in cases}:
+            raise RuntimeError('Unknown frozen case ID')
+        cases = [c for c in cases if c['id'] in selected]
+    if not cases:
+        raise RuntimeError('No frozen cases selected')
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     run = {'caseSha256': sha, 'schema': metadata['schema'], 'runId': metadata['runId'], 'applicationCommit': metadata['commit'], 'ids': args.ids, 'repetition': args.repetition, 'timeoutSeconds': suite['watchdogSeconds'], 'concurrency': 1}
@@ -137,6 +143,7 @@ async def main(args):
 if __name__ == '__main__':
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--metadata', required=True)
+    p.add_argument('--suite', help='Explicit frozen suite manifest; omission retains Spec059')
     p.add_argument('--materials', required=True)
     p.add_argument('--output', required=True)
     p.add_argument('--ids', default='')

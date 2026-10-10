@@ -2,7 +2,7 @@
 
 MARKER = '<!--noria:'
 HEADER_LIMIT = 1024
-PROSE_POLICY = '''最终正文直接完整交付，首行 <!--noria:{}--> 后换行；标记不展示，工具前说明不用。直接遵从用户要求，无需 finish_task 或任务元数据表单。\n'''
+PROSE_POLICY = '''最终正文直接完整交付，首行 <!--noria:{}--> 后换行；仅当本次请求仍有未完成项时，在同一标记填写 remaining，例如 <!--noria:{"remaining":["未完成的具体事项及原因"]}-->，不为此另调工具。普通追问、建议和未来可选事项不算未完成。标记不展示，工具前说明不用；无需 finish_task 或任务元数据表单。\n'''
 
 
 def parse_header(raw, *, complete=False):
@@ -45,28 +45,3 @@ def task_for(job, task=None):
             remaining = [*remaining[:7], '；'.join(remaining[7:])]
         value = value.model_copy(update={'state': 'blocked', 'remaining': remaining})
     return value
-
-
-async def delivery_for(context, raw, *, pending_task=None):
-    from app.agent.completion.delivery import Delivery
-    from app.modules.messages.models import Message
-    from app.modules.operations.receipts import message_actions
-    from app.security.ownership import owned
-    from app.tasks.lease import lease
-    answer, unfinished, _ = parse_header(raw, complete=True)
-    from app.tasks.budget.service import current
-    budget = current(context)
-    if budget and budget['phase'] in ('finalizing', 'exhausted'):
-        pending_task = unfinished or pending_task
-    if not answer.strip():
-        raise ValueError('模型未返回有效正文')
-    async with context.sessions() as db:
-        job, actor = await lease(db, context)
-        message = await owned(db, Message, job.target_id, actor)
-        task = job.result.get('explicitTaskContext') or job.result.get('intentTaskInterpretation') or {}
-        if pending_task and task.get('state', 'completed') == 'completed':
-            task = pending_task
-        cards = await message_actions(db, actor, message)
-        return Delivery(version=2, answer=answer, task=task_for(job, task),
-                        business_requested=bool(cards or job.result.get('explicitBusinessRequest')),
-                        operation_ids=[card['id'] for card in cards], verification_requested=False)

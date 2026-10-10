@@ -13,7 +13,7 @@ from pydantic import PrivateAttr
 
 
 # A shared model may serve internal work and user replies concurrently.
-internal_call_kind = ContextVar('internal_model_call_kind', default=None)
+from app.agent.runtime.budget import internal_call_kind
 
 
 def approximate_tokens(messages):

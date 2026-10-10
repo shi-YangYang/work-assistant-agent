@@ -445,3 +445,28 @@ async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup,
     assert result['reply'].count('材料范围：') == 1
     assert result['reply'].startswith('销售额合计为300。')
     assert '文字工具读取 3/3 个分段' in result['reply']
+
+
+async def test_content_sized_pages_keep_small_json_whole_and_large_file_citations(setup):
+    from app.modules.attachments.documents import chunk_page
+    settings, sessions, users, clients = setup
+    conv = await conversation(clients['employee'])
+    small = await upload(clients['employee'], 'small.json', json.dumps({'orders': [1, 2, 3], 'price': 5}).encode())
+    large = await upload(clients['employee'], 'large.txt', ('有界内容\n' * 10000).encode())
+    sent = await message(clients['employee'], conv, '读取文件', [small['id'], large['id']])
+    await run(settings, sessions, users, sent)
+    async with sessions() as db:
+        item = await db.get(Attachment, small['id'])
+        page = await chunk_page(db, item)
+        assert len(page['items']) == item.extraction_info['chunks'] and page['nextCursor'] is None
+        item = await db.get(Attachment, large['id'])
+        cursor, ordinals = 0, []
+        while cursor is not None:
+            page = await chunk_page(db, item, cursor)
+            assert 0 < len(page['items']) <= 40
+            assert sum(len(row['text']) for row in page['items']) <= 12000
+            ordinals.extend(row['ordinal'] for row in page['items'])
+            next_cursor = page['nextCursor']
+            assert next_cursor is None or next_cursor > cursor
+            cursor = next_cursor
+        assert ordinals == list(range(item.extraction_info['chunks']))

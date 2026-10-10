@@ -95,8 +95,13 @@ async def test_daily_usage_does_not_block_calls_but_per_run_budget_remains(setup
     assert first != second and context.calls == 2
     async with sessions() as db:
         assert (await db.get(ModelUsage,second)).job_id == job.id
-    context.calls=8
-    with pytest.raises(BudgetExceeded): await reserve_call(context,'agent')
+    async with sessions.begin() as db:
+        live = await db.get(Job, job.id)
+        budget = live.result['taskBudget']
+        maximum = budget['policy']['models']
+        live.result = {**live.result, 'taskBudget': {**budget, 'models': maximum}}
+    with pytest.raises(BudgetExceeded):
+        await reserve_call(context, 'assistant')
 
 
 async def test_concurrent_idempotent_send_returns_one_message(setup):

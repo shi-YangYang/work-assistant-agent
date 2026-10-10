@@ -9,6 +9,8 @@ from app.modules.interactions.schemas import Question
 async def request_user_input(questions: list[Question], runtime: ToolRuntime[RunContext], continue_task: bool = False) -> str:
     """Ask 1-3 necessary questions, then stop while waiting for the actual user.
 
+    Also use when the user explicitly requests the temporary question form to
+    choose preferences; prose A/B options do not display that component.
     Use for unresolved targets, required dates or preferences, not authorization
     approval (business actions provide their own approval cards). Support single,
     multiple or text type. Always allowCustom when the user may supply an answer

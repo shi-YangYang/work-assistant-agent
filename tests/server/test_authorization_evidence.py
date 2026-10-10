@@ -66,9 +66,10 @@ async def test_new_evidence_replaces_only_current_proposal_classification(setup,
     assert len(judge.inputs) == 2
     key = digest(judge.inputs[-1]['proposedOperation'])
     category = 'invalid_arguments' if latest_kind.startswith('invalid_') else latest_kind
-    expected_state = 'succeeded' if category == 'success' else 'not_requested' if category == 'not_requested' else 'clarification'
+    expected_state = {'success': 'succeeded', 'not_requested': 'not_requested',
+                      'missing_info': 'clarification', 'invalid_arguments': 'failed'}[category]
     assert latest['state'] == expected_state, latest
-    if expected_state == 'clarification':
+    if expected_state in ('clarification', 'failed'):
         assert latest['category'] == category
     assert context.authorization_outcomes[key] == category
     assert (key in context.unrequested_actions) == (category == 'not_requested')
@@ -191,13 +192,14 @@ async def test_selected_item_refusals_do_not_block_siblings_or_bypass_read_and_r
     denied = ScopedJudge(allowed=False, kind='not_requested')
     context.intent_model = denied
     third = await execute(context, step=3, action='create_work', changes={'title': '验收'}, **reference, item_id=saved['items'][2]['id'])
-    assert third['state'] == 'clarification'
+    assert third['state'] == 'not_requested'
+    assert context.authorization_outcomes[digest(denied.inputs[-1]['proposedOperation'])] == 'not_requested'
     context.intent_model = Judge()
     first = await execute(context, step=1, action='create_work', changes={'title': '范围'}, **reference, item_id=saved['items'][0]['id'])
     assert first['state'] == 'succeeded'
     # A new receipt invalidates the old decision, not the user's restriction.
     context.intent_model = denied
-    assert (await execute(context, step=3, action='create_work', changes={'title': '验收'}, **reference, item_id=saved['items'][2]['id']))['state'] == 'clarification'
+    assert (await execute(context, step=3, action='create_work', changes={'title': '验收'}, **reference, item_id=saved['items'][2]['id']))['state'] == 'not_requested'
     assert len(denied.inputs) == 2
     forged = await execute(context, step=2, action='create_work', changes={'title': '开发'},
                            deliverable_id=str(uuid4()), deliverable_revision=1, item_id=saved['items'][1]['id'])

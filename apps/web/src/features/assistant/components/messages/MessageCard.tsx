@@ -236,7 +236,7 @@ export function MessageCard({
             !message.businessUnavailable &&
             !failed &&
             job?.operationFeedback?.map((item) => (
-              <div className={noticeStyles['notice']} role="status" key={item.step}>
+              <div className={noticeStyles['notice']} role="status" key={item.key ?? item.step}>
                 <strong>
                   {item.label} ·{' '}
                   {item.state === 'clarification'

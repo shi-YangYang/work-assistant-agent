@@ -69,8 +69,8 @@ async def test_numeric_answer_does_not_trigger_post_generation_judge(setup, raw_
     fake = NumericModel(model='controlled', api_key='unused', raw_first=raw_first, answer=answer)
     result, stored = await run(setup, fake, '库存80件，甲需要50件，乙需要40件，够不够？不要修改工作。')
     assert result['reply'] == answer and result['job']['taskOutcome']['state'] == 'completed'
-    assert fake.calls == (2 if raw_first else 1) and not fake.reviews and fake.repairs == 0
-    assert stored.get('deliveryRepairs', []) == (['protocol'] if raw_first else [])
+    assert fake.calls == 1 and not fake.reviews and fake.repairs == 0
+    assert not stored.get('deliveryRepairs')
     assert not result['actions'] and not result['drafts']
     assert (await setup[3]['employee'].get('/api/v1/work-items')).json()['items'] == []
 

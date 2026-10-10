@@ -73,7 +73,8 @@ def document_tool_result(context, item, result, job):
 
 @tool
 async def read_document(attachment_id: str, start: int, runtime: ToolRuntime[RunContext]) -> str:
-    """Read up to 3 real document chunks, starting at a zero-based ordinal. Use
+    """Read a content-sized page (up to 40 chunks / 12000 characters), starting
+    at a zero-based ordinal. Chunk identities remain unchanged. Use
     nextCursor until null when full coverage is needed, otherwise read only the
     relevant parts and state that scope. Keep each claim's original conditions
     and qualifiers; distinguish inference. Cite only returned citation tokens.

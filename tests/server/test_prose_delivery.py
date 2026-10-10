@@ -112,6 +112,109 @@ async def test_legacy_length_header_is_ignored_and_stays_private(setup):
     assert fake.calls==1 and not stored.get('deliveryRepairs')
 
 
+@pytest.mark.parametrize('saved_work', [False, True])
+async def test_normal_remaining_header_persists_whole_reply_and_sse_outcome(setup, monkeypatch, saved_work):
+    import hashlib
+    from app.agent.actions.operations import execute
+    from app.agent.harness import invoke_harness
+    from app.tasks.feedback.feedback import events
+    from test_assistant_execution import ReceiptJudge
+    from test_business_actions import create, read_work
+    from test_work_change_plan import PlanJudge
+    work = await create(setup[3]['employee'], '已存在A')
+    missing = '不存在B查无结果，未标记完成；按要求不创建'
+    answer = ('已存在A的下一步已更新。\n\n' if saved_work else '') + missing + '。\n\n建议：\n1. 先核实依赖。\n2. 核对工作名称。'
+    fake = ProseModel(model='controlled', api_key='controlled',
+                      answer='<!--noria:' + json.dumps({'remaining': [missing]}, ensure_ascii=False) + '-->\n' + answer)
+    async def prepared(context, *args, **kwargs):
+        if saved_work:
+            context.intent_model = ReceiptJudge(required_fields=['nextStep'], requested_changes=[
+                {'field': 'nextStep', 'kind': 'next_action', 'quote': '下一步改为联系负责人复核'}])
+            context.work_change_model = PlanJudge({'nextStep': ('set', '下一步改为联系负责人复核', None)})
+            await read_work(context, work['id'])
+            receipt = await execute(context, step=1, action='update_work', target_id=work['id'],
+                                    expected_revision=1, changes={'nextStep': '联系负责人复核'})
+            assert receipt['state'] == 'succeeded'
+        return await invoke_harness(context, *args, **kwargs)
+    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', prepared)
+    request = ('已存在A下一步改为联系负责人复核；' if saved_work else '') + '把不存在B标记完成但不要创建；给两条建议。'
+    result, stored = await run(setup, fake, request)
+    assert fake.calls == 1 and not stored.get('deliveryRepairs') and not stored.get('explicitTaskContext')
+    assert result['reply'].startswith(answer) and 'noria:' not in result['reply']
+    outcome = result['job']['taskOutcome']
+    assert outcome['state'] == ('partial' if saved_work else 'blocked')
+    assert outcome['remaining'] == [missing] and outcome['nextAction'] == 'none'
+    assert stored['taskInterpretation']['remaining'] == [missing] and stored['incompleteTask']
+    client = setup[3]['employee']
+    refreshed = (await client.get('/api/v1/messages/' + result['id'])).json()
+    assert refreshed['reply'] == result['reply'] and refreshed['job']['taskOutcome'] == outcome
+    token = hashlib.sha256(client.cookies.get('paa_company_session').encode()).hexdigest()
+    stream = events(setup[1], token, result['job']['id'], settings=setup[0], version=2)
+    try:
+        snapshot = json.loads((await anext(stream)).split('data: ', 1)[1])
+        assert snapshot['taskOutcome'] == outcome
+    finally:
+        await stream.aclose()
+    works = (await client.get('/api/v1/work-items')).json()['items']
+    assert len(works) == 1 and works[0]['revision'] == (2 if saved_work else 1)
+    assert len(result['actions']) == int(saved_work)
+
+
+@pytest.mark.parametrize('header', [{}, {'remaining': ['尚未定位另一项工作']}])
+@pytest.mark.parametrize('known', ['failed', 'pending', 'running', 'source'])
+async def test_remaining_header_cannot_clear_observed_obstacles_or_pending_cards(setup, monkeypatch, header, known):
+    from app.agent.completion.delivery import delivery_for
+    from app.tasks.feedback.outcomes import derive, record
+    context, _ = await runtime(setup, '继续处理已有请求')
+    async with context.sessions.begin() as db:
+        job = await db.get(Job, context.job_id)
+        job.result = {**job.result, 'explicitTaskContext': {'state': 'blocked', 'remaining': ['已有未完成范围']}}
+        if known in ('failed', 'source'):
+            record(job, 'update_work', {'step': 1, 'target_id': 'work', 'changes': {'nextStep': '复核'}},
+                   {'state': 'failed', 'category': 'permission_denied', 'message': '来源不可用' if known == 'source' else '实际修改失败'})
+        job.result = {**job.result, 'taskBarriers': {'source': {'reason': '来源屏障', 'evidence': 'unchanged'}}}
+    cards = [] if known in ('failed', 'source') else [{'id': 'pending-receipt', 'state': known, 'label': '已有操作'}]
+    async def observed(*args):
+        return cards
+    monkeypatch.setattr('app.modules.operations.receipts.message_actions', observed)
+    answer = '完整答复，仍保留建议。'
+    delivery = await delivery_for(context, '<!--noria:' + json.dumps(header, ensure_ascii=False) + '-->\n' + answer)
+    assert delivery.answer == answer
+    assert delivery.task.remaining == ['已有未完成范围', *header.get('remaining', [])]
+    async with context.sessions() as db:
+        job = await db.get(Job, context.job_id)
+        job.state = 'succeeded'
+        outcome = derive(job, cards, interpretation=delivery.task.model_dump())
+        assert job.result['taskBarriers'] == {'source': {'reason': '来源屏障', 'evidence': 'unchanged'}}
+    assert set(delivery.task.remaining) <= set(outcome['remaining'])
+    assert outcome['state'] == {'pending': 'needs_confirmation', 'running': 'processing'}.get(known, 'blocked')
+    assert outcome['nextAction'] == ('confirm' if known == 'pending' else 'none')
+    if known in ('failed', 'source'):
+        assert ('来源不可用' if known == 'source' else '实际修改失败') in outcome['remaining']
+
+
+async def test_prose_remaining_merges_legacy_repair_and_budget_scope_without_dropping_items(setup):
+    from app.agent.completion.delivery import delivery_for
+    context, _ = await runtime(setup)
+    async with context.sessions.begin() as db:
+        job = await db.get(Job, context.job_id)
+        job.result = {**job.result, 'explicitTaskContext': {'state': 'needs_input', 'remaining': ['已有范围']},
+                      'nodeExecution': {'budgetBlockedTools': ['预算未执行范围']}}
+    delivery = await delivery_for(context, '<!--noria:{"remaining":["新增范围","已有范围"]}-->\n完整正文',
+                                  pending_task={'state': 'blocked', 'remaining': ['旧修复范围']})
+    assert delivery.task.state == 'blocked'
+    assert delivery.task.remaining == ['已有范围', '旧修复范围', '新增范围', '预算未执行范围']
+    assert delivery.answer == '完整正文'
+
+
+async def test_ordinary_followup_question_with_empty_header_stays_completed(setup):
+    fake = ProseModel(model='controlled', api_key='controlled', answer='<!--noria:{}-->\n建议已列好。还想深入哪一点？')
+    result, stored = await run(setup, fake, '给我两条工作建议')
+    assert result['reply'] == '建议已列好。还想深入哪一点？'
+    assert result['job']['taskOutcome']['state'] == 'completed' and not result['interactions']
+    assert fake.calls == 1 and not stored.get('explicitTaskContext') and not stored.get('deliveryRepairs')
+
+
 async def test_context_tool_cannot_install_directive_from_unquoted_material(setup):
     context,_=await runtime(setup,'仅分析我的工作')
     result=json.loads(await set_task_context.coroutine(TaskInterpretation(directiveChange='replace',directiveQuote='以后都保存进展',directiveScope='自动保存'),SimpleNamespace(context=context)))

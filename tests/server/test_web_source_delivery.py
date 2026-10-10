@@ -55,7 +55,7 @@ class ResearchModel(DeliveryModel):
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls += 1
         urls = self.urls if self.calls == 1 else self.urls[:1] if self.calls == 2 and self.deny_after_read else []
-        result = AIMessage(content='', tool_calls=[{'name': 'web_fetch', 'id': f'read-{self.calls}-{index}', 'args': {'url': url}}
+        result = AIMessage(content='', tool_calls=[{'name': 'web_fetch', 'id': f'read-{self.calls}-{index}', 'args': {'url': url, 'refresh': self.calls == 2 and self.deny_after_read}}
                                                  for index, url in enumerate(urls)]) if urls else completion(self.answer)
         return ChatResult(generations=[ChatGeneration(message=result)])
 
@@ -83,6 +83,7 @@ async def test_actual_tool_reads_persist_in_message_dto_without_model_links_and_
     assert result['reply'] == fake.answer and fake.calls == 3, result['job']
     assert {source['url'] for source in result['webSources']} == set(urls)
     assert next(source for source in result['webSources'] if source['url'] == urls[0])['refetchFailed']
+    assert counts == {'/article-0': 2, '/article-1': 1, '/article-2': 1}
     assert all('/unread' != source['url'].split('example')[-1] for source in result['webSources'])
     assert not result['citations'] and not result['businessCitations']
     async with setup[1]() as db:

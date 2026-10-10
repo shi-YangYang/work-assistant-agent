@@ -161,8 +161,13 @@ class ReferenceRecoveryModel(ReviewedFixtureModel):
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls += 1
-        if isinstance(messages[-1], ToolMessage):
+        if isinstance(messages[-1], ToolMessage) and messages[-1].name != 'load_tools':
             self.tool_results.append(str(messages[-1].content))
+        if self.calls == 1:
+            assert [tool['function']['name'] for tool in kwargs['tools']] == ['load_tools']
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[{
+                'id': 'reference-capabilities', 'name': 'load_tools', 'args': {'groups': ['work', 'documents']},
+            }]))])
         schema = next(t['function']['parameters'] for t in kwargs['tools'] if t['function']['name'] == 'propose_progress')
         assert schema['properties']['status']['enum'] == ['in_progress', 'blocked', 'done']
         assert 'work_id' not in schema['required']
@@ -176,8 +181,8 @@ class ReferenceRecoveryModel(ReviewedFixtureModel):
             ('propose_progress', {**progress, 'work_id': self.work_id}),
             ('propose_progress', new_progress),
         ]
-        if self.calls <= len(actions):
-            name, args = actions[self.calls - 1]
+        if self.calls <= len(actions) + 1:
+            name, args = actions[self.calls - 2]
             answer = AIMessage(content='', tool_calls=[{'id': f'reference-{self.calls}', 'name': name, 'args': args}])
         else:
             answer = AIMessage(content='进展建议已整理，请确认。')
@@ -201,7 +206,7 @@ async def test_model_recovers_invalid_references_without_exposing_other_work(set
         await process_job(job, sessions, settings, saver, model=model)
     result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert result['job']['state'] == 'succeeded', result['job']
-    assert model.calls == 5
+    assert model.calls == 6
     assert len(model.tool_results) == 4
     assert all('不存在或无权查看' in result for result in model.tool_results[:3])
     assert '不可泄露' not in str(model.tool_results)

@@ -4,6 +4,7 @@ from app.tasks.budget.service import current
 from app.tasks.budget.state import policy
 
 final_answer_call = ContextVar('budget_final_answer', default=False)
+internal_call_kind = ContextVar('internal_model_call_kind', default=None)
 
 
 def instruction(context):

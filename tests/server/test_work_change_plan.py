@@ -23,7 +23,7 @@ class PlanJudge:
         self.fields, self.inputs = fields, []
 
     async def ainvoke(self, messages):
-        payload = json.loads(messages[-1].content)
+        payload = next(json.loads(message.content) for message in messages if str(message.content).startswith('{'))
         self.inputs.append(payload)
         assert 'proposedOperation' not in payload and 'changes' not in payload
         result = {field: {'mode': 'preserve', 'quotes': [], 'value': None} for field in FIELDS}
@@ -130,6 +130,64 @@ async def test_work_status_plan_cannot_invent_archival_state():
     fields['status'] = {'mode': 'set', 'quotes': [{'text': '归档这个工作'}], 'value': 'archived'}
     with pytest.raises(ValueError, match='normalized'):
         validate_plan(WorkChangePlan.model_validate(fields), payload)
+
+
+@pytest.mark.parametrize('field', ['title', 'summary', 'blocker', 'nextStep'])
+async def test_text_plan_schema_rejects_replacement_content_before_semantic_validation(field):
+    from pydantic import ValidationError
+    fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
+    fields[field] = {'mode': 'set', 'quotes': [{'text': '下一步改为周五完成演示文稿'}], 'value': '周五完成演示文稿'}
+    with pytest.raises(ValidationError) as error:
+        WorkChangePlan.model_validate(fields)
+    assert error.value.errors(include_input=False)[0]['loc'] == (field, 'value')
+
+
+async def test_text_plan_keeps_clear_and_source_checks_with_field_locations():
+    payload = {'messageId': 'message', 'userSources': [{'messageId': 'message', 'userText': '清空下一步'}]}
+    fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
+    fields['nextStep'] = {'mode': 'set', 'quotes': [{'text': '清空下一步'}], 'value': ''}
+    plan = validate_plan(WorkChangePlan.model_validate(fields), payload)
+    assert patch_error(plan, {'targetContent': {'nextStep': '旧计划'}, 'changes': {'nextStep': ''}}) == ''
+    assert 'nextStep 应为' in patch_error(plan, {'changes': {'nextStep': '替换而非清空'}})
+    fields['nextStep']['quotes'][0]['text'] = '另一个来源的指令'
+    with pytest.raises(ValueError, match=r'nextStep\.quotes: Change source is not original user text'):
+        validate_plan(WorkChangePlan.model_validate(fields), payload)
+    fields['nextStep']['quotes'] = []
+    with pytest.raises(ValueError, match=r'nextStep\.quotes: Each change needs a user source'):
+        validate_plan(WorkChangePlan.model_validate(fields), payload)
+    fields['nextStep']['mode'] = 'preserve'
+    with pytest.raises(ValueError, match=r'nextStep\.value: Preserved/appended field'):
+        validate_plan(WorkChangePlan.model_validate(fields), payload)
+
+
+async def test_text_plan_retry_identifies_value_field_and_writes_only_once(setup):
+    from test_assistant_execution import ReceiptJudge
+    work = await create(setup[3]['employee'], '单字段计划', summary='保留说明', nextStep='旧计划')
+    context, _ = await runtime(setup, '只把下一步改为周五完成演示文稿，其他内容不变')
+    context.node_retry = True
+    await initialize(context, 'plan-value-format')
+    await read_work(context, work['id'])
+
+    class ValueJudge(PlanJudge):
+        async def ainvoke(self, messages):
+            response = await super().ainvoke(messages)
+            if len(self.inputs) == 1:
+                result = json.loads(response.content)
+                result['nextStep']['value'] = '周五完成演示文稿'
+                return AIMessage(content=json.dumps(result))
+            assert len(messages) == 3 and 'nextStep.value' in messages[-1].content
+            return response
+
+    context.work_change_model = ValueJudge({'nextStep': ('set', '下一步改为周五完成演示文稿', None)})
+    context.intent_model = ReceiptJudge(requested_changes=[{'quote': '下一步改为周五完成演示文稿', 'field': 'nextStep', 'kind': 'next_action'}])
+    args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'nextStep': '周五完成演示文稿'})
+    result = await execute(context, **args)
+    assert result['state'] == 'succeeded'
+    assert (await execute(context, **args))['id'] == result['id']
+    after = (await setup[3]['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert after['revision'] == 2 and after['nextStep'] == '周五完成演示文稿'
+    assert all(after[key] == work[key] for key in ('title', 'summary', 'status', 'blocker', 'dueDate', 'body'))
+    assert len(context.work_change_model.inputs) == 2
 
 
 @pytest.mark.parametrize('missing', ['body', 'update', 'materials', 'removeMaterial'])
@@ -300,3 +358,118 @@ async def test_plan_cache_respects_target_version_and_cancelled_lease(setup, cha
         assert saved['state'] == 'succeeded' and saved['details']['summary'] == '外部补充'
         assert len(context.work_change_model.inputs) == 2
         assert [item['targetWork']['revision'] for item in context.work_change_model.inputs] == [1, 2]
+
+
+async def test_equal_date_is_preserved_on_first_patch_despite_judge_required_field(setup):
+    from test_assistant_execution import ReceiptJudge
+    work = await create(setup[3]['employee'], '解除阻碍', status='blocked', dueDate='2026-10-12')
+    context, _ = await runtime(setup, '改回进行中，保留2026-10-12截止')
+    await read_work(context, work['id'])
+    context.work_change_model = PlanJudge({'status': ('set', '改回进行中', 'in_progress'),
+                                         'dueDate': ('set', '保留2026-10-12截止', '2026-10-12')})
+    context.intent_model = ReceiptJudge(receipt=False, required_fields=['status', 'dueDate'], requested_changes=[
+        {'field': 'status', 'kind': 'status', 'quote': '改回进行中'},
+        {'field': 'dueDate', 'kind': 'deadline', 'quote': '保留2026-10-12截止'}])
+    result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'status': 'in_progress'})
+    assert result['state'] == 'succeeded', result
+    saved = (await setup[3]['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert saved['status'] == 'in_progress' and saved['dueDate'] == '2026-10-12' and saved['revision'] == 2
+
+
+@pytest.mark.parametrize('kind', ['invalid_arguments', 'missing_info', 'permission_denied', 'conflict'])
+async def test_cross_group_denial_is_repaired_not_mistaken_for_user_clarification(setup, kind):
+    from test_work_records import body
+    from app.agent.actions.intent import IntentVerdict
+    work = await create(setup[3]['employee'], '补正文')
+    context, _ = await runtime(setup, '补充内容：三份反馈，下一步归类。')
+    context.node_retry = True
+    await initialize(context, 'atomic-body')
+    await read_work(context, work['id'])
+    context.work_change_model = PlanJudge({'body': ('set', '补充内容：三份反馈', None),
+                                         'nextStep': ('set', '下一步归类', None)})
+    class Judge:
+        calls = 0
+        async def ainvoke(self, messages):
+            self.calls += 1
+            payload = json.loads(messages[1].content)
+            if self.calls == 1:
+                return AIMessage(content=IntentVerdict(allowed=False, quote=payload['currentUserText'], reason='缺少下一步', failureKind=kind, denialScope='fields',
+                    requiredFields=['nextStep'], requestedChanges=[{'field': 'nextStep', 'quote': '下一步归类', 'kind': 'next_action'}]).model_dump_json())
+            return AIMessage(content=IntentVerdict(allowed=True, quote=payload['currentUserText'], reason='', requiredFields=['body'],
+                requestedChanges=[{'field': 'body', 'quote': '补充内容：三份反馈', 'kind': 'content'}]).model_dump_json())
+    context.intent_model = Judge()
+    result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'body': body('三份反馈')})
+    assert result['state'] == 'succeeded' and context.intent_model.calls == 2, result
+    saved = (await setup[3]['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert saved['bodyText'] == '三份反馈' and saved['nextStep'] == ''
+
+
+@pytest.mark.parametrize('repair_allowed', [True, False])
+async def test_preserve_conflict_gets_one_independent_recheck_then_normal_authorization(setup, repair_allowed):
+    from test_assistant_execution import ReceiptJudge
+    work = await create(setup[3]['employee'], '第二项工作')
+    context, _ = await runtime(setup, '把刚才第二项工作的下一步改为今天与负责人确认，第一项不变')
+    context.node_retry = True
+    await initialize(context, 'scope-repair')
+    await read_work(context, work['id'])
+    class ScopeJudge:
+        calls = 0
+        async def ainvoke(self, messages):
+            self.calls += 1
+            payload = json.loads(messages[1].content)
+            assert 'changes' not in payload and 'proposedOperation' not in payload
+            fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
+            if self.calls == 2 and repair_allowed:
+                fields['nextStep'] = {'mode': 'set', 'quotes': [{'messageId': payload['messageId'], 'text': '下一步改为今天与负责人确认'}], 'value': None}
+            return AIMessage(content=json.dumps(fields))
+    context.work_change_model = ScopeJudge()
+    context.intent_model = ReceiptJudge(requested_changes=[{'quote': '下一步改为今天与负责人确认', 'field': 'nextStep', 'kind': 'next_action'}])
+    args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'nextStep': '今天与负责人确认'})
+    first = await execute(context, **args)
+    if repair_allowed:
+        assert first['state'] == 'succeeded'
+        assert (await setup[3]['employee'].get('/api/v1/work-items/' + work['id'])).json()['revision'] == 2
+    else:
+        assert first['category'] == 'invalid_arguments'
+        second = await execute(context, **args)
+        assert second['category'] == 'invalid_arguments'
+        assert (await setup[3]['employee'].get('/api/v1/work-items/' + work['id'])).json()['revision'] == 1
+    assert context.work_change_model.calls == 2
+
+
+@pytest.mark.parametrize('exit_at', ['before_node', 'after_node'])
+async def test_scope_repair_recovers_same_node_after_worker_exit(setup, monkeypatch, exit_at):
+    from app.agent.actions import work_change_plan as module
+    from app.tasks.nodes.node_execution import active_node
+    context, sent = await runtime(setup, '下一步改为确认负责人')
+    context.node_retry = True
+    await initialize(context, 'repair-restart')
+    payload = {'messageId': sent['messageId'], 'userSources': [{'messageId': sent['messageId'], 'userText': '下一步改为确认负责人'}]}
+    plan = WorkChangePlan.model_validate({name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS})
+    proposal = {'changes': {'nextStep': '确认负责人'}, 'targetContent': {'nextStep': ''}}
+    judge = PlanJudge({'nextStep': ('set', '下一步改为确认负责人', None)})
+    original = module.execute_node
+    calls = []
+    async def interrupt_once(*args, **kwargs):
+        calls.append((kwargs['identity'], active_node.get()))
+        if len(calls) == 1 and exit_at == 'before_node':
+            raise InterruptedError('worker exited before durable node')
+        result = await original(*args, **kwargs)
+        if len(calls) == 1:
+            raise InterruptedError('worker exited after durable result, before plan cache')
+        return result
+    monkeypatch.setattr(module, 'execute_node', interrupt_once)
+    for parent in ('first-tool', 'resumed-tool'):
+        token = active_node.set((parent, 'tool'))
+        try:
+            if parent == 'first-tool':
+                with pytest.raises(InterruptedError):
+                    await module.repair_preserved_scope(context, 'stable-key', plan, payload, proposal, judge)
+            else:
+                result = await module.repair_preserved_scope(context, 'stable-key', plan, payload, proposal, judge)
+        finally:
+            active_node.reset(token)
+    assert result.nextStep.mode == 'set' and module.patch_error(result, proposal) == ''
+    assert calls[0] == calls[1] and len(judge.inputs) == 1
+    repeated = await module.repair_preserved_scope(context, 'stable-key', plan, payload, proposal, judge)
+    assert repeated == result and len(calls) == 2

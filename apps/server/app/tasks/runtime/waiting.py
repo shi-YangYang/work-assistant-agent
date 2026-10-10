@@ -58,7 +58,7 @@ async def settle(db, actor, message_id):
         job.lease_until, job.updated_at = None, now()
         job.result = {**job.result, 'taskInterpretation': {**job.result.get('taskInterpretation', {}), 'state': 'completed', 'remaining': []}}
     from app.tasks.feedback.outcomes import derive
-    from app.modules.operations.policy.rules import LABELS
-    cards = [{'state': row.state, 'label': LABELS[row.action]} for row in actions]
+    from app.tasks.feedback.work_requirements import settled_receipt
+    cards = [await settled_receipt(db, actor, row) for row in actions]
     job.result = {**job.result, 'taskOutcome': derive(job, cards)}
     update_feedback(job, 'complete' if job.state in ('succeeded', 'cancelled') else None, '')

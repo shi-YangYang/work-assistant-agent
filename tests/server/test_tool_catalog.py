@@ -86,8 +86,9 @@ async def test_ordinary_prose_has_only_catalog_once_and_keeps_clock_role_mode(se
     assert result['job']['taskOutcome']['state'] == 'completed'
     assert '当前请求时间' in model.systems[0] and 'Asia/Shanghai' in model.systems[0]
     assert '当前执行权限' in model.systems[0] and '员工：' in model.systems[0]
-    # Wire-size regression only; expression quality is assessed with real samples.
-    assert len(model.systems[0]) < 1800
+    # Persona examples are intentional; keep capability rules out of the cold prompt.
+    from app.agent.prompts.main import POLICIES
+    assert all(policy not in model.systems[0] for policy in POLICIES.values())
     assert len(json.dumps(model.schemas[0], ensure_ascii=False)) < 1300
 
 
@@ -168,7 +169,7 @@ async def test_load_is_idempotent_scope_bound_and_lease_guarded(setup):
         assert loaded_groups(next_context, await db.get(Job, next_context.job_id)) == []
 
 
-async def test_legacy_tool_call_registers_capability_but_preserves_cached_node_and_acl(setup):
+async def test_known_tool_call_registers_capability_but_preserves_cached_node_and_acl(setup):
     work = await create(setup[3]['employee'])
     context, _ = await runtime(setup, '读取报价方案')
     context.node_retry = True
@@ -254,9 +255,9 @@ async def test_discovery_keeps_existing_request_and_time_budgets(setup):
 async def test_disabled_execution_history_has_discoverable_recovery_group(setup):
     context, _ = await runtime(setup, '读取先前执行记录')
     assert 'read_execution' in available_groups(context)['documents']
-    from app.agent.tools.catalog import remember_legacy_call
+    from app.agent.tools.catalog import remember_call_capability
     async with context.sessions.begin() as db:
         job = await db.get(Job, context.job_id)
-        remember_legacy_call(context, job, {'name': 'read_execution', 'args': {}})
+        remember_call_capability(context, job, {'name': 'read_execution', 'args': {}})
         assert loaded_groups(context, job) == ['documents']
         assert 'read_execution' in visible_tools(context, loaded_groups(context, job))

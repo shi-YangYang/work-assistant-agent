@@ -116,7 +116,7 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
             result = await invoke_bounded(context, graph.ainvoke(inputs, config, context=context), timeout=max(0.01, context.node_deadline - time.time() if context.node_retry else 180 - (time.monotonic() - context.started)))
     await validate_memory_completed(context)
     messages = result.get('messages', [])
-    from app.agent.completion.prose import delivery_for
+    from app.agent.completion.delivery import delivery_for
 
     async def read_delivery(items):
         last = next((m for m in reversed(items) if isinstance(m, AIMessage)), None)

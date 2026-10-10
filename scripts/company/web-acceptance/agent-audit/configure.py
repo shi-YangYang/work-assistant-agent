@@ -46,7 +46,7 @@ async def configure(path, username):
         await source_engine.dispose()
     metadata, private = load_environment(path)
     env = private['environment']
-    env.update({'PAA_REPLY_STREAM_REDIS_URL': original.reply_stream_redis_url or 'redis://127.0.0.1:6379/0', 'PAA_REPLY_STREAM_NAMESPACE': 'spec059:' + metadata['runId'], 'PAA_SANDBOX_URL': original.sandbox_url, 'PAA_SANDBOX_TOKEN': original.sandbox_token})
+    env.update({'PAA_REPLY_STREAM_REDIS_URL': original.reply_stream_redis_url or 'redis://127.0.0.1:6379/0', 'PAA_REPLY_STREAM_NAMESPACE': metadata.get('suite', 'spec059') + ':' + metadata['runId'], 'PAA_SANDBOX_URL': original.sandbox_url, 'PAA_SANDBOX_TOKEN': original.sandbox_token})
     Path(metadata['secretFile']).write_text(json.dumps(private, ensure_ascii=False, indent=2))
     import shlex
     Path(metadata['secretEnvFile']).write_text(''.join(f'export {k}={shlex.quote(v)}\n' for k, v in env.items()))
@@ -60,7 +60,7 @@ async def configure(path, username):
                 for purpose, config in configs.items():
                     sid = str(uuid4())
                     model = config['model']
-                    service = ModelService(id=sid, company_id=company, name='Spec059 ' + purpose, base_url=config['base'], models=[model])
+                    service = ModelService(id=sid, company_id=company, name=metadata.get('suite', 'spec059').capitalize() + ' ' + purpose, base_url=config['base'], models=[model])
                     db.add(service)
                     await db.flush()
                     db.add(ModelServiceRevision(company_id=company, service_id=sid, revision=1, name=service.name, base_url=service.base_url, models=service.models, credential=encrypt(settings.model_key_file, config['key'], company, sid, 1)))

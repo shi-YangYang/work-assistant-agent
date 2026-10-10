@@ -25,7 +25,7 @@ DESCRIPTIONS = {
     'documents': '读取私人附件/历史消息，保存与修改私人方案、文稿、清单及稳定条目',
     'files': '表格检查、文件/图表/文档生成、Python计算及执行记录',
     'memory': '保存或忘记用户直接自述的稳定个人背景',
-    'task_context': '集中澄清，记录持续指令变更、承接任务与未完成项',
+    'task_context': '临时提问框（用户明确要求时使用）、集中澄清、持续指令与承接任务',
 }
 RECEIPT_GROUPS = {
     'create_work': 'work', 'update_work': 'work', 'delete_work': 'work',
@@ -96,8 +96,8 @@ def remember_groups(context, job, groups):
     return value['groups']
 
 
-def remember_legacy_call(context, job, call):
-    """Old checkpoints still execute through all original authorization checks."""
+def remember_call_capability(context, job, call):
+    """Discover a registered direct call; schema and authorization still apply."""
     name = call['name']
     loaded = loaded_groups(context, job)
     available = available_groups(context)

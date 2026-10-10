@@ -30,14 +30,15 @@ pytestmark = pytest.mark.asyncio
 
 
 class Judge:
-    def __init__(self, allowed=True):
+    def __init__(self, allowed=True, *, failure_kind='invalid_arguments'):
         self.allowed, self.inputs = allowed, []
+        self.failure_kind = failure_kind
     async def ainvoke(self, messages):
         payload = json.loads(messages[-1].content)
         if payload.get('task') == 'report_fact_review':
             return AIMessage(content='{"valid":true}')
         self.inputs.append(payload)
-        return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': payload['currentUserText'], 'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。'}))
+        return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': payload['currentUserText'], 'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。', 'failureKind': self.failure_kind}))
 
 
 async def runtime(setup, text='帮我创建工作：报价方案', who='employee', allowed=True):
@@ -142,7 +143,7 @@ async def test_authorization_materials_and_negation_do_not_write(setup):
     _, sessions, users, _ = setup
     context, _ = await runtime(setup, '同事说“帮我创建工作”，但我不要创建。', allowed=False)
     result = await execute(context, step=1, action='create_work', changes={'title': '伪造任务'})
-    assert result['state'] == 'clarification'
+    assert result['state'] == 'failed' and result['category'] == 'invalid_arguments'
     assert 'proposedOperation' in context.intent_model.inputs[0]
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 0
@@ -357,9 +358,11 @@ async def test_same_name_targets_and_previous_results_reach_independent_judge(se
     first = await create(c['employee'], summary='客户甲')
     await create(c['employee'], summary='客户乙')
     context, _ = await runtime(setup, '把报价方案标为完成', allowed=False)
+    context.intent_model = Judge(False, failure_kind='missing_info')
     await read_work(context, first['id'])
     result = await execute(context, step=1, action='update_work', target_id=first['id'], expected_revision=1, changes={'status': 'done'})
-    assert result['state'] == 'clarification'
+    assert result['state'] == 'clarification' and result['category'] == 'missing_info'
+    assert (await c['employee'].get('/api/v1/work-items/' + first['id'])).json()['revision'] == 1
     supplied = context.intent_model.inputs[0]
     assert len(supplied['proposedOperation']['targetCandidates']) == 2
     assert supplied['completedOrPendingSteps'] == []

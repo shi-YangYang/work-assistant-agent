@@ -51,13 +51,15 @@ async def execute(context, **arguments):
     from app.tasks.lease import lease
     async def remember(result):
         from app.agent.actions.task_outcomes import remember as remember_outcome
-        resolved_keys = await remember_outcome(context, arguments.get('action', ''), arguments, result)
+        outcome_arguments = {key: value for key, value in arguments.items() if key != 'task_item_id'}
+        if result.get('taskItemId'):
+            outcome_arguments['task_item_id'] = result['taskItemId']
+        await remember_outcome(context, arguments.get('action', ''), outcome_arguments, result)
         step = arguments.get('step')
         if not isinstance(step, int) or not 1 <= step <= 8:
             return
-        request_key = digest({key: value for key, value in arguments.items() if key not in ('step', 'expected_revision')})
         async with context.sessions.begin() as db:
-            job, _ = await lease(db, context)
+            job, context_actor = await lease(db, context)
             if context.node_retry:
                 from app.tasks.nodes.node_execution import active_node
                 from app.tasks.nodes.node_state import execution, save
@@ -67,18 +69,22 @@ async def execute(context, **arguments):
                     node = next(item for item in state['nodes'] if item['id'] == current_node[0])
                     node['requestKey'] = digest({key: value for key, value in arguments.items() if key not in ('step', 'expected_revision', 'task_item_id')})
                     save(job, state)
-            keys = job.result.get('operationFeedbackKeys', {})
-            resolved = result.get('state') in ('succeeded', 'pending', 'running')
-            feedback = [item for item in job.result.get('operationFeedback', []) if item['step'] != step and not (resolved and keys.get(str(item['step'])) in resolved_keys | {request_key})]
-            keys = {str(item['step']): keys.get(str(item['step']), '') for item in feedback}
-            if result.get('state') in ('failed', 'conflict', 'clarification', 'waiting'):
-                feedback.append({'step': step, 'action': arguments.get('action', ''), 'label': LABELS.get(arguments.get('action'), '业务操作'), 'state': result['state'], 'message': str(result.get('message', ''))[:500]})
-                keys[str(step)] = request_key
-            job.result = {**job.result, 'operationFeedback': sorted(feedback, key=lambda item: item['step']), 'operationFeedbackKeys': keys}
             # Announce only committed outcomes. The endpoint resolves authorized
             # DTOs on each read instead of copying tool arguments into SSE.
             from app.tasks.feedback.feedback_state import update_feedback
             update_feedback(job, 'operating', '')
+            if arguments.get('action') == 'update_work' and job.result.get('workChangeRequirements'):
+                from app.modules.operations.receipts import message_actions
+                from app.tasks.feedback.work_requirements import remaining
+                cards = [result]
+                missing = remaining(job, cards, include_pending=True)
+                if missing or any(entry.get('planRejection') for entry in job.result.get('toolOutcomes', [])):
+                    message = await owned(db, Message, job.target_id, context_actor)
+                    cards = await message_actions(db, context_actor, message)
+                    missing = remaining(job, cards, include_pending=True)
+                from app.tasks.feedback.outcomes import reconcile
+                reconcile(job, cards)
+                return missing
     try:
         result = await _execute(context, **arguments)
     except HTTPException as error:
@@ -100,12 +106,15 @@ async def execute(context, **arguments):
         await remember({'state': 'conflict' if error.status_code == 409 else 'failed', 'category': 'permission_denied' if error.status_code in (403, 404) else 'conflict' if error.status_code == 409 else 'invalid_arguments', 'message': error.detail['message']})
         raise
     except ValueError:
-        await remember({'state': 'clarification', 'message': '请核对必要内容、日期和字段，操作未执行。'})
+        await remember({'state': 'failed', 'category': 'invalid_arguments', 'message': '请核对必要内容、日期和字段，操作未执行。'})
         raise
     else:
-        await remember(result)
+        missing = await remember(result)
         if result.get('objectRevision') and result.get('objectId'):
             context.read_versions[result['objectId']] = result['objectRevision']
+        if missing:
+            result = {**result, 'remainingChanges': missing,
+                      'planningNote': '此回执仅覆盖已保存的原子步骤；按原用户要求继续剩余字段，不重复已成功操作。每一步仍须正常授权，不能把未尝试步骤说成缺少用户信息。'}
         return result
 
 
@@ -199,7 +208,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         from app.modules.operations.policy.execution_policy import mode_for, decide
         mode = await mode_for(db, job)
         effect = 'prepare_confirmation' if decide(mode, action, changes=changes).outcome == 'ask' else 'enqueue_report' if action == 'generate_report' else 'save'
-        proposal = {'targetCandidates': candidates, 'action': action, 'effect': effect, 'target': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}' if target else '', **params}
+        proposal = {'targetCandidates': candidates, 'action': action, 'requestStep': step, 'effect': effect, 'target': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}' if target else '', **params}
         if task_item_id:
             proposal['taskItemId'] = task_item_id
         if isinstance(target, WorkItem):
@@ -229,9 +238,19 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             return {'state': 'clarification', 'message': str(error)}
     allowed, reason = await authorize_intent(context, proposal)
     if not allowed:
-        if digest(proposal) in context.unrequested_actions:
+        if digest(proposal) in context.unrequested_actions or context.authorization_outcomes.get(digest(proposal)) == 'not_requested':
             return {'state': 'not_requested', 'message': reason or '本次未要求该操作，已跳过；继续回应原请求即可，无需要求用户授权多余操作。'}
-        return {'state': 'clarification', 'category': context.authorization_outcomes.get(digest(proposal), 'missing_info'), 'message': reason or '请明确要执行的操作和对象，业务尚未更改'}
+        category = context.authorization_outcomes.get(digest(proposal), 'invalid_arguments')
+        return {'state': 'clarification' if category == 'missing_info' else 'failed', 'category': category,
+                'taskItemId': context.task_item_keys.get(digest(proposal), ''),
+                'fieldIssues': context.authorization_details.get(digest(proposal), []),
+                'message': reason or '本次操作未执行，请根据失败原因修正参数或说明未完成范围。'}
+    if action == 'create_work' and selected and digest(proposal) not in context.title_only_actions:
+        from app.modules.work.content.document import plain_text
+        if any(item.get('body', '').strip() for item in selected.get('items', [])) and not plain_text(changes.get('body')).strip():
+            return {'state': 'failed', 'category': 'invalid_arguments',
+                    'fieldIssues': [{'field': 'body', 'code': 'missing'}],
+                    'message': '所选方案条目有正文，本次只传标题尚未保存。请在同一步 changes.body 中保留条目目标、内容与条件后重试；不要新建额外副本或设置未要求的下一步/日期。'}
     if action == 'update_work':
         merged = dict(changes)
         for name, addition in context.append_values.get(digest(proposal), {}).items():

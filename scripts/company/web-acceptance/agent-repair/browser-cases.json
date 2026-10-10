@@ -1,0 +1,153 @@
+[
+  {
+    "id": "B03",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "full",
+    "effort": "low",
+    "family": "memory",
+    "expected": "偏好保存一次，跨新会话可召回；忘记后不存在同义条目，观察工具调用与真实写入分别计数。",
+    "turns": [
+      {
+        "prompt": "请记住，我喜欢吃米饭。"
+      },
+      {
+        "prompt": "我喜欢什么主食？只回答已知记忆，不要猜。",
+        "newConversation": true
+      },
+      {
+        "prompt": "请忘记我喜欢吃米饭这条偏好，不要继续保存它。"
+      }
+    ],
+    "sourceCase": {
+      "suite": "059",
+      "id": "B03",
+      "sha256": "7bd860820324f92a5382bcd6e3148b9b8c9c0ea4dc75f41c6cf9db44accd0fae"
+    },
+    "resetMemory": true,
+    "verifyAfterReload": true
+  },
+  {
+    "id": "B04",
+    "role": "employee",
+    "persona": "professional",
+    "mode": "full",
+    "effort": "low",
+    "family": "work-multiturn",
+    "expected": "仅创建一个标题为B04客户走访的工作；更新同一工作内容，状态保持进行中，不重复创建。",
+    "maxWrites": 2,
+    "turns": [
+      {
+        "prompt": "帮我新建一项工作，标题B04客户走访，内容是整理三位客户的问题，状态进行中。请直接保存。"
+      },
+      {
+        "prompt": "给刚才这项工作补充内容：已经收集到三份反馈，下一步归类。不要改变状态。"
+      },
+      {
+        "prompt": "读取这项工作，告诉我当前状态和完整内容，不要再次修改。"
+      }
+    ],
+    "sourceCase": {
+      "suite": "059",
+      "id": "B04",
+      "sha256": "957ae250b24177ce347336255f236445564c74b5b7822e4358e4ba095010d893"
+    },
+    "resetMemory": true,
+    "verifyAfterReload": true,
+    "repeatTitles": ["B04客户走访"],
+    "repairAssertions": [
+      "补正文合法原子操作不受其他组nextStep缺失拒绝；读回三份反馈、下一步归类和进行中；只创建一次、更新只一版"
+    ]
+  },
+  {
+    "id": "B06",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "question",
+    "expected": "明确请求先以临时提问收集格式；回答后继续同一任务，不重复提问或写入工作。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "请帮我写一次内部分享的提纲，但先通过临时提问框让我选择主题：时间管理或者沟通技巧。收到我的选择后再写，不要自行选，不要保存为工作。",
+        "questionAnswer": "时间管理",
+        "requireQuestion": true
+      },
+      {
+        "prompt": "把这个提纲变成五分钟的版本。"
+      },
+      {
+        "prompt": "最后只给我开场白，不要再次询问主题。"
+      }
+    ],
+    "sourceCase": {
+      "suite": "059",
+      "id": "B06",
+      "sha256": "5a5489766f3c6e73eb9caa40b0fa0b779c6689dc289ae14f458f67fb759f318f"
+    },
+    "resetMemory": true,
+    "verifyAfterReload": true,
+    "repairAssertions": [
+      "首轮必须真实提问框；实际选择时间管理、提交并继续同任务；未展示组件立即记录FAIL且不执行依赖选择的后续轮"
+    ]
+  },
+  {
+    "id": "B09",
+    "role": "employee",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "offline-retry",
+    "expected": "断网发送保留草稿，恢复网络不自动重发；用户点击重试/发送后成功接收一次，不产生重复消息。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "用一句话解释什么是缓存。",
+        "offlineRetry": true
+      },
+      {
+        "prompt": "再给一个浏览器缓存的例子。"
+      },
+      {
+        "prompt": "不用查询资料，用一句话总结。"
+      }
+    ],
+    "sourceCase": {
+      "suite": "059",
+      "id": "B09",
+      "sha256": "dda55a10dbb4d23fd7cd7a3b5d21358b3f5e862f1eae437b17a6d3a55a24671d"
+    },
+    "resetMemory": true,
+    "verifyAfterReload": true
+  },
+  {
+    "id": "B10",
+    "role": "admin",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "cancel",
+    "expected": "实际模型请求进行时中断，UI恢复可发送；后续任务可正常执行，取消轮没有迟到完整答复覆盖新轮。",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "请写一篇详细的长篇技术培训讲义，约7000字，介绍数据库索引设计、索引失效和实践案例。不要用工具。",
+        "cancel": true
+      },
+      {
+        "prompt": "不用继续刚才的讲义，只回答2加3等于几。"
+      },
+      {
+        "prompt": "确认你已经停止写那篇长讲义，现在只回复收到。"
+      }
+    ],
+    "sourceCase": {
+      "suite": "059",
+      "id": "B10",
+      "sha256": "28f6a457f192766ca68f4e44fa2788615ff29eda5c0497244ef7a22c0c308153"
+    },
+    "resetMemory": true,
+    "verifyAfterReload": true
+  }
+]

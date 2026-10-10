@@ -91,7 +91,7 @@ def selected_tests():
 def run(args):
     from environment import load_environment
     metadata, private = load_environment(args.metadata)
-    if metadata.get('suite') != 'spec059':
+    if metadata.get('suite') not in ('spec059', 'spec060'):
         raise RuntimeError('Spec 059 owned environment required')
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -102,9 +102,11 @@ def run(args):
     manifest['schema'] = metadata['schema']
     save(output / 'inventory.json', manifest)
     env = {**os.environ, **private['environment'], 'SPEC059_FIXED_EVIDENCE': str(output),
-           'PAA_REPLY_STREAM_REDIS_URL': args.redis_url, 'PAA_REPLY_STREAM_TEST_URL': args.redis_url,
-           'PAA_REPLY_STREAM_FAULT_URL': '', 'PAA_REPLY_STREAM_FAULT_CONTAINER': '',
+           'PAA_REPLY_STREAM_REDIS_URL': args.redis_url or private['environment'].get('PAA_REPLY_STREAM_REDIS_URL', ''),
+           'PAA_REPLY_STREAM_TEST_URL': args.redis_url or private['environment'].get('PAA_REPLY_STREAM_TEST_URL', ''),
+           'PAA_AGENT_FAULT_ENVIRONMENT': str(Path(args.metadata).resolve()),
            'PYTHONPATH': os.pathsep.join([str(Path(__file__).parent), private['environment']['PYTHONPATH']])}
+    env = {key: value for key, value in env.items() if key.lower() not in ('http_proxy', 'https_proxy', 'all_proxy')}
     command = [sys.executable, '-m', 'pytest', '-q', '-p', 'fixed', '--tb=short',
                '--junitxml=' + str(output / 'fixed.xml'), *files]
     save(output / 'command.json', {'command': command, 'cwd': str(ROOT), 'schema': metadata['schema'],

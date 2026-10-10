@@ -238,7 +238,8 @@ async def test_preloaded_work_still_requires_new_authorization_and_own_sources(s
     current.intent_model = ReceiptJudge(allowed=False)
     rejected = await execute(current, step=1, action='update_work', target_id=prior['objectId'],
                              expected_revision=1, changes={'nextStep': '未被请求的修改'})
-    assert rejected['state'] == 'clarification' and len(current.intent_model.inputs) == 1
+    assert rejected['state'] == 'failed' and rejected['category'] == 'invalid_arguments'
+    assert len(current.intent_model.inputs) == 1
     async with setup[1]() as db:
         saved = await db.get(WorkItem, prior['objectId'])
         assert saved.revision == 1 and saved.content['nextStep'] == ''

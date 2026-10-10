@@ -18,8 +18,28 @@ def barrier_key(proposal):
     # Rephrasing values or changing tool call IDs is not new evidence. Object
     # revisions and actual source tokens are; argument errors use exact keys.
     selected = proposal.get('deliverableSelection') or {}
-    return digest({**{key: proposal.get(key) for key in ('action', 'targetId', 'expectedRevision', 'kind', 'date', 'sourceTokens')},
-                   'selection': {key: selected.get(key) for key in ('id', 'revision')} | {'items': sorted(item['id'] for item in selected.get('items', []))}})
+    identity = {**{key: proposal.get(key) for key in ('action', 'targetId', 'expectedRevision', 'kind', 'date', 'obligationId', 'sourceTokens')},
+                'selection': {key: selected.get(key) for key in ('id', 'revision')} | {'items': sorted(item['id'] for item in selected.get('items', []))}}
+    if proposal.get('taskItemId'):
+        identity['taskItemId'] = proposal['taskItemId']
+    elif proposal['action'] in ('create_work', 'propose_progress', 'propose_followup') and not proposal.get('targetId') and not selected:
+        # No object/source exists yet: one incomplete new item must not block a
+        # different item. Corrected contents still need independent approval.
+        identity['changes'] = proposal.get('changes')
+        identity['copyIndex'] = proposal.get('copyIndex', 1)
+    return digest(identity)
+
+
+def slot_key(proposal):
+    """A blocked execution slot prevents guessing, never proves success."""
+    step = proposal.get('requestStep')
+    if not isinstance(step, int):
+        return None
+    return barrier_key({**proposal, 'taskItemId': f'blocked-slot:{step}'})
+
+
+def argument_key(proposal):
+    return digest({key: value for key, value in proposal.items() if key != 'requestStep'})
 
 
 def authorization_evidence(request):
@@ -39,7 +59,9 @@ async def blocked(context, proposal, evidence):
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
         values = job.result.get('taskBarriers', {})
-        value = values.get(barrier_key(proposal)) or values.get(digest(proposal))
+        value = values.get(barrier_key(proposal)) or values.get(argument_key(proposal)) or values.get(digest(proposal))
+        if not value and not proposal.get('taskItemId'):
+            value = values.get(slot_key(proposal))
         # New, server-verified facts require a new authorization decision;
         # they never turn a cached refusal into permission. Older barriers
         # without an evidence fingerprint are re-evaluated once as well.
@@ -50,6 +72,13 @@ async def barrier(context, proposal, reason, *, evidence, kind='missing_info'):
     from app.tasks.lease import lease
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
-        key = digest(proposal) if kind in ('invalid_arguments', 'conflict') else barrier_key(proposal)
-        values = {**job.result.get('taskBarriers', {}), key: {'reason': reason[:500], 'category': kind, 'evidence': evidence}}
+        item_id = getattr(context, 'task_item_keys', {}).get(digest(proposal), proposal.get('taskItemId', ''))
+        keys = [argument_key(proposal)] if kind in ('invalid_arguments', 'conflict') else [barrier_key(proposal)]
+        if kind == 'missing_info':
+            if item_id:
+                keys.append(barrier_key({**proposal, 'taskItemId': item_id}))
+            if slot_key(proposal):
+                keys.append(slot_key(proposal))
+        value = {'reason': reason[:500], 'category': kind, 'evidence': evidence, 'taskItemId': item_id}
+        values = {**job.result.get('taskBarriers', {}), **dict.fromkeys(keys, value)}
         job.result = {**job.result, 'taskBarriers': dict(list(values.items())[-32:])}

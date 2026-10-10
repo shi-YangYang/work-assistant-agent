@@ -2,7 +2,7 @@
 import httpx
 import json
 import pytest
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, ToolMessage
 from app.agent.actions.intent import authorize_intent
 from app.agent.runtime.middleware import ToolBoundary
 from app.agent.actions.operations import execute
@@ -23,12 +23,14 @@ async def test_query_in_parallel_write_batch_is_deferred_until_next_model_step(s
     read = {'id': 'query', 'name': 'find_work_items', 'args': {}}
     write = {'id': 'write', 'name': 'execute_business_action', 'args': {'action': 'update_work'}}
     request = SimpleNamespace(runtime=SimpleNamespace(context=context), tool_call=read, state={'messages': [AIMessage(content='', tool_calls=[write, read])]})
-    handler = AsyncMock(return_value='fresh-result')
+    fresh = ToolMessage(content='fresh-result', tool_call_id=read['id'], name=read['name'])
+    handler = AsyncMock(return_value=fresh)
     result = await ToolBoundary().awrap_tool_call(request, handler)
-    assert 'error' in json.loads(result.content)
+    refused = json.loads(result.content)
+    assert refused['state'] == 'not_executed' and refused['code'] == 'mixed_read_write'
     handler.assert_not_awaited()
     request.state['messages'].append(AIMessage(content='', tool_calls=[read]))
-    assert await ToolBoundary().awrap_tool_call(request, handler) == 'fresh-result'
+    assert await ToolBoundary().awrap_tool_call(request, handler) == fresh
     handler.assert_awaited_once()
 
 
@@ -55,7 +57,8 @@ async def test_rejected_action_cannot_bypass_barrier_by_changing_step(setup):
     await execute(context, step=1, **args)
     await execute(context, step=2, **{**args, 'changes': {'title': '新标题'}})
     context.intent_model = Judge()
-    assert (await execute(context, step=3, **args))['state'] == 'clarification'
+    rejected = await execute(context, step=3, **args)
+    assert rejected['state'] == 'failed' and rejected['category'] == 'invalid_arguments'
     detail = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert detail['job']['operationFeedback']
     assert not detail['actions']
@@ -102,12 +105,17 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
         assert calls[1] == {'repair_missing_action': True}
     assert len(data['actions']) == (1 if mode in ('repair', 'already_saved') else 0)
     if not data['actions']:
-        assert '已创建工作' not in data['reply']
-        assert data['job']['taskOutcome']['state'] != 'completed'
+        outcome = data['job']['taskOutcome']
+        assert outcome['state'] != 'completed' and outcome['completed'] == []
+        assert (await setup[3]['employee'].get('/api/v1/work-items')).json()['items'] == []
         if mode == 'rejected':
-            assert data['job']['operationFeedback']
+            # Keep the controlled model's complete prose; only real receipts
+            # may populate the server-owned operation result.
+            assert data['reply'] == '已创建工作。'
+            assert outcome['state'] == 'blocked' and outcome['nextAction'] == 'none'
+            assert outcome['remaining'] and data['job']['operationFeedback']
         else:
-            assert '未执行' in data['reply']
+            assert '已创建工作' not in data['reply'] and '未执行' in data['reply']
 
 
 async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected_milestone(setup):

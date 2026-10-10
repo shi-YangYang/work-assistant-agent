@@ -1,4 +1,6 @@
 """Private-result provenance stays attached across failed tasks and preview reads."""
+import asyncio
+import hashlib
 import json
 from dataclasses import replace
 from types import SimpleNamespace
@@ -14,13 +16,31 @@ from app.modules.deliverables.models import Deliverable, DeliverableRevision
 from app.modules.messages.models import Message
 from app.security.access import scope
 from app.tasks.context import InputChanged
-from app.tasks.feedback.reply_stream import ReplyPublisher
+from app.tasks.streaming.publisher import ReplyPublisher
 from app.tasks.models import Job
 from app.tasks.processing.handlers import process_job
 from test_business_actions import create, finish, runtime
 from test_deliverables import read_plan, save_plan
 
 pytestmark = pytest.mark.asyncio
+
+
+async def streamed_reply(setup, context, who, state):
+    from app.tasks.feedback.feedback import events
+    token = hashlib.sha256(setup[3][who].cookies.get('paa_company_session').encode()).hexdigest()
+    stream = events(context.sessions, token, context.job_id, settings=context.settings, version=2)
+    try:
+        async with asyncio.timeout(3):
+            async for raw in stream:
+                name = raw.split('\n', 1)[0].removeprefix('event: ')
+                if name not in ('reply_sync', 'reply_delta', 'reply_withdrawn', 'reply_unavailable'):
+                    continue
+                value = json.loads(raw.split('data: ', 1)[1])
+                assert name != 'reply_unavailable', value
+                if value.get('state') == state:
+                    return value
+    finally:
+        await stream.aclose()
 
 
 @pytest.mark.parametrize('ending', ['cancelled', 'failed'])
@@ -76,11 +96,14 @@ async def test_team_result_from_unfinished_task_never_becomes_streamable(setup, 
     publisher = ReplyPublisher(replace(context), 'team-result')
     await publisher.start()
     await publisher.write(marker)
+    await publisher.drain()
+    preview = await streamed_reply(setup, context, 'admin', 'withdrawn')
+    assert not preview.get('text')
     for url in ('/api/v1/jobs/' + followup['jobId'] + '/feedback', '/api/v1/messages/' + followup['messageId']):
         response = await clients['admin'].get(url)
         assert response.status_code == 200
-        assert response.json()['replyStream']['state'] == 'withdrawn'
-        assert response.json()['replyStream']['text'] == ''
+        assert response.json()['replyStream'] is None
+    await publisher.close()
     # Buffering cannot make the authorized result itself unavailable.
     assert (await clients['admin'].get('/api/v1/deliverables/' + plan['id'])).json()['body'] == marker
     if ending == 'cancelled' and entry == 'history':
@@ -107,7 +130,9 @@ async def test_result_dependency_is_rechecked_on_preview_read_and_publish(setup,
     await publisher.start()
     await publisher.write('本人的流式分析')
     feedback_url = '/api/v1/jobs/' + sent['jobId'] + '/feedback'
-    assert (await clients['admin'].get(feedback_url)).json()['replyStream']['text'] == '本人的流式分析'
+    await publisher.drain()
+    assert (await streamed_reply(setup, context, 'admin', 'streaming'))['text'] == '本人的流式分析'
+    assert (await clients['admin'].get(feedback_url)).json()['replyStream'] is None
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         assert job.feedback['replyStreamSource']['deliverables'][plan['id']]['revision'] == 1
@@ -123,20 +148,22 @@ async def test_result_dependency_is_rechecked_on_preview_read_and_publish(setup,
             await db.delete(record)
         else:
             record.files = [{'sources': [{'kind': 'attachment', 'id': 'removed-source', 'revision': 1, 'sha256': 'gone'}]}]
-    # Nothing has republished: DTO reads must independently revoke the stored prefix.
+    # Nothing has republished: a v2 subscriber must independently revoke the old prefix.
+    preview = await streamed_reply(setup, context, 'admin', 'withdrawn')
+    assert not preview.get('text')
+    assert not (await publisher.store.snapshot(publisher.identity))['text']
     for url in (feedback_url, '/api/v1/messages/' + sent['messageId']):
         response = await clients['admin'].get(url)
         assert response.status_code == 200
-        assert response.json()['replyStream']['state'] == 'withdrawn'
-        assert response.json()['replyStream']['text'] == ''
+        assert response.json()['replyStream'] is None
         assert 'replyStreamSource' not in response.text
-    if change == 'team':
-        await publisher.write('迟到的团队正文', force=True)
-        async with sessions() as db:
-            assert (await db.get(Job, context.job_id)).feedback['replyStream']['text'] == ''
-    else:
-        with pytest.raises((InputChanged, HTTPException)):
-            await publisher.write('失效后迟到的正文', force=True)
+    # SSE seals a revoked generation; late producer writes cannot restore it.
+    await publisher.write('失效后迟到的正文', force=True)
+    from app.tasks.context import LostLease
+    with pytest.raises((InputChanged, HTTPException, LostLease)):
+        await publisher.drain()
+    assert not (await publisher.store.snapshot(publisher.identity))['text']
+    await publisher.close()
 
 
 async def test_reading_historical_revision_and_saving_new_version_keep_personal_streaming(setup):
@@ -156,8 +183,11 @@ async def test_reading_historical_revision_and_saving_new_version_keep_personal_
     publisher = ReplyPublisher(context, 'personal-history')
     await publisher.start()
     await publisher.write('按个人历史材料整理')
+    await publisher.drain()
+    assert (await streamed_reply(setup, context, 'employee', 'streaming'))['text'] == '按个人历史材料整理'
     response = await setup[3]['employee'].get('/api/v1/jobs/' + sent['jobId'] + '/feedback')
-    assert response.json()['replyStream']['text'] == '按个人历史材料整理'
+    assert response.json()['replyStream'] is None
+    await publisher.close()
     async with context.sessions() as db:
         job = await db.get(Job, context.job_id)
         assert job.feedback['replyStreamSource']['deliverables'][plan['id']] == {'revision': 3, 'readRevisions': [1, 2, 3]}

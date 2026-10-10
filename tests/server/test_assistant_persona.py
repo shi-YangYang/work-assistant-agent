@@ -181,7 +181,8 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
     other = 'professional' if persona == 'dabao' else 'dabao'
     await client.patch(path, json={'personaId': other, 'expectedRevision': conversation['revision']})
     calls = []
-    marker = '当前聊天风格是“Noria人设”' if persona == 'dabao' else '当前聊天风格是“专业人设”'
+    from app.agent.prompts.persona import runtime_persona_prompt
+    marker = runtime_persona_prompt(persona)
     answer = '脑内标签页开太多了。先说最卡的一件，我们一件件拆。' if persona == 'dabao' else '先处理最卡的一件。现在是哪项任务？'
     async def response(request):
         body = json.loads(request.content)
@@ -189,7 +190,8 @@ async def test_worker_freezes_persona_through_queue_auto_and_manual_retry(setup,
         system = '\n'.join(str(item['content']) for item in body['messages'] if item['role'] == 'system')
         if body.get('tools'):
             assert marker in system
-            assert ('处理管理员本人工作和已授权员工业务问答' if role == 'admin' else '处理当前员工的工作请求') in system
+            assert runtime_persona_prompt(other) not in system
+            assert ('管理员：' if role == 'admin' else '员工：') in system
             if len(calls) == 1:
                 return httpx.Response(502, json={'error': {'message': 'controlled temporary error'}})
             if len(calls) == 2:

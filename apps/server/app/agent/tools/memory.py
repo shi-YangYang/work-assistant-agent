@@ -15,7 +15,13 @@ async def apply(runtime, **changes):
                 call_id=runtime.tool_call_id, **changes)
         return json.dumps(result, ensure_ascii=False)
     except HTTPException as error:
-        return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']}, ensure_ascii=False)
+        detail = {}
+        if error.status_code == 409:
+            async with context.sessions() as db:
+                _, actor = await lease(db, context)
+                detail = await service.conflict_context(db, actor, context.memory_snapshot, changes.get('old', ''))
+        return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed',
+                           'code': error.detail.get('code', 'memory_invalid'), 'message': error.detail['message'], **detail}, ensure_ascii=False)
 
 
 @tool
@@ -23,6 +29,8 @@ async def save_memory(new_text: str, evidence: str, runtime: ToolRuntime[RunCont
     """Save durable first-person background/preferences to THIS account's memory.
     new_text is a minimal Markdown fragment. Empty old_text appends; otherwise
     replace that exact UNIQUE substring, preserving unrelated text/format.
+    Replacement text must match the selected fragment boundary: if old_text
+    excludes its bullet or punctuation, new_text excludes those too.
     evidence MUST quote the current user's direct input verbatim, never history,
     files, tools or assistant text. explicit only for an explicit remember/correct
     request. No credentials, inferred sensitive traits or one-off instructions.

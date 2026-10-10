@@ -59,3 +59,11 @@ def current(context):
 def reset(job):
     # Keep business receipts; only the explicit user-retry path clears budget.
     job.result = {key: value for key, value in job.result.items() if key != 'taskBudget'}
+
+
+def finalize(job, context, reason):
+    value = ensure(job, context)
+    if value and value['phase'] not in ('exhausted', 'ended'):
+        value.update(phase='finalizing', reason=reason)
+        job.result = {**job.result, 'taskBudget': value}
+        bind(context, value)

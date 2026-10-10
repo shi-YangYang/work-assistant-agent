@@ -2,19 +2,31 @@
 import { chromium } from 'playwright'
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { dirname, resolve } from 'node:path'
 import { api, browserEnvironment } from '../agent-browser-common.mjs'
 
 const metadataPath = process.env.SPEC059_ENVIRONMENT
 const output = process.env.SPEC059_BROWSER_OUTPUT
 const previousOutput = process.env.SPEC059_PREVIOUS_OUTPUT
-const casesPath =
-  process.env.SPEC059_BROWSER_CASES ?? new URL('./browser-cases.json', import.meta.url)
+const suitePath = process.env.AGENT_BROWSER_SUITE
+const suite = suitePath ? JSON.parse(readFileSync(suitePath, 'utf8')) : null
+const repetition = Number(process.env.AGENT_BROWSER_REPETITION ?? '1')
+if (![1, 2, 3].includes(repetition)) throw new Error('Invalid predeclared repetition')
+if (suite && process.env.SPEC059_BROWSER_CASES) throw new Error('Suite determines its frozen cases')
+const casesPath = suite
+  ? resolve(dirname(suitePath), suite.browserCaseFile)
+  : (process.env.SPEC059_BROWSER_CASES ?? new URL('./browser-cases.json', import.meta.url))
+const caseSha256 = createHash('sha256').update(readFileSync(casesPath)).digest('hex')
+if (suite && caseSha256 !== suite.browserCaseSha256)
+  throw new Error('Frozen browser cases fingerprint mismatch')
 if (!metadataPath || !output) throw new Error('Owned environment and unique output required')
 const { metadata, state } = browserEnvironment({ metadataPath })
 const cases = JSON.parse(readFileSync(casesPath, 'utf8')).filter(
   (item) =>
-    !process.env.SPEC059_CASE_IDS || process.env.SPEC059_CASE_IDS.split(',').includes(item.id),
+    (!process.env.SPEC059_CASE_IDS || process.env.SPEC059_CASE_IDS.split(',').includes(item.id)) &&
+    (repetition === 1 || suite?.browserRepetition.caseIds.includes(item.id)),
 )
+if (!cases.length) throw new Error('No frozen browser cases selected')
 mkdirSync(output, { recursive: true })
 if (existsSync(`${output}/run.json`)) throw new Error('Never overwrite first results')
 writeFileSync(
@@ -22,7 +34,9 @@ writeFileSync(
   JSON.stringify(
     {
       runId: metadata.runId,
-      caseSha256: createHash('sha256').update(readFileSync(casesPath)).digest('hex'),
+      caseSha256,
+      suiteRevision: suite?.revision ?? '059',
+      repetition,
       applicationCommit: metadata.commit,
       channel: 'real-browser',
       startedAt: new Date().toISOString(),
@@ -104,7 +118,11 @@ async function waitTurn(page, row, directory, step) {
     firstVisible = false,
     cancelled = false
   while (Date.now() - began < 1860000) {
-    const text = (await page.locator('[data-reply-state]').allTextContents()).at(-1) ?? ''
+    const article = page
+      .locator('article')
+      .filter({ has: page.getByText(row.prompt, { exact: true }) })
+      .last()
+    const text = (await article.locator('[data-reply-state]').allTextContents()).at(-1) ?? ''
     if (text && text !== previous) {
       row.samples.push({
         ms: Date.now() - row.started,
@@ -134,7 +152,14 @@ async function waitTurn(page, row, directory, step) {
       row.message.job?.state === 'running' &&
       Date.now() - began > 3000
     ) {
+      const cancellation = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          new URL(response.url()).pathname === `/api/v1/jobs/${row.message.job.id}/cancel`,
+      )
       await page.getByRole('button', { name: '中断', exact: true }).click()
+      const response = await cancellation
+      row.cancellation = { status: response.status(), data: await response.json() }
       cancelled = true
       row.cancelledAtMs = Date.now() - row.started
     }
@@ -190,7 +215,7 @@ async function waitTurn(page, row, directory, step) {
             if (await option.count()) await option.first().check()
             else if (await field.locator('textarea').count())
               await field.locator('textarea').fill(step.questionAnswer)
-            else await field.locator('input').first().check()
+            else throw new Error('Requested frozen answer is absent; refusing arbitrary option')
           }
           const result = page.waitForResponse(
             (response) =>
@@ -210,6 +235,10 @@ async function waitTurn(page, row, directory, step) {
           continue
         }
         row.question = { notDisplayed: true }
+        if (step.requireQuestion)
+          row.requirementFailures = [
+            'Explicit question UI was not displayed; dependent turns are not sent',
+          ]
       }
       row.receipts = receipts
       row.reloadDuringStreamObserved = reloaded
@@ -219,7 +248,13 @@ async function waitTurn(page, row, directory, step) {
   }
   throw new Error('Harness watchdog 1860 seconds exceeded; product budget is 1800 seconds')
 }
-async function journey(item) {
+async function journey(original) {
+  const item = structuredClone(original)
+  if (repetition > 1)
+    for (const title of item.repeatTitles ?? []) {
+      for (const step of item.turns)
+        step.prompt = step.prompt.replaceAll(title, `${title}-r${repetition}`)
+    }
   const directory = `${output}/${item.id}`
   mkdirSync(directory, { recursive: true })
   const context = await browser.newContext({
@@ -299,6 +334,18 @@ async function journey(item) {
           blocker: '缺少测试账号',
           nextStep: '联系供应商',
         }))
+    if (item.resetMemory && !prior) {
+      let memory = await api(page, '/api/v1/assistant/memory')
+      if (!memory.enabled)
+        memory = await api(page, '/api/v1/assistant/memory/settings', 'PATCH', {
+          enabled: true,
+          expectedRevision: memory.revision,
+        })
+      await api(page, '/api/v1/assistant/memory/document', 'PUT', {
+        markdown: '',
+        expectedRevision: memory.revision,
+      })
+    }
     result.before = prior?.before ?? (await records(page))
     if (prior?.turns[0]?.receipt) {
       firstConversation = prior.turns[0].receipt.conversationId
@@ -367,13 +414,24 @@ async function journey(item) {
         row.visibleMode = await page
           .getByRole('button', { name: /^执行权限：/ })
           .getAttribute('aria-label')
+        if (
+          item.persona === 'dabao'
+            ? !row.visiblePersona.includes('Noria')
+            : !row.visiblePersona.includes('专业')
+        )
+          throw new Error('Visible persona differs from frozen case before sending')
+        if (!row.visibleMode.includes(modes[item.mode]))
+          throw new Error('Visible permission differs from frozen case before sending')
         const recovery =
           process.env.SPEC059_RECOVER_ENV_FAILURES === '1' &&
           ['awaiting_retry', 'failed'].includes(prior?.turns[index]?.message?.job?.state)
         const observedReceipt = prior?.turns[index]?.error && prior.turns[index].receipt
         const editor = page.getByRole('textbox', { name: '工作消息' })
         if (!recovery && !observedReceipt) await editor.fill(step.prompt)
-        if (step.offlineRetry) {
+        if (step.offlineRetry && (recovery || observedReceipt)) {
+          row.offline = prior.turns[index].offline
+          row.offlineEvidenceSource = priorPath
+        } else if (step.offlineRetry) {
           await context.setOffline(true)
           await page.getByRole('button', { name: '发送', exact: true }).click()
           await page.getByRole('alert').waitFor()
@@ -448,13 +506,22 @@ async function journey(item) {
         )
         await page.screenshot({ path: `${directory}/turn-${row.turn}-accepted.png` })
         await waitTurn(page, row, directory, step)
+        row.seconds = (Date.now() - row.started) / 1000
         await page
           .getByRole('button', { name: '发送', exact: true })
           .waitFor({ state: 'visible', timeout: 30000 })
         await page.waitForTimeout(300)
         row.readback = await records(page)
         row.ui = await page.locator('[data-chat-content]').innerText()
-        row.seconds = (Date.now() - row.started) / 1000
+        if (item.verifyAfterReload) {
+          await page.reload()
+          await page.getByRole('textbox', { name: '工作消息' }).waitFor()
+          row.afterReload = {
+            message: await api(page, '/api/v1/messages/' + row.message.id),
+            ui: await page.locator('[data-chat-content]').innerText(),
+          }
+        }
+        row.observationSeconds = (Date.now() - row.started) / 1000
         await page.screenshot({ path: `${directory}/turn-${row.turn}-final.png`, fullPage: true })
       } catch (error) {
         row.error = error.message
@@ -482,7 +549,12 @@ async function journey(item) {
           error: row.error,
         }),
       )
-      if (row.error || ['failed', 'awaiting_retry'].includes(row.message?.job?.state)) break
+      if (
+        row.error ||
+        row.requirementFailures?.length ||
+        ['failed', 'awaiting_retry'].includes(row.message?.job?.state)
+      )
+        break
     }
     result.after = await records(page)
   } catch (error) {

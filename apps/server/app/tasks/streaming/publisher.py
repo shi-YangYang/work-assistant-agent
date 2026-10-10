@@ -31,7 +31,7 @@ class ReplyPublisher:
         self.context.reply_publishers.clear()
         from app.tasks.lease import lease
         from app.tasks.feedback.feedback_state import update_feedback
-        from app.tasks.feedback.reply_stream import source_snapshot
+        from app.tasks.streaming.lifecycle import source_snapshot
         async with self.context.sessions.begin() as db:
             job, _ = await lease(db, self.context)
             old = (job.feedback or {}).get('replyStream', {})
@@ -108,7 +108,7 @@ class ReplyPublisher:
 
     async def _publish(self, text, state):
         from app.tasks.lease import lease
-        from app.tasks.feedback.reply_stream import source_snapshot, validate_sources, presentation_text
+        from app.tasks.streaming.lifecycle import source_snapshot, validate_sources, presentation_text
         from app.modules.messages.models import Message
         self.mark('source_check.start')
         async with self.context.sessions() as db:
@@ -173,7 +173,7 @@ class ReplyPublisher:
                 pass
 
     async def fail(self, error, text=None):
-        from app.tasks.feedback.reply_stream import failure_state
+        from app.tasks.streaming.lifecycle import failure_state
         if failure_state(error) == 'interrupted':
             await self.write(self.text if text is None else text, state='interrupted', force=True)
             try:

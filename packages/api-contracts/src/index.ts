@@ -260,6 +260,7 @@ export interface Draft {
   revision: number
 }
 export interface OperationFeedback {
+  key?: string
   step: number
   action: string
   label: string

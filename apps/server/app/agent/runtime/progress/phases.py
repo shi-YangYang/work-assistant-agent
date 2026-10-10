@@ -18,7 +18,7 @@ def model_phase(messages, job_id, *, nested=False):
 
 async def model_activity(context, phase):
     """Publish only a phase and timestamp, once per transition, never reasoning."""
-    from app.agent.runtime.model import internal_call_kind
+    from app.agent.runtime.budget import internal_call_kind
     from app.db.base import now
     from app.tasks.lease import lease
     from app.tasks.nodes.node_execution import active_node

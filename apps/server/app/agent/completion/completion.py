@@ -27,6 +27,9 @@ async def verified_receipt(context, db, actor, job):
     if rows[0].result.get('receiptInput') != request:
         return None
     card = await action_dto(db, actor, rows[0])
+    from app.tasks.feedback.work_requirements import remaining
+    if remaining(job, [card], include_pending=True):
+        return None
     return card if card['state'] in ('succeeded', 'pending', 'running') else None
 
 

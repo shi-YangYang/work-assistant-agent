@@ -8,7 +8,8 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 from sqlalchemy import select
 
-from app.agent.prompts.evidence import CLAIM_SUPPORT_POLICY, EVIDENCE_POLICY
+from app.agent.prompts.evidence import CLAIM_SUPPORT_POLICY
+from app.agent.prompts.main import CORE, POLICIES
 from app.modules.executions.models import SandboxExecution
 from fakes import completion
 from test_response_delivery import RoutingModel, run
@@ -34,10 +35,15 @@ class EvidenceModel(RoutingModel):
     async def _agenerate(self, messages, *args, **kwargs):
         self.calls += 1
         system = '\n'.join(str(message.content) for message in messages if isinstance(message, SystemMessage))
-        assert system.count(EVIDENCE_POLICY) == 1
+        assert system.count(CORE) == 1
         names = [tool['function']['name'] for tool in kwargs.get('tools', [])]
         self.requests.append(names)
-        if self.experiment and self.calls == 1 and 'run_python' in names:
+        groups = next((tool['function']['parameters']['properties']['groups']['items']['enum']
+                       for tool in kwargs.get('tools', []) if tool['function']['name'] == 'load_tools'), [])
+        if self.experiment and self.calls == 1 and 'files' in groups:
+            answer = AIMessage(content='', tool_calls=[{'id': 'load-experiment', 'name': 'load_tools', 'args': {'groups': ['files']}}])
+        elif self.experiment and self.calls == 2 and 'run_python' in names:
+            assert POLICIES['files'] in system
             answer = AIMessage(content='', tool_calls=[{'id': 'experiment', 'name': 'run_python', 'args': {
                 'code': 'import platform\nprint(platform.python_version())\nprint(sorted({"b", "a"}))',
                 'title': '观察当前环境下的排序结果'}}])
@@ -67,7 +73,7 @@ async def test_ordinary_tasks_still_finish_in_one_call_with_sandbox_available(se
     fake = EvidenceModel(model='controlled', api_key='unused', answer=answer)
     result, stored = await run((settings, *setup[1:]), fake, user_text)
     assert result['reply'] == answer and result['job']['taskOutcome']['state'] == 'completed'
-    assert fake.calls == 1 and fake.reviews == 0 and 'run_python' in fake.requests[0]
+    assert fake.calls == 1 and fake.reviews == 0 and fake.requests == [['load_tools']]
     assert not any(node['kind'] in ('tool', 'review') for node in result['job']['nodes'])
     assert not stored.get('replyReview') and not stored.get('deliveryRepairs')
     assert not result['actions'] and not result['drafts'] and not result['deliverables']
@@ -101,8 +107,9 @@ async def test_experiment_receipt_and_unavailable_paths_use_existing_graph_witho
     fake = EvidenceModel(model='controlled', api_key='unused', experiment=True,
                          verification_requested=verify, verification_quote=quote)
     result, stored = await run((settings, *setup[1:]), fake, (quote + '，' if quote else '') + '请做一个最小实验，观察集合排序。')
-    assert ('run_python' in fake.requests[0]) is enabled
-    assert fake.calls == (2 if enabled else 1) and fake.reviews == 0
+    assert fake.requests[0] == ['load_tools']
+    assert any('run_python' in names for names in fake.requests) is enabled
+    assert fake.calls == (3 if enabled else 1) and fake.reviews == 0
     assert len(submissions) == int(enabled) and len(fake.evidence) == int(enabled)
     assert sum(node['kind'] == 'tool' for node in result['job']['nodes']) == int(enabled)
     assert sum(node['kind'] == 'review' for node in result['job']['nodes']) == 0
@@ -128,11 +135,17 @@ class QuoteRepairModel(EvidenceModel):
 
     async def _agenerate(self, messages, *args, **kwargs):
         result = await super()._agenerate(messages, *args, **kwargs)
-        call = result.generations[0].message.tool_calls[0]
+        message = result.generations[0].message
+        call = message.tool_calls[0]
         if call['name'] == 'finish_task':
-            repaired = self.calls > 2 and self.corrected_verification is not None
-            call['args']['verification_requested'] = self.corrected_verification if repaired else True
-            call['args']['verification_quote'] = ('核验这个排序结论' if self.corrected_verification else '') if repaired else '此前用户说过的另一个主张'
+            repaired = self.calls > 3 and self.corrected_verification is not None
+            if repaired:
+                assert self.requests[-1] == []
+                assert any(isinstance(item, ToolMessage) and '不是当前用户请求' in str(item.content) for item in messages)
+                result.generations[0].message = AIMessage(content=self.answer)
+            else:
+                call['args']['verification_requested'] = True
+                call['args']['verification_quote'] = '此前用户说过的另一个主张'
         return result
 
 
@@ -159,8 +172,8 @@ async def test_current_verification_quote_is_repaired_once_without_reexecuting_e
     fake = QuoteRepairModel(model='controlled', api_key='unused', experiment=True, corrected_verification=corrected_verification)
     prompt = '请核验这个排序结论' if corrected_verification else '做一个最小排序实验，说明环境'
     result, stored = await run((settings, *setup[1:]), fake, prompt)
-    assert len(submissions) == 1 and fake.calls == 3
-    assert fake.requests[-1] == ['finish_task']
+    assert len(submissions) == 1 and fake.calls == 4
+    assert fake.requests[-1] == []
     assert stored['deliveryRepairs'] == ['protocol']
     assert fake.reviews == 0
     if corrected_verification is None:

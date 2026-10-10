@@ -358,10 +358,15 @@ async def test_followup_guard_preserves_clarification_query_and_existing_budget(
         async def ainvoke(self, *args):
             pytest.fail('Read-only discussion must not be reviewed or rewritten')
     if kind == 'budget':
-        rt.context.calls = 8
+        from app.tasks.budget.service import ensure
+        async with sessions.begin() as db:
+            live = await db.get(Job, job.id)
+            budget = ensure(live, rt.context)
+            maximum = budget['policy']['models']
+            live.result = {**live.result, 'taskBudget': {**budget, 'models': maximum}}
         with pytest.raises(BudgetExceeded):
             await reserve_call(rt.context, 'assistant')
-        assert rt.context.calls == 8
+        assert rt.context.calls == maximum
     else:
         actual = await assess(rt.context, answer, model=UnexpectedReview())
         assert actual.text == answer and actual.verified

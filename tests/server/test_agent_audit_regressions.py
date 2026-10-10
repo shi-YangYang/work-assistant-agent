@@ -66,7 +66,7 @@ async def test_another_copy_needs_its_own_authorization(setup):
     assert (await execute(context, step=1, **args))['state'] == 'succeeded'
     context.intent_model = Judge(allowed=False)
     denied = await execute(context, step=2, copy_index=2, **args)
-    assert denied['state'] == 'clarification'
+    assert denied['state'] == 'failed' and denied['category'] == 'invalid_arguments'
     assert len(context.intent_model.inputs) == 1
     async with sessions() as db:
         assert len((await db.scalars(select(WorkItem).where(WorkItem.owner_id == users['employee'].id))).all()) == 1
@@ -122,6 +122,8 @@ async def test_retry_refreshes_stale_reply_and_tool_reads(setup, monkeypatch, ch
     calls = []
     async def graph(context, *args, **kwargs):
         calls.append(context.node_scope)
+        from app.agent.runtime.model import reserve_call
+        await reserve_call(context, 'assistant')
         async def read():
             return await get_work_item.coroutine(work['id'], SimpleNamespace(context=context))
         evidence = await execute_node(context, identity='read-work', kind='tool', label='读取工作', operation=read)
@@ -130,13 +132,21 @@ async def test_retry_refreshes_stale_reply_and_tool_reads(setup, monkeypatch, ch
         await set_delivery(context, '最新状态：' + json.loads(evidence)['status'])
         context.delivery.update(verification_requested=True, verification_quote='核验这项工作是否已经完成')
         return '最新状态：' + json.loads(evidence)['status']
-    class BrokenReview:
-        async def ainvoke(self, messages):
-            raise RuntimeError('controlled interruption')
-    monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)
-    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=BrokenReview())
+    from app.tasks.processing import handlers
+    from sqlalchemy.exc import OperationalError
+    original_citations = handlers.verified_citations
+    persistence_attempts = []
+    async def fail_initial_save(*args, **kwargs):
+        persistence_attempts.append(True)
+        if len(persistence_attempts) <= 2:
+            raise OperationalError(None, None, RuntimeError('controlled final-save interruption'))
+        return await original_citations(*args, **kwargs)
+    monkeypatch.setattr(handlers, 'verified_citations', fail_initial_save)
+    monkeypatch.setattr(handlers, 'invoke_harness', graph)
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=Review())
     first = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert first['job']['state'] == 'awaiting_retry', first
+    assert len(persistence_attempts) == 2 and not first['reply']
     if change_work:
         edited = await clients['employee'].post('/api/v1/work-items/' + work['id'] + '/progress', json={'expectedRevision': 1, 'title': '当前状态', 'status': 'done'})
         assert edited.status_code == 200, edited.text

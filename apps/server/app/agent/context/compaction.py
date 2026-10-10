@@ -99,7 +99,7 @@ class ContextCompaction(AgentMiddleware):
         # Summarize bounded chunks using the same model/request protections. No
         # framework with_retry(): execute_node is the sole retry owner.
         from app.agent.memory.middleware import without_memory
-        from app.agent.runtime.model import internal_call_kind
+        from app.agent.runtime.budget import internal_call_kind
         serialized = json.dumps(messages_to_dict(without_memory(removed, summaries=True)), ensure_ascii=False)
         budget = input_budget(context, 4000)
         chunk_size = max(256, min(int((budget or len(serialized)) * .65), 1500000))

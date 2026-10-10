@@ -142,3 +142,31 @@ def test_incomplete_forget_target_requests_clarity_without_expanding(markdown, t
         forget_fragment(markdown, target)
     assert error.value.status_code == 409
     assert '未删除任何内容' in error.value.detail['message']
+
+
+def test_partial_list_replacement_does_not_repeat_surrounding_syntax():
+    from app.modules.memories.document import patch
+    document = {'markdown': '- 喜欢米饭。\n- 保留这一项。', 'annotations': []}
+    result = patch(document, '喜欢米饭', '- 喜欢面条。', explicit=True, source='m')
+    assert result['markdown'] == '- 喜欢面条。\n- 保留这一项。'
+    assert document['markdown'] == '- 喜欢米饭。\n- 保留这一项。'
+    code = {'markdown': '```text\n- 原片段。\n```', 'annotations': []}
+    assert patch(code, '原片段', '- 新片段。', explicit=True, source='m')['markdown'] == '```text\n- - 新片段。。\n```'
+
+
+def test_fact_under_another_heading_is_not_a_duplicate_of_unscoped_new_fact():
+    from app.modules.memories.document import patch
+    document = {'markdown': '# 同事\n\n- 喜欢米饭。', 'annotations': []}
+    result = patch(document, '', '喜欢米饭。', explicit=False, source='m')
+    assert result['markdown'].count('喜欢米饭。') == 2
+
+
+@pytest.mark.parametrize('markdown', ['```text\n~~~\n- 片段。\n~~~\n```', '    - 片段。'])
+def test_fragment_patch_keeps_literal_code_syntax(markdown):
+    document = {'markdown': markdown, 'annotations': []}
+    assert patch(document, '片段', '- 新片段。', explicit=True, source='m')['markdown'] == markdown.replace('片段', '- 新片段。')
+
+
+def test_nested_list_fragment_preserves_parent_and_indentation():
+    document = {'markdown': '- 饮食\n  - 喜欢米饭。\n  - 喜欢面条。', 'annotations': []}
+    assert patch(document, '喜欢米饭', '- 喜欢粥。', explicit=True, source='m')['markdown'] == '- 饮食\n  - 喜欢粥。\n  - 喜欢面条。'

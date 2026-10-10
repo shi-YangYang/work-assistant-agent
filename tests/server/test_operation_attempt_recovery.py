@@ -30,7 +30,7 @@ async def test_cancelled_task_confirmation_requires_explicit_resume_and_new_card
     await read_work(context, work['id'])
     result = await execute(context, **args, task_item_id=pending['taskItemId'])
     if not resume:
-        assert result['state'] == 'clarification'
+        assert result['state'] == 'failed' and result['category'] == 'invalid_arguments'
     else:
         assert result['state'] == 'pending' and result['id'] != pending['id'], result
         assert result['messageId'] == newer['messageId'] and result['taskItemId'] == pending['taskItemId']

@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
-from app.agent.completion.delivery import PUBLIC_REPLY_POLICY
+from app.agent.prompts.main import main_policy
 from fakes import completion
 from test_response_delivery import DeliveryModel, run
 
@@ -29,7 +29,7 @@ class MislabelledReadModel(DeliveryModel):
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls += 1
-        assert any(PUBLIC_REPLY_POLICY in message.content for message in messages if isinstance(message, SystemMessage))
+        assert any(main_policy('employee') in message.content for message in messages if isinstance(message, SystemMessage))
         if self.calls == 1:
             result = completion(self.answer)
             result.tool_calls[0]['args']['business_requested'] = True

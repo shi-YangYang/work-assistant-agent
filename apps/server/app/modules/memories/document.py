@@ -92,13 +92,15 @@ def fragment_key(text):
 def already_present(document, new, expires):
     text = document['markdown']
     candidates = []
+    scoped = False
     for start, end in blocks(text):
         body = text[start:end].strip()
         # A heading changes scope; identical words under different headings
         # are not interchangeable. Code/quotes are not standalone facts.
         headings = list(re.finditer(r'^#{1,6}\s+.+$', body, re.M))
         if headings:
-            candidates.clear()
+            scoped = True
+        if scoped:
             continue
         if re.search(r'^(?:\s*[>`~]| {4}|\t)', text[start:end], re.M):
             continue
@@ -133,6 +135,21 @@ def patch(document, old, new, *, explicit, source, expires=None):
             problem(409, '人工编辑的记忆需要明确的修改要求，未覆盖原文', 'memory_manual_protected')
         if expires and any(a < start < b or a < end < b for a, b in blocks(text)):
             problem(422, '有期限的记忆请修改完整段落或列表，避免影响其它内容')
+        # A fragment replacement must not reinsert the surrounding list syntax.
+        line_start = text.rfind('\n', 0, start) + 1
+        prefix = text[line_start:start]
+        fence = None
+        for line in text[:line_start].splitlines():
+            marker = re.match(r'^ {0,3}(`{3,}|~{3,})', line)
+            if marker and fence is None:
+                fence = marker[1]
+            elif marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+                fence = None
+        literal = fence is not None or text[line_start:].startswith(('    ', '\t'))
+        if not literal and re.fullmatch(r'[ \t]*(?:[-*+] |\d+[.)] )', prefix):
+            new = re.sub(r'^[ \t]*(?:[-*+] |\d+[.)] )', '', new, count=1)
+        if not literal and new and end < len(text) and text[end] in '。！？；.!?;' and new.endswith(text[end]):
+            new = new[:-1]
         changed = text[:start] + new + text[end:]
     else:
         if not new.strip():

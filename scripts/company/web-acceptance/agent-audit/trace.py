@@ -1,4 +1,4 @@
-"""Test-process-only transparent observations; no prompts or private reasoning stored."""
+"""Test-process-only observations; never store system prompts or private reasoning."""
 from contextvars import ContextVar
 import hashlib
 import json
@@ -35,6 +35,32 @@ def emit(kind, **values):
 
 def context_values(context):
     return {'jobId': context.job_id, 'companyId': context.company_id, 'ownerId': context.owner_id, 'attempt': context.attempt, 'fence': context.fence, 'stateVersions': dict(context.read_versions)}
+
+
+def validation_causes(error):
+    """Observe constant validation reasons, never model input or raw verdict text."""
+    import ast
+    from pydantic import ValidationError
+    from app.agent.actions import intent
+    source = ast.parse(Path(intent.__file__).read_text())
+    constants = {node.args[0].value for node in ast.walk(source)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                 and node.func.id == 'ValueError' and node.args
+                 and isinstance(node.args[0], ast.Constant)
+                 and isinstance(node.args[0].value, str)}
+    result, seen = [], set()
+    cause = error.__cause__
+    while cause is not None and id(cause) not in seen and len(result) < 4:
+        seen.add(id(cause))
+        row = {'type': type(cause).__name__}
+        if isinstance(cause, ValidationError):
+            row['errors'] = [{key: item[key] for key in ('type', 'loc', 'msg')}
+                             for item in cause.errors(include_input=False, include_context=False, include_url=False)]
+        elif type(cause) is ValueError and str(cause) in constants:
+            row['message'] = str(cause)
+        result.append(row)
+        cause = cause.__cause__
+    return result
 
 
 def observe_job(operation):
@@ -88,7 +114,8 @@ def install(path):
                 emit('model_attempt_result', toolCalls=generation.message.tool_calls, contentCharacters=len(str(generation.message.content)), usage=generation.message.usage_metadata)
             return result
         except BaseException as error:
-            emit('model_attempt_error', error=type(error).__name__)
+            details = {'validationCauses': validation_causes(error)} if os.environ.get('AGENT_AUDIT_PLAN_INPUT') == 'synthetic' else {}
+            emit('model_attempt_error', error=type(error).__name__, **details)
             raise
         finally:
             scope.reset(token)
@@ -120,6 +147,30 @@ def install(path):
     BoundedChatModel._single = model
     ToolBoundary.awrap_tool_call = boundary
     tool_nodes.tool_node = node
+    if os.environ.get('AGENT_AUDIT_PLAN_INPUT') == 'synthetic':
+        plan_module = importlib.import_module('app.agent.actions.work_change_plan')
+        original_input = plan_module.source_input
+        original_plan = plan_module.work_change_plan
+
+        def plan_input(request, proposal, message_id):
+            payload = original_input(request, proposal, message_id)
+            emit('work_change_plan_input', payload=payload, payloadSha256=digest(payload))
+            return payload
+
+        async def planned(context, request, proposal, message_id, judge):
+            token = scope.set({**scope.get(), **context_values(context)})
+            try:
+                result = await original_plan(context, request, proposal, message_id, judge)
+                emit('work_change_plan_result', messageId=message_id,
+                     targetId=proposal.get('targetId'), plan=result.model_dump(),
+                     sourceRevision=context.source_revision,
+                     documentVersions=context.document_versions)
+                return result
+            finally:
+                scope.reset(token)
+
+        plan_module.source_input = plan_input
+        plan_module.work_change_plan = planned
     from sqlalchemy import event, inspect
     from sqlalchemy.orm import Session
     tables = {'company_work_item', 'company_work_revision', 'company_report', 'company_report_revision', 'company_assistant_memory', 'company_deliverable', 'company_deliverable_revision', 'company_business_action', 'company_sandbox_execution', 'company_work_material', 'company_work_update', 'company_work_update_revision'}

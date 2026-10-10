@@ -99,12 +99,22 @@ async def agent_attachment(db, identifier, actor, job):
     return item
 
 
-async def chunk_page(db, item, start=0, limit=3, query=''):
+PAGE_CHARACTERS = 12000
+PAGE_CHUNKS = 40
+
+
+async def chunk_page(db, item, start=0, limit=PAGE_CHUNKS, query=''):
     statement = select(DocumentChunk).where(DocumentChunk.attachment_id == item.id, DocumentChunk.revision == item.extraction_revision, DocumentChunk.ordinal >= start)
     if query:
         statement = statement.where(DocumentChunk.text.icontains(query[:120], autoescape=True))
     rows = list((await db.scalars(statement.order_by(DocumentChunk.ordinal).limit(limit + 1))).all())
-    return {'attachment': attachment_dto(item), 'items': [{'ordinal': row.ordinal, 'location': row.location, 'text': row.text} for row in rows[:limit]], 'nextCursor': rows[limit - 1].ordinal + 1 if len(rows) > limit else None}
+    page, characters = [], 0
+    for row in rows[:limit]:
+        if page and characters + len(row.text) > PAGE_CHARACTERS:
+            break
+        page.append(row)
+        characters += len(row.text)
+    return {'attachment': attachment_dto(item), 'items': [{'ordinal': row.ordinal, 'location': row.location, 'text': row.text} for row in page], 'nextCursor': page[-1].ordinal + 1 if page and len(rows) > len(page) else None}
 
 
 CITATION = re.compile(r'\[\[file:([^\]\n]+)\]\]')

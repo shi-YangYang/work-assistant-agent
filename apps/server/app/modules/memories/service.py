@@ -165,3 +165,13 @@ async def validate_job(db, actor, job):
         latest = max(operations.values(), key=lambda value: value['revision'])
         if (await restore(db, actor, latest, job=job)).get('state') != 'succeeded':
             raise ValueError('记忆已被修改或删除，旧任务结果已失效；请重新说明要求')
+
+
+async def conflict_context(db, actor, snapshot, fragment):
+    """Only expose exact matching lines already visible in this task's memory."""
+    row = await read(db, actor)
+    if (not row or not row.enabled or not snapshot or not snapshot.writable
+            or row.generation != snapshot.generation or row.revision != snapshot.revision or not fragment.strip()):
+        return {}
+    lines = [line for line in row.document['markdown'].splitlines() if fragment.strip() in line]
+    return {'matchingFragments': lines[:3], 'nextStep': '使用匹配行中的完整事实精确定位，保留其他内容；不能扩大删除范围。'} if lines and sum(map(len, lines[:3])) <= 1200 else {}

@@ -10,6 +10,7 @@ from app.modules.messages.models import Message
 from app.modules.work.models import WorkItem, WorkRevision
 from app.tasks.models import Job
 from test_business_actions import runtime, finish, read_work
+from test_work_records import body
 from test_company import keyed
 
 pytestmark = pytest.mark.asyncio
@@ -66,9 +67,9 @@ async def test_private_versions_stable_items_links_and_dates(setup):
     await finish(context)
     context, _ = await runtime(setup, '把现在方案的第一项加入我的工作')
     await read_plan(context, first['id'])
-    created = await execute(context, step=1, action='create_work', changes={'title': '接口联调', 'summary': '按文档实现'}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
+    created = await execute(context, step=1, action='create_work', changes={'title': '接口联调', 'body': body('按文档实现')}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
     assert created['state'] == 'succeeded', created
-    replay = await execute(context, step=1, action='create_work', changes={'title': '接口联调', 'summary': '按文档实现'}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
+    replay = await execute(context, step=1, action='create_work', changes={'title': '接口联调', 'body': body('按文档实现')}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
     assert replay['objectId'] == created['objectId']
     selection = context.intent_model.inputs[-1]['proposedOperation']['deliverableSelection']
     assert selection['items'][0]['id'] == first['items'][1]['id']
@@ -80,7 +81,7 @@ async def test_private_versions_stable_items_links_and_dates(setup):
     changed = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=work['revision'], changes={'dueDate': '2026-10-09'}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
     assert changed['state'] == 'succeeded'
     saved = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
-    assert saved['summary'] == '按文档实现' and saved['dueDate'] == '2026-10-09'
+    assert saved['bodyText'] == '按文档实现' and saved['dueDate'] == '2026-10-09'
     assert (await read_plan(context, first['id']))['revision'] == 2
     assert (await clients['admin'].get('/api/v1/messages/' + sent['messageId'])).status_code == 404
     for who in ('admin', 'peer', 'outsider'):
@@ -171,7 +172,7 @@ async def test_private_revision_delivery_and_existing_link_do_not_claim_business
     await finish(context)
     context, _ = await runtime(setup, '把第一项加入我的工作')
     await read_plan(context, first['id'])
-    params = dict(step=1, action='create_work', changes={'title': '联调'}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
+    params = dict(step=1, action='create_work', changes={'title': '联调', 'body': body('分两天完成')}, deliverable_id=first['id'], deliverable_revision=2, item_id=second['items'][0]['id'])
     assert (await execute(context, **params))['state'] == 'succeeded'
     await finish(context)
     context, _ = await runtime(setup, '再把第一项加入我的工作')
@@ -190,3 +191,39 @@ async def test_tool_result_paging_keeps_stable_items_and_declares_incomplete_tex
     assert first['items'][0]['id'] == second['items'][0]['id'] == 'stable'
     assert len(first['body']) + len(first['items'][0]['body']) <= 10000
     assert result['body'] == '正文' * 5000
+
+
+async def test_selected_plan_requires_content_before_first_work_write(setup):
+    context, _ = await runtime(setup, '给我两条建议')
+    plan = await save_plan(context, title='建议', body='', items=[{'title': '澄清需求', 'body': '收集三份反馈，标明缺失条件'}, {'title': '联调', 'body': '先核对接口；没有测试账号时暂停'}])
+    await finish(context)
+    context, _ = await runtime(setup, '把前两条建议分别加入工作，不加截止日期')
+    await read_plan(context, plan['id'])
+    for index, item in enumerate(plan['items'], 1):
+        params = dict(step=index, action='create_work', deliverable_id=plan['id'], deliverable_revision=1, item_id=item['id'])
+        failed = await execute(context, **params, changes={'title': item['title']})
+        assert failed['category'] == 'invalid_arguments' and failed['fieldIssues'] == [{'field': 'body', 'code': 'missing'}]
+        saved = await execute(context, **params, changes={'title': item['title'], 'body': body(item['body'])})
+        assert saved['state'] == 'succeeded', saved
+        detail = (await setup[3]['employee'].get('/api/v1/work-items/' + saved['objectId'])).json()
+        assert detail['bodyText'] == item['body'] and detail['status'] == 'in_progress' and detail['dueDate'] is None
+    async with context.sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == context.owner_id)) == 2
+
+
+async def test_explicit_title_only_selection_remains_supported(setup):
+    from langchain_core.messages import AIMessage
+    context, _ = await runtime(setup, '给我一条建议')
+    plan = await save_plan(context, title='建议', body='', items=[{'title': '澄清需求', 'body': '核对三份反馈'}])
+    await finish(context)
+    context, _ = await runtime(setup, '把第一项加入工作，只要标题，不要正文')
+    await read_plan(context, plan['id'])
+    class TitleOnlyJudge:
+        async def ainvoke(self, messages):
+            data = json.loads(messages[-1].content)
+            return AIMessage(content=json.dumps({'allowed': True, 'quote': data['currentUserText'], 'reason': '', 'titleOnly': True}))
+    context.intent_model = TitleOnlyJudge()
+    result = await execute(context, step=1, action='create_work', changes={'title': '澄清需求'}, deliverable_id=plan['id'], deliverable_revision=1, item_id=plan['items'][0]['id'])
+    assert result['state'] == 'succeeded'
+    detail = (await setup[3]['employee'].get('/api/v1/work-items/' + result['objectId'])).json()
+    assert detail['bodyText'] == '' and detail['title'] == '澄清需求'

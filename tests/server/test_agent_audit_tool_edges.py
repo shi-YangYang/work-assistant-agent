@@ -222,19 +222,24 @@ async def test_document_directory_and_chunk_pages_cover_exact_authorized_sets(se
     assert len(found) == len(set(found)) == 23 and set(found) == set(expected)
     evidence_rows = {}
     for name in ('find_documents', 'read_document'):
-        offset, chunks = 0, []
+        offset, chunks, read_pages = 0, [], []
         while True:
             raw = (await find_documents.coroutine('共同词', SimpleNamespace(context=context), attachment_id=target, start=offset)
                 if name == 'find_documents' else await read_document.coroutine(target, offset, SimpleNamespace(context=context)))
             page = json.loads(raw)
-            assert len(page['items']) <= 3
+            assert len(page['items']) <= (3 if name == 'find_documents' else 40)
+            assert sum(len(row['text']) for row in page['items']) <= 12_000
+            assert all(row['location'] == f"第{row['ordinal']}段"
+                       and row['text'] == f"共同词 段落_{row['ordinal']:02d}" for row in page['items'])
+            read_pages.append(page)
             assert all(row['citation'] == f"[[file:{target}:1:{row['ordinal']}]]" for row in page['items'])
             chunks.extend(row['ordinal'] for row in page['items'])
             if page['nextCursor'] is None:
                 break
-            assert page['nextCursor'] > offset
+            assert page['nextCursor'] == page['items'][-1]['ordinal'] + 1 > offset
             offset = page['nextCursor']
         assert chunks == list(range(10))
+        assert len(read_pages) == (4 if name == 'find_documents' else 1)
         evidence_rows[name] = chunks
     evidence('document-tool-pages', {'directoryPages': pages, 'ownDocuments': len(found),
         'foreignExcluded': 1, 'chunkOrdinals': evidence_rows})

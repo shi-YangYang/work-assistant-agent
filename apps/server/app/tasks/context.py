@@ -89,6 +89,8 @@ class RunContext:
     context_checkpoint_config: dict = field(default_factory=dict)
     explicit_confirmations: set[str] = field(default_factory=set)
     authorization_outcomes: dict = field(default_factory=dict)
+    authorization_details: dict = field(default_factory=dict)
+    title_only_actions: set[str] = field(default_factory=set)
     append_values: dict = field(default_factory=dict)
     work_reference_snapshot: dict | None = None
     task_snapshot: dict = field(default_factory=dict)

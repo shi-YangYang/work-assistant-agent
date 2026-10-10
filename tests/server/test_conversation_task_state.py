@@ -185,9 +185,10 @@ async def test_argument_correction_releases_old_failure_and_suggestion_denials_a
     _, sessions, _, clients = setup
     context, _ = await runtime(setup, '创建工作')
     context.intent_model = ScopedJudge(allowed=False, kind='invalid_arguments')
-    await execute(context, step=1, action='create_work', changes={'title': '错误字段'})
+    failed = await execute(context, step=1, action='create_work', changes={'title': '错误字段'})
     context.intent_model = ScopedJudge()
-    result = await execute(context, step=1, action='create_work', changes={'title': '合法字段'})
+    assert failed['taskItemId']
+    result = await execute(context, step=1, action='create_work', changes={'title': '合法字段'}, task_item_id=failed['taskItemId'])
     assert result['state'] == 'succeeded'
     async with sessions() as db:
         job = await db.get(Job, context.job_id)
@@ -258,7 +259,7 @@ async def test_unattempted_remaining_action_gets_new_identity_without_repeating_
     arguments = dict(step=1, action='update_work', target_id=second_work['id'], expected_revision=1, changes={'nextStep': '发给客户'})
     for _ in range(2):
         wrong = await execute(context, **arguments, task_item_id=saved['taskItemId'])
-        assert wrong['state'] == 'clarification' and wrong['category'] == 'invalid_arguments'
+        assert wrong['state'] == 'failed' and wrong['category'] == 'invalid_arguments'
         assert '需求确认' in wrong['message'] and '留空' in wrong['message']
     assert len(judge.inputs) == 1  # Repeated invalid parameters do not spend another model call.
     corrected = await execute(context, **arguments)
@@ -340,7 +341,7 @@ async def test_explicit_cancelled_resume_preserves_sources_and_separates_work_st
         assert state.payload['task']['items'][0]['receiptId'] == saved['id']
         if legacy_scope:
             job = await db.get(Job, first.job_id)
-            job.result = {**job.result, 'taskItems': [{key: value for key, value in item.items() if key != 'workScope'} for item in job.result['taskItems']]}
+            job.result = {**job.result, 'taskItems': [{key: value for key, value in item.items() if key not in ('workScope', 'attemptedOperation')} for item in job.result['taskItems']]}
     context, _ = await runtime(setup, '继续上次中断的任务，只处理尚未完成的步骤，不要重复保存正文')
     judge = ScopedJudge(source=sent['messageId'], quote=original, resume=True)
     context.intent_model = judge
@@ -351,7 +352,7 @@ async def test_explicit_cancelled_resume_preserves_sources_and_separates_work_st
     args = {'step': 2, 'action': 'update_work', 'target_id': work['id'], 'expected_revision': 2,
         'changes': {'update': {'action': 'create', 'text': '收到客户需求'}}}
     wrong = await execute(context, **args, task_item_id=saved['taskItemId'])
-    assert wrong['state'] == 'clarification' and wrong['category'] == 'invalid_arguments'
+    assert wrong['state'] == 'failed' and wrong['category'] == 'invalid_arguments'
     assert '变更范围' in wrong['message']
     remaining = await execute(context, **args)
     assert remaining['state'] == 'succeeded' and remaining['id'] != saved['id'], remaining
@@ -491,7 +492,7 @@ async def test_bound_continuing_target_survives_rename_and_rejects_same_name_rep
     context.intent_model = ScopedJudge(source=sent['messageId'], quote=quote, append=['summary'])
     await read_work(context, replacement['id'])
     wrong = await execute(context, step=1, action='update_work', target_id=replacement['id'], expected_revision=1, changes={'summary': '第二份进展'})
-    assert wrong['state'] == 'clarification'
+    assert wrong['state'] == 'failed' and wrong['category'] == 'invalid_arguments'
     assert context.intent_model.inputs[0]['conversationTask']['activeDirectives'][0]['targetId'] == original['id']
     await read_work(context, original['id'])
     correct = await execute(context, step=2, action='update_work', target_id=original['id'], expected_revision=2, changes={'summary': '第二份进展'})
@@ -522,7 +523,7 @@ async def test_inline_scope_binds_only_its_verified_target_and_finish_preserves_
         current, _ = await runtime(setup, '下一条进展')
         current.intent_model = ScopedJudge(source=sent['messageId'], quote=quote, append=['summary'])
         await read_work(current, replacement['id'])
-        assert (await execute(current, step=1, action='update_work', target_id=replacement['id'], expected_revision=1, changes={'summary': '下一条进展'}))['state'] == 'clarification'
+        assert (await execute(current, step=1, action='update_work', target_id=replacement['id'], expected_revision=1, changes={'summary': '下一条进展'}))['state'] == 'failed'
         await read_work(current, original['id'])
         assert (await execute(current, step=2, action='update_work', target_id=original['id'], expected_revision=2, changes={'summary': '下一条进展'}))['state'] == 'succeeded'
 
