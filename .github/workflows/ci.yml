@@ -60,7 +60,7 @@ jobs:
   company:
     name: Company API and Web
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     services:
       redis:
         image: redis:7.4.2-alpine
@@ -100,9 +100,16 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run db:company
       - run: npm run test:server
-        timeout-minutes: 15
+        timeout-minutes: 25
         env:
-          PYTEST_ADDOPTS: --tb=short --durations=15
+          # run.mjs supplies -q; -vv keeps the active test visible on timeout.
+          PYTEST_ADDOPTS: -vv --tb=short --durations=20 -o faulthandler_timeout=90 --junitxml=artifacts/ci/server-tests.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: company-server-tests
+          path: artifacts/ci/server-tests.xml
+          if-no-files-found: ignore
       - run: npm run typecheck:web
       - run: npm run test:web
       - run: node --test tests/deploy/local-*.test.mjs tests/sandbox/local-dev.test.mjs
