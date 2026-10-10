@@ -1,5 +1,13 @@
 import { spawn } from 'node:child_process'
 
+export function directServiceEnvironment(source) {
+  const env = { ...source }
+  for (const name of Object.keys(env))
+    if (/^(https?|all|no|openai)_proxy$/i.test(name)) delete env[name]
+  // Also prevent Python clients from falling back to macOS system proxies.
+  return { ...env, NO_PROXY: '*', no_proxy: '*' }
+}
+
 export function signalOwnedChild(
   child,
   signal,

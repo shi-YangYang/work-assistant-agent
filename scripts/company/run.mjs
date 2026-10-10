@@ -7,7 +7,7 @@ import { startLocalReplyStream } from './reply-stream-local.mjs'
 import { startLocalDatabase } from './database-local.mjs'
 import { createInfra } from './local-infra/compose.mjs'
 import { createLifecycle } from './local-infra/lifecycle.mjs'
-import { signalOwnedChild } from './local-infra/processes.mjs'
+import { directServiceEnvironment, signalOwnedChild } from './local-infra/processes.mjs'
 const root = resolve(import.meta.dirname, '../..')
 const webRequire = createRequire(join(root, 'apps/web/package.json'))
 const python =
@@ -29,10 +29,10 @@ if (!existsSync(python)) {
   process.exit(1)
 }
 const children = []
-function launch(command, args) {
+function launch(command, args, childEnv = env) {
   const child = spawn(command, args, {
     cwd: root,
-    env,
+    env: childEnv,
     stdio: 'inherit',
     detached: process.platform !== 'win32',
   })
@@ -101,21 +101,26 @@ if (action === 'all') {
   }
 }
 if (!stopping && (action === 'all' || action === 'api'))
-  launch(python, [
-    '-m',
-    'uvicorn',
-    'app.main:app',
-    '--host',
-    '127.0.0.1',
-    '--port',
-    '8000',
-    '--reload',
-    '--reload-dir',
-    join(root, 'apps/server'),
-    '--reload-dir',
-    join(root, 'packages/voiceprint-engine/src'),
-  ])
-if (!stopping && (action === 'all' || action === 'worker')) launch(python, ['-m', 'app.worker'])
+  launch(
+    python,
+    [
+      '-m',
+      'uvicorn',
+      'app.main:app',
+      '--host',
+      '127.0.0.1',
+      '--port',
+      '8000',
+      '--reload',
+      '--reload-dir',
+      join(root, 'apps/server'),
+      '--reload-dir',
+      join(root, 'packages/voiceprint-engine/src'),
+    ],
+    directServiceEnvironment(env),
+  )
+if (!stopping && (action === 'all' || action === 'worker'))
+  launch(python, ['-m', 'app.worker'], directServiceEnvironment(env))
 if (!stopping && action === 'all')
   launch(process.execPath, [
     join(dirname(webRequire.resolve('vite/package.json')), 'bin/vite.js'),
