@@ -132,7 +132,8 @@ async def test_saved_plan_rechecks_refusal_and_creates_exactly_two_linked_works(
     saved = await save_plan(context, title='实施计划', body='按顺序实施', items=[{'title': '明确范围与技术方案'}, {'title': '开发与联调'}, {'title': '验收'}])
     await read_plan(context, saved['id'])
     # Correcting one prerequisite still does not supply the required item.
-    assert (await execute(context, **first_args))['state'] == 'clarification'
+    unresolved = await execute(context, **first_args)
+    assert unresolved['state'] == 'clarification' and unresolved['taskItemId']
     assert len(judge.inputs) == 2
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 0
@@ -147,10 +148,11 @@ async def test_saved_plan_rechecks_refusal_and_creates_exactly_two_linked_works(
     fresh = SelectedJudge()
     context.intent_model = fresh
     reference = {'deliverable_id': saved['id'], 'deliverable_revision': 1}
-    first = await execute(context, **{**first_args, 'step': 3}, **reference, item_id=saved['items'][0]['id'])
+    first = await execute(context, **{**first_args, 'step': 3}, **reference, item_id=saved['items'][0]['id'], task_item_id=unresolved['taskItemId'])
     second_args = {'step': 2, 'action': 'create_work', 'changes': {'title': '开发与联调', 'summary': '完成开发和联调'}, **reference, 'item_id': saved['items'][1]['id']}
     second = await execute(context, **second_args)
     assert first['state'] == second['state'] == 'succeeded'
+    assert first['taskItemId'] == unresolved['taskItemId']
     assert (await execute(context, **{**second_args, 'step': 4}))['id'] == second['id']
     assert len(fresh.inputs) == 2
     read = await read_plan(context, saved['id'])

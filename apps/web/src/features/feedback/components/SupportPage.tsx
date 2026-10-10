@@ -131,9 +131,11 @@ export function SupportPage() {
               else return
               event.preventDefault()
               selectTab(tabs[next].id)
-              event.currentTarget.parentElement
-                ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-                [next]?.focus()
+              const buttons =
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                  '[role="tab"]',
+                )
+              buttons?.[next]?.focus()
             }}
           >
             {item.label}

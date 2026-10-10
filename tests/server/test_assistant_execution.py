@@ -119,7 +119,11 @@ async def test_partial_update_cannot_write_or_shortcut_before_all_requested_fiel
     before = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
     assert before['revision'] == 1 and before['status'] == 'in_progress' and before['summary'] == '准备培训材料'
     assert not (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()['actions']
+    # Correct the same atomic item, rather than proposing a separate update.
+    assert rejected['taskItemId']
+    args['task_item_id'] = rejected['taskItemId']
     saved = await execute(context, **args, changes=changes)
+    assert saved['taskItemId'] == rejected['taskItemId']
     assert saved['state'] == 'succeeded' and await receipt_completion(context, returned(saved))
     after = (await clients['employee'].get('/api/v1/work-items/' + work['id'])).json()
     assert after['revision'] == 2 and all(after[key] == value for key, value in changes.items())

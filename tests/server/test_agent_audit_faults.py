@@ -1,7 +1,9 @@
 """Spec 059 destructive cases. Synthetic fixtures, unchanged application code."""
 import asyncio
 import json
+import os
 from pathlib import Path
+import re
 import sys
 from uuid import uuid4
 
@@ -9,6 +11,7 @@ import httpx
 import pytest
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import func, select
+from sqlalchemy.engine import make_url
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/company/web-acceptance/agent-audit'))
 from faults import evidence, isolated_url
@@ -22,6 +25,15 @@ from app.tasks.runtime.queue import claim
 from test_agent_budget_flow import provider, response, run
 
 pytestmark = pytest.mark.asyncio
+
+
+@pytest.fixture
+def owned_fault_environment():
+    if os.getenv('PAA_AGENT_FAULT_ENVIRONMENT'):
+        return  # isolated_url still validates the declaration before any fault.
+    url = make_url(os.getenv('DATABASE_TEST_URL') or 'postgresql://')
+    if not re.fullmatch(r'-csearch_path=spec059_[a-z]+_[a-f0-9]{12}', url.query.get('options', '')):
+        pytest.skip('Opt-in faults require an owned acceptance environment')
 
 
 @pytest.mark.parametrize('cycle', [1, 2, 3])
@@ -85,20 +97,20 @@ async def test_parallel_same_memory_patch_different_call_ids_has_one_revision(se
     assert current['revision'] == 1 and current['markdown'].count('喜欢吃米饭') == 1
 
 
-async def test_owned_database_disconnection_and_idempotent_recovery(setup, monkeypatch, caplog):
+async def test_owned_database_disconnection_and_idempotent_recovery(owned_fault_environment, setup, monkeypatch, caplog):
     import test_infrastructure_failures as existing
     monkeypatch.setattr(existing, 'isolated_url', isolated_url)
     await existing.test_database_disconnect_rolls_back_partial_write_and_recovers(setup, caplog)
 
 
 @pytest.mark.parametrize('fault', ['permission', 'capacity'])
-async def test_owned_media_failure_and_cleanup(setup, monkeypatch, caplog, fault):
+async def test_owned_media_failure_and_cleanup(owned_fault_environment, setup, monkeypatch, caplog, fault):
     import test_infrastructure_failures as existing
     monkeypatch.setattr(existing, 'isolated_url', isolated_url)
     await existing.test_media_write_failure_leaves_no_file_or_row_and_recovers(setup, monkeypatch, caplog, fault)
 
 
-async def test_owned_worker_sigkill_and_real_lease_recovery(setup, monkeypatch, tmp_path):
+async def test_owned_worker_sigkill_and_real_lease_recovery(owned_fault_environment, setup, monkeypatch, tmp_path):
     import test_process_worker_recovery as existing
     isolated_url(setup[0])
     source = Path(existing.__file__).with_name('full_system_worker_probe.py').read_text()
@@ -113,7 +125,7 @@ async def test_owned_worker_sigkill_and_real_lease_recovery(setup, monkeypatch, 
 
 
 @pytest.mark.parametrize('concurrency', [1, 5, 10])
-async def test_isolated_users_mixed_tasks_do_not_cross_outputs(setup, concurrency):
+async def test_isolated_users_mixed_tasks_do_not_cross_outputs(owned_fault_environment, setup, concurrency):
     from test_tool_catalog import CatalogModel
     from test_memory_tool_flow import MemoryModel
     from test_response_delivery import DeliveryModel

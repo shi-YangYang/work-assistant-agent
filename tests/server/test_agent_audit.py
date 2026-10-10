@@ -117,7 +117,7 @@ def test_continuation_keeps_memory_settings_and_accepted_receipt(tmp_path, monke
 
     monkeypatch.setattr(runner, 'configure_case', configure)
     monkeypatch.setattr(runner.http, 'execute_case', execute)
-    args = SimpleNamespace(metadata='owned', materials='materials', output=str(tmp_path / 'continued'), ids='', repetition=1, resume=False, continue_from=str(previous), resume_reason='process interrupted')
+    args = SimpleNamespace(metadata='owned', suite=None, materials='materials', output=str(tmp_path / 'continued'), ids='', repetition=1, resume=False, continue_from=str(previous), resume_reason='process interrupted')
     asyncio.run(runner.main(args))
     assert seen == [('synthetic', prior)]
     assert (prior / 'accepted.jsonl').read_text() == json.dumps(accepted) + '\n'

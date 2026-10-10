@@ -2,6 +2,7 @@
 import copy
 import json
 import socket
+import ssl
 import sqlite3
 import sys
 import tempfile
@@ -12,6 +13,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
+
+import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apps/desktop/core/src'))
 from paa_core.minutes.llm_provider import Provider, Limits, _StreamReply, config, parameters
@@ -335,6 +338,11 @@ class Handler(BaseHTTPRequestHandler):
 
 class TransportTests(unittest.TestCase):
     def setUp(self):
+        # Load the platform certificate store outside subsecond transport
+        # budgets. Keep real HTTP sockets, timeouts and TLS verification.
+        tls_context, client = ssl.create_default_context(), httpx.AsyncClient
+        self.enterContext(patch('paa_core.minutes.llm_provider.httpx.AsyncClient',
+                                side_effect=lambda **kwargs: client(verify=tls_context, **kwargs)))
         self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         self.server.daemon_threads = True
         self.server.calls = []; self.server.delay = 0; self.server.status = 200
