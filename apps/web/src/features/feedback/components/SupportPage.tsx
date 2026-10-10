@@ -10,7 +10,6 @@ import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { Pagination } from '@web/components/actions/Pagination'
-import { PanelSection } from '@web/components/content/PanelSection'
 import {
   feedbackListPath,
   handleFeedback,
@@ -19,12 +18,17 @@ import {
 } from '@web/features/feedback/api/requests'
 import { useCursorPage } from '@web/hooks/useCursorPage'
 import { useRetryWait } from '@web/hooks/useRetryWait'
-import { captureDiagnostics, copyText, diagnosticText } from '@web/lib/diagnostics'
+import { captureDiagnostics, diagnosticText } from '@web/lib/diagnostics'
 import { useWorkspace } from '@web/lib/workspace'
 import { dateLabel } from '@web/utils/date'
 import { Inbox } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { useLocation } from 'react-router'
+import { useLocation, useSearchParams } from 'react-router'
+
+const tabs = [
+  { id: 'submit', label: '提交反馈' },
+  { id: 'records', label: '反馈记录' },
+] as const
 
 type FeedbackDraft = {
   description: string
@@ -52,13 +56,24 @@ export function SupportPage() {
   const [note, setNote] = useState('')
   const [state, setState] = useState<'pending' | 'resolved'>('pending')
   const admin = identity.member.role === 'admin'
-  const search = new URLSearchParams(location.search)
-  const scope = admin && search.get('scope') !== 'mine' ? 'all' : 'mine'
+  const [search, setSearch] = useSearchParams()
+  const tab =
+    search.get('tab') === 'records' ||
+    (!search.has('tab') && ['scope', 'state', 'after'].some((key) => search.has(key)))
+      ? 'records'
+      : 'submit'
+  const selectTab = (next: (typeof tabs)[number]['id']) => {
+    const params = new URLSearchParams(search)
+    params.set('tab', next)
+    setSearch(params, { replace: true, state: location.state })
+  }
+  const scope = admin ? 'all' : 'mine'
   const filterState = ['pending', 'resolved'].includes(search.get('state') ?? '')
     ? search.get('state')!
     : ''
-  const list = useCursorPage<SupportFeedback>(feedbackListPath(scope, filterState))
-  const text = `${draft.description || '（请填写问题描述）'}\n\n${diagnosticText(draft.diagnostics)}`
+  const list = useCursorPage<SupportFeedback>(
+    tab === 'records' ? feedbackListPath(scope, filterState) : null,
+  )
   const submit = async () => {
     if (inFlight.current || retryWait || !draft.description.trim()) return
     const pending = draft.pending ?? {
@@ -72,7 +87,7 @@ export function SupportPage() {
     try {
       await submitFeedback(pending.body, pending.key)
       setDraft('support', undefined)
-      list.refresh()
+      list.filter({ tab: 'records', state: '', scope: '' })
       notify('反馈已提交，可在列表查看处理结果。')
     } catch (failure) {
       setError(failure instanceof Error ? failure : '反馈未提交，请重试。')
@@ -94,8 +109,44 @@ export function SupportPage() {
       className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']} ${styles['support-page']}`}
     >
       <PageHeader title="问题反馈" description="描述遇到的问题，由本公司管理员处理。" />
-      <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
-        <PanelSection title="提交反馈" defaultOpen>
+      <div className={layoutStyles['tabs']} role="tablist" aria-label="问题反馈">
+        {tabs.map((item, index) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            id={`support-tab-${item.id}`}
+            aria-controls={`support-panel-${item.id}`}
+            aria-selected={tab === item.id}
+            data-active={tab === item.id}
+            tabIndex={tab === item.id ? 0 : -1}
+            disabled={busy}
+            onClick={() => selectTab(item.id)}
+            onKeyDown={(event) => {
+              let next: number
+              if (event.key === 'ArrowRight') next = (index + 1) % tabs.length
+              else if (event.key === 'ArrowLeft') next = (index + tabs.length - 1) % tabs.length
+              else if (event.key === 'Home') next = 0
+              else if (event.key === 'End') next = tabs.length - 1
+              else return
+              event.preventDefault()
+              selectTab(tabs[next].id)
+              event.currentTarget.parentElement
+                ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+                [next]?.focus()
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        id="support-panel-submit"
+        aria-labelledby="support-tab-submit"
+        hidden={tab !== 'submit'}
+      >
+        {tab === 'submit' && (
           <form
             className={`${styles['support-compose']}`}
             aria-label="提交反馈"
@@ -118,15 +169,6 @@ export function SupportPage() {
                 placeholder="你做了什么，遇到了什么问题？"
               />
             </label>
-            <details className={styles['support-diagnostics']}>
-              <summary>查看本次诊断摘要</summary>
-              <p className={utilitiesStyles['muted']}>
-                仅包含以下环境信息，不自动采集聊天、文件或完整网址。请勿在描述中填写密码或密钥。
-              </p>
-              <pre className={styles['diagnostic-summary']}>
-                {diagnosticText(draft.diagnostics)}
-              </pre>
-            </details>
             {draft.pending && (
               <p className={utilitiesStyles['muted']}>
                 提交结果待确认，请原样重试；本次反馈不会重复创建。
@@ -134,17 +176,6 @@ export function SupportPage() {
             )}
             <ErrorNotice>{error}</ErrorNotice>
             <div className={`${layoutStyles['form-actions']} ${styles['slot-form-actions']}`}>
-              <button
-                type="button"
-                onClick={() =>
-                  void copyText(text).then(
-                    () => notify('已复制反馈信息'),
-                    (failure: Error) => setError(failure),
-                  )
-                }
-              >
-                复制反馈信息
-              </button>
               <BusyButton
                 className={controlsStyles['primary']}
                 busy={busy}
@@ -158,28 +189,18 @@ export function SupportPage() {
               </BusyButton>
             </div>
           </form>
-        </PanelSection>
-        <PanelSection
-          title="反馈记录"
-          status={
-            list.data?.items.length === 0 ? '暂无反馈' : scope === 'all' ? '公司反馈' : '我的反馈'
-          }
-        >
+        )}
+      </div>
+      <div
+        role="tabpanel"
+        id="support-panel-records"
+        aria-labelledby="support-tab-records"
+        hidden={tab !== 'records'}
+      >
+        {tab === 'records' && (
           <div>
             <header className={styles['support-heading']}>
               <div className={styles['support-filters']}>
-                {admin && (
-                  <label>
-                    查看范围
-                    <select
-                      value={scope}
-                      onChange={(event) => list.filter({ scope: event.target.value })}
-                    >
-                      <option value="mine">我的反馈</option>
-                      <option value="all">公司反馈</option>
-                    </select>
-                  </label>
-                )}
                 <label>
                   处理状态
                   <select
@@ -233,7 +254,7 @@ export function SupportPage() {
               />
             )}
           </div>
-        </PanelSection>
+        )}
       </div>
       {selected && (
         <Modal title="反馈详情" onClose={() => !busy && setSelected(null)}>
