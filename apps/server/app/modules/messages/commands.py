@@ -45,7 +45,7 @@ async def submit_message(db, actor, body, idempotency_key, settings):
     from app.modules.model_services.reasoning.settings import validate_message_settings
     await validate_message_settings(db, actor, body.reasoning)
     if body.workReference:
-        from app.modules.messages.work_references import require_work
+        from app.modules.messages.references.work_references import require_work
         await require_work(db, actor, body.workReference.workId)
     if body.newConversation:
         conversation = Conversation(company_id=actor.company_id, owner_id=actor.id, persona_id=body.personaId or DEFAULT_PERSONA)
@@ -108,7 +108,7 @@ async def correct_transcript(db, actor, identifier, body):
         problem(422, '仅语音消息可以修正转写')
     if item.transcript_revision != body.expectedRevision:
         problem(409, '转写已被更新，请读取最新内容')
-    from app.modules.messages.audio import transcript_groups
+    from app.modules.messages.input.audio import transcript_groups
     job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message'))
     try:
         transcript_groups(body.text, job.result if job else {})

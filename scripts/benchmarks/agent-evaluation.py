@@ -36,9 +36,9 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'apps/server'), str(ROOT / 'tests/server')]
 
-from agent_eval_cases import cases, failures, persona_cases
-from agent_task_eval_cases import SUITE_REVISION, task_cases, task_failures
-from agent_eval_grading import SEMANTIC_RULES, GRADING_PROMPT, grading_input, parse_grade
+from _support.agent.agent_eval_cases import cases, failures, persona_cases
+from _support.agent.agent_task_eval_cases import SUITE_REVISION, task_cases, task_failures
+from _support.agent.agent_eval_grading import SEMANTIC_RULES, GRADING_PROMPT, grading_input, parse_grade
 from conftest import setup
 from app.core.config import Settings
 from app.agent.harness import build_graph
@@ -218,14 +218,14 @@ async def evaluate(case, configs, prepared=None):
                             continue
                         if hook == 'lost_receipt' and job.kind == 'message':
                             record = {'type': hook, 'injected': 0, 'source': 'controlled_lost_tool_response_after_real_write'}
-                            from app.agent.tools.actions import actions_execute
+                            from app.agent.tools.business.actions import actions_execute
                             async def lose_response(*args, **kwargs):
                                 answer = await actions_execute(*args, **kwargs)
                                 if args and args[0].job_id == job.id and not record['injected'] and answer.get('state') == 'succeeded':
                                     record['injected'] += 1
                                     raise ConnectionError('controlled receipt loss after committed business write')
                                 return answer
-                            with patch('app.agent.tools.actions.actions_execute', lose_response):
+                            with patch('app.agent.tools.business.actions.actions_execute', lose_response):
                                 await process_job(job, sessions, settings, saver)
                             snapshot['hooks'].append(record)
                             after = checked(await client.get('/api/v1/messages/' + value['messageId']), 200)
@@ -307,7 +307,7 @@ async def main():
     configs = await configuration(args.source_user, include_asr=args.suite == 'work-records')
     available = task_cases() if args.suite == 'task-consistency' else persona_cases((args.persona,) if args.persona else ('dabao', 'professional')) if args.suite == 'persona' else cases()
     if args.suite == 'work-records':
-        from work_record_eval_cases import work_record_cases
+        from _support.work.work_record_eval_cases import work_record_cases
         available = work_record_cases()
     if args.suite == 'task-consistency' and args.group != 'all':
         available = [case for case in available if case.holdout == (args.group == 'holdout')]
@@ -327,7 +327,7 @@ async def main():
         nonlocal count, failed
         async with semaphore:
             if args.suite == 'work-records':
-                from work_record_eval_runtime import evaluate_work_record
+                from _support.work.work_record_eval_runtime import evaluate_work_record
                 result = await evaluate_work_record(case, configs, sys.modules[__name__])
             else:
                 result = await evaluate(case, configs)

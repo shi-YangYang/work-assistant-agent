@@ -2,8 +2,8 @@ import controlsStyles from '../../../../styles/controls.module.css'
 import styles from './MessageComposer.module.css'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
 import { WorkReferencePicker } from '../work-reference/WorkReferencePicker'
-import type { useWorkReference } from '../../hooks/useWorkReference'
-import { ContextUsage } from './ContextUsage'
+import type { useWorkReference } from '../../hooks/composer/useWorkReference'
+import { ContextUsage } from './controls/ContextUsage'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
@@ -19,7 +19,7 @@ import {
   X,
   BriefcaseBusiness,
 } from 'lucide-react'
-import type { useAssistantTask } from '../../hooks/useAssistantTask'
+import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
 import type * as React from 'react'
 import { useId, useRef } from 'react'
 

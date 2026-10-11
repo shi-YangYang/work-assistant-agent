@@ -45,7 +45,7 @@ class WorkEdit(Progress, Revision):
 
 
 from app.modules.work.content.document import WorkDocument
-from app.modules.work.record_schemas import MaterialSource
+from app.modules.work.records.record_schemas import MaterialSource
 
 
 class WorkCreate(Progress):

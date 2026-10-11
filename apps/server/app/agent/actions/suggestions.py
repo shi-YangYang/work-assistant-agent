@@ -88,7 +88,7 @@ async def settle_suggestion(context, db, job, actor, message, draft, action, con
     mode = await mode_for(db, job)
     decision = decide(mode, 'update_work' if work_id else 'create_work', explicitly_confirm=options['explicitConfirmation'])
     if decision.outcome == 'allow':
-        from app.modules.work.progress import apply_draft
+        from app.modules.work.drafts.progress import apply_draft
         work = await apply_draft(db, actor, draft)
         draft.status = 'confirmed'
         draft.revision += 1

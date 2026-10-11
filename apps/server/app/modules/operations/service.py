@@ -21,7 +21,7 @@ from app.security.ownership import owned
 async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
     p = row.params
     if row.action in ('create_work', 'update_work') and (set(p['changes']) & {'body', 'bodyEdits', 'materials', 'materialIds', 'update', 'removeMaterial'} or p.get('sharedAttachmentIds')):
-        from app.modules.work.agent_commands import apply_action
+        from app.modules.work.agent.agent_commands import apply_action
         from app.core.config import Settings
         row.result = await apply_action(db, actor, row, settings or Settings(), confirmed=confirmed, job=job)
     elif row.action in ('create_work', 'update_work'):
@@ -62,11 +62,11 @@ async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
             timezone = obligation.timezone
         # Pass the authenticated request through the asynchronous handoff, not
         # a brief invented by the tool-calling model.
-        from app.agent.context.conversation_context import request_text
+        from app.agent.context.references.conversation_context import request_text
         from app.modules.messages.models import Message
         message = await owned(db, Message, row.message_id, actor)
         instructions = request_text(message, job) if job else message.text
-        from app.agent.context.report_context import capture_brief
+        from app.agent.context.references.report_context import capture_brief
         source = await capture_brief(db, actor, message, job) if job else None
         item, report_job = await ensure_report(db, actor, p['kind'], day, report_timezone=timezone, instructions=instructions, instruction_source=source)
         if job:

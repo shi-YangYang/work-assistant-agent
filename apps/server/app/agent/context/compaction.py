@@ -171,7 +171,7 @@ class ContextCompaction(AgentMiddleware):
                     return restored
                 summary = await self.summarize(context, removed, target - overhead)
                 from app.tasks.nodes.node_execution import active_node
-                from app.agent.completion.evidence_consistency import tool_evidence
+                from app.agent.completion.evidence.evidence_consistency import tool_evidence
                 candidate = {'id': identifier, 'nodeId': active_node.get()[0] if active_node.get() else None,
                              'summary': summary, 'removedIds': [m.id for m in removed],
                              'sources': context.context_sources,

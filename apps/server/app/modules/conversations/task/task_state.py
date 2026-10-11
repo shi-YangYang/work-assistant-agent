@@ -4,7 +4,7 @@ from app.core.digests import digest
 from app.core.errors import problem
 from app.db.base import now
 from app.modules.conversations.models import ConversationTaskState
-from app.modules.messages.input_text import request_text
+from app.modules.messages.input.input_text import request_text
 from app.modules.conversations.task.task_schemas import TaskInterpretation, TaskSource
 from app.modules.messages.models import Message
 from app.security.access import valid as business_valid

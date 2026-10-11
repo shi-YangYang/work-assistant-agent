@@ -38,10 +38,10 @@ def save(path, value):
 def inventory():
     from langchain_core.utils.function_calling import convert_to_openai_tool
     from app.agent.tools.registry import BUSINESS_TOOLS
-    from app.agent.tools.team import TEAM_TOOLS
+    from app.agent.tools.business.team import TEAM_TOOLS
     from app.agent.tools.catalog import available_groups, allowed_tools
     from app.agent.prompts.policies import EXCLUDED_TOOLS
-    from app.agent.tools.actions import execute_business_action
+    from app.agent.tools.business.actions import execute_business_action
     from app.main import create_app
     from app.core.config import Settings
     registered = {tool.name: tool for tool in BUSINESS_TOOLS + TEAM_TOOLS}
@@ -85,7 +85,7 @@ def inventory():
 
 
 def selected_tests():
-    return [str(path.relative_to(ROOT)) for path in sorted((ROOT / 'tests/server').glob('test_*.py')) if path.stem not in EXCLUDED]
+    return [str(path.relative_to(ROOT)) for path in sorted((ROOT / 'tests/server').rglob('test_*.py')) if path.stem not in EXCLUDED]
 
 
 def run(args):
@@ -142,7 +142,7 @@ def pytest_sessionstart(session):
     if not os.getenv('SPEC059_FIXED_EVIDENCE'):
         return
     from app.agent.tools.registry import BUSINESS_TOOLS
-    from app.agent.tools.team import TEAM_TOOLS
+    from app.agent.tools.business.team import TEAM_TOOLS
     for tool in BUSINESS_TOOLS + TEAM_TOOLS:
         original = tool.coroutine
         def instrument(original, name):

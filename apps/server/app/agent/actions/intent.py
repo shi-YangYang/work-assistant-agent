@@ -203,7 +203,7 @@ async def authorize_intent(context, proposal):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         company = await db.get(Company, actor.company_id)
-        from app.agent.context.conversation_context import conversation_references, request_text
+        from app.agent.context.references.conversation_context import conversation_references, request_text
         previous = await conversation_references(db, actor, job, message, context=context)
         current = request_text(message, job)
         if not current.strip():
@@ -217,12 +217,12 @@ async def authorize_intent(context, proposal):
         for row in previous_steps:
             card = await action_dto(db, actor, row)
             prior.append({'step': row.step, **{key: card[key] for key in ('id', 'action', 'state', 'objectId', 'objectRevision', 'changedFields', 'details') if key in card}})
-        from app.modules.work.draft_receipts import message_drafts
+        from app.modules.work.drafts.draft_receipts import message_drafts
         for draft in await message_drafts(db, actor, message, job):
             prior.append({'action': 'update_work' if draft.base_revision is not None else 'create_work',
                 'state': 'succeeded' if draft.status == 'confirmed' else 'pending' if draft.status == 'pending' else 'cancelled',
                 'objectId': draft.work_id, 'details': draft.content})
-        from app.agent.context.deliverable_context import deliverable_context
+        from app.agent.context.references.deliverable_context import deliverable_context
         results = await deliverable_context(db, actor, message, job=job)
         request = {'conversationTask': task, 'privateDeliverables': results, 'completedOrPendingSteps': prior, 'verifiedReads': await verified_read_context(db, actor, job, proposal, context.read_versions), 'currentUserText': current, 'conversationForReferenceOnly': previous, 'messageTime': message.created_at.astimezone(ZoneInfo(company.rules['timezone'])).isoformat(), 'timezone': company.rules['timezone'], 'proposedOperation': proposal}
         current_items = job.result.get('taskItems', [])

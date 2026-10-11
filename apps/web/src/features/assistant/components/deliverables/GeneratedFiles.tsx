@@ -3,7 +3,7 @@ import { ApiError } from '@web/api/client'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Download, FileText, Image, LoaderCircle, Presentation, Sheet } from 'lucide-react'
 import { useState } from 'react'
-import { useGeneratedFile, useGeneratedImage } from '../../hooks/useGeneratedFile'
+import { useGeneratedFile, useGeneratedImage } from '../../hooks/deliverables/useGeneratedFile'
 import { fileSize } from '../../utils/files'
 import styles from './GeneratedFiles.module.css'
 

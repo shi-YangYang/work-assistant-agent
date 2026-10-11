@@ -8,7 +8,7 @@ from app.core.errors import problem
 from app.db.base import now
 from app.modules.members.models import Member
 from app.modules.messages.models import Message
-from app.modules.messages.input_text import request_text
+from app.modules.messages.input.input_text import request_text
 from app.tasks.context import MemorySnapshot
 from .models import AssistantMemory
 from .document import annotations_after, patch, validate

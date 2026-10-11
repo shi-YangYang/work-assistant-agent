@@ -1,0 +1,211 @@
+"""Native-session isolation and enrollment publication boundaries; no real models."""
+import asyncio
+import base64
+import hashlib
+import io
+import pytest
+import secrets
+import wave
+from datetime import timedelta
+from app.db.base import now
+from app.modules.auth.models import DesktopAuthorization, DesktopSession, Session
+from app.modules.auth.sessions import COOKIE, digest, revoke_member
+from app.modules.members.models import Member
+from app.modules.voiceprints.models import Voiceprint
+from app.tasks.processing.voiceprints import process_once
+from paa_voiceprints import MODEL_ID
+from sqlalchemy import delete, select, update
+from _support.http.desktop_voiceprints import enroll, fake_extract, start, token, wav_bytes
+
+
+pytestmark = pytest.mark.asyncio
+
+
+async def test_desktop_pkce_atomic_exchange_and_cookie_isolation(setup):
+    _, sessions, users, c = setup
+    client = c['admin']
+    info = await client.get('/api/v1/desktop/info')
+    assert info.json() == {'protocolVersion': 1, 'webOrigin': 'http://test'}
+    request, verifier = await start(client)
+    assert request['authorizationUrl'] == 'http://test/desktop/connect?request=' + request['requestId']
+    assert (await client.get('/api/v1/desktop/me')).status_code == 401
+    pending = await client.post('/api/v1/desktop/login/exchange', json={'requestId': request['requestId'], 'verifier': verifier})
+    assert pending.status_code == 202 and pending.json() == {'state': 'pending'}
+    wrong = await client.post('/api/v1/desktop/login/exchange', json={'requestId': request['requestId'], 'verifier': 'a' * 64})
+    assert wrong.status_code == 403
+    assert (await client.post('/api/v1/auth/desktop/requests/' + request['requestId'], json={'approve': True}, headers={'X-CSRF-Token': 'wrong'})).status_code == 403
+    assert (await client.post('/api/v1/auth/desktop/requests/' + request['requestId'], json={'approve': True})).status_code == 200
+    async with sessions.begin() as db:
+        await db.execute(update(DesktopAuthorization).where(DesktopAuthorization.request_hash == digest(request['requestId'])).values(polled_at=None))
+    responses = await asyncio.gather(*(client.post('/api/v1/desktop/login/exchange', json={'requestId': request['requestId'], 'verifier': verifier}) for _ in range(2)))
+    assert sorted(r.status_code for r in responses) == [200, 410]
+    success = next(r.json() for r in responses if r.status_code == 200)
+    assert success['member']['id'] == users['admin'].id
+    async with sessions() as db:
+        rows = (await db.scalars(select(DesktopSession).where(DesktopSession.member_id == users['admin'].id))).all()
+        assert len(rows) == 1 and rows[0].token_hash != success['token']
+    headers = {'Authorization': 'Bearer ' + success['token']}
+    assert (await client.get('/api/v1/desktop/me', headers=headers)).status_code == 200
+    assert (await client.post('/api/v1/desktop/logout', headers=headers)).status_code == 200
+    assert (await client.get('/api/v1/desktop/me', headers=headers)).status_code == 401
+
+
+@pytest.mark.parametrize('change', ['revoke', 'disable', 'demote', 'web_logout'])
+async def test_desktop_revocation_and_current_roles(setup, change):
+    _, sessions, users, c = setup
+    headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
+    async with sessions.begin() as db:
+        actor = await db.get(Member, users['admin'].id)
+        if change == 'revoke': await revoke_member(db, actor.id)
+        if change == 'disable': actor.active = False
+        if change == 'demote': actor.role = 'employee'
+    if change == 'web_logout':
+        assert (await c['admin'].post('/api/v1/auth/logout')).status_code == 200
+    result = await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)
+    assert result.status_code == (403 if change == 'demote' else 401)
+
+
+async def test_desktop_authorization_needs_no_password_change_step(setup):
+    _, _, users, c = setup
+    headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
+    result = await c['admin'].get('/api/v1/desktop/me', headers=headers)
+    assert result.status_code == 200 and result.json()['member']['id'] == users['admin'].id
+    assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)).status_code == 200
+
+
+@pytest.mark.parametrize('remaining', [timedelta(days=7), timedelta(hours=2)])
+async def test_new_desktop_expiry_is_bounded_by_eight_hours_and_parent(setup, monkeypatch, remaining):
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    instant = now()
+    monkeypatch.setattr('app.modules.auth.desktop_router.now', lambda: instant)
+    async with sessions.begin() as db:
+        parent = await db.scalar(select(Session).where(Session.token_hash == digest(client.cookies.get(COOKIE))))
+        parent.expires_at = instant + remaining
+    raw = await token(client)
+    async with sessions() as db:
+        desktop = await db.scalar(select(DesktopSession).where(DesktopSession.token_hash == digest(raw)))
+        assert desktop.expires_at == instant + min(timedelta(hours=8), remaining)
+        desktop_expiry = desktop.expires_at
+    # Ordinary Web activity may upgrade/renew the parent, never its desktop token.
+    assert (await client.get('/api/v1/auth/me')).status_code == 200
+    async with sessions() as db:
+        assert (await db.get(DesktopSession, desktop.id)).expires_at == desktop_expiry
+
+
+async def test_grant_expiry_denial_and_origin_boundaries(setup):
+    _, sessions, _, c = setup
+    request, verifier = await start(c['employee'])
+    assert (await c['employee'].post('/api/v1/auth/desktop/requests/' + request['requestId'], json={'approve': False})).status_code == 200
+    assert (await c['employee'].post('/api/v1/desktop/login/exchange', json={'requestId': request['requestId'], 'verifier': verifier})).status_code == 410
+    async with sessions.begin() as db:
+        await db.execute(update(DesktopAuthorization).where(DesktopAuthorization.request_hash == digest(request['requestId'])).values(state='pending', expires_at=now()-timedelta(seconds=1)))
+    assert (await c['employee'].get('/api/v1/auth/desktop/requests/' + request['requestId'])).status_code == 410
+    assert (await c['employee'].post('/api/v1/desktop/login/start', headers={'Origin': 'https://evil.example'}, json={'challenge': 'a'*43})).status_code == 403
+    # Native exceptions never weaken the existing Web write boundary.
+    del c['employee'].headers['Origin']
+    assert (await c['employee'].post('/api/v1/auth/logout')).status_code == 403
+    result = await c['employee'].post('/api/v1/desktop/login/start', json={'challenge': 'a'*43})
+    assert result.status_code == 200
+    async with sessions.begin() as db:
+        await db.execute(delete(DesktopAuthorization).where(DesktopAuthorization.request_hash == digest(result.json()['requestId'])))
+
+
+async def test_voiceprint_company_admin_boundaries_and_publish(setup):
+    settings, sessions, users, c = setup
+    member = users['employee'].id
+    assert (await c['employee'].get('/api/v1/settings/voiceprints')).status_code == 403
+    assert (await enroll(c['employee'], member)).status_code == 403
+    assert (await enroll(c['admin'], users['outsider'].id)).status_code == 404
+    assert (await enroll(c['admin'], member, consent=False)).status_code == 422
+    listing = (await c['admin'].get('/api/v1/settings/voiceprints')).json()
+    assert {m['memberId'] for m in listing['items']} == {users[x].id for x in ('admin', 'employee', 'peer')}
+    assert all('templates' not in m for m in listing['items'])
+    result = await enroll(c['admin'], member)
+    assert result.status_code == 202 and result.json()['state'] == 'queued'
+    assert (await enroll(c['admin'], member, revision=1)).status_code == 409
+    header = {'Authorization': 'Bearer ' + await token(c['admin'])}
+    assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=header)).json()['profiles'] == []
+    assert await process_once(sessions, settings, extractor=fake_extract)
+    ready = (await c['admin'].get('/api/v1/desktop/voiceprints', headers=header)).json()
+    assert ready['profiles'] == [{'memberId': member, 'name': users['employee'].name, 'templates': [[1.] + [0.] * 255]}]
+    assert (await c['outsider'].get('/api/v1/settings/voiceprints/' + member + '/audio')).status_code == 403
+    assert (await c['admin'].get('/api/v1/settings/voiceprints/' + member + '/audio')).content == wav_bytes()
+    # Failed replacement preserves the published template and private old original.
+    assert (await enroll(c['admin'], member, revision=1)).status_code == 202
+    async def fail(*args): raise ValueError('声纹模型未就绪，请检查模型文件')
+    assert await process_once(sessions, settings, extractor=fail)
+    after = (await c['admin'].get('/api/v1/desktop/voiceprints', headers=header)).json()
+    assert after == ready
+    failed = next(m for m in (await c['admin'].get('/api/v1/settings/voiceprints')).json()['items'] if m['memberId'] == member)
+    assert failed['state'] == 'failed' and failed['ready'] and '模型' in failed['error']
+    assert (await c['admin'].post('/api/v1/settings/voiceprints/' + member + '/retry')).status_code == 202
+    assert await process_once(sessions, settings, extractor=fake_extract)
+    assert (await c['admin'].delete('/api/v1/settings/voiceprints/' + member)).status_code == 200
+    assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=header)).json()['profiles'] == []
+    assert not list((settings.media_dir / 'voiceprints').iterdir())
+
+
+async def test_delete_inflight_cannot_republish_and_inactive_hidden(setup):
+    settings, sessions, users, c = setup
+    member = users['admin'].id
+    assert (await enroll(c['admin'], member)).status_code == 202
+    async def delete_while_processing(path, unused):
+        assert (await c['admin'].delete('/api/v1/settings/voiceprints/' + member)).status_code == 200
+        return {'modelId': MODEL_ID, 'templates': [[1.] + [0.] * 255], 'speechSeconds': 10}
+    await process_once(sessions, settings, extractor=delete_while_processing)
+    async with sessions() as db:
+        assert await db.scalar(select(Voiceprint).where(Voiceprint.member_id == member)) is None
+    assert not list((settings.media_dir / 'voiceprints').iterdir())
+
+
+async def test_version_mismatch_is_actionable_and_inactive_is_not_synced(setup):
+    settings, sessions, users, c = setup
+    member = users['employee'].id
+    assert (await enroll(c['admin'], member)).status_code == 202
+    await process_once(sessions, settings, extractor=fake_extract)
+    headers = {'Authorization': 'Bearer ' + await token(c['admin'])}
+    async with sessions.begin() as db:
+        item = await db.scalar(select(Voiceprint).where(Voiceprint.member_id == member))
+        item.model_id = 'old-engine-v0'
+    listing = (await c['admin'].get('/api/v1/settings/voiceprints')).json()
+    item = next(row for row in listing['items'] if row['memberId'] == member)
+    assert item['state'] == 'incompatible' and not item['ready'] and '重新上传' in item['error']
+    result = await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)
+    assert result.status_code == 409 and result.json()['error']['code'] == 'voiceprint_model_mismatch'
+    async with sessions.begin() as db:
+        actor = await db.get(Member, member)
+        actor.active = False
+        outsider = await db.get(Member, users['outsider'].id)
+        outsider.role = 'admin'
+    assert (await c['admin'].get('/api/v1/desktop/voiceprints', headers=headers)).json()['profiles'] == []
+    foreign = {'Authorization': 'Bearer ' + await token(c['outsider'])}
+    assert (await c['outsider'].get('/api/v1/desktop/voiceprints', headers=foreign)).json()['profiles'] == []
+    assert (await c['outsider'].get('/api/v1/settings/voiceprints/' + member + '/audio')).status_code == 404
+    assert (await c['outsider'].delete('/api/v1/settings/voiceprints/' + member)).status_code == 404
+    assert (await c['admin'].delete('/api/v1/settings/voiceprints/' + member)).status_code == 200
+
+
+async def test_subprocess_cancellation_reaps_inference(tmp_path, monkeypatch):
+    import sys
+    from dataclasses import replace
+    from app.core.config import Settings
+    from app.tasks.processing.voiceprints import extract
+    runner = tmp_path / 'runner.py'
+    runner.write_text('import sys,time\nprint("ready",flush=True)\ntime.sleep(60)\n')
+    actual_spawn = asyncio.create_subprocess_exec
+    child_started = asyncio.Event()
+    children = []
+    async def spawn(*args, **kwargs):
+        child = await actual_spawn(sys.executable, str(runner), **kwargs)
+        children.append(child)
+        child_started.set()
+        return child
+    async def audio(*args): return wav_bytes(), 1
+    monkeypatch.setattr('app.tasks.processing.voiceprints.audio_wav', audio)
+    monkeypatch.setattr('app.tasks.processing.voiceprints.asyncio.create_subprocess_exec', spawn)
+    task = asyncio.create_task(extract(tmp_path / 'sample', Settings()))
+    await asyncio.wait_for(child_started.wait(), 5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError): await task
+    assert children[0].returncode is not None

@@ -8,7 +8,7 @@ from app.tasks.lease import lease
 async def prepare_transcripts(context, attachments, transcript, revision, provider=None):
     from sqlalchemy import select
     from app.modules.messages.models import Message
-    from app.modules.messages.audio import joined_transcript
+    from app.modules.messages.input.audio import joined_transcript
     from app.tasks.feedback.feedback import publish
     async with context.sessions() as db:
         live, _ = await lease(db, context)

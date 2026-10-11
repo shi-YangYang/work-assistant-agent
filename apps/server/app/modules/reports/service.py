@@ -5,7 +5,7 @@ from app.modules.members.models import Company, Member
 from app.modules.reports.models import Report, ReportRevision
 from app.modules.reports.periods import period
 from app.modules.reports.schemas import ReportContent
-from app.modules.reports.sources import report_inputs
+from app.modules.reports.generation.sources import report_inputs
 from app.security.ownership import owned
 from app.tasks.models import Job
 from sqlalchemy import select

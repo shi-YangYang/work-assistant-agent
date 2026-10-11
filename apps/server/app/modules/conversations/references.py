@@ -1,10 +1,10 @@
 """Authoritative message and receipt projection used by conversation consumers."""
-from app.modules.messages.audio import transcript_groups
+from app.modules.messages.input.audio import transcript_groups
 from app.tasks.models import Job
 from sqlalchemy import select
 
 
-from app.modules.messages.input_text import request_text
+from app.modules.messages.input.input_text import request_text
 
 
 async def message_reference(db, actor, message, *, job=None, job_loaded=False):

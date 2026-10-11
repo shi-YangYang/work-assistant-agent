@@ -17,16 +17,16 @@ import {
 } from '@web/features/assistant/api/requests'
 import { latestChat, restoreConversation } from '@web/features/assistant/api/restore-conversation'
 import { ConversationChat } from '@web/features/assistant/components/conversation/ConversationChat'
-import { PersonaPicker } from '@web/features/assistant/components/conversation/PersonaPicker'
-import { useExecutionMode } from '../../hooks/useExecutionMode'
-import { useConversationPersona } from '@web/features/assistant/hooks/useConversationPersona'
+import { PersonaPicker } from '@web/features/assistant/components/conversation/controls/PersonaPicker'
+import { useExecutionMode } from '../../hooks/preferences/useExecutionMode'
+import { useConversationPersona } from '@web/features/assistant/hooks/preferences/useConversationPersona'
 import {
   type RegisterConversationRefresh,
   useConversationRefresh,
-} from '../../hooks/useConversationRefresh'
-import { ConversationPicker } from '@web/features/assistant/components/conversation/ConversationPicker'
+} from '../../hooks/conversation/useConversationRefresh'
+import { ConversationPicker } from '@web/features/assistant/components/conversation/controls/ConversationPicker'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
-import { useConversationSearch } from '@web/features/assistant/hooks/useConversationSearch'
+import { useConversationSearch } from '@web/features/assistant/hooks/conversation/useConversationSearch'
 import { useQueryResource } from '@web/hooks/useQueryResource'
 import { identityScope } from '@web/lib/session-drafts'
 import { assistantQuery, saveConversationQuery } from '../../api/queries'

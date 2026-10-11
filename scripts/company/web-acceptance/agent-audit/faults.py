@@ -56,10 +56,10 @@ def main():
            'SPEC059_FIXED_EVIDENCE': str(output), 'PAA_AGENT_FAULT_ENVIRONMENT': str(Path(args.metadata).resolve()),
            'PYTHONPATH': os.pathsep.join([str(Path(__file__).parent), private['environment']['PYTHONPATH']])}
     cases = args.cases or [
-        'tests/server/test_agent_audit_faults.py',
-        'tests/server/test_full_system_acceptance.py::test_twenty_five_simultaneous_same_key_writes_have_one_receipt_and_one_record',
-        'tests/server/test_full_system_acceptance.py::test_concurrent_versioned_edits_accept_exactly_one_and_preserve_winner',
-        'tests/server/test_full_system_acceptance.py::test_parallel_message_replays_then_cancels_keep_one_job_and_terminal_fence',
+        'tests/server/audit/test_agent_audit_faults.py',
+        'tests/server/scenarios/test_full_system_acceptance.py::test_twenty_five_simultaneous_same_key_writes_have_one_receipt_and_one_record',
+        'tests/server/scenarios/test_full_system_acceptance.py::test_concurrent_versioned_edits_accept_exactly_one_and_preserve_winner',
+        'tests/server/scenarios/test_full_system_acceptance.py::test_parallel_message_replays_then_cancels_keep_one_job_and_terminal_fence',
     ]
     command = [sys.executable, '-m', 'pytest', '-q', '-p', 'fixed', '--tb=short', '--junitxml=' + str(output / 'faults.xml'), *cases]
     (output / 'command.json').write_text(json.dumps({'command': command, 'schema': metadata['schema'], 'startedAt': time.time()}, indent=2))

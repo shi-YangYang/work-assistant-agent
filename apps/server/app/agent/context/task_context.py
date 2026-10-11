@@ -39,7 +39,7 @@ async def projection(db, actor, job, message, context):
         previous = {}  # A missing/revised request is never a surviving grant.
     historical = []
     if snapshot.get('allowLegacy'):
-        from app.agent.context.conversation_context import conversation_references
+        from app.agent.context.references.conversation_context import conversation_references
         from app.modules.conversations.references import request_text
         from app.tasks.models import Job
         from app.security.access import valid
@@ -60,7 +60,7 @@ async def projection(db, actor, job, message, context):
             for question in interaction.questions:
                 answer = next(a for a in interaction.answers if a['questionId'] == question['id'])
                 interaction_answers.append({'question': question['prompt'], 'text': answer['text'], 'selected': [option for option in question['options'] if option['id'] in answer['optionIds']]})
-    from app.agent.context.work_context import work_context
+    from app.agent.context.references.work_context import work_context
     reference = await work_context(db, actor, job, message, context)
     return {**({'workReference': reference} if reference else {}), 'interactionAnswers': interaction_answers, 'historicalUserSources': historical, 'version': snapshot['version'], 'taskId': snapshot['taskId'], 'activeDirectives': directives,
             'previousTask': {**previous, 'userSources': sources} if previous else {}}

@@ -42,18 +42,36 @@ def matrix_for(path):
     return MATRIX.get(prefix, ['UNMAPPED'])
 
 
+def test_sources(root):
+    """Include extracted fixtures as discovery evidence, never as collected tests."""
+    def source(path, seen):
+        if path in seen or not path.is_file():
+            return ''
+        seen.add(path)
+        text = path.read_text()
+        dependencies = []
+        for node in ast.walk(ast.parse(text)):
+            names = [node.module] if isinstance(node, ast.ImportFrom) else [alias.name for alias in node.names] if isinstance(node, ast.Import) else []
+            for name in names:
+                if name and name.startswith('_support.'):
+                    dependencies.append(source(root / (name.replace('.', '/') + '.py'), seen))
+        return '\n'.join([text, *dependencies])
+
+    return {str(path.relative_to(ROOT)): source(path, set()) for path in sorted(root.rglob('test_*.py'))}
+
+
 def main(output):
     from app.main import create_app
     from app.agent.tools.registry import BUSINESS_TOOLS
-    from app.agent.tools.team import TEAM_TOOLS
+    from app.agent.tools.business.team import TEAM_TOOLS
     from app.agent.prompts.policies import ALLOWED_TOOLS, TEAM_TOOL_NAMES
     schema = create_app().openapi()
-    test_sources = {str(path.relative_to(ROOT)): path.read_text() for path in (ROOT / 'tests/server').glob('test_*.py')}
+    sources = test_sources(ROOT / 'tests/server')
     operations = []
     for path, methods in sorted(schema['paths'].items()):
         for method, operation in sorted(methods.items()):
             constant = path.split('{')[0].rstrip('/')
-            candidates = [name for name, source in test_sources.items() if constant in source]
+            candidates = [name for name, source in sources.items() if constant in source]
             operations.append({'id': method.upper() + ' ' + path, 'operationId': operation['operationId'], 'matrix': matrix_for(path),
                                'candidateTestFiles': candidates, 'coverageStatus': 'UNTRACED',
                                'note': 'Source references are discovery aids; only executed assertions establish coverage.',

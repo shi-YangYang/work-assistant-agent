@@ -19,7 +19,7 @@ from app.agent.prompts.persona import runtime_persona_prompt
 from app.agent.prompts.main import main_policy
 from app.agent.prompts.policies import ALLOWED_TOOLS, EXCLUDED_TOOLS, TEAM_TOOL_NAMES
 from app.agent.tools.registry import BUSINESS_TOOLS
-from app.agent.tools.team import TEAM_TOOLS
+from app.agent.tools.business.team import TEAM_TOOLS
 from app.core.personas import LEGACY_PERSONA
 from app.db.base import now
 from app.modules.messages.models import Message
@@ -159,8 +159,8 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
         await lease(db, context)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
-    from app.agent.context.work_context import reference_evidence
-    from app.agent.completion.evidence_consistency import tool_evidence
+    from app.agent.context.references.work_context import reference_evidence
+    from app.agent.completion.evidence.evidence_consistency import tool_evidence
     context.reply_evidence = [*reference_evidence(context), *context.context_evidence, *[
         row for row in tool_evidence(messages, context.job_id) if row['tool'] in ALLOWED_TOOLS | TEAM_TOOL_NAMES
     ]]
