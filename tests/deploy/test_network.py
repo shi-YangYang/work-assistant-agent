@@ -26,13 +26,17 @@ class ProxyNetworkTests(unittest.TestCase):
             shutil.copytree(REPO / 'deploy/company', root / 'deploy/company')
             (root / 'apps/server').mkdir(parents=True)
             env = root / 'apps/server/.env.web'
-            # Let Docker choose a free subnet so the test can coexist with a local deployment.
-            docker('network', 'create', network)
+            # Ask Docker for a free subnet, then explicitly configure it below.
+            # Older engines reject static container IPs on automatically allocated subnets.
+            network_id = docker('network', 'create', network)
             fixture = root / 'network.json'
             compose = ('compose', '-p', project, '-f', str(fixture))
             try:
                 info = json.loads(docker('network', 'inspect', network))[0]
                 subnet = ipaddress.ip_network(info['IPAM']['Config'][0]['Subnet'])
+                docker('network', 'rm', network_id)
+                network_id = None
+                network_id = docker('network', 'create', '--subnet', str(subnet), network)
                 web_ip, api_ip = str(subnet[2]), str(subnet[3])
                 env.write_text(
                     'POSTGRES_PASSWORD=test-password\nPAA_DOMAIN=company.example\n'
@@ -78,7 +82,8 @@ class ProxyNetworkTests(unittest.TestCase):
                     if fixture.exists():
                         docker(*compose, 'down', '--timeout', '1')
                 finally:
-                    docker('network', 'rm', network)
+                    if network_id:
+                        docker('network', 'rm', network_id)
 
 
 if __name__ == '__main__':
