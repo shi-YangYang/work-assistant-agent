@@ -124,9 +124,15 @@ it('keeps decoded recording duration and uses the same player for compact and ex
   expect(recordingPreview).toHaveBeenCalledWith(files[0].file)
   expect(view.container.querySelectorAll('audio')).toHaveLength(1)
   const trigger = screen.getByRole('button', { name: '展开语音 1试听' })
+  expect(screen.queryByRole('dialog', { name: '语音 1试听详情' })).toBeNull()
+  fireEvent.click(trigger)
   expect(
-    document.getElementById(trigger.getAttribute('popovertarget')!)?.querySelector('audio'),
-  ).toBeTruthy()
+    document.getElementById(trigger.getAttribute('aria-controls')!)?.querySelector('audio'),
+  ).toBe(view.container.querySelector('audio'))
+  expect(screen.getByRole('dialog', { name: '语音 1试听详情' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '关闭试听详情' }))
+  expect(screen.queryByRole('dialog', { name: '语音 1试听详情' })).toBeNull()
+  expect(view.container.querySelectorAll('audio')).toHaveLength(1)
   view.unmount()
   expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:converted')
 })

@@ -73,7 +73,6 @@ beforeEach(() => {
   dialogs()
   vi.clearAllMocks()
   setCsrf('test')
-  HTMLDivElement.prototype.hidePopover = vi.fn()
   vi.mocked(readActiveAssistantJob).mockResolvedValue({ job: null })
   vi.mocked(sendMessage).mockResolvedValue({
     conversationId: convo.id,
@@ -178,8 +177,11 @@ it('plus-menu selection replaces one reference and stays in the current conversa
   })
   render(view(vault, `/assistant/${convo.id}`))
   await screen.findByRole('textbox', { name: '工作消息' })
+  expect(screen.queryByRole('dialog', { name: '添加附件' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '添加附件' }))
   fireEvent.click(screen.getByText('引用工作'))
   await screen.findByRole('dialog', { name: '引用工作' })
+  expect(screen.queryByRole('dialog', { name: '添加附件' })).toBeNull()
   fireEvent.click(await screen.findByRole('button', { name: '引用 上线 Web' }))
   expect(screen.queryByRole('dialog', { name: '引用工作' })).toBeNull()
   expect(screen.queryByText('旧工作')).toBeNull()

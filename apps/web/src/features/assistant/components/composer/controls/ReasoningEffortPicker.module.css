@@ -13,8 +13,12 @@
   font-size: 12px;
 }
 .trigger span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.trigger > svg {
+  flex-shrink: 0;
 }
 .trigger:disabled {
   opacity: 1;
@@ -60,5 +64,10 @@
     min-height: 44px;
     max-width: 70px;
     padding-inline: 4px;
+  }
+}
+@media (max-width: 380px) {
+  .trigger {
+    max-width: 48px;
   }
 }
