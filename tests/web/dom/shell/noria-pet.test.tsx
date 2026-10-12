@@ -30,6 +30,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -44,6 +45,17 @@ function setVisibility(hidden: boolean) {
     Object.defineProperty(document, 'hidden', { configurable: true, value: hidden })
     document.dispatchEvent(new Event('visibilitychange'))
   })
+}
+
+function mockImageRetries() {
+  vi.useFakeTimers()
+  const images: HTMLImageElement[] = []
+  vi.stubGlobal('Image', function () {
+    const image = document.createElement('img')
+    images.push(image)
+    return image
+  })
+  return images
 }
 
 it('shares theme controls with settings, keeps drafts, restores focus, and makes no business requests', () => {
@@ -129,6 +141,74 @@ it('keeps the brand image if blinking fails and a usable fallback if the brand i
   expect(trigger.querySelector('img')).toBeNull()
   fireEvent.click(trigger)
   expect(screen.getByRole('dialog', { name: 'Noria 外观' })).toBeTruthy()
+})
+
+it('recovers failed blink and brand images without replacing the pet or showing broken images', () => {
+  const retries = mockImageRetries()
+  render(<PetStage {...props} animate />)
+  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const pet = trigger.querySelector('[data-animate]')!
+  const mark = trigger.querySelector('img[src*="mark"]')!
+  fireEvent.error(trigger.querySelector('img[src*="blink"]')!)
+  act(() => vi.advanceTimersByTime(1000))
+  expect(retries).toHaveLength(1)
+  expect(trigger.querySelector('img[src*="blink"]')).toBeNull()
+  expect(trigger.querySelector('img[src*="mark"]')).toBe(mark)
+  fireEvent.load(retries[0])
+  expect(trigger.querySelector('[data-animate]')).toBe(pet)
+  expect(pet.getAttribute('data-animate')).toBe('true')
+  expect(trigger.querySelector('img[src*="blink"]')?.getAttribute('src')).toBe(retries[0].src)
+
+  fireEvent.error(mark)
+  act(() => vi.advanceTimersByTime(1000))
+  expect(retries).toHaveLength(2)
+  expect(within(trigger).getByText('N')).toBeTruthy()
+  fireEvent.load(retries[1])
+  expect(within(trigger).queryByText('N')).toBeNull()
+  expect(pet.getAttribute('data-animate')).toBe('true')
+  expect(trigger.querySelector('img[src*="mark"]')?.getAttribute('src')).toBe(retries[1].src)
+  act(() => {
+    vi.advanceTimersByTime(60000)
+    window.dispatchEvent(new Event('online'))
+  })
+  expect(retries).toHaveLength(2)
+})
+
+it('bounds failed retries, resumes on reconnect or visibility, and cleans up pending work', () => {
+  const retries = mockImageRetries()
+  const view = render(<PetStage {...props} animate />)
+  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  fireEvent.error(trigger.querySelector('img[src*="blink"]')!)
+  act(() => vi.advanceTimersByTime(1000))
+  fireEvent.error(retries[0])
+  act(() => vi.advanceTimersByTime(3000))
+  fireEvent.error(retries[1])
+  act(() => vi.advanceTimersByTime(60000))
+  expect(retries).toHaveLength(2)
+  expect(retries[0].src).not.toBe(retries[1].src)
+
+  act(() => window.dispatchEvent(new Event('online')))
+  expect(retries).toHaveLength(3)
+  fireEvent.error(retries[2])
+  setVisibility(true)
+  act(() => {
+    vi.advanceTimersByTime(60000)
+    window.dispatchEvent(new Event('online'))
+  })
+  expect(retries).toHaveLength(3)
+  expect(retries[2].onload).toBeNull()
+  setVisibility(false)
+  act(() => vi.advanceTimersByTime(1000))
+  expect(retries).toHaveLength(4)
+  fireEvent.error(retries[3])
+  view.unmount()
+  expect(retries[3].onload).toBeNull()
+  expect(retries[3].onerror).toBeNull()
+  act(() => {
+    vi.advanceTimersByTime(60000)
+    window.dispatchEvent(new Event('online'))
+  })
+  expect(retries).toHaveLength(4)
 })
 
 it('stays static for reduced motion and reacts when the preference changes', () => {

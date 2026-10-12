@@ -216,9 +216,7 @@ export function Shell({
             <section ref={mainRef} className={styles['main']}>
               <PetStage
                 navTriggerRef={triggerRef}
-                animate={
-                  location.pathname === '/assistant' || location.pathname.startsWith('/assistant/')
-                }
+                animate
                 expandedNav={expandedNav}
                 setExpandedNav={setExpandedNav}
               />
