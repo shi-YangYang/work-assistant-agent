@@ -72,6 +72,14 @@ elif tool == 'docker':
         print('https://company.example')
 elif tool == 'curl':
     if os.environ.get('FAIL_AT') == 'health': sys.exit(1)
+    responses = json.loads(os.environ.get('HEALTH_RESPONSES', '[]'))
+    if responses and args[-1].endswith('/health'):
+        counter = Path(os.environ['DEPLOY_TEST_LOG']).with_suffix('.health-count')
+        count = int(counter.read_text()) if counter.exists() else 0
+        counter.write_text(str(count + 1))
+        response = responses[min(count, len(responses) - 1)]
+        sys.stdout.write(response['body'])
+        sys.exit(response['code'])
     print('{"status":"ready"}' if args[-1].endswith('/health') else '<html></html>')
 '''
 
@@ -249,6 +257,34 @@ class ReleaseTests(unittest.TestCase):
     def test_health_failure_does_not_report_success(self):
         result = self.run_release('health')
         self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'failed')
+        self.assertIn('API health check failed after 12 attempts.', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+
+    def test_health_startup_responses_retry_without_tracebacks(self):
+        self.env['HEALTH_RESPONSES'] = json.dumps([
+            {'code': 7, 'body': ''},
+            {'code': 0, 'body': ''},
+            {'code': 0, 'body': '<html>Starting</html>'},
+            {'code': 0, 'body': 'null'},
+            {'code': 0, 'body': '{"status":"starting"}'},
+            {'code': 0, 'body': '{"status":"ready"}'},
+        ])
+        result = self.run_release()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertEqual(result.stdout.count('Waiting for API readiness'), 5)
+        self.assertEqual(self.log.with_suffix('.health-count').read_text(), '6')
+        self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'ready')
+
+    def test_invalid_health_response_never_reports_success(self):
+        self.env['HEALTH_RESPONSES'] = json.dumps([{'code': 0, 'body': '<html>Unavailable</html>'}])
+        result = self.run_release()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertNotIn('Deployment ready:', result.stdout)
+        self.assertIn('API health check failed after 12 attempts.', result.stderr)
+        self.assertEqual(self.log.with_suffix('.health-count').read_text(), '12')
         self.assertEqual((self.release / 'deployment-status').read_text().strip(), 'failed')
 
     def test_missing_environment_or_reused_release_never_contacts_docker(self):

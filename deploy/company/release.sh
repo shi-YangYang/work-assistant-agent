@@ -131,11 +131,23 @@ compose up -d --no-build --no-deps api worker web
 origin=$(compose exec -T api python -c 'import os; print(os.environ["PAA_WEB_ORIGIN"].rstrip("/"))')
 [[ "$origin" =~ ^https://[a-zA-Z0-9.:-]+$ ]] || { echo 'Invalid production Web origin' >&2; exit 1; }
 for attempt in {1..12}; do
-  if curl --fail --silent --show-error --connect-timeout 5 --max-time 10 "$origin/api/v1/health" \
-    | python3 -c 'import json,sys; assert json.load(sys.stdin).get("status") == "ready"'; then
-    break
+  if health=$(curl --fail --silent --show-error --connect-timeout 5 --max-time 10 "$origin/api/v1/health"); then
+    if printf '%s' "$health" | python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if isinstance(payload, dict) and payload.get("status") == "ready" else 1)
+'; then
+      break
+    fi
   fi
-  [[ "$attempt" -lt 12 ]] || exit 1
+  if [[ "$attempt" -eq 12 ]]; then
+    echo 'API health check failed after 12 attempts.' >&2
+    exit 1
+  fi
+  printf 'Waiting for API readiness (%s/12); retrying in 5 seconds.\n' "$attempt"
   sleep 5
 done
 curl --fail --silent --show-error --connect-timeout 5 --max-time 15 "$origin/" \
