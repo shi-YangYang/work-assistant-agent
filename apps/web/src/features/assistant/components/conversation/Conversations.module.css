@@ -72,6 +72,8 @@
   .conversation-heading {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 44px 44px;
+    min-height: calc(88px + env(safe-area-inset-top));
+    align-content: start;
     gap: 0 6px;
     padding: calc(8px + env(safe-area-inset-top)) 12px 4px;
   }
@@ -79,14 +81,16 @@
     display: none;
   }
   .conversation-heading > h2 {
-    grid-area: 1 / 1;
-    margin-left: 44px;
-    max-width: calc(50vw - 100px);
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    clip-path: inset(50%);
   }
   .conversation-heading > div:first-of-type {
-    grid-area: 2 / 1;
+    grid-area: 1 / 1;
     justify-self: start;
-    margin-left: 0;
+    margin-left: 44px;
   }
   .new-conversation {
     grid-area: 1 / 2;

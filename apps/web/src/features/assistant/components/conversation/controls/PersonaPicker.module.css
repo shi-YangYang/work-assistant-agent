@@ -56,8 +56,21 @@
   color: var(--muted);
 }
 @media (max-width: 760px) {
+  .trigger,
+  .trigger:hover:where(:not(:disabled)) {
+    border-color: transparent;
+    background: transparent;
+    padding-inline: 4px;
+  }
+  .trigger[aria-expanded='true'] {
+    color: var(--text);
+  }
+  .suffix {
+    display: none;
+  }
   .menu {
-    left: 0;
+    /* The trigger sits beside the navigation button; align the menu to the page edge. */
+    left: -44px;
     right: auto;
   }
 }

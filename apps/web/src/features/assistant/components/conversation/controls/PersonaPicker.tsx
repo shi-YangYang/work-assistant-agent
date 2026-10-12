@@ -3,15 +3,17 @@ import { Check, ChevronDown } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import styles from './PersonaPicker.module.css'
 
-const personas: { id: PersonaId; name: string; description: string }[] = [
+const personas: { id: PersonaId; name: string; shortName: string; description: string }[] = [
   {
     id: 'dabao',
     name: 'Noria人设',
+    shortName: 'Noria',
     description: '亲切幽默，善于交流，认真办事。',
   },
   {
     id: 'professional',
     name: '专业人设',
+    shortName: '专业',
     description: '冷静务实，结论清晰，建议具体。',
   },
 ]
@@ -68,7 +70,10 @@ export function PersonaPicker({
           }
         }}
       >
-        {personas.find((persona) => persona.id === value)?.name}
+        <span>
+          {personas.find((persona) => persona.id === value)?.shortName}
+          <span className={styles.suffix}>人设</span>
+        </span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
       {expanded && (
