@@ -1,0 +1,282 @@
+"""Job identity regressions through actual PostgreSQL checkpoints and tool execution."""
+import pytest
+from datetime import timedelta
+from _support.agent.fakes import ReviewedFixtureModel
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from app.agent.context.history import conversation_history
+from app.agent.runtime.middleware import ToolBoundary
+from app.db.base import now
+from app.modules.messages.models import Message
+from app.modules.reports.models import Report
+from app.modules.work.models import ProgressDraft
+from app.security.access import scope as business_scope
+from app.tasks.context import RunContext
+from app.tasks.processing.handlers import process_job
+from app.tasks.models import Job
+from app.tasks.runtime.queue import claim
+from pydantic import Field
+from sqlalchemy import select
+from _support.http.company import send
+from _support.agent.recovery import RecoveryModel, model
+
+
+pytestmark = pytest.mark.asyncio
+
+
+async def test_retry_only_resumes_its_message_job_after_a_later_job_fails(setup, monkeypatch):
+    settings, sessions, users, clients = setup
+    actor, employee = users['employee'], clients['employee']
+    first = await send(employee, '只有 A 的原始事项')
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=model('仅属于 A', fail_once=True))
+        second = await send(employee, '只有 B 的原始事项')
+        original = ToolBoundary.awrap_tool_call
+        blocked = {second['jobId']}
+        async def fail_before_b_tool(self, request, handler):
+            if request.runtime.context.job_id in blocked:
+                blocked.remove(request.runtime.context.job_id)
+                raise RuntimeError('Controlled failure before B tool')
+            return await original(self, request, handler)
+        monkeypatch.setattr(ToolBoundary, 'awrap_tool_call', fail_before_b_tool)
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=model('仅属于 B'))
+        stale = await employee.post(f"/api/v1/jobs/{first['jobId']}/retry", json={})
+        assert stale.status_code == 409 and stale.json()['error']['code'] == 'task_superseded'
+        async with sessions() as db:
+            assert (await db.get(Job, first['jobId'])).state == 'failed'
+            assert (await db.get(Job, second['jobId'])).state == 'failed'
+            assert not (await db.scalars(select(ProgressDraft).where(ProgressDraft.owner_id == actor.id))).all()
+        assert (await employee.post(f"/api/v1/jobs/{second['jobId']}/retry", json={})).status_code == 200
+        resumed_model = model('不应重新生成的 C')
+        await process_job(await claim(sessions, actor.id), sessions, settings, saver, model=resumed_model)
+        assert resumed_model.calls == 1
+        async with sessions.begin() as db:
+            assert (await db.get(Job, second['jobId'])).state == 'succeeded'
+            b_draft = await db.scalar(select(ProgressDraft).where(ProgressDraft.message_id == second['messageId']))
+            assert b_draft.content['title'] == '仅属于 B'
+            done = await db.get(Job, first['jobId'])
+            done.state, done.fence, done.lease_until = 'running', done.fence + 1, now() + timedelta(seconds=90)
+        completed_model = model('不应发生的额外请求')
+        await process_job(done, sessions, settings, saver, model=completed_model)
+        assert completed_model.calls == 0
+
+
+async def test_report_retry_uses_its_input_and_old_saved_receipt_without_extra_call(setup):
+    from _support.work.report_reliability import prepared, ReportModel, CONTENT
+    import json
+    settings,sessions,users,c=setup
+    report,first,_=await prepared(setup)
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel('invalid A'))
+    async with sessions.begin() as db:
+        second=Job(company_id=report.company_id,owner_id=report.owner_id,kind='report',target_id=report.id,base_revision=1,result=first.result)
+        db.add(second);await db.flush()
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel('invalid B'))
+    assert (await c['employee'].post('/api/v1/jobs/'+first.id+'/retry',json={})).status_code==200
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'仅属于 A'})))
+    async with sessions() as db:
+        assert (await db.get(Job,second.id)).state=='failed'
+    assert (await c['employee'].post('/api/v1/jobs/'+second.id+'/retry',json={})).status_code==200
+    await process_job(await claim(sessions,users['employee'].id),sessions,settings,None,model=ReportModel(json.dumps({**CONTENT,'completed':'仅属于 B'})))
+    async with sessions.begin() as db:
+        saved=await db.get(Report,report.id)
+        assert saved.content['completed']=='仅属于 A' and saved.candidate['content']['completed']=='仅属于 B'
+        done=await db.get(Job,first.id)
+        done.state,done.fence,done.lease_until='running',done.fence+1,now()+timedelta(seconds=90)
+    response=ReportModel('must not run')
+    await process_job(done,sessions,settings,None,model=response)
+    assert response.calls==0
+
+
+async def test_history_keeps_explicit_clarification_and_excludes_future_or_other_employee(setup):
+    settings, sessions, users, clients = setup
+    actor = users['employee']
+    instant = now()
+    conversation = (await clients['employee'].post('/api/v1/conversations', json={})).json()
+    async with sessions.begin() as db:
+        parent = Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation['id'], text='客户是哪一家的？', reply='请补充客户名称。', created_at=instant - timedelta(days=1))
+        db.add(parent)
+        await db.flush()
+        for n in range(15):
+            db.add(Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation['id'], text='较新的历史消息 ' + str(n), created_at=instant - timedelta(minutes=n + 1)))
+        db.add(Message(company_id=actor.company_id, owner_id=users['peer'].id, text='另一个员工的机密', created_at=instant - timedelta(minutes=1)))
+    response = await clients['employee'].post('/api/v1/messages', json={'text': '是华远的方案', 'replyTo': parent.id}, headers={'Idempotency-Key': 'history-recovery'})
+    assert response.status_code == 202
+    job = await claim(sessions, actor.id)
+    # Reproduce pre-existing queued history; the API now rejects a concurrent
+    # message in this conversation before it reaches the history boundary.
+    async with sessions.begin() as db:
+        db.add(Message(company_id=actor.company_id, owner_id=actor.id, conversation_id=conversation['id'], text='后发的 B 不能成为 A 的历史'))
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    content = [{'type': 'text', 'text': '文' * 8000}, *[{'type': 'image_url', 'image_url': {'url': 'controlled-image'}} for _ in range(4)]]
+    history = await conversation_history(context, job, content)
+    text = str([item.content for item in history])
+    assert parent.id in text and '请补充客户名称' in text
+    assert '另一个员工的机密' not in text and '后发的 B' not in text
+    # History is complete; the request boundary uses the actual model capability,
+    # including image envelopes and the task projection, rather than a 20k cap.
+    from app.agent.context.context_usage import ensure_input, estimate_request
+    from app.tasks.context import BudgetExceeded
+    from langchain_core.messages import HumanMessage
+    used = estimate_request([*history, HumanMessage(content=content)])
+    context.model_binding = {'assistant': {'contextCapability': {'contextWindow': 100000, 'inputLimit': used, 'maxOutput': 4000}}}
+    ensure_input(context, used)
+    context.model_binding['assistant']['contextCapability']['inputLimit'] = used - 1
+    with pytest.raises(BudgetExceeded):
+        ensure_input(context, used)
+
+
+class ReferenceRecoveryModel(ReviewedFixtureModel):
+    work_id: str
+    message_id: str
+    new_reference: str | None = None
+    calls: int = 0
+    tool_results: list[str] = Field(default_factory=list)
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.calls += 1
+        if isinstance(messages[-1], ToolMessage) and messages[-1].name != 'load_tools':
+            self.tool_results.append(str(messages[-1].content))
+        if self.calls == 1:
+            assert [tool['function']['name'] for tool in kwargs['tools']] == ['load_tools']
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[{
+                'id': 'reference-capabilities', 'name': 'load_tools', 'args': {'groups': ['work', 'documents']},
+            }]))])
+        schema = next(t['function']['parameters'] for t in kwargs['tools'] if t['function']['name'] == 'propose_progress')
+        assert schema['properties']['status']['enum'] == ['in_progress', 'blocked', 'done']
+        assert 'work_id' not in schema['required']
+        progress = {'title': '引用纠正后的工作', 'summary': '初稿完成，等待报价', 'status': 'blocked', 'blocker': '等待报价', 'next_step': '收到报价后测算', 'work_id': None}
+        new_progress = {k: v for k, v in progress.items() if k != 'work_id'}
+        if self.new_reference is not None:
+            new_progress['work_id'] = self.new_reference
+        actions = [
+            ('get_work_item', {'work_id': self.work_id}),
+            ('get_message_context', {'message_id': self.message_id}),
+            ('propose_progress', {**progress, 'work_id': self.work_id}),
+            ('propose_progress', new_progress),
+        ]
+        if self.calls <= len(actions) + 1:
+            name, args = actions[self.calls - 2]
+            answer = AIMessage(content='', tool_calls=[{'id': f'reference-{self.calls}', 'name': name, 'args': args}])
+        else:
+            answer = AIMessage(content='进展建议已整理，请确认。')
+        return ChatResult(generations=[ChatGeneration(message=answer)])
+
+
+@pytest.mark.parametrize(('other_owner', 'new_reference'), [('peer', 'null'), ('outsider', None)])
+async def test_model_recovers_invalid_references_without_exposing_other_work(setup, other_owner, new_reference):
+    from app.modules.work.models import WorkItem
+    settings, sessions, users, clients = setup
+    target = users[other_owner]
+    async with sessions.begin() as db:
+        foreign_work = WorkItem(company_id=target.company_id, owner_id=target.id, title='不可泄露的工作', content={'summary': '不可泄露的内容'})
+        foreign_message = Message(company_id=target.company_id, owner_id=target.id, text='不可泄露的消息')
+        db.add_all([foreign_work, foreign_message])
+        await db.flush()
+    sent = await send(clients['employee'])
+    job = await claim(sessions, users['employee'].id)
+    model = ReferenceRecoveryModel(model='controlled-reference', api_key='no-network', max_retries=0, work_id=foreign_work.id, message_id=foreign_message.id, new_reference=new_reference)
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(job, sessions, settings, saver, model=model)
+    result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert result['job']['state'] == 'succeeded', result['job']
+    assert model.calls == 6
+    assert len(model.tool_results) == 4
+    assert all('不存在或无权查看' in result for result in model.tool_results[:3])
+    assert '不可泄露' not in str(model.tool_results)
+    assert len(result['drafts']) == 1 and result['drafts'][0]['workId'] is None
+    assert result['drafts'][0]['content']['status'] == 'blocked'
+    assert not (await clients['employee'].get('/api/v1/work-items')).json()['items']
+
+
+async def test_work_search_and_message_context_use_confirmed_state_after_reply(setup):
+    import json
+    from types import SimpleNamespace
+    from app.agent.tools.business.work import find_work_items
+    from app.agent.tools.resources.messages import get_message_context
+    from app.modules.work.models import WorkItem
+    settings, sessions, users, clients = setup
+    actor = users['employee']
+    sent = await send(clients['employee'])
+    job = await claim(sessions, actor.id)
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    async with sessions.begin() as db:
+        source = await db.get(Message, sent['messageId'])
+        source.reply = '尚未确认，只是一条建议'
+        work = WorkItem(company_id=actor.company_id, owner_id=actor.id, title='真实联调—海星方案', content={'title':'真实联调—海星方案','summary':'确认后的当前进展','status':'blocked','blocker':'等待报价','nextStep':'收到报价后测算'})
+        foreign = WorkItem(company_id=actor.company_id, owner_id=users['peer'].id, title='真实联调—海星方案', content={'summary':'不可泄露'})
+        db.add_all([work, foreign])
+        await db.flush()
+        db.add(ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=source.id, work_id=work.id, content=work.content, status='confirmed', tool_key='confirmed-reference'))
+    runtime = SimpleNamespace(context=context)
+    results = json.loads(await find_work_items.coroutine(query='海星方案', runtime=runtime))
+    assert [item['id'] for item in results['items']] == [work.id]
+    assert context.read_versions == {work.id: work.revision}
+    source = json.loads(await get_message_context.coroutine(message_id=sent['messageId'], runtime=runtime))
+    assert source['progress'] == [{'status':'confirmed','workId':work.id}]
+    assert source['reply'] == '尚未确认，只是一条建议'
+    assert '不可泄露' not in str(results) + str(source)
+
+
+async def test_work_tool_filters_status_before_paging_and_scans_hidden_rows(setup):
+    import json
+    from types import SimpleNamespace
+    from app.agent.tools.business.work import find_work_items
+    from app.modules.work.models import WorkItem
+    settings, sessions, users, clients = setup
+    actor = users['employee']
+    sent = await send(clients['employee'])
+    job = await claim(sessions, actor.id)
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    stamp = now()
+    def work(owner, index, status='in_progress', **extra):
+        title = '分页目标 ' + str(index)
+        return WorkItem(company_id=actor.company_id, owner_id=owner, title=title, content={'title': title, 'status': status, 'summary': '', 'blocker': '', 'nextStep': ''}, **extra)
+    async with sessions.begin() as db:
+        matches = [work(actor.id, i, updated_at=stamp - timedelta(seconds=i)) for i in range(22)]
+        hidden = [work(actor.id, i, updated_at=stamp + timedelta(seconds=i + 1), access={'team': True, 'actorId': users['admin'].id, 'companyId': actor.company_id, 'role': 'admin'}) for i in range(101)]
+        db.add_all([*matches, *hidden, work(users['peer'].id, 'other'), *[work(actor.id, i, 'done') for i in range(25)], work(actor.id, 'blocked', 'blocked')])
+        await db.flush()
+        expected = {w.id for w in matches}
+    runtime = SimpleNamespace(context=context)
+    identifiers, cursor = [], ''
+    while True:
+        page = json.loads(await find_work_items.coroutine('分页目标', runtime, status='in_progress', cursor=cursor))
+        assert page['scope'] == 'self' and page['filters']['status'] == 'in_progress'
+        assert 0 < len(page['items']) <= 20
+        identifiers.extend(row['id'] for row in page['items'])
+        cursor = page['nextCursor']
+        if not cursor:
+            break
+    assert len(identifiers) == len(expected) and set(identifiers) == expected
+    assert set(context.read_versions) == expected
+    empty = json.loads(await find_work_items.coroutine('不存在的标题', runtime, status='in_progress'))
+    assert empty['items'] == [] and empty['nextCursor'] is None
+
+
+async def test_work_tool_returns_bounded_previews_and_full_detail_with_a_continuation(setup):
+    import json
+    from types import SimpleNamespace
+    from app.agent.tools.business.work import find_work_items, get_work_item
+    from app.modules.work.service import save_work
+    settings, sessions, users, clients = setup
+    actor = users['admin']
+    sent = await send(clients['admin'])
+    job = await claim(sessions, actor.id)
+    context = RunContext(actor.id, actor.company_id, job.id, job.fence, sessions, settings)
+    async with sessions.begin() as db:
+        rows = [await save_work(db, actor, {'title': '长内容 '+str(i), 'status': 'in_progress', 'summary': '文' * 4000, 'blocker': '阻' * 2000, 'nextStep': '续' * 2000}, access={**business_scope(actor), 'team': True}) for i in range(2)]
+    runtime = SimpleNamespace(context=context)
+    first = json.loads(await find_work_items.coroutine('', runtime))
+    async with sessions() as db:
+        saved = await db.get(Job, job.id)
+        assert {read['id'] for read in saved.access['reads'].values()} == {first['items'][0]['id']}
+    second = json.loads(await find_work_items.coroutine('', runtime, cursor=first['nextCursor']))
+    assert len(first['items']) == len(second['items']) == 1 and second['nextCursor'] is None
+    assert {first['items'][0]['id'], second['items'][0]['id']} == {w.id for w in rows}
+    assert all(page['items'][0]['summary'] == '文' * 500 and page['items'][0]['nextStep'] == '续' * 2000 for page in (first, second))
+    for page in (first, second):
+        detail = json.loads(await get_work_item.coroutine(page['items'][0]['id'], runtime))
+        assert detail['updates']['items'][0]['text'] == '文' * 4000
+        assert detail['body']['content'][0]['content'][0]['text'] == '文' * 4000
+        assert detail['nextStep'] == '续' * 2000

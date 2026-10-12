@@ -4,7 +4,7 @@ from app.modules.operations.receipts import message_actions as actions_message_a
 from app.modules.team.sources import business_link_dtos
 from app.modules.work.models import ProgressDraft
 from app.modules.work.serializers import draft_dto
-from app.modules.messages.web_sources import web_source_dtos
+from app.modules.messages.references.web_sources import web_source_dtos
 from app.security.access import valid as business_valid
 from app.tasks.models import Job
 from app.tasks.serializers import job_dto
@@ -16,7 +16,7 @@ async def message_dto(db, item, actor):
     attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == item.id, Attachment.deleted.is_(False)))).all()
     job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
     cards = await actions_message_actions(db, actor, item)
-    from app.modules.work.draft_receipts import message_drafts
+    from app.modules.work.drafts.draft_receipts import message_drafts
     visible_drafts = await message_drafts(db, actor, item, job)
     outcome_allowed = allowed and actor.id == item.owner_id and job and (not job.access or job.access.get('role') == actor.role) and await business_valid(db, actor, job.access)
     if outcome_allowed:
@@ -30,7 +30,7 @@ async def message_dto(db, item, actor):
     results = await message_deliverables(db, actor, item) if allowed else []
     from app.modules.interactions.serializers import message_interactions
     interactions = await message_interactions(db, actor, item) if allowed else []
-    from app.modules.messages.work_references import reference_dto
+    from app.modules.messages.references.work_references import reference_dto
     reference = await reference_dto(db, actor, item.work_reference) if allowed else None
     from app.tasks.feedback.reply_stream import dto as reply_dto
     reply_stream = await reply_dto(db, actor, job, item) if outcome_allowed else None

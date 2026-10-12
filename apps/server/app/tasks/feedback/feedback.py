@@ -77,7 +77,7 @@ async def snapshot(sessions, token_hash, job_id, *, transport=False, temporary=N
         actions = await message_actions(db, actor, message)
         from app.tasks.feedback.context_feedback import usage_dto
         from app.tasks.feedback.outcomes import refresh, dto as outcome_dto
-        from app.modules.work.draft_receipts import message_drafts
+        from app.modules.work.drafts.draft_receipts import message_drafts
         drafts = await message_drafts(db, actor, message, job)
         refresh(job, actions, drafts)
         from app.modules.interactions.serializers import message_interactions

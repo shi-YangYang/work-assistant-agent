@@ -2,7 +2,18 @@ name: paa-company
 services:
   redis:
     image: redis:7.4.2-alpine
-    command: ['redis-server', '--save', '', '--appendonly', 'no', '--maxmemory', '64mb', '--maxmemory-policy', 'noeviction']
+    command:
+      [
+        'redis-server',
+        '--save',
+        '',
+        '--appendonly',
+        'no',
+        '--maxmemory',
+        '64mb',
+        '--maxmemory-policy',
+        'noeviction',
+      ]
     mem_limit: 128m
     memswap_limit: 128m
     healthcheck:
@@ -17,7 +28,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-paa_company}
       POSTGRES_USER: ${POSTGRES_USER:-paa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
+    command:
+      [
+        'postgres',
+        '-c',
+        'shared_buffers=${PAA_POSTGRES_SHARED_BUFFERS:-64MB}',
+        '-c',
+        'max_connections=${PAA_POSTGRES_MAX_CONNECTIONS:-20}',
+      ]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
@@ -40,7 +58,11 @@ services:
   api:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: service }
     env_file: ../../apps/server/.env.web
-    environment: *service-env
+    environment:
+      <<: *service-env
+      # Only the dedicated Caddy address may supply client IP/protocol headers.
+      FORWARDED_ALLOW_IPS: ${PAA_PROXY_IP:-172.30.254.2}
+    networks: [default, proxy]
     volumes:
       - media:/data/media
       - type: bind
@@ -48,13 +70,17 @@ services:
         target: /run/paa/model-master.key
         read_only: true
         bind: { create_host_path: false }
-    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
+    depends_on:
+      {
+        migrate: { condition: service_completed_successfully },
+        redis: { condition: service_healthy },
+      }
     restart: unless-stopped
   worker:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: worker }
-    cpus: 2.0
-    mem_limit: 3g
-    memswap_limit: 3g
+    cpus: ${PAA_WORKER_CPUS:-2.0}
+    mem_limit: ${PAA_WORKER_MEMORY:-3g}
+    memswap_limit: ${PAA_WORKER_MEMORY:-3g}
     env_file: ../../apps/server/.env.web
     environment: *service-env
     command: ['python', '-m', 'app.worker']
@@ -66,7 +92,11 @@ services:
         target: /run/paa/model-master.key
         read_only: true
         bind: { create_host_path: false }
-    depends_on: { migrate: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
+    depends_on:
+      {
+        migrate: { condition: service_completed_successfully },
+        redis: { condition: service_healthy },
+      }
     restart: unless-stopped
   sandbox:
     profiles: [sandbox]
@@ -88,7 +118,13 @@ services:
       - sandbox_state:/state
       - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
-      test: ['CMD', 'python', '-c', 'import os,urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8010/health",headers={"Authorization":"Bearer "+os.environ["SANDBOX_TOKEN"]}),timeout=5)']
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          'import os,urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8010/health",headers={"Authorization":"Bearer "+os.environ["SANDBOX_TOKEN"]}),timeout=5)',
+        ]
       interval: 15s
       timeout: 8s
       retries: 3
@@ -97,9 +133,17 @@ services:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: web }
     environment: { PAA_DOMAIN: '${PAA_DOMAIN:?Set public domain or IP}' }
     ports: ['80:80', '443:443']
+    networks:
+      proxy:
+        ipv4_address: ${PAA_PROXY_IP:-172.30.254.2}
     volumes: [caddy_data:/data, caddy_config:/config]
     depends_on: [api]
     restart: unless-stopped
+networks:
+  proxy:
+    ipam:
+      config:
+        - subnet: ${PAA_PROXY_SUBNET:-172.30.254.0/29}
 volumes:
   sandbox_state:
   pgdata:

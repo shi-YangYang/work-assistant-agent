@@ -16,7 +16,7 @@ router = APIRouter()
 @router.post('/api/v1/work-items', status_code=201)
 async def create_work(body: WorkCreate, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB, settings=SETTINGS):
     if body.body is not None or body.materials:
-        from app.modules.work.record_commands import record_command
+        from app.modules.work.records.record_commands import record_command
         return (await record_command(db, actor, None, body, idempotency_key, settings))['work']
     return await create_work_command(Progress.model_validate(body.model_dump(exclude={'body', 'materials'})), idempotency_key, actor, db)
 
@@ -54,8 +54,8 @@ async def delete_work(identifier: str, body: Revision, actor=AUTH, db=DB, settin
     return await finish_deletion(db, item.owner_id, settings)
 
 
-from app.modules.work.record_schemas import WorkPatch, UpdateCreate, UpdateEdit, UpdateDelete, MaterialRemove
-from app.modules.work.record_commands import record_command, remove_material_command
+from app.modules.work.records.record_schemas import WorkPatch, UpdateCreate, UpdateEdit, UpdateDelete, MaterialRemove
+from app.modules.work.records.record_commands import record_command, remove_material_command
 
 
 @router.patch('/api/v1/work-items/{identifier}')

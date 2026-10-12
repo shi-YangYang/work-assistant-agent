@@ -106,11 +106,22 @@ function responseFailure(
       category: 'forbidden' as const,
       message: businessMessage(message, '没有访问权限，请联系公司管理员。'),
     }
-  if (status === 429)
+  if (status === 429) {
+    const loginMessage =
+      code === 'login_browser_rate_limited'
+        ? '登录操作过于频繁'
+        : code === 'login_network_rate_limited'
+          ? '当前网络的登录请求较多'
+          : null
     return {
       category: 'rate_limited' as const,
-      message: retryAfter ? `请求较多，请等待 ${retryAfter} 秒后再试。` : '请求较多，请稍后再试。',
+      message: loginMessage
+        ? `${loginMessage}，${retryAfter ? `请等待 ${retryAfter} 秒后再试。` : '请稍后再试。'}`
+        : retryAfter
+          ? `请求较多，请等待 ${retryAfter} 秒后再试。`
+          : '请求较多，请稍后再试。',
     }
+  }
   if (status >= 500) return { category: 'server' as const, message: '服务暂时不可用，请稍后重试。' }
   if (status === 409)
     return {

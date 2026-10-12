@@ -91,7 +91,7 @@ async def tool_node(context, request, operation):
     async def unavailable_web(error):
         if error.failure.code != 'web_network' or error.failure.cancelled:
             raise error
-        from app.agent.tools.web import unavailable
+        from app.agent.tools.resources.web import unavailable
         value = call.get('args', {}).get('url' if call['name'] == 'web_fetch' else 'query', '')
         content = await unavailable(context, value, error.failure.message,
                                     is_fetch=call['name'] == 'web_fetch', code=error.failure.code)

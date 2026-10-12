@@ -77,10 +77,10 @@ async def source_check(db, actor, row):
 async def preview(db, actor, row):
     if row.action == 'create_work':
         from app.modules.work.schemas import Progress
-        from app.modules.work.record_schemas import AgentWorkChanges
+        from app.modules.work.records.record_schemas import AgentWorkChanges
         changes = AgentWorkChanges.model_validate(row.params['changes']).model_dump(mode='json', exclude_unset=True)
         Progress(**{key: value for key, value in changes.items() if key in Progress.model_fields})
-        from app.modules.work.agent_commands import action_preview
+        from app.modules.work.agent.agent_commands import action_preview
         changes, names = await action_preview(db, actor, None, changes)
         return {'title': changes['title'], 'changes': changes, 'materialNames': names, 'revision': 0}
     if row.action == 'generate_report':
@@ -96,7 +96,7 @@ async def preview(db, actor, row):
         if row.action == 'update_work':
             from app.modules.work.schemas import Progress
             Progress(**{key: value for key, value in {**target.content, **changes}.items() if key in Progress.model_fields})
-            from app.modules.work.agent_commands import action_preview
+            from app.modules.work.agent.agent_commands import action_preview
             changes, names = await action_preview(db, actor, target, changes)
         return {'title': target.title if isinstance(target, WorkItem) else f'{target.period} {target.kind}', 'changes': changes, 'before': {key: target.content.get(key) for key in changes}, 'materialNames': names if row.action == 'update_work' else {}, 'revision': target.revision}
     if row.action == 'submit_report':

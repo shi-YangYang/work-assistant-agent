@@ -96,7 +96,7 @@ async def probe(request_db, sessions, settings, actor, body, config, key, finger
             if body.purpose == 'report':
                 answer = await request([{'role': 'user', 'content': '报告格式测试：返回 JSON 对象，字段 completed、ongoing、blockers、next 均为字符串，completed 填写“已完成测试”，其余为空。不要调用工具。'}])
                 from langchain_core.messages import AIMessage
-                from app.modules.reports.parsing import parse_report
+                from app.modules.reports.generation.parsing import parse_report
                 parse_report(AIMessage(content=answer.get('content') or ''))
             else:
                 tools = [{'type': 'function', 'function': {'name': 'probe_echo', 'description': 'Return the supplied value for this capability test; no business writes.', 'parameters': {'type': 'object', 'properties': {'value': {'type': 'string'}}, 'required': ['value'], 'additionalProperties': False}}}]

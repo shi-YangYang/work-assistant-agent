@@ -1,6 +1,6 @@
 import json
 from langchain_core.messages import AIMessage, ToolMessage
-from app.agent.context.conversation_context import request_text
+from app.agent.context.references.conversation_context import request_text
 from app.core.digests import digest
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction

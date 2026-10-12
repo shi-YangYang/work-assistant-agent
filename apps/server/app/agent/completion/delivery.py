@@ -2,7 +2,7 @@
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules.conversations.task.task_schemas import TaskInterpretation
-from app.agent.completion.reply_review import ReviewedReply
+from app.agent.completion.review.reply_review import ReviewedReply
 from app.agent.completion.answer_length import AnswerLength
 from pydantic.json_schema import SkipJsonSchema
 
@@ -80,7 +80,7 @@ async def completion_reference_error(context, operation_ids, *, verification_req
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         known = {card['id'] for card in await message_actions(db, actor, message)}
-        from app.modules.messages.input_text import request_text
+        from app.modules.messages.input.input_text import request_text
         current_request = request_text(message, job)
     if set(operation_ids or []) - known:
         return ('收尾引用了本轮业务回执以外的 ID，不能沿用此前消息的回执。私人成果、生成文件和沙盒执行 ID 都不是业务回执。'
@@ -130,10 +130,10 @@ async def assess(context, answer, *, model=None):
         if set(value.operation_ids) - known:
             return ReviewedReply(needs_response=True, verified=True, response_reason='收尾引用了不存在或不可访问的业务回执；只能依据真实回执说明结果。', task=task)
         if value.verification_requested:
-            from app.modules.messages.input_text import request_text
+            from app.modules.messages.input.input_text import request_text
             if value.verification_quote not in request_text(message, job):
                 return ReviewedReply(error_code='UntrustedVerificationRequest', error_message='收尾中的核验要求无法对应本次问题，请重试答复。', task=task)
-        from app.modules.work.draft_receipts import message_drafts
+        from app.modules.work.drafts.draft_receipts import message_drafts
         drafts = await message_drafts(db, actor, message, job)
         outcomes = job.result.get('toolOutcomes', [])
         missing_execution = value.business_requested and not cards and not drafts and not outcomes and task['state'] == 'completed'

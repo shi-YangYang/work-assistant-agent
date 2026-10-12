@@ -7,12 +7,12 @@ from app.tasks.lease import lease
 
 async def conversation_history(context, job, content):
     """Use the same authorized references as the independent intent check."""
-    from app.agent.context.conversation_context import conversation_references
+    from app.agent.context.references.conversation_context import conversation_references
     async with context.sessions.begin() as db:
         live, actor = await lease(db, context)
         current = await owned(db, Message, job.target_id, actor)
         references = await conversation_references(db, actor, live, current, context=context)
-        from app.agent.context.deliverable_context import deliverable_context
+        from app.agent.context.references.deliverable_context import deliverable_context
         results = await deliverable_context(db, actor, current, job=live)
         from app.modules.executions.queries import read_executions
         executions = await read_executions(db, actor, live, current)

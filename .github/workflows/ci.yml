@@ -97,6 +97,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: python -m venv .venv-server
       - run: .venv-server/bin/python -m pip install -r apps/server/requirements.lock
+      - name: Check production deployment configuration
+        timeout-minutes: 2
+        run: |
+          docker compose version
+          .venv-server/bin/python -m unittest discover -s tests/deploy -p test_release.py
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm run db:company
       - run: npm run test:server

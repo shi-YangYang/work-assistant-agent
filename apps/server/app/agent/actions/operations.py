@@ -8,7 +8,7 @@ from app.modules.operations.receipts import action_dto
 from app.modules.operations.policy.rules import ACTIONS, CONFIRM, LABELS, REPORT_FIELDS, WORK_FIELDS
 from app.modules.operations.service import perform
 from app.modules.operations.targets import preview, read_target, source_check
-from app.modules.reports.sources import report_fact_basis
+from app.modules.reports.generation.sources import report_fact_basis
 from app.modules.work.models import WorkItem
 from app.security.access import scope as business_scope, valid as business_valid
 from app.security.ownership import owned
@@ -120,7 +120,7 @@ async def execute(context, **arguments):
 
 async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='daily', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1, deliverable_id='', deliverable_revision=0, item_id='', shared_attachment_ids=None, task_item_id=''):
     from app.tasks.lease import lease
-    from app.agent.context.conversation_context import request_text
+    from app.agent.context.references.conversation_context import request_text
     if action not in ACTIONS or not 1 <= step <= 8 or requires_step is not None and not 1 <= requires_step < step:
         return {'state': 'failed', 'message': '操作或步骤无效'}
     if not isinstance(copy_index, int) or not 1 <= copy_index <= 8 or action != 'create_work' and copy_index != 1:
@@ -130,7 +130,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
     if changes.keys() - fields or submit_after and action != 'generate_report':
         return {'state': 'failed', 'message': '包含本次操作不支持的字段'}
     if action in ('create_work', 'update_work'):
-        from app.modules.work.record_schemas import AgentWorkChanges
+        from app.modules.work.records.record_schemas import AgentWorkChanges
         AgentWorkChanges.model_validate(changes)
     params = {'targetId': target_id, 'expectedRevision': expected_revision, 'changes': changes, 'kind': report_kind, 'date': report_date, 'obligationId': obligation_id, 'sourceTokens': sorted(source_tokens or []), 'submitAfter': submit_after, 'requiresStep': requires_step}
     if deliverable_id or deliverable_revision or item_id:

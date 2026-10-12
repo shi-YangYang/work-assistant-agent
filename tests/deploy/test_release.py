@@ -279,11 +279,46 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(float(worker['cpus']), 2.0)
                 self.assertEqual(int(worker['mem_limit']), 3 * 1024 ** 3)
                 self.assertEqual(int(worker['memswap_limit']), int(worker['mem_limit']))
+                api, web = config['services']['api'], config['services']['web']
+                proxy_ip = web['networks']['proxy']['ipv4_address']
+                self.assertEqual(api['environment']['FORWARDED_ALLOW_IPS'], proxy_ip)
+                self.assertNotIn('*', proxy_ip)
+                self.assertEqual(set(web['networks']), {'proxy'})
+                self.assertEqual(set(api['networks']), {'default', 'proxy'})
+                self.assertFalse(api.get('ports'))
+                self.assertNotIn('proxy', worker.get('networks', {}))
                 command = config['services']['web'].get('command')
                 if mode == 'ip':
                     self.assertIn('/etc/caddy/Caddyfile.ip', command)
                 else:
                     self.assertFalse(command)
+
+    @unittest.skipUnless(shutil.which('docker'), 'Docker Compose CLI is unavailable')
+    def test_capacity_configuration_survives_release_and_ip_overlays(self):
+        with self.env_file.open('a') as output:
+            output.write('PAA_WORKER_CONCURRENCY=6\nPAA_WORKER_CPUS=4\nPAA_WORKER_MEMORY=4g\n'
+                         'PAA_DB_POOL_SIZE=5\nPAA_DB_MAX_OVERFLOW=5\n'
+                         'PAA_POSTGRES_MAX_CONNECTIONS=60\nPAA_POSTGRES_SHARED_BUFFERS=256MB\n')
+        (self.release / 'apps/server/.env.web').symlink_to(self.env_file)
+        for mode in ('domain', 'ip'):
+            with self.subTest(mode=mode):
+                (self.release / '.release.env').write_text(self.manifest + f'PAA_DEPLOY_MODE={mode}\n')
+                result = subprocess.run(
+                    ['sh', str(self.release / 'deploy/company/compose.sh'), 'config', '--format', 'json'],
+                    env={**os.environ, 'PAA_COMPOSE_ROOT': str(self.release)},
+                    capture_output=True, text=True, timeout=15,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                services = json.loads(result.stdout)['services']
+                self.assertEqual(float(services['worker']['cpus']), 4)
+                self.assertEqual(int(services['worker']['mem_limit']), 4 * 1024 ** 3)
+                self.assertEqual(services['worker']['mem_limit'], services['worker']['memswap_limit'])
+                self.assertEqual(services['worker']['environment']['PAA_WORKER_CONCURRENCY'], '6')
+                for name in ('api', 'worker'):
+                    self.assertEqual(services[name]['environment']['PAA_DB_POOL_SIZE'], '5')
+                    self.assertEqual(services[name]['environment']['PAA_DB_MAX_OVERFLOW'], '5')
+                self.assertIn('max_connections=60', services['postgres']['command'])
+                self.assertIn('shared_buffers=256MB', services['postgres']['command'])
 
 
 if __name__ == '__main__':

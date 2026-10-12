@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from app.core.errors import problem
 from app.http.dependencies import ADMIN, AUTH, DB, SETTINGS
 from app.modules.auth.dingtalk.callback import complete_callback, result
-from app.modules.auth.dingtalk.service import ACCOUNT_RATE, AccountVerification, CALLBACK, Configuration, available, clear_auth_cookies, config_dto, configuration, login_company, proof, rate, start
+from app.modules.auth.dingtalk.rate_limit import login_rate
+from app.modules.auth.dingtalk.service import ACCOUNT_RATE, AccountVerification, CALLBACK, Configuration, available, clear_auth_cookies, config_dto, configuration, login_company, proof, start
 from app.modules.auth.models import DingTalkAuthorization, DingTalkConfig, DingTalkIdentity
 from app.modules.auth.sessions import COOKIE, revoke_member, verify_password
 from app.security.secrets import decrypt, encrypt
@@ -53,7 +54,7 @@ async def save_configuration(body: Configuration, actor=ADMIN, db=DB, settings=S
 
 @router.post('/api/v1/auth/dingtalk/start')
 async def login_start(request: Request, response: Response, db=DB):
-    await rate(request, 'login')
+    await login_rate(request, response)
     company = await login_company(db, request.app.state.settings)
     config = await configuration(db, company.id) if company else None
     return await start(db, request, response, config, 'login')

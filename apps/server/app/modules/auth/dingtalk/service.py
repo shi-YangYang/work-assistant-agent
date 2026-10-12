@@ -7,17 +7,12 @@ from app.core.input_rules import PASSWORD_RULES
 from app.core.schemas import Input
 from app.db.base import now
 from app.modules.auth.models import DingTalkAuthorization, DingTalkConfig
-from app.modules.auth.sessions import digest, limit_authenticated_request, throttle
+from app.modules.auth.sessions import digest, limit_authenticated_request
 from app.modules.members.models import Company
 from app.security.secrets import decrypt
 from pydantic import Field
 from sqlalchemy import delete, select, update
 from urllib.parse import urlencode, urlsplit
-
-
-async def rate(request, key):
-    async with request.app.state.sessions.begin() as db:
-        await throttle(db, 'dingtalk:' + key + ':' + (request.client.host if request.client else 'unknown'))
 
 
 async def account_rate(request: Request):

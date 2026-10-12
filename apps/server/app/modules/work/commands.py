@@ -3,7 +3,7 @@ from app.core.versions import version
 from app.db.idempotency import idem_begin, idem_save
 from app.modules.messages.service import active_message
 from app.modules.work.models import ProgressDraft, WorkItem
-from app.modules.work.progress import confirm_drafts
+from app.modules.work.drafts.progress import confirm_drafts
 from app.modules.work.serializers import draft_dto, work_dto
 from app.modules.work.service import save_work as writes_save_work
 from app.security.access import inherit as business_inherit, require as business_require

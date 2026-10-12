@@ -1,6 +1,7 @@
 import mark from '@paa/ui-web/mark.png'
 import blink from '@paa/ui-web/pet/blink.png'
-import { useState, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
+import { usePetImage } from './usePetImage'
 import styles from './NoriaPet.module.css'
 
 function subscribeVisibility(callback: () => void) {
@@ -20,9 +21,9 @@ function subscribeReducedMotion(callback: () => void) {
 export function NoriaPet({ animate = false }: { animate?: boolean }) {
   const visible = useSyncExternalStore(subscribeVisibility, isVisible)
   const reducedMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion)
-  const [blinkFailed, setBlinkFailed] = useState(false)
-  const [imageFailed, setImageFailed] = useState(false)
-  const canAnimate = animate && !reducedMotion && !blinkFailed && !imageFailed
+  const markImage = usePetImage(mark, visible)
+  const blinkImage = usePetImage(blink, visible && animate && !reducedMotion)
+  const canAnimate = animate && !reducedMotion && !blinkImage.failed && !markImage.failed
 
   return (
     <span
@@ -32,24 +33,24 @@ export function NoriaPet({ animate = false }: { animate?: boolean }) {
       aria-hidden="true"
     >
       <span className={styles.face}>
-        {imageFailed ? (
+        {markImage.failed ? (
           <span className={styles.fallback}>N</span>
         ) : (
           <>
             <img
               className={styles.mark}
-              src={mark}
+              src={markImage.src}
               alt=""
               draggable={false}
-              onError={() => setImageFailed(true)}
+              onError={markImage.onError}
             />
-            {!blinkFailed && (
+            {!blinkImage.failed && (
               <img
                 className={styles.blink}
-                src={blink}
+                src={blinkImage.src}
                 alt=""
                 draggable={false}
-                onError={() => setBlinkFailed(true)}
+                onError={blinkImage.onError}
               />
             )}
           </>

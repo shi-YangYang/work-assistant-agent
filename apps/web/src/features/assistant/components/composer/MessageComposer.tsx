@@ -2,8 +2,8 @@ import controlsStyles from '../../../../styles/controls.module.css'
 import styles from './MessageComposer.module.css'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
 import { WorkReferencePicker } from '../work-reference/WorkReferencePicker'
-import type { useWorkReference } from '../../hooks/useWorkReference'
-import { ContextUsage } from './ContextUsage'
+import type { useWorkReference } from '../../hooks/composer/useWorkReference'
+import { ContextUsage } from './controls/ContextUsage'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
 import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
@@ -19,9 +19,10 @@ import {
   X,
   BriefcaseBusiness,
 } from 'lucide-react'
-import type { useAssistantTask } from '../../hooks/useAssistantTask'
+import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
 import type * as React from 'react'
-import { useId, useRef } from 'react'
+import { useRef } from 'react'
+import { usePopover } from '@web/components/overlays/usePopover'
 
 export function MessageComposer({
   containerRef,
@@ -80,10 +81,8 @@ export function MessageComposer({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const attachmentTrigger = useRef<HTMLButtonElement>(null)
-  const attachmentMenu = useRef<HTMLDivElement>(null)
-  const attachmentMenuId = useId()
   const capturing = recording.state !== 'idle'
+  const attachmentMenu = usePopover({ disabled: locked || capturing, scopeKey: contextKey })
   const retryPending = pending && !busy
   const interrupting = !pending && !!task?.running
   const label = interrupting
@@ -205,37 +204,25 @@ export function MessageComposer({
               }}
             />
             <button
-              ref={attachmentTrigger}
+              {...attachmentMenu.triggerProps}
               className={controlsStyles['icon-button']}
               aria-label="添加附件"
               title="添加附件"
               aria-haspopup="dialog"
-              popoverTarget={attachmentMenuId}
               disabled={locked || capturing}
             >
               <Plus size={20} />
             </button>
             <div
-              ref={attachmentMenu}
-              id={attachmentMenuId}
+              {...attachmentMenu.panelProps}
               className={styles['attachment-menu']}
-              popover="auto"
               role="dialog"
               aria-label="添加附件"
-              onToggle={(event) => {
-                if (event.newState !== 'open') return
-                const rect = attachmentTrigger.current?.getBoundingClientRect()
-                const menu = event.currentTarget
-                if (rect) {
-                  menu.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 12))}px`
-                  menu.style.top = `${Math.max(12, rect.top - menu.offsetHeight - 10)}px`
-                }
-              }}
             >
               <button
                 disabled={locked || capturing}
                 onClick={() => {
-                  attachmentMenu.current?.hidePopover()
+                  attachmentMenu.close()
                   input.current?.click()
                 }}
               >
@@ -247,7 +234,7 @@ export function MessageComposer({
               <button
                 disabled={locked || capturing}
                 onClick={() => {
-                  attachmentMenu.current?.hidePopover()
+                  attachmentMenu.close()
                   fileInput.current?.click()
                 }}
               >
@@ -260,7 +247,7 @@ export function MessageComposer({
                 <button
                   disabled={locked || capturing}
                   onClick={() => {
-                    attachmentMenu.current?.hidePopover()
+                    attachmentMenu.close()
                     workReference.setPickerOpen(true)
                   }}
                 >

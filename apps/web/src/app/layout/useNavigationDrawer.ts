@@ -40,10 +40,10 @@ export function useNavigationDrawer(routeKey: string) {
     main.inert = true
     focusable()[0]?.focus()
     const keydown = (event: KeyboardEvent) => {
-      // A command dialog owns focus while open; the native settings popover closes first.
+      // A command dialog owns focus while open; the settings popover closes first.
       if (event.defaultPrevented || event.isComposing || modalOpen()) return
       if (event.key === 'Escape') {
-        if (sidebar.querySelector(':popover-open')) return
+        if (sidebar.querySelector('[data-popover-open]')) return
         event.preventDefault()
         setExpandedNav(false)
       } else if (event.key === 'Tab') {
@@ -59,7 +59,6 @@ export function useNavigationDrawer(routeKey: string) {
     document.addEventListener('keydown', keydown)
     return () => {
       document.removeEventListener('keydown', keydown)
-      sidebar.querySelector<HTMLElement>(':popover-open')?.hidePopover()
       main.inert = wasInert
       if (!modalOpen()) {
         if (trigger?.getClientRects().length) trigger.focus()

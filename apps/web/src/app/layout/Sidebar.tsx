@@ -15,7 +15,7 @@ import {
   Settings,
 } from 'lucide-react'
 import type * as React from 'react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { usePopover } from '@web/components/overlays/usePopover'
 import type { Location } from 'react-router'
 import { Link, NavLink } from 'react-router'
 
@@ -48,27 +48,10 @@ export function Sidebar({
   accountName: string
   logout: () => Promise<void>
 }) {
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const settingsTrigger = useRef<HTMLButtonElement>(null)
-  const settingsPanel = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    if (!settingsOpen) return
-    const position = () => {
-      const panel = settingsPanel.current
-      const trigger = settingsTrigger.current
-      if (!panel || !trigger) return
-      const rect = trigger.getBoundingClientRect()
-      panel.style.left = `${Math.min(rect.right + 10, window.innerWidth - panel.offsetWidth - 12)}px`
-      panel.style.top = `${Math.max(12, Math.min(rect.bottom - panel.offsetHeight, window.innerHeight - panel.offsetHeight - 12))}px`
-    }
-    position()
-    window.addEventListener('resize', position)
-    window.addEventListener('scroll', position, true)
-    return () => {
-      window.removeEventListener('resize', position)
-      window.removeEventListener('scroll', position, true)
-    }
-  }, [settingsOpen])
+  const settings = usePopover({
+    placement: 'right-end',
+    scopeKey: `${location.key}:${expandedNav}`,
+  })
   return (
     <aside
       ref={sidebarRef}
@@ -137,13 +120,10 @@ export function Sidebar({
           labelClassName={styles['nav-label']}
         />
         <button
-          ref={settingsTrigger}
+          {...settings.triggerProps}
           className={styles['settings-toggle']}
           data-active={location.pathname.startsWith('/settings/')}
-          aria-expanded={settingsOpen}
-          aria-controls="sidebar-settings"
           title="系统设置"
-          popoverTarget="sidebar-settings"
         >
           <Settings size={18} />
           <span className={styles['nav-label']}>系统设置</span>
@@ -152,13 +132,7 @@ export function Sidebar({
             className={`${styles['settings-chevron']} ${styles['nav-label']}`}
           />
         </button>
-        <div
-          ref={settingsPanel}
-          id="sidebar-settings"
-          className={styles['settings-popover']}
-          popover="auto"
-          onToggle={(event) => setSettingsOpen(event.newState === 'open')}
-        >
+        <div {...settings.panelProps} className={styles['settings-popover']}>
           <nav aria-label="系统设置">
             {[
               ...allowedSettings.filter((p) => p.path !== '/settings/support'),
@@ -175,7 +149,7 @@ export function Sidebar({
                 title={p.title}
                 aria-label={p.title}
                 onClick={() => {
-                  settingsPanel.current?.hidePopover()
+                  settings.close()
                   setExpandedNav(false)
                 }}
               >

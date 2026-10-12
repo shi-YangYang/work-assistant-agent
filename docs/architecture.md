@@ -88,12 +88,20 @@ migrations/ / assets/       数据库迁移、包内资源
 ```text
 agent/
 ├── context/       历史、上下文、压缩和 checkpoint
+│   └── references/  会话、图片、工作、报告与成果引用
 ├── memory/        当前账号记忆的临时注入与恢复过滤
 ├── runtime/       模型调用、中间件与工具节点
 ├── prompts/       人设、角色与执行模式提示词
 ├── actions/       授权、业务操作与临时交互
-├── completion/    结果核对、交付和修正
-└── tools/         按领域定义的工具
+├── completion/    稳定交付契约与装配
+│   ├── evidence/    工具事实与业务回执
+│   ├── review/      现有可选核对
+│   └── recovery/    预算收尾、降级与有界修复
+└── tools/         registry/catalog 保持统一注册与发现
+    ├── business/    工作、报告和团队工具
+    ├── resources/   文档、网页、消息和成果工具
+    ├── control/     收尾、任务解释与临时问答
+    └── sandbox/     自由代码执行与内置工具
 tasks/
 ├── budget/        内部策略、原子预占、轮次和恢复
 ├── runtime/       队列、worker、中断与续接
@@ -104,14 +112,14 @@ tasks/
 └── retry/         独立重试策略
 ```
 
-`tasks/context.py`、`lease.py`、`models.py` 保留公共契约和租约边界。业务子域就近组织，例如 `conversations/context/`、`reports/scheduling/`、`operations/{mutations,policy}/` 和 `model_services/usage/`；已清晰的小目录不强行拆层。Python 子包不建立汇总整个业务的导出入口。
+`tasks/context.py`、`lease.py`、`models.py` 保留公共契约和租约边界。业务子域就近组织，例如 `conversations/context/`、`reports/scheduling/`、`operations/{mutations,policy}/` 和 `model_services/usage/`；已清晰的小目录不强行拆层。Python 子包不建立汇总整个业务的导出入口。工作模块的草稿、记录命令和工具适配分别归 `work/{drafts,records,agent}/`；消息输入与引用归 `messages/{input,references}/`；报告生成辅助归 `reports/generation/`。稳定入口、ORM、迁移版本及持久化契约原位保留，不建立旧路径转发层。
 
 发送消息的服务端路径：
 
 1. `modules/messages/router.py` → `commands.py:submit_message`，校验幂等键、会话和附件，保存消息与 Job。
 2. `http/dependencies.py` 提交请求事务，失败回滚。
 3. `tasks/runtime/queue.py` 领取任务，`tasks/processing/handlers.py:process_job` 调用 `agent/harness.py`。
-4. `agent/tools/` 调用授权业务服务；工作进展确认进入 `modules/work/progress.py:confirm_drafts`，检查版本后保存。
+4. `agent/tools/` 调用授权业务服务；工作进展确认进入 `modules/work/drafts/progress.py:confirm_drafts`，检查版本后保存。
 
 `tests/server/test_architecture.py` 检查反向依赖、循环、ORM 登记和应用实例隔离。
 
@@ -126,7 +134,7 @@ tasks/
 ### 工作记录与材料
 
 - `WorkItem.content` 保存受限 JSON 正文、派生纯文本与材料引用；`WorkRevision` 保存对应版本。正文用于目标与方案，进展由 `WorkUpdate`／`WorkUpdateRevision` 独立记录和更正。
-- Web 与 Agent 通过 `modules/work/record_commands.py` 写入，统一检查归属、版本、幂等与材料；Agent 继续经过业务操作授权和回执，不另设直写通道。
+- Web 与 Agent 通过 `modules/work/records/record_commands.py` 写入，统一检查归属、版本、幂等与材料；Agent 继续经过业务操作授权和回执，不另设直写通道。
 - `WorkMaterial` 绑定工作自有附件快照，复用附件解析、预览与下载。保存到工作后的文件不依赖源聊天；读取、历史访问、沙盒输入和清理都校验工作权限及仍有效的引用。
 - 模型按需读取正文、进展与材料，不把全部历史塞进上下文。报告区分期间实际进展与未来计划，保留生成时的来源快照。
 
@@ -158,6 +166,8 @@ styles/       本端基础 CSS、公共布局和控件 Module
 - 路由延迟加载，加载与失败恢复留在路由区域，不重置整个应用。
 - 业务 TSX 超过约 350 个非空行时检查职责，不机械拆碎。
 - 应用布局归 `app/layout/`；公共组件按 `actions`、`forms`、`feedback`、`overlays`、`content` 分组。拥挤的业务组件目录按功能分组，例如助手的 `conversation/`、`composer/`、`messages/`，私有样式与组件同目录，文件保留明确名称。
+- 聊天输入的附件条归 `assistant/components/composer/attachments/`，权限、上下文、强度归 `composer/controls/`；会话与人设选择归 `conversation/controls/`，转写展示与更正归 `messages/transcript/`。Hook 按 `assistant/hooks/{conversation,composer,preferences,deliverables}/` 归属，不改变状态所有者。
+- 新增文件先选择已有业务能力；只有出现独立职责且相关文件需要一起维护时再增加分组。同组件的 TSX、私有 CSS 就近，不按扩展名分家，也不为单个文件机械建目录。
 - 工作正文编辑器归 `features/work/components/content/`，进展与材料分别归 `updates/`、`materials/`。共用媒体预览在 `components/media/`，上传请求在 `api/attachments.ts`；工作与聊天不互相引用私有媒体组件。
 
 ### Web 样式边界
@@ -170,7 +180,7 @@ styles/       本端基础 CSS、公共布局和控件 Module
 - 交互状态使用 ARIA／`data-*`；保留 `data-scroll-container`、`data-chat-content`，不在 JS 拼生成类名。`:global(.keyboard-open)` 仅用于手机键盘避让。
 - Web 与 Electron 各自维护主题和样式，共享品牌图片。路由切换不得改变层叠结果。
 
-发送消息的前端路径：`app/AppRoutes.tsx` → `features/assistant/components/conversation/Conversations.tsx`／`ConversationChat.tsx` → `components/composer/MessageComposer.tsx` → `hooks/useMessageSubmission.ts` → `api/requests.ts` → `apps/web/src/api/client.ts`。其中助手相对路径以 `features/assistant/` 为根；消息由 `components/messages/ChatHistory.tsx`／`MessageCard.tsx` 展示，录音由 `hooks/useRecording.ts` 管理。
+发送消息的前端路径：`app/AppRoutes.tsx` → `features/assistant/components/conversation/Conversations.tsx`／`ConversationChat.tsx` → `components/composer/MessageComposer.tsx` → `hooks/composer/useMessageSubmission.ts` → `api/requests.ts` → `apps/web/src/api/client.ts`。其中助手相对路径以 `features/assistant/` 为根；消息由 `components/messages/ChatHistory.tsx`／`MessageCard.tsx` 展示，录音由 `hooks/composer/useRecording.ts` 管理。
 
 `lib/session-drafts.ts` 管理账号代次，聊天 feature 的 `lib/composer-drafts.ts` 管理附件清理。`tests/web/architecture.test.ts` 检查依赖方向、请求入口、循环和 CSS 归属。
 
@@ -184,6 +194,14 @@ styles/       本端基础 CSS、公共布局和控件 Module
 | `voiceprint-engine` | 登记和匹配共用的模型、预处理及模板协议 |
 
 共享包不导入应用，桌面 IPC 契约留在桌面。Node 使用 npm workspaces 和根锁文件；Python 核心与公司服务独立锁定依赖。测试集中在 `tests/`，按对象分区，React 交互回归放在 `tests/web/dom/`。
+
+### 测试组织
+
+- `tests/server/` 按 `agent/`、`modules/`、`tasks/`、`integrations/`、`contracts/`、`scenarios/`、`audit/` 分类；领域内部继续按被测功能分组。`conftest.py` 与架构检查留在根目录，保持 fixture 作用域。
+- 复用模型、请求、材料及工作工厂放在 `tests/server/_support/{agent,http,materials,work}/`。测试直接引用支持模块，不从其他测试文件导入；支持模块不能反向依赖测试。复用的故障场景由支持模块实现，原用例保留收集入口和隔离标记。
+- 测试子进程入口放 `tests/server/probes/`，保留原环境保护。入口使用明确路径，不能依赖某个测试文件恰好在同层。
+- Web 普通测试按 `assistant/`、`forms/`、`model-services/`、`navigation/`、`resources/`、`requests/` 归组；DOM 测试按页面功能归组。`setup.ts`、架构检查和 `dom/helpers.tsx` 保持共用入口。
+- 测试发现递归扫描，手动审计继续保留原排除名单与故障环境门禁；移动用例时同步显式路径、源码读取及 mock 目标，不能因全绿而忽略少收集用例。
 
 ### 声纹引擎
 

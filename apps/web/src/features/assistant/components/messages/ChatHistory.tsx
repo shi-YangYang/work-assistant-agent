@@ -12,7 +12,7 @@ import { BusinessActionCard } from '@web/features/assistant/components/interacti
 import { MessageCard } from '@web/features/assistant/components/messages/MessageCard'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import type { TaskContinuation } from '../../api/interactions'
-import type { useAssistantTask } from '../../hooks/useAssistantTask'
+import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
 import type * as React from 'react'
 import { Sparkles } from 'lucide-react'
 

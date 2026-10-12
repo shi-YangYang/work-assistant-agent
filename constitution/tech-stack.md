@@ -38,6 +38,7 @@
 - 应用配置就近维护；根目录保留 workspace、统一检查和公共 TypeScript 配置。
 - 构建输出在各应用的 `out/`；桌面发行包在 `dist/desktop/`，冻结核心在 `dist/core/`。
 - 拥挤目录按功能归组：Web 布局归 `app/layout/`，组件与私有 CSS 就近，跨组件共享 CSS 归 `styles/patterns/`；桌面 renderer 按会议／设置组织，本地核心按录音／转写／说话人／模型／纪要组织。
+- Web 聊天组件在输入／会话／消息分组内继续归属附件、控制项、转写；Hook 分会话、输入、偏好与成果。后端测试按领域归组，共用辅助在 `tests/server/_support/`，进程入口在 `probes/`；Web 普通测试与 DOM 测试各自按功能归组。
 - 后端在 `agent/`、`tasks/` 和业务模块内部按职责划分子包，保留应用入口、ORM、公共任务上下文及租约路径；不创建旧路径转发层。完整目录与依赖见[技术架构](../docs/architecture.md)。
 
 ## 工程命令

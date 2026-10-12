@@ -53,6 +53,8 @@ class Settings:
     reply_stream_namespace: str = field(default_factory=lambda: os.getenv('PAA_REPLY_STREAM_NAMESPACE', 'paa:reply:v2'))
 
     worker_concurrency: int = field(default_factory=lambda: int(os.getenv('PAA_WORKER_CONCURRENCY', '3')))
+    db_pool_size: int = field(default_factory=lambda: int(os.getenv('PAA_DB_POOL_SIZE', '2')))
+    db_max_overflow: int = field(default_factory=lambda: int(os.getenv('PAA_DB_MAX_OVERFLOW', '1')))
 
     def __post_init__(self):
         if not 32 <= self.generated_total_quota_mb <= 1048576:
@@ -61,6 +63,10 @@ class Settings:
             raise ValueError('PAA_GENERATED_QUOTA_MB must be between 32 and 10240')
         if not 1 <= self.worker_concurrency <= 8:
             raise ValueError('PAA_WORKER_CONCURRENCY must be between 1 and 8')
+        if not 1 <= self.db_pool_size <= 50:
+            raise ValueError('PAA_DB_POOL_SIZE must be between 1 and 50')
+        if not 0 <= self.db_max_overflow <= 50:
+            raise ValueError('PAA_DB_MAX_OVERFLOW must be between 0 and 50')
 
     @property
     def checkpoint_url(self) -> str:
