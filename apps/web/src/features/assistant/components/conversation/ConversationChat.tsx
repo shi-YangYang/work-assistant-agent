@@ -334,7 +334,7 @@ export function ConversationChat({
     if (task.job) receiveContext(task.job, task.feedback)
   }, [task.job, task.feedback, receiveContext])
   const nextCursor = data?.nextCursor
-  const empty = !messages.length && !error && (!conversationId || !!data)
+  const empty = !messages.length && !busy && !task.job && !error && (!conversationId || !!data)
   const retryPage = () => {
     void execution.refresh()
     void reasoning.refresh()
@@ -420,6 +420,7 @@ export function ConversationChat({
           </button>
         )}
         <ChatHistory
+          sending={busy}
           onContextUpdate={context.receive}
           task={task}
           onContinuation={(continuation) => {

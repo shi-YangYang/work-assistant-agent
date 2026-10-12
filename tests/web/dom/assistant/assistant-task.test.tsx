@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import type { BusinessAction, Identity, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
+import type {
+  Attachment,
+  BusinessAction,
+  Identity,
+  Job,
+  JobFeedback,
+  WorkMessage,
+} from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
@@ -8,6 +15,7 @@ import { ApiError } from '../../../../apps/web/src/api/client'
 import {
   readActiveAssistantJob,
   sendMessage,
+  uploadAttachment,
 } from '../../../../apps/web/src/features/assistant/api/requests'
 import { cancelJob, retryJob } from '../../../../apps/web/src/features/jobs/api/requests'
 import { MessageCard } from '../../../../apps/web/src/features/assistant/components/messages/MessageCard'
@@ -21,6 +29,7 @@ vi.mock('@web/features/assistant/api/requests', async (load) => ({
   ...(await load<typeof import('../../../../apps/web/src/features/assistant/api/requests')>()),
   readActiveAssistantJob: vi.fn(),
   sendMessage: vi.fn(),
+  uploadAttachment: vi.fn(),
 }))
 vi.mock('@web/features/jobs/api/requests', async (load) => ({
   ...(await load<typeof import('../../../../apps/web/src/features/jobs/api/requests')>()),
@@ -76,6 +85,7 @@ const feedback = (patch: Partial<JobFeedback> = {}): JobFeedback => ({
 beforeEach(() => {
   dialogs()
   vi.resetAllMocks()
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   sources.length = 0
   history = []
   vi.stubGlobal('EventSource', Source)
@@ -101,6 +111,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 function Chat({ initial = 'first' }: { initial?: string }) {
@@ -128,6 +139,118 @@ function view(initial = 'first', vault = createVault()) {
 }
 const input = () => screen.getByRole('textbox', { name: '工作消息' }) as HTMLTextAreaElement
 const type = (value: string) => fireEvent.change(input(), { target: { value } })
+
+function voiceDraft(vault: ReturnType<typeof createVault>, conversation = 'first') {
+  vault.writer()(`composer:${conversation || 'new'}`, {
+    text: '',
+    key: 'voice-request',
+    files: [
+      {
+        id: 'voice',
+        file: new File(['audio'], '语音.webm', { type: 'audio/webm' }),
+        url: 'blob:voice',
+      },
+    ],
+  })
+}
+const voice: Attachment = {
+  id: 'uploaded-voice',
+  kind: 'audio',
+  name: '语音.webm',
+  mime: 'audio/webm',
+  size: 5,
+  url: '/voice',
+}
+
+it.each(['', 'first'])(
+  'keeps voice submission visible through upload, acceptance and transcription in conversation %s',
+  async (initial) => {
+    const upload = deferred<Attachment>()
+    const submission = deferred<Awaited<ReturnType<typeof sendMessage>>>()
+    const vault = createVault()
+    voiceDraft(vault, initial)
+    vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
+    vi.mocked(sendMessage).mockReturnValue(submission.promise)
+    const mounted = view(initial, vault)
+    const send = await screen.findByRole<HTMLButtonElement>('button', { name: '发送' })
+    await waitFor(() => expect(send.disabled).toBe(false))
+    fireEvent.click(send)
+    expect(screen.getByText('正在上传语音…')).toBeTruthy()
+    expect(mounted.container.querySelector('[data-pending-assistant]')?.textContent).toContain(
+      'Noria',
+    )
+    expect(screen.queryByText('今天，想推进什么？')).toBeNull()
+    expect(sendMessage).not.toHaveBeenCalled()
+    await act(async () => upload.resolve(voice))
+    expect(screen.getByText('正在发送消息…')).toBeTruthy()
+    vi.mocked(readActiveAssistantJob).mockResolvedValue({
+      job: { ...running, state: 'queued', stage: 'queued' },
+    })
+    await act(async () =>
+      submission.resolve({ conversationId: 'first', messageId: 'message', jobId: 'job' }),
+    )
+    expect(screen.getByText('已发送，正在排队…')).toBeTruthy()
+    expect(mounted.container.querySelector('[data-pending-assistant]')).not.toBeNull()
+    await act(async () =>
+      sources
+        .at(-1)!
+        .dispatchEvent(
+          new MessageEvent('snapshot', {
+            data: JSON.stringify(feedback({ stage: 'transcribing' })),
+          }),
+        ),
+    )
+    expect(screen.getByText('正在识别语音…')).toBeTruthy()
+    history = [
+      {
+        ...message(running),
+        text: '',
+        attachments: [voice],
+        transcript: '请帮我写一段介绍',
+        transcriptRevision: 1,
+      },
+    ]
+    await act(async () =>
+      sources
+        .at(-1)!
+        .dispatchEvent(
+          new MessageEvent('snapshot', { data: JSON.stringify(feedback({ seq: 2 })) }),
+        ),
+    )
+    await waitFor(() =>
+      expect(mounted.container.querySelector('[data-pending-assistant]')).toBeNull(),
+    )
+    expect(screen.getAllByText('Noria')).toHaveLength(1)
+    expect(screen.getByText(/^思考中 ·/)).toBeTruthy()
+    expect(uploadAttachment).toHaveBeenCalledTimes(1)
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+  },
+)
+
+it.each(['upload', 'send'])(
+  'clears the submission indicator after voice %s fails and preserves the draft',
+  async (stage) => {
+    const upload = deferred<Attachment>()
+    const submission = deferred<Awaited<ReturnType<typeof sendMessage>>>()
+    const vault = createVault()
+    voiceDraft(vault)
+    vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
+    vi.mocked(sendMessage).mockReturnValue(submission.promise)
+    const mounted = view('first', vault)
+    const send = await screen.findByRole<HTMLButtonElement>('button', { name: '发送' })
+    await waitFor(() => expect(send.disabled).toBe(false))
+    fireEvent.click(send)
+    expect(screen.getByText('正在上传语音…')).toBeTruthy()
+    if (stage === 'send') await act(async () => upload.resolve(voice))
+    await act(async () => (stage === 'upload' ? upload : submission).reject(new Error('网络中断')))
+    await screen.findByText('网络中断')
+    expect(mounted.container.querySelector('[data-pending-assistant]')).toBeNull()
+    expect(vault.getSnapshot()['composer:first']).toMatchObject({
+      sending: false,
+      files: [{ id: 'voice' }],
+    })
+  },
+)
 
 it('locks before history loads, permits the next draft and attachments, and preserves them through cancellation', async () => {
   const restore = deferred<{ job: Job | null }>()
