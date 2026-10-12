@@ -355,6 +355,20 @@ export interface Job {
   error: string
   updatedAt: string
 }
+export interface AssistantActivityJob {
+  id: string
+  conversationId: string | null
+  targetId: string
+  state: Job['state']
+  stage: string
+  attempt: number
+  fence: number
+  seq: number
+  updatedAt: string
+}
+export interface AssistantActivity {
+  jobs: AssistantActivityJob[]
+}
 export interface DeliverableReference {
   id: string
   revision: number

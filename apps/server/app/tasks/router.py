@@ -18,6 +18,12 @@ from app.tasks.serializers import job_dto
 router = APIRouter()
 
 
+@router.get('/api/v1/assistant/activity')
+async def assistant_activity(actor=AUTH, db=DB):
+    from app.tasks.runtime.conversation_activity import account_activity
+    return await account_activity(db, actor)
+
+
 @router.get('/api/v1/jobs/{identifier}')
 async def get_job(identifier: str, actor=AUTH, db=DB):
     item = await owned(db, Job, identifier, actor)

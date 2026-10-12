@@ -1,3 +1,4 @@
+import type { AssistantActivityState } from '@web/api/assistant-activity'
 import { Menu } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import controls from '@web/styles/controls.module.css'
@@ -7,11 +8,13 @@ import styles from './PetStage.module.css'
 
 export function PetStage({
   animate,
+  activity = 'idle',
   navTriggerRef,
   expandedNav,
   setExpandedNav,
 }: {
   animate: boolean
+  activity?: AssistantActivityState
   navTriggerRef: RefObject<HTMLButtonElement | null>
   expandedNav: boolean
   setExpandedNav: (expanded: boolean) => void
@@ -45,8 +48,13 @@ export function PetStage({
             setOpen(true)
           }}
         >
-          <NoriaPet animate={animate && !open} />
+          <NoriaPet animate={animate && !open} working={activity === 'working'} />
           <span className={styles.name}>Noria</span>
+          {activity !== 'idle' && (
+            <span className={styles.status} role="status">
+              {activity === 'working' ? '努力工作中' : '状态待同步'}
+            </span>
+          )}
         </button>
       </div>
       {open && <NoriaAppearanceDialog onClose={() => setOpen(false)} />}

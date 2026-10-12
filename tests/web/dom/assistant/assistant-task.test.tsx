@@ -11,6 +11,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { useState } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import {
+  AssistantActivityStore,
+  mountAssistantActivity,
+} from '../../../../apps/web/src/api/assistant-activity'
 import { ApiError } from '../../../../apps/web/src/api/client'
 import {
   readActiveAssistantJob,
@@ -62,6 +66,12 @@ const message = (job: Job): WorkMessage =>
     job,
   }) as unknown as WorkMessage
 let history: WorkMessage[] = []
+const activityReleases: (() => void)[] = []
+function observeActivity() {
+  const store = new AssistantActivityStore('company:owner:employee')
+  activityReleases.push(mountAssistantActivity(store))
+  return store
+}
 const sources: Source[] = []
 class Source extends EventTarget {
   close = vi.fn()
@@ -95,13 +105,15 @@ beforeEach(() => {
       async (url: string) =>
         new Response(
           JSON.stringify(
-            url.includes('/assistant/execution-settings')
-              ? { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
-              : url.includes('/messages?')
-                ? { items: history, nextCursor: null }
-                : url.includes('/context-usage')
-                  ? { contextUsage: history.at(-1)?.job?.contextUsage ?? null }
-                  : { items: [], nextCursor: null },
+            url.includes('/assistant/activity')
+              ? { jobs: [] }
+              : url.includes('/assistant/execution-settings')
+                ? { executionMode: 'auto', modeRevision: 1, fullAccessConfirmed: false }
+                : url.includes('/messages?')
+                  ? { items: history, nextCursor: null }
+                  : url.includes('/context-usage')
+                    ? { contextUsage: history.at(-1)?.job?.contextUsage ?? null }
+                    : { items: [], nextCursor: null },
           ),
         ),
     ),
@@ -111,6 +123,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  activityReleases.splice(0).forEach((release) => release())
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -155,6 +168,7 @@ function voiceDraft(vault: ReturnType<typeof createVault>, conversation = 'first
 }
 const voice: Attachment = {
   id: 'uploaded-voice',
+  duration: 1,
   kind: 'audio',
   name: '语音.webm',
   mime: 'audio/webm',
@@ -165,6 +179,7 @@ const voice: Attachment = {
 it.each(['', 'first'])(
   'keeps voice submission visible through upload, acceptance and transcription in conversation %s',
   async (initial) => {
+    const activity = observeActivity()
     const upload = deferred<Attachment>()
     const submission = deferred<Awaited<ReturnType<typeof sendMessage>>>()
     const vault = createVault()
@@ -176,6 +191,7 @@ it.each(['', 'first'])(
     await waitFor(() => expect(send.disabled).toBe(false))
     fireEvent.click(send)
     expect(screen.getByText('正在上传语音…')).toBeTruthy()
+    expect(activity.getSnapshot()).toBe('working')
     expect(mounted.container.querySelector('[data-pending-assistant]')?.textContent).toContain(
       'Noria',
     )
@@ -190,17 +206,17 @@ it.each(['', 'first'])(
       submission.resolve({ conversationId: 'first', messageId: 'message', jobId: 'job' }),
     )
     expect(screen.getByText('已发送，正在排队…')).toBeTruthy()
+    expect(activity.getSnapshot()).toBe('working')
     expect(mounted.container.querySelector('[data-pending-assistant]')).not.toBeNull()
     await act(async () =>
-      sources
-        .at(-1)!
-        .dispatchEvent(
-          new MessageEvent('snapshot', {
-            data: JSON.stringify(feedback({ stage: 'transcribing' })),
-          }),
-        ),
+      sources.at(-1)!.dispatchEvent(
+        new MessageEvent('snapshot', {
+          data: JSON.stringify(feedback({ stage: 'transcribing' })),
+        }),
+      ),
     )
     expect(screen.getByText('正在识别语音…')).toBeTruthy()
+    expect(activity.getSnapshot()).toBe('working')
     history = [
       {
         ...message(running),
@@ -230,6 +246,7 @@ it.each(['', 'first'])(
 it.each(['upload', 'send'])(
   'clears the submission indicator after voice %s fails and preserves the draft',
   async (stage) => {
+    const activity = observeActivity()
     const upload = deferred<Attachment>()
     const submission = deferred<Awaited<ReturnType<typeof sendMessage>>>()
     const vault = createVault()
@@ -241,9 +258,11 @@ it.each(['upload', 'send'])(
     await waitFor(() => expect(send.disabled).toBe(false))
     fireEvent.click(send)
     expect(screen.getByText('正在上传语音…')).toBeTruthy()
+    expect(activity.getSnapshot()).toBe('working')
     if (stage === 'send') await act(async () => upload.resolve(voice))
     await act(async () => (stage === 'upload' ? upload : submission).reject(new Error('网络中断')))
     await screen.findByText('网络中断')
+    expect(activity.getSnapshot()).toBe('idle')
     expect(mounted.container.querySelector('[data-pending-assistant]')).toBeNull()
     expect(vault.getSnapshot()['composer:first']).toMatchObject({
       sending: false,

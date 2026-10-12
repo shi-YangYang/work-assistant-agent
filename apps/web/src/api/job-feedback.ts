@@ -96,6 +96,7 @@ export const stageNames: Record<string, string> = {
 }
 
 export const feedbackDisconnected = '连接已断开，任务可能仍在后台处理。'
+type RecoveryConfirmation = Pick<Job, 'id' | 'state' | 'attempt' | 'fence'>
 
 function connectJobFeedback(
   jobId: string,
@@ -110,6 +111,7 @@ function connectJobFeedback(
   let reply: ReplyCursor | null = null
   let previewUnavailable = false
   let closed = false
+  let inaccessible = false
   let completed = false
   let recovering = false
   let retryAt = 0
@@ -157,6 +159,7 @@ function connectJobFeedback(
   const stop = (message: string, status?: number) => {
     if (closed) return
     closed = true
+    inaccessible = status === 403 || status === 404
     request?.abort()
     closeSource()
     receiveValue(null)
@@ -225,9 +228,23 @@ function connectJobFeedback(
       if (active() && source === opened) disconnect()
     }
   }
-  const recover = async () => {
-    if (closed || completed || recovering || source || navigator.onLine === false) return
+  const recover = async (confirmed?: RecoveryConfirmation) => {
+    if (!active() || completed || recovering || source || navigator.onLine === false) return
+    // A new authorized query may rediscover a job while another consumer still
+    // retains its stopped transport. Ordinary reconnects cannot revive it.
+    if (
+      closed &&
+      (!inaccessible ||
+        !confirmed ||
+        confirmed.id !== jobId ||
+        terminalJob(confirmed.state) ||
+        confirmed.attempt !== (latest?.attempt ?? attempt) ||
+        confirmed.fence !== (latest?.fence ?? fence))
+    )
+      return
     if (Date.now() < retryAt) return
+    closed = false
+    inaccessible = false
     recovering = true
     const controller = new AbortController()
     request = controller
@@ -262,6 +279,7 @@ function connectJobFeedback(
       window.removeEventListener('online', online)
       window.removeEventListener('offline', disconnect)
       closed = true
+      inaccessible = false
       request?.abort()
       closeSource()
     },
@@ -282,7 +300,7 @@ type FeedbackConnection = {
   error: string
   listeners: Set<FeedbackListener>
   dispose?: () => void
-  recover?: () => Promise<void>
+  recover?: (confirmed?: RecoveryConfirmation) => Promise<void>
 }
 const connections = new Map<string, FeedbackConnection>()
 
@@ -322,6 +340,8 @@ export function subscribeJobFeedback(
     shared.attempt = attempt
     shared.fence = fence
     shared.value = null
+    shared.error = ''
+    shared.listeners.forEach((item) => item.error(''))
     const transport = connectJobFeedback(
       jobId,
       attempt,
@@ -365,6 +385,6 @@ export function subscribeJobFeedback(
   }
 }
 
-export function reconnectJobFeedback(jobId: string | null) {
-  return jobId ? connections.get(`${epoch}:${jobId}`)?.recover?.() : undefined
+export function reconnectJobFeedback(jobId: string | null, confirmed?: RecoveryConfirmation) {
+  return jobId ? connections.get(`${epoch}:${jobId}`)?.recover?.(confirmed) : undefined
 }

@@ -70,3 +70,18 @@
     animation: none;
   }
 }
+
+.working {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+.working[data-ready='true'][data-active='true'] {
+  opacity: 1;
+}
+.pet[data-working='true'] .blink {
+  animation-play-state: paused;
+}

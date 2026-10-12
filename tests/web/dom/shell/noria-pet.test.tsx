@@ -6,6 +6,11 @@ import { PetStage } from '../../../../apps/web/src/app/layout/pet/PetStage'
 import { AppearancePage } from '../../../../apps/web/src/features/settings/components/appearance/AppearancePage'
 import { initializeTheme, setTheme } from '../../../../apps/web/src/lib/theme'
 import { dialogs } from '../helpers'
+import { createTypingRenderer } from '../../../../apps/web/src/app/layout/pet/typing-animation'
+
+vi.mock('../../../../apps/web/src/app/layout/pet/typing-animation', () => ({
+  createTypingRenderer: vi.fn(() => vi.fn()),
+}))
 
 let reducedMotion = false
 const motionListeners = new Set<() => void>()
@@ -52,7 +57,14 @@ function mockImageRetries() {
   const images: HTMLImageElement[] = []
   vi.stubGlobal('Image', function () {
     const image = document.createElement('img')
-    images.push(image)
+    const src = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src')!
+    Object.defineProperty(image, 'src', {
+      get: () => src.get!.call(image),
+      set: (value: string) => {
+        src.set!.call(image, value)
+        if (value.includes('noria-retry')) images.push(image)
+      },
+    })
     return image
   })
   return images
@@ -238,4 +250,60 @@ it('reflects theme preferences changed in another browser tab through the existi
   })
   expect(screen.getByRole('button', { name: '深色' }).getAttribute('aria-pressed')).toBe('true')
   expect(document.documentElement.dataset.theme).toBe('dark')
+})
+
+it('switches work state without replacing the trigger, preserves the label and pauses animation', () => {
+  let image!: HTMLImageElement
+  vi.stubGlobal('Image', function () {
+    image = document.createElement('img')
+    return image
+  })
+  const view = render(<PetStage {...props} animate />)
+  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const pet = trigger.querySelector('[data-animate]')!
+  const canvas = trigger.querySelector('canvas')!
+  expect(canvas.dataset.ready).toBe('false')
+  view.rerender(<PetStage {...props} animate activity="working" />)
+  expect(screen.getByRole('status').textContent).toBe('努力工作中')
+  expect(canvas.dataset.typing).toBe('false')
+  fireEvent.load(image)
+  expect(createTypingRenderer).toHaveBeenCalled()
+  expect(canvas.dataset.typing).toBe('true')
+  fireEvent.click(trigger)
+  expect(canvas.dataset.typing).toBe('false')
+  fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }))
+  expect(canvas.dataset.typing).toBe('true')
+  setVisibility(true)
+  expect(canvas.dataset.typing).toBe('false')
+  setVisibility(false)
+  expect(canvas.dataset.typing).toBe('true')
+  act(() => {
+    reducedMotion = true
+    motionListeners.forEach((callback) => callback())
+  })
+  expect(canvas.dataset.typing).toBe('false')
+  expect(canvas.dataset.active).toBe('true')
+  view.rerender(<PetStage {...props} animate activity="unknown" />)
+  expect(screen.getByRole('status').textContent).toBe('状态待同步')
+  expect(canvas.dataset.active).toBe('false')
+  view.rerender(<PetStage {...props} animate activity="idle" />)
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(trigger.querySelector('[data-animate]')).toBe(pet)
+  expect(trigger.querySelector('canvas')).toBe(canvas)
+  expect(fetch).not.toHaveBeenCalled()
+})
+
+it('retains the original face and working status when the working asset cannot load', () => {
+  vi.useFakeTimers()
+  let image!: HTMLImageElement
+  vi.stubGlobal('Image', function () {
+    image = document.createElement('img')
+    return image
+  })
+  render(<PetStage {...props} animate activity="working" />)
+  fireEvent.error(image)
+  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  expect(trigger.querySelector('img[src*="mark"]')).not.toBeNull()
+  expect(trigger.querySelector('canvas')?.dataset.ready).toBe('false')
+  expect(screen.getByRole('status').textContent).toBe('努力工作中')
 })

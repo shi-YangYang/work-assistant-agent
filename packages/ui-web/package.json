@@ -6,6 +6,7 @@
     "./app-icon.png": "./brand/desktop/app-icon.png",
     "./logo.png": "./brand/logo.png",
     "./mark.png": "./brand/mark.png",
-    "./pet/blink.png": "./brand/pet/blink.png"
+    "./pet/blink.png": "./brand/pet/blink.png",
+    "./pet/working.png": "./brand/pet/working.png"
   }
 }

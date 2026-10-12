@@ -12,6 +12,8 @@ import { ErrorNoticeOutlet, ErrorNoticeScope } from '@web/components/feedback/Er
 import { logout as requestLogout } from '@web/features/auth/api/requests'
 import { DingTalkResult } from '@web/features/auth/components/DingTalkResult'
 import { useMobileViewport } from '@web/hooks/useMobileViewport'
+import { useAssistantActivity } from '@web/hooks/useAssistantActivity'
+import { identityScope } from '@web/lib/session-drafts'
 import { SessionDrafts } from '@web/lib/session-drafts'
 import { SupportLink } from '@web/lib/support-link'
 import { Workspace } from '@web/lib/workspace'
@@ -37,6 +39,7 @@ export function Shell({
   vault: SessionDrafts
 }) {
   useMobileViewport()
+  const activity = useAssistantActivity(identityScope(identity))
   const accountName = identity.member.role === 'admin' ? '管理员' : identity.member.name
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
   const writerGeneration = vault.version
@@ -217,6 +220,7 @@ export function Shell({
               <PetStage
                 navTriggerRef={triggerRef}
                 animate
+                activity={activity}
                 expandedNav={expandedNav}
                 setExpandedNav={setExpandedNav}
               />

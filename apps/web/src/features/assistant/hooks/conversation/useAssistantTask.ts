@@ -1,4 +1,9 @@
 import type { Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
+import {
+  acceptAssistantActivity,
+  announceAssistantActivity,
+  assistantActivityKey,
+} from '@web/api/assistant-activity'
 import { epoch, isCancelled } from '@web/api/client'
 import { assistantQuery } from '../../api/queries'
 import { readActiveAssistantJob } from '@web/features/assistant/api/requests'
@@ -9,14 +14,6 @@ import { useWorkspace } from '@web/lib/workspace'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 const activeJob = (job: Job | null) => !!job && ['queued', 'running'].includes(job.state)
-const activityKey = (owner: string, id: string) => `paa-assistant-task:${owner}:${id}`
-function announce(owner: string, id: string) {
-  try {
-    localStorage.setItem(activityKey(owner, id), crypto.randomUUID())
-  } catch {
-    // Visibility/online recovery and the server's conversation guard remain available.
-  }
-}
 
 type Snapshot = {
   scope: string
@@ -132,7 +129,7 @@ export function useAssistantTask(
       if (!document.hidden) void refresh()
     }
     const changed = (event: StorageEvent) => {
-      if (conversationId && event.key === activityKey(owner, conversationId)) {
+      if (conversationId && event.key === assistantActivityKey(owner, conversationId)) {
         void refresh()
         syncRef.current?.()
       }
@@ -169,6 +166,7 @@ export function useAssistantTask(
   const accepted = (sent: { conversationId: string; messageId: string; jobId: string }) => {
     const state = valid()
     if (!state) return
+    acceptAssistantActivity(owner, sent)
     state.conversationId = sent.conversationId
     state.revision++
     update({
@@ -191,7 +189,7 @@ export function useAssistantTask(
       `/conversations/${sent.conversationId}/active-job`,
       owner,
     )?.set({ job: valid()!.value.job })
-    announce(owner, sent.conversationId)
+    announceAssistantActivity(owner, sent.conversationId)
     update({ checking: false })
   }
   const canSubmit = () => {
@@ -211,6 +209,12 @@ export function useAssistantTask(
     return true
   }
   const finishRetry = (next: Job | null) => {
+    if (next && conversationId && epoch === generation)
+      acceptAssistantActivity(
+        owner,
+        { conversationId, messageId: next.targetId, jobId: next.id },
+        next,
+      )
     const state = valid()
     if (!state) return
     state.retrying = false
@@ -218,7 +222,7 @@ export function useAssistantTask(
       resource?.set({ job: next })
       update({ job: next })
     }
-    if (state.conversationId) announce(owner, state.conversationId)
+    if (state.conversationId) announceAssistantActivity(owner, state.conversationId)
     void refresh()
   }
   const interrupt = async () => {
@@ -229,10 +233,15 @@ export function useAssistantTask(
     try {
       const result = await cancelJob(target)
       if (valid() !== state) return
+      acceptAssistantActivity(
+        owner,
+        { conversationId: state.conversationId!, messageId: result.targetId, jobId: result.id },
+        result,
+      )
       state.revision++
       resource?.set({ job: result })
       update({ job: result })
-      if (state.conversationId) announce(owner, state.conversationId)
+      if (state.conversationId) announceAssistantActivity(owner, state.conversationId)
       await refresh()
     } catch (error) {
       if (valid() !== state || isCancelled(error)) return

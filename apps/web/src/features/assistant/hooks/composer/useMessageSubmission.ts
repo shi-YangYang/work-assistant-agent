@@ -1,6 +1,8 @@
 import type { ExecutionMode, PersonaId } from '@paa/api-contracts'
 import type { useReasoningEffort } from '../preferences/useReasoningEffort'
 import type { PersonaInteraction } from '../preferences/useConversationPersona'
+import { beginAssistantActivity } from '@web/api/assistant-activity'
+import { identityScope } from '@web/lib/session-drafts'
 import { ApiError, isCancelled } from '@web/api/client'
 import { sendMessage, uploadAttachment } from '@web/features/assistant/api/requests'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -52,7 +54,7 @@ export function useMessageSubmission({
     refresh: () => Promise<void>
   }
 }) {
-  const { setDraft, rememberConversation } = useWorkspace()
+  const { identity, setDraft, rememberConversation } = useWorkspace()
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
@@ -75,6 +77,7 @@ export function useMessageSubmission({
       return
     }
     if (interaction && !interaction.acquire('message')) return
+    const activity = beginAssistantActivity(identityScope(identity))
     sendingRef.current = true
     setBusy(true)
     setSendError('')
@@ -127,6 +130,7 @@ export function useMessageSubmission({
         )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
+      activity?.accepted(sent)
       task?.accepted(sent)
       rememberConversation(sent.conversationId)
       current.files.forEach((file) => URL.revokeObjectURL(file.url))
@@ -173,6 +177,7 @@ export function useMessageSubmission({
         else setSendError(e instanceof Error ? e : '发送未完成')
       }
     } finally {
+      activity?.finish()
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, { sending: false, uploading: undefined }),
       )

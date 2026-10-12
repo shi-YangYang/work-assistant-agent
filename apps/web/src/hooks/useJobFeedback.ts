@@ -6,6 +6,7 @@ import {
   visibleFeedback,
 } from '@web/api/job-feedback'
 import { epoch } from '@web/api/client'
+import { settleAssistantActivity } from '@web/api/assistant-activity'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 export function useJobFeedback(
@@ -33,6 +34,9 @@ export function useJobFeedback(
   const attempt = job?.attempt ?? 0
   const fence = job?.fence ?? 0
   const state = job?.state
+  useEffect(() => {
+    if (enabled && job && epoch === generation) settleAssistantActivity(job)
+  }, [enabled, job, generation])
   useEffect(
     () =>
       subscribeJobFeedback(

@@ -1,6 +1,7 @@
 import mark from '@paa/ui-web/mark.png'
 import blink from '@paa/ui-web/pet/blink.png'
 import { useSyncExternalStore } from 'react'
+import { NoriaWorkingPet } from './NoriaWorkingPet'
 import { usePetImage } from './usePetImage'
 import styles from './NoriaPet.module.css'
 
@@ -18,7 +19,13 @@ function subscribeReducedMotion(callback: () => void) {
   return () => media.removeEventListener('change', callback)
 }
 
-export function NoriaPet({ animate = false }: { animate?: boolean }) {
+export function NoriaPet({
+  animate = false,
+  working = false,
+}: {
+  animate?: boolean
+  working?: boolean
+}) {
   const visible = useSyncExternalStore(subscribeVisibility, isVisible)
   const reducedMotion = useSyncExternalStore(subscribeReducedMotion, prefersReducedMotion)
   const markImage = usePetImage(mark, visible)
@@ -30,6 +37,7 @@ export function NoriaPet({ animate = false }: { animate?: boolean }) {
       className={styles.pet}
       data-animate={canAnimate}
       data-paused={!visible}
+      data-working={working}
       aria-hidden="true"
     >
       <span className={styles.face}>
@@ -55,6 +63,7 @@ export function NoriaPet({ animate = false }: { animate?: boolean }) {
             )}
           </>
         )}
+        <NoriaWorkingPet active={working} animate={animate && !reducedMotion} visible={visible} />
       </span>
     </span>
   )

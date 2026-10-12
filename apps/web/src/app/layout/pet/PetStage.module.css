@@ -68,3 +68,22 @@
     top: calc(8px + env(safe-area-inset-top));
   }
 }
+
+.status {
+  position: absolute;
+  top: 100%;
+  margin-top: 3px;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  color: var(--muted);
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  .status {
+    margin-top: 2px;
+    font-size: 10px;
+    line-height: 14px;
+  }
+}
