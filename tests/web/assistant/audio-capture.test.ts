@@ -182,15 +182,31 @@ describe('asynchronous microphone ownership', () => {
   })
 })
 
-it.each([
-  ['NotAllowedError', '权限'],
-  ['NotFoundError', '未找到麦克风'],
-  ['NotReadableError', '占用'],
-])('explains microphone %s with a usable alternative', (name, expected) => {
-  const error = new DOMException('private device text', name)
-  expect(microphoneError(error)).toContain(expected)
-  expect(microphoneError(error)).toContain('文字')
-  expect(microphoneError(error)).not.toContain('private device')
+describe.each([
+  ['Mozilla/5.0 (Linux; Android) Chrome/130.0', '系统和浏览器'],
+  ['Mozilla/5.0 (Linux; Android) AliApp(DingTalk/7.6.0)', '系统设置中检查钉钉'],
+])('microphone guidance in %s', (userAgent, settings) => {
+  it.each([
+    ['NotAllowedError', '麦克风权限未获允许'],
+    ['PermissionDeniedError', '麦克风权限未获允许'],
+    ['SecurityError', '麦克风权限未获允许'],
+    ['NotFoundError', '未找到麦克风'],
+    ['DevicesNotFoundError', '未找到麦克风'],
+    ['NotReadableError', '无法启动麦克风'],
+    ['TrackStartError', '无法启动麦克风'],
+    ['AbortError', '无法启动麦克风'],
+    ['UnknownError', '无法启动麦克风'],
+  ])('explains %s without guessing microphone occupation', (name, expected) => {
+    vi.stubGlobal('navigator', { userAgent })
+    const message = microphoneError(new DOMException('private device text', name))
+    expect(message).toContain(expected)
+    expect(message).toContain('文字')
+    expect(message).toContain('语音文件')
+    expect(message).not.toContain('private device')
+    expect(message).not.toContain('占用')
+    if (expected !== '未找到麦克风') expect(message).toContain(settings)
+    if (expected === '无法启动麦克风') expect(message).not.toContain('权限未获允许')
+  })
 })
 
 it('stops at the remaining mixed-attachment budget without discarding recorded content', async () => {

@@ -199,11 +199,15 @@ export class AudioCapture {
 
 export function microphoneError(error: unknown) {
   const name = error instanceof Error ? error.name : ''
-  if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name))
-    return '麦克风权限未获允许，请在浏览器设置中允许录音，或输入文字、选择语音文件。'
   if (['NotFoundError', 'DevicesNotFoundError'].includes(name))
     return '未找到麦克风，请连接设备，或输入文字、选择语音文件。'
-  if (['NotReadableError', 'TrackStartError', 'AbortError'].includes(name))
-    return '麦克风暂时不可用，可能正被其他应用占用。请关闭占用后重试，或输入文字、选择语音文件。'
-  return '无法开始录音，请检查麦克风，或输入文字、选择语音文件。'
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const permissionHint = /DingTalk/i.test(userAgent)
+    ? '请在系统设置中检查钉钉的麦克风权限，允许后重新打开页面。'
+    : '请检查系统和浏览器的麦克风权限，允许后重新打开页面。'
+  // Startup errors alone do not establish microphone occupation or permission denial.
+  const reason = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name)
+    ? '麦克风权限未获允许。'
+    : '无法启动麦克风。'
+  return `${reason}${permissionHint}也可以输入文字或选择语音文件。`
 }
