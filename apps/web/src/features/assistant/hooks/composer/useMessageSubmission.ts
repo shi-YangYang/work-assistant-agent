@@ -12,7 +12,7 @@ import {
   updateSendingDraft,
 } from '@web/features/assistant/utils/files'
 import { useWorkspace } from '@web/lib/workspace'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { RefObject } from 'react'
 export function useMessageSubmission({
@@ -32,6 +32,7 @@ export function useMessageSubmission({
   retryWait,
   refresh,
   task,
+  recordedSend,
 }: {
   composer: Composer
   composerKey: string
@@ -53,11 +54,27 @@ export function useMessageSubmission({
     accepted: (sent: { conversationId: string; messageId: string; jobId: string }) => void
     refresh: () => Promise<void>
   }
+  recordedSend?: RefObject<File | null>
 }) {
   const { identity, setDraft, rememberConversation } = useWorkspace()
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
+  useEffect(() => {
+    const file = recordedSend?.current
+    if (!recordedSend || !file || capturing || !composer.files.some((item) => item.file === file))
+      return
+    let cancelled = false
+    // Wait for the recorder's final data and the updated draft to commit.
+    queueMicrotask(() => {
+      if (cancelled || !active.current || recordedSend.current !== file) return
+      recordedSend.current = null
+      void send()
+    })
+    return () => {
+      cancelled = true
+    }
+  })
   async function send() {
     if (
       (execution && !execution.ready) ||

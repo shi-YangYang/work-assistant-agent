@@ -159,12 +159,8 @@ export function ConversationChat({
   const retryWait = useRetryWait(sendError)
   const pending = !!composer.pending
   const [limitError, setLimitError] = useState('')
-  const { captureState, capturing, seconds, capture, active } = useRecording(
-    composerKey,
-    setDraft,
-    setSendError,
-    setLimitError,
-  )
+  const { captureState, capturing, seconds, capture, active, pendingSend, stop, cancel } =
+    useRecording(composerKey, setDraft, setSendError, setLimitError)
   const { busy, sendingRef, send } = useMessageSubmission({
     composer,
     composerKey,
@@ -182,6 +178,7 @@ export function ConversationChat({
     retryWait,
     refresh: invalidate,
     task,
+    recordedSend: pendingSend,
   })
   const locked =
     busy ||
@@ -262,17 +259,17 @@ export function ConversationChat({
     setSendError('')
   }
   async function startRecording() {
-    if (locked) return
+    if (locked) return false
     if (
       composer.files.length >= MAX_ATTACHMENTS ||
       composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
         MAX_AUDIO_ATTACHMENTS
     ) {
       setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
-      return
+      return false
     }
     setSendError('')
-    await capture.current?.start()
+    return (await capture.current?.start()) ?? false
   }
   const previewImages: PreviewImage[] = composer.files
     .filter((item) => fileKind(item.file) === 'image')
@@ -535,7 +532,8 @@ export function ConversationChat({
             state: captureState,
             seconds,
             start: startRecording,
-            stop: () => capture.current?.stop(),
+            stop,
+            cancel,
           }}
         >
           <ComposerAttachments

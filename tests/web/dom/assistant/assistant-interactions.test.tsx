@@ -266,7 +266,13 @@ it('keeps the exact toolbar groups, same microphone slot, and disables mode with
     retryWait: 0,
     children: null,
     executionControl: <ExecutionModePicker value="auto" acknowledged={false} onChange={vi.fn()} />,
-    recording: { state: 'idle' as const, seconds: 0, start: vi.fn(), stop: vi.fn() },
+    recording: {
+      state: 'idle' as const,
+      seconds: 0,
+      start: vi.fn(),
+      stop: vi.fn(),
+      cancel: vi.fn(),
+    },
   }
   const view = render(<MessageComposer {...props} />)
   const attach = screen.getByRole('button', { name: '添加附件' })

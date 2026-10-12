@@ -216,27 +216,6 @@
 .composer-actions > div {
   min-width: 0;
 }
-.recording-slot {
-  position: relative;
-  flex-shrink: 0;
-}
-.recording-slot[data-recording='true'] {
-  color: var(--danger);
-  background: var(--danger-bg);
-}
-.recording-time {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  text-align: center;
-  font-size: 9px;
-  line-height: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.recording-slot[data-recording='true'] > svg {
-  transform: translateY(-4px);
-}
 @media (max-width: 380px) {
   .composer-actions {
     gap: 2px;

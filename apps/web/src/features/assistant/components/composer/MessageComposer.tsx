@@ -4,15 +4,15 @@ import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
 import { WorkReferencePicker } from '../work-reference/WorkReferencePicker'
 import type { useWorkReference } from '../../hooks/composer/useWorkReference'
 import { ContextUsage } from './controls/ContextUsage'
+import { VoiceRecordButton, type VoiceRecording } from './controls/VoiceRecordButton'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
-import type { CaptureState, Composer } from '@web/features/assistant/lib/audio-capture'
+import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
 import {
   CornerUpLeft,
   Plus,
   ImagePlus,
-  Mic,
   Paperclip,
   ArrowUp,
   Square,
@@ -71,7 +71,7 @@ export function MessageComposer({
   previewUploading: boolean
   personaSaving?: boolean
   pending: boolean
-  recording: { state: CaptureState; seconds: number; start: () => Promise<void>; stop: () => void }
+  recording: VoiceRecording
   retryWait: number
   contextKey?: string
   contextUsage?: Usage | null
@@ -268,42 +268,11 @@ export function MessageComposer({
               loading={contextLoading}
             />
             {reasoningControl}
-            <button
-              type="button"
-              className={`${controlsStyles['icon-button']} ${styles['recording-slot']}`}
-              data-recording={capturing}
-              title={
-                capturing
-                  ? recording.state === 'requesting'
-                    ? '取消麦克风申请'
-                    : recording.state === 'stopping'
-                      ? '正在结束录音'
-                      : `停止录音 · ${recording.seconds} 秒`
-                  : '录制语音'
-              }
-              aria-label={
-                capturing
-                  ? recording.state === 'requesting'
-                    ? '取消麦克风申请'
-                    : recording.state === 'stopping'
-                      ? '正在结束录音'
-                      : `停止录音 · ${recording.seconds} 秒`
-                  : '录制语音'
-              }
-              disabled={capturing ? recording.state === 'stopping' : locked}
-              onClick={capturing ? recording.stop : recording.start}
-            >
-              {capturing ? (
-                <>
-                  <Square size={14} fill="currentColor" />
-                  <span className={styles['recording-time']} aria-hidden="true">
-                    {recording.seconds}s
-                  </span>
-                </>
-              ) : (
-                <Mic size={20} />
-              )}
-            </button>
+            <VoiceRecordButton
+              recording={recording}
+              disabled={locked}
+              holdDisabled={!!task?.blocked || !!retryWait || personaSaving || reasoningSaving}
+            />
             <button
               data-expanded={false}
               aria-label={label}

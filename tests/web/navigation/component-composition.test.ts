@@ -165,7 +165,13 @@ it('message composer renders pending submission, attachment slot and recording c
     pending: true,
     sendError: '',
     retryWait: 0,
-    recording: { state: 'recording' as const, seconds: 12, start: vi.fn(), stop: vi.fn() },
+    recording: {
+      state: 'recording' as const,
+      seconds: 12,
+      start: vi.fn(),
+      stop: vi.fn(),
+      cancel: vi.fn(),
+    },
     children: createElement('span', { 'data-preview': true }, '附件预览'),
   }
   const html = renderToStaticMarkup(createElement(MessageComposer, props))

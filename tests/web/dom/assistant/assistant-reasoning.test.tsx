@@ -69,7 +69,13 @@ function Harness({ running = false }: { running?: boolean }) {
         previewUploading={false}
         pending={!!composer.pending}
         retryWait={0}
-        recording={{ state: 'idle', seconds: 0, start: async () => {}, stop: vi.fn() }}
+        recording={{
+          state: 'idle',
+          seconds: 0,
+          start: async () => {},
+          stop: vi.fn(),
+          cancel: vi.fn(),
+        }}
         reasoningSaving={!controller.ready}
         reasoningControl={
           <ReasoningEffortPicker

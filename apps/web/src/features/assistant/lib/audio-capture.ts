@@ -77,6 +77,7 @@ type Session = {
   chunks: BlobPart[]
   keep: boolean
   finished: boolean
+  stopping: boolean
 }
 
 // Own both the pending permission request and every acquired stream. React may
@@ -90,15 +91,15 @@ export class AudioCapture {
   constructor(private callbacks: CaptureCallbacks) {}
 
   async start(maxBytes = MAX_FILE_BYTES) {
-    if (this.disposed || this.pending || this.session) return
+    if (this.disposed || this.pending || this.session) return false
     const generation = ++this.generation
     if (typeof window !== 'undefined' && window.isSecureContext === false) {
       this.callbacks.error('此地址不是安全连接，无法录音。请使用 HTTPS，或发送文字、语音文件。')
-      return
+      return false
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       this.callbacks.error('当前浏览器不支持录音，请输入文字或选择语音文件。')
-      return
+      return false
     }
     this.pending = true
     this.callbacks.state('requesting')
@@ -107,13 +108,20 @@ export class AudioCapture {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (this.disposed || generation !== this.generation) {
         stream.getTracks().forEach((track) => track.stop())
-        return
+        return false
       }
       const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((type) =>
         MediaRecorder.isTypeSupported(type),
       )
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
-      const session: Session = { stream, recorder, chunks: [], keep: true, finished: false }
+      const session: Session = {
+        stream,
+        recorder,
+        chunks: [],
+        keep: true,
+        finished: false,
+        stopping: false,
+      }
       this.session = session
       let bytes = 0
       recorder.ondataavailable = (event) => {
@@ -137,9 +145,10 @@ export class AudioCapture {
       recorder.start(1000)
       this.pending = false
       this.callbacks.state('recording')
+      return true
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop())
-      if (this.disposed || generation !== this.generation) return
+      if (this.disposed || generation !== this.generation) return false
       const session = this.session
       if (session) {
         session.keep = false
@@ -149,6 +158,7 @@ export class AudioCapture {
       this.pending = false
       this.callbacks.state('idle')
       this.callbacks.error(microphoneError(error))
+      return false
     }
   }
 
@@ -159,7 +169,8 @@ export class AudioCapture {
       if (!this.disposed) this.callbacks.state('idle')
     }
     const session = this.session
-    if (!session || session.finished) return
+    if (!session || session.finished || session.stopping) return
+    session.stopping = true
     if (!this.disposed) this.callbacks.state('stopping')
     try {
       if (session.recorder.state !== 'inactive') session.recorder.stop()
@@ -169,6 +180,11 @@ export class AudioCapture {
     } finally {
       session.stream.getTracks().forEach((track) => track.stop())
     }
+  }
+
+  cancel() {
+    if (this.session) this.session.keep = false
+    this.stop()
   }
 
   dispose() {
