@@ -252,6 +252,8 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 
 首次构建下载依赖，后续复用 Docker 缓存；构建会占用服务器资源。工作流超时 60 分钟，服务器发布超时 50 分钟。镜像按本地 image ID 固定，勿清理 `current/`、`previous/` 引用的镜像。
 
+Web 缓存由 `deploy/company/Caddyfile.app` 管理：HTML（含前端路由）和固定文件名资源使用 `no-cache`，保留 ETag 校验；`/assets/` 下带构建哈希的资源使用 `public, max-age=31536000, immutable`。缺失静态文件返回不缓存的 404，不回退成首页。API、私有文件及流式响应沿用后端的缓存规则。部署不会强制刷新已打开的页面；此前缓存的旧页面可能仍需手动刷新一次。
+
 `current/` 指向本次尝试，`previous/` 保留旧版本，结果在 `deployment-status`。构建／配置检查失败不停止旧服务，备份失败尝试恢复旧服务；迁移或上线检查失败则停用应用并保留数据，不自动启动旧代码。schema 变化须按备份恢复，不能只切旧镜像。排障命令：`sh /srv/work-assistant-agent/current/deploy/company/compose.sh logs --tail=100 api worker migrate`。
 
 旧手工部署接入 CD 时沿用部署根目录、`.env.company`、主密钥和 `paa-company` 数据卷；发布脚本将旧配置链接到新版本 `apps/server/.env.web`。续期 cron 和日常备份改用 `current/deploy/company/` 下的脚本。

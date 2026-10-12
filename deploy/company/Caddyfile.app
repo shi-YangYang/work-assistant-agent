@@ -18,6 +18,22 @@ handle /api/* {
 }
 handle {
 	root * /srv
-	try_files {path} /index.html
-	file_server
+	header Cache-Control no-cache
+	@versioned path_regexp versioned ^/assets/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$
+	header @versioned Cache-Control "public, max-age=31536000, immutable" {
+		match status 200 206 304
+	}
+	# Missing static files must not fall back to an HTML page.
+	@static path /assets /assets/* /pdfjs /pdfjs/* /*.*
+	handle @static {
+		file_server
+	}
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}
+handle_errors {
+	header Cache-Control no-store
+	respond "{err.status_code} {err.status_text}" {err.status_code}
 }
