@@ -354,7 +354,7 @@ sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec -T api pytho
 
 钉钉登录按浏览器限制 10 分钟 12 次发起，同一出口 IP 允许每分钟 120 次；共享公司网络不会共用一个低额度。计数保存在 PostgreSQL，进程重启不会清零。浏览器使用独立的短期 HttpOnly 标识，与授权 state、登录会话分开；清除标识仍受 IP 限流保护。超限返回 `Retry-After`，页面提示等待时间，不自动重试。
 
-生产 Caddy 与 API 使用专用 `proxy` 网络，API 只信任 Caddy 的固定地址，Caddy 覆盖外部传入的转发头；API 不发布宿主端口。默认网段为 `172.30.254.0/29`、Caddy 地址为 `172.30.254.2`。如与现有 Docker／内网路由冲突，在部署环境同时调整 `PAA_PROXY_SUBNET` 和 `PAA_PROXY_IP`，保持地址在该网段内。域名和 IP 两种部署均通过现有 CD 应用，不需要数据库迁移。此配置假定 Caddy 是公网入口；增加 CDN 或其他前置代理时，须另行配置并验证可信来源链，不能直接信任任意转发头。
+生产 Caddy 与 API 使用专用 `proxy` 网络，API 只信任 Caddy 的固定地址，Caddy 覆盖外部传入的转发头；API 不发布宿主端口。默认网段为 `172.30.254.0/29`，Caddy 固定为 `172.30.254.2`，API 固定为 `172.30.254.3`，避免 API 先启动时自动占用 Caddy 地址。部署预检查使用不接入该网络的临时 worker 容器，不占用在线 API 的固定地址。如与现有 Docker／内网路由冲突，在部署环境同时调整 `PAA_PROXY_SUBNET`、`PAA_PROXY_IP` 和 `PAA_API_PROXY_IP`，确保两个地址不同且均在该网段内。域名和 IP 两种部署均通过现有 CD 应用，不需要数据库迁移。此配置假定 Caddy 是公网入口；增加 CDN 或其他前置代理时，须另行配置并验证可信来源链，不能直接信任任意转发头。
 
 登录并发复验使用隔离测试数据库和本地 Docker Desktop：先准备与当前依赖一致的 API `service` 镜像，再运行 `PAA_TEST_LOGIN_PROXY_IMAGE=<镜像名> npm run test:server -- tests/server/modules/auth/test_login_proxy.py -s`。该检查使用当前源码、生产 Caddy 转发规则和模拟钉钉响应，覆盖 50／100 个独立浏览器集中登录及伪造转发头，不调用真实钉钉或模型服务，也不代表云服务器容量承诺。
 
