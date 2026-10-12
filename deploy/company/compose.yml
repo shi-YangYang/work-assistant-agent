@@ -28,7 +28,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-paa_company}
       POSTGRES_USER: ${POSTGRES_USER:-paa}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-    command: ['postgres', '-c', 'shared_buffers=64MB', '-c', 'max_connections=20']
+    command:
+      [
+        'postgres',
+        '-c',
+        'shared_buffers=${PAA_POSTGRES_SHARED_BUFFERS:-64MB}',
+        '-c',
+        'max_connections=${PAA_POSTGRES_MAX_CONNECTIONS:-20}',
+      ]
     volumes: [pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
@@ -71,9 +78,9 @@ services:
     restart: unless-stopped
   worker:
     build: { context: ../.., dockerfile: deploy/company/Dockerfile, target: worker }
-    cpus: 2.0
-    mem_limit: 3g
-    memswap_limit: 3g
+    cpus: ${PAA_WORKER_CPUS:-2.0}
+    mem_limit: ${PAA_WORKER_MEMORY:-3g}
+    memswap_limit: ${PAA_WORKER_MEMORY:-3g}
     env_file: ../../apps/server/.env.web
     environment: *service-env
     command: ['python', '-m', 'app.worker']

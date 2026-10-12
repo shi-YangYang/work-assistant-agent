@@ -172,14 +172,15 @@ async def no_saver():
     yield None
 
 
-async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,monkeypatch):
+@pytest.mark.parametrize('members,slots', [(30, 3), (50, 6)])
+async def test_members_parallel_bounded_fair_unique_and_one_owner(setup,monkeypatch,members,slots):
     settings, sessions, users, _ = setup
     company = users['employee'].company_id
     from functools import partial
     monkeypatch.setattr('app.tasks.runtime.runner.claim',partial(claim,company_id=company))
     owners = []
     async with sessions.begin() as db:
-        for index in range(30):
+        for index in range(members):
             member = Member(company_id=company, username='parallel_' + uuid4().hex, name='并行员工', password_hash='unused')
             db.add(member); await db.flush(); owners.append(member.id)
             db.add(Job(company_id=company, owner_id=member.id, kind='message', target_id=str(uuid4())))
@@ -191,7 +192,7 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
         assert job.owner_id not in active and job.id not in seen
         first = not seen
         active.add(job.owner_id); seen.add(job.id); maxima.append(len(active))
-        if len(active) == 3: first_wave.set()
+        if len(active) == slots: first_wave.set()
         await first_wave.wait()
         if job.owner_id == owners[0] and first:
             await slow.wait()
@@ -200,16 +201,18 @@ async def test_thirty_members_parallel_bounded_fair_unique_and_one_owner(setup,m
         async with sessions.begin() as db:
             live = await db.get(Job,job.id); live.state = 'failed' if job.owner_id == owners[1] else 'succeeded'; live.lease_until = None
         active.remove(job.owner_id)
-        if len(seen) >= 30: slow.set()
-        if len(seen) == 31 and not active: stop.set()
-    await asyncio.wait_for(run_slots(sessions,replace(settings,worker_concurrency=3),stop,saver_factory=no_saver,runner=runner),20)
-    assert len(seen) == 31 and max(maxima) == 3 and not active
+        if len(seen) >= members: slow.set()
+        if len(seen) == members + 1 and not active: stop.set()
+    await asyncio.wait_for(run_slots(sessions,replace(settings,worker_concurrency=slots),stop,saver_factory=no_saver,runner=runner),20)
+    assert len(seen) == members + 1 and max(maxima) == slots and not active
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(Job).where(Job.owner_id.in_(owners),Job.state=='running')) == 0
 
 
-async def test_slot_failure_is_supervised_and_shutdown_recovers_started_state(setup):
+async def test_slot_failure_is_supervised_and_shutdown_recovers_started_state(setup,monkeypatch):
     settings,sessions,users,_=setup
+    from functools import partial
+    monkeypatch.setattr('app.tasks.runtime.runner.claim',partial(claim,company_id=users['employee'].company_id))
     @asynccontextmanager
     async def unavailable():
         raise RuntimeError('controlled checkpoint unavailable')

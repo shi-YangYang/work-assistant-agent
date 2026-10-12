@@ -370,11 +370,28 @@ sh /srv/work-assistant-agent/current/deploy/company/compose.sh exec -T api pytho
 
 ### 后台处理与汇报安排
 
-生产 worker 及子进程合计上限为 2 核、3 GiB，禁用 swap；超出 CPU 会限速，超内存可能 OOM。此限制不约束镜像构建。
+生产 worker 及子进程的资源由 `PAA_WORKER_CPUS`、`PAA_WORKER_MEMORY` 配置，默认 2 核、3 GiB，禁用 swap；超出 CPU 会限速，超内存可能 OOM。此限制不约束镜像构建。
 
 `PAA_WORKER_CONCURRENCY` 默认 `3`，范围 `1～8`；不同员工并行，同员工串行，仅运行一个 worker。提高并发需检查模型限流与内存。
 
-每个处理槽一个 checkpoint 连接，另有进程锁连接和两个最多各 3 个连接的 API／worker 事务池；并发 8 时最多 15 个连接，PostgreSQL 上限 20，须留运维余量。语音转换每进程最多 2 个；退出等候 10 秒，Compose 留 20 秒。结果未知的已发送模型请求由用户确认重试，未发出的可恢复排队。
+每个处理槽一个 checkpoint 连接，另有进程锁连接；API／worker 各自的事务连接池由 `PAA_DB_POOL_SIZE`（默认 2）和 `PAA_DB_MAX_OVERFLOW`（默认 1）控制。连接预算为 `并发槽数 + 1 + API 池上限 + worker 池上限`，另留迁移、运维和临时进程余量。PostgreSQL 的 `PAA_POSTGRES_MAX_CONNECTIONS`、`PAA_POSTGRES_SHARED_BUFFERS` 默认分别为 20、64MB。
+
+8 核／16 GiB 单机可从以下配套配置起步，写入服务器持久环境文件（现有 CD 使用的 `.env.company` 或 `apps/server/.env.web`），后续发布继续沿用：
+
+```dotenv
+PAA_WORKER_CONCURRENCY=6
+PAA_WORKER_CPUS=4
+PAA_WORKER_MEMORY=4g
+PAA_DB_POOL_SIZE=5
+PAA_DB_MAX_OVERFLOW=5
+PAA_POSTGRES_MAX_CONNECTIONS=60
+PAA_POSTGRES_SHARED_BUFFERS=256MB
+SANDBOX_CONCURRENCY=2
+```
+
+该配置的应用连接预算为 27，数据库上限 60；聊天等待外部模型时仍占用处理槽，硬件升级不意味着任务无限并发。沙盒执行容器单独占用资源，不能只看 control 容器的内存限制。增加 API 进程或任务并发前重新核算总连接与内存，并验证模型服务限流；这些参数不是并发容量承诺。修改后需排空任务并重建 PostgreSQL、API、worker 容器，不能只重启旧容器；不需要数据库迁移。
+
+语音转换每进程最多 2 个；退出等候 10 秒，Compose 留 20 秒。结果未知的已发送模型请求由用户确认重试，未发出的可恢复排队。
 
 汇报待办从规则生效后的周期产生，不追补旧欠交；新成员和规则变化不改既有截止时间。停机恢复分批补待办及站内提醒，不集中调用模型。
 

@@ -5,8 +5,10 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import pytest
 
 from app.core import config
+from app.db.session import database
 
 
 def test_environment_loading_is_independent_of_cwd_and_keeps_process_overrides(tmp_path):
@@ -39,3 +41,26 @@ def test_absolute_persistent_paths_are_preserved(monkeypatch, tmp_path):
     settings = config.Settings()
     assert settings.media_dir == tmp_path / 'media'
     assert settings.model_key_file == tmp_path / 'private.key'
+
+
+@pytest.mark.asyncio
+async def test_database_pool_capacity_uses_environment_with_bounded_defaults(monkeypatch):
+    for name in ('PAA_DB_POOL_SIZE', 'PAA_DB_MAX_OVERFLOW'):
+        monkeypatch.delenv(name, raising=False)
+    defaults = config.Settings()
+    assert (defaults.db_pool_size, defaults.db_max_overflow) == (2, 1)
+    monkeypatch.setenv('PAA_DB_POOL_SIZE', '5')
+    monkeypatch.setenv('PAA_DB_MAX_OVERFLOW', '5')
+    settings = config.Settings()
+    engine, _ = database(settings)
+    try:
+        assert engine.pool.size() == 5
+        assert engine.pool._max_overflow == 5
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize('field,value', [('db_pool_size', 0), ('db_pool_size', 51), ('db_max_overflow', -1), ('db_max_overflow', 51)])
+def test_database_pool_rejects_unbounded_or_invalid_capacity(field, value):
+    with pytest.raises(ValueError, match='PAA_DB_'):
+        config.Settings(**{field: value})
