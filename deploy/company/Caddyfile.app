@@ -10,6 +10,9 @@ header {
 }
 handle /api/* {
 	reverse_proxy api:8000 {
+		# This is the public edge: replace client-supplied forwarding headers.
+		header_up X-Forwarded-For {http.request.remote.host}
+		header_up X-Forwarded-Proto {http.request.scheme}
 		flush_interval -1
 	}
 }

@@ -157,6 +157,23 @@ describe('company HTTP boundary', () => {
     })
     expect(fetch).toHaveBeenCalledTimes(1)
   })
+  it.each([
+    ['login_browser_rate_limited', '登录操作过于频繁'],
+    ['login_network_rate_limited', '当前网络的登录请求较多'],
+  ])('explains login throttling for %s without automatic retries', async (code, message) => {
+    const fetch = vi.fn().mockResolvedValue(
+      response({ error: { code, message: '<html>private details</html>' } }, 429, {
+        'Retry-After': '30',
+      }),
+    )
+    vi.stubGlobal('fetch', fetch)
+    await expect(write('/auth/dingtalk/start', {})).rejects.toMatchObject({
+      category: 'rate_limited',
+      message: `${message}，请等待 30 秒后再试。`,
+      retryAfter: 30,
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
   it('bounds reads, uploads and model probes; active abort stays silent', async () => {
     vi.useFakeTimers()
     vi.stubGlobal(

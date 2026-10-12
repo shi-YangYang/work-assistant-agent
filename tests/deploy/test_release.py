@@ -279,6 +279,14 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(float(worker['cpus']), 2.0)
                 self.assertEqual(int(worker['mem_limit']), 3 * 1024 ** 3)
                 self.assertEqual(int(worker['memswap_limit']), int(worker['mem_limit']))
+                api, web = config['services']['api'], config['services']['web']
+                proxy_ip = web['networks']['proxy']['ipv4_address']
+                self.assertEqual(api['environment']['FORWARDED_ALLOW_IPS'], proxy_ip)
+                self.assertNotIn('*', proxy_ip)
+                self.assertEqual(set(web['networks']), {'proxy'})
+                self.assertEqual(set(api['networks']), {'default', 'proxy'})
+                self.assertFalse(api.get('ports'))
+                self.assertNotIn('proxy', worker.get('networks', {}))
                 command = config['services']['web'].get('command')
                 if mode == 'ip':
                     self.assertIn('/etc/caddy/Caddyfile.ip', command)

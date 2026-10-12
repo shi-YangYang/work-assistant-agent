@@ -1,4 +1,5 @@
 import hashlib
+import math
 import secrets
 from datetime import timedelta
 from app.core.errors import problem
@@ -8,6 +9,7 @@ from app.modules.auth.session_policy import ABSOLUTE_LIFETIME, deadline, renewal
 from app.modules.members.models import Member
 from app.security.locks import company_lock
 from pwdlib import PasswordHash
+from fastapi import HTTPException
 from sqlalchemy import delete, func, select, update
 from starlette.concurrency import run_in_threadpool
 
@@ -84,16 +86,18 @@ async def revoke_member(db, member_id):
     await db.execute(update(DingTalkAuthorization).where(DingTalkAuthorization.member_id == member_id).values(revoked=True, proof_hash=None))
 
 
-async def throttle(db, identity, *, limit=12):
+async def throttle(db, identity, *, limit=12, window_seconds=600, code='invalid_request', message='尝试次数过多，请 10 分钟后重试'):
     key = digest(identity)
-    recent = now() - timedelta(minutes=10)
     # Count and insert atomically across concurrent requests without a company lock.
     from sqlalchemy import text
     await db.execute(text('SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))'), {'key': key})
-    count = await db.scalar(select(func.count()).select_from(LoginAttempt).where(LoginAttempt.identity == key, LoginAttempt.created_at > recent))
+    instant = now()
+    recent = instant - timedelta(seconds=window_seconds)
+    count, oldest = (await db.execute(select(func.count(), func.min(LoginAttempt.created_at)).where(LoginAttempt.identity == key, LoginAttempt.created_at > recent))).one()
     if count >= limit:
-        problem(429, '尝试次数过多，请 10 分钟后重试')
-    db.add(LoginAttempt(identity=key))
+        retry_after = max(1, math.ceil((oldest + timedelta(seconds=window_seconds) - instant).total_seconds()))
+        raise HTTPException(429, detail={'code': code, 'message': message}, headers={'Retry-After': str(retry_after)})
+    db.add(LoginAttempt(identity=key, created_at=instant))
     await db.flush()
 
 
