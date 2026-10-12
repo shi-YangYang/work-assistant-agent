@@ -29,8 +29,9 @@ ln -s "$env_file" "$release/apps/server/.env.web"
 compose() { PAA_COMPOSE_ROOT="$release" sh "$release/deploy/company/compose.sh" "$@"; }
 compose config --quiet
 compose pull postgres redis
-# Check the server-owned key and origin before touching the running services.
-compose run --rm --no-deps -T --entrypoint python api -c '
+# Worker shares the key/origin configuration but has no fixed proxy address.
+# A one-off API container would conflict with the running API during upgrades.
+compose run --rm --no-deps -T --entrypoint python worker -c '
 import os
 from urllib.parse import urlparse
 assert len(open(os.environ["PAA_MODEL_KEY_FILE"], "rb").read()) == 32, "Invalid master key"

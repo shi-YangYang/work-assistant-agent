@@ -48,12 +48,12 @@ elif tool == 'docker':
     failure = os.environ.get('FAIL_AT')
     if 'config' in args and '--images' in args:
         print('postgres:17.11-bookworm')
-    if 'run' in args and 'api' in args and 'PAA_MODEL_KEY_FILE' in args[-1]:
+    if 'run' in args and 'worker' in args and 'PAA_MODEL_KEY_FILE' in args[-1]:
         # Real Compose creates even the unused pgdata volume during this preflight.
         Path(os.environ['DEPLOY_TEST_LOG']).with_suffix('.volume').touch()
     if failure == 'pull' and 'pull' in args:
         sys.exit(1)
-    if failure == 'key' and 'run' in args and 'python' in args and 'api' in args:
+    if failure == 'key' and 'run' in args and 'python' in args and 'worker' in args:
         sys.exit(1)
     if 'run' in args and 'migrate' in args and failure == 'migrate':
         sys.exit(1)
@@ -143,6 +143,9 @@ class ReleaseTests(unittest.TestCase):
         builds = [c for c in commands if c[:2] == ['docker', 'build']]
         self.assertEqual([c[c.index('--target') + 1] for c in builds], ['service', 'worker', 'web'])
         self.assertTrue(all(commands.index(c) < migrate for c in builds))
+        preflight = next(c for c in commands if 'run' in c and 'PAA_MODEL_KEY_FILE' in c[-1])
+        self.assertIn('worker', preflight)
+        self.assertNotIn('api', preflight)
         self.assertEqual([c[-2:] for c in commands if 'pull' in c], [['postgres', 'redis']])
         self.assertFalse(any('pg_dump' in ' '.join(c) or 'stop' in c for c in commands))
         self.assertEqual((self.release / '.release.env').read_text(), self.manifest + 'PAA_DEPLOY_MODE=domain\n')
@@ -281,6 +284,9 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(int(worker['memswap_limit']), int(worker['mem_limit']))
                 api, web = config['services']['api'], config['services']['web']
                 proxy_ip = web['networks']['proxy']['ipv4_address']
+                api_ip = api['networks']['proxy']['ipv4_address']
+                self.assertEqual(api_ip, '172.30.254.3')
+                self.assertNotEqual(api_ip, proxy_ip)
                 self.assertEqual(api['environment']['FORWARDED_ALLOW_IPS'], proxy_ip)
                 self.assertNotIn('*', proxy_ip)
                 self.assertEqual(set(web['networks']), {'proxy'})

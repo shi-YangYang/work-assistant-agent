@@ -62,7 +62,11 @@ services:
       <<: *service-env
       # Only the dedicated Caddy address may supply client IP/protocol headers.
       FORWARDED_ALLOW_IPS: ${PAA_PROXY_IP:-172.30.254.2}
-    networks: [default, proxy]
+    networks:
+      default: {}
+      proxy:
+        # Keep API allocation from taking Caddy's trusted address on a fresh network.
+        ipv4_address: ${PAA_API_PROXY_IP:-172.30.254.3}
     volumes:
       - media:/data/media
       - type: bind
