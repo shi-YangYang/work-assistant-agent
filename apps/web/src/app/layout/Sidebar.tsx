@@ -6,6 +6,7 @@ import styles from './Sidebar.module.css'
 import type { Identity } from '@paa/api-contracts'
 import type { LucideIcon } from 'lucide-react'
 import {
+  ArrowLeft,
   ChevronRight,
   Cloud,
   Search,
@@ -15,7 +16,8 @@ import {
   Settings,
 } from 'lucide-react'
 import type * as React from 'react'
-import { usePopover } from '@web/components/overlays/usePopover'
+import { identityScope } from '@web/lib/session-drafts'
+import { useSidebarNavigation } from './useSidebarNavigation'
 import type { Location } from 'react-router'
 import { Link, NavLink } from 'react-router'
 
@@ -48,10 +50,17 @@ export function Sidebar({
   accountName: string
   logout: () => Promise<void>
 }) {
-  const settings = usePopover({
-    placement: 'right-end',
-    scopeKey: `${location.key}:${expandedNav}`,
-  })
+  const { menu, selectMenu, settingsRef, backRef } = useSidebarNavigation(
+    location,
+    identityScope(identity),
+  )
+  const settingsMenu = menu === 'settings'
+  const entries = settingsMenu
+    ? [
+        ...allowedSettings.filter((p) => p.path !== '/settings/support'),
+        ...allowedSettings.filter((p) => p.path === '/settings/support'),
+      ]
+    : allowed
   return (
     <aside
       ref={sidebarRef}
@@ -89,76 +98,79 @@ export function Sidebar({
         <Search size={17} /> <span className={styles['nav-label']}>查找页面与操作</span>
         <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
       </button>
-      <nav aria-label="工作空间">
-        {allowed.map((p) => (
+      <nav aria-label={settingsMenu ? '系统设置' : '工作空间'}>
+        {settingsMenu && (
+          <span className={`${styles['navigation-label']} ${styles['nav-label']}`}>系统设置</span>
+        )}
+        {entries.map((p) => (
           <NavLink
             key={p.path}
             to={p.path}
             title={p.title}
             aria-label={p.title}
+            className={
+              settingsMenu && (p.path === '/settings/rules' || p.path === '/settings/support')
+                ? styles['settings-section-start']
+                : undefined
+            }
             onClick={() => setExpandedNav(false)}
           >
             <p.icon size={18} />
             <span className={styles['nav-label']}>{p.title}</span>
           </NavLink>
         ))}
-        <button
-          type="button"
-          className={styles['disabled-entry']}
-          disabled
-          aria-label="云搭子 beta"
-          title="云搭子 beta · 即将开放"
-        >
-          <Cloud size={18} aria-hidden="true" />
-          <span className={styles['nav-label']}>云搭子</span>
-          <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
-        </button>
+        {!settingsMenu && (
+          <button
+            type="button"
+            className={styles['disabled-entry']}
+            disabled
+            aria-label="云搭子 beta"
+            title="云搭子 beta · 即将开放"
+          >
+            <Cloud size={18} aria-hidden="true" />
+            <span className={styles['nav-label']}>云搭子</span>
+            <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
+          </button>
+        )}
       </nav>
       <div className={styles['sidebar-bottom']}>
         <ReportNotifications
           className={styles['notification-entry']}
           labelClassName={styles['nav-label']}
         />
-        <button
-          {...settings.triggerProps}
-          className={styles['settings-toggle']}
-          data-active={location.pathname.startsWith('/settings/')}
-          title="系统设置"
-        >
-          <Settings size={18} />
-          <span className={styles['nav-label']}>系统设置</span>
-          <ChevronRight
-            size={15}
-            className={`${styles['settings-chevron']} ${styles['nav-label']}`}
-          />
-        </button>
-        <div {...settings.panelProps} className={styles['settings-popover']}>
-          <nav aria-label="系统设置">
-            {[
-              ...allowedSettings.filter((p) => p.path !== '/settings/support'),
-              ...allowedSettings.filter((p) => p.path === '/settings/support'),
-            ].map((p) => (
-              <NavLink
-                key={p.path}
-                to={p.path}
-                className={
-                  p.path === '/settings/rules' || p.path === '/settings/support'
-                    ? styles['settings-section-start']
-                    : undefined
-                }
-                title={p.title}
-                aria-label={p.title}
-                onClick={() => {
-                  settings.close()
-                  setExpandedNav(false)
-                }}
-              >
-                <p.icon size={16} />
-                <span>{p.title}</span>
-              </NavLink>
-            ))}
-          </nav>
-        </div>
+        {settingsMenu ? (
+          <button
+            ref={backRef}
+            type="button"
+            className={styles['settings-toggle']}
+            title="返回主菜单"
+            aria-label="返回主菜单"
+            onClick={() => selectMenu('main')}
+          >
+            <ArrowLeft size={18} aria-hidden="true" />
+            <span className={styles['nav-label']}>返回主菜单</span>
+          </button>
+        ) : (
+          <button
+            ref={settingsRef}
+            type="button"
+            aria-label="系统设置"
+            className={styles['settings-toggle']}
+            data-active={location.pathname.startsWith('/settings/')}
+            title="系统设置"
+            onClick={() => {
+              selectMenu('settings')
+              setExpandedNav(true)
+            }}
+          >
+            <Settings size={18} />
+            <span className={styles['nav-label']}>系统设置</span>
+            <ChevronRight
+              size={15}
+              className={`${styles['settings-chevron']} ${styles['nav-label']}`}
+            />
+          </button>
+        )}
         <div className={styles['identity']}>
           <span className={`${layoutStyles['avatar']} ${styles['slot-avatar']}`}>
             {accountName.slice(0, 1)}

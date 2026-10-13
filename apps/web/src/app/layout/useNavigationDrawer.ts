@@ -7,6 +7,7 @@ export function useNavigationDrawer(routeKey: string) {
   const sidebarRef = useRef<HTMLElement>(null)
   const mainRef = useRef<HTMLElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const restoreFocusRef = useRef<(() => void) | null>(null)
   const expandedNav = navigation.routeKey === routeKey && navigation.expanded
   if (navigation.routeKey !== routeKey) setNavigation({ routeKey, expanded: false })
   const setExpandedNav = useCallback(
@@ -23,6 +24,8 @@ export function useNavigationDrawer(routeKey: string) {
   }, [setExpandedNav])
 
   useLayoutEffect(() => {
+    restoreFocusRef.current?.()
+    restoreFocusRef.current = null
     if (!expandedNav) return
     const sidebar = sidebarRef.current
     const main = mainRef.current
@@ -38,9 +41,9 @@ export function useNavigationDrawer(routeKey: string) {
     const modalOpen = () => document.querySelector('dialog[open]') !== null
     const wasInert = main.inert
     main.inert = true
-    focusable()[0]?.focus()
+    if (!sidebar.contains(document.activeElement)) focusable()[0]?.focus()
     const keydown = (event: KeyboardEvent) => {
-      // A command dialog owns focus while open; the settings popover closes first.
+      // A command dialog owns focus while open; other open popovers close first.
       if (event.defaultPrevented || event.isComposing || modalOpen()) return
       if (event.key === 'Escape') {
         if (sidebar.querySelector('[data-popover-open]')) return
@@ -60,9 +63,13 @@ export function useNavigationDrawer(routeKey: string) {
     return () => {
       document.removeEventListener('keydown', keydown)
       main.inert = wasInert
-      if (!modalOpen()) {
-        if (trigger?.getClientRects().length) trigger.focus()
-        else focusable()[0]?.focus()
+      // Restore after the DOM commit; React otherwise restores the old focused link
+      // after this cleanup, leaving focus inside the closed drawer.
+      restoreFocusRef.current = () => {
+        if (!modalOpen()) {
+          if (trigger?.getClientRects().length) trigger.focus()
+          else focusable()[0]?.focus()
+        }
       }
     }
   }, [expandedNav, setExpandedNav])
