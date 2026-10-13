@@ -49,6 +49,8 @@ def outcome(message):
         return ('failed', '工具未完成，请查看答复') if message.status == 'error' else ('awaiting_input', '请查看答复并补充信息')
     if isinstance(value, dict):
         state = value.get('state') or value.get('status')
+        if message.name == 'generate_image' and state == 'partial':
+            return 'failed', f"已生成 {value.get('imageCount', 0)}/{value.get('requestedCount', 0)} 张，部分图片未完成"
         if value.get('category') in ('invalid_arguments', 'conflict', 'transient_failure'):
             return 'failed', '操作未完成，请查看业务说明'
         if value.get('category') == 'permission_denied':

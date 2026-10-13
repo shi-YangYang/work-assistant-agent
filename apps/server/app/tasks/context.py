@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -57,6 +58,7 @@ class RunContext:
     deliverable_reads: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)
     image_sources: dict[str, str] = field(default_factory=dict)
+    image_generation_lock: Any = field(default_factory=asyncio.Lock, repr=False, compare=False)
     model_binding: dict | None = None
     model_purpose: str = 'assistant'
     config_attempt: int = 0

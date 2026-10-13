@@ -11,7 +11,7 @@ import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
 import type { TaskContinuation } from '../../api/interactions'
 import { QuestionHistory } from '../interactions/QuestionPanel'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
-import { DeliverableEntry } from '../deliverables/Deliverable'
+import { MessageDeliverables } from '../deliverables/Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/interactions/BusinessActionCard'
 import { DocumentCard } from '@web/components/media/Documents'
 import { ImageGallery } from '@web/components/media/ImageGallery'
@@ -258,15 +258,16 @@ export function MessageCard({
             own={own}
             unavailable={live.unavailable}
           />
-          {own &&
-            !message.businessUnavailable &&
-            message.deliverables?.map((item) => (
-              <DeliverableEntry
-                key={`${item.id}:${item.revision}`}
-                item={item}
-                onContinue={onDeliverable}
-              />
-            ))}
+          {own && !message.businessUnavailable && !!message.deliverables?.length && (
+            <MessageDeliverables
+              items={message.deliverables}
+              complete={
+                failed ||
+                replyPresentation(message, job, live.feedback, own, live.unavailable).delivered
+              }
+              onContinue={onDeliverable}
+            />
+          )}
           {own &&
             !message.businessUnavailable &&
             (live.feedback?.actions ?? message.actions)

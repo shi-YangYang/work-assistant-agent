@@ -1,16 +1,74 @@
 import type { DeliverableReference, DeliverableSummary } from '@paa/api-contracts'
+import { Modal } from '@web/components/overlays/Modal'
 import { FileText, ArrowUpRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { DeliverablePanel } from './DeliverablePanel'
-import { GeneratedFiles } from './GeneratedFiles'
+import { GeneratedFiles, GeneratedImages } from './GeneratedFiles'
 import styles from './Deliverable.module.css'
+
+export function MessageDeliverables({
+  items,
+  complete,
+  onContinue,
+}: {
+  items: DeliverableSummary[]
+  complete: boolean
+  onContinue?: (reference: DeliverableReference, title: string, text?: string) => void
+}) {
+  const imageResults = items.filter(
+    (item) => item.files?.length && item.files.every((file) => file.mimeType === 'image/png'),
+  )
+  const grouped = imageResults.length > 1
+  return (
+    <>
+      <GeneratedImages items={items} />
+      {complete && grouped && <ImageTaskEntry items={imageResults} />}
+      {items
+        .filter((item) => !grouped || !imageResults.includes(item))
+        .map((item) => (
+          <DeliverableEntry
+            key={`${item.id}:${item.revision}`}
+            item={item}
+            onContinue={onContinue}
+            includeImages={false}
+            showEntry={complete || !item.files?.some((file) => file.mimeType === 'image/png')}
+          />
+        ))}
+    </>
+  )
+}
+
+function ImageTaskEntry({ items }: { items: DeliverableSummary[] }) {
+  const [open, setOpen] = useState(false)
+  const title = items.every((item) => item.title === items[0].title)
+    ? items[0].title
+    : `生成图片（${items.reduce((count, item) => count + (item.files?.length ?? 0), 0)}张）`
+  return (
+    <>
+      <button className={styles.entry} onClick={() => setOpen(true)}>
+        <FileText size={16} aria-hidden="true" />
+        <span>查看{title}</span>
+        <ArrowUpRight size={14} aria-hidden="true" />
+      </button>
+      {open && (
+        <Modal title={title} variant="drawer" onClose={() => setOpen(false)}>
+          <GeneratedImages items={items} />
+        </Modal>
+      )}
+    </>
+  )
+}
 
 export function DeliverableEntry({
   item,
   onContinue,
+  includeImages = true,
+  showEntry = true,
 }: {
   item: DeliverableSummary
   onContinue?: (reference: DeliverableReference, title: string, text?: string) => void
+  includeImages?: boolean
+  showEntry?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const continuation = useRef<Parameters<NonNullable<typeof onContinue>> | null>(null)
@@ -24,13 +82,20 @@ export function DeliverableEntry({
   }, [open, onContinue])
   return (
     <>
-      <GeneratedFiles deliverableId={item.id} revision={item.revision} files={item.files} />
-      <button className={styles.entry} onClick={() => setOpen(true)}>
-        <FileText size={16} aria-hidden="true" />
-        <span>查看{item.title}</span>
-        <ArrowUpRight size={14} aria-hidden="true" />
-      </button>
-      {open && (
+      <GeneratedFiles
+        deliverableId={item.id}
+        revision={item.revision}
+        files={item.files}
+        includeImages={includeImages}
+      />
+      {showEntry && (
+        <button className={styles.entry} onClick={() => setOpen(true)}>
+          <FileText size={16} aria-hidden="true" />
+          <span>查看{item.title}</span>
+          <ArrowUpRight size={14} aria-hidden="true" />
+        </button>
+      )}
+      {showEntry && open && (
         <DeliverablePanel
           item={item}
           onClose={() => setOpen(false)}

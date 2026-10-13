@@ -50,6 +50,7 @@ export function acceptFeedback(
       JSON.stringify(incoming.replyStream ?? null) ===
         JSON.stringify(current.replyStream ?? null) &&
       incoming.state === current.state &&
+      incoming.imageDeliveryCount === current.imageDeliveryCount &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
       JSON.stringify(incoming.interactions ?? []) === JSON.stringify(current.interactions ?? []) &&
       JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? []) &&
@@ -116,6 +117,7 @@ function connectJobFeedback(
   let recovering = false
   let retryAt = 0
   let previousStage: string | undefined
+  let imageDeliveryCount = 0
   let source: EventSource | undefined
   let request: AbortController | undefined
   const closeSource = () => {
@@ -144,15 +146,17 @@ function connectJobFeedback(
     latest = incoming
     const stageChanged = previousStage !== undefined && previousStage !== incoming.stage
     const completedMedia = previousStage === 'parsing' || previousStage === 'transcribing'
+    const imagesChanged = (incoming.imageDeliveryCount ?? 0) > imageDeliveryCount
+    imageDeliveryCount = incoming.imageDeliveryCount ?? 0
     previousStage = incoming.stage
     setError(previewUnavailable ? '实时预览暂不可用，任务仍在后台处理。' : '')
     if (terminalJob(incoming.state)) {
       completed = true
       closeSource()
       refresh(incoming)
-    } else if (stageChanged && completedMedia) {
-      // Only media completion needs persisted transcript/extraction data. Search,
-      // generation, operations and review are already represented by the stream.
+    } else if ((stageChanged && completedMedia) || imagesChanged) {
+      // Fetch persisted media and newly finished images while the task continues.
+      // Ordinary text deltas still do not trigger message queries.
       refresh(incoming)
     }
   }

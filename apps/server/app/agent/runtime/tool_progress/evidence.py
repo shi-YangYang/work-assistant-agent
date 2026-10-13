@@ -69,6 +69,10 @@ def result_key(call, result):
     elif call['name'] == 'generate_image' and result.get('operationId'):
         value = {key: result.get(key) for key in ('state', 'operationId')}
         args = {}
+    elif call['name'] == 'generate_image' and isinstance(result.get('results'), list):
+        value = {'state': result.get('state'), 'notExecutedCount': result.get('notExecutedCount'),
+                 'results': [{key: item.get(key) for key in ('state', 'operationId', 'code')} for item in result['results']]}
+        args = {}
     elif call['name'] in ('save_memory', 'forget_memory') and result.get('state') == 'succeeded':
         value = {key: result.get(key) for key in ('state', 'revision', 'generation', 'operation')}
         args = {}

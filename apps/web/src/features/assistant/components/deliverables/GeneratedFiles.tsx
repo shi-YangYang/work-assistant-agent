@@ -1,4 +1,4 @@
-import type { DeliverableFile } from '@paa/api-contracts'
+import type { DeliverableFile, DeliverableSummary } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { ImageGallery } from '@web/components/media/ImageGallery'
@@ -12,20 +12,42 @@ export function GeneratedFiles({
   deliverableId,
   revision,
   files = [],
+  includeImages = true,
 }: {
   deliverableId: string
   revision: number
   files?: DeliverableFile[]
+  includeImages?: boolean
 }) {
-  if (!files.length) return null
+  const visible = includeImages ? files : files.filter((file) => file.mimeType !== 'image/png')
+  if (!visible.length) return null
   return (
     <ul className={styles.files} aria-label={`生成文件 · 版本 ${revision}`}>
-      {files.map((file) => (
+      {visible.map((file) => (
         <GeneratedFile
           key={`${deliverableId}:${revision}:${file.id}`}
           deliverableId={deliverableId}
           revision={revision}
           file={file}
+        />
+      ))}
+    </ul>
+  )
+}
+
+export function GeneratedImages({ items }: { items: DeliverableSummary[] }) {
+  const images = items.flatMap((item) =>
+    (item.files ?? [])
+      .filter((file) => file.mimeType === 'image/png')
+      .map((file) => ({ deliverableId: item.id, revision: item.revision, file })),
+  )
+  if (!images.length) return null
+  return (
+    <ul className={`${styles.files} ${styles.images}`} aria-label="生成图片">
+      {images.map((image) => (
+        <GeneratedFile
+          key={`${image.deliverableId}:${image.revision}:${image.file.id}`}
+          {...image}
         />
       ))}
     </ul>

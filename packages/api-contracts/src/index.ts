@@ -639,6 +639,7 @@ export interface ReplyStream {
 }
 
 export interface JobFeedback {
+  imageDeliveryCount?: number
   replyStream?: ReplyStream | null
   interactions?: AssistantInteraction[]
   taskOutcome?: TaskOutcome | null

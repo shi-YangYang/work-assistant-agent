@@ -374,7 +374,8 @@ async def test_cleanup_between_cache_verification_and_publish_is_rechecked(setup
 
 @pytest.mark.parametrize('final_failure', [False, True])
 @pytest.mark.parametrize('synchronous', [False, True])
-async def test_agent_lazy_generation_duplicate_calls_persists_before_final_text(setup, provider, monkeypatch, final_failure, synchronous):
+@pytest.mark.parametrize('batch', [False, True])
+async def test_agent_lazy_generation_duplicate_calls_persists_before_final_text(setup, provider, monkeypatch, final_failure, synchronous, batch):
     from langchain_core.messages import AIMessage, ToolMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
@@ -391,8 +392,8 @@ async def test_agent_lazy_generation_duplicate_calls_persists_before_final_text(
             else:
                 assert 'generate_image' in tools and 'run_python' not in tools
                 count = len([message for message in previous if message.name == 'generate_image'])
-                if count < 2:
-                    answer = AIMessage(content='', tool_calls=[{'id': f'image-call-{count}', 'name': 'generate_image', 'args': {'prompt': '画一只鸟', 'operation': count + 1}}])
+                if count < (1 if batch else 2):
+                    answer = AIMessage(content='', tool_calls=[{'id': f'image-call-{count}', 'name': 'generate_image', 'args': {'prompt': '画一只鸟', 'operation': count + 1, **({'count': 4} if batch else {})}}])
                 else:
                     # The image already exists before the final text is produced.
                     result = (await setup[3]['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
@@ -411,7 +412,11 @@ async def test_agent_lazy_generation_duplicate_calls_persists_before_final_text(
         await process_job(job, setup[1], setup[0], saver, model=fake)
     result = (await setup[3]['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert result['job']['state'] == ('failed' if final_failure else 'succeeded'), result
-    assert len(result['deliverables']) == 1 and provider.submit.await_count == (0 if synchronous else 1) and generate_sync.await_count == (1 if synchronous else 0) and fake.calls == 4
+    expected_images = 4 if batch else 1
+    assert len(result['deliverables']) == expected_images
+    assert provider.submit.await_count == (0 if synchronous else expected_images)
+    assert generate_sync.await_count == (expected_images if synchronous else 0)
+    assert fake.calls == (3 if batch else 4)
     assert any(node['label'] == '生成图片' for node in result['job']['nodes'])
 
 

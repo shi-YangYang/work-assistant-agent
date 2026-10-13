@@ -22,6 +22,7 @@ from app.modules.model_services.models import ModelUsage
 from app.modules.model_services.usage.usage import RequestRecord, usage_fields
 from app.security.ownership import owned
 from app.tasks.context import LostLease
+from app.tasks.feedback.feedback_state import update_feedback
 from app.tasks.lease import lease
 
 
@@ -35,7 +36,7 @@ async def authorized(db, context, row):
     return job, actor, config, key
 
 
-async def claim(context, prompt, title, operation, size=None, *, intent=None):
+async def claim(context, prompt, title, operation, size=None, *, intent=None, variant=0):
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if job.kind != 'message':
@@ -50,7 +51,8 @@ async def claim(context, prompt, title, operation, size=None, *, intent=None):
         wan.endpoint(context.settings, config)
         if intent is not None:
             size = sizes.normalize(config=config, **intent)
-        fingerprint = digest({'prompt': ' '.join(prompt.split()), 'size': sizes.wire_size(config, size)})
+        fingerprint = digest({'prompt': ' '.join(prompt.split()), 'size': sizes.wire_size(config, size),
+                              **({'variant': variant} if variant else {})})
         row = previous or await db.scalar(select(ImageGeneration).where(ImageGeneration.message_id == message.id,
             ImageGeneration.fingerprint == fingerprint).with_for_update())
         if row:
@@ -149,15 +151,23 @@ async def publish(context, identifier):
             value['message'] = '已交付可用图片，部分返回文件未能保存；没有重新生成。'
         row.state, row.result, row.updated_at = 'succeeded', value, now()
         context.deliverable_reads[item.id] = record.revision
-        job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision}}
+        job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision},
+                      'imageDeliveryCount': job.result.get('imageDeliveryCount', 0) + len(row.files)}
+        update_feedback(job)
         return value
 
 
-async def generate(context, *, prompt, title='生成图片', operation=1, width=None, height=None, aspect='', resolution='', use=''):
-    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 5000 or not title.strip() or len(title) > 200 or type(operation) is not int or not 1 <= operation <= 8:
-        raise ProviderError('image_input', '请提供 5000 字以内的画面描述及有效操作编号', sent=False)
+def validate_input(prompt, title, operation):
+    if type(operation) is not int or not 1 <= operation <= 4:
+        raise ProviderError('image_input', '每条消息最多生成 4 张图片，请使用 1～4 的操作编号；如需更多图片，请另发一条消息。', sent=False)
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 5000 or not isinstance(title, str) or not title.strip() or len(title) > 200:
+        raise ProviderError('image_input', '请提供 5000 字以内的画面描述及有效标题', sent=False)
+
+
+async def generate(context, *, prompt, title='生成图片', operation=1, width=None, height=None, aspect='', resolution='', use='', variant=0):
+    validate_input(prompt, title, operation)
     row, existing = await claim(context, prompt.strip(), title.strip(), operation, intent={
-        'width': width, 'height': height, 'aspect': aspect, 'resolution': resolution, 'use': use})
+        'width': width, 'height': height, 'aspect': aspect, 'resolution': resolution, 'use': use}, variant=variant)
     if existing is not None:
         return existing
     record = RequestRecord(context.sessions, row.usage_id)

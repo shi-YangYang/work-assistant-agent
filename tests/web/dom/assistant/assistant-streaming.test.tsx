@@ -268,6 +268,46 @@ it('shares one connection, adds no request per prefix, and withdraws DTO fallbac
   expect(sources[0].close).toHaveBeenCalledTimes(1)
 })
 
+it('refreshes each newly published image during generation without refetching for text or duplicate events', () => {
+  const sources: EventTarget[] = []
+  class Source extends EventTarget {
+    close = vi.fn()
+    constructor() {
+      super()
+      sources.push(this)
+    }
+  }
+  vi.stubGlobal('EventSource', Source)
+  const refresh = vi.fn()
+  function Consumer() {
+    useJobFeedback(job, true, refresh)
+    return null
+  }
+  render(<Consumer />)
+  const send = (seq: number, imageDeliveryCount: number, state: Job['state'] = 'running') =>
+    act(() =>
+      sources[0].dispatchEvent(
+        new MessageEvent('snapshot', {
+          data: JSON.stringify({ ...feedback('正文', seq), state, imageDeliveryCount }),
+        }),
+      ),
+    )
+  // A reconnect's first snapshot can already contain finished images.
+  send(1, 1)
+  expect(refresh).toHaveBeenCalledTimes(1)
+  send(1, 1)
+  send(2, 1)
+  expect(refresh).toHaveBeenCalledTimes(1)
+  send(3, 2)
+  expect(refresh).toHaveBeenCalledTimes(2)
+  expect(refresh.mock.lastCall?.[0]).toMatchObject({ state: 'running', imageDeliveryCount: 2 })
+  send(2, 1) // A stale event must not lower the delivery count.
+  send(4, 2)
+  expect(refresh).toHaveBeenCalledTimes(2)
+  send(5, 4, 'succeeded')
+  expect(refresh).toHaveBeenCalledTimes(3)
+})
+
 it('shows the server-sealed cancellation response while final message GET is delayed or fails', () => {
   const sealed = {
     ...job,

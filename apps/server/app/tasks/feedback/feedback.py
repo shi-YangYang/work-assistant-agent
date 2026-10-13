@@ -106,7 +106,7 @@ async def snapshot(sessions, token_hash, job_id, *, transport=False, temporary=N
                             'state': temporary.get('state', 'streaming') if allowed else 'withdrawn',
                             'text': reply_text(temporary.get('text', '')) if allowed else ''}
 
-        return {**transport_metadata, 'replyStream': reply_stream, 'interactions': interactions, 'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
+        return {**transport_metadata, 'imageDeliveryCount': job.result.get('imageDeliveryCount', 0), 'replyStream': reply_stream, 'interactions': interactions, 'taskOutcome': outcome_dto(job), 'contextUsage': usage_dto(job), 'incompleteTask': bool(job.result.get('incompleteTask')), 'nodes':node_dtos(job),'jobId':job.id,'attempt':job.attempt,'fence':job.fence,'seq':feedback.get('seq',0), 'state':job.state,'stage':'queued' if job.state == 'queued' else feedback.get('stage','generating'), 'text':text,'error':job.error,'updatedAt':job.updated_at.isoformat(), 'actions':actions}
 
 
 def event(name, value):

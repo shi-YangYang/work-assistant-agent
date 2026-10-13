@@ -12,6 +12,16 @@
   background: var(--subtle);
   border-radius: 14px;
 }
+.images {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding: 4px 4px 10px;
+}
+.images > .image-file {
+  flex: 0 0 auto;
+}
 .row {
   display: flex;
   align-items: center;
@@ -71,12 +81,11 @@
 }
 .preview {
   display: grid;
-  min-height: 120px;
 }
 .image-file {
   min-width: 0;
   width: fit-content;
-  max-width: min(100%, 240px);
+  max-width: min(100%, 200px);
 }
 .thumbnail {
   display: block;
@@ -97,7 +106,7 @@
   display: block;
   width: auto;
   max-width: 100%;
-  max-height: 200px;
+  max-height: 160px;
   object-fit: contain;
 }
 @media (hover: hover) and (pointer: fine) {
@@ -122,6 +131,14 @@
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+@media (max-width: 600px) {
+  .image-file {
+    max-width: min(100%, 160px);
+  }
+  .thumbnail img {
+    max-height: 120px;
   }
 }
 @media (max-width: 480px) {

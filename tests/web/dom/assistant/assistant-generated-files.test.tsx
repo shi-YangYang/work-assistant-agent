@@ -3,7 +3,10 @@ import type { Deliverable, DeliverableFile, DeliverableSummary } from '@paa/api-
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setCsrf } from '../../../../apps/web/src/api/client'
-import { DeliverableEntry } from '../../../../apps/web/src/features/assistant/components/deliverables/Deliverable'
+import {
+  DeliverableEntry,
+  MessageDeliverables,
+} from '../../../../apps/web/src/features/assistant/components/deliverables/Deliverable'
 import { GeneratedFiles } from '../../../../apps/web/src/features/assistant/components/deliverables/GeneratedFiles'
 import { deferred, dialogs } from '../helpers'
 
@@ -61,6 +64,54 @@ it('leaves existing text-only deliverables unchanged and does not fetch generate
   expect(screen.queryByRole('list')).toBeNull()
   expect(screen.getByRole('button', { name: '查看销售分析' })).toBeTruthy()
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('keeps incremental images in one strip and adds one task entry after the reply completes', async () => {
+  const items = [1, 2, 3, 4].map((number) => ({
+    ...summary,
+    id: `image-${number}`,
+    title: '3D猫和老鼠（4张）',
+    files: [
+      {
+        ...file('image.png', 'image/png'),
+        url: `/api/v1/deliverables/image-${number}/files/image.png?revision=2`,
+      },
+    ],
+  }))
+  const view = render(<MessageDeliverables items={items.slice(0, 1)} complete={false} />)
+  const strip = screen.getByRole('list', { name: '生成图片' })
+  await within(strip).findByRole('button', { name: '预览image.png' })
+  expect(screen.queryByRole('button', { name: /^查看/ })).toBeNull()
+  view.rerender(<MessageDeliverables items={items} complete={false} />)
+  await waitFor(() =>
+    expect(within(strip).getAllByRole('button', { name: '预览image.png' })).toHaveLength(4),
+  )
+  expect(within(strip).getAllByRole('listitem')).toHaveLength(4)
+  expect(screen.getAllByRole('list')).toHaveLength(1)
+  expect(screen.queryByRole('button', { name: /^查看/ })).toBeNull()
+  // Completing the reply must neither remount nor fetch the thumbnails again.
+  view.rerender(<MessageDeliverables items={items} complete />)
+  expect(screen.getAllByRole('button', { name: /^查看/ })).toHaveLength(1)
+  expect(fetch).toHaveBeenCalledTimes(4)
+  expect(screen.getByRole('list', { name: '生成图片' })).toBe(strip)
+  expect(strip.querySelector('button')?.textContent).not.toContain('查看')
+  fireEvent.click(within(strip).getAllByRole('button', { name: '预览image.png' })[2])
+  expect(screen.getByRole('dialog', { name: 'image.png' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '查看3D猫和老鼠（4张）' }))
+  const task = screen.getByRole('dialog', { name: '3D猫和老鼠（4张）' })
+  await waitFor(() =>
+    expect(within(task).getAllByRole('button', { name: '预览image.png' })).toHaveLength(4),
+  )
+  fireEvent.click(within(task).getAllByRole('button', { name: '预览image.png' })[3])
+  const preview = screen.getByRole('dialog', { name: 'image.png' })
+  fireEvent.click(within(preview).getByRole('button', { name: '下载原图片' }))
+  await waitFor(() => expect(clicked).toHaveLength(1))
+  expect(fetch).toHaveBeenLastCalledWith(items[3].files[0].url, expect.anything())
+  fireEvent.click(within(preview).getByRole('button', { name: '关闭' }))
+  fireEvent.click(within(task).getByRole('button', { name: '关闭' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
 })
 
 it('shows all supported file formats and downloads only the selected file through the authenticated client', async () => {
