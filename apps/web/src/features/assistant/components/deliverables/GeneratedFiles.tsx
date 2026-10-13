@@ -1,7 +1,8 @@
 import type { DeliverableFile } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
-import { Download, FileText, Image, LoaderCircle, Presentation, Sheet } from 'lucide-react'
+import { ImageGallery } from '@web/components/media/ImageGallery'
+import { Download, FileText, LoaderCircle, Presentation, Sheet } from 'lucide-react'
 import { useState } from 'react'
 import { useGeneratedFile, useGeneratedImage } from '../../hooks/deliverables/useGeneratedFile'
 import { fileSize } from '../../utils/files'
@@ -42,20 +43,27 @@ function GeneratedFile({
 }) {
   const { download, busy, error } = useGeneratedFile(deliverableId, revision, file)
   const unavailable = error instanceof ApiError && [401, 403, 404].includes(error.status)
+  if (file.mimeType === 'image/png') {
+    return (
+      <li className={styles['image-file']}>
+        {unavailable ? (
+          <ErrorNotice retry={() => void download()}>{error}</ErrorNotice>
+        ) : (
+          <GeneratedImage
+            deliverableId={deliverableId}
+            revision={revision}
+            file={file}
+            download={{ run: () => void download(), busy, error }}
+          />
+        )}
+      </li>
+    )
+  }
   const format = file.name.split('.').pop()?.toUpperCase() ?? '文件'
   const Icon =
-    file.mimeType === 'image/png'
-      ? Image
-      : format === 'PPTX'
-        ? Presentation
-        : ['XLSX', 'CSV'].includes(format)
-          ? Sheet
-          : FileText
+    format === 'PPTX' ? Presentation : ['XLSX', 'CSV'].includes(format) ? Sheet : FileText
   return (
     <li className={styles.file}>
-      {file.mimeType === 'image/png' && !unavailable && (
-        <GeneratedImage deliverableId={deliverableId} revision={revision} file={file} />
-      )}
       <div className={styles.row}>
         <span className={styles.icon} aria-hidden="true">
           <Icon size={20} />
@@ -91,25 +99,55 @@ function GeneratedImage({
   deliverableId,
   revision,
   file,
+  download,
 }: {
   deliverableId: string
   revision: number
   file: DeliverableFile
+  download: { run: () => void; busy: boolean; error: Error | string }
 }) {
   const { url, error, retry } = useGeneratedImage(deliverableId, revision, file)
   const [failedUrl, setFailedUrl] = useState('')
+  const [open, setOpen] = useState(false)
   return (
     <div className={styles.preview}>
       {url && url !== failedUrl ? (
-        <img src={url} alt={file.name} onError={() => setFailedUrl(url)} />
+        <button
+          className={styles.thumbnail}
+          type="button"
+          aria-label={`预览${file.name}`}
+          onClick={() => setOpen(true)}
+        >
+          <img src={url} alt={file.name} onError={() => setFailedUrl(url)} />
+        </button>
       ) : url ? (
-        <span className={styles.loading}>图片无法预览，可下载文件查看。</span>
+        <>
+          <span className={styles.loading}>图片无法预览，可下载文件查看。</span>
+          <button
+            className={styles.download}
+            disabled={download.busy}
+            onClick={download.run}
+            aria-label={`下载${file.name}`}
+          >
+            <Download size={17} aria-hidden="true" />
+            下载
+          </button>
+        </>
       ) : error ? (
         <ErrorNotice retry={retry}>{error}</ErrorNotice>
       ) : (
         <span className={styles.loading} role="status">
           正在读取图片…
         </span>
+      )}
+      {!open && <ErrorNotice retry={download.run}>{download.error}</ErrorNotice>}
+      {open && url && (
+        <ImageGallery
+          images={[{ id: file.id, name: file.name, src: url, original: file.url }]}
+          initial={0}
+          onClose={() => setOpen(false)}
+          download={download}
+        />
       )}
     </div>
   )

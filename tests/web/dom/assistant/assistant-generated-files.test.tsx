@@ -126,17 +126,46 @@ it('rechecks download authorization and removes a previously loaded preview afte
   const image = file('销售趋势.png', 'image/png')
   render(<GeneratedFiles deliverableId="result" revision={2} files={[image]} />)
   await screen.findByRole('img', { name: image.name })
+  fireEvent.click(screen.getByRole('button', { name: `预览${image.name}` }))
   vi.mocked(fetch).mockResolvedValue(
     new Response(JSON.stringify({ error: { code: 'forbidden', message: '该文件无权查看' } }), {
       status: 403,
     }),
   )
-  fireEvent.click(screen.getByRole('button', { name: `下载${image.name}` }))
+  fireEvent.click(screen.getByRole('button', { name: '下载原图片' }))
   await screen.findByText('该文件无权查看')
   expect(fetch).toHaveBeenCalledTimes(2)
   expect(clicked).toHaveLength(0)
   expect(screen.queryByRole('img')).toBeNull()
+  expect(screen.queryByRole('dialog')).toBeNull()
   expect(revokeUrl).toHaveBeenCalledWith('blob:generated')
+})
+
+it('opens a compact image in the gallery and keeps download errors and retry inside the preview', async () => {
+  const image = file('猫和老鼠.png', 'image/png')
+  render(<GeneratedFiles deliverableId="result" revision={2} files={[image]} />)
+  const thumbnail = await screen.findByRole('button', { name: `预览${image.name}` })
+  expect(screen.queryByText(image.name)).toBeNull()
+  expect(screen.queryByText(/PNG ·/)).toBeNull()
+  expect(screen.queryByRole('button', { name: `下载${image.name}` })).toBeNull()
+  thumbnail.focus()
+  fireEvent.click(thumbnail)
+  const dialog = screen.getByRole('dialog', { name: image.name })
+  expect(within(dialog).getByRole('img', { name: image.name }).getAttribute('src')).toBe(
+    'blob:generated',
+  )
+  expect(fetch).toHaveBeenCalledTimes(1)
+  fireEvent.click(within(dialog).getByRole('button', { name: '放大图片' }))
+  expect(within(dialog).getByText('125%')).toBeTruthy()
+  vi.mocked(fetch).mockRejectedValueOnce(new TypeError('offline'))
+  fireEvent.click(within(dialog).getByRole('button', { name: '下载原图片' }))
+  await within(dialog).findByText('无法连接服务，请检查网络后重试。')
+  fireEvent.click(within(dialog).getByRole('button', { name: '重试' }))
+  await waitFor(() => expect(clicked).toEqual([{ url: 'blob:generated', name: image.name }]))
+  expect(fetch).toHaveBeenCalledTimes(3)
+  fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }))
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(document.activeElement).toBe(thumbnail)
 })
 
 it('offers an explicit retry after a transient failure without polling', async () => {

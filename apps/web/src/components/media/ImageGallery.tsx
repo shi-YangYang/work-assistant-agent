@@ -19,10 +19,12 @@ export function ImageGallery({
   images,
   initial,
   onClose,
+  download,
 }: {
   images: PreviewImage[]
   initial: number
   onClose: () => void
+  download?: { run: () => void; busy: boolean; error: Error | string }
 }) {
   const [index, setIndex] = useState(initial)
   const [retry, setRetry] = useState(0)
@@ -126,18 +128,30 @@ export function ImageGallery({
             <button type="button" aria-label="适应窗口" title="适应窗口" onClick={reset}>
               <Expand size={18} />
             </button>
-            {item && (
-              <a
-                className={mediaPreviewStyles['preview-download']}
-                href={item.original}
-                download={item.name}
-                aria-label="下载原图片"
+            {download ? (
+              <button
+                type="button"
+                aria-label={download.busy ? '正在下载原图片' : '下载原图片'}
+                disabled={download.busy}
+                onClick={download.run}
               >
                 <Download size={18} />
-              </a>
+              </button>
+            ) : (
+              item && (
+                <a
+                  className={mediaPreviewStyles['preview-download']}
+                  href={item.original}
+                  download={item.name}
+                  aria-label="下载原图片"
+                >
+                  <Download size={18} />
+                </a>
+              )
             )}
           </div>
         </div>
+        {download && <ErrorNotice retry={download.run}>{download.error}</ErrorNotice>}
         <ErrorNotice
           retry={
             src
