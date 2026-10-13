@@ -139,14 +139,15 @@ it.each([
     const workspaceEntries = visibleLinks(main())
     expect(workspaceEntries).toEqual(
       account.member.role === 'admin'
-        ? ['聊天搭子', '我的工作', '团队看板', '成员管理', '公告管理']
-        : ['聊天搭子', '我的工作', '我的报告'],
+        ? ['聊天搭子', '我的工作', '团队看板', '成员管理', '公告管理', '通知']
+        : ['聊天搭子', '我的工作', '我的报告', '通知'],
     )
     expect(screen.getByRole('button', { name: '云搭子 beta' }).hasAttribute('disabled')).toBe(true)
     openSettings()
     expect(visibleLinks(settings())).toEqual(entries)
     expect(screen.queryByRole('navigation', { name: '工作空间' })).toBeNull()
     expect(screen.queryByRole('button', { name: '云搭子 beta' })).toBeNull()
+    expect(screen.queryByRole('link', { name: /^通知/ })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '返回主菜单' }))
     goBack()
