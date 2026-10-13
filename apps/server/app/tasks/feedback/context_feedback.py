@@ -14,7 +14,13 @@ def usage_dto(job):
     result = {key: value[key] for key in FIELDS if key in value}
     result['seq'] = max(result.get('seq', 0), (job.feedback or {}).get('seq', 0))
     result['updatedAt'] = job.updated_at.isoformat()
-    if job.state in ('failed', 'awaiting_retry', 'cancelled'):
+    if job.state == 'cancelled':
+        # Stopping a reply does not invalidate its last input estimate. Project
+        # legacy cancellations too, whose stored usage was marked as failed.
+        result.update(state='ready', attempt=job.attempt, fence=job.fence)
+        if result.get('afterTokens') is None:
+            result.pop('reason', None)
+    elif job.state in ('failed', 'awaiting_retry'):
         result['state'] = 'failed'
     elif result.get('state') == 'compacting':
         from app.tasks.nodes.node_state import node_dtos

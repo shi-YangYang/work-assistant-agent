@@ -100,6 +100,48 @@ async def test_cancel_queue_is_idempotent_and_preserves_source_and_completed_nod
     assert (await client.post('/api/v1/messages', json={'text': '下一条'}, headers=keyed())).status_code == 202
 
 
+@pytest.mark.parametrize('usage_state', [None, 'ready', 'compacting', 'retry_wait'])
+async def test_cancel_preserves_last_context_estimate_in_response_feedback_and_reload(setup, usage_state):
+    _, sessions, users, clients = setup
+    client = clients['employee']
+    sent = await send(client, '中断后保留上下文用量')
+    job = await claim(sessions, users['employee'].id)
+    if usage_state:
+        async with sessions.begin() as db:
+            current = await db.get(Job, job.id)
+            current.result = {**current.result, 'contextUsage': {
+                'jobId': job.id, 'attempt': job.attempt, 'fence': job.fence, 'seq': 1,
+                'model': 'controlled-test', 'usedTokens': 12000, 'contextWindow': 1000000,
+                'estimated': True, 'state': usage_state,
+                **({'compactionId': 'pending', 'beforeTokens': 12000, 'afterTokens': None,
+                    'reason': '正在压缩上下文'} if usage_state != 'ready' else {}),
+            }}
+    response = await cancel(client, job.id, fence=job.fence)
+    assert response.status_code == 200
+    usage = response.json()['contextUsage']
+    if usage_state:
+        assert usage['state'] == 'ready' and usage['usedTokens'] == 12000
+        assert usage['fence'] == response.json()['fence'] == job.fence + 1
+        assert usage.get('afterTokens') is None
+        assert 'reason' not in usage
+    else:
+        assert usage is None
+    async with sessions.begin() as db:
+        current = await db.get(Job, job.id)
+        assert current.result.get('contextUsage') == usage
+        if usage_state:
+            # Old cancellations used failed even for a valid estimate; repair
+            # the read projection without a data migration or model request.
+            current.result = {**current.result, 'contextUsage': {
+                **usage, 'state': 'failed', 'fence': job.fence,
+            }}
+    for path in (f'/jobs/{job.id}', f'/jobs/{job.id}/feedback',
+                 f"/conversations/{sent['conversationId']}/context-usage"):
+        restored = await client.get('/api/v1' + path)
+        assert restored.status_code == 200
+        assert restored.json()['contextUsage'] == usage
+
+
 async def test_cancel_permission_kind_and_execution_version(setup):
     _, sessions, users, clients = setup
     sent = await send(clients['employee'])
