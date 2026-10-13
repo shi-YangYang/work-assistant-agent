@@ -31,7 +31,6 @@ export function TeamResults({
   view,
   scope,
   params,
-  status,
   update,
   open,
 }: {
@@ -40,36 +39,12 @@ export function TeamResults({
   view: 'reports' | 'work'
   scope: 'updated' | 'current'
   params: URLSearchParams
-  status: string
   update: (values: Record<string, string>, reset?: boolean) => void
   open: (row: Row, replace?: boolean) => void
 }) {
   return (
     <div className={teamStyles['team-results']}>
       {!data && !list.error && <TeamLoading key={`${view}:${params.toString()}`} />}
-      {data && (
-        <div className={teamStyles['team-result-caption']}>
-          <span>
-            {view === 'work'
-              ? scope === 'current'
-                ? '当前工作状态'
-                : '期间更新 · 截至所选期末的状态'
-              : '所选周期的汇报'}{' '}
-            · {data.total} 条
-          </span>
-          {(params.get('q') ||
-            params.get('member') ||
-            (params.get('members') && params.get('members') !== 'active') ||
-            status) && (
-            <button
-              className={`${controlsStyles['text-button']} ${teamStyles['slot-text-button']}`}
-              onClick={() => update({ q: '', member: '', members: '', [`${view}Status`]: '' })}
-            >
-              清除筛选
-            </button>
-          )}
-        </div>
-      )}
       {data?.items.length ? (
         <div>
           {data.items.map((row) => (

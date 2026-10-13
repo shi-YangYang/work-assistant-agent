@@ -11,21 +11,22 @@
   border-radius: 0;
   overflow: visible;
 }
-.team-view-heading {
+.team-filter-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 0 0 10px;
 }
-.team-view-heading .slot-tabs {
+.team-page > .slot-tabs {
   border: 0;
-  margin: 0;
+  margin: 0 0 12px;
   gap: 4px;
   padding: 3px;
   flex-shrink: 0;
 }
-.team-view-heading .slot-tabs button {
+.team-page > .slot-tabs button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -41,6 +42,17 @@
   background: var(--subtle);
   border-radius: 10px;
 }
+.report-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.report-controls .segmented-control {
+  margin-left: 0;
+}
 .segmented-control button {
   border: 0;
   background: transparent;
@@ -54,7 +66,7 @@
   box-shadow: var(--raised);
 }
 .team-panel .team-toolbar {
-  flex: 1;
+  flex: 1 1 500px;
   min-width: 0;
   margin: 0;
   padding: 3px 0;
@@ -137,18 +149,6 @@
 .team-results {
   border-top: 1px solid var(--line);
 }
-.team-result-caption {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 0;
-  font-size: 12px;
-  color: var(--muted);
-}
-.team-result-caption .slot-text-button {
-  font-size: 12px;
-}
 .team-record {
   display: grid;
   grid-template-columns: 140px minmax(0, 1fr);
@@ -156,6 +156,9 @@
   padding: 16px 0;
   border-top: 1px solid var(--line);
   align-items: start;
+}
+.team-record:first-child {
+  border-top: 0;
 }
 .team-record:hover {
   background: var(--subtle);
@@ -287,24 +290,12 @@ button.team-record-content {
 .mobile-status {
   display: none;
 }
-@container (max-width: 900px) {
-  .team-view-heading {
-    flex-wrap: wrap;
-  }
-  .team-panel .team-toolbar {
-    flex-basis: 100%;
-    order: 1;
-  }
-}
 @media (max-width: 760px) {
-  .team-view-heading {
+  .team-filter-row {
     padding: 0 0 8px;
     gap: 8px;
   }
-  .team-view-heading .slot-tabs {
-    gap: 4px;
-  }
-  .team-view-heading .slot-tabs button,
+  .team-page > .slot-tabs button,
   .segmented-control button {
     min-height: 44px;
   }
@@ -361,9 +352,6 @@ button.team-record-content {
   .team-member .slot-avatar {
     width: 25px;
     height: 25px;
-  }
-  .team-result-caption {
-    padding: 8px 0;
   }
   .team-reader-nav {
     flex-wrap: wrap;

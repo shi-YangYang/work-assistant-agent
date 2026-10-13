@@ -1,5 +1,6 @@
 import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
 import searchInputStyles from '../../../styles/patterns/SearchInput.module.css'
+import controlsStyles from '../../../styles/controls.module.css'
 import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
 import { SearchInput } from '@web/components/forms/SearchInput'
@@ -14,6 +15,7 @@ export function TeamFilters({
   data,
   view,
   periodFilter,
+  leadingControls,
 }: {
   params: URLSearchParams
   update: (values: Record<string, string>, reset?: boolean) => void
@@ -21,6 +23,7 @@ export function TeamFilters({
   data: TeamWorkspacePage<Row> | null
   view: 'reports' | 'work'
   periodFilter?: ReactNode
+  leadingControls?: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
   const statusKey = `${view}Status`
@@ -46,6 +49,7 @@ export function TeamFilters({
         ]
   return (
     <ListToolbar className={teamStyles['team-toolbar']}>
+      {leadingControls}
       <div className={`${searchInputStyles['work-search']} ${teamStyles['slot-work-search']}`}>
         <Search size={17} aria-hidden="true" />
         <SearchInput
@@ -104,6 +108,14 @@ export function TeamFilters({
           ))}
         </select>
       </div>
+      {(params.get('q') || active > 0) && (
+        <button
+          className={controlsStyles['text-button']}
+          onClick={() => update({ q: '', member: '', members: '', [statusKey]: '' })}
+        >
+          清除筛选
+        </button>
+      )}
       {periodFilter}
     </ListToolbar>
   )

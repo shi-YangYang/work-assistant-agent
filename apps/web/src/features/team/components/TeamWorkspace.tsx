@@ -12,6 +12,7 @@ import { PeriodFilter } from '@web/components/forms/PeriodFilter'
 import { teamWorkspacePath } from '@web/features/team/api/requests'
 import { TeamFilters } from '@web/features/team/components/TeamFilters'
 import { TeamResults } from '@web/features/team/components/TeamResults'
+import { ReportPeriodPicker } from './report-period/ReportPeriodPicker'
 import { isWork, type TeamRow as Row } from '@web/features/team/types'
 import { useResource } from '@web/hooks/useResource'
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, ClipboardCheck, RefreshCw } from 'lucide-react'
@@ -36,12 +37,19 @@ export function TeamWorkspace({
   const view = params.get('view') === 'reports' ? 'reports' : 'work'
   const scope = params.get('scope') === 'updated' ? 'updated' : 'current'
   const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
+  const periodParams = new URLSearchParams(params)
+  if (
+    !periodParams.get('period') ||
+    (view === 'reports' && kind === 'weekly' && periodParams.get('period') === 'today')
+  ) {
+    periodParams.set('period', view === 'reports' && kind === 'daily' ? 'today' : 'this_week')
+  }
   const status = params.get(`${view}Status`) || ''
   const offset = Math.max(0, Number(params.get(`${view}Offset`)) || 0)
   const query = new URLSearchParams({ scope, kind, status, offset: String(offset) })
   for (const key of ['q', 'member', 'members', 'period', 'start', 'end']) {
     if (view === 'work' && scope === 'current' && ['period', 'start', 'end'].includes(key)) continue
-    if (params.get(key)) query.set(key, params.get(key)!)
+    if (periodParams.get(key)) query.set(key, periodParams.get(key)!)
   }
   // Keep each tab's last result; only the visible tab fetches and polls.
   const workList = useResource<TeamWorkspacePage<Row>>(
@@ -102,6 +110,42 @@ export function TeamWorkspace({
           ['overdue', '已逾期', 'overdue'],
           ['cancelled', '已撤销', 'cancelled'],
         ]
+  const typeControl = (
+    <div
+      className={teamStyles['segmented-control']}
+      aria-label={view === 'work' ? '工作范围' : '报告类型'}
+    >
+      {(view === 'work'
+        ? [
+            ['current', '当前工作'],
+            ['updated', '期间更新'],
+          ]
+        : [
+            ['daily', '日报'],
+            ['weekly', '周报'],
+          ]
+      ).map(([value, label]) => (
+        <button
+          key={value}
+          data-active={(view === 'work' ? scope : kind) === value}
+          aria-pressed={(view === 'work' ? scope : kind) === value}
+          onClick={() => {
+            if (view === 'work') update({ scope: value })
+            else if (value !== kind) {
+              update({
+                kind: value,
+                period: value === 'daily' ? 'today' : 'this_week',
+                start: '',
+                end: '',
+              })
+            }
+          }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
   return (
     <div className={`${layoutStyles['page']} ${teamStyles['team-page']}`} data-scroll-container>
       {fromMembers && <DetailBackLink />}
@@ -120,6 +164,24 @@ export function TeamWorkspace({
           </button>
         }
       />
+      <div className={`${layoutStyles['tabs']} ${teamStyles['slot-tabs']}`} aria-label="看板视图">
+        <button
+          data-active={view === 'work'}
+          aria-pressed={view === 'work'}
+          onClick={() => update({ view: 'work' }, false)}
+        >
+          <BriefcaseBusiness size={17} />
+          工作进展
+        </button>
+        <button
+          data-active={view === 'reports'}
+          aria-pressed={view === 'reports'}
+          onClick={() => update({ view: 'reports' }, false)}
+        >
+          <ClipboardCheck size={17} />
+          日报周报
+        </button>
+      </div>
       <div
         className={teamStyles['team-counts']}
         data-view={view}
@@ -141,69 +203,39 @@ export function TeamWorkspace({
         ))}
       </div>
       <section className={teamStyles['team-panel']}>
-        <div className={teamStyles['team-view-heading']}>
-          <div
-            className={`${layoutStyles['tabs']} ${teamStyles['slot-tabs']}`}
-            aria-label="看板视图"
-          >
-            <button
-              data-active={view === 'work'}
-              aria-pressed={view === 'work'}
-              onClick={() => update({ view: 'work' }, false)}
-            >
-              <BriefcaseBusiness size={17} />
-              工作进展
-            </button>
-            <button
-              data-active={view === 'reports'}
-              aria-pressed={view === 'reports'}
-              onClick={() => update({ view: 'reports' }, false)}
-            >
-              <ClipboardCheck size={17} />
-              日报周报
-            </button>
-          </div>
+        <div className={teamStyles['team-filter-row']}>
           <TeamFilters
             params={params}
             update={update}
             searchReset={searchReset}
             data={data}
             view={view}
+            leadingControls={
+              view === 'reports' && (
+                <div className={teamStyles['report-controls']}>
+                  {typeControl}
+                  <ReportPeriodPicker
+                    params={periodParams}
+                    kind={kind}
+                    range={data?.range}
+                    change={update}
+                  />
+                </div>
+              )
+            }
             periodFilter={
-              (view === 'reports' || scope === 'updated') && (
+              view === 'work' &&
+              scope === 'updated' && (
                 <PeriodFilter
                   className={teamStyles['team-period-filter']}
-                  params={params}
+                  params={periodParams}
                   range={data?.range}
                   change={update}
                 />
               )
             }
           />
-          <div
-            className={teamStyles['segmented-control']}
-            aria-label={view === 'work' ? '工作范围' : '报告类型'}
-          >
-            {(view === 'work'
-              ? [
-                  ['current', '当前工作'],
-                  ['updated', '期间更新'],
-                ]
-              : [
-                  ['daily', '日报'],
-                  ['weekly', '周报'],
-                ]
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                data-active={(view === 'work' ? scope : kind) === value}
-                aria-pressed={(view === 'work' ? scope : kind) === value}
-                onClick={() => update({ [view === 'work' ? 'scope' : 'kind']: value })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {view === 'work' && typeControl}
         </div>
         <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
         <TeamResults
@@ -212,7 +244,6 @@ export function TeamWorkspace({
           view={view}
           scope={scope}
           params={params}
-          status={status}
           update={update}
           open={open}
         />

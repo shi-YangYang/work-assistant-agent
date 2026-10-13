@@ -58,16 +58,16 @@ function page<T>(item: T): TeamWorkspacePage<T> {
     counts: { all: 1, in_progress: 1, submitted: 1 },
     members: [member],
     range: {
-      period: 'this_week',
-      start: '2026-10-12',
-      end: '2026-10-18',
+      period: item === report ? 'today' : 'this_week',
+      start: item === report ? '2026-10-13' : '2026-10-12',
+      end: item === report ? '2026-10-13' : '2026-10-18',
       timezone: 'Asia/Shanghai',
     },
   }
 }
-function mount() {
+function mount(path = '/team') {
   render(
-    <MemoryRouter initialEntries={['/team']}>
+    <MemoryRouter initialEntries={[path]}>
       <TestWorkspace vault={createVault()}>
         <TeamWorkspace renderDetail={() => null} />
       </TestWorkspace>
@@ -77,7 +77,11 @@ function mount() {
 const switchTab = (name: string) =>
   fireEvent.click(within(screen.getByLabelText('看板视图')).getByRole('button', { name }))
 
-beforeEach(() => vi.resetAllMocks())
+beforeEach(() => {
+  vi.resetAllMocks()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-13T04:00:00Z'))
+})
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
@@ -93,11 +97,13 @@ it('skips the loading notice when the first tab request finishes quickly without
   expect(screen.getByRole('heading', { name: work.work.title })).toBeTruthy()
 
   switchTab('日报周报')
+  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe('今天')
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
   await act(async () => vi.advanceTimersByTime(100))
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
   await act(async () => reports.resolve(page(report)))
   expect(screen.getByText(report.summary)).toBeTruthy()
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=today')
   await act(async () => vi.advanceTimersByTime(300))
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
 })
@@ -158,7 +164,7 @@ it('returns to either loaded tab without blanking rows, counts or employee optio
   switchTab('日报周报')
   expect(screen.getByText(report.summary)).toBeTruthy()
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
-  expect(screen.getByText(/2026-10-12 — 2026-10-18/)).toBeTruthy()
+  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe('今天 · 10月13日')
   await waitFor(() => expect(reportReads).toBe(2))
 })
 
@@ -189,4 +195,30 @@ it('does not apply a late response from an inactive tab or reuse rows under a di
     filtered.resolve({ ...page(work), items: [], total: 0, counts: { all: 0 } }),
   )
   expect(screen.getByText('暂无符合条件的工作')).toBeTruthy()
+})
+
+it('queries the selected day or full week and resets pagination without losing employee filters', async () => {
+  vi.mocked(api).mockImplementation(async () => page(report))
+  mount('/team?view=reports&reportsOffset=20&member=employee&q=客户')
+  await screen.findByText(report.summary)
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=today')
+  fireEvent.click(screen.getByRole('button', { name: '前一天' }))
+  await waitFor(() =>
+    expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('start=2026-10-12&end=2026-10-12'),
+  )
+  const query = new URLSearchParams(vi.mocked(api).mock.calls.at(-1)![0].split('?')[1])
+  expect(query.get('offset')).toBe('0')
+  expect(query.get('member')).toBe('employee')
+  expect(query.get('q')).toBe('客户')
+  fireEvent.click(within(screen.getByLabelText('报告类型')).getByRole('button', { name: '周报' }))
+  await waitFor(() => expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=this_week'))
+  fireEvent.click(screen.getByRole('button', { name: '选择汇报周期' }))
+  fireEvent.click(screen.getByRole('gridcell', { name: '2026-10-08，选择该周' }))
+  await waitFor(() =>
+    expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('start=2026-10-05&end=2026-10-11'),
+  )
+  expect(screen.queryByRole('dialog')).toBeNull()
+  fireEvent.click(within(screen.getByLabelText('报告类型')).getByRole('button', { name: '日报' }))
+  await waitFor(() => expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=today'))
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).not.toMatch(/(?:start|end)=/)
 })
