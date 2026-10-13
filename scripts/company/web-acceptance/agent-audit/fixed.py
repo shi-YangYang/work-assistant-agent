@@ -91,8 +91,8 @@ def selected_tests():
 def run(args):
     from environment import load_environment
     metadata, private = load_environment(args.metadata)
-    if metadata.get('suite') not in ('spec059', 'spec060'):
-        raise RuntimeError('Spec 059 owned environment required')
+    if metadata.get('suite') not in ('spec059', 'spec060', 'spec068'):
+        raise RuntimeError('Supported owned audit environment required')
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     manifest = inventory()

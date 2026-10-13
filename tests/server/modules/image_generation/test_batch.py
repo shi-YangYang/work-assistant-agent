@@ -11,7 +11,7 @@ from app.agent.tools.resources.images import generate_image
 from app.integrations.models.images import wan
 from app.integrations.models.transport import ProviderError
 from app.modules.image_generation.batch import generate_batch
-from test_operations import configured, provider
+from .test_operations import configured, provider
 
 pytestmark = pytest.mark.asyncio
 TOKEN_PLAN = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'
@@ -85,6 +85,8 @@ async def test_distinct_batches_in_one_message_do_not_overlap(setup, provider, m
     {'prompt': '猫', 'count': 5}, {'prompts': ['猫'] * 5},
     {'prompts': ['猫', '']}, {'prompt': '猫', 'count': 4, 'operation': 2},
     {'prompt': '猫', 'prompts': ['狗']}, {'prompts': ['猫'], 'count': 2},
+    {'prompts': ['猫', '狗', '鸟', '兔'], 'count': 2},
+    {'prompts': ['猫', '狗', '鸟', '兔'], 'count': 4, 'operation': 2},
 ])
 async def test_invalid_batch_is_rejected_before_any_generation(setup, provider, args):
     context, _, _ = await configured(setup)
@@ -144,3 +146,47 @@ async def test_terminal_image_feedback_never_keeps_pending_slots_animating(state
     job = SimpleNamespace(state=state, result={'imageGeneration': slots})
     assert [slot['state'] for slot in dto(job)] == expected
     assert [slot['state'] for slot in slots] == ['ready', 'generating', 'queued']
+
+
+async def test_original_split_then_batch_retry_reuses_first_image_without_duplicates(setup, provider):
+    context, sent, _ = await configured(setup)
+    prompts = ['3D猫和老鼠打翻牛奶', '3D猫和老鼠追逐', '3D猫和老鼠和解', '3D猫和老鼠分享晚餐']
+    first = await generate_batch(context, prompt=prompts[0])
+    assert first['state'] == 'succeeded'
+    for prompt in prompts[1:]:
+        assert (await generate_batch(context, prompt=prompt))['state'] == 'conflict'
+    assert provider.submit.await_count == 1
+    complete = await generate_batch(context, prompts=prompts)
+    assert complete['state'] == 'succeeded' and complete['imageCount'] == 4
+    assert complete['results'][0] == first
+    assert len({row['operationId'] for row in complete['results']}) == 4
+    assert provider.submit.await_count == 4
+    message = (await setup[3]['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert len(message['deliverables']) == 4
+    assert len({file['id'] for row in message['deliverables'] for file in row['files']}) == 4
+
+
+async def test_original_high_count_and_prompt_list_trace_uses_the_same_four_receipts(setup, provider):
+    context, sent, _ = await configured(setup)
+    # Exact three calls from the frozen high-2 trace; the first two formerly
+    # failed only because count=4 redundantly repeated the list length.
+    arguments = {
+        'prompts': [
+            '3D卡通渲染风格，一只圆润的橘猫和一只小灰老鼠坐在木桌旁一起喝下午茶，桌上有茶壶和两只小茶杯，热气袅袅，暖黄色灯光，柔和景深，皮克斯动画质感，温馨可爱',
+            '3D卡通渲染风格，一只小猫和一只小老鼠在厨房木地板上追逐一块黄色奶酪，奶酪在前方滚动，姿态夸张有动感，明亮阳光，皮克斯动画质感，活泼有趣',
+            '3D卡通渲染风格，猫咪和小老鼠在客厅玩躲猫猫，猫咪从沙发后探出头找，小老鼠躲在绿植花盆后面偷笑，条纹地毯，柔和自然光，皮克斯动画质感，俏皮可爱',
+            '3D卡通渲染风格，猫咪和小老鼠坐在野餐垫上分享一块草莓奶油蛋糕，两只各拿一把小叉子，蛋糕上有蜡烛和莓果装饰，草坪与蓝天背景，皮克斯动画质感，温暖甜蜜',
+        ],
+        'title': '3D猫和老鼠四格场景', 'count': 4,
+    }
+    first = json.loads(await generate_image.coroutine(runtime=SimpleNamespace(context=context), **arguments))
+    assert first['state'] == 'succeeded' and first['imageCount'] == 4
+    second = json.loads(await generate_image.coroutine(runtime=SimpleNamespace(context=context), **arguments, operation=1))
+    arguments.pop('count')
+    third = json.loads(await generate_image.coroutine(runtime=SimpleNamespace(context=context), **arguments, operation=1))
+    assert second == third == first
+    assert provider.submit.await_count == 4
+    assert [call.args[3] for call in provider.submit.await_args_list] == arguments['prompts']
+    message = (await setup[3]['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert len(message['deliverables']) == 4
+    assert len({file['id'] for row in message['deliverables'] for file in row['files']}) == 4

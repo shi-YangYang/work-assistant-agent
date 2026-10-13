@@ -1,0 +1,17 @@
+{
+  "revision": "068-1",
+  "applicationCommit": "0fd76fed8400d064d2585c4e753d542343eb864f",
+  "caseFile": "cases.json",
+  "caseSha256": "bc672ac69d3e66b911d7be480c5a588f53e81010fc41e105545c2fec67f9e19d",
+  "distinctTasks": 24,
+  "observations": 54,
+  "watchdogSeconds": 1920,
+  "highRiskRepetition": {
+    "caseIds": []
+  },
+  "firstResults": "immutable",
+  "efforts": ["low", "high"],
+  "comparison": "six tasks × two efforts × three serial interleaved observations",
+  "newDistinctTasks": 8,
+  "notes": "Original 16 curated audit tasks adapted only for low/high and date; six timing tasks and two image tasks new. No max. Browser agent adds separate journeys."
+}

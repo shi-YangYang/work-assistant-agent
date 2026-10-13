@@ -69,7 +69,7 @@ test('W16 manually configured model survives reload without exposing credential'
       (
         await http('/api/v1/settings/model-routing', 'PUT', {
           assistant: before.data.assistant,
-          report: before.data.report,
+          image: before.data.image,
           asr: before.data.asr,
           expectedRevision: current.data.revision,
         })

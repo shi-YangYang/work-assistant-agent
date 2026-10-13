@@ -3,8 +3,8 @@ import copy
 from types import SimpleNamespace
 import pytest
 from sqlalchemy import select
-from app.modules.work.content.checklist import compatible_body, checklist_items, edit_previews
-from app.modules.work.content.document import WorkDocument, edit_document, plain_text
+from app.modules.work.content.checklist import compatible_body, checklist_items
+from app.modules.work.content.document import WorkDocument, edit_document, edit_previews, plain_text
 from app.modules.work.models import WorkItem, WorkRevision
 from app.modules.reports.generation.sources import report_plan_contexts
 from app.modules.team.sources import bounded_content

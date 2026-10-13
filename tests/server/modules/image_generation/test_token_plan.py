@@ -14,7 +14,7 @@ from app.modules.image_generation.models import ImageGeneration
 from app.modules.model_services.models import ModelUsage
 from app.tasks.context import LostLease
 from app.tasks.models import Job
-from test_operations import configured, provider
+from .test_operations import configured, provider
 
 pytestmark = pytest.mark.asyncio
 TOKEN_PLAN = 'https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'

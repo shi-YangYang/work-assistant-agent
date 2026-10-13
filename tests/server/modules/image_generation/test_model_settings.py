@@ -19,7 +19,7 @@ from app.modules.image_generation import service
 from app.tasks.models import Job
 from _support.agent.business_actions import runtime
 from _support.http.model_services import create, payload
-from test_operations import provider
+from .test_operations import provider
 
 
 def custom_model(**patch):

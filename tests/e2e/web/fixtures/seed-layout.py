@@ -18,7 +18,7 @@ async def main():
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
     metadata, private = load_environment(args.metadata)
-    if metadata['purpose'] != 'web' or metadata['suite'] not in ('spec044', 'spec054'):
+    if metadata['purpose'] != 'web' or metadata['suite'] not in ('spec044', 'spec054', 'spec068'):
         raise RuntimeError('Only an owned browser acceptance environment is allowed')
     output = Path(args.output)
     if output.exists():

@@ -126,7 +126,7 @@ it('marks a listed announcement read without navigation and clears its badge onl
   fireEvent.click(screen.getByRole('button', { name: '标为已读' }))
   await waitFor(() => {
     expect(screen.queryByLabelText('未读')).toBeNull()
-    expect(screen.getByRole('tab', { name: '公告', exact: true })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: '公告' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '标为已读' })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
   })

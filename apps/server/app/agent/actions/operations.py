@@ -126,6 +126,9 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
     if not isinstance(copy_index, int) or not 1 <= copy_index <= 8 or action != 'create_work' and copy_index != 1:
         return {'state': 'failed', 'message': '创建副本编号无效'}
     changes = changes or {}
+    if action == 'generate_report' and (changes or source_tokens):
+        return {'state': 'failed', 'category': 'invalid_arguments',
+                'message': '生成报告请传 report_kind 和 report_date，changes 与 source_tokens 留空；原始要求和来源由服务端读取，本次未执行。'}
     fields = WORK_FIELDS if action in ('create_work', 'update_work') else REPORT_FIELDS if action == 'edit_report' else frozenset()
     if changes.keys() - fields or submit_after and action != 'generate_report':
         return {'state': 'failed', 'message': '包含本次操作不支持的字段'}
@@ -215,7 +218,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             from app.modules.work.serializers import work_content
             proposal['targetContent'] = work_content(target.content, target.id)
         if action in ('create_work', 'update_work') and changes.get('bodyEdits'):
-            from app.modules.work.content.checklist import edit_previews
+            from app.modules.work.content.document import edit_previews
             details = edit_previews(proposal.get('targetContent', {}).get('body', {'schemaVersion': 1, 'content': []}), changes['bodyEdits'])
             if any(edit['action'] == 'set_checked' for edit in details):
                 proposal['workContentChanges'] = [edit for edit in details if edit['action'] == 'set_checked']

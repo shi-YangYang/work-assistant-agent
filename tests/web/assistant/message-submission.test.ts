@@ -13,7 +13,11 @@ vi.mock('@web/features/assistant/api/requests', () => ({
   uploadAttachment: vi.fn(),
 }))
 vi.mock('@web/lib/workspace', () => ({
-  useWorkspace: () => ({ setDraft: mocks.setDraft, rememberConversation: mocks.remember }),
+  useWorkspace: () => ({
+    identity: { company: { id: 'company' }, member: { id: 'owner', role: 'employee' } },
+    setDraft: mocks.setDraft,
+    rememberConversation: mocks.remember,
+  }),
 }))
 
 beforeEach(() => vi.clearAllMocks())

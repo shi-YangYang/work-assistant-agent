@@ -126,6 +126,8 @@ async def assess(context, answer, *, model=None):
         task = task_for(job, value.task.model_dump()).model_dump()
         from app.tasks.feedback.work_requirements import task_with_remaining
         task = task_with_remaining(job, cards, task)
+        from app.tasks.feedback.report_waits import normalize as normalize_report_waits
+        task = normalize_report_waits(job, cards, task, clock=getattr(context, 'request_clock', ''))
         known = {card['id'] for card in cards}
         if set(value.operation_ids) - known:
             return ReviewedReply(needs_response=True, verified=True, response_reason='收尾引用了不存在或不可访问的业务回执；只能依据真实回执说明结果。', task=task)

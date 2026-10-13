@@ -74,7 +74,7 @@ async def action_preview(db, actor, work, changes):
             version(entry, update['expectedRevision'])
             changes['update'] = {**update, 'before': entry.text}
     if 'bodyEdits' in changes:
-        from app.modules.work.content.checklist import edit_previews
+        from app.modules.work.content.document import edit_previews
         from app.modules.work.serializers import work_content
         current = work_content(work.content, work.id).get('body', {'schemaVersion': 1, 'content': []}) if work else {'schemaVersion': 1, 'content': []}
         changes['bodyEdits'] = edit_previews(current, changes['bodyEdits'])

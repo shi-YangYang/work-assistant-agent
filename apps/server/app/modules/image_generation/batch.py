@@ -9,8 +9,10 @@ def requests(prompt, count, prompts, title, operation):
     if type(count) is not int or not 1 <= count <= 4:
         raise ProviderError('image_input', '每条消息最多生成 4 张图片，请指定 1～4 张。', sent=False)
     if prompts is not None:
-        if not isinstance(prompts, list) or not 1 <= len(prompts) <= 4 or prompt or count != 1:
+        if not isinstance(prompts, list) or not 1 <= len(prompts) <= 4 or prompt or count not in (1, len(prompts)):
             raise ProviderError('image_input', '请使用一段描述和张数，或提供 1～4 段图片描述，不要同时使用两种方式。', sent=False)
+        # A matching count is redundant, not another batch multiplier. Keep the
+        # original list and per-image slots so either spelling has one receipt.
         values = prompts
     else:
         values = [prompt] * count

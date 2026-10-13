@@ -140,3 +140,32 @@ def edit_document(body, edits):
             replacement[0].setdefault('attrs', {})['id'] = edit['blockId']
         nodes[index:index + 1] = replacement
     return WorkDocument(content=nodes).model_dump()
+
+
+def edit_previews(body, edits):
+    from app.modules.work.content.checklist import checklist_items
+    # Validate the batch first, including overlapping targets; previews may not
+    # turn individually valid operations into an invalid atomic request.
+    edit_document(body, edits)
+    current, previews = body, []
+    for edit in edits:
+        if edit['action'] == 'set_checked':
+            item = checklist_items(current)[edit['itemId']]
+            previews.append({**edit, 'text': plain_text({'content': item.get('content', [])}), 'beforeChecked': item['attrs'].get('checked', False)})
+            updated = edit_document(current, [edit])
+        else:
+            nodes = current['content']
+            before = [node for node in nodes if node.get('attrs', {}).get('id') == edit.get('blockId')] if edit.get('blockId') else []
+            updated = edit_document(current, [edit])
+            index = nodes.index(before[0]) if before else len(nodes)
+            count = len(updated['content']) - len(nodes) + len(before)
+            blocks = updated['content'][index:index + count]
+            if edit['action'] == 'append_checklist' and before:
+                # Append previews describe only the new items; the original
+                # list and its completed items are not being appended again.
+                block = copy.deepcopy(blocks[0])
+                block['content'] = block['content'][len(before[0].get('content', [])):]
+                blocks = [block]
+            previews.append({**edit, 'before': before, 'blocks': blocks})
+        current = updated
+    return previews

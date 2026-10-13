@@ -37,8 +37,11 @@ test('W20 route loading duration, cached navigation, narrow and low-height contr
       }
       requestAnimationFrame(update)
     })
-    if (path === '/work') await page.getByRole('link', { name: '我的工作', exact: true }).click()
-    else {
+    if (path === '/work') {
+      const back = page.getByRole('button', { name: '返回主菜单', exact: true })
+      if (await back.isVisible()) await back.click()
+      await page.getByRole('link', { name: '我的工作', exact: true }).click()
+    } else {
       await page.getByRole('button', { name: '系统设置', exact: true }).click()
       await page.getByRole('link', { name: '记忆', exact: true }).click()
     }

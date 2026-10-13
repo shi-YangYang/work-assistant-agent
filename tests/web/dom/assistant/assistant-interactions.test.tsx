@@ -5,7 +5,7 @@ import type {
   ExecutionMode,
   ExecutionSettings,
 } from '@paa/api-contracts'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createRef, useState } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ExecutionModePicker } from '../../../../apps/web/src/features/assistant/components/composer/controls/ExecutionModePicker'
@@ -250,7 +250,7 @@ it('rolls back failed account saves and ignores late results after switching acc
   await modeReady()
   expect(screen.queryByRole('alert')).toBeNull()
 })
-it('keeps the exact toolbar groups, same microphone slot, and disables mode without removing its button', () => {
+it('keeps desktop controls accessible and the microphone stable while recording', () => {
   const props = {
     containerRef: createRef<HTMLDivElement>(),
     send: vi.fn(),
@@ -262,7 +262,6 @@ it('keeps the exact toolbar groups, same microphone slot, and disables mode with
     busy: false,
     previewUploading: false,
     pending: false,
-    sendError: '',
     retryWait: 0,
     children: null,
     executionControl: <ExecutionModePicker value="auto" acknowledged={false} onChange={vi.fn()} />,
@@ -276,18 +275,10 @@ it('keeps the exact toolbar groups, same microphone slot, and disables mode with
   }
   const view = render(<MessageComposer {...props} />)
   const attach = screen.getByRole('button', { name: '添加附件' })
-  expect(
-    within(attach.parentElement!)
-      .getAllByRole('button')
-      .map((button) => button.getAttribute('aria-label'))
-      .filter(Boolean),
-  ).toEqual(['添加附件', '执行权限：自动审核'])
+  const mode = screen.getByRole('button', { name: '执行权限：自动审核' })
+  const context = screen.getByRole('button', { name: /^上下文使用情况/ })
   const mic = screen.getByRole('button', { name: '录制语音' })
-  const controls = () =>
-    within(mic.parentElement!)
-      .getAllByRole('button')
-      .map((button) => button.getAttribute('aria-label'))
-  expect(controls()).toEqual([expect.stringMatching(/^上下文使用情况/), '录制语音', '发送'])
+  expect(screen.getByRole('button', { name: '发送' })).toBeTruthy()
   view.rerender(
     <MessageComposer
       {...props}
@@ -295,8 +286,68 @@ it('keeps the exact toolbar groups, same microphone slot, and disables mode with
     />,
   )
   expect(screen.getByRole('button', { name: '停止录音 · 15 秒' })).toBe(mic)
-  expect(controls()).toEqual([expect.stringMatching(/^上下文使用情况/), '停止录音 · 15 秒', '发送'])
+  expect(screen.getByRole('button', { name: '执行权限：自动审核' })).toBe(mode)
+  expect(screen.getByRole('button', { name: /^上下文使用情况/ })).toBe(context)
+  expect((attach as HTMLButtonElement).disabled).toBe(true)
+  view.rerender(
+    <MessageComposer
+      {...props}
+      executionControl={
+        <ExecutionModePicker value="auto" acknowledged={false} disabled onChange={vi.fn()} />
+      }
+    />,
+  )
+  expect(screen.getByRole('button', { name: '执行权限：自动审核' })).toBe(mode)
+  expect((mode as HTMLButtonElement).disabled).toBe(true)
 })
+
+it('preserves pending text, attachment preview and recording controls in the browser composer', () => {
+  const { container } = render(
+    <MessageComposer
+      containerRef={createRef<HTMLDivElement>()}
+      send={vi.fn()}
+      addFiles={vi.fn()}
+      composer={{
+        text: '保持原文',
+        files: [
+          {
+            id: 'audio',
+            file: new File(['audio'], 'voice.webm', { type: 'audio/webm' }),
+            url: 'blob:preview',
+          },
+        ],
+        key: 'draft',
+        replyTo: 'source',
+      }}
+      locked
+      change={vi.fn()}
+      textInput={createRef<HTMLTextAreaElement>()}
+      busy={false}
+      previewUploading={false}
+      pending
+      retryWait={0}
+      recording={{
+        state: 'recording',
+        seconds: 12,
+        start: vi.fn(),
+        stop: vi.fn(),
+        cancel: vi.fn(),
+      }}
+    >
+      <span>附件预览</span>
+    </MessageComposer>,
+  )
+  const input = screen.getByRole('textbox', { name: '工作消息' }) as HTMLTextAreaElement
+  expect(input.value).toBe('保持原文')
+  expect(input.readOnly).toBe(true)
+  expect(screen.getByText('附件预览')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '停止录音 · 12 秒' })).toBeTruthy()
+  expect(container.querySelector('[data-recording="true"]')).toBeTruthy()
+  expect(screen.getByText('12s')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '原样重试，确认结果' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '取消补充关联' })).toBeTruthy()
+})
+
 function fillAnswers() {
   fireEvent.click(screen.getByLabelText('网站上线'))
   fireEvent.click(screen.getByLabelText('实施计划'))

@@ -33,7 +33,8 @@ import { assistantQuery, saveConversationQuery } from '../../api/queries'
 import { useWorkspace } from '@web/lib/workspace'
 import { MessageSquare, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router'
+import { useLocation, useNavigate, useSearchParams } from 'react-router'
+import { flushSync } from 'react-dom'
 
 export function Assistant({ conversationId }: { conversationId?: string }) {
   return (
@@ -43,15 +44,20 @@ export function Assistant({ conversationId }: { conversationId?: string }) {
   )
 }
 
-function AssistantContent({ conversationId }: { conversationId?: string }) {
+function AssistantContent({ conversationId: routeConversationId }: { conversationId?: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
+  const location = useLocation()
+  const [newFromLocation, setNewFromLocation] = useState<string | null>(null)
+  const startingNew = newFromLocation === location.key
+  if (newFromLocation !== null && !startingNew) setNewFromLocation(null)
+  const conversationId = startingNew ? undefined : routeConversationId
   const { identity, drafts, setDraft, notify, lastConversationId, rememberConversation } =
     useWorkspace()
-  const workEntry = params.get('workId') || undefined
+  const workEntry = startingNew ? undefined : params.get('workId') || undefined
   const [resolvedWorkEntry, setResolvedWorkEntry] = useState<string | undefined>()
   const needsWorkRestore = !!workEntry && !conversationId && resolvedWorkEntry !== workEntry
-  const explicitNew = !workEntry && params.get('new') === '1'
+  const explicitNew = startingNew || (!workEntry && params.get('new') === '1')
   const showConversations = params.get('conversations') === '1'
   const [resumed, setResumed] = useState(false)
   const [resumeError, setResumeError] = useState<Error | string>('')
@@ -211,6 +217,9 @@ function AssistantContent({ conversationId }: { conversationId?: string }) {
   function create() {
     if (!stopBeforeAction()) return
     setExpanded(false)
+    // Nested route navigation commits in a transition. Switch draft ownership
+    // immediately, then let the destination route take over without remounting it.
+    flushSync(() => setNewFromLocation(location.key))
     navigate('/assistant?new=1')
     setFailure('')
   }

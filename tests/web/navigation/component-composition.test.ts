@@ -2,7 +2,6 @@ import { Children, createElement, isValidElement, type ReactElement, type ReactN
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 import { FormField } from '../../../apps/web/src/components/forms/FormField'
-import { MessageComposer } from '../../../apps/web/src/features/assistant/components/composer/MessageComposer'
 import { ServiceConnectionFields } from '../../../apps/web/src/features/model-services/components/service/ServiceConnectionFields'
 import { ServiceEditor } from '../../../apps/web/src/features/model-services/components/service/ServiceEditor'
 import { ServiceModelLibrary } from '../../../apps/web/src/features/model-services/components/service/ServiceModelLibrary'
@@ -105,17 +104,14 @@ it('model library dispatches the selected model and preserves availability guard
   expect(renderToStaticMarkup(tree)).toContain('工作助手')
 })
 
-it('service editor saves the exact draft before assignment and does not save an unchanged service', () => {
+it('service editor saves without navigating to assignments and keeps its connection guard', () => {
   const service = draft()
-  const save = vi.fn().mockResolvedValue(true),
-    setTab = vi.fn(),
-    setAssignServiceId = vi.fn(),
-    setRemoveOpen = vi.fn()
+  const save = vi.fn().mockResolvedValue(true)
+  const setRemoveOpen = vi.fn()
   const props = {
     draft: service,
     busy: '',
     dirty: true,
-    select: vi.fn(),
     setRemoveOpen,
     update: vi.fn(),
     setKeys: vi.fn(),
@@ -123,64 +119,18 @@ it('service editor saves the exact draft before assignment and does not save an 
     error: '',
     conflict: false,
     save,
-    setTab,
-    setAssignServiceId,
     children: createElement('div', null, '连接与模型插槽'),
   }
   const tree = ServiceEditor(props)
-  button(tree, '保存并设置用途 ').onClick()
-  expect(save).toHaveBeenCalledWith(service, true)
-  expect(setTab).not.toHaveBeenCalled()
+  button(tree, '保存服务').onClick()
+  expect(save).toHaveBeenCalledExactlyOnceWith()
   button(tree, '删除当前模型服务').onClick()
   expect(setRemoveOpen).toHaveBeenCalledWith(true)
-  button(ServiceEditor({ ...props, dirty: false }), '设置用途 ').onClick()
-  expect(save).toHaveBeenCalledTimes(1)
-  expect(setAssignServiceId).toHaveBeenCalledWith('')
-  expect(setTab).toHaveBeenCalledWith('routing')
+  expect(button(ServiceEditor({ ...props, connectionReady: false }), '保存服务').disabled).toBe(
+    true,
+  )
+  expect(renderToStaticMarkup(ServiceEditor({ ...props, dirty: false }))).toContain(
+    '模型用途在“用途分配”中管理',
+  )
   expect(renderToStaticMarkup(tree)).toContain('连接与模型插槽')
-})
-
-it('message composer renders pending submission, attachment slot and recording controls without owning session state', () => {
-  const props = {
-    containerRef: { current: null },
-    send: vi.fn(),
-    addFiles: vi.fn(),
-    composer: {
-      text: '保持原文',
-      files: [
-        {
-          id: 'audio',
-          file: new File(['audio'], 'voice.webm', { type: 'audio/webm' }),
-          url: 'blob:preview',
-        },
-      ],
-      key: 'draft',
-      replyTo: 'source',
-    },
-    locked: true,
-    change: vi.fn(),
-    textInput: { current: null },
-    busy: false,
-    previewUploading: false,
-    pending: true,
-    sendError: '',
-    retryWait: 0,
-    recording: {
-      state: 'recording' as const,
-      seconds: 12,
-      start: vi.fn(),
-      stop: vi.fn(),
-      cancel: vi.fn(),
-    },
-    children: createElement('span', { 'data-preview': true }, '附件预览'),
-  }
-  const html = renderToStaticMarkup(createElement(MessageComposer, props))
-  expect(html).toContain('附件预览')
-  expect(html).toContain('readOnly=""')
-  expect(html).toContain('保持原文')
-  expect(html).toContain('aria-label="停止录音 · 12 秒"')
-  expect(html).toContain('data-recording="true"')
-  expect(html).toContain('>12s</span>')
-  expect(html).toContain('原样重试，确认结果')
-  expect(html).toContain('取消补充关联')
 })

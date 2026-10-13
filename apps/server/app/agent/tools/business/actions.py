@@ -95,10 +95,10 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
       the server assigns durable IDs.
 
     Reports:
-    - generate_report passes the ORIGINAL brief, including style/focus/plans.
-      Once kind/company-local YYYY-MM-DD date are known, enqueue and end; the
-      worker reads confirmed sources. No preliminary work/obligation lookup,
-      polling or empty-draft edit to repeat the brief.
+    - generate_report: set report_kind and company-local report_date (YYYY-MM-DD).
+      Omit changes and source_tokens. The server copies the ORIGINAL user brief
+      (style/focus/plans) and reads sources. Enqueue and end: no preliminary
+      work/obligation lookup, polling or edit to repeat the brief.
     - submit_after=true only for explicit generate-and-submit, INCLUDING
       "generate, let me review before submitting"; review-first and execution
       mode still control approval.

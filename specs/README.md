@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 068：Web 全量测试与体验审计](spec-068-web-comprehensive-testing/spec.md) — 原审计产品 FAIL；确认问题修补已通过独立验收，未增加模型／网络步骤，保留原覆盖及测速限制。[修复报告](spec-068-web-comprehensive-testing/repair-report.md)、[修复验收](spec-068-web-comprehensive-testing/repair-acceptance.md)、[原测试报告](spec-068-web-comprehensive-testing/report.md)、[问题清单](spec-068-web-comprehensive-testing/issues.md)。
+
 - [Spec 067：手机端聊天输入栏与功能面板](spec-067-mobile-composer/spec.md) — 已完成，紧凑主输入栏与“＋”功能面板，独立验收 PASS；[实施计划与目录](spec-067-mobile-composer/plan.md)、[验收记录](spec-067-mobile-composer/acceptance.md)。
 
 - [Spec 066：通知页面与公告管理](spec-066-company-announcements/spec.md) — 已完成，全员通知页顶部切换提醒／公告，管理员另有“公告管理”入口；[实施计划与目录](spec-066-company-announcements/plan.md)、[验收记录](spec-066-company-announcements/acceptance.md)。
@@ -47,4 +49,4 @@
 
 ## 生命周期
 
-新 Spec 从 **068** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+新 Spec 从 **069** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

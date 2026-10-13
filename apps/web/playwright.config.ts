@@ -2,13 +2,16 @@ import { defineConfig, devices } from '@playwright/test'
 import { resolve } from 'node:path'
 
 const run =
+  process.env.SPEC068_RUN_ID ??
   process.env.SPEC054_RUN_ID ??
   process.env.SPEC044_RUN_ID ??
   new Date().toISOString().replace(/[:.]/g, '-')
 if (!/^[a-zA-Z0-9_-]+$/.test(run)) throw new Error('Invalid acceptance run ID')
-const evidence = process.env.SPEC054_ENVIRONMENT
-  ? resolve(__dirname, '../../artifacts/spec054/20261008-full/ui/browser', run)
-  : resolve(__dirname, '../../artifacts/spec044/browser', run)
+const evidence = process.env.SPEC068_OUTPUT
+  ? resolve(process.env.SPEC068_OUTPUT)
+  : process.env.SPEC054_ENVIRONMENT
+    ? resolve(__dirname, '../../artifacts/spec054/20261008-full/ui/browser', run)
+    : resolve(__dirname, '../../artifacts/spec044/browser', run)
 
 export default defineConfig({
   testDir: resolve(__dirname, '../../tests/e2e/web'),
@@ -29,7 +32,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 1000 } },
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
     },
     { name: 'firefox', grep: /@cross/, use: { ...devices['Desktop Firefox'] } },
     { name: 'webkit', grep: /@cross/, use: { ...devices['Desktop Safari'] } },

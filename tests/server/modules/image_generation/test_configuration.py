@@ -24,12 +24,13 @@ async def test_routing_capabilities_old_client_omission_and_frozen_binding(setup
     settings, sessions, users, clients = setup
     saved = await create(clients['admin'], image_payload())
     choice = {'serviceId': saved['id'], 'modelId': 'image'}
-    for purpose in ('assistant', 'report', 'asr'):
+    for purpose in ('assistant', 'asr'):
         assert (await clients['admin'].put('/api/v1/settings/model-routing', json={'expectedRevision': 0, purpose: choice})).status_code == 422
     response = await clients['admin'].put('/api/v1/settings/model-routing', json={'expectedRevision': 0, 'image': choice})
     assert response.status_code == 200 and response.json()['image'] == choice
-    old = await clients['admin'].put('/api/v1/settings/model-routing', json={'expectedRevision': 1, 'assistant': None, 'report': 'follow', 'asr': None})
-    assert old.json()['image'] == choice
+    old = await clients['admin'].put('/api/v1/settings/model-routing', json={'expectedRevision': 1, 'assistant': None, 'report': choice, 'asr': None})
+    assert old.status_code == 200 and old.json()['image'] == choice
+    assert old.json()['report'] == 'follow' and old.json()['assistant'] is None
     context, _ = await runtime(setup, '画一只鸟')
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
