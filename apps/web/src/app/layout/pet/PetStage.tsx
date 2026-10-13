@@ -1,5 +1,5 @@
 import type { AssistantActivityState } from '@web/api/assistant-activity'
-import { Menu } from 'lucide-react'
+import { CloudOff, Menu, Wrench } from 'lucide-react'
 import { useState, type RefObject } from 'react'
 import controls from '@web/styles/controls.module.css'
 import { NoriaPet } from './NoriaPet'
@@ -49,12 +49,19 @@ export function PetStage({
           }}
         >
           <NoriaPet animate={animate && !open} working={activity === 'working'} />
-          <span className={styles.name}>Noria</span>
-          {activity !== 'idle' && (
-            <span className={styles.status} role="status">
-              {activity === 'working' ? '努力工作中' : '状态待同步'}
-            </span>
-          )}
+          <span className={styles.bubble}>
+            <span className={styles.name}>Noria</span>
+            {activity !== 'idle' && (
+              <span className={styles.status} role="status">
+                {activity === 'working' ? (
+                  <Wrench size={12} aria-hidden="true" />
+                ) : (
+                  <CloudOff size={12} aria-hidden="true" />
+                )}
+                {activity === 'working' ? '努力工作中' : '状态待同步'}
+              </span>
+            )}
+          </span>
         </button>
       </div>
       {open && <NoriaAppearanceDialog onClose={() => setOpen(false)} />}
