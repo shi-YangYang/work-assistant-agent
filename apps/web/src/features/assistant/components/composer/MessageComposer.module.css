@@ -11,20 +11,17 @@
 }
 .composer-wrap:not([data-question='true']) {
   max-height: none;
+  overflow: visible;
 }
 .composer {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  border: 1px solid transparent;
+  border: 1px solid var(--line);
   border-radius: 24px;
-  background: var(--subtle);
+  background: var(--surface);
   padding: 20px 18px 12px;
-  box-shadow: none;
-  transition: border-color 160ms;
-}
-.composer:focus-within {
-  border-color: var(--control);
+  box-shadow: var(--shadow);
 }
 .composer > textarea {
   flex-shrink: 0;

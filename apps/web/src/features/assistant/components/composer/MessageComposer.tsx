@@ -160,7 +160,7 @@ export function MessageComposer({
         <textarea
           ref={textInput}
           aria-label="工作消息"
-          placeholder="发消息，或告诉我你想推进的工作…"
+          placeholder="询问 Noria"
           rows={1}
           maxLength={8000}
           value={composer.text}
