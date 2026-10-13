@@ -91,7 +91,7 @@ afterEach(() => {
 it('starts compact, shows named tools with current values and switches focus without losing a draft', () => {
   render(<Harness />)
   const input = screen.getByRole<HTMLTextAreaElement>('textbox')
-  const voice = screen.getByRole('button', { name: '录制语音' })
+  const voice = screen.getByRole('button', { name: '切换到语音输入' })
   expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
   expect(screen.queryByRole('region')).toBeNull()
   expect(screen.queryByRole('button', { name: /思考强度/ })).toBeNull()
@@ -114,7 +114,7 @@ it('starts compact, shows named tools with current values and switches focus wit
   expect(screen.queryByRole('region')).toBeNull()
   expect(document.activeElement).toBe(input)
   expect(input.value).toBe('新草稿')
-  expect(screen.getByRole('button', { name: '录制语音' })).toBe(voice)
+  expect(screen.getByRole('button', { name: '切换到语音输入' })).toBe(voice)
   expect(send).not.toHaveBeenCalled()
 })
 
@@ -239,7 +239,7 @@ it('closes before system pickers and preserves text on cancellation or work sele
 it('closes all layers on a conversation or breakpoint change without remounting input and recording controls', () => {
   const view = render(<Harness text="草稿" />)
   const input = screen.getByRole('textbox')
-  const voice = screen.getByRole('button', { name: '录制语音' })
+  const voice = screen.getByRole('button', { name: '切换到语音输入' })
   fireEvent.click(more())
   fireEvent.click(screen.getByRole('button', { name: '思考强度：high' }))
   view.rerender(<Harness text="草稿" scope="second" />)
@@ -274,18 +274,49 @@ it('caps multiline input and removes only the mobile height when returning to de
   expect(input.style.height).toBe('')
 })
 
-it('closes the panel when tap recording starts and keeps capture controls visible while locked', () => {
-  const view = render(<Harness />)
+it('switches to the voice bar without recording, preserves the draft, and keeps stop reachable while locked', () => {
+  const view = render(<Harness text="保留文字草稿" />)
+  const input = screen.getByRole<HTMLTextAreaElement>('textbox')
+  act(() => input.focus())
   fireEvent.click(more())
-  fireEvent.click(screen.getByRole('button', { name: '录制语音' }))
-  expect(start).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: '切换到语音输入' }))
+  expect(start).not.toHaveBeenCalled()
+  expect(screen.queryByRole('textbox')).toBeNull()
+  expect(document.activeElement).not.toBe(input)
   expect(screen.queryByRole('region')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '切换到文字输入' }))
+  expect(screen.getByRole('textbox')).toBe(input)
+  expect(input.value).toBe('保留文字草稿')
+  expect(document.activeElement).toBe(input)
+  fireEvent.click(screen.getByRole('button', { name: '切换到语音输入' }))
+  fireEvent.click(screen.getByRole('button', { name: '点击录音，长按发送' }))
+  expect(start).toHaveBeenCalledOnce()
   view.rerender(
     <Harness locked recording={{ state: 'recording', seconds: 12, start, stop, cancel }} />,
   )
   expect(more().getAttribute('disabled')).not.toBeNull()
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: '切换到文字输入' }).disabled).toBe(
+    true,
+  )
   fireEvent.click(screen.getByRole('button', { name: '停止录音 · 12 秒' }))
   expect(stop).toHaveBeenCalledWith()
+  expect(send).not.toHaveBeenCalled()
+})
+
+it('resets voice mode on a conversation or breakpoint change without discarding text', () => {
+  const view = render(<Harness text="草稿" />)
+  fireEvent.click(screen.getByRole('button', { name: '切换到语音输入' }))
+  view.rerender(<Harness text="草稿" scope="second" />)
+  expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe('草稿')
+  fireEvent.click(screen.getByRole('button', { name: '切换到语音输入' }))
+  act(() => {
+    window.innerWidth = 1280
+    window.dispatchEvent(new Event('resize'))
+  })
+  expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe('草稿')
+  expect(screen.queryByRole('button', { name: '点击录音，长按发送' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '录制语音' }))
+  expect(start).toHaveBeenCalledOnce()
 })
 
 it('does not hide context failures or recovery status in a closed panel', () => {
@@ -294,35 +325,47 @@ it('does not hide context failures or recovery status in a closed panel', () => 
   expect(screen.queryByRole('region')).toBeNull()
 })
 
-it('preserves a held recording across panel closing and sends only once on release', async () => {
-  vi.useFakeTimers()
-  vi.stubGlobal(
-    'PointerEvent',
-    class extends MouseEvent {
-      pointerId: number
-      isPrimary: boolean
-      constructor(type: string, options: PointerEventInit = {}) {
-        super(type, options)
-        this.pointerId = options.pointerId ?? 1
-        this.isPrimary = options.isPrimary ?? true
-      }
-    },
-  )
-  render(<Harness />)
-  fireEvent.click(more())
-  const voice = screen.getByRole('button', { name: '录制语音' })
-  const pointer = { pointerId: 1, button: 0, clientY: 500, clientX: 30, isPrimary: true }
-  fireEvent.pointerDown(voice, pointer)
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(350)
-  })
-  expect(screen.queryByRole('region')).toBeNull()
-  expect(start).toHaveBeenCalledOnce()
-  expect(cancel).not.toHaveBeenCalled()
-  expect(screen.getByRole('button', { name: '录制语音' })).toBe(voice)
-  fireEvent.pointerUp(voice, pointer)
-  fireEvent.click(voice, { detail: 1 })
-  expect(stop).toHaveBeenCalledExactlyOnceWith(true)
-  expect(start).toHaveBeenCalledOnce()
-  expect(send).not.toHaveBeenCalled()
-})
+it.each(['send', 'cancel'])(
+  'uses the voice bar to hold and %s without a duplicate click action',
+  async (action) => {
+    vi.useFakeTimers()
+    vi.stubGlobal(
+      'PointerEvent',
+      class extends MouseEvent {
+        pointerId: number
+        isPrimary: boolean
+        constructor(type: string, options: PointerEventInit = {}) {
+          super(type, options)
+          this.pointerId = options.pointerId ?? 1
+          this.isPrimary = options.isPrimary ?? true
+        }
+      },
+    )
+    render(<Harness />)
+    fireEvent.click(screen.getByRole('button', { name: '切换到语音输入' }))
+    fireEvent.click(more())
+    const voice = screen.getByRole('button', { name: '点击录音，长按发送' })
+    const pointer = { pointerId: 1, button: 0, clientY: 500, clientX: 30, isPrimary: true }
+    fireEvent.pointerDown(voice, pointer)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350)
+    })
+    expect(screen.queryByRole('region')).toBeNull()
+    expect(start).toHaveBeenCalledOnce()
+    expect(cancel).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '点击录音，长按发送' })).toBe(voice)
+    if (action === 'cancel') {
+      fireEvent.pointerMove(voice, { ...pointer, clientY: 420 })
+      expect(screen.getByRole('status').textContent).toContain('松开取消')
+    }
+    fireEvent.pointerUp(voice, pointer)
+    fireEvent.click(voice, { detail: 1 })
+    if (action === 'send') expect(stop).toHaveBeenCalledExactlyOnceWith(true)
+    else {
+      expect(cancel).toHaveBeenCalledOnce()
+      expect(stop).not.toHaveBeenCalled()
+    }
+    expect(start).toHaveBeenCalledOnce()
+    expect(send).not.toHaveBeenCalled()
+  },
+)

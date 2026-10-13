@@ -41,7 +41,7 @@ class Recorder {
 const stopTrack = vi.fn()
 const stream = { getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream
 const getUserMedia = vi.fn()
-function Harness() {
+function Harness({ variant = 'icon' }: { variant?: 'icon' | 'bar' }) {
   const { drafts, setDraft } = useWorkspace()
   const composer = (drafts.draft as Composer | undefined) ?? { text: '', key: '', files: [] }
   const [error, setError] = useState<Error | string>('')
@@ -65,6 +65,7 @@ function Harness() {
   return (
     <>
       <VoiceRecordButton
+        variant={variant}
         disabled={submission.busy}
         recording={{
           state: recording.captureState,
@@ -84,13 +85,13 @@ const flush = async (ms = 0) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms)
   })
-function view() {
+function view(variant: 'icon' | 'bar' = 'icon') {
   const vault = createVault()
   vault.writer()('draft', { text: '原来的文字', files: [], key: 'draft' })
   return {
     ...render(
       <TestWorkspace vault={vault}>
-        <Harness />
+        <Harness variant={variant} />
       </TestWorkspace>,
     ),
     vault,
@@ -160,42 +161,53 @@ it('keeps short presses as record, stop and manual send', async () => {
   await flush()
   expect(sendMessage).toHaveBeenCalledOnce()
 })
-it('sends once after release and the final audio event, preserving the current draft', async () => {
-  view()
-  const button = await hold()
-  expect(screen.getByRole('status').textContent).toContain('松开发送，上滑取消')
-  fireEvent.pointerUp(button, pointer)
-  fireEvent.click(button, { detail: 1 })
-  expect(uploadAttachment).not.toHaveBeenCalled()
-  act(() => Recorder.latest.finish())
-  await flush()
-  act(() => Recorder.latest.finish())
-  await flush()
-  expect(getUserMedia).toHaveBeenCalledOnce()
-  expect(uploadAttachment).toHaveBeenCalledOnce()
-  expect(sendMessage).toHaveBeenCalledExactlyOnceWith(
-    expect.objectContaining({
-      text: '原来的文字',
-      attachmentIds: ['voice'],
-      voiceCommandAttachmentIds: ['voice'],
-    }),
-    expect.any(String),
-  )
-  expect(screen.queryByRole('status')).toBeNull()
-})
+it.each(['icon', 'bar'] as const)(
+  'sends once from the %s control after release and the final audio event, preserving the current draft',
+  async (variant) => {
+    view(variant)
+    const button = await hold(
+      screen.getByRole('button', { name: variant === 'bar' ? '点击录音，长按发送' : '录制语音' }),
+    )
+    expect(screen.getByRole('status').textContent).toContain('松开发送，上滑取消')
+    fireEvent.pointerUp(button, pointer)
+    fireEvent.click(button, { detail: 1 })
+    expect(uploadAttachment).not.toHaveBeenCalled()
+    act(() => Recorder.latest.finish())
+    await flush()
+    act(() => Recorder.latest.finish())
+    await flush()
+    expect(getUserMedia).toHaveBeenCalledOnce()
+    expect(uploadAttachment).toHaveBeenCalledOnce()
+    expect(sendMessage).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        text: '原来的文字',
+        attachmentIds: ['voice'],
+        voiceCommandAttachmentIds: ['voice'],
+      }),
+      expect.any(String),
+    )
+    expect(screen.queryByRole('status')).toBeNull()
+  },
+)
 it.each(['slide', 'pointercancel', 'lostpointercapture'])(
   'discards a held recording on %s without sending',
   async (reason) => {
-    view()
-    const button = await hold()
+    view('bar')
+    const button = screen.getByRole('button', { name: '点击录音，长按发送' })
+    act(() => button.focus())
+    expect(document.activeElement).toBe(button)
+    await hold(button)
     if (reason === 'slide') {
       fireEvent.pointerMove(button, { ...pointer, clientY: 100 })
       expect(screen.getByRole('status').textContent).toContain('松开取消')
       fireEvent.pointerUp(button, { ...pointer, clientY: 100 })
     } else if (reason === 'pointercancel') fireEvent.pointerCancel(button, pointer)
     else fireEvent.lostPointerCapture(button, pointer)
+    fireEvent.click(button, { detail: 1 })
     act(() => Recorder.latest.finish())
     await flush()
+    expect(document.activeElement).not.toBe(button)
+    expect(getUserMedia).toHaveBeenCalledOnce()
     expect(stopTrack).toHaveBeenCalled()
     expect(screen.getByLabelText('附件数量').textContent).toBe('0')
     expect(uploadAttachment).not.toHaveBeenCalled()

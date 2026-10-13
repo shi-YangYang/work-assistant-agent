@@ -12,7 +12,13 @@ import {
 } from 'react'
 
 type Control = 'context' | 'reasoning' | 'execution'
-type PanelState = { mobile: boolean; open: boolean; scope: string; active: Control | null }
+type PanelState = {
+  mobile: boolean
+  open: boolean
+  scope: string
+  active: Control | null
+  voice: boolean
+}
 export const MobileComposerContext = createContext<{
   mobile: boolean
   open: boolean
@@ -47,15 +53,24 @@ export function useMobileComposerPanel({
   capturing: boolean
 }) {
   const [mobile, setMobile] = useState(() => window.innerWidth <= 760)
-  const [state, setState] = useState<PanelState>({ mobile, open: false, scope, active: null })
+  const [state, setState] = useState<PanelState>({
+    mobile,
+    open: false,
+    scope,
+    active: null,
+    voice: false,
+  })
+  const focusDraft = useRef(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const id = useId()
-  if (state.scope !== scope || state.mobile !== mobile || (capturing && state.open))
-    setState({ mobile, open: false, scope, active: null })
+  if (state.scope !== scope || state.mobile !== mobile)
+    setState({ mobile, open: false, scope, active: null, voice: false })
+  else if (capturing && state.open) setState({ ...state, open: false, active: null })
   const open = state.open && state.scope === scope && mobile && !capturing
+  const voice = mobile && (state.voice || capturing)
   const close = useCallback(
     (restoreFocus = false) => {
-      setState({ mobile, open: false, scope, active: null })
+      setState((previous) => ({ ...previous, mobile, open: false, scope, active: null }))
       if (restoreFocus) trigger.current?.focus({ preventScroll: true })
     },
     [mobile, scope],
@@ -80,9 +95,13 @@ export function useMobileComposerPanel({
       element.style.setProperty('height', `${Math.max(44, Math.min(element.scrollHeight, 112))}px`)
     }
     resize()
+    if (focusDraft.current && !voice) {
+      focusDraft.current = false
+      element.focus({ preventScroll: true })
+    }
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
-  }, [mobile, text, textInput])
+  }, [mobile, text, textInput, voice])
   useEffect(() => {
     if (!open) return
     const outside = (event: PointerEvent) => {
@@ -108,12 +127,20 @@ export function useMobileComposerPanel({
     if (open) close()
     else {
       textInput.current?.blur()
-      setState({ mobile, open: true, scope, active: null })
+      setState({ ...state, mobile, open: true, scope, active: null })
     }
+  }
+  const switchVoice = () => {
+    textInput.current?.blur()
+    setState({ mobile, open: false, scope, active: null, voice: true })
+  }
+  const switchText = () => {
+    focusDraft.current = true
+    setState({ mobile, open: false, scope, active: null, voice: false })
   }
   const value = useMemo(
     () => ({ mobile, open, active: state.active, activate }),
     [mobile, open, state.active, activate],
   )
-  return { mobile, open, close, toggle, trigger, id, value }
+  return { mobile, open, close, toggle, trigger, id, value, voice, switchVoice, switchText }
 }

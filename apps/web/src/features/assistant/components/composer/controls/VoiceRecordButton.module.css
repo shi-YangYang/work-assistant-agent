@@ -6,6 +6,20 @@
   -webkit-user-select: none;
   -webkit-touch-callout: none;
 }
+.bar {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-align: center;
+}
+.bar:active:where(:not(:disabled)) {
+  background: var(--hover);
+}
 .button[data-recording='true'] {
   color: var(--danger);
   background: var(--danger-bg);

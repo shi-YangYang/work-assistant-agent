@@ -15,7 +15,7 @@ import type { ContextUsage as Usage } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
-import { CornerUpLeft, Plus, ArrowUp, Square, X } from 'lucide-react'
+import { CornerUpLeft, Plus, ArrowUp, Square, X, Keyboard } from 'lucide-react'
 import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
 import type * as React from 'react'
 import { useRef } from 'react'
@@ -147,7 +147,7 @@ export function MessageComposer({
             onSelect={workReference.select}
           />
         )}
-        <div className={styles['composer']} data-dragging={dragging}>
+        <div className={styles['composer']} data-dragging={dragging} data-voice={mobilePanel.voice}>
           <div className={styles['preview']}>
             {composer.workReference && (
               <WorkReferenceChip
@@ -199,6 +199,7 @@ export function MessageComposer({
             )}
           </div>
           <textarea
+            hidden={mobilePanel.voice}
             ref={textInput}
             aria-label="工作消息"
             placeholder="询问 Noria"
@@ -296,10 +297,26 @@ export function MessageComposer({
             <VoiceRecordButton
               recording={recording}
               disabled={locked}
+              variant={mobilePanel.voice ? 'bar' : 'icon'}
+              onActivate={
+                mobilePanel.mobile && !mobilePanel.voice ? mobilePanel.switchVoice : undefined
+              }
               holdDisabled={!!task?.blocked || !!retryWait || personaSaving || reasoningSaving}
               beforeStart={() => mobilePanel.close()}
             />
           </div>
+          {mobilePanel.voice && (
+            <button
+              type="button"
+              className={`${controlsStyles['icon-button']} ${styles['voice-mode-toggle']}`}
+              aria-label="切换到文字输入"
+              title="切换到文字输入"
+              disabled={capturing}
+              onClick={mobilePanel.switchText}
+            >
+              <Keyboard size={22} />
+            </button>
+          )}
           <button
             data-expanded={false}
             hidden={mobilePanel.mobile && !showSend}

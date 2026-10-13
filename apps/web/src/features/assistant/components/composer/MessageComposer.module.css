@@ -49,6 +49,9 @@
   border-color: transparent;
   box-shadow: none;
 }
+.composer > textarea[hidden] {
+  display: none;
+}
 .preview {
   grid-area: preview;
   min-width: 0;
@@ -223,6 +226,23 @@
   }
   .slot-primary[hidden] {
     display: none;
+  }
+  .voice-mode-toggle {
+    grid-area: voice;
+    align-self: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .composer[data-voice='true'] .voice-action {
+    grid-area: draft;
+    align-self: center;
+    width: 100%;
+    min-width: 0;
+  }
+  .composer[data-voice='true'] .voice-action > button {
+    width: 100%;
+    padding: 0 6px;
   }
   .preview:empty {
     display: none;

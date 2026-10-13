@@ -27,11 +27,15 @@ export function VoiceRecordButton({
   disabled,
   holdDisabled = false,
   beforeStart,
+  variant = 'icon',
+  onActivate,
 }: {
   recording: VoiceRecording
   disabled: boolean
   holdDisabled?: boolean
   beforeStart?: () => void
+  variant?: 'icon' | 'bar'
+  onActivate?: () => void
 }) {
   const [holding, setHolding] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -45,7 +49,11 @@ export function VoiceRecordButton({
       : recording.state === 'stopping'
         ? '正在结束录音'
         : `停止录音 · ${recording.seconds} 秒`
-    : '录制语音'
+    : onActivate
+      ? '切换到语音输入'
+      : variant === 'bar'
+        ? '点击录音，长按发送'
+        : '录制语音'
 
   function clearPress() {
     const current = press.current
@@ -62,7 +70,10 @@ export function VoiceRecordButton({
   function abort() {
     const current = clearPress()
     if (current) suppressClick.current = true
-    if (current?.held) recording.cancel()
+    if (current?.held) {
+      button.current?.blur()
+      recording.cancel()
+    }
   }
   useEffect(() => {
     const hidden = () => {
@@ -87,7 +98,7 @@ export function VoiceRecordButton({
   function down(event: PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || event.isPrimary === false || press.current) return
     suppressClick.current = false
-    if (capturing || disabled || holdDisabled) return
+    if (capturing || disabled || holdDisabled || onActivate) return
     event.currentTarget.setPointerCapture?.(event.pointerId)
     const current: Press = {
       id: event.pointerId,
@@ -122,8 +133,10 @@ export function VoiceRecordButton({
     if (press.current?.id !== event.pointerId) return
     const current = clearPress()
     if (!current?.held) return
-    if (current.cancel) recording.cancel()
-    else recording.stop(true)
+    if (current.cancel) {
+      event.currentTarget.blur()
+      recording.cancel()
+    } else recording.stop(true)
   }
 
   return (
@@ -131,10 +144,10 @@ export function VoiceRecordButton({
       <button
         ref={button}
         type="button"
-        className={`${controls['icon-button']} ${styles.button}`}
+        className={`${variant === 'bar' ? styles.bar : controls['icon-button']} ${styles.button}`}
         data-recording={capturing}
         aria-label={label}
-        title={capturing ? label : '点击录音，长按说话、松开发送'}
+        title={capturing || onActivate ? label : '点击录音，长按说话、松开发送，上滑取消'}
         disabled={capturing ? recording.state === 'stopping' : disabled}
         onPointerDown={down}
         onPointerMove={move}
@@ -152,13 +165,26 @@ export function VoiceRecordButton({
           }
           suppressClick.current = false
           if (capturing) recording.stop()
+          else if (onActivate) onActivate()
           else {
             beforeStart?.()
             void recording.start()
           }
         }}
       >
-        {capturing ? (
+        {variant === 'bar' ? (
+          holding ? (
+            cancelling ? (
+              '松开取消'
+            ) : (
+              '松开发送，上滑取消'
+            )
+          ) : capturing ? (
+            label
+          ) : (
+            '点击录音，长按发送'
+          )
+        ) : capturing ? (
           <>
             <Square size={14} fill="currentColor" />
             <span className={styles.time} aria-hidden="true">
