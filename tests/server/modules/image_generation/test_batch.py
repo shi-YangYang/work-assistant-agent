@@ -28,6 +28,11 @@ async def test_four_variants_are_saved_sequentially_and_replayed_without_new_req
         assert len(message['deliverables']) == len(started)
         feedback = (await setup[3]['employee'].get('/api/v1/jobs/' + context.job_id + '/feedback')).json()
         assert feedback['imageDeliveryCount'] == len(started)
+        slots = feedback['imageGeneration']
+        assert [slot['state'] for slot in slots] == ['ready'] * len(started) + ['generating'] + ['queued'] * (3 - len(started))
+        assert slots == message['job']['imageGeneration']
+        assert slots[len(started)]['width'] == slots[len(started)]['height'] == 2048
+        assert all('prompt' not in slot and 'url' not in slot for slot in slots)
         started.append(args[3])
         return deepcopy(provider.query.return_value) if synchronous else (f'task-{len(started)}', 'request')
     if synchronous:
@@ -43,6 +48,8 @@ async def test_four_variants_are_saved_sequentially_and_replayed_without_new_req
     assert len(started) == 4
     feedback = (await setup[3]['employee'].get('/api/v1/jobs/' + context.job_id + '/feedback')).json()
     assert feedback['imageDeliveryCount'] == 4
+    assert [slot['deliverableId'] for slot in feedback['imageGeneration']] == [row['delivery']['id'] for row in result['results']]
+    assert all(slot['state'] == 'ready' for slot in feedback['imageGeneration'])
 
 
 async def test_distinct_batches_in_one_message_do_not_overlap(setup, provider, monkeypatch):
@@ -96,6 +103,8 @@ async def test_partial_failure_keeps_successes_and_never_recreates_them(setup, p
     assert [row['state'] for row in result['results']] == ['succeeded', 'failed', 'succeeded', 'succeeded']
     assert await generate_batch(context, prompts=['猫', '狗', '鸟', '兔']) == result
     assert generate.await_count == 4
+    feedback = (await setup[3]['employee'].get('/api/v1/jobs/' + context.job_id + '/feedback')).json()
+    assert [slot['state'] for slot in feedback['imageGeneration']] == ['ready', 'failed', 'ready', 'ready']
     message = ToolMessage(name='generate_image', tool_call_id='images', content=json.dumps(result))
     assert outcome(message) == ('failed', '已生成 3/4 张，部分图片未完成')
 
@@ -108,6 +117,8 @@ async def test_unknown_request_stops_batch_without_resubmitting(setup, provider,
     assert result['state'] == 'unknown' and result['imageCount'] == 1 and result['notExecutedCount'] == 2
     assert await generate_batch(context, prompt='猫', count=4) == result
     assert generate.await_count == 2
+    feedback = (await setup[3]['employee'].get('/api/v1/jobs/' + context.job_id + '/feedback')).json()
+    assert [slot['state'] for slot in feedback['imageGeneration']] == ['ready', 'unknown', 'not_started', 'not_started']
 
 
 async def test_batch_retry_resumes_download_and_generates_only_remaining_images(setup, provider, monkeypatch):
@@ -124,3 +135,12 @@ async def test_batch_retry_resumes_download_and_generates_only_remaining_images(
     assert result['state'] == 'succeeded' and result['imageCount'] == 4
     assert generate.await_count == 4
     assert result['results'][0] == first['results'][0]
+
+
+@pytest.mark.parametrize('state, expected', [('cancelled', ['ready', 'cancelled', 'cancelled']), ('failed', ['ready', 'interrupted', 'not_started']), ('succeeded', ['ready', 'interrupted', 'not_started'])])
+async def test_terminal_image_feedback_never_keeps_pending_slots_animating(state, expected):
+    from app.tasks.feedback.image_feedback import dto
+    slots = [{'operation': number, 'state': value} for number, value in enumerate(['ready', 'generating', 'queued'], 1)]
+    job = SimpleNamespace(state=state, result={'imageGeneration': slots})
+    assert [slot['state'] for slot in dto(job)] == expected
+    assert [slot['state'] for slot in slots] == ['ready', 'generating', 'queued']

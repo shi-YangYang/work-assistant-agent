@@ -36,6 +36,8 @@ const createUrl = vi.fn(() => 'blob:generated')
 const revokeUrl = vi.fn()
 const clicked: { url: string; name: string }[] = []
 beforeEach(() => {
+  // Canvas rendering is checked in the browser; jsdom only exercises slot state.
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   setCsrf('csrf', 'company:owner')
   dialogs()
   createUrl.mockClear()
@@ -319,4 +321,64 @@ it('keeps the requested version for file downloads and subsequent chat edits', a
     summary.title,
     undefined,
   )
+})
+
+it('reserves every image slot before delivery, replaces in place and stops terminal placeholders', async () => {
+  const generation: import('@paa/api-contracts').ImageGenerationSlot[] = [
+    { operation: 1, state: 'generating', width: 2048, height: 2048 },
+    { operation: 2, state: 'queued' },
+    { operation: 3, state: 'queued' },
+    { operation: 4, state: 'queued' },
+  ]
+  const view = render(
+    <MessageDeliverables items={[]} generation={generation} state="running" complete={false} />,
+  )
+  const strip = screen.getByRole('list', { name: '生成图片' })
+  expect(within(strip).getAllByRole('listitem')).toHaveLength(4)
+  expect(screen.getByRole('status', { name: '第 1 张图片：正在生成' })).toBeTruthy()
+  expect(screen.getByRole('status', { name: '第 4 张图片：等待生成' })).toBeTruthy()
+  expect(fetch).not.toHaveBeenCalled()
+  const item = { ...summary, files: [file('cat.png', 'image/png')] }
+  const updated = generation.map((slot) =>
+    slot.operation === 1
+      ? { ...slot, state: 'ready' as const, deliverableId: item.id, revision: item.revision }
+      : slot.operation === 2
+        ? { ...slot, state: 'failed' as const }
+        : slot.operation === 3
+          ? { ...slot, state: 'generating' as const }
+          : slot,
+  )
+  view.rerender(
+    <MessageDeliverables items={[item]} generation={updated} state="running" complete={false} />,
+  )
+  await within(strip).findByRole('button', { name: '预览cat.png' })
+  expect(within(strip).getAllByRole('listitem')).toHaveLength(4)
+  expect(within(strip).getAllByRole('listitem')[0].querySelector('img')).toBeTruthy()
+  expect(screen.getByRole('status', { name: '第 2 张图片：生成失败' }).dataset.active).toBe('false')
+  expect(screen.getByRole('status', { name: '第 3 张图片：正在生成' }).dataset.active).toBe('true')
+  expect(screen.queryByRole('button', { name: /^查看/ })).toBeNull()
+  view.rerender(
+    <MessageDeliverables items={[item]} generation={updated} state="cancelled" complete />,
+  )
+  for (const operation of [3, 4]) {
+    const cancelled = screen.getByRole('status', { name: `第 ${operation} 张图片：已取消` })
+    expect(cancelled.dataset.active).toBe('false')
+    expect(cancelled.querySelector('canvas')).toBeNull()
+  }
+  expect(within(strip).getAllByRole('listitem')).toHaveLength(4)
+  expect(fetch).toHaveBeenCalledTimes(1)
+
+  // Reloading a completed result is a file read, never a new generation.
+  view.unmount()
+  const response = deferred<Response>()
+  vi.mocked(fetch).mockReturnValueOnce(response.promise)
+  render(
+    <MessageDeliverables items={[item]} generation={[updated[0]]} state="succeeded" complete />,
+  )
+  const loading = screen.getByRole('status', { name: '第 1 张图片：加载图片…' })
+  expect(loading.dataset.active).toBe('false')
+  expect(loading.querySelector('canvas')).toBeNull()
+  response.resolve(new Response(new Uint8Array([1, 2, 3, 4])))
+  await screen.findByRole('button', { name: '预览cat.png' })
+  expect(screen.queryByRole('status')).toBeNull()
 })

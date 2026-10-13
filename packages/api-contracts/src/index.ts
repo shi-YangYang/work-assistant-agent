@@ -338,7 +338,24 @@ export interface TaskOutcome {
   reason?: string
   nextAction: 'none' | 'reply' | 'confirm' | 'retry'
 }
+export interface ImageGenerationSlot {
+  operation: number
+  state:
+    | 'queued'
+    | 'generating'
+    | 'ready'
+    | 'failed'
+    | 'unknown'
+    | 'interrupted'
+    | 'not_started'
+    | 'cancelled'
+  width?: number
+  height?: number
+  deliverableId?: string
+  revision?: number
+}
 export interface Job {
+  imageGeneration?: ImageGenerationSlot[]
   replyStream?: ReplyStream | null
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
@@ -639,6 +656,7 @@ export interface ReplyStream {
 }
 
 export interface JobFeedback {
+  imageGeneration?: ImageGenerationSlot[]
   imageDeliveryCount?: number
   replyStream?: ReplyStream | null
   interactions?: AssistantInteraction[]

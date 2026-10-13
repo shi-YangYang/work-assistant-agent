@@ -23,6 +23,7 @@ from app.modules.model_services.usage.usage import RequestRecord, usage_fields
 from app.security.ownership import owned
 from app.tasks.context import LostLease
 from app.tasks.feedback.feedback_state import update_feedback
+from app.tasks.feedback.image_feedback import update as update_image
 from app.tasks.lease import lease
 
 
@@ -51,6 +52,10 @@ async def claim(context, prompt, title, operation, size=None, *, intent=None, va
         wan.endpoint(context.settings, config)
         if intent is not None:
             size = sizes.normalize(config=config, **intent)
+        wire_size = sizes.wire_size(config, size)
+        if wire_size and '*' in wire_size:
+            width, height = map(int, wire_size.split('*'))
+            update_image(job, operation, width=width, height=height)
         fingerprint = digest({'prompt': ' '.join(prompt.split()), 'size': sizes.wire_size(config, size),
                               **({'variant': variant} if variant else {})})
         row = previous or await db.scalar(select(ImageGeneration).where(ImageGeneration.message_id == message.id,
@@ -153,6 +158,7 @@ async def publish(context, identifier):
         context.deliverable_reads[item.id] = record.revision
         job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision},
                       'imageDeliveryCount': job.result.get('imageDeliveryCount', 0) + len(row.files)}
+        update_image(job, row.operation, state='ready', deliverableId=item.id, revision=record.revision)
         update_feedback(job)
         return value
 

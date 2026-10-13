@@ -51,6 +51,8 @@ export function acceptFeedback(
         JSON.stringify(current.replyStream ?? null) &&
       incoming.state === current.state &&
       incoming.imageDeliveryCount === current.imageDeliveryCount &&
+      JSON.stringify(incoming.imageGeneration ?? []) ===
+        JSON.stringify(current.imageGeneration ?? []) &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
       JSON.stringify(incoming.interactions ?? []) === JSON.stringify(current.interactions ?? []) &&
       JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? []) &&

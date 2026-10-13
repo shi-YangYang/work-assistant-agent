@@ -251,3 +251,37 @@ it('keeps the same expanded operation row when the subject resolves and processi
   expect(mounted.container.querySelector('[data-node-id="read"]')).toBe(row)
   expect(mounted.container.querySelector('details')?.open).toBe(true)
 })
+
+it('shows image generation instead of a second thinking activity, then resumes the reply status', () => {
+  const images: Job['imageGeneration'] = [
+    { operation: 1, state: 'ready' },
+    { operation: 2, state: 'generating' },
+    { operation: 3, state: 'queued' },
+    { operation: 4, state: 'queued' },
+  ]
+  const imageNode = { ...node, label: '生成图片' }
+  const view = render(
+    <JobNotice
+      job={{ ...job, nodes: [imageNode], imageGeneration: images }}
+      refresh={vi.fn()}
+      showNodes
+      replyActivity="生成中"
+    />,
+  )
+  expect(view.getByText('正在生成图片 · 已完成 1/4 张')).toBeTruthy()
+  expect(view.container.querySelector('[data-reply-activity]')).toBeNull()
+  expect(view.queryByText('思考中')).toBeNull()
+  view.rerender(
+    <JobNotice
+      job={{
+        ...job,
+        nodes: [{ ...imageNode, state: 'succeeded' }],
+        imageGeneration: images.map((slot) => ({ ...slot, state: 'ready' })),
+      }}
+      refresh={vi.fn()}
+      showNodes
+      replyActivity="生成中"
+    />,
+  )
+  expect(view.getByText('生成回答 · 处理中')).toBeTruthy()
+})

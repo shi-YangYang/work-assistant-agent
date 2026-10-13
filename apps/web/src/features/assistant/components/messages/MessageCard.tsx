@@ -77,6 +77,14 @@ export function MessageCard({
       ? activeJob!
       : sourceJob
   const live = useJobFeedback(job, own && !message.businessUnavailable, onFeedback ?? onChange)
+  const imageJob = job?.imageGeneration ? job : sourceJob
+  // Message refresh and SSE can arrive in either order; older feedback must not
+  // reintroduce placeholders beside images that have already been delivered.
+  const imageGeneration =
+    live.feedback?.imageGeneration &&
+    (!imageJob?.imageGeneration || live.feedback.updatedAt >= imageJob.updatedAt)
+      ? live.feedback.imageGeneration
+      : imageJob?.imageGeneration
   useEffect(() => {
     if (own && !message.businessUnavailable && job) onContextUpdate?.(job, live.feedback)
   }, [own, message.businessUnavailable, job, live.feedback, onContextUpdate])
@@ -208,6 +216,7 @@ export function MessageCard({
             <JobNotice
               job={{
                 ...job,
+                imageGeneration,
                 ...(live.feedback
                   ? {
                       state: live.feedback.state,
@@ -258,16 +267,20 @@ export function MessageCard({
             own={own}
             unavailable={live.unavailable}
           />
-          {own && !message.businessUnavailable && !!message.deliverables?.length && (
-            <MessageDeliverables
-              items={message.deliverables}
-              complete={
-                failed ||
-                replyPresentation(message, job, live.feedback, own, live.unavailable).delivered
-              }
-              onContinue={onDeliverable}
-            />
-          )}
+          {own &&
+            !message.businessUnavailable &&
+            (!!message.deliverables?.length || !!imageGeneration?.length) && (
+              <MessageDeliverables
+                items={message.deliverables ?? []}
+                generation={imageGeneration}
+                state={live.feedback?.state ?? job?.state}
+                complete={
+                  failed ||
+                  replyPresentation(message, job, live.feedback, own, live.unavailable).delivered
+                }
+                onContinue={onDeliverable}
+              />
+            )}
           {own &&
             !message.businessUnavailable &&
             (live.feedback?.actions ?? message.actions)

@@ -2,6 +2,7 @@
 from collections import Counter
 from app.integrations.models.transport import ProviderError
 from app.modules.image_generation.service import generate, validate_input
+from app.tasks.feedback.image_feedback import register, advance
 
 
 def requests(prompt, count, prompts, title, operation):
@@ -34,6 +35,8 @@ async def generate_batch(context, *, prompt='', count=1, prompts=None, title='ç”
     values = requests(prompt, count, prompts, title, operation)
     async with context.image_generation_lock:
         results, variants = [], Counter()
+        operations = list(range(operation, operation + len(values)))
+        await register(context, operations)
         for index, value in enumerate(values):
             normalized = ' '.join(value.split())
             # Explicit variants are distinct images; replaying the same batch
@@ -44,10 +47,14 @@ async def generate_batch(context, *, prompt='', count=1, prompts=None, title='ç”
             except ProviderError as error:
                 # Input/configuration failures happen before a durable claim.
                 # Keep earlier deliveries in the batch response and stop here.
-                results.append({'state': 'failed', 'code': error.code, 'message': str(error)})
+                result = {'state': 'failed', 'code': error.code, 'message': str(error)}
+                results.append(result)
+                await advance(context, operation + index, result, operations[index + 1:], stop=True)
                 break
             variants[normalized] += 1
             results.append(result)
-            if result.get('state') in ('retryable', 'unknown', 'running', 'conflict', 'cancelled'):
+            stop = result.get('state') in ('retryable', 'unknown', 'running', 'conflict', 'cancelled')
+            await advance(context, operation + index, result, operations[index + 1:], stop=stop)
+            if stop:
                 break
         return results[0] if len(values) == 1 else summary(results, len(values))

@@ -1,4 +1,9 @@
-import type { DeliverableReference, DeliverableSummary } from '@paa/api-contracts'
+import type {
+  DeliverableReference,
+  DeliverableSummary,
+  ImageGenerationSlot,
+  Job,
+} from '@paa/api-contracts'
 import { Modal } from '@web/components/overlays/Modal'
 import { FileText, ArrowUpRight } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -9,10 +14,14 @@ import styles from './Deliverable.module.css'
 export function MessageDeliverables({
   items,
   complete,
+  generation,
+  state,
   onContinue,
 }: {
   items: DeliverableSummary[]
   complete: boolean
+  generation?: ImageGenerationSlot[]
+  state?: Job['state']
   onContinue?: (reference: DeliverableReference, title: string, text?: string) => void
 }) {
   const imageResults = items.filter(
@@ -21,7 +30,7 @@ export function MessageDeliverables({
   const grouped = imageResults.length > 1
   return (
     <>
-      <GeneratedImages items={items} />
+      <GeneratedImages items={items} generation={generation} state={state} />
       {complete && grouped && <ImageTaskEntry items={imageResults} />}
       {items
         .filter((item) => !grouped || !imageResults.includes(item))
