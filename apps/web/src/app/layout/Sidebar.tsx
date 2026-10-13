@@ -108,11 +108,6 @@ export function Sidebar({
             to={p.path}
             title={p.title}
             aria-label={p.title}
-            className={
-              settingsMenu && (p.path === '/settings/rules' || p.path === '/settings/support')
-                ? styles['settings-section-start']
-                : undefined
-            }
             onClick={() => setExpandedNav(false)}
           >
             <p.icon size={18} />

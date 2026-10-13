@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   LifeBuoy,
   MessageSquare,
-  Palette,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -65,12 +64,6 @@ export const settingsPages = [
     icon: LifeBuoy,
   },
   { path: '/settings/account', title: '账户', detail: '查看账号信息与修改密码', icon: UserRound },
-  {
-    path: '/settings/appearance',
-    title: '外观',
-    detail: '浅色、深色或跟随系统主题',
-    icon: Palette,
-  },
   {
     path: '/settings/rules',
     title: '汇报规则',

@@ -137,9 +137,6 @@
 .settings-chevron {
   margin-left: auto;
 }
-.sidebar nav a.settings-section-start {
-  margin-top: 10px;
-}
 .identity {
   display: flex;
   gap: 10px;
