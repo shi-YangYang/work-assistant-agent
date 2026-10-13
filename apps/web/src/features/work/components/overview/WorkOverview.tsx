@@ -30,6 +30,7 @@ export function WorkPage() {
     >
       <PageHeader
         title="我的工作"
+        className={styles.header}
         actions={
           <>
             <button

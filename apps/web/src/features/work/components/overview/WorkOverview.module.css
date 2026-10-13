@@ -1,12 +1,15 @@
 .page {
   min-width: 0;
 }
+.page > .header {
+  margin-bottom: 8px;
+}
 .page .surface {
   border: 0;
   border-radius: 0;
 }
 .surface > .toolbar {
-  padding: 8px 0 12px;
+  padding: 0 0 12px;
 }
 .list > .columns {
   padding: 8px 12px 8px 42px;
