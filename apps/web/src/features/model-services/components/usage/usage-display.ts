@@ -2,6 +2,7 @@ export const purposeNames: Record<string, string> = {
   assistant: '工作助手',
   report: '报告生成',
   asr: '语音转写',
+  image: '图片生成',
   admin_test: '配置测试',
 }
 

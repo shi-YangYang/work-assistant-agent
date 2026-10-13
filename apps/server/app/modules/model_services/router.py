@@ -49,8 +49,17 @@ async def models(body: ConfigRequest, actor=ADMIN, db=DB, settings=SETTINGS):
 
 
 @router.post('/api/v1/settings/model-services/test')
+@router.post('/api/v1/settings/model-services/test-image')
 async def test(body: ConfigRequest, request: Request, actor=ADMIN, db=DB):
+    if request.url.path.endswith('/test-image') and body.purpose != 'image':
+        problem(422, '此检测入口仅支持图片用途')
     config, key, fingerprint = await draft_config(db, actor, body, request.app.state.settings)
+    if body.purpose == 'image':
+        from app.modules.model_services.image_probe import image_probe
+        # Draft/auth checks have finished; release the request connection before I/O.
+        await db.commit()
+        result = await image_probe(request.app.state.sessions, request.app.state.settings, actor, body, config, key, fingerprint)
+        return {**result, 'requestId': request.state.request_id}
     if not await db.scalar(text('SELECT pg_try_advisory_xact_lock(hashtextextended(:company, 9))'), {'company': actor.company_id}):
         problem(409, '公司已有目录或检测请求正在进行，请稍后再试')
     # Reuse the request transaction for the lock; a second connection here

@@ -5,6 +5,7 @@ import app.modules.auth.models
 import app.modules.conversations.models
 import app.modules.deliverables.models
 import app.modules.executions.models
+import app.modules.image_generation.models
 import app.modules.interactions.models
 import app.modules.memories.models
 import app.modules.members.models

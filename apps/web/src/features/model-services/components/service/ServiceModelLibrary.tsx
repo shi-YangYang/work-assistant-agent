@@ -77,7 +77,9 @@ export function ServiceModelLibrary({
                     ? '需要选择接口协议'
                     : item.protocol === 'chat'
                       ? '聊天模型'
-                      : '语音转写'}
+                      : item.protocol === 'dashscope-image'
+                        ? '图片生成'
+                        : '语音转写'}
                   {purposes.length ? ` · ${purposes.join('、')}` : ''}
                 </small>
               </div>

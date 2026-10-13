@@ -1,3 +1,4 @@
+import { protocolPurpose } from '@web/features/model-services/types'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import utilitiesStyles from '../../../../styles/utilities.module.css'
@@ -14,6 +15,7 @@ import { modelFieldErrors } from '@web/features/model-services/utils/service-dra
 import { changeModelProtocol } from '@web/features/model-services/utils/service-presets'
 import { useState } from 'react'
 import { ReasoningSettings } from './ReasoningSettings'
+import { ImageSettings } from './ImageSettings'
 import type * as React from 'react'
 
 export function ModelOptions({
@@ -36,7 +38,7 @@ export function ModelOptions({
   busy: string
   updateModel: (next: CompanyModel) => void | undefined
   automaticMatch: {
-    protocol: ('chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr') | null
+    protocol: CompanyModel['protocol'] | null
     reason: string
   } | null
   setTestPurpose: React.Dispatch<React.SetStateAction<Purpose>>
@@ -47,7 +49,7 @@ export function ModelOptions({
   const [invalidParameters, setInvalidParameters] = useState(false)
   const fields = model
     ? modelFieldErrors(model)
-    : { model: '', language: '', contextWindow: '', reasoning: '' }
+    : { model: '', language: '', contextWindow: '', reasoning: '', imageSettings: '' }
   return (
     <>
       {modelOpen && model && draft && (
@@ -92,6 +94,7 @@ export function ModelOptions({
                   <select
                     value={model.protocolMode === 'auto' ? 'auto' : model.protocol}
                     onChange={(e) => {
+                      setInvalidParameters(false)
                       if (e.target.value === 'auto') {
                         updateModel({ ...model, protocolMode: 'auto' })
                       } else {
@@ -100,7 +103,7 @@ export function ModelOptions({
                           ...changeModelProtocol(model, protocol),
                           protocolMode: 'manual',
                         })
-                        setTestPurpose(protocol === 'chat' ? 'assistant' : 'asr')
+                        setTestPurpose(protocolPurpose(protocol))
                       }
                     }}
                   >
@@ -162,6 +165,13 @@ export function ModelOptions({
                     onValidityChange={setInvalidParameters}
                   />
                 </>
+              ) : model.protocol === 'dashscope-image' ? (
+                <ImageSettings
+                  key={model.id}
+                  model={model}
+                  updateModel={updateModel}
+                  onValidityChange={setInvalidParameters}
+                />
               ) : (
                 <FormField
                   label="识别语言（可选）"
@@ -199,6 +209,7 @@ export function ModelOptions({
                 !!fields.language ||
                 !!fields.contextWindow ||
                 !!fields.reasoning ||
+                !!fields.imageSettings ||
                 invalidParameters
               }
               onClick={() => setModelOpen(false)}

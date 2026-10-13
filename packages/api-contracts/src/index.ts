@@ -383,6 +383,8 @@ export interface DeliverableReference {
   itemIds: string[]
 }
 export interface DeliverableFile {
+  width?: number
+  height?: number
   id: string
   name: string
   mimeType: string
@@ -548,12 +550,19 @@ export interface ContextCapability {
   maxOutput: number | null
   source: string
 }
+export interface ImageModelSettings {
+  api: 'auto' | 'multimodal-sync' | 'image-async'
+  sizeMode: 'auto' | 'provider' | 'fixed'
+  sizes: string[]
+  defaultSize: string | null
+}
 export interface CompanyModel {
+  imageSettings?: ImageModelSettings | null
   contextWindow?: number | null
   contextCapability?: ContextCapability
   id: string
   model: string
-  protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
+  protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr' | 'dashscope-image'
   protocolMode?: 'auto' | 'manual'
   reasoning: ModelReasoning
   parameters: Record<string, import('@paa/model-config').JsonValue>
@@ -582,6 +591,7 @@ export interface ModelRouting {
   assistant: ModelSelection | null
   report: ModelSelection | 'follow' | null
   asr: ModelSelection | null
+  image?: ModelSelection | null
   environment: {
     assistant: { baseUrl: string; model: string; hasKey: boolean }
     asr: { baseUrl: string; model: string; hasKey: boolean }
@@ -593,7 +603,7 @@ export interface ModelCheck {
   service: string
   model: string
   revision: number
-  purpose: 'assistant' | 'report' | 'asr'
+  purpose: 'assistant' | 'report' | 'asr' | 'image'
   time: string
   elapsedMs: number
   checks: {

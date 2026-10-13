@@ -21,9 +21,9 @@ async def bind_job(db, job, settings):
     company = await db.get(Company, job.company_id)
     purpose = 'report' if job.kind == 'report' else 'assistant'
     binding = {'attempt': job.config_attempt, 'routingRevision': routing.revision if routing else 0, 'source': 'database' if routing or not company.environment_models else 'environment'}
-    for use in (purpose, 'asr') if purpose == 'assistant' else (purpose,):
+    for use in (purpose, 'asr', 'image') if purpose == 'assistant' else (purpose,):
         if routing:
-            selection = routing.choices[use]
+            selection = routing.choices.get(use)
             if selection == 'follow':
                 selection = routing.choices['assistant']
             if not selection:
@@ -45,8 +45,8 @@ async def bind_job(db, job, settings):
                 options = request_options(model, selection.get('effort'))
                 effort = selection.get('effort', model.get('reasoning', {}).get('initial'))
                 explicit_reasoning = model.get('explicitReasoning', False)
-            binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': rev.revision, 'name': rev.name, 'modelId': model['id'], 'model': model['model'], 'protocol': model['protocol'], 'effort': effort, 'parameters': options, 'explicitReasoning': explicit_reasoning, 'streaming': model['streaming'] if use != 'asr' else False}
-        elif company.environment_models:
+            binding[use] = {'serviceId': service.id, 'revisionId': rev.id, 'revision': rev.revision, 'name': rev.name, 'modelId': model['id'], 'model': model['model'], 'protocol': model['protocol'], 'effort': effort, 'parameters': options, 'explicitReasoning': explicit_reasoning, 'streaming': model['streaming'] if use in ('assistant', 'report') else False}
+        elif company.environment_models and use != 'image':
             url, key, name = (settings.asr_base_url, settings.asr_key, settings.asr_model) if use == 'asr' else (settings.agent_base_url, settings.agent_key, settings.agent_model)
             if not url or not key:
                 binding[use] = None
@@ -93,7 +93,7 @@ async def bind_job(db, job, settings):
 async def resolve_bound(db, settings, company_id, binding, purpose):
     choice = binding.get(purpose)
     if not choice:
-        raise ProviderError('not_configured', {'assistant': '工作助手', 'report': '报告模型', 'asr': '语音转写'}[purpose] + '尚未配置，请联系管理员；原始材料已保留')
+        raise ProviderError('not_configured', {'assistant': '工作助手', 'report': '报告模型', 'asr': '语音转写', 'image': '图片生成'}[purpose] + '尚未配置，请联系管理员；原始材料已保留')
     service = await db.scalar(select(ModelService).where(ModelService.id == choice['serviceId'], ModelService.company_id == company_id, ModelService.revoked.is_(False)))
     if not service:
         raise ProviderError('revoked', '模型配置已更新，请重试')
@@ -102,7 +102,7 @@ async def resolve_bound(db, settings, company_id, binding, purpose):
         raise ProviderError('revoked', '模型配置已更新，请重试')
     model = next(m for m in rev.models if m['id'] == choice['modelId'])
     options = (legacy_parameters(model, choice.get('presetId')) if 'presets' in model or 'legacyParameters' in model else request_options(model, choice.get('effort'))) if 'parameters' not in choice else choice['parameters']
-    config = {'baseUrl': rev.base_url, 'model': model['model'], 'protocol': model['protocol'], 'parameters': parameters(options), 'streaming': choice['streaming'], 'language': model.get('language', '')}
+    config = {'baseUrl': rev.base_url, 'model': model['model'], 'protocol': model['protocol'], 'parameters': parameters(options), 'streaming': choice['streaming'], 'language': model.get('language', ''), 'imageSettings': model.get('imageSettings')}
     key = decrypt(settings.model_key_file, rev.credential, company_id, service.id, rev.revision)
     return config, key
 

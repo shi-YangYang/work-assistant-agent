@@ -1,5 +1,6 @@
 import type { CompanyModel, CompanyService, ContextCapability } from '@paa/api-contracts'
 import { validateParameters } from '@paa/model-config'
+import { imageSettingsError } from './image-settings'
 import type { ServicePreset } from '@web/features/model-services/utils/service-presets'
 import { resolveModelProtocol } from '@web/features/model-services/utils/service-presets'
 
@@ -114,6 +115,7 @@ export function modelFieldErrors(model: CompanyModel) {
   }
   return {
     reasoning,
+    imageSettings: imageSettingsError(model),
     contextWindow:
       model.contextWindow != null &&
       (!Number.isInteger(model.contextWindow) ||
@@ -153,7 +155,9 @@ export function validateReasoning(model: CompanyModel) {
   )
     throw new Error('参数覆盖必须是 JSON 对象。')
   if (model.protocol !== 'chat' && (efforts.length || Object.keys(model.parameters).length))
-    throw new Error('语音接口不接受聊天推理参数。')
+    throw new Error('非聊天接口不接受聊天推理参数。')
+  if (model.protocol === 'dashscope-image' && (model.language || model.contextWindow != null))
+    throw new Error('图片接口不接受识别语言和上下文设置。')
   for (const effort of efforts) {
     const options = parameterOverrides[effort] ?? { ...model.parameters, reasoning_effort: effort }
     validateCompanyParameters(options)
@@ -184,7 +188,12 @@ export function validateServiceModels(models: CompanyModel[]) {
   const seen = new Set<string>()
   for (const model of models) {
     const errors = modelFieldErrors(model)
-    const message = errors.model || errors.language || errors.contextWindow || errors.reasoning
+    const message =
+      errors.model ||
+      errors.language ||
+      errors.contextWindow ||
+      errors.reasoning ||
+      errors.imageSettings
     if (message) throw new Error(`${model.model || '未命名模型'}：${message}`)
     const identity = JSON.stringify([model.model, model.protocol])
     if (seen.has(identity)) throw new Error(`模型 ${model.model} 的接口配置重复，请修改或移除。`)

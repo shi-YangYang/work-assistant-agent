@@ -1,3 +1,4 @@
+import { protocolPurpose } from '@web/features/model-services/types'
 import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
@@ -213,7 +214,7 @@ export function ModelServices() {
                   }}
                   onTest={(item) => {
                     setActiveModel(item.id)
-                    setTestPurpose(item.protocol === 'chat' ? 'assistant' : 'asr')
+                    setTestPurpose(protocolPurpose(item.protocol))
                     setError('')
                     setTestOpen(true)
                   }}

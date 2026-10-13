@@ -10,7 +10,7 @@ import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { PanelSection } from '@web/components/content/PanelSection'
 import { readModelRouting, saveModelRouting } from '@web/features/model-services/api/requests'
 import type { Purpose } from '@web/features/model-services/types'
-import { purposeNames } from '@web/features/model-services/types'
+import { purposeNames, supportsPurpose } from '@web/features/model-services/types'
 import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
@@ -69,11 +69,11 @@ export function Routing({
     <section
       className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${modelServicesStyles['model-routing']}`}
     >
-      {(['assistant', 'report', 'asr'] as const).map((purpose) => {
+      {(['assistant', 'report', 'asr', 'image'] as const).map((purpose) => {
         const choice = value[purpose]
         const options = services.flatMap((service) =>
           service.models
-            .filter((m) => (purpose === 'asr' ? m.protocol !== 'chat' : m.protocol === 'chat'))
+            .filter((m) => supportsPurpose(m.protocol, purpose))
             .map((model) => ({ service, model })),
         )
         const selected =
@@ -172,6 +172,7 @@ export function Routing({
                     assistant: value.assistant,
                     report: value.report,
                     asr: value.asr,
+                    image: value.image,
                     expectedRevision: value.revision,
                   }),
                 () => {

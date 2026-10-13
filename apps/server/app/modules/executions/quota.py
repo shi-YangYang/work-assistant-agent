@@ -4,8 +4,12 @@ from app.core.errors import problem
 from app.modules.deliverables.models import DeliverableRevision
 
 
-async def reserve(db, settings, actor, incoming_bytes):
+async def lock_storage(db):
     await db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended('noria:generated-storage', 0))"))
+
+
+async def reserve(db, settings, actor, incoming_bytes):
+    await lock_storage(db)
     revisions = (await db.scalars(select(DeliverableRevision.files).where(DeliverableRevision.owner_id == actor.id))).all()
     used = {item['storageKey']: item['size'] for files in revisions for item in files or []}
     if sum(used.values()) + incoming_bytes > settings.generated_quota_mb * 1024 * 1024:

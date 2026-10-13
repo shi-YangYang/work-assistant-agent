@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 
 def summary(item, record):
-    return {'id': item.id, 'revision': record.revision, 'latestRevision': item.revision, 'title': record.title, 'messageId': record.message_id, 'itemCount': len(record.items), 'files': [{'id': entry['id'], 'name': entry['name'], 'mimeType': entry['mimeType'], 'size': entry['size'], 'url': f"/api/v1/deliverables/{item.id}/files/{entry['id']}?revision={record.revision}"} for entry in record.files or []], 'updatedAt': record.created_at.isoformat()}
+    return {'id': item.id, 'revision': record.revision, 'latestRevision': item.revision, 'title': record.title, 'messageId': record.message_id, 'itemCount': len(record.items), 'files': [{'id': entry['id'], 'name': entry['name'], 'mimeType': entry['mimeType'], 'size': entry['size'], **{k: entry[k] for k in ('width', 'height') if k in entry}, 'url': f"/api/v1/deliverables/{item.id}/files/{entry['id']}?revision={record.revision}"} for entry in record.files or []], 'updatedAt': record.created_at.isoformat()}
 
 
 async def detail(db, actor, item, record):

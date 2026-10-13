@@ -63,6 +63,8 @@ export function matchModelProtocol(
       reason:
         'Token Plan 的语音识别请使用 qwen-audio-3.0-asr-flash；qwen3-asr-flash 适用于百炼按量服务。',
     }
+  if (['wan2.7-image', 'wan2.7-image-pro'].includes(model))
+    return { protocol: 'dashscope-image', reason: '' }
   // Explicit synchronous families only: filetrans, realtime, TTS and image
   // generation use different APIs and must never fall through to chat.
   if (/^qwen-audio-3\.0-asr-flash(?:-\d{4}-\d{2}-\d{2})?$/.test(model))
@@ -103,11 +105,15 @@ export function changeModelProtocol(model: CompanyModel, protocol: Protocol): Co
   return {
     ...model,
     protocol,
+    imageSettings: undefined,
     reasoning: { efforts: [], initial: null },
     parameters: {},
     explicitReasoning: false,
     streaming: protocol === 'chat',
-    language: protocol === 'dashscope-asr' ? '' : model.language,
+    language: protocol === 'dashscope-asr' || protocol === 'dashscope-image' ? '' : model.language,
+    ...(protocol === 'dashscope-image'
+      ? { contextWindow: null, contextCapability: undefined }
+      : {}),
   }
 }
 

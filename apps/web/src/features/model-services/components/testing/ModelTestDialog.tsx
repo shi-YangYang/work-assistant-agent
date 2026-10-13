@@ -48,7 +48,12 @@ export function ModelTestDialog({
               value={testPurpose}
               onChange={(e) => setTestPurpose(e.target.value as Purpose)}
             >
-              {(model?.protocol === 'chat' ? ['assistant', 'report'] : ['asr']).map((p) => (
+              {(model?.protocol === 'chat'
+                ? ['assistant', 'report']
+                : model?.protocol === 'dashscope-image'
+                  ? ['image']
+                  : ['asr']
+              ).map((p) => (
                 <option key={p} value={p}>
                   {purposeNames[p as Purpose]}
                 </option>
@@ -57,11 +62,13 @@ export function ModelTestDialog({
           </label>
           <p>
             会发送固定的
-            {testPurpose === 'asr'
-              ? '中文短语音'
-              : testPurpose === 'assistant'
-                ? '文字、图片与工具测试样本'
-                : '文字与工具测试样本'}
+            {testPurpose === 'image'
+              ? '文生图样本，生成一张测试图片'
+              : testPurpose === 'asr'
+                ? '中文短语音'
+                : testPurpose === 'assistant'
+                  ? '文字、图片与工具测试样本'
+                  : '文字与工具测试样本'}
             ，可能产生服务费用，不使用员工资料。
           </p>
           <div className={layoutStyles['form-actions']}>

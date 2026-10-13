@@ -63,7 +63,8 @@ function GeneratedFile({
         <div className={styles.description}>
           <strong title={file.name}>{file.name}</strong>
           <span>
-            {format} · {fileSize(file.size)} · 版本 {revision}
+            {format} · {fileSize(file.size)}
+            {file.width && file.height ? ` · ${file.width} × ${file.height}` : ''} · 版本 {revision}
           </span>
         </div>
         <button
