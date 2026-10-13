@@ -1,5 +1,5 @@
 import type { Attachment, Work, WorkDocument } from '@paa/api-contracts'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ConflictRecovery } from '@web/components/forms/ConflictRecovery'
@@ -21,19 +21,63 @@ import controls from '@web/styles/controls.module.css'
 import styles from './WorkContent.module.css'
 
 type ContentDraft = { body: WorkDocument; files: Attachment[]; revision: number; key: string }
-export function WorkContent({ work, own, saved }: { work: Work; own: boolean; saved: () => void }) {
+export function WorkContent({
+  work: incoming,
+  own,
+  saved,
+}: {
+  work: Work
+  own: boolean
+  saved: () => void
+}) {
   const [editing, setEditing] = useState(false)
+  const [confirmed, setConfirmed] = useState<Work | null>(null)
+  const work =
+    confirmed?.id === incoming.id && confirmed.revision > incoming.revision && !incoming.historical
+      ? confirmed
+      : incoming
+  const [checking, setChecking] = useState(false)
+  const checkingRef = useRef(false)
+  const [checkError, setCheckError] = useState<Error | string>('')
+  const writable = own && !work.historical
+  async function toggle(itemId: string, checked: boolean) {
+    if (!writable || editing || checkingRef.current) return
+    checkingRef.current = true
+    setChecking(true)
+    setCheckError('')
+    try {
+      const result = await patchWork(
+        work.id,
+        {
+          expectedRevision: work.revision,
+          bodyEdits: [{ action: 'set_checked', itemId, checked }],
+        },
+        crypto.randomUUID(),
+      )
+      setConfirmed(result.work)
+      saved()
+    } catch (error) {
+      setCheckError(error instanceof Error ? error : '清单保存失败，请重试')
+    } finally {
+      checkingRef.current = false
+      setChecking(false)
+    }
+  }
   return (
     <section className={styles.section} aria-label="工作内容">
       <div className={styles.heading}>
         <h3>工作内容</h3>
-        {own && !editing && (
-          <button className={controls['text-button']} onClick={() => setEditing(true)}>
+        {writable && !editing && (
+          <button
+            disabled={checking}
+            className={controls['text-button']}
+            onClick={() => setEditing(true)}
+          >
             编辑内容
           </button>
         )}
       </div>
-      {editing && own ? (
+      {editing && writable ? (
         <ContentEditor
           work={work}
           close={() => setEditing(false)}
@@ -43,9 +87,33 @@ export function WorkContent({ work, own, saved }: { work: Work; own: boolean; sa
           }}
         />
       ) : work.body?.content.length || (!work.body && work.summary) ? (
-        <WorkRichText body={work.body ?? documentFromText(work.summary)} work={work} own={own} />
+        <WorkRichText
+          body={work.body ?? documentFromText(work.summary)}
+          work={work}
+          own={own}
+          toggle={writable ? toggle : undefined}
+          disabled={checking}
+        />
       ) : (
         <p className={styles.hint}>写下目标、方案或清单，也可以添加图片和文件。</p>
+      )}
+      {checking && (
+        <small className={styles.saving} role="status">
+          正在保存清单…
+        </small>
+      )}
+      <ErrorNotice>{checkError}</ErrorNotice>
+      {checkError instanceof ApiError && checkError.status === 409 && (
+        <button
+          type="button"
+          className={controls['text-button']}
+          onClick={() => {
+            setCheckError('')
+            saved()
+          }}
+        >
+          读取最新版本
+        </button>
       )}
     </section>
   )

@@ -37,7 +37,7 @@ async def apply_action(db, actor, row, settings, *, confirmed=False, job=None):
             changes.update({key: update[key] for key in ('text', 'materialIds', 'materials') if key in update})
         if p.get('sharedAttachmentIds'):
             changes['materials'] = [*changes.get('materials', []), *({'attachmentId': value} for value in p['sharedAttachmentIds'])]
-        if 'summary' in changes and not identifier and 'body' not in changes:
+        if 'summary' in changes and not identifier and not {'body', 'bodyEdits'} & changes.keys():
             from app.modules.work.content.document import from_text
             changes['body'] = from_text(changes.pop('summary'))
         elif 'summary' in changes and identifier:
@@ -74,18 +74,10 @@ async def action_preview(db, actor, work, changes):
             version(entry, update['expectedRevision'])
             changes['update'] = {**update, 'before': entry.text}
     if 'bodyEdits' in changes:
-        from app.modules.work.content.document import edit_document
-        current = work.content.get('body', {'schemaVersion': 1, 'content': []}) if work else {'schemaVersion': 1, 'content': []}
-        previews = []
-        for edit in changes['bodyEdits']:
-            nodes = current['content']
-            before = [node for node in nodes if node.get('attrs', {}).get('id') == edit.get('blockId')] if edit['action'] != 'append' else []
-            updated = edit_document(current, [edit])
-            index = nodes.index(before[0]) if before else len(nodes)
-            count = len(updated['content']) - len(nodes) + len(before)
-            previews.append({**edit, 'before': before, 'blocks': updated['content'][index:index + count]})
-            current = updated
-        changes['bodyEdits'] = previews
+        from app.modules.work.content.checklist import edit_previews
+        from app.modules.work.serializers import work_content
+        current = work_content(work.content, work.id).get('body', {'schemaVersion': 1, 'content': []}) if work else {'schemaVersion': 1, 'content': []}
+        changes['bodyEdits'] = edit_previews(current, changes['bodyEdits'])
     names = {}
     from app.modules.attachments.documents import visible_attachment
     from app.modules.deliverables.queries import get_deliverable

@@ -1,8 +1,9 @@
 from datetime import date
 from typing import Literal
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from app.core.schemas import Input, Revision
 from app.modules.work.content.document import WorkDocument
+from app.modules.work.content.checklist import checked_edits
 
 
 class MaterialSource(Input):
@@ -30,6 +31,11 @@ class RecordPatch(Input):
     bodyEdits: list[dict] | None = Field(default=None, max_length=100)
     materials: list[MaterialSource] = Field(default_factory=list, max_length=9)
     materialIds: list[str] | None = Field(default=None, max_length=1000)
+
+    @field_validator('bodyEdits')
+    @classmethod
+    def valid_edits(cls, value):
+        return checked_edits(value) if value is not None else value
 
     @model_validator(mode='after')
     def valid_patch(self):

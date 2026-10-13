@@ -171,6 +171,13 @@ export interface WorkDocument {
   schemaVersion: 1
   content: WorkNode[]
 }
+export type WorkBodyEdit =
+  | { action: 'append'; blocks: WorkNode[] }
+  | { action: 'replace'; blockId: string; blocks: WorkNode[] }
+  | { action: 'remove'; blockId: string }
+  | { action: 'append_checklist'; blockId?: string; items: { text: string; checked?: boolean }[] }
+  | { action: 'replace_checklist'; blockId: string; items: { text: string; checked?: boolean }[] }
+  | { action: 'set_checked'; itemId: string; checked: boolean; blockId?: string }
 export interface WorkMaterialSource {
   attachmentId?: string
   deliverableId?: string
@@ -207,6 +214,7 @@ export interface WorkRecordFields {
   materialIds?: string[]
 }
 export interface WorkPatch extends Partial<Omit<Progress, 'summary'>>, WorkRecordFields {
+  bodyEdits?: WorkBodyEdit[]
   expectedRevision: number
   materials?: WorkMaterialSource[]
 }

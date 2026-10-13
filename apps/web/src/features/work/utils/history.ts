@@ -1,5 +1,10 @@
 import type { Progress, Work, WorkDocument, WorkNode } from '@paa/api-contracts'
-import { documentFromText, documentMaterialIds, splitDocumentMaterials } from './document'
+import {
+  documentChecklist,
+  documentFromText,
+  documentMaterialIds,
+  splitDocumentMaterials,
+} from './document'
 
 type Revision = NonNullable<Work['history']>[number]
 const fields: { key: keyof Progress; label: string }[] = [
@@ -21,13 +26,18 @@ const display = (content: Progress, key: keyof Progress) => {
   return key === 'status' ? statuses[text] || text : text || '未设置'
 }
 
-function bodyContent(body: WorkDocument) {
+function bodyContent(body: WorkDocument, ignoreChecks = false) {
   const normalize = (node: WorkNode): WorkNode => ({
     type: node.type,
     text: node.text,
     attrs: Object.fromEntries(
       Object.entries(node.attrs ?? {})
-        .filter(([key, value]) => key !== 'id' && value !== null)
+        .filter(
+          ([key, value]) =>
+            key !== 'id' &&
+            value !== null &&
+            !(ignoreChecks && node.type === 'taskItem' && key === 'checked'),
+        )
         .sort(([left], [right]) => left.localeCompare(right)),
     ),
     marks: node.marks ?? [],
@@ -63,8 +73,28 @@ export function historyChanges(current: Revision, previous?: Revision) {
   const previousBody = previous
     ? bodyContent(previous.content.body ?? documentFromText(previous.content.summary))
     : []
+  const checks = documentChecklist(current.content.body)
+  const previousChecks = documentChecklist(previous?.content.body)
+  if (comparable)
+    for (const [id, item] of checks) {
+      const before = previousChecks.get(id)
+      if (before && before.checked !== item.checked)
+        changes.push({
+          key: `check:${id}`,
+          label: item.text,
+          before: before.checked ? '已完成' : '未完成',
+          after: item.checked ? '已完成' : '未完成',
+        })
+    }
+  const onlyChecks =
+    comparable &&
+    current.content.body &&
+    previous.content.body &&
+    JSON.stringify(bodyContent(current.content.body, true)) ===
+      JSON.stringify(bodyContent(previous.content.body, true))
   if (
     current.content.body &&
+    !onlyChecks &&
     (comparable ? JSON.stringify(body) !== JSON.stringify(previousBody) : body.length > 0)
   ) {
     changes.push({

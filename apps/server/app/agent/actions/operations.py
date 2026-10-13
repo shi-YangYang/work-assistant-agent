@@ -212,7 +212,13 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         if task_item_id:
             proposal['taskItemId'] = task_item_id
         if isinstance(target, WorkItem):
-            proposal['targetContent'] = target.content
+            from app.modules.work.serializers import work_content
+            proposal['targetContent'] = work_content(target.content, target.id)
+        if action in ('create_work', 'update_work') and changes.get('bodyEdits'):
+            from app.modules.work.content.checklist import edit_previews
+            details = edit_previews(proposal.get('targetContent', {}).get('body', {'schemaVersion': 1, 'content': []}), changes['bodyEdits'])
+            if any(edit['action'] == 'set_checked' for edit in details):
+                proposal['workContentChanges'] = [edit for edit in details if edit['action'] == 'set_checked']
         if selected:
             proposal['deliverableSelection'] = selected
         if attachments:
@@ -246,11 +252,13 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
                 'fieldIssues': context.authorization_details.get(digest(proposal), []),
                 'message': reason or '本次操作未执行，请根据失败原因修正参数或说明未完成范围。'}
     if action == 'create_work' and selected and digest(proposal) not in context.title_only_actions:
-        from app.modules.work.content.document import plain_text
-        if any(item.get('body', '').strip() for item in selected.get('items', [])) and not plain_text(changes.get('body')).strip():
+        from app.modules.work.content.document import WorkDocument, edit_document, plain_text
+        effective_body = (edit_document({'schemaVersion': 1, 'content': []}, changes['bodyEdits'])
+                          if 'bodyEdits' in changes else WorkDocument.model_validate(changes.get('body') or {}).model_dump())
+        if any(item.get('body', '').strip() for item in selected.get('items', [])) and not plain_text(effective_body).strip():
             return {'state': 'failed', 'category': 'invalid_arguments',
                     'fieldIssues': [{'field': 'body', 'code': 'missing'}],
-                    'message': '所选方案条目有正文，本次只传标题尚未保存。请在同一步 changes.body 中保留条目目标、内容与条件后重试；不要新建额外副本或设置未要求的下一步/日期。'}
+                    'message': '所选方案条目有正文，本次只传标题尚未保存。请在同一步 changes.body 或 bodyEdits 中保留条目目标、内容与条件后重试；不要新建额外副本或设置未要求的下一步/日期。'}
     if action == 'update_work':
         merged = dict(changes)
         for name, addition in context.append_values.get(digest(proposal), {}).items():

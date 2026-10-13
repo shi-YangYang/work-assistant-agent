@@ -24,7 +24,7 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     BEFORE creating work from selected advice, save/read its original stable
     deliverable entries. Chat-only advice: save the original selected entries,
     then read their stable IDs. On the FIRST create, put the full goal/content/
-    conditions in body; link the read deliverable_id, deliverable_revision and
+    conditions in body or one bodyEdits batch; link the read deliverable_id, deliverable_revision and
     item_id, one entry per action. Never start with title only, guess IDs or merge
     same-title entries. shared_attachment_ids: only explicitly requested shared files.
 
@@ -66,7 +66,25 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
       body holds goals/context/plans, update dated progress.
       body: {schemaVersion:1,content:[Tiptap nodes]}. Prefer stable-ID bodyEdits:
       [{action:'append',blocks:[...]}, {action:'replace',blockId,blocks:[...]},
-      {action:'remove',blockId}].
+      {action:'remove',blockId}]. Create/append checklists with
+      {action:'append_checklist',items:[{text,checked?:false}],blockId?:readTaskListId};
+      omit blockId for a new list, supply an actual read top-level taskList ID
+      to append to that list. Do not hand-write checklist nodes. Preserve order,
+      conditions and compound items. Create the ENTIRE supplied content in ONE
+      create_work, never a partial work followed by updates. Checklist + notes:
+      changes:{title:'今日待办',bodyEdits:[
+        {action:'append_checklist',items:[{text:'收周报'},{text:'打印简历'}]},
+        {action:'append',blocks:[{type:'paragraph',content:[{type:'text',text:'备注：打印机待检修'}]}]}
+      ]}. Put all items/notes in this batch; do not also send body.
+      {action:'replace_checklist',blockId,items} converts a read ordinary block
+      only when requested. Mark/unmark via {action:'set_checked',itemId,checked,blockId?}
+      using read taskItem.attrs.id; optional blockId must be its actual top-level
+      taskList ID. Never rewrite a list to toggle. Batch all
+      requested items in ONE action. Default unchecked; partial completion is
+      not whole-item completion, and checklist completion never sets work status.
+      Same-text items in different sections are distinct: clarify the section/item
+      unless the user explicitly selects all matches; never infer a batch from one name.
+      body and bodyEdits are mutually exclusive; no automatic write from chat facts.
       update: {action:'create',text,materialIds?,materials?},
       {action:'edit',id,expectedRevision,text,materialIds?}, or
       {action:'delete',id,expectedRevision}; list_work_updates before edit/delete.

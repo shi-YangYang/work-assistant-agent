@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 063：工作勾选清单与轻量 Agent 操作](spec-063-work-checklists/spec.md) — 已完成，独立验收 PASS；正文直接勾选、Agent 整批生成与定点修改，无新增模型阶段；low／high 对照与专项复验见 [验收结果](spec-063-work-checklists/acceptance.md)。
+
 - [Spec 062：Noria 宠物工作状态](spec-062-noria-pet-activity/spec.md) — 已实施并通过独立验收；全页面本人任务状态与双爪打字动画接入，78 项 Web、2 项后端定向测试通过；[状态设计](spec-062-noria-pet-activity/plan.md)、[验收与限制](spec-062-noria-pet-activity/acceptance.md)。
 
 - [Spec 061：项目目录归类与边界整理](spec-061-directory-organization/spec.md) — 已实施并通过独立验收；Web、后端与测试按职责归类，原 2 项日期假设失败已后续修复并定向通过；[目录与迁移](spec-061-directory-organization/plan.md)、[验收与限制](spec-061-directory-organization/acceptance-final.md)。
@@ -37,4 +39,4 @@
 
 ## 生命周期
 
-新 Spec 从 **063** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+新 Spec 从 **064** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

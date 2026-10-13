@@ -59,8 +59,9 @@ def report_plan_contexts(revisions):
         previous = latest.get(revision.work_id)
         if previous is None or revision.revision > previous.revision:
             latest[revision.work_id] = revision
-    return [{'sourceId': row.id, 'workId': row.work_id, 'title': row.content.get('title', ''), 'bodyText': row.content['bodyText']}
-            for row in latest.values() if row.content.get('bodyText')]
+    from app.modules.work.content.document import plain_text
+    return [{'sourceId': row.id, 'workId': row.work_id, 'title': row.content.get('title', ''), 'bodyText': plain_text(row.content['body']) if row.content.get('body') is not None else row.content.get('bodyText', '')}
+            for row in latest.values() if row.content.get('body') or row.content.get('bodyText')]
 
 
 def report_source_content(revision):

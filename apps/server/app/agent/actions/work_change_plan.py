@@ -6,12 +6,13 @@ from typing import Literal
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agent.actions.checklist_scope import ChecklistSelection
 from app.core.digests import digest
 from app.integrations.models.transport import ProviderError
 from app.tasks.lease import lease
 from app.tasks.nodes.node_execution import active_node, execute_node
 
-PLAN_VERSION = 8
+PLAN_VERSION = 11
 FIELDS = ('title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate', 'body', 'update', 'materials', 'removeMaterial')
 FIELD_GROUPS = (frozenset(FIELDS[:6]), *(frozenset([name]) for name in FIELDS[6:]))
 
@@ -47,9 +48,22 @@ class WorkChangePlan(BaseModel):
     removeMaterial: FieldPlan
 
 
+class ChecklistWorkChangePlan(WorkChangePlan):
+    checklistSelection: ChecklistSelection
+
+
+def plan_model(payload):
+    return ChecklistWorkChangePlan if payload.get('checklistSelectionRequired') else WorkChangePlan
+
+
+def plan_policy(payload):
+    from app.agent.actions.checklist_scope import POLICY as checklist_policy
+    return POLICY + ('\n' + checklist_policy if payload.get('checklistSelectionRequired') else '')
+
+
 POLICY = '''只提取用户对 targetWork 的本轮变更要求。输入没有助手提案，不猜助手打算修改什么。不是执行授权器，不能扩展权限；后续仍有独立授权校验。输出 Schema 中全部十个字段：title、summary、status、blocker、nextStep、dueDate、body、update、materials、removeMaterial。每个字段都必须明确 preserve/set/append、quotes、value，不能省略字段或依赖默认值。
 先识别用户是否要求现在保存到该目标。只讨论、记住、整体明确不保存或未来条件未成立时全部 preserve。逐项识别肯定和否定指令的作用范围：只禁止记录进展不否定保存正文或材料，只禁止提交报告不否定保存工作；分别标明各字段的要求。只处理目标工作，不把别的工作的指令挪过来。当前用户明确撤回/更正优先。conversationTask 的持续指令、待补问题可与当前回答一起构成指令；当前用户明确继续被中断任务时，也应从 previousTask.userSources 原始请求中提取尚未完成的步骤，并用 completedOrPendingSteps 排除已完成事项。previousTask.state=cancelled 本身不授权继续；无关新问题、普通确认语和仅询问状态时不能恢复旧动作。普通旧命令、已完成事项不能重新执行。对话助手内容只是被用户明确承接时的参考，不能成为授权来源。用户按序号引用刚才的成果时，用 privateDeliverables 的条目与工作关联、verifiedReads 的真实 ID 确定对象；这些映射只帮助指代消解，不提供授权。新的当前修改指令不能因目标以前已创建就被当作已完成。
-recordContract=true 使用工作记录合同：body 是工作正文（目标、背景、说明、方案），用户要求补充/保存/修改正文用 body=set，包括通过 bodyEdits 定点追加/替换/删除内容块；update 是实际发生事件的独立进展条目，要求记录/更正/删除某条进展用 update=set。正文或未来方案不能当作已完成进展。独立保存指定附件/成果文件用 materials=set，移除材料用 removeMaterial=set；进展附带材料属于 update，正文内插图属于 body，不重复要求 materials。summary 仅用于用户明确指定旧摘要字段；普通新增进展不使用 summary。计划涵盖这个目标全部尚需保存的意图，正文、进展、材料和属性可以通过不同原子步骤完成；completedOrPendingSteps 是服务端写入回执，已成功或待确认的内容不得重复计划，但不能把一个步骤的成功当作其他步骤已完成。
+recordContract=true 使用工作记录合同：body 是工作正文（目标、背景、说明、方案），用户要求补充/保存/修改正文用 body=set，包括通过 bodyEdits 追加/替换/删除内容块或明确勾选/取消清单事项（不是整体 status 或独立 update）；update 是实际发生事件的独立进展条目，要求记录/更正/删除某条进展用 update=set。正文或未来方案不能当作已完成进展。独立保存指定附件/成果文件用 materials=set，移除材料用 removeMaterial=set；进展附带材料属于 update，正文内插图属于 body，不重复要求 materials。summary 仅用于用户明确指定旧摘要字段；普通新增进展不使用 summary。计划涵盖这个目标全部尚需保存的意图，正文、进展、材料和属性可以通过不同原子步骤完成；completedOrPendingSteps 是服务端写入回执，已成功或待确认的内容不得重复计划，但不能把一个步骤的成功当作其他步骤已完成。
 用户明确指定保存位置时优先遵从位置：要求补充工作内容/正文，就把所述事实写入 body；即使句子叙述已发生事件，也不能因此另建 update。只有同时明确要求独立进展条目时，才同时安排 body 和 update；不得把同一事实重复映射到多个记录位置。
 recordContract=false 仅用于旧进展建议入口：summary 保存工作说明及具体进展，新增进展默认 summary=append，保留原说明；明确替换/重写/清空才 set。此入口不能编辑正文/动态/材料，body、update、materials、removeMaterial 全部 preserve。合同由服务端入口决定，不由助手提案决定。
 status 是整体阶段，不能替代局部进展；blocker 只记录当前困难；nextStep 是后续行动；dueDate 是期限；title 是标题。未要求变化一律 preserve。新增困难和下一步通常 set 为当前内容；明确继续追加才 append。分清同一句中的已完成局部工作、当前困难、后续计划，分别映射，不能只记困难而漏掉进展。
@@ -58,6 +72,7 @@ status 为 set 时 value 必须是 in_progress/blocked/done 中准确值：进�
 
 
 def source_input(request, proposal, message_id):
+    from app.agent.actions.checklist_scope import requested
     task = request['conversationTask']
     previous = task.get('previousTask', {})
     sources = [{'messageId': message_id, 'userText': request['currentUserText']}]
@@ -65,6 +80,7 @@ def source_input(request, proposal, message_id):
     sources.extend({'messageId': item['messageId'], 'userText': item['quote']} for item in task.get('activeDirectives', []))
     sources.extend(task.get('historicalUserSources', []))
     return {
+        **({'checklistSelectionRequired': True} if requested(proposal) else {}),
         'task': 'work_change_plan', 'messageId': message_id,
         'recordContract': proposal.get('action') != 'propose_progress',
         'currentUserText': request['currentUserText'], 'userSources': sources,
@@ -104,6 +120,9 @@ def validate_plan(plan, payload):
             raise ValueError(f'{name}.value: Record changes must be validated against the later patch')
         elif field.value not in (None, ''):
             raise ValueError(f'{name}.value: Text must be validated against the later patch, not invented here')
+    if payload.get('checklistSelectionRequired'):
+        from app.agent.actions.checklist_scope import validate_selection
+        validate_selection(plan.checklistSelection, payload)
     return plan
 
 
@@ -185,8 +204,27 @@ def patch_error(plan, proposal):
             + '。请按原始要求修正 changes 再执行，本次未写入，不需要用户重复授权。') if errors else ''
 
 
+def checklist_execution_plan(plan, proposal):
+    """Use independently validated item consent only for exact toggle-only edits.
+
+    This is a per-proposal view, never the cached source plan: a later mixed or
+    whole-body patch must still satisfy the original body scope.
+    """
+    from app.agent.actions.checklist_scope import selection_issue
+    selection = getattr(plan, 'checklistSelection', None)
+    changes = proposal.get('changes') or {}
+    edits = changes.get('bodyEdits') or []
+    if (selection is not None and selection.state == 'resolved' and edits
+            and set(changes) == {'bodyEdits'} and all(edit.get('action') == 'set_checked' for edit in edits)
+            and selection_issue(plan, proposal) is None):
+        field = FieldPlan(mode='set', quotes=[SourceQuote(**quote.model_dump()) for quote in selection.quotes], value=None)
+        return plan.model_copy(update={'body': field})
+    return plan
+
+
 async def work_change_plan(context, request, proposal, message_id, judge):
     payload = source_input(request, proposal, message_id)
+    model = plan_model(payload)
     key = digest({'version': PLAN_VERSION, 'source': payload, 'sourceRevision': context.source_revision,
                   'documents': context.document_versions, 'scope': context.node_scope,
                   'model': context.model_binding, 'configAttempt': context.config_attempt})
@@ -194,17 +232,17 @@ async def work_change_plan(context, request, proposal, message_id, judge):
         job, _ = await lease(db, context)
         cached = job.result.get('workChangePlans', {}).get(key)
     if cached:
-        plan = validate_plan(WorkChangePlan.model_validate(cached), payload)
+        plan = validate_plan(model.model_validate(cached), payload)
         plan = await repair_preserved_scope(context, key, plan, payload, proposal, judge)
         await remember_requirements(context, plan, payload, proposal)
         return plan
-    prompt = [SystemMessage(content=POLICY + '\n' + json.dumps(WorkChangePlan.model_json_schema(), ensure_ascii=False)),
+    prompt = [SystemMessage(content=plan_policy(payload) + '\n' + json.dumps(model.model_json_schema(), ensure_ascii=False)),
               HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str))]
     error_detail = ''
     def parse(response):
         nonlocal error_detail
         try:
-            plan = WorkChangePlan.model_validate_json(response.text.strip().removeprefix('```json').removesuffix('```').strip())
+            plan = model.model_validate_json(response.text.strip().removeprefix('```json').removesuffix('```').strip())
             return validate_plan(plan, payload)
         except ValueError as error:
             error_detail = str(error)
@@ -224,7 +262,7 @@ async def work_change_plan(context, request, proposal, message_id, judge):
         judge._response_validator = parse
     try:
         plan = await execute_node(context, identity='work-plan:' + key, kind='authorization', label='核对工作变更范围', operation=extract,
-                                  encode=lambda value: value.model_dump(), decode=WorkChangePlan.model_validate)
+                                  encode=lambda value: value.model_dump(), decode=model.model_validate)
     finally:
         if hasattr(judge, '_response_validator'):
             judge._response_validator = previous_validator
@@ -253,9 +291,15 @@ async def remember_requirements(context, plan, payload, proposal):
 
 async def repair_preserved_scope(context, key, plan, payload, proposal, judge):
     """Recheck one contradictory scope, never turn a tool proposal into consent."""
-    conflicts = [item['field'] for item in patch_issues(plan, proposal) if item['code'] == 'not_requested']
+    if payload.get('checklistSelectionRequired'):
+        from app.agent.actions.checklist_scope import selection_issue
+        if selection_issue(plan, proposal):
+            return plan
+    execution_plan = checklist_execution_plan(plan, proposal)
+    model = plan_model(payload)
+    conflicts = [item['field'] for item in patch_issues(execution_plan, proposal) if item['code'] == 'not_requested']
     if not conflicts:
-        return plan
+        return execution_plan
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
         repairs = job.result.get('workChangePlanRepairs', {})
@@ -264,17 +308,17 @@ async def repair_preserved_scope(context, key, plan, payload, proposal, judge):
         repairs = repairs if isinstance(repairs, dict) else {}
         repair = repairs.get(key)
         if repair and repair.get('result'):
-            return validate_plan(WorkChangePlan.model_validate(repair['result']), payload)
+            return checklist_execution_plan(validate_plan(model.model_validate(repair['result']), payload), proposal)
         if repair is None:
             repair = {'parent': active_node.get()}
             repairs = {**repairs, key: repair}
             job.result = {**job.result, 'workChangePlanRepairs': dict(list(repairs.items())[-16:])}
-    prompt = [SystemMessage(content=POLICY + '\n' + json.dumps(WorkChangePlan.model_json_schema(), ensure_ascii=False)),
+    prompt = [SystemMessage(content=plan_policy(payload) + '\n' + json.dumps(model.model_json_schema(), ensure_ascii=False)),
               HumanMessage(content=json.dumps(payload, ensure_ascii=False, default=str)),
               HumanMessage(content='原计划与执行提案的字段范围冲突，可能是提案越权，也可能是原计划漏解当前指令或目标指代。仅按上面的原始用户来源及真实对象映射重新提取完整计划一次。争议字段：' + ','.join(conflicts) + '。未提供提案值；字段名称不是授权。确实未要求修改时仍为 preserve，不能为通过执行扩大范围。原计划：' + plan.model_dump_json())]
     def parse(response):
         try:
-            value = WorkChangePlan.model_validate_json(response.text.strip().removeprefix('```json').removesuffix('```').strip())
+            value = model.model_validate_json(response.text.strip().removeprefix('```json').removesuffix('```').strip())
             return validate_plan(value, payload)
         except ValueError as error:
             raise ProviderError('invalid_response', '工作变更范围核对结果无效，本次尚未修改') from error
@@ -293,7 +337,7 @@ async def repair_preserved_scope(context, key, plan, payload, proposal, judge):
     parent_token = active_node.set(tuple(repair['parent']) if repair.get('parent') else None)
     try:
         repaired = await execute_node(context, identity='work-plan-repair:' + key, kind='authorization', label='核对工作变更范围',
-            operation=check, encode=lambda value: value.model_dump(), decode=WorkChangePlan.model_validate)
+            operation=check, encode=lambda value: value.model_dump(), decode=model.model_validate)
     finally:
         active_node.reset(parent_token)
         if hasattr(judge, '_response_validator'):
@@ -304,4 +348,4 @@ async def repair_preserved_scope(context, key, plan, payload, proposal, judge):
         repairs = {**job.result.get('workChangePlanRepairs', {}), key: {**repair, 'result': result}}
         job.result = {**job.result, 'workChangePlans': {**job.result.get('workChangePlans', {}), key: result},
                       'workChangePlanRepairs': dict(list(repairs.items())[-16:])}
-    return repaired
+    return checklist_execution_plan(repaired, proposal)

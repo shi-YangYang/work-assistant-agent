@@ -220,3 +220,25 @@ async def test_explicit_title_only_selection_remains_supported(setup):
     assert result['state'] == 'succeeded'
     detail = (await setup[3]['employee'].get('/api/v1/work-items/' + result['objectId'])).json()
     assert detail['bodyText'] == '' and detail['title'] == '澄清需求'
+
+
+async def test_selected_plan_batch_checklist_saves_complete_body_on_first_attempt(setup):
+    context, _ = await runtime(setup, '准备一份联调清单')
+    plan = await save_plan(context, title='联调计划', body='', items=[{'title': '联调', 'body': '核对三个接口；没有测试账号时暂停'}])
+    await finish(context)
+    context, _ = await runtime(setup, '把联调计划第一项存为带勾选框的工作，保留条件')
+    await read_plan(context, plan['id'])
+    params = dict(step=1, action='create_work', deliverable_id=plan['id'], deliverable_revision=1, item_id=plan['items'][0]['id'], changes={
+        'title': '联调', 'bodyEdits': [
+            {'action': 'append_checklist', 'items': [{'text': '核对三个接口'}]},
+            {'action': 'append', 'blocks': [{'type': 'paragraph', 'content': [{'type': 'text', 'text': '没有测试账号时暂停'}]}]},
+        ],
+    })
+    result = await execute(context, **params)
+    assert result['state'] == 'succeeded', result
+    assert (await execute(context, **params))['id'] == result['id']
+    detail = (await setup[3]['employee'].get('/api/v1/work-items/' + result['objectId'])).json()
+    assert detail['revision'] == 1 and detail['bodyText'] == '☐ 核对三个接口\n没有测试账号时暂停'
+    assert len(context.intent_model.inputs) == 1
+    linked = await read_plan(context, plan['id'])
+    assert [link['workId'] for link in linked['links']] == [result['objectId']]

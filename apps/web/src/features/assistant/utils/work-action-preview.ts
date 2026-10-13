@@ -22,21 +22,27 @@ export function workChangeText(
   if (key === 'bodyEdits' && Array.isArray(value))
     return value
       .map((edit, index) => {
+        if (edit.action === 'set_checked')
+          return `${index + 1}. ${edit.text || '清单事项'}：${edit.beforeChecked ? '已完成' : '未完成'} → ${edit.checked ? '已完成' : '未完成'}`
+        const append = ['append', 'append_checklist'].includes(edit.action)
         const label =
           (
-            { append: '追加内容', replace: '修改指定内容', remove: '删除指定内容' } as Record<
-              string,
-              string
-            >
+            {
+              append: '追加内容',
+              replace: '修改指定内容',
+              remove: '删除指定内容',
+              append_checklist: '追加清单',
+              replace_checklist: '整理为清单',
+            } as Record<string, string>
           )[edit.action] ?? '修改内容'
         const before = edit.before?.map(blockText).join('\n')
         const after = edit.blocks?.map(blockText).join('\n')
         return [
           `${index + 1}. ${label}`,
-          edit.action !== 'append' ? `原内容：\n${before || '（空内容）'}` : '',
+          !append ? `原内容：\n${before || '（空内容）'}` : '',
           edit.action === 'remove'
             ? '修改为：删除以上内容'
-            : `${edit.action === 'append' ? '新增内容' : '修改为'}：\n${after || '（空内容）'}`,
+            : `${append ? '新增内容' : '修改为'}：\n${after || '（空内容）'}`,
         ]
           .filter(Boolean)
           .join('\n')

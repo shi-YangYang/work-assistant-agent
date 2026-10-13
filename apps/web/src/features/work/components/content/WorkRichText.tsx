@@ -1,4 +1,4 @@
-import type { Attachment, Work, WorkDocument } from '@paa/api-contracts'
+import type { Attachment, Work, WorkDocument, WorkNode } from '@paa/api-contracts'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
@@ -18,6 +18,7 @@ export function WorkRichText({
   upload,
   disabled = false,
   own = false,
+  toggle,
 }: {
   body: WorkDocument
   change?: (body: WorkDocument) => void
@@ -26,8 +27,14 @@ export function WorkRichText({
   upload?: (files: File[]) => Promise<Attachment[]>
   disabled?: boolean
   own?: boolean
+  toggle?: (id: string, checked: boolean) => void
 }) {
   const files = useRef<HTMLInputElement>(null)
+  const root = useRef<HTMLDivElement>(null)
+  const interaction = useRef({ toggle, disabled })
+  useEffect(() => {
+    interaction.current = { toggle, disabled }
+  }, [toggle, disabled])
   const [link, setLink] = useState<string | null>(null)
   const [invalidLink, setInvalidLink] = useState(false)
   const editor = useEditor({
@@ -38,15 +45,25 @@ export function WorkRichText({
         link: { openOnClick: !change, protocols: ['http', 'https', 'mailto'] },
       }),
       TaskList,
-      TaskItem.configure({ nested: true }),
+      TaskItem.configure({
+        nested: true,
+        a11y: { checkboxLabel: (node) => node.textContent || '清单事项' },
+        onReadOnlyChecked: (node, checked) => {
+          if (!interaction.current.disabled && typeof node.attrs.id === 'string')
+            interaction.current.toggle?.(node.attrs.id, checked)
+          return false
+        },
+      }),
       WorkMaterialNode,
       UniqueID.configure({
+        updateDocument: !!change,
         types: [
           'paragraph',
           'heading',
           'bulletList',
           'orderedList',
           'taskList',
+          'taskItem',
           'blockquote',
           'codeBlock',
           'horizontalRule',
@@ -86,12 +103,42 @@ export function WorkRichText({
   useEffect(() => {
     if (!editor || editor.isDestroyed) return
     const content = body.content.length ? body.content : [{ type: 'paragraph' }]
-    if (JSON.stringify(editor.getJSON().content) !== JSON.stringify(content))
-      editor.commands.setContent({ type: 'doc', content }, { emitUpdate: false })
-  }, [body, editor])
+    if (JSON.stringify(editor.getJSON().content) !== JSON.stringify(content)) {
+      // Checkbox-only saves update attributes without replacing the document,
+      // preserving DOM focus, scroll position and material views.
+      const incoming = editor.schema.nodeFromJSON({ type: 'doc', content })
+      const stripChecks = (node: WorkNode): WorkNode => ({
+        ...node,
+        ...(node.attrs
+          ? { attrs: { ...node.attrs, ...(node.type === 'taskItem' ? { checked: false } : {}) } }
+          : {}),
+        ...(node.content ? { content: node.content.map(stripChecks) } : {}),
+      })
+      if (
+        !change &&
+        JSON.stringify(stripChecks(editor.state.doc.toJSON())) ===
+          JSON.stringify(stripChecks(incoming.toJSON()))
+      ) {
+        const tr = editor.state.tr
+        incoming.descendants((node, pos) => {
+          if (
+            node.type.name === 'taskItem' &&
+            node.attrs.checked !== editor.state.doc.nodeAt(pos)?.attrs.checked
+          )
+            tr.setNodeMarkup(pos, undefined, node.attrs)
+        })
+        if (tr.docChanged) editor.view.dispatch(tr)
+      } else editor.commands.setContent({ type: 'doc', content }, { emitUpdate: false })
+    }
+  }, [body, editor, change])
+  useEffect(() => {
+    root.current?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]').forEach((input) => {
+      input.disabled = disabled || (!change && !toggle)
+    })
+  })
   return (
     <MaterialContext.Provider value={{ work, pending, own }}>
-      <div className={styles.rich} data-editing={!!change}>
+      <div ref={root} className={styles.rich} data-editing={!!change}>
         {change && (
           <div className={styles.toolbar} role="toolbar" aria-label="正文格式">
             <button

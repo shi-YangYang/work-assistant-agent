@@ -95,6 +95,11 @@
   grid-template-columns: 5em minmax(0, 1fr);
   gap: 12px;
 }
+.changes > .check-change {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
 .changes dt,
 .before {
   color: var(--muted);

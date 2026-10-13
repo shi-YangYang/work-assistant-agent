@@ -3,11 +3,11 @@ from app.security.access import receipt, remember, require, resolve
 
 
 async def work_for_model(db, actor, job, work, *, body_start=0, detail=False):
-    from app.modules.work.serializers import work_dto
+    from app.modules.work.serializers import work_dto, work_content
     await require(db, actor, work.access, retained=True)
     result = work_dto(work, overview=True)
     if detail:
-        nodes = work.content.get('body', {}).get('content', [])
+        nodes = work_content(work.content, work.id).get('body', {}).get('content', [])
         selected, size = [], 0
         import json
         for node in nodes[body_start:]:
