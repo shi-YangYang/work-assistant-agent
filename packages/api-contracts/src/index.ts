@@ -588,7 +588,9 @@ export interface ModelSelection {
 export interface ModelRouting {
   revision: number
   source: 'environment' | 'database'
+  /** Shared text model for chat and daily/weekly reports. */
   assistant: ModelSelection | null
+  /** Legacy field; the server returns 'follow' for the shared text model. */
   report: ModelSelection | 'follow' | null
   asr: ModelSelection | null
   image?: ModelSelection | null

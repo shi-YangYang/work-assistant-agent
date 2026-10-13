@@ -49,7 +49,7 @@ export function ModelTestDialog({
               onChange={(e) => setTestPurpose(e.target.value as Purpose)}
             >
               {(model?.protocol === 'chat'
-                ? ['assistant', 'report']
+                ? ['assistant']
                 : model?.protocol === 'dashscope-image'
                   ? ['image']
                   : ['asr']

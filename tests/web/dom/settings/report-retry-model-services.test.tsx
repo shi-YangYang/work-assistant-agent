@@ -119,6 +119,8 @@ it('automatically selects a sole service and invalidates test results when its c
   expect(await screen.findByLabelText('服务名称')).toBeTruthy()
   expect((screen.getByLabelText('服务名称') as HTMLInputElement).value).toBe(service.name)
   fireEvent.click(screen.getByRole('button', { name: '测试 gpt-test' }))
+  expect(screen.getByRole('option', { name: '文字模型' })).toBeTruthy()
+  expect(screen.queryByRole('option', { name: '报告生成' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '开始测试' }))
   await screen.findByText('模型测试结果')
   fireEvent.change(screen.getByLabelText('服务名称'), { target: { value: '新配置' } })

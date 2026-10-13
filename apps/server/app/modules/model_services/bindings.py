@@ -3,6 +3,7 @@ from app.modules.members.models import Company, Member
 from app.modules.model_services.models import ModelRouting, ModelService, ModelServiceRevision
 from app.modules.model_services.parameters import request_options
 from app.modules.model_services.reasoning.legacy import legacy_parameters
+from app.modules.model_services.routing_choices import unified_choices
 from app.modules.model_services.schemas import ServiceModel, parameters
 from app.modules.model_services.service import current_revision, get_service, validate_choice, validate_master_key
 from app.security.secrets import decrypt, encrypt
@@ -20,12 +21,11 @@ async def bind_job(db, job, settings):
     routing = await db.get(ModelRouting, job.company_id)
     company = await db.get(Company, job.company_id)
     purpose = 'report' if job.kind == 'report' else 'assistant'
+    choices = unified_choices(routing.choices if routing else None)
     binding = {'attempt': job.config_attempt, 'routingRevision': routing.revision if routing else 0, 'source': 'database' if routing or not company.environment_models else 'environment'}
     for use in (purpose, 'asr', 'image') if purpose == 'assistant' else (purpose,):
         if routing:
-            selection = routing.choices.get(use)
-            if selection == 'follow':
-                selection = routing.choices['assistant']
+            selection = choices['assistant' if use == 'report' else use]
             if not selection:
                 binding[use] = None
                 continue
@@ -93,7 +93,7 @@ async def bind_job(db, job, settings):
 async def resolve_bound(db, settings, company_id, binding, purpose):
     choice = binding.get(purpose)
     if not choice:
-        raise ProviderError('not_configured', {'assistant': '工作助手', 'report': '报告模型', 'asr': '语音转写', 'image': '图片生成'}[purpose] + '尚未配置，请联系管理员；原始材料已保留')
+        raise ProviderError('not_configured', {'assistant': '文字模型', 'report': '文字模型', 'asr': '语音转写', 'image': '图片生成'}[purpose] + '尚未配置，请联系管理员；原始材料已保留')
     service = await db.scalar(select(ModelService).where(ModelService.id == choice['serviceId'], ModelService.company_id == company_id, ModelService.revoked.is_(False)))
     if not service:
         raise ProviderError('revoked', '模型配置已更新，请重试')

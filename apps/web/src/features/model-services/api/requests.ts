@@ -17,7 +17,6 @@ export function readModelRouting() {
 
 export function saveModelRouting(body: {
   assistant: ModelSelection | null
-  report: ModelSelection | 'follow' | null
   asr: ModelSelection | null
   image?: ModelSelection | null
   expectedRevision: number

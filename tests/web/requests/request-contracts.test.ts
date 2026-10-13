@@ -462,11 +462,10 @@ const contracts: Contract[] = [
     () =>
       models.saveModelRouting({
         assistant: null,
-        report: 'follow',
         asr: null,
         expectedRevision: 3,
       }),
-    { assistant: null, report: 'follow', asr: null, expectedRevision: 3 },
+    { assistant: null, asr: null, expectedRevision: 3 },
   ),
   write(
     'POST',

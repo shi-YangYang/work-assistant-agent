@@ -5,7 +5,7 @@ export type Listing = { services: CompanyService[]; routing: ModelRouting }
 export type Purpose = 'assistant' | 'report' | 'asr' | 'image'
 
 export const purposeNames = {
-  assistant: '工作助手',
+  assistant: '文字模型',
   report: '报告生成',
   asr: '语音转写',
   image: '图片生成',

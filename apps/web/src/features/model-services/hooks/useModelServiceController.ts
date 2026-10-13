@@ -212,9 +212,9 @@ export function useModelServiceController() {
   }
   const usesFor = (serviceId: string, modelId?: string) => {
     const routing = resource.data?.routing
-    return (['assistant', 'report', 'asr', 'image'] as const)
+    return (['assistant', 'asr', 'image'] as const)
       .filter((purpose) => {
-        const choice = routing?.[purpose] === 'follow' ? routing.assistant : routing?.[purpose]
+        const choice = routing?.[purpose]
         return (
           choice &&
           typeof choice === 'object' &&

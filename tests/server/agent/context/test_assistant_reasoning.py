@@ -114,7 +114,7 @@ async def test_first_configuration_needs_only_model_save_and_preserves_accepted_
         assert config['parameters'] == {}
 
 
-async def test_removed_option_falls_back_only_affected_accounts_and_report_stays_explicit(setup):
+async def test_removed_option_falls_back_only_affected_accounts_and_report_uses_model_initial(setup):
     settings, sessions, users, clients = setup
     saved, routing = await configure(clients)
     routing.update(expectedRevision=1, report={**routing['assistant'], 'parameters': {'reasoning_effort': 'medium', 'temperature': .4}, 'explicitReasoning': True})
@@ -135,7 +135,7 @@ async def test_removed_option_falls_back_only_affected_accounts_and_report_stays
         job = SimpleNamespace(kind='report', result={}, model_binding=None, config_attempt=0, company_id=users['employee'].company_id)
         binding = await bind_job(db, job, settings)
         config, _ = await resolve_bound(db, settings, job.company_id, binding, 'report')
-        assert config['parameters'] == {'reasoning_effort': 'medium', 'temperature': .4}
+        assert config['parameters'] == {'reasoning_effort': 'max'}
 
 
 async def test_invalid_model_change_is_atomic_and_initial_has_one_source(setup):
@@ -305,7 +305,7 @@ async def test_follow_report_preserves_old_explicit_empty_parameter_semantics(se
     ('medium', 'medium', {'reasoning_effort': 'medium'}),
     ('nested', 'medium', {'reasoning': {'effort': 'medium'}}),
 ])
-async def test_migrated_independent_report_binding_uses_its_actual_parameters(setup, report_preset, expected_effort, expected_parameters):
+async def test_frozen_independent_report_binding_keeps_its_parameters_after_routing_merge(setup, report_preset, expected_effort, expected_parameters):
     from types import SimpleNamespace
     from app.modules.model_services.reasoning.legacy import direct_model, migrated_choices
     from app.modules.model_services.parameters import report_model_config
@@ -328,12 +328,22 @@ async def test_migrated_independent_report_binding_uses_its_actual_parameters(se
     routing = migrated_choices(routing, {(saved['id'], 'chat'): old})
     assert (await clients['admin'].put('/api/v1/settings/model-routing', json=routing)).status_code == 200
     async with sessions() as db:
-        job = SimpleNamespace(kind='report', result={}, model_binding=None, config_attempt=0, company_id=users['employee'].company_id)
+        from app.modules.model_services.models import ModelServiceRevision
+        revision = await db.scalar(select(ModelServiceRevision).where(ModelServiceRevision.service_id == saved['id']))
+        frozen = {'attempt': 0, 'routingRevision': 1, 'source': 'database', 'report': {
+            **routing['report'], 'revisionId': revision.id, 'revision': revision.revision,
+            'name': saved['name'], 'model': 'deepseek-chat', 'protocol': 'chat',
+            'effort': expected_effort, 'streaming': True,
+        }}
+        job = SimpleNamespace(kind='report', result={}, model_binding=frozen, config_attempt=0, company_id=users['employee'].company_id)
         binding = await bind_job(db, job, settings)
         config, _ = await resolve_bound(db, settings, job.company_id, binding, 'report')
         assert binding['report']['effort'] == expected_effort
         assert binding['report']['explicitReasoning'] is (report_preset is not None)
         assert report_model_config(config, binding['report'])['parameters'] == expected_parameters
+        # A new report follows the same configured text model as chat.
+        fresh = SimpleNamespace(kind='report', result={}, model_binding=None, config_attempt=0, company_id=job.company_id)
+        assert (await bind_job(db, fresh, settings))['report']['parameters'] == {'reasoning_effort': 'high'}
         assistant = SimpleNamespace(kind='message', result={}, model_binding=None, config_attempt=0, company_id=job.company_id, owner_id=users['employee'].id)
         assistant_binding = await bind_job(db, assistant, settings)
         assert assistant_binding['assistant']['effort'] == 'high'

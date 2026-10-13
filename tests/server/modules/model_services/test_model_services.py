@@ -152,7 +152,7 @@ async def test_saved_purpose_still_blocks_removing_or_incompatible_model(setup, 
     response = await clients['admin'].patch('/api/v1/settings/model-services/' + saved['id'], json=body)
     assert response.status_code == 422
     if change != 'protocol':
-        assert '用途分配' in response.text and '工作助手' in response.text
+        assert '用途分配' in response.text and '文字模型' in response.text
     assert (await clients['admin'].get('/api/v1/settings/model-services/' + saved['id'])).json() == saved
 
 
@@ -198,7 +198,7 @@ async def test_model_streaming_is_the_only_setting_for_new_bindings(setup, strea
         async with sessions.begin() as db:
             binding = await bind_job(db, job, settings)
             config, _ = await resolve_bound(db, settings, job.company_id, binding, purpose)
-        expected = streaming if purpose == 'assistant' or follow_report else not streaming
+        expected = streaming
         assert config['streaming'] is expected
         if purpose == 'assistant':
             assert binding['asr']['streaming'] is False

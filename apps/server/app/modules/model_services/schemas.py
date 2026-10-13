@@ -156,6 +156,7 @@ class Selection(Input):
 class RoutingInput(Input):
     expectedRevision: int = Field(ge=0)
     assistant: Selection | None = None
+    # Accepted for old clients; new routing always shares the text model.
     report: Selection | Literal['follow'] | None = 'follow'
     asr: Selection | None = None
     image: Selection | None = None
