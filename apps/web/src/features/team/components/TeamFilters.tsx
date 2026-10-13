@@ -2,10 +2,9 @@ import { ListToolbar } from '@web/components/layout/list-toolbar/ListToolbar'
 import searchInputStyles from '../../../styles/patterns/SearchInput.module.css'
 import teamStyles from '../styles/team.module.css'
 import type { TeamWorkspacePage } from '@paa/api-contracts'
-import { PeriodFilter } from '@web/components/forms/PeriodFilter'
 import { SearchInput } from '@web/components/forms/SearchInput'
 import { type TeamRow as Row } from '@web/features/team/types'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Search, SlidersHorizontal } from 'lucide-react'
 
 export function TeamFilters({
@@ -14,14 +13,14 @@ export function TeamFilters({
   searchReset,
   data,
   view,
-  scope,
+  periodFilter,
 }: {
   params: URLSearchParams
   update: (values: Record<string, string>, reset?: boolean) => void
   searchReset: number
   data: TeamWorkspacePage<Row> | null
   view: 'reports' | 'work'
-  scope: 'updated' | 'current'
+  periodFilter?: ReactNode
 }) {
   const [expanded, setExpanded] = useState(false)
   const statusKey = `${view}Status`
@@ -66,15 +65,6 @@ export function TeamFilters({
       >
         <SlidersHorizontal size={16} /> 筛选{active ? ` · ${active}` : ''}
       </button>
-      {(view === 'reports' || scope === 'updated') && (
-        <PeriodFilter
-          className={teamStyles['team-period-filter']}
-          captionClassName={teamStyles['team-period-caption']}
-          params={params}
-          range={data?.range}
-          change={update}
-        />
-      )}
       <div
         id="team-advanced-filters"
         className={teamStyles['advanced-filters']}
@@ -114,6 +104,7 @@ export function TeamFilters({
           ))}
         </select>
       </div>
+      {periodFilter}
     </ListToolbar>
   )
 }

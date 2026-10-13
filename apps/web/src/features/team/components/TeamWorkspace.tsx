@@ -8,6 +8,7 @@ import { detailReturn } from '@web/utils/navigation'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { Pagination } from '@web/components/actions/Pagination'
+import { PeriodFilter } from '@web/components/forms/PeriodFilter'
 import { teamWorkspacePath } from '@web/features/team/api/requests'
 import { TeamFilters } from '@web/features/team/components/TeamFilters'
 import { TeamResults } from '@web/features/team/components/TeamResults'
@@ -42,7 +43,16 @@ export function TeamWorkspace({
     if (view === 'work' && scope === 'current' && ['period', 'start', 'end'].includes(key)) continue
     if (params.get(key)) query.set(key, params.get(key)!)
   }
-  const list = useResource<TeamWorkspacePage<Row>>(teamWorkspacePath(view, query), 30000)
+  // Keep each tab's last result; only the visible tab fetches and polls.
+  const workList = useResource<TeamWorkspacePage<Row>>(
+    view === 'work' ? teamWorkspacePath('work', query) : null,
+    30000,
+  )
+  const reportList = useResource<TeamWorkspacePage<Row>>(
+    view === 'reports' ? teamWorkspacePath('reports', query) : null,
+    30000,
+  )
+  const list = view === 'work' ? workList : reportList
   const update = (values: Record<string, string>, reset = true) => {
     if (values.q === '') resetSearch((value) => value + 1)
     const next = new URLSearchParams(params)
@@ -93,12 +103,12 @@ export function TeamWorkspace({
           ['cancelled', '已撤销', 'cancelled'],
         ]
   return (
-    <div className={layoutStyles['page']} data-scroll-container>
+    <div className={`${layoutStyles['page']} ${teamStyles['team-page']}`} data-scroll-container>
       {fromMembers && <DetailBackLink />}
       <PageHeader
         title="团队看板"
         context={fromMembers ? 'detail' : 'page'}
-        description="看见团队的每一步，让需要关注的事更清晰。"
+        className={teamStyles['team-header']}
         actions={
           <button
             className={controlsStyles['icon-button']}
@@ -153,6 +163,23 @@ export function TeamWorkspace({
               日报周报
             </button>
           </div>
+          <TeamFilters
+            params={params}
+            update={update}
+            searchReset={searchReset}
+            data={data}
+            view={view}
+            periodFilter={
+              (view === 'reports' || scope === 'updated') && (
+                <PeriodFilter
+                  className={teamStyles['team-period-filter']}
+                  params={params}
+                  range={data?.range}
+                  change={update}
+                />
+              )
+            }
+          />
           <div
             className={teamStyles['segmented-control']}
             aria-label={view === 'work' ? '工作范围' : '报告类型'}
@@ -178,14 +205,6 @@ export function TeamWorkspace({
             ))}
           </div>
         </div>
-        <TeamFilters
-          params={params}
-          update={update}
-          searchReset={searchReset}
-          data={data}
-          view={view}
-          scope={scope}
-        />
         <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
         <TeamResults
           data={data}

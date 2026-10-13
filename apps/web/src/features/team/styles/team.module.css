@@ -1,4 +1,10 @@
-.team-panel {
+.team-page {
+  scrollbar-gutter: stable;
+}
+.team-page > .team-header {
+  margin-bottom: 8px;
+}
+.team-page > .team-panel {
   margin-top: 0;
   background: var(--surface);
   border: 0;
@@ -7,25 +13,29 @@
 }
 .team-view-heading {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0;
-  flex-wrap: wrap;
+  gap: 12px;
+  padding: 0 0 10px;
 }
 .team-view-heading .slot-tabs {
   border: 0;
   margin: 0;
-  gap: 8px;
+  gap: 4px;
+  padding: 3px;
+  flex-shrink: 0;
 }
 .team-view-heading .slot-tabs button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 13px;
+  padding: 5px 10px;
+  font-size: 13px;
 }
 .segmented-control {
   display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
   gap: 3px;
   padding: 3px;
   background: var(--subtle);
@@ -43,13 +53,15 @@
   color: var(--accent);
   box-shadow: var(--raised);
 }
-.team-toolbar {
-  margin-bottom: 0;
-  padding: 12px 0;
+.team-panel .team-toolbar {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 0;
 }
 .team-toolbar .slot-work-search {
-  flex: 0 1 320px;
-  max-width: 320px;
+  flex: 1 1 200px;
+  max-width: 240px;
 }
 .team-toolbar select {
   width: auto;
@@ -69,17 +81,15 @@
     padding-right: 10px;
   }
 }
-.team-toolbar .team-period-caption {
-  flex-basis: 100%;
-  margin: 0;
-  font-size: 12px;
+.team-toolbar .team-period-filter:has(input) {
+  flex: 1 1 100%;
 }
 .team-counts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
-  padding: 16px 0;
-  margin: 0 0 16px;
+  padding: 10px 0;
+  margin: 0 0 12px;
   border-block: 1px solid var(--line);
 }
 .team-counts[data-view='reports'] {
@@ -87,9 +97,10 @@
 }
 .team-counts button {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-height: 36px;
   border: 0;
   background: transparent;
   padding: 0 16px;
@@ -101,10 +112,10 @@
   padding-left: 0;
 }
 .team-counts button strong {
-  font-size: 28px;
+  font-size: 24px;
   font-weight: 550;
-  letter-spacing: -1px;
-  line-height: 1.5;
+  letter-spacing: -0.5px;
+  line-height: 1.25;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
@@ -131,7 +142,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 0;
+  padding: 8px 0;
   font-size: 12px;
   color: var(--muted);
 }
@@ -275,6 +286,15 @@ button.team-record-content {
 .filter-toggle,
 .mobile-status {
   display: none;
+}
+@container (max-width: 900px) {
+  .team-view-heading {
+    flex-wrap: wrap;
+  }
+  .team-panel .team-toolbar {
+    flex-basis: 100%;
+    order: 1;
+  }
 }
 @media (max-width: 760px) {
   .team-view-heading {

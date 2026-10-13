@@ -10,6 +10,20 @@ import { obligationLabel } from '@web/features/reports/utils/obligations'
 import { isWork, type TeamRow as Row } from '@web/features/team/types'
 import { dateLabel } from '@web/utils/date'
 import { BriefcaseBusiness, ChevronRight, ClipboardCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function TeamLoading() {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 200)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div className={recordLayoutStyles['records-loading']} aria-busy="true">
+      {visible && <span role="status">正在读取团队记录…</span>}
+    </div>
+  )
+}
 
 export function TeamResults({
   data,
@@ -32,11 +46,7 @@ export function TeamResults({
 }) {
   return (
     <div className={teamStyles['team-results']}>
-      {!data && !list.error && (
-        <p className={recordLayoutStyles['records-loading']} role="status">
-          正在读取团队记录…
-        </p>
-      )}
+      {!data && !list.error && <TeamLoading key={`${view}:${params.toString()}`} />}
       {data && (
         <div className={teamStyles['team-result-caption']}>
           <span>
