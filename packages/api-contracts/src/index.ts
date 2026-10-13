@@ -850,3 +850,29 @@ export interface AssistantMemory {
   updatedAt: string | null
   maxCharacters: number
 }
+
+export interface AnnouncementSummary {
+  id: string
+  title: string
+  summary: string
+  state: 'published' | 'withdrawn'
+  revision: number
+  authorName: string
+  editorName: string
+  publishedAt: string
+  updatedAt: string
+  withdrawnAt: string | null
+  unread: boolean
+}
+export interface Announcement extends Omit<AnnouncementSummary, 'summary'> {
+  markdown: string
+}
+export interface AnnouncementContent {
+  title: string
+  markdown: string
+}
+export interface NotificationSummary {
+  remindersUnread: number
+  announcementsUnread: number
+  totalUnread: number
+}

@@ -1,7 +1,8 @@
+import { NotificationProvider } from '@web/features/notifications/components/NotificationProvider'
 import styles from './Shell.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { AppRoutes } from '@web/app/AppRoutes'
-import { pages, settingsPages } from '@web/app/layout/navigation-items'
+import { pages, settingsPages, notificationPage } from '@web/app/layout/navigation-items'
 import { Sidebar } from '@web/app/layout/Sidebar'
 import { PetStage } from '@web/app/layout/pet/PetStage'
 import { useNavigationDrawer } from '@web/app/layout/useNavigationDrawer'
@@ -150,7 +151,7 @@ export function Shell({
       icon: List,
       run: () => openCommandPage('/assistant?conversations=1'),
     },
-    ...allowed.map((page) => ({
+    ...[...allowed, notificationPage].map((page) => ({
       id: page.path,
       label: page.title,
       detail: page.detail,
@@ -181,65 +182,67 @@ export function Shell({
           rememberConversation,
         }}
       >
-        <ErrorNoticeScope>
-          <ErrorNotice>{logoutError}</ErrorNotice>
-          <div
-            className={`${styles['company-shell']} ${expandedNav ? styles['nav-expanded'] : ''}`}
-            onClickCapture={(event) => {
-              if (
-                drafts.recording &&
-                (event.target as HTMLElement).closest('a[href]') &&
-                !window.confirm('离开工作助手会停止录音，并保留已录制内容供你试听或发送。继续？')
-              ) {
-                event.preventDefault()
-                event.stopPropagation()
-              }
-            }}
-          >
-            {expandedNav && (
-              <button
-                className={styles['nav-backdrop']}
-                aria-label="收起导航"
-                tabIndex={-1}
-                onClick={() => setExpandedNav(false)}
-              />
-            )}
-            <Sidebar
-              sidebarRef={sidebarRef}
-              setExpandedNav={setExpandedNav}
-              expandedNav={expandedNav}
-              identity={identity}
-              setCommands={setCommands}
-              allowed={allowed}
-              location={location}
-              allowedSettings={allowedSettings}
-              accountName={accountName}
-              logout={logout}
-            />
-            <section ref={mainRef} className={styles['main']}>
-              <PetStage
-                navTriggerRef={triggerRef}
-                animate
-                activity={activity}
-                expandedNav={expandedNav}
-                setExpandedNav={setExpandedNav}
-              />
-              <ErrorNoticeOutlet />
-              {!['/settings/account', '/settings/login'].includes(location.pathname) && (
-                <DingTalkResult />
+        <NotificationProvider key={identityScope(identity)} scope={identityScope(identity)}>
+          <ErrorNoticeScope>
+            <ErrorNotice>{logoutError}</ErrorNotice>
+            <div
+              className={`${styles['company-shell']} ${expandedNav ? styles['nav-expanded'] : ''}`}
+              onClickCapture={(event) => {
+                if (
+                  drafts.recording &&
+                  (event.target as HTMLElement).closest('a[href]') &&
+                  !window.confirm('离开工作助手会停止录音，并保留已录制内容供你试听或发送。继续？')
+                ) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }
+              }}
+            >
+              {expandedNav && (
+                <button
+                  className={styles['nav-backdrop']}
+                  aria-label="收起导航"
+                  tabIndex={-1}
+                  onClick={() => setExpandedNav(false)}
+                />
               )}
-              <AppRoutes identity={identity} onLogout={onLogout} />
-            </section>
-          </div>
-          {toast && (
-            <div className={styles['toast']} role="status">
-              {toast}
+              <Sidebar
+                sidebarRef={sidebarRef}
+                setExpandedNav={setExpandedNav}
+                expandedNav={expandedNav}
+                identity={identity}
+                setCommands={setCommands}
+                allowed={allowed}
+                location={location}
+                allowedSettings={allowedSettings}
+                accountName={accountName}
+                logout={logout}
+              />
+              <section ref={mainRef} className={styles['main']}>
+                <PetStage
+                  navTriggerRef={triggerRef}
+                  animate
+                  activity={activity}
+                  expandedNav={expandedNav}
+                  setExpandedNav={setExpandedNav}
+                />
+                <ErrorNoticeOutlet />
+                {!['/settings/account', '/settings/login'].includes(location.pathname) && (
+                  <DingTalkResult />
+                )}
+                <AppRoutes identity={identity} onLogout={onLogout} />
+              </section>
             </div>
-          )}
-          {commands && (
-            <CommandPalette commands={commandItems} onClose={() => setCommands(false)} />
-          )}
-        </ErrorNoticeScope>
+            {toast && (
+              <div className={styles['toast']} role="status">
+                {toast}
+              </div>
+            )}
+            {commands && (
+              <CommandPalette commands={commandItems} onClose={() => setCommands(false)} />
+            )}
+          </ErrorNoticeScope>
+        </NotificationProvider>
       </Workspace.Provider>
     </SupportLink.Provider>
   )

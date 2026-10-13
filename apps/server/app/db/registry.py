@@ -1,5 +1,6 @@
 """Register every ORM table before schema inspection or migration."""
 import app.db.idempotency
+import app.modules.announcements.models
 import app.modules.attachments.models
 import app.modules.auth.models
 import app.modules.conversations.models

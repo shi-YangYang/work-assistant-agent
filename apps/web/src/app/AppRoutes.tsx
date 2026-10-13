@@ -3,6 +3,21 @@ import type { Identity } from '@paa/api-contracts'
 import { routePage } from './route-page'
 import { Navigate, Route, Routes } from 'react-router'
 
+const NotificationsPage = routePage(async () => ({
+  default: (await import('@web/pages/NotificationsPage')).NotificationsPage,
+}))
+const AnnouncementManagementPage = routePage(async () => ({
+  default: (await import('@web/features/announcements/components/AnnouncementManagementPage'))
+    .AnnouncementManagementPage,
+}))
+const AnnouncementDetail = routePage(async () => ({
+  default: (await import('@web/features/announcements/components/AnnouncementDetail'))
+    .AnnouncementDetail,
+}))
+const AnnouncementEditor = routePage(async () => ({
+  default: (await import('@web/features/announcements/components/AnnouncementEditor'))
+    .AnnouncementEditor,
+}))
 const LoginMethods = routePage(async () => ({
   default: (await import('@web/features/auth/components/configuration/LoginMethods')).LoginMethods,
 }))
@@ -73,6 +88,8 @@ export function AppRoutes({ identity, onLogout }: { identity: Identity; onLogout
       <Route path="/assistant" element={<AssistantPage />} />
       <Route path="/assistant/:conversationId" element={<AssistantPage />} />
       <Route path="/messages/:id" element={<SourcePage />} />
+      <Route path="/notifications" element={<NotificationsPage />} />
+      <Route path="/notifications/announcements/:id" element={<AnnouncementDetail />} />
       <Route path="/work" element={<WorkPage />} />
       <Route path="/work/:id" element={<WorkDetailPage />} />
       <Route
@@ -88,6 +105,10 @@ export function AppRoutes({ identity, onLogout }: { identity: Identity; onLogout
           <Route path="/team/details" element={<TeamLegacyRedirect />} />
           <Route path="/team/reports" element={<TeamLegacyRedirect />} />
           <Route path="/team/:id" element={<TeamLegacyRedirect />} />
+          <Route path="/announcement-management" element={<AnnouncementManagementPage />} />
+          <Route path="/announcement-management/new" element={<AnnouncementEditor />} />
+          <Route path="/announcement-management/:id" element={<AnnouncementDetail management />} />
+          <Route path="/announcement-management/:id/edit" element={<AnnouncementEditor />} />
           <Route path="/members" element={<MembersPage />} />
         </>
       )}

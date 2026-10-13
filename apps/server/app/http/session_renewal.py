@@ -23,6 +23,7 @@ BACKGROUND_READS = frozenset({
     '/api/v1/report-obligations',
     '/api/v1/team/report-obligations',
     '/api/v1/notifications',
+    '/api/v1/notification-summary',
     '/api/v1/team/workspace/{view}',
     '/api/v1/business-sources/{message_id}/{token}',
     '/api/v1/work-items/{identifier}/business-sources/{token}',

@@ -8,7 +8,7 @@ from app.modules.members.models import Company
 from app.modules.reports.models import ReportNotification, ReportObligation
 from app.modules.reports.scheduling.schedule import obligation_dto as reporting_obligation_dto, obligation_page as reporting_obligation_page
 from app.security.ownership import owned
-from sqlalchemy import func, select
+from app.modules.reports.scheduling.notifications import notification_query, unread_count
 from typing import Annotated
 
 router = APIRouter()
@@ -39,8 +39,8 @@ async def prepare_obligation(identifier: str, idempotency_key: Annotated[str | N
 async def notifications(cursor: int = Query(0, ge=0), actor=AUTH, db=DB):
     if actor.role != 'employee':
         return {'items': [], 'nextCursor': None, 'unread': 0}
-    base = select(ReportNotification, ReportObligation).join(ReportObligation, ReportObligation.id == ReportNotification.obligation_id).where(ReportNotification.company_id == actor.company_id, ReportNotification.owner_id == actor.id, ReportObligation.state == 'pending')
-    unread = await db.scalar(select(func.count()).select_from(base.where(ReportNotification.read_at.is_(None)).subquery()))
+    base = notification_query(actor)
+    unread = await unread_count(db, actor)
     rows = (await db.execute(base.order_by(ReportNotification.updated_at.desc(), ReportNotification.id).offset(cursor).limit(21))).all()
     return {'items': [{'id': notice.id, 'stage': notice.stage, 'read': notice.read_at is not None, 'updatedAt': notice.updated_at.isoformat(), 'obligation': reporting_obligation_dto(obligation, now(), own=True)} for notice, obligation in rows[:20]], 'nextCursor': str(cursor + 20) if len(rows) > 20 else None, 'unread': unread}
 

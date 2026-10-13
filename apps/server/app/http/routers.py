@@ -1,4 +1,6 @@
 """Compose public routes by business domain."""
+from app.http.notifications import router as notifications_router
+from app.modules.announcements.router import router as announcements_router
 from app.http.health import router as health_router
 from app.modules.attachments.router import router as attachments_router
 from app.modules.auth.desktop_router import router as auth_desktop_router
@@ -27,6 +29,8 @@ from app.tasks.router import router as tasks_router
 
 
 def register_routes(app):
+    app.include_router(announcements_router)
+    app.include_router(notifications_router)
     app.include_router(memories_router)
     app.include_router(model_services_router)
     app.include_router(support_router)

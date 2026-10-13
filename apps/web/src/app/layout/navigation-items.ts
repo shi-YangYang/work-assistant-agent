@@ -1,5 +1,7 @@
 import {
   AudioLines,
+  Bell,
+  Megaphone,
   Brain,
   BriefcaseBusiness,
   CalendarClock,
@@ -41,7 +43,21 @@ export const pages = [
     icon: Users,
     admin: true,
   },
+  {
+    path: '/announcement-management',
+    title: '公告管理',
+    detail: '发布、编辑与撤回公司公告',
+    icon: Megaphone,
+    admin: true,
+  },
 ]
+
+export const notificationPage = {
+  path: '/notifications',
+  title: '通知',
+  detail: '查看个人提醒与公司公告',
+  icon: Bell,
+}
 
 export const settingsPages = [
   {

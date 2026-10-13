@@ -126,20 +126,10 @@ const visibleLinks = (nav: HTMLElement) =>
     .map((node) => node.textContent)
 
 it.each([
-  [identity, ['记忆', '账户', '外观', '汇报规则', '问题反馈']],
+  [identity, ['记忆', '账户', '汇报规则', '问题反馈']],
   [
     admin,
-    [
-      '记忆',
-      '用户声纹',
-      '账户',
-      '外观',
-      '汇报规则',
-      '登录方式',
-      '模型服务管理',
-      '模型用量',
-      '问题反馈',
-    ],
+    ['记忆', '用户声纹', '账户', '汇报规则', '登录方式', '模型服务管理', '模型用量', '问题反馈'],
   ],
 ])(
   'replaces the menu with the allowed settings in order and transfers focus for $member.role',
@@ -149,7 +139,7 @@ it.each([
     const workspaceEntries = visibleLinks(main())
     expect(workspaceEntries).toEqual(
       account.member.role === 'admin'
-        ? ['聊天搭子', '我的工作', '团队看板', '成员管理']
+        ? ['聊天搭子', '我的工作', '团队看板', '成员管理', '公告管理']
         : ['聊天搭子', '我的工作', '我的报告'],
     )
     expect(screen.getByRole('button', { name: '云搭子 beta' }).hasAttribute('disabled')).toBe(true)
@@ -249,7 +239,7 @@ it('does not carry a manual menu choice across member, company or role changes',
     expect(main()).toBeTruthy()
   }
   openSettings()
-  expect(visibleLinks(settings())).toEqual(['记忆', '账户', '外观', '汇报规则', '问题反馈'])
+  expect(visibleLinks(settings())).toEqual(['记忆', '账户', '汇报规则', '问题反馈'])
 })
 
 it('expands the tablet rail into the same drawer, preserves focus and menu when closing or resizing', async () => {

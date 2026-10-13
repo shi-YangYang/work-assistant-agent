@@ -1,0 +1,24 @@
+dialog.confirm {
+  width: 420px;
+}
+.body {
+  display: grid;
+  gap: 20px;
+}
+.description {
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.description p {
+  margin: 0;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+@media (max-width: 760px) {
+  .actions button {
+    min-height: 44px;
+  }
+}

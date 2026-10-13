@@ -110,7 +110,7 @@
   color: var(--text);
 }
 .sidebar nav a[aria-current='page'],
-.sidebar-bottom > a[data-active='true'] {
+.sidebar-bottom > a[aria-current='page'] {
   background: var(--selection);
   color: var(--text);
   font-weight: 550;
