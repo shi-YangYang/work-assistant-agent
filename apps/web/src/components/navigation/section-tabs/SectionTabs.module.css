@@ -1,0 +1,28 @@
+.tablist {
+  overflow-x: auto;
+}
+.tablist > button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.panel {
+  min-width: 0;
+  --form-actions-margin: 16px 0 0;
+  --form-actions-padding: 8px 0 0;
+}
+.panel[hidden] {
+  display: none;
+}
+.status {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.panel > .body > :first-child,
+.panel > .body > form > :first-child {
+  margin-top: 0;
+}
+.panel > .body > :last-child,
+.panel > .body > form > :last-child {
+  margin-bottom: 0;
+}

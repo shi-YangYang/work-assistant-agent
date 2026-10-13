@@ -7,7 +7,7 @@ import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { FormField } from '@web/components/forms/FormField'
 import { Modal } from '@web/components/overlays/Modal'
-import { PanelSection } from '@web/components/content/PanelSection'
+import { SectionTabs, TabSection } from '@web/components/navigation/section-tabs/SectionTabs'
 import { saveDingTalkConfiguration } from '@web/features/auth/api/requests'
 import { useDingTalkRedirect } from '@web/features/auth/hooks/useDingTalkRedirect'
 import { loginConfigurationErrors } from '@web/features/auth/utils/login-configuration'
@@ -16,11 +16,22 @@ import { dateLabel } from '@web/utils/date'
 import { useState } from 'react'
 import { useBlocker } from 'react-router'
 
+const loginTabs = [
+  { id: 'credentials', label: '钉钉企业内部应用' },
+  { id: 'authorization', label: '授权与入口' },
+  { id: 'setup', label: '钉钉后台配置' },
+] as const
+export type LoginConfigurationTab = (typeof loginTabs)[number]['id']
+
 export function LoginConfiguration({
   value,
   saved,
+  tab,
+  selectTab,
 }: {
   value: DingTalkConfiguration
+  tab: LoginConfigurationTab
+  selectTab: (tab: LoginConfigurationTab) => void
   saved: (message: string) => void
 }) {
   const [corpId, setCorpId] = useState(value.corpId)
@@ -42,8 +53,10 @@ export function LoginConfiguration({
       Object.values(loginConfigurationErrors({ corpId, clientId, secret }, value.hasSecret)).some(
         Boolean,
       )
-    )
+    ) {
+      selectTab('credentials')
       return
+    }
     setBusy(true)
     setError('')
     try {
@@ -70,10 +83,21 @@ export function LoginConfiguration({
   }
   return (
     <>
+      <SectionTabs
+        scope="login"
+        label="登录方式"
+        tabs={loginTabs}
+        selected={tab}
+        onChange={selectTab}
+        disabled={busy || redirect.busy}
+      />
       <ErrorNotice>{error}</ErrorNotice>
-      <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
-        <PanelSection
+      <div
+        className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['settings-tab-panels']}`}
+      >
+        <TabSection
           bodyClassName={loginConfigurationStyles['settings-section-body']}
+          tab={{ scope: 'login', id: 'credentials', selected: tab }}
           title="钉钉企业内部应用"
           status={value.hasSecret ? '已配置凭证' : '待配置'}
           defaultOpen
@@ -133,9 +157,10 @@ export function LoginConfiguration({
               </BusyButton>
             </div>
           </form>
-        </PanelSection>
-        <PanelSection
+        </TabSection>
+        <TabSection
           bodyClassName={loginConfigurationStyles['settings-section-body']}
+          tab={{ scope: 'login', id: 'authorization', selected: tab }}
           title="授权与入口"
           status={value.enabled ? '已启用' : '未启用'}
           defaultOpen
@@ -168,9 +193,10 @@ export function LoginConfiguration({
             </BusyButton>
           </div>
           {redirect.guard}
-        </PanelSection>
-        <PanelSection
+        </TabSection>
+        <TabSection
           bodyClassName={loginConfigurationStyles['settings-section-body']}
+          tab={{ scope: 'login', id: 'setup', selected: tab }}
           title="钉钉后台配置"
           status="回调地址与权限"
         >
@@ -197,7 +223,7 @@ export function LoginConfiguration({
           <p className={utilitiesStyles['muted']}>
             每次钉钉登录都会重新核验成员。删除账号会撤销已有登录；如需阻止再次通过钉钉注册，请在钉钉侧移除其应用授权。
           </p>
-        </PanelSection>
+        </TabSection>
       </div>
       {blocker.state === 'blocked' && (
         <Modal title="放弃未保存的登录配置？" onClose={() => blocker.reset()}>
