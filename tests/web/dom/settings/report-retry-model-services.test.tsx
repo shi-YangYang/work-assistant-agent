@@ -163,6 +163,7 @@ it('selects and remembers the remaining service after the selected service is de
 it('keeps a newly saved service selected while the list refresh is pending and after returning', async () => {
   const mounted = models([service])
   await screen.findByLabelText('服务名称')
+  expect(screen.queryByRole('button', { name: '设置用途' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '添加服务' }))
   fireEvent.change(screen.getByLabelText('服务名称'), { target: { value: other.name } })
   fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: other.baseUrl } })
@@ -170,12 +171,14 @@ it('keeps a newly saved service selected while the list refresh is pending and a
   const refresh = deferred<unknown>()
   vi.mocked(api).mockReturnValue(refresh.promise)
   vi.mocked(saveModelService).mockResolvedValueOnce(other)
+  expect(screen.queryByRole('button', { name: '保存并设置用途' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '保存服务' }))
   await waitFor(() => expect(screen.getByLabelText('API 密钥')).toHaveProperty('value', ''))
   expect(screen.getByLabelText('服务名称')).toHaveProperty('value', other.name)
   expect(screen.getByRole('combobox', { name: '选择模型服务' })).toHaveProperty('value', other.id)
   expect(localStorage.getItem('paa:model-service:company:owner:admin')).toBe(other.id)
   expect(screen.getByText('已保存', { exact: true })).toBeTruthy()
+  expect(screen.getByRole('tab', { name: '服务配置' })).toHaveProperty('ariaSelected', 'true')
   await act(async () =>
     refresh.resolve({
       services: [service, other],
@@ -183,6 +186,9 @@ it('keeps a newly saved service selected while the list refresh is pending and a
       environment: [],
     }),
   )
+  fireEvent.click(screen.getByRole('tab', { name: '用途分配' }))
+  expect(screen.getByRole('button', { name: '保存用途分配' })).toBeTruthy()
+  expect(saveModelService).toHaveBeenCalledTimes(1)
   mounted.unmount()
   models([service, other])
   await waitFor(() => expect(screen.getByLabelText('服务名称')).toHaveProperty('value', other.name))

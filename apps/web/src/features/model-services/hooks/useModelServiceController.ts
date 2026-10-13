@@ -29,7 +29,6 @@ export function useModelServiceController() {
   const [activeModel, setActiveModel] = useState('')
   const [picker, setPicker] = useState<'catalog' | 'manual' | null>(null)
   const [modelOpen, setModelOpen] = useState(false)
-  const [assignServiceId, setAssignServiceId] = useState('')
   const [testPurpose, setTestPurpose] = useState<Purpose>('assistant')
   const [removeOpen, setRemoveOpen] = useState(false)
   const session = useServiceDraftSession()
@@ -105,7 +104,7 @@ export function useModelServiceController() {
     resetFeedback()
     changeDraftAddress(...args)
   }
-  const save = async (target = draft, assign = false): Promise<boolean> => {
+  const save = async (target = draft): Promise<boolean> => {
     if (!target) return false
     const generation = generationRef.current
     setBusy('save')
@@ -143,11 +142,9 @@ export function useModelServiceController() {
       setConflict(false)
       generationRef.current++
       resource.refresh()
-      workspace.notify('模型服务已保存')
-      if (assign) {
-        setAssignServiceId(saved.id)
-        setTab('routing')
-      }
+      workspace.notify(
+        target.revision ? '模型服务已保存' : '模型服务已保存，可在“用途分配”中启用模型',
+      )
       return true
     } catch (e) {
       if (alive.current) handleError(e)
@@ -248,8 +245,6 @@ export function useModelServiceController() {
     setPicker,
     modelOpen,
     setModelOpen,
-    assignServiceId,
-    setAssignServiceId,
     testPurpose,
     setTestPurpose,
     removeOpen,

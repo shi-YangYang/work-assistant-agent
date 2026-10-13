@@ -8,7 +8,7 @@ import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { readModelService } from '@web/features/model-services/api/requests'
 import type { ServiceDraft } from '@web/features/model-services/utils/service-drafts'
 import { cleanServiceDraft } from '@web/features/model-services/utils/service-drafts'
-import { ArrowRight, Cpu, Trash2 } from 'lucide-react'
+import { Cpu, Trash2 } from 'lucide-react'
 import type * as React from 'react'
 
 export function ServiceEditor({
@@ -22,8 +22,6 @@ export function ServiceEditor({
   error,
   conflict,
   save,
-  setAssignServiceId,
-  setTab,
   children,
 }: {
   busy: string
@@ -35,9 +33,7 @@ export function ServiceEditor({
   connectionReady: boolean
   error: string | Error
   conflict: boolean
-  save: (target?: ServiceDraft, assign?: boolean) => Promise<boolean>
-  setAssignServiceId: (id: string) => void
-  setTab: (tab: 'services' | 'routing') => void
+  save: (target?: ServiceDraft) => Promise<boolean>
   children: React.ReactNode
 }) {
   return (
@@ -103,28 +99,15 @@ export function ServiceEditor({
         </div>
         <footer className={modelServicesStyles['model-savebar']}>
           <span className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
-            {dirty
-              ? '保存后生效'
-              : draft.models.length
-                ? '选择各项功能使用的模型'
-                : '添加模型后可设置用途'}
+            {dirty ? '保存后生效' : '模型用途在“用途分配”中管理'}
           </span>
-          <button disabled={!!busy || !connectionReady} onClick={() => void save()}>
-            保存服务
-          </button>
           <BusyButton
             className={`${controlsStyles['primary']} ${modelServicesStyles['slot-primary']}`}
             busy={busy === 'save'}
-            disabled={!!busy || !connectionReady || !draft.models.length}
-            onClick={() => {
-              if (dirty) void save(draft, true)
-              else {
-                setAssignServiceId('')
-                setTab('routing')
-              }
-            }}
+            disabled={!!busy || !connectionReady}
+            onClick={() => void save()}
           >
-            {dirty ? '保存并设置用途' : '设置用途'} <ArrowRight size={15} />
+            保存服务
           </BusyButton>
         </footer>
       </section>
