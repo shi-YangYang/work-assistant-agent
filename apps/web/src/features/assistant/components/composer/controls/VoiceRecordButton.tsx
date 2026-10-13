@@ -26,10 +26,12 @@ export function VoiceRecordButton({
   recording,
   disabled,
   holdDisabled = false,
+  beforeStart,
 }: {
   recording: VoiceRecording
   disabled: boolean
   holdDisabled?: boolean
+  beforeStart?: () => void
 }) {
   const [holding, setHolding] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -98,6 +100,7 @@ export function VoiceRecordButton({
         current.held = true
         suppressClick.current = true
         setHolding(true)
+        beforeStart?.()
         void recording.start().then((started) => {
           if (started === false && press.current === current) clearPress()
         })
@@ -149,7 +152,10 @@ export function VoiceRecordButton({
           }
           suppressClick.current = false
           if (capturing) recording.stop()
-          else void recording.start()
+          else {
+            beforeStart?.()
+            void recording.start()
+          }
         }}
       >
         {capturing ? (

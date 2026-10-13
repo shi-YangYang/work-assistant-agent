@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 067：手机端聊天输入栏与功能面板](spec-067-mobile-composer/spec.md) — 已完成，紧凑主输入栏与“＋”功能面板，独立验收 PASS；[实施计划与目录](spec-067-mobile-composer/plan.md)、[验收记录](spec-067-mobile-composer/acceptance.md)。
+
 - [Spec 066：通知页面与公告管理](spec-066-company-announcements/spec.md) — 已完成，全员通知页顶部切换提醒／公告，管理员另有“公告管理”入口；[实施计划与目录](spec-066-company-announcements/plan.md)、[验收记录](spec-066-company-announcements/acceptance.md)。
 
 - [Spec 065：独立图片模型与聊天图片生成](spec-065-image-generation/spec.md) — 独立图片用途及兼容模型／尺寸配置已实现，扩展独立验收 PASS；现有 Wan Token Plan 真实方图回归通过，其他真实调用范围见[验收与限制](spec-065-image-generation/model-config-acceptance.md)。
@@ -45,4 +47,4 @@
 
 ## 生命周期
 
-新 Spec 从 **067** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+新 Spec 从 **068** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

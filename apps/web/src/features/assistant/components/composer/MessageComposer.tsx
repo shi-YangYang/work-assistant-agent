@@ -3,22 +3,19 @@ import styles from './MessageComposer.module.css'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
 import { WorkReferencePicker } from '../work-reference/WorkReferencePicker'
 import type { useWorkReference } from '../../hooks/composer/useWorkReference'
-import { ContextUsage } from './controls/ContextUsage'
+import { ComposerAttachmentMenu } from './ComposerAttachmentMenu'
+import { MobileComposerPanel } from './MobileComposerPanel'
+import {
+  MobileComposerContext,
+  useMobileComposerPanel,
+} from '../../hooks/composer/useMobileComposerPanel'
+import { ContextUsage, contextUsageLabel } from './controls/ContextUsage'
 import { VoiceRecordButton, type VoiceRecording } from './controls/VoiceRecordButton'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
 import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
-import {
-  CornerUpLeft,
-  Plus,
-  ImagePlus,
-  Paperclip,
-  ArrowUp,
-  Square,
-  X,
-  BriefcaseBusiness,
-} from 'lucide-react'
+import { CornerUpLeft, Plus, ArrowUp, Square, X } from 'lucide-react'
 import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
 import type * as React from 'react'
 import { useRef } from 'react'
@@ -82,7 +79,34 @@ export function MessageComposer({
   const input = useRef<HTMLInputElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const capturing = recording.state !== 'idle'
-  const attachmentMenu = usePopover({ disabled: locked || capturing, scopeKey: contextKey })
+  const mobilePanel = useMobileComposerPanel({
+    container: containerRef,
+    textInput,
+    text: composer.text,
+    scope: contextKey,
+    capturing,
+  })
+  const attachmentMenu = usePopover({
+    disabled: locked || capturing || mobilePanel.mobile,
+    scopeKey: contextKey,
+  })
+  const addImages = () => {
+    attachmentMenu.close(false)
+    mobilePanel.close()
+    input.current?.click()
+  }
+  const selectFiles = () => {
+    attachmentMenu.close(false)
+    mobilePanel.close()
+    fileInput.current?.click()
+  }
+  const selectWork = workReference
+    ? () => {
+        attachmentMenu.close(false)
+        mobilePanel.close()
+        workReference.setPickerOpen(true)
+      }
+    : undefined
   const retryPending = pending && !busy
   const interrupting = !pending && !!task?.running
   const label = interrupting
@@ -98,94 +122,114 @@ export function MessageComposer({
           : task?.blocked
             ? '正在恢复处理状态'
             : '发送'
+  const showSend =
+    !!composer.text.trim() ||
+    !!composer.files.length ||
+    interrupting ||
+    busy ||
+    pending ||
+    !!retryWait ||
+    !!task?.blocked
+  const contextNotice = contextUnavailable || (contextUsage && contextUsage.state !== 'ready')
   return (
-    <div
-      ref={containerRef}
-      className={styles['composer-wrap']}
-      data-empty={empty}
-      data-question={!!questionPanel}
-    >
-      {questionPanel}
-      {workReference?.pickerOpen && (
-        <WorkReferencePicker
-          selected={composer.workReference?.workId}
-          onClose={() => workReference.setPickerOpen(false)}
-          onSelect={workReference.select}
-        />
-      )}
-      <div className={styles['composer']} data-dragging={dragging}>
-        {composer.workReference && (
-          <WorkReferenceChip
-            reference={composer.workReference}
-            disabled={locked}
-            onRemove={workReference?.remove}
+    <MobileComposerContext value={mobilePanel.value}>
+      <div
+        ref={containerRef}
+        className={styles['composer-wrap']}
+        data-empty={empty}
+        data-question={!!questionPanel}
+      >
+        {questionPanel}
+        {workReference?.pickerOpen && (
+          <WorkReferencePicker
+            selected={composer.workReference?.workId}
+            onClose={() => workReference.setPickerOpen(false)}
+            onSelect={workReference.select}
           />
         )}
-        {workReference?.loading && <small role="status">正在引用工作…</small>}
-        {composer.deliverableReference && (
-          <div className={styles['replying']}>
-            <span>继续处理：{composer.deliverableTitle ?? '当前方案'}</span>
-            <button
-              type="button"
-              aria-label="取消成果关联"
-              disabled={locked}
-              onClick={() =>
-                change({
-                  ...composer,
-                  deliverableReference: undefined,
-                  deliverableTitle: undefined,
-                  key: '',
-                })
-              }
-            >
-              ×
-            </button>
+        <div className={styles['composer']} data-dragging={dragging}>
+          <div className={styles['preview']}>
+            {composer.workReference && (
+              <WorkReferenceChip
+                reference={composer.workReference}
+                disabled={locked}
+                onRemove={workReference?.remove}
+              />
+            )}
+            {workReference?.loading && <small role="status">正在引用工作…</small>}
+            {composer.deliverableReference && (
+              <div className={styles['replying']}>
+                <span>继续处理：{composer.deliverableTitle ?? '当前方案'}</span>
+                <button
+                  type="button"
+                  aria-label="取消成果关联"
+                  disabled={locked}
+                  onClick={() =>
+                    change({
+                      ...composer,
+                      deliverableReference: undefined,
+                      deliverableTitle: undefined,
+                      key: '',
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {composer.replyTo && (
+              <div className={styles['replying']}>
+                <CornerUpLeft size={14} />
+                正在补充此前消息
+                <button
+                  className={controlsStyles['icon-button']}
+                  aria-label="取消补充关联"
+                  disabled={locked}
+                  onClick={() => change({ ...composer, replyTo: undefined, key: '' })}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+            {composer.files.length > 0 && children}
+            {mobilePanel.mobile && contextNotice && (
+              <small role="status" className={styles['context-notice']}>
+                {contextUsageLabel(contextUsage, contextUnavailable)}
+              </small>
+            )}
           </div>
-        )}
-        {composer.replyTo && (
-          <div className={styles['replying']}>
-            <CornerUpLeft size={14} />
-            正在补充此前消息
-            <button
-              className={controlsStyles['icon-button']}
-              aria-label="取消补充关联"
-              disabled={locked}
-              onClick={() => change({ ...composer, replyTo: undefined, key: '' })}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        )}
-        {composer.files.length > 0 && children}
-        <textarea
-          ref={textInput}
-          aria-label="工作消息"
-          placeholder="询问 Noria"
-          rows={1}
-          maxLength={8000}
-          value={composer.text}
-          readOnly={busy || previewUploading || pending}
-          onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
-          onPaste={(event) => {
-            const images = clipboardImages(event.clipboardData)
-            if (!images.length) return
-            event.preventDefault()
-            void addFiles(images)
-          }}
-          onKeyDown={(event) =>
-            submitOnEnter(event, () => {
-              if (pending || !task?.blocked) void send()
-            })
-          }
-        />
-        <div className={styles['composer-actions']}>
-          <div>
+          <textarea
+            ref={textInput}
+            aria-label="工作消息"
+            placeholder="询问 Noria"
+            rows={1}
+            maxLength={8000}
+            value={composer.text}
+            readOnly={busy || previewUploading || pending}
+            onFocus={() => {
+              if (mobilePanel.mobile) mobilePanel.close()
+            }}
+            onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
+            onPaste={(event) => {
+              const images = clipboardImages(event.clipboardData)
+              if (!images.length) return
+              event.preventDefault()
+              void addFiles(images)
+            }}
+            onKeyDown={(event) =>
+              submitOnEnter(event, () => {
+                if (pending || !task?.blocked) void send()
+              })
+            }
+          />
+          <div className={styles['attachment-actions']}>
             <input
               ref={input}
               type="file"
               accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
               multiple
               hidden
+              disabled={locked || capturing}
               onChange={(e) => {
                 void addFiles(Array.from(e.target.files ?? []))
                 e.target.value = ''
@@ -205,99 +249,85 @@ export function MessageComposer({
             />
             <button
               {...attachmentMenu.triggerProps}
+              ref={mobilePanel.mobile ? mobilePanel.trigger : attachmentMenu.triggerProps.ref}
+              aria-expanded={mobilePanel.mobile ? mobilePanel.open : attachmentMenu.open}
+              aria-controls={
+                mobilePanel.mobile ? mobilePanel.id : attachmentMenu.triggerProps['aria-controls']
+              }
+              onClick={
+                mobilePanel.mobile ? mobilePanel.toggle : attachmentMenu.triggerProps.onClick
+              }
               className={controlsStyles['icon-button']}
-              aria-label="添加附件"
-              title="添加附件"
-              aria-haspopup="dialog"
-              disabled={locked || capturing}
+              aria-label={mobilePanel.mobile ? '更多功能' : '添加附件'}
+              title={mobilePanel.mobile ? '更多功能' : '添加附件'}
+              aria-haspopup={mobilePanel.mobile ? undefined : 'dialog'}
+              disabled={capturing || (!mobilePanel.mobile && locked)}
             >
               <Plus size={20} />
             </button>
-            <div
-              {...attachmentMenu.panelProps}
-              className={styles['attachment-menu']}
-              role="dialog"
-              aria-label="添加附件"
-            >
-              <button
-                disabled={locked || capturing}
-                onClick={() => {
-                  attachmentMenu.close()
-                  input.current?.click()
-                }}
-              >
-                <ImagePlus size={18} />
-                <span>
-                  添加图片<small>上传截图、照片或粘贴图片</small>
-                </span>
-              </button>
-              <button
-                disabled={locked || capturing}
-                onClick={() => {
-                  attachmentMenu.close()
-                  fileInput.current?.click()
-                }}
-              >
-                <Paperclip size={18} />
-                <span>
-                  添加文件<small>文档、PDF 或语音文件</small>
-                </span>
-              </button>
-              {workReference && (
-                <button
-                  disabled={locked || capturing}
-                  onClick={() => {
-                    attachmentMenu.close()
-                    workReference.setPickerOpen(true)
-                  }}
-                >
-                  <BriefcaseBusiness size={18} />
-                  <span>
-                    引用工作<small>选择我的工作作为本条消息的参考</small>
-                  </span>
-                </button>
-              )}
-            </div>
-            {executionControl}
-          </div>
-          <div className={styles['send-actions']}>
-            <ContextUsage
-              key={contextKey}
-              usage={contextUsage}
-              unavailable={contextUnavailable}
-              loading={contextLoading}
+            <ComposerAttachmentMenu
+              menu={attachmentMenu}
+              disabled={locked || capturing}
+              addImages={addImages}
+              addFiles={selectFiles}
+              selectWork={selectWork}
             />
-            {reasoningControl}
+          </div>
+          <MobileComposerPanel
+            id={mobilePanel.id}
+            mobile={mobilePanel.mobile}
+            open={mobilePanel.open}
+            disabled={locked || capturing}
+            addImages={addImages}
+            addFiles={selectFiles}
+            selectWork={selectWork}
+            execution={executionControl}
+            reasoning={reasoningControl}
+            context={
+              <ContextUsage
+                key={contextKey}
+                usage={contextUsage}
+                unavailable={contextUnavailable}
+                loading={contextLoading}
+              />
+            }
+          />
+          <div className={styles['voice-action']}>
             <VoiceRecordButton
               recording={recording}
               disabled={locked}
               holdDisabled={!!task?.blocked || !!retryWait || personaSaving || reasoningSaving}
+              beforeStart={() => mobilePanel.close()}
             />
-            <button
-              data-expanded={false}
-              aria-label={label}
-              aria-busy={busy || task?.cancelling}
-              title={label}
-              className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
-              disabled={
-                interrupting
-                  ? task?.cancelling
-                  : busy ||
-                    !!retryWait ||
-                    previewUploading ||
-                    personaSaving ||
-                    reasoningSaving ||
-                    capturing ||
-                    (!pending && task?.blocked) ||
-                    (!composer.text.trim() && !composer.files.length)
-              }
-              onClick={interrupting ? task?.interrupt : send}
-            >
-              {interrupting ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}
-            </button>
           </div>
+          <button
+            data-expanded={false}
+            hidden={mobilePanel.mobile && !showSend}
+            aria-label={label}
+            aria-busy={busy || task?.cancelling}
+            title={label}
+            className={`${controlsStyles['primary']} ${styles['slot-primary']}`}
+            disabled={
+              interrupting
+                ? task?.cancelling
+                : busy ||
+                  !!retryWait ||
+                  previewUploading ||
+                  personaSaving ||
+                  reasoningSaving ||
+                  capturing ||
+                  (!pending && task?.blocked) ||
+                  (!composer.text.trim() && !composer.files.length)
+            }
+            onClick={() => {
+              mobilePanel.close()
+              void (interrupting ? task?.interrupt() : send())
+            }}
+          >
+            {interrupting ? <Square size={15} fill="currentColor" /> : <ArrowUp size={18} />}
+          </button>
         </div>
       </div>
-    </div>
+    </MobileComposerContext>
   )
 }

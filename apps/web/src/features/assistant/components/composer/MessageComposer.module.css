@@ -14,8 +14,11 @@
   overflow: visible;
 }
 .composer {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 44px auto 36px 36px;
+  grid-template-areas: 'preview preview preview preview preview preview' 'draft draft draft draft draft draft' 'plus execution context reasoning voice send';
+  column-gap: 3px;
+  align-items: center;
   flex-shrink: 0;
   border: 1px solid var(--line);
   border-radius: 24px;
@@ -24,6 +27,9 @@
   box-shadow: var(--shadow);
 }
 .composer > textarea {
+  grid-area: draft;
+  width: 100%;
+  min-width: 0;
   flex-shrink: 0;
   resize: none;
   border: 0;
@@ -43,21 +49,21 @@
   border-color: transparent;
   box-shadow: none;
 }
-.composer-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 36px;
+.preview {
+  grid-area: preview;
+  min-width: 0;
+}
+.attachment-actions {
+  grid-area: plus;
   margin-top: 5px;
 }
-.composer-actions > div {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.voice-action {
+  grid-area: voice;
+  margin-top: 5px;
 }
-.send-actions > .slot-primary {
+.slot-primary {
+  grid-area: send;
+  margin-top: 5px;
   border-radius: 50%;
   width: 36px;
   height: 36px;
@@ -65,10 +71,16 @@
   min-width: 36px;
   padding: 0;
 }
-.send-actions > .slot-primary:disabled {
+.slot-primary:disabled {
   opacity: 1;
   background: var(--hover);
   color: var(--muted);
+}
+.context-notice {
+  display: block;
+  color: var(--muted);
+  padding: 0 8px 6px;
+  font-size: 12px;
 }
 .composer-wrap[data-empty='true'] {
   position: sticky;
@@ -152,48 +164,6 @@
   outline: 2px dashed var(--accent);
   outline-offset: -3px;
 }
-@media (max-width: 760px) {
-  .composer-wrap {
-    padding: 8px 12px max(12px, env(safe-area-inset-bottom));
-  }
-  .composer {
-    padding: 13px 12px 8px;
-    border-radius: 13px;
-  }
-  .composer > textarea {
-    font-size: 16px;
-    min-height: 65px;
-    height: 65px;
-    max-height: 100px;
-  }
-  .composer-actions {
-    gap: 8px;
-    flex-wrap: nowrap;
-  }
-  .composer-actions > div {
-    flex-wrap: nowrap;
-    gap: 1px;
-  }
-  .send-actions > .slot-primary {
-    margin-left: auto;
-    padding: 0;
-    width: 44px;
-    height: 44px;
-  }
-  :global(.keyboard-open) .composer > textarea {
-    min-height: 60px;
-    height: 60px;
-    max-height: 100px;
-  }
-}
-@media (max-height: 650px) {
-  .composer > textarea {
-    min-height: 62px;
-    height: 62px;
-    max-height: 100px;
-  }
-}
-
 @media (min-width: 1600px) {
   .composer-wrap {
     max-width: 1052px;
@@ -203,36 +173,65 @@
   }
 }
 
-.composer-actions > .send-actions {
-  flex-wrap: nowrap;
-  flex-shrink: 0;
-  margin-left: auto;
-  gap: 3px;
-}
-
-.composer-actions > div {
-  min-width: 0;
-}
-@media (max-width: 380px) {
-  .composer-actions {
-    gap: 2px;
+@media (max-width: 760px) {
+  .composer-wrap,
+  .composer-wrap[data-empty='true'] {
+    padding: 8px 8px max(8px, env(safe-area-inset-bottom));
+    background: var(--surface);
   }
-  .composer-actions > .send-actions {
-    gap: 0;
+  .composer {
+    grid-template-columns: 44px minmax(0, 1fr) 44px auto;
+    grid-template-areas: 'preview preview preview preview' 'voice draft plus send' 'panel panel panel panel';
+    gap: 0 4px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--surface);
+    box-shadow: none;
+  }
+  .composer > textarea {
+    align-self: center;
+    min-height: 44px;
+    height: 44px;
+    max-height: 112px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 9px 12px;
+    background: var(--surface);
+    font-size: 16px;
+    line-height: 24px;
+  }
+  .composer > textarea:focus,
+  .composer > textarea:focus-visible {
+    border-color: var(--line);
+  }
+  .attachment-actions,
+  .voice-action,
+  .slot-primary {
+    align-self: end;
+    margin: 0;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .attachment-actions > button,
+  .voice-action > button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  .slot-primary[hidden] {
+    display: none;
+  }
+  .preview:empty {
+    display: none;
   }
 }
-
 @media (max-height: 600px) {
   .composer-wrap[data-question='true'] {
     max-height: 100%;
     padding-top: 4px;
     padding-bottom: max(6px, env(safe-area-inset-bottom));
-  }
-  .composer-wrap[data-question='true'] > .composer {
-    padding: 8px 10px 6px;
-  }
-  .composer-wrap[data-question='true'] > .composer > textarea {
-    height: 36px;
-    min-height: 36px;
   }
 }

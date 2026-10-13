@@ -233,9 +233,15 @@ export function ConversationChat({
     const scroll = scroller.current
     const content = scroll?.querySelector('[data-chat-content]')
     if (!scroll || !content) return
+    let previousHeight = 0
     const observer = new ResizeObserver(() => {
+      // Composer changes adjust bottom padding, not the message content itself.
+      const messageHeight =
+        content.getBoundingClientRect().height -
+        parseFloat(getComputedStyle(content).paddingBottom || '0')
       if (atBottomRef.current) scroll.scrollTop = scroll.scrollHeight
-      else setNewReply(true)
+      else if (previousHeight && Math.abs(messageHeight - previousHeight) > 1) setNewReply(true)
+      previousHeight = messageHeight
     })
     observer.observe(content)
     return () => observer.disconnect()

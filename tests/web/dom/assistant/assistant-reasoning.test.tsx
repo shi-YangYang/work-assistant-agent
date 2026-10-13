@@ -141,7 +141,11 @@ it('keeps toolbar order and mounted controls while selecting the next message du
   const context = screen.getByRole('button', { name: /上下文使用情况/ })
   const microphone = screen.getByRole('button', { name: '录制语音' })
   const stop = screen.getByRole('button', { name: '中断' })
-  expect([...high.parentElement!.children]).toEqual([context, high, microphone, stop])
+  const ordered = [context, high, microphone, stop]
+  for (let index = 1; index < ordered.length; index++)
+    expect(
+      ordered[index - 1].compareDocumentPosition(ordered[index]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   fireEvent.keyDown(high, { key: 'ArrowDown' })
   const selected = screen.getByRole('menuitemradio', { name: 'high' })
   expect(document.activeElement).toBe(selected)
