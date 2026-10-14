@@ -1,4 +1,3 @@
-import { NotificationEntry } from '@web/features/notifications/components/NotificationEntry'
 import brandMark from '@paa/ui-web/mark.png'
 import controlsStyles from '../../styles/controls.module.css'
 import layoutStyles from '../../styles/layout.module.css'
@@ -115,24 +114,17 @@ export function Sidebar({
           </NavLink>
         ))}
         {!settingsMenu && (
-          <>
-            <NotificationEntry
-              className={styles['notification-entry']}
-              labelClassName={styles['nav-label']}
-              onNavigate={() => setExpandedNav(false)}
-            />
-            <button
-              type="button"
-              className={styles['disabled-entry']}
-              disabled
-              aria-label="云搭子 beta"
-              title="云搭子 beta · 即将开放"
-            >
-              <Cloud size={18} aria-hidden="true" />
-              <span className={styles['nav-label']}>云搭子</span>
-              <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
-            </button>
-          </>
+          <button
+            type="button"
+            className={styles['disabled-entry']}
+            disabled
+            aria-label="云搭子 beta"
+            title="云搭子 beta · 即将开放"
+          >
+            <Cloud size={18} aria-hidden="true" />
+            <span className={styles['nav-label']}>云搭子</span>
+            <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
+          </button>
         )}
       </nav>
       <div className={styles['sidebar-bottom']}>

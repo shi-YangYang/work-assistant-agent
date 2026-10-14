@@ -1,6 +1,14 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { createRef, useState } from 'react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render as renderView,
+  screen,
+  within,
+} from '@testing-library/react'
+import { createRef, useState, type ReactElement } from 'react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PetStage } from '../../../../apps/web/src/app/layout/pet/PetStage'
 import { AppearancePage } from '../../../../apps/web/src/features/settings/components/appearance/AppearancePage'
@@ -39,6 +47,8 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
+const render = (element: ReactElement) => renderView(element, { wrapper: MemoryRouter })
+
 const props = {
   navTriggerRef: createRef<HTMLButtonElement>(),
   expandedNav: false,
@@ -86,10 +96,10 @@ it('shares theme controls with settings, keeps drafts, restores focus, and makes
     )
   }
   render(<View />)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   trigger.focus()
   fireEvent.click(trigger)
-  const dialog = screen.getByRole('dialog', { name: 'Noria 外观' })
+  const dialog = screen.getByRole('dialog', { name: 'Noria' })
   fireEvent.click(within(dialog).getByRole('button', { name: '深色' }))
   expect(document.documentElement.dataset.theme).toBe('dark')
   expect(localStorage.getItem('paa.company.theme')).toBe('dark')
@@ -114,7 +124,7 @@ it('shares theme controls with settings, keeps drafts, restores focus, and makes
 
 it('keeps the same pet and brand image across page changes and pauses while hidden', () => {
   const view = render(<PetStage {...props} animate />)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   const pet = trigger.querySelector('[data-animate]')!
   const mark = trigger.querySelector('img[src*="mark"]')!
   const blink = trigger.querySelector('img[src*="blink"]')!
@@ -126,7 +136,7 @@ it('keeps the same pet and brand image across page changes and pauses while hidd
   setVisibility(false)
   expect(pet.getAttribute('data-paused')).toBe('false')
   view.rerender(<PetStage {...props} animate={false} />)
-  expect(screen.getByRole('button', { name: 'Noria 外观' })).toBe(trigger)
+  expect(screen.getByRole('button', { name: 'Noria' })).toBe(trigger)
   expect(trigger.querySelector('[data-animate]')).toBe(pet)
   expect(trigger.querySelector('img[src*="mark"]')).toBe(mark)
   expect(trigger.querySelector('img[src*="blink"]')).toBe(blink)
@@ -142,7 +152,7 @@ it('keeps the same pet and brand image across page changes and pauses while hidd
 
 it('keeps the brand image if blinking fails and a usable fallback if the brand image fails', () => {
   render(<PetStage {...props} animate />)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   const mark = trigger.querySelector('img[src*="mark"]')!
   fireEvent.error(trigger.querySelector('img[src*="blink"]')!)
   expect(trigger.querySelector('[data-animate]')?.getAttribute('data-animate')).toBe('false')
@@ -152,13 +162,13 @@ it('keeps the brand image if blinking fails and a usable fallback if the brand i
   expect(within(trigger).getByText('N')).toBeTruthy()
   expect(trigger.querySelector('img')).toBeNull()
   fireEvent.click(trigger)
-  expect(screen.getByRole('dialog', { name: 'Noria 外观' })).toBeTruthy()
+  expect(screen.getByRole('dialog', { name: 'Noria' })).toBeTruthy()
 })
 
 it('recovers failed blink and brand images without replacing the pet or showing broken images', () => {
   const retries = mockImageRetries()
   render(<PetStage {...props} animate />)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   const pet = trigger.querySelector('[data-animate]')!
   const mark = trigger.querySelector('img[src*="mark"]')!
   fireEvent.error(trigger.querySelector('img[src*="blink"]')!)
@@ -189,7 +199,7 @@ it('recovers failed blink and brand images without replacing the pet or showing 
 it('bounds failed retries, resumes on reconnect or visibility, and cleans up pending work', () => {
   const retries = mockImageRetries()
   const view = render(<PetStage {...props} animate />)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   fireEvent.error(trigger.querySelector('img[src*="blink"]')!)
   act(() => vi.advanceTimersByTime(1000))
   fireEvent.error(retries[0])
@@ -226,7 +236,7 @@ it('bounds failed retries, resumes on reconnect or visibility, and cleans up pen
 it('stays static for reduced motion and reacts when the preference changes', () => {
   reducedMotion = true
   render(<PetStage {...props} animate />)
-  const pet = screen.getByRole('button', { name: 'Noria 外观' }).querySelector('[data-animate]')!
+  const pet = screen.getByRole('button', { name: 'Noria' }).querySelector('[data-animate]')!
   expect(pet.getAttribute('data-animate')).toBe('false')
   act(() => {
     reducedMotion = false
@@ -243,7 +253,7 @@ it('stays static for reduced motion and reacts when the preference changes', () 
 it('reflects theme preferences changed in another browser tab through the existing store', () => {
   initializeTheme()
   render(<PetStage {...props} animate={false} />)
-  fireEvent.click(screen.getByRole('button', { name: 'Noria 外观' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Noria' }))
   act(() => {
     localStorage.setItem('paa.company.theme', 'dark')
     window.dispatchEvent(new StorageEvent('storage', { key: 'paa.company.theme' }))
@@ -259,7 +269,7 @@ it('switches work state without replacing the trigger, preserves the label and p
     return image
   })
   const view = render(<PetStage {...props} animate />)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   const pet = trigger.querySelector('[data-animate]')!
   const canvas = trigger.querySelector('canvas')!
   expect(canvas.dataset.ready).toBe('false')
@@ -302,7 +312,7 @@ it('retains the original face and working status when the working asset cannot l
   })
   render(<PetStage {...props} animate activity="working" />)
   fireEvent.error(image)
-  const trigger = screen.getByRole('button', { name: 'Noria 外观' })
+  const trigger = screen.getByRole('button', { name: 'Noria' })
   expect(trigger.querySelector('img[src*="mark"]')).not.toBeNull()
   expect(trigger.querySelector('canvas')?.dataset.ready).toBe('false')
   expect(screen.getByRole('status').textContent).toBe('努力工作中')

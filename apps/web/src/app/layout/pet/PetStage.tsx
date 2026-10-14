@@ -4,6 +4,7 @@ import { useState, type RefObject } from 'react'
 import controls from '@web/styles/controls.module.css'
 import { NoriaPet } from './NoriaPet'
 import { NoriaAppearanceDialog } from './NoriaAppearanceDialog'
+import { useNotificationSummary } from '@web/features/notifications/hooks/useNotificationSummary'
 import styles from './PetStage.module.css'
 
 export function PetStage({
@@ -20,6 +21,8 @@ export function PetStage({
   setExpandedNav: (expanded: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
+  const unread = useNotificationSummary()?.data?.totalUnread ?? 0
+  const label = unread > 0 ? `Noria，${unread} 条未读通知` : 'Noria'
   return (
     <>
       <div className={styles.stage}>
@@ -37,8 +40,8 @@ export function PetStage({
         <button
           type="button"
           className={styles.trigger}
-          aria-label="Noria 外观"
-          title="Noria 外观"
+          aria-label={label}
+          title={label}
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={(event) => {
@@ -48,7 +51,14 @@ export function PetStage({
             setOpen(true)
           }}
         >
-          <NoriaPet animate={animate && !open} working={activity === 'working'} />
+          <span className={styles.avatar}>
+            <NoriaPet animate={animate && !open} working={activity === 'working'} />
+            {unread > 0 && (
+              <span className={styles.unread} aria-hidden="true">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </span>
           <span className={styles.bubble}>
             <span className={styles.name}>Noria</span>
             {activity !== 'idle' && (

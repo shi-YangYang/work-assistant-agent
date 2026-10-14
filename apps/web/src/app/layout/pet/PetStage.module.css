@@ -25,6 +25,31 @@
 .trigger:hover {
   background: transparent;
 }
+.avatar {
+  position: relative;
+  display: block;
+}
+.unread {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #fbe7e9;
+  color: #b84451;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .bubble {
   position: relative;
   display: flex;
