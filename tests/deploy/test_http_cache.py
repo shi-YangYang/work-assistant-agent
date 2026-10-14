@@ -1,17 +1,48 @@
 """Check the production Caddy rules over HTTP without company data or services."""
-from http.client import RemoteDisconnected
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 from uuid import uuid4
 
 REPO = Path(__file__).resolve().parents[2]
 IMMUTABLE = 'public, max-age=31536000, immutable'
+
+
+def wait_for_caddy(client, origin, logs):
+    for _ in range(50):
+        try:
+            with client.open(origin + '/', timeout=1):
+                return
+        except (URLError, TimeoutError, ConnectionError):
+            # Docker can accept and reset a connection before Caddy starts listening.
+            time.sleep(.1)
+    raise RuntimeError('Caddy did not start: ' + logs()[-2000:])
+
+
+class CaddyStartupTests(unittest.TestCase):
+    def test_connection_reset_during_startup_is_retried_until_ready(self):
+        client = MagicMock()
+        client.open.side_effect = [ConnectionResetError('starting'), MagicMock()]
+        logs = MagicMock()
+        with patch('time.sleep'):
+            wait_for_caddy(client, 'http://127.0.0.1:12345', logs)
+        self.assertEqual(client.open.call_count, 2)
+        logs.assert_not_called()
+
+    def test_permanent_startup_failure_is_bounded_and_includes_container_logs(self):
+        client = MagicMock()
+        client.open.side_effect = ConnectionResetError('not ready')
+        logs = MagicMock(return_value='invalid Caddyfile fixture')
+        with patch('time.sleep'), self.assertRaisesRegex(RuntimeError, 'invalid Caddyfile fixture'):
+            wait_for_caddy(client, 'http://127.0.0.1:12345', logs)
+        self.assertEqual(client.open.call_count, 50)
+        logs.assert_called_once_with()
 
 
 @unittest.skipUnless(shutil.which('docker'), 'Docker is unavailable')
@@ -86,13 +117,7 @@ class HttpCacheTests(unittest.TestCase):
                'caddy:2.10.2-alpine')
         cls.origin = 'http://' + docker('port', name, '80/tcp')
         cls.client = build_opener(ProxyHandler({}))
-        for _ in range(50):
-            try:
-                with cls.client.open(cls.origin + '/', timeout=1):
-                    return
-            except (URLError, TimeoutError, RemoteDisconnected):
-                time.sleep(.1)
-        raise RuntimeError('Caddy did not start: ' + docker('logs', name)[-2000:])
+        wait_for_caddy(cls.client, cls.origin, lambda: docker('logs', name))
 
     def request(self, path, headers=None, method='GET'):
         request = Request(self.origin + path, headers=headers or {}, method=method)
