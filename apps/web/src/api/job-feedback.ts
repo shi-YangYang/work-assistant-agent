@@ -50,6 +50,9 @@ export function acceptFeedback(
       JSON.stringify(incoming.replyStream ?? null) ===
         JSON.stringify(current.replyStream ?? null) &&
       incoming.state === current.state &&
+      incoming.imageDeliveryCount === current.imageDeliveryCount &&
+      JSON.stringify(incoming.imageGeneration ?? []) ===
+        JSON.stringify(current.imageGeneration ?? []) &&
       JSON.stringify(incoming.actions ?? []) === JSON.stringify(current.actions ?? []) &&
       JSON.stringify(incoming.interactions ?? []) === JSON.stringify(current.interactions ?? []) &&
       JSON.stringify(incoming.nodes ?? []) === JSON.stringify(current.nodes ?? []) &&
@@ -96,6 +99,7 @@ export const stageNames: Record<string, string> = {
 }
 
 export const feedbackDisconnected = '连接已断开，任务可能仍在后台处理。'
+type RecoveryConfirmation = Pick<Job, 'id' | 'state' | 'attempt' | 'fence'>
 
 function connectJobFeedback(
   jobId: string,
@@ -110,10 +114,12 @@ function connectJobFeedback(
   let reply: ReplyCursor | null = null
   let previewUnavailable = false
   let closed = false
+  let inaccessible = false
   let completed = false
   let recovering = false
   let retryAt = 0
   let previousStage: string | undefined
+  let imageDeliveryCount = 0
   let source: EventSource | undefined
   let request: AbortController | undefined
   const closeSource = () => {
@@ -142,21 +148,24 @@ function connectJobFeedback(
     latest = incoming
     const stageChanged = previousStage !== undefined && previousStage !== incoming.stage
     const completedMedia = previousStage === 'parsing' || previousStage === 'transcribing'
+    const imagesChanged = (incoming.imageDeliveryCount ?? 0) > imageDeliveryCount
+    imageDeliveryCount = incoming.imageDeliveryCount ?? 0
     previousStage = incoming.stage
     setError(previewUnavailable ? '实时预览暂不可用，任务仍在后台处理。' : '')
     if (terminalJob(incoming.state)) {
       completed = true
       closeSource()
       refresh(incoming)
-    } else if (stageChanged && completedMedia) {
-      // Only media completion needs persisted transcript/extraction data. Search,
-      // generation, operations and review are already represented by the stream.
+    } else if ((stageChanged && completedMedia) || imagesChanged) {
+      // Fetch persisted media and newly finished images while the task continues.
+      // Ordinary text deltas still do not trigger message queries.
       refresh(incoming)
     }
   }
   const stop = (message: string, status?: number) => {
     if (closed) return
     closed = true
+    inaccessible = status === 403 || status === 404
     request?.abort()
     closeSource()
     receiveValue(null)
@@ -225,9 +234,23 @@ function connectJobFeedback(
       if (active() && source === opened) disconnect()
     }
   }
-  const recover = async () => {
-    if (closed || completed || recovering || source || navigator.onLine === false) return
+  const recover = async (confirmed?: RecoveryConfirmation) => {
+    if (!active() || completed || recovering || source || navigator.onLine === false) return
+    // A new authorized query may rediscover a job while another consumer still
+    // retains its stopped transport. Ordinary reconnects cannot revive it.
+    if (
+      closed &&
+      (!inaccessible ||
+        !confirmed ||
+        confirmed.id !== jobId ||
+        terminalJob(confirmed.state) ||
+        confirmed.attempt !== (latest?.attempt ?? attempt) ||
+        confirmed.fence !== (latest?.fence ?? fence))
+    )
+      return
     if (Date.now() < retryAt) return
+    closed = false
+    inaccessible = false
     recovering = true
     const controller = new AbortController()
     request = controller
@@ -262,6 +285,7 @@ function connectJobFeedback(
       window.removeEventListener('online', online)
       window.removeEventListener('offline', disconnect)
       closed = true
+      inaccessible = false
       request?.abort()
       closeSource()
     },
@@ -282,7 +306,7 @@ type FeedbackConnection = {
   error: string
   listeners: Set<FeedbackListener>
   dispose?: () => void
-  recover?: () => Promise<void>
+  recover?: (confirmed?: RecoveryConfirmation) => Promise<void>
 }
 const connections = new Map<string, FeedbackConnection>()
 
@@ -322,6 +346,8 @@ export function subscribeJobFeedback(
     shared.attempt = attempt
     shared.fence = fence
     shared.value = null
+    shared.error = ''
+    shared.listeners.forEach((item) => item.error(''))
     const transport = connectJobFeedback(
       jobId,
       attempt,
@@ -365,6 +391,6 @@ export function subscribeJobFeedback(
   }
 }
 
-export function reconnectJobFeedback(jobId: string | null) {
-  return jobId ? connections.get(`${epoch}:${jobId}`)?.recover?.() : undefined
+export function reconnectJobFeedback(jobId: string | null, confirmed?: RecoveryConfirmation) {
+  return jobId ? connections.get(`${epoch}:${jobId}`)?.recover?.(confirmed) : undefined
 }

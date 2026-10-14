@@ -1,7 +1,9 @@
 import type { ContextUsage as Usage } from '@paa/api-contracts'
 import { X } from 'lucide-react'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
+import { useMobileComposerControl } from '../../../hooks/composer/useMobileComposerPanel'
+import { Modal } from '@web/components/overlays/Modal'
 import styles from './ContextUsage.module.css'
 
 const number = (value: number) => value.toLocaleString('zh-CN')
@@ -23,18 +25,26 @@ export function ContextUsage({
   unavailable?: boolean
   loading?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const { mobile, available, activate, deactivate } = useMobileComposerControl('context')
+  const [requestedOpen, setOpen] = useState(false)
+  const open = requestedOpen && available
   const [hint, setHint] = useState(false)
-  const [position, setPosition] = useState({ left: 0, bottom: 0, maxHeight: 400 })
+  const [position, setPosition] = useState<CSSProperties>({ left: 0, bottom: 0, maxHeight: 400 })
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
   const id = useId()
   const label = loading && !usage ? '正在读取用量' : contextUsageLabel(usage, unavailable)
   const percent = usage?.contextWindow ? usage.usedTokens / usage.contextWindow : null
-  const visible = open || hint
+  const visible = open || (!mobile && hint)
+  const [previousMobile, setPreviousMobile] = useState(mobile)
+  if (previousMobile !== mobile || (!available && (requestedOpen || hint))) {
+    setPreviousMobile(mobile)
+    setOpen(false)
+    setHint(false)
+  }
   useLayoutEffect(() => {
-    if (!visible) return
+    if (!visible || mobile) return
     const place = () => {
       const rect = trigger.current?.getBoundingClientRect()
       if (!rect) return
@@ -51,13 +61,17 @@ export function ContextUsage({
     place()
     window.addEventListener('resize', place)
     window.addEventListener('scroll', place, true)
+    window.visualViewport?.addEventListener('resize', place)
+    window.visualViewport?.addEventListener('scroll', place)
     return () => {
       window.removeEventListener('resize', place)
       window.removeEventListener('scroll', place, true)
+      window.visualViewport?.removeEventListener('resize', place)
+      window.visualViewport?.removeEventListener('scroll', place)
     }
-  }, [visible, open])
+  }, [visible, open, mobile])
   useEffect(() => {
-    if (!open) return
+    if (!open || mobile) return
     closeButton.current?.focus()
     const outside = (event: PointerEvent) => {
       if (
@@ -66,42 +80,98 @@ export function ContextUsage({
       ) {
         setOpen(false)
         setHint(false)
+        deactivate()
       }
     }
     document.addEventListener('pointerdown', outside)
     return () => document.removeEventListener('pointerdown', outside)
-  }, [open])
+  }, [open, mobile, deactivate])
   const close = () => {
     setOpen(false)
+    deactivate()
     trigger.current?.focus()
     setHint(false)
   }
+  const details = (
+    <div className={styles.details}>
+      <div className={styles.value}>
+        {percent !== null ? `约 ${Math.floor(percent * 100)}%` : label}
+      </div>
+      {percent !== null && usage?.state !== 'ready' && <p className={styles.note}>{label}</p>}
+      {usage && (
+        <>
+          <dl>
+            <div>
+              <dt>当前输入估算</dt>
+              <dd>{number(usage.usedTokens)} tokens</dd>
+            </div>
+            <div>
+              <dt>窗口容量</dt>
+              <dd>{usage.contextWindow ? `${number(usage.contextWindow)} tokens` : '未配置'}</dd>
+            </div>
+            {usage.inputLimit != null && usage.inputLimit !== usage.contextWindow && (
+              <div>
+                <dt>服务输入上限</dt>
+                <dd>{number(usage.inputLimit)} tokens</dd>
+              </div>
+            )}
+          </dl>
+          <p className={styles.model}>{usage.model}</p>
+          {usage.reason && <p className={styles.note}>{usage.reason}</p>}
+          {usage.state === 'ready' &&
+            usage.compactionId &&
+            usage.beforeTokens != null &&
+            usage.afterTokens != null && (
+              <p className={styles.note}>
+                上下文已压缩 · {number(usage.beforeTokens)} → {number(usage.afterTokens)} tokens
+              </p>
+            )}
+        </>
+      )}
+      {!usage && (
+        <p className={styles.caption}>
+          {loading
+            ? '正在读取这段会话的上下文用量。'
+            : unavailable
+              ? '联网恢复后将重新获取。'
+              : '助手开始处理消息后显示用量。'}
+        </p>
+      )}
+    </div>
+  )
   return (
     <>
       <button
         type="button"
         ref={trigger}
         className={styles.trigger}
+        data-panel={mobile}
         aria-label={`上下文使用情况：${label}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-busy={loading}
-        aria-controls={open ? id : undefined}
-        aria-describedby={hint && !open ? `${id}-hint` : undefined}
+        aria-controls={open && !mobile ? id : undefined}
+        aria-describedby={!mobile && hint && !open ? `${id}-hint` : undefined}
         data-active={usage?.state === 'compacting' || usage?.state === 'retry_wait'}
         onPointerEnter={(event) => {
-          if (event.pointerType !== 'touch') setHint(true)
+          if (!mobile && event.pointerType !== 'touch') setHint(true)
         }}
         onPointerLeave={() => setHint(false)}
         onFocus={() => setHint(true)}
         onBlur={() => setHint(false)}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
+          if (
+            event.key === 'Escape' &&
+            !event.nativeEvent.isComposing &&
+            (open || (!mobile && hint))
+          ) {
             close()
             event.stopPropagation()
           }
         }}
         onClick={() => {
+          if (!open) activate()
+          else deactivate()
           setOpen(!open)
           setHint(false)
         }}
@@ -124,19 +194,43 @@ export function ContextUsage({
             strokeDasharray={`${Math.min(100, Math.max(0, (percent ?? 0) * 100))} 100`}
           />
         </svg>
+        {mobile && (
+          <span className={styles['panel-caption']}>
+            <span>上下文</span>
+            <small className={styles['panel-label']}>{label.replace('约 ', '约')}</small>
+          </span>
+        )}
       </button>
-      {visible &&
+      {mobile && open && (
+        <Modal
+          title="上下文使用情况"
+          className={styles['mobile-dialog']}
+          onClose={close}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              event.stopPropagation()
+              close()
+            }
+          }}
+        >
+          {details}
+        </Modal>
+      )}
+      {!mobile &&
+        visible &&
         createPortal(
           open ? (
             <div
               ref={panel}
               id={id}
               role="dialog"
+              data-composer-layer="context"
               aria-label="上下文使用情况"
               className={styles.panel}
               style={position}
               onKeyDown={(event) => {
-                if (event.key === 'Escape') {
+                if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
                   event.stopPropagation()
                   close()
                 }
@@ -149,6 +243,7 @@ export function ContextUsage({
                 ) {
                   setOpen(false)
                   setHint(false)
+                  deactivate()
                 }
               }}
             >
@@ -158,54 +253,7 @@ export function ContextUsage({
                   <X size={16} />
                 </button>
               </header>
-              <div className={styles.value}>
-                {percent !== null ? `约 ${Math.floor(percent * 100)}%` : label}
-              </div>
-              {percent !== null && usage?.state !== 'ready' && (
-                <p className={styles.note}>{label}</p>
-              )}
-              {usage && (
-                <>
-                  <dl>
-                    <div>
-                      <dt>当前输入估算</dt>
-                      <dd>{number(usage.usedTokens)} tokens</dd>
-                    </div>
-                    <div>
-                      <dt>窗口容量</dt>
-                      <dd>
-                        {usage.contextWindow ? `${number(usage.contextWindow)} tokens` : '未配置'}
-                      </dd>
-                    </div>
-                    {usage.inputLimit != null && usage.inputLimit !== usage.contextWindow && (
-                      <div>
-                        <dt>服务输入上限</dt>
-                        <dd>{number(usage.inputLimit)} tokens</dd>
-                      </div>
-                    )}
-                  </dl>
-                  <p className={styles.model}>{usage.model}</p>
-                  {usage.reason && <p className={styles.note}>{usage.reason}</p>}
-                  {usage.state === 'ready' &&
-                    usage.compactionId &&
-                    usage.beforeTokens != null &&
-                    usage.afterTokens != null && (
-                      <p className={styles.note}>
-                        上下文已压缩 · {number(usage.beforeTokens)} → {number(usage.afterTokens)}{' '}
-                        tokens
-                      </p>
-                    )}
-                </>
-              )}
-              {!usage && (
-                <p className={styles.caption}>
-                  {loading
-                    ? '正在读取这段会话的上下文用量。'
-                    : unavailable
-                      ? '联网恢复后将重新获取。'
-                      : '助手开始处理消息后显示用量。'}
-                </p>
-              )}
+              {details}
             </div>
           ) : (
             <div role="tooltip" id={`${id}-hint`} className={styles.tooltip} style={position}>

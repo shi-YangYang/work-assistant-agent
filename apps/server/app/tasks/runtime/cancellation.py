@@ -57,10 +57,8 @@ async def cancel_job(db, actor, identifier, body, *, temporary=None):
     cancel_unfinished(item)
     update_feedback(item, text='')
     if item.result.get('contextUsage'):
-        item.result = {**item.result, 'contextUsage': {
-            **item.result['contextUsage'], 'state': 'failed', 'fence': item.fence,
-            'attempt': item.attempt, 'seq': item.feedback['seq'],
-        }}
+        from app.tasks.feedback.context_feedback import usage_dto
+        item.result = {**item.result, 'contextUsage': usage_dto(item)}
     documents = (await db.scalars(select(Attachment).where(
         Attachment.message_id == message.id, Attachment.owner_id == actor.id,
         Attachment.company_id == actor.company_id, Attachment.deleted.is_(False),

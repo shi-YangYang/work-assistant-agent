@@ -1,0 +1,95 @@
+.panel {
+  display: contents;
+}
+.entry {
+  display: none;
+}
+.context {
+  grid-area: context;
+}
+.reasoning {
+  grid-area: reasoning;
+}
+.execution {
+  grid-area: execution;
+}
+.context,
+.reasoning,
+.execution {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-top: 5px;
+}
+@media (max-width: 760px) {
+  .panel {
+    grid-area: panel;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px 8px 4px;
+    margin-top: 8px;
+    border-top: 1px solid var(--line);
+    max-height: max(80px, calc(var(--app-height, 100dvh) - 210px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .panel[hidden] {
+    display: none;
+  }
+  .entry,
+  .context > button {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 76px;
+    height: auto;
+    padding: 12px 2px 8px;
+    border: 0;
+    border-radius: 12px;
+    color: var(--secondary);
+    background: transparent;
+    font-size: 12px;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+  .entry:hover:not(:disabled),
+  .entry:active:not(:disabled) {
+    background: var(--hover);
+  }
+  .context,
+  .reasoning,
+  .execution {
+    grid-area: auto;
+    margin: 0;
+  }
+  .context {
+    align-items: stretch;
+  }
+  .reasoning,
+  .execution {
+    grid-column: 1 / -1;
+  }
+  .reasoning:empty,
+  .execution:empty {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .context > button[data-panel='true'] {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    width: 100%;
+    padding: 12px 2px 8px;
+  }
+  .entry > svg,
+  .context > button > svg {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+}

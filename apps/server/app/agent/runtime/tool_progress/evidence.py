@@ -3,7 +3,7 @@ import json
 from dataclasses import asdict
 from app.core.digests import digest
 
-WRITES = frozenset({'execute_business_action', 'propose_progress', 'propose_followup', 'save_memory', 'forget_memory', 'save_deliverable', 'request_user_input'})
+WRITES = frozenset({'generate_image', 'execute_business_action', 'propose_progress', 'propose_followup', 'save_memory', 'forget_memory', 'save_deliverable', 'request_user_input'})
 CURSORS = {'read_document': 'start', 'find_documents': 'start', 'read_deliverable': 'offset',
            'find_work_items': 'cursor', 'get_work_item': 'body_start',
            'list_work_updates': 'start', 'list_work_materials': 'start', 'read_work_material': 'start',
@@ -45,7 +45,7 @@ def request_key(call):
 
 
 def failed_result(result):
-    return result.get('category') in ('invalid_arguments', 'permission_denied', 'missing_info', 'conflict', 'transient_failure') or result.get('state') in ('failed', 'conflict', 'unavailable', 'clarification', 'not_requested') or 'error' in result
+    return result.get('category') in ('invalid_arguments', 'permission_denied', 'missing_info', 'conflict', 'transient_failure') or result.get('state') in ('failed', 'conflict', 'unavailable', 'clarification', 'not_requested', 'unknown', 'retryable') or 'error' in result
 
 
 def result_key(call, result):
@@ -65,6 +65,13 @@ def result_key(call, result):
         value.pop('progressNotice', None)
     elif call['name'] == 'execute_business_action' and result.get('id') and result.get('state') in ('succeeded', 'pending', 'running'):
         value = {key: result.get(key) for key in ('id', 'state', 'objectId', 'objectRevision', 'revision', 'job')}
+        args = {}
+    elif call['name'] == 'generate_image' and result.get('operationId'):
+        value = {key: result.get(key) for key in ('state', 'operationId')}
+        args = {}
+    elif call['name'] == 'generate_image' and isinstance(result.get('results'), list):
+        value = {'state': result.get('state'), 'notExecutedCount': result.get('notExecutedCount'),
+                 'results': [{key: item.get(key) for key in ('state', 'operationId', 'code')} for item in result['results']]}
         args = {}
     elif call['name'] in ('save_memory', 'forget_memory') and result.get('state') == 'succeeded':
         value = {key: result.get(key) for key in ('state', 'revision', 'generation', 'operation')}

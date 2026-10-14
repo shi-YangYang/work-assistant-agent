@@ -4,6 +4,7 @@ from app.core.digests import digest
 from app.core.errors import problem
 from app.modules.members.models import Company, Member
 from app.modules.model_services.models import ModelRouting
+from app.modules.model_services.routing_choices import unified_choices
 from app.modules.model_services.service import get_service, validate_choice
 from .policy import effective_selection
 
@@ -13,7 +14,7 @@ async def reasoning_state(db, actor):
     await db.scalar(select(Company).where(Company.id == actor.company_id).with_for_update())
     member = await db.scalar(select(Member).where(Member.id == actor.id, Member.company_id == actor.company_id).with_for_update().execution_options(populate_existing=True))
     routing = await db.get(ModelRouting, actor.company_id)
-    selection = routing.choices.get('assistant') if routing else None
+    selection = unified_choices(routing.choices if routing else None)['assistant']
     options, chosen, service = [], None, None
     if selection:
         service = await get_service(db, actor.company_id, selection['serviceId'])

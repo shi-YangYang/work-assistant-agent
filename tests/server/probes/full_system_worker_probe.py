@@ -2,11 +2,9 @@
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
 import sys
-
-if not os.environ.get('SPEC044_RUN_ID'):
-    raise SystemExit('Requires isolated acceptance environment')
 
 from sqlalchemy.engine import make_url
 from app.core.config import Settings
@@ -19,11 +17,30 @@ from app.tasks.models import Job
 from app.tasks.runtime.runner import run_slots
 
 
+def checked_target(settings):
+    run_id = os.environ.get('SPEC044_RUN_ID', '')
+    if not re.fullmatch(r'[a-f0-9]{32}', run_id):
+        raise SystemExit('Requires isolated acceptance environment')
+    if os.environ.get('PAA_AGENT_FAULT_ENVIRONMENT'):
+        # Validates the exact database, schema, owner marker and private manifest;
+        # a new audit suite must never become a broad search_path prefix bypass.
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'))
+        from faults import isolated_url
+        url = isolated_url(settings)
+        metadata = json.loads(Path(os.environ['PAA_AGENT_FAULT_ENVIRONMENT']).read_text())
+        if metadata['runId'] != run_id:
+            raise SystemExit('Worker run does not match the owned environment')
+        return url
+    url = make_url(settings.database_url)
+    if (url.database != 'paa_company_test' or url.host not in ('127.0.0.1', 'localhost')
+            or not re.fullmatch(r'-csearch_path=spec(?:044|054)_[a-z]+_' + run_id[:12], url.query.get('options', ''))):
+        raise SystemExit('Refusing unsafe DB target')
+    return url
+
+
 async def main():
     settings = Settings()
-    url = make_url(settings.database_url)
-    if url.database != 'paa_company_test' or not url.query.get('options', '').startswith(('-csearch_path=spec044_', '-csearch_path=spec054_')):
-        raise SystemExit('Refusing unsafe DB target')
+    checked_target(settings)
     control = json.loads(Path(sys.argv[1]).read_text())
     phase = sys.argv[2]
     marker_dir = Path(control['markers'])
@@ -61,4 +78,5 @@ async def main():
         await engine.dispose()
 
 
-asyncio.run(main())
+if __name__ == '__main__':
+    asyncio.run(main())

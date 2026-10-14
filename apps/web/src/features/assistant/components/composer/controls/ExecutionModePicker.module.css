@@ -88,3 +88,56 @@
     display: none;
   }
 }
+
+.trigger[data-panel='true'] {
+  width: 100%;
+  max-width: none;
+  min-height: 48px;
+  height: auto;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--secondary);
+  font-size: 13px;
+}
+.trigger[data-panel='true'] > span {
+  display: block;
+  color: inherit;
+}
+.trigger[data-panel='true'] > .panel-title {
+  margin-right: auto;
+  color: var(--text);
+}
+
+.trigger[data-panel='true'] > svg:last-child {
+  display: block;
+}
+.trigger[data-panel='true'] > svg:not(:last-child) {
+  display: none;
+}
+.menu {
+  overflow-y: auto;
+}
+
+.mobile-dialog {
+  width: 360px;
+}
+.menu[data-inline='true'] {
+  position: static;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  overflow: visible;
+}
+.menu[data-inline='true'] button {
+  min-height: 44px;
+}
+.menu[data-inline='true'] button > svg {
+  flex-shrink: 0;
+}

@@ -11,7 +11,7 @@ import { resolveProgressDrafts } from '@web/features/assistant/api/requests'
 import type { TaskContinuation } from '../../api/interactions'
 import { QuestionHistory } from '../interactions/QuestionPanel'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
-import { DeliverableEntry } from '../deliverables/Deliverable'
+import { MessageDeliverables } from '../deliverables/Deliverable'
 import { BusinessActionCard } from '@web/features/assistant/components/interactions/BusinessActionCard'
 import { DocumentCard } from '@web/components/media/Documents'
 import { ImageGallery } from '@web/components/media/ImageGallery'
@@ -77,6 +77,14 @@ export function MessageCard({
       ? activeJob!
       : sourceJob
   const live = useJobFeedback(job, own && !message.businessUnavailable, onFeedback ?? onChange)
+  const imageJob = job?.imageGeneration ? job : sourceJob
+  // Message refresh and SSE can arrive in either order; older feedback must not
+  // reintroduce placeholders beside images that have already been delivered.
+  const imageGeneration =
+    live.feedback?.imageGeneration &&
+    (!imageJob?.imageGeneration || live.feedback.updatedAt >= imageJob.updatedAt)
+      ? live.feedback.imageGeneration
+      : imageJob?.imageGeneration
   useEffect(() => {
     if (own && !message.businessUnavailable && job) onContextUpdate?.(job, live.feedback)
   }, [own, message.businessUnavailable, job, live.feedback, onContextUpdate])
@@ -208,6 +216,7 @@ export function MessageCard({
             <JobNotice
               job={{
                 ...job,
+                imageGeneration,
                 ...(live.feedback
                   ? {
                       state: live.feedback.state,
@@ -260,13 +269,18 @@ export function MessageCard({
           />
           {own &&
             !message.businessUnavailable &&
-            message.deliverables?.map((item) => (
-              <DeliverableEntry
-                key={`${item.id}:${item.revision}`}
-                item={item}
+            (!!message.deliverables?.length || !!imageGeneration?.length) && (
+              <MessageDeliverables
+                items={message.deliverables ?? []}
+                generation={imageGeneration}
+                state={live.feedback?.state ?? job?.state}
+                complete={
+                  failed ||
+                  replyPresentation(message, job, live.feedback, own, live.unavailable).delivered
+                }
                 onContinue={onDeliverable}
               />
-            ))}
+            )}
           {own &&
             !message.businessUnavailable &&
             (live.feedback?.actions ?? message.actions)

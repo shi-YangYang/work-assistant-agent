@@ -1,4 +1,6 @@
 import styles from './ChatHistory.module.css'
+import messageStyles from './MessageCard.module.css'
+import noticeStyles from '../../../../styles/patterns/Notice.module.css'
 import type {
   BusinessAction,
   DeliverableReference,
@@ -11,10 +13,12 @@ import type {
 import { BusinessActionCard } from '@web/features/assistant/components/interactions/BusinessActionCard'
 import { MessageCard } from '@web/features/assistant/components/messages/MessageCard'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import { fileKind } from '@web/features/assistant/utils/files'
+import { JobNotice } from '@web/features/jobs/components/JobNotice'
 import type { TaskContinuation } from '../../api/interactions'
 import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
 import type * as React from 'react'
-import { Sparkles } from 'lucide-react'
+import { LoaderCircle, Sparkles } from 'lucide-react'
 
 export function ChatHistory({
   scroller,
@@ -39,7 +43,9 @@ export function ChatHistory({
   onContextUpdate,
   onContinuation,
   task,
+  sending = false,
 }: {
+  sending?: boolean
   onContinuation?: (continuation?: TaskContinuation) => void
   task?: ReturnType<typeof useAssistantTask>
   onContextUpdate?: (job: Job, feedback: JobFeedback | null) => void
@@ -69,13 +75,21 @@ export function ChatHistory({
   }
 }) {
   const visibleMessageIds = new Set(messages.map((message) => message.id))
+  const pendingJob = task?.job && !visibleMessageIds.has(task.job.targetId) ? task.job : null
+  const uploading = composer.files.find((file) => file.id === composer.uploading)
+  const sendingLabel = uploading
+    ? fileKind(uploading.file) === 'audio'
+      ? '正在上传语音…'
+      : '正在上传附件…'
+    : '正在发送消息…'
+  const empty = !messages.length && !sending && !pendingJob && !error && (!conversationId || !!data)
   const standaloneActions =
     actionReceipts.data?.items.filter((action) => !visibleMessageIds.has(action.messageId)) ?? []
   const coveredOrigins = new Set(standaloneActions.map((action) => action.messageId))
   return (
     <div
       className={styles['chat-scroll']}
-      data-empty={!messages.length && !error && (!conversationId || !!data)}
+      data-empty={empty}
       ref={scroller}
       onScroll={() => {
         const node = scroller.current
@@ -91,7 +105,7 @@ export function ChatHistory({
             加载更早消息
           </button>
         )}
-        {!messages.length && !error && (!conversationId || !!data) && (
+        {empty && (
           <div className={styles['assistant-welcome']}>
             <div className={styles['welcome-orbit']} aria-hidden="true">
               <span />
@@ -146,6 +160,30 @@ export function ChatHistory({
             />
           )
         })}
+        {(sending || pendingJob) && (
+          <div className={messageStyles['assistant-turn']} data-pending-assistant>
+            <h3 className={messageStyles['assistant-identity']}>
+              <Sparkles size={16} />
+              Noria
+            </h3>
+            {sending ||
+            (pendingJob && ['succeeded', 'awaiting_input'].includes(pendingJob.state)) ? (
+              <p className={noticeStyles.processing} role="status">
+                <LoaderCircle size={14} aria-hidden="true" />
+                {sending ? sendingLabel : '正在载入回复…'}
+              </p>
+            ) : pendingJob ? (
+              <JobNotice
+                job={pendingJob}
+                showNodes
+                refresh={refresh}
+                retryBlocked={locked || task?.blocked}
+                onRetryStart={task?.beginRetry}
+                onRetrySettled={task?.finishRetry}
+              />
+            ) : null}
+          </div>
+        )}
       </div>
     </div>
   )

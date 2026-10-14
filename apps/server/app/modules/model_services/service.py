@@ -5,12 +5,13 @@ from app.db.base import now
 from app.integrations.models.transport import normalize_url
 from app.modules.members.models import Company
 from app.modules.model_services.models import ModelRouting, ModelService, ModelServiceRevision
+from app.modules.model_services.routing_choices import EMPTY_CHOICES, unified_choices
 from app.modules.model_services.schemas import ServiceInput, ServiceModel
 from app.security.secrets import decrypt, encrypt, read_key
 from sqlalchemy import func, select
 from uuid import uuid4
 
-EMPTY_CHOICES = {'assistant': None, 'report': 'follow', 'asr': None}
+PROTOCOLS = {'assistant': {'chat'}, 'report': {'chat'}, 'asr': {'transcriptions', 'qwen-asr', 'dashscope-asr'}, 'image': {'dashscope-image'}}
 
 
 def service_dto(row):
@@ -68,12 +69,12 @@ async def save_service(db, settings, actor, body, identifier=None):
         key = body.apiKey or decrypt(settings.model_key_file, old.credential, actor.company_id, row.id, old.revision)
         routing = await db.get(ModelRouting, actor.company_id)
         if routing:
-            choices = dict(routing.choices)
+            choices = unified_choices(routing.choices)
             for purpose, choice in choices.items():
                 if isinstance(choice, dict) and choice['serviceId'] == row.id:
                     model = next((model for model in models if model.id == choice['modelId']), None)
                     if not model:
-                        label = {'assistant': '工作助手', 'report': '报告生成', 'asr': '语音转写'}[purpose]
+                        label = {'assistant': '文字模型', 'asr': '语音转写', 'image': '图片生成'}[purpose]
                         problem(422, f'模型仍用于{label}，请先在“用途分配”中更换或解除绑定，再移除此模型。')
                     validate_choice(models, choice, purpose)
             if choices != routing.choices:
@@ -101,7 +102,7 @@ async def save_service(db, settings, actor, body, identifier=None):
 def validate_choice(models, choice, purpose):
     models = [m.model_dump() if isinstance(m, ServiceModel) else m for m in models]
     model = next((m for m in models if m['id'] == choice['modelId']), None)
-    if not model or ((purpose == 'asr') != (model['protocol'] != 'chat')):
+    if not model or model['protocol'] not in PROTOCOLS.get(purpose, set()):
         problem(422, '所选模型不存在或协议不适用于该用途')
     if purpose != 'report' and (choice.get('parameters') is not None or choice.get('explicitReasoning')):
         problem(422, '只有独立报告用途可以保留专属参数')
@@ -112,8 +113,8 @@ async def routing_dto(db, company_id, settings):
     row = await db.get(ModelRouting, company_id)
     company = await db.get(Company, company_id)
     environment = bool(not row and company.environment_models)
-    choices = {purpose: {key: value for key, value in choice.items() if key != 'streaming'} if isinstance(choice, dict) else choice for purpose, choice in (row.choices if row else EMPTY_CHOICES).items()}
-    return {'revision': row.revision if row else 0, 'source': 'environment' if environment else 'database', **choices, 'environment': environment_summary(settings) if environment else None}
+    choices = unified_choices(row.choices if row else None)
+    return {'revision': row.revision if row else 0, 'source': 'environment' if environment else 'database', **EMPTY_CHOICES, **choices, 'environment': environment_summary(settings) if environment else None}
 
 
 def environment_summary(settings):
@@ -125,7 +126,9 @@ async def save_routing(db, actor, body, settings):
     row = await db.get(ModelRouting, actor.company_id)
     if (row.revision if row else 0) != body.expectedRevision:
         problem(409, '用途配置已在其他页面更新，请读取最新版本', 'revision_conflict')
-    choices = body.model_dump(exclude={'expectedRevision'})
+    # Ignore the retired report assignment from old clients. In particular, an
+    # explicit assistant=null clears text routing instead of reviving that model.
+    choices = {**unified_choices(row.choices if row else None), **body.model_dump(exclude={'expectedRevision', 'report'}, exclude_unset=True)}
     for purpose, choice in choices.items():
         if isinstance(choice, dict):
             service = await get_service(db, actor.company_id, choice['serviceId'])
@@ -145,9 +148,9 @@ async def remove_service(db, actor, identifier, expected):
     service = await get_service(db, actor.company_id, identifier, lock=True)
     version(service, expected)
     routing = await db.get(ModelRouting, actor.company_id)
-    affected = [purpose for purpose, choice in (routing.choices if routing else {}).items() if isinstance(choice, dict) and choice['serviceId'] == identifier]
+    affected = [purpose for purpose, choice in unified_choices(routing.choices if routing else None).items() if isinstance(choice, dict) and choice['serviceId'] == identifier]
     if affected:
-        problem(409, '该服务正在用于 ' + '、'.join({'assistant': '工作助手', 'report': '报告', 'asr': '语音转写'}[p] for p in affected) + '，请先解除或更换用途')
+        problem(409, '该服务正在用于 ' + '、'.join({'assistant': '文字模型', 'asr': '语音转写', 'image': '图片生成'}[p] for p in affected) + '，请先解除或更换用途')
     service.revoked = True
     # Keep non-sensitive provenance but remove all credential availability.
     revisions = (await db.scalars(select(ModelServiceRevision).where(ModelServiceRevision.service_id == service.id))).all()

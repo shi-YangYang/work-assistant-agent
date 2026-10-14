@@ -10,6 +10,7 @@ from app.tasks.context import BudgetExceeded, RunContext
 from app.tasks.lease import lease
 
 GROUPS = {
+    'images': frozenset({'generate_image'}),
     'work': frozenset({'find_work_items', 'get_work_item', 'list_work_updates', 'list_work_materials', 'read_work_material', 'propose_progress', 'execute_business_action', 'get_business_actions', *TEAM_TOOL_NAMES}),
     'reports': frozenset({'query_reports', 'query_report_obligations', 'execute_business_action', 'get_business_actions', 'query_team_business', 'read_team_source'}),
     'research': frozenset({'web_search', 'web_fetch'}),
@@ -19,6 +20,7 @@ GROUPS = {
     'task_context': frozenset({'set_task_context', 'request_user_input'}),
 }
 DESCRIPTIONS = {
+    'images': '按文字生成私人图片（不支持图片编辑），公司需配置图片模型',
     'work': '查询和修改本人工作、进展、材料',
     'reports': '查询本人报告/待办，生成、编辑和提交报告',
     'research': '搜索和读取公开网页',
@@ -135,7 +137,7 @@ def visible_tools(context, groups):
 
 
 @tool
-async def load_tools(groups: Annotated[list[str], Field(min_length=1, max_length=7)], runtime: ToolRuntime[RunContext]) -> str:
+async def load_tools(groups: Annotated[list[str], Field(min_length=1, max_length=8)], runtime: ToolRuntime[RunContext]) -> str:
     """Load named capabilities for this task; does not read data or grant access."""
     context = runtime.context
     if (time.time() >= context.node_deadline if context.node_retry else time.monotonic() - context.started > 180):

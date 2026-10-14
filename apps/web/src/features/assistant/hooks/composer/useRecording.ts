@@ -15,16 +15,27 @@ export function useRecording(
   const [seconds, setSeconds] = useState(0)
   const capture = useRef<AudioCapture | null>(null)
   const active = useRef(true)
+  const sendOnFinish = useRef(false)
+  const pendingSend = useRef<File | null>(null)
   useEffect(() => {
     active.current = true
     const controller = new AudioCapture({
       state: (state) => {
+        if (state === 'requesting') {
+          sendOnFinish.current = false
+          pendingSend.current = null
+        }
         setCaptureState(state)
         if (state === 'recording') setSeconds(0)
         setDraft('recording', state !== 'idle' ? true : undefined)
       },
-      error: setSendError,
+      error: (error) => {
+        sendOnFinish.current = false
+        setSendError(error)
+      },
       file: (file) => {
+        if (active.current && sendOnFinish.current) pendingSend.current = file
+        sendOnFinish.current = false
         setDraft(composerKey, (previous: Composer | undefined) =>
           appendRecordedFile(previous, file),
         )
@@ -32,11 +43,17 @@ export function useRecording(
     })
     capture.current = controller
     const guard = () => {
-      if (document.hidden) controller.stop()
+      if (document.hidden) {
+        sendOnFinish.current = false
+        pendingSend.current = null
+        controller.stop()
+      }
     }
     document.addEventListener('visibilitychange', guard)
     return () => {
       active.current = false
+      sendOnFinish.current = false
+      pendingSend.current = null
       controller.dispose()
       capture.current = null
       setDraft('recording', undefined)
@@ -48,6 +65,7 @@ export function useRecording(
     const controller = capture.current
     const timer = setInterval(() => setSeconds((n) => n + 1), 1000)
     const limit = setTimeout(() => {
+      sendOnFinish.current = false
       controller?.stop()
       setLimitError('已达到 3 分钟录音上限，已保留录音片段，可以试听后发送。')
     }, 180000)
@@ -56,5 +74,22 @@ export function useRecording(
       clearTimeout(limit)
     }
   }, [recording, setLimitError])
-  return { captureState, recording, capturing, seconds, capture, active }
+  return {
+    captureState,
+    recording,
+    capturing,
+    seconds,
+    capture,
+    active,
+    pendingSend,
+    stop: (send = false) => {
+      sendOnFinish.current = send && captureState === 'recording'
+      capture.current?.stop()
+    },
+    cancel: () => {
+      sendOnFinish.current = false
+      pendingSend.current = null
+      capture.current?.cancel()
+    },
+  }
 }

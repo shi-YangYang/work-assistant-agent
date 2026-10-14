@@ -91,7 +91,9 @@
   flex: none;
   flex-direction: row;
   align-items: center;
+  min-width: 28px;
   height: 1.8em;
+  cursor: pointer;
   margin: 0;
 }
 .rich :global(.tiptap) ul[data-type='taskList'] > li > label input {
@@ -100,6 +102,15 @@
   min-height: 0;
   margin: 0;
   accent-color: var(--text);
+}
+.rich :global(.tiptap) li[data-checked='true'] > div > p {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.saving {
+  display: block;
+  color: var(--muted);
+  margin-top: 8px;
 }
 .rich :global(.tiptap) ul[data-type='taskList'] > li > div {
   flex: 1;
@@ -198,6 +209,12 @@
 @media (max-width: 600px) {
   .section {
     padding: 16px 0;
+  }
+  .rich :global(.tiptap) ul[data-type='taskList'] > li > label {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    margin: -8px 0 -8px -8px;
   }
   .toolbar button {
     min-height: 42px;

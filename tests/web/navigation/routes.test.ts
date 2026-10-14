@@ -33,6 +33,15 @@ vi.mock('@web/features/model-services/components/usage/ModelUsagePage', () => ({
   ModelUsagePage: () => 'model-usage-page',
 }))
 
+vi.mock('@web/features/announcements/components/AnnouncementManagementPage', () => ({
+  AnnouncementManagementPage: () => 'announcement-management-page',
+}))
+vi.mock('@web/features/announcements/components/AnnouncementEditor', () => ({
+  AnnouncementEditor: () => 'announcement-editor-page',
+}))
+vi.mock('@web/features/announcements/components/AnnouncementDetail', () => ({
+  AnnouncementDetail: () => 'announcement-detail-page',
+}))
 afterEach(cleanup)
 function render(path: string, role: 'admin' | 'employee') {
   const identity = { member: { id: 'member', role } } as Identity
@@ -49,6 +58,10 @@ function render(path: string, role: 'admin' | 'employee') {
 }
 it.each([
   ['/team', 'team-page'],
+  ['/announcement-management', 'announcement-management-page'],
+  ['/announcement-management/new', 'announcement-editor-page'],
+  ['/announcement-management/item/edit', 'announcement-editor-page'],
+  ['/announcement-management/item', 'announcement-detail-page'],
   ['/members', 'members-page'],
   ['/settings/models', 'model-services-page'],
   ['/settings/voiceprints', 'voiceprints-page'],

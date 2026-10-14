@@ -206,17 +206,30 @@ test('UI-11 usage table exposes all columns with a stable key column and scroll 
   for (const value of ['浅色', '深色'] as const) {
     await theme(page, value)
     for (const width of [360, 390]) {
+      // Resizing while the scroll region retains keyboard focus can move it into view.
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
       await page.setViewportSize({ width, height: 844 })
       const table = page.locator('table')
       const region = page.getByRole('region', { name: '模型调用记录', exact: true })
       await expect(region).toHaveAttribute('tabindex', '0')
-      await region.evaluate((node) => node.scrollTo(0, 0))
+      await region.evaluate((node) => node.scrollTo({ left: 0, behavior: 'instant' }))
+      await expect.poll(() => region.evaluate((node) => node.scrollLeft)).toBe(0)
       const first = table.locator('tbody tr').first().locator('td').first()
       const before = await first.boundingBox()
       expect(before).not.toBeNull()
       await expect(page.getByText('向右滑动查看更多列', { exact: true })).toBeVisible()
       await region.focus()
+      await expect(region).toBeFocused()
+      // Native keyboard scrolling animates even with reduced motion. Finish it
+      // before jumping to the opposite edge or resizing the next scenario.
+      const scrollEnded = region.evaluate(
+        (node) =>
+          new Promise<void>((done) =>
+            node.addEventListener('scrollend', () => done(), { once: true }),
+          ),
+      )
       await page.keyboard.press('ArrowRight')
+      await scrollEnded
       await expect.poll(() => region.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0)
       await region.evaluate((node) => node.scrollTo(node.scrollWidth, 0))
       await expect

@@ -22,6 +22,9 @@ async def business_link_dtos(db, actor, links):
 
 
 def bounded_content(content, length=1200):
+    if content.get('body') is not None:
+        from app.modules.work.content.document import plain_text
+        content = {**content, 'bodyText': plain_text(content['body'])}
     return {key: str(value)[:length] for key, value in content.items() if key in ('title', 'summary', 'bodyText', 'status', 'blocker', 'nextStep', 'completed', 'ongoing', 'blockers', 'next')}
 
 

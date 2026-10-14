@@ -8,7 +8,7 @@ import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { FormField } from '@web/components/forms/FormField'
-import { PanelSection } from '@web/components/content/PanelSection'
+import { SectionTabs, TabSection } from '@web/components/navigation/section-tabs/SectionTabs'
 import { logout } from '@web/features/auth/api/requests'
 import { DingTalkResult } from '@web/features/auth/components/DingTalkResult'
 import { useDingTalkRedirect } from '@web/features/auth/hooks/useDingTalkRedirect'
@@ -36,6 +36,15 @@ export function DingTalkAccountPage({
   const hasPassword = account.data?.hasPassword ?? member?.hasPassword ?? true
   const verified = !!account.data?.passwordVerified
   const passwordMax = inputRules.member.password.max
+  const admin = member?.role === 'admin'
+  const [selectedTab, setSelectedTab] = useState<string | null>(null)
+  const tab = selectedTab ?? (!hasPassword || verified ? 'password' : 'info')
+  const sectionTab = (id: string) => (admin ? { scope: 'account', id, selected: tab } : undefined)
+  const tabs = [
+    { id: 'info', label: '账号信息' },
+    { id: 'password', label: hasPassword ? '修改密码' : '设置本地密码' },
+    ...(account.data ? [{ id: 'dingtalk', label: '钉钉账号关联' }] : []),
+  ]
 
   function passwordFailure(failure: unknown) {
     if (!(failure instanceof ApiError)) return false
@@ -87,11 +96,24 @@ export function DingTalkAccountPage({
         title="账户"
         description={<Link to="/settings/support">问题反馈与处理结果</Link>}
       />
+      {admin && (
+        <SectionTabs
+          scope="account"
+          label="账户"
+          tabs={tabs}
+          selected={tab}
+          onChange={setSelectedTab}
+          disabled={busy || redirect.busy}
+        />
+      )}
       <DingTalkResult />
       <ErrorNotice retry={account.refresh}>{error || account.error}</ErrorNotice>
-      <div className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}>
-        <PanelSection
+      <div
+        className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${admin ? layoutStyles['settings-tab-panels'] : ''}`}
+      >
+        <TabSection
           bodyClassName={styles['settings-section-body']}
+          tab={sectionTab('info')}
           title="账号信息"
           status={member?.role === 'admin' ? '管理员' : '用户'}
           defaultOpen
@@ -120,9 +142,10 @@ export function DingTalkAccountPage({
           {copied && <p role="status">{copied}</p>}
           <p>本地密码：{hasPassword ? '已设置密码' : '未设置密码'}</p>
           {account.data && <p>钉钉：{account.data.bound ? '已绑定' : '未绑定'}</p>}
-        </PanelSection>
-        <PanelSection
+        </TabSection>
+        <TabSection
           bodyClassName={styles['settings-section-body']}
+          tab={sectionTab('password')}
           title={hasPassword ? '修改密码' : '设置本地密码'}
           status={hasPassword ? '已设置密码' : '未设置密码'}
           defaultOpen={!hasPassword || verified}
@@ -134,10 +157,11 @@ export function DingTalkAccountPage({
             onSaved={onLogout}
             onFailure={account.refresh}
           />
-        </PanelSection>
+        </TabSection>
         {account.data && (
-          <PanelSection
+          <TabSection
             bodyClassName={styles['settings-section-body']}
+            tab={sectionTab('dingtalk')}
             title="钉钉账号关联"
             status={account.data.bound ? '已绑定' : '未绑定'}
           >
@@ -203,23 +227,25 @@ export function DingTalkAccountPage({
                 )}
               </>
             )}
-          </PanelSection>
+          </TabSection>
         )}
       </div>
       {redirect.guard}
-      <button
-        className={controlsStyles['danger']}
-        onClick={async () => {
-          try {
-            await logout({})
-            onLogout()
-          } catch (e) {
-            setError(e as Error)
-          }
-        }}
-      >
-        退出登录
-      </button>
+      {(!admin || tab === 'info') && (
+        <button
+          className={controlsStyles['danger']}
+          onClick={async () => {
+            try {
+              await logout({})
+              onLogout()
+            } catch (e) {
+              setError(e as Error)
+            }
+          }}
+        >
+          退出登录
+        </button>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ from app.agent.runtime.progress.tools import tool_presentation
 
 # Replay safety is an execution policy, independent of display-label registration.
 REPLAYABLE_TOOLS = frozenset({
-    'save_memory', 'forget_memory', 'set_task_context',
+    'generate_image', 'save_memory', 'forget_memory', 'set_task_context',
     'inspect_table', 'export_table', 'create_chart', 'create_document', 'create_slides',
     'run_python', 'request_user_input', 'find_work_items', 'get_work_item',
     'list_work_updates', 'list_work_materials', 'read_work_material', 'get_message_context', 'get_business_actions', 'query_reports', 'query_report_obligations',
@@ -49,13 +49,15 @@ def outcome(message):
         return ('failed', '工具未完成，请查看答复') if message.status == 'error' else ('awaiting_input', '请查看答复并补充信息')
     if isinstance(value, dict):
         state = value.get('state') or value.get('status')
+        if message.name == 'generate_image' and state == 'partial':
+            return 'failed', f"已生成 {value.get('imageCount', 0)}/{value.get('requestedCount', 0)} 张，部分图片未完成"
         if value.get('category') in ('invalid_arguments', 'conflict', 'transient_failure'):
             return 'failed', '操作未完成，请查看业务说明'
         if value.get('category') == 'permission_denied':
             return 'failed', '当前权限无法执行'
         if state == 'not_requested':
             return 'cancelled', '本次未要求该操作'
-        if 'error' in value or state in ('failed', 'conflict', 'unavailable', 'cancelled'):
+        if 'error' in value or state in ('failed', 'conflict', 'unavailable', 'cancelled', 'unknown', 'retryable'):
             return 'failed', '操作未执行，请查看业务说明'
         if state in ('clarification', 'waiting', 'not_found'):
             return 'awaiting_input', '需要补充信息' if state != 'not_found' else '未找到匹配内容'

@@ -81,7 +81,9 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext], body_sta
     and saved materials. body_start is a zero-based top-level block offset; pass
     nextBodyStart until null to read the body fully. Each page includes up to 20
     whole blocks (roughly 12k characters; an indivisible block can exceed that,
-    bounded by the 250KB document limit). Stable attrs.id identifies local edits.
+    bounded by the 250KB document limit). Stable attrs.id identifies local edits;
+    taskItem.attrs.id and checked identify each checklist item and its state.
+    A checked item does not imply that the entire work is done.
     updates/materials are bounded previews with nextCursor. Continue through
     list_work_updates/list_work_materials. Read actual files with read_work_material;
     directory names and body text excerpts never count as reading those files.

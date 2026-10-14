@@ -1,4 +1,5 @@
 import type { AssistantInteraction } from '@paa/api-contracts'
+import { beginAssistantActivity } from '@web/api/assistant-activity'
 import { epoch, isCancelled, ApiError } from '@web/api/client'
 import { mergeInteractions } from '../../utils/interactions'
 import { useQueryResource } from '@web/hooks/useQueryResource'
@@ -79,10 +80,12 @@ export function useAssistantInteraction(
         items: previous?.scope === scope ? previous.items : [],
         busy: item.id,
       }))
+      const activity = answers ? beginAssistantActivity(identityScope(identity)) : undefined
       try {
         const result = answers
           ? await answerInteraction(item, answers, key)
           : await cancelInteraction(item, key)
+        if (result.continuation) activity?.accepted(result.continuation)
         if (!valid()) return
         pending.current = null
         setDraft(`question:${item.id}:${item.revision}`, undefined)
@@ -108,10 +111,11 @@ export function useAssistantInteraction(
         }))
         if (error instanceof ApiError && [403, 404, 409].includes(error.status)) refresh()
       } finally {
+        activity?.finish()
         if (lock.current === session) lock.current = null
       }
     },
-    [generation, scope, refresh, onContinue, setDraft, query],
+    [generation, scope, refresh, onContinue, setDraft, query, identity],
   )
   return {
     items,

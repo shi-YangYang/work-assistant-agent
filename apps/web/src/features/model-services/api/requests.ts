@@ -17,8 +17,8 @@ export function readModelRouting() {
 
 export function saveModelRouting(body: {
   assistant: ModelSelection | null
-  report: ModelSelection | 'follow' | null
   asr: ModelSelection | null
+  image?: ModelSelection | null
   expectedRevision: number
 }) {
   return write('/settings/model-routing', body, 'PUT')
@@ -73,7 +73,10 @@ export function checkServiceConfiguration(
         capabilities?: Record<string, ContextCapability>
       }
     | ModelCheck
-  >(`/settings/model-services/${kind}`, { ...body, models: writableModels(body.models) })
+  >(
+    `/settings/model-services/${kind === 'test' && body.purpose === 'image' ? 'test-image' : kind}`,
+    { ...body, models: writableModels(body.models) },
+  )
 }
 
 export function deleteModelService(draft: ServiceDraft, body: { expectedRevision: number }) {

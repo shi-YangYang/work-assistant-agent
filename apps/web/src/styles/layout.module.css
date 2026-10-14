@@ -403,6 +403,13 @@
 .settings-sections > .panel-footer {
   padding: 16px 0;
 }
+.settings-tab-panels {
+  margin: 0 0 16px;
+}
+.settings-tab-panels > .panel-footer {
+  margin-top: 16px;
+  padding: 16px 0 0;
+}
 .page .filters :is(input:not([type='checkbox']), select, button) {
   min-height: 36px;
 }

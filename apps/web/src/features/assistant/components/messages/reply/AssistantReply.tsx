@@ -7,6 +7,7 @@ import styles from './AssistantReply.module.css'
 import { useStreamingText } from './useStreamingText'
 import { replyPresentation } from './reply-presentation'
 import { WebSources } from './WebSources'
+import { compactImageReferences } from './image-references'
 
 export function AssistantReply({
   message,
@@ -34,7 +35,7 @@ export function AssistantReply({
     return message.reply ? (
       <div className={styles.reply}>
         <BusinessReply
-          text={message.reply}
+          text={own ? compactImageReferences(message.reply, message.deliverables) : message.reply}
           sources={message.businessCitations ?? []}
           endpoint={messageSourcesPath(message.id)}
         />

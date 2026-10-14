@@ -299,16 +299,6 @@
 .model-settings-dialog .slot-form-actions > span {
   margin-right: auto;
 }
-.model-next-step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--positive);
-}
-.model-next-step > .slot-text-button {
-  margin-left: auto;
-}
 .model-environment {
   margin: 0 0 16px;
   align-items: center;
@@ -383,10 +373,6 @@
   }
   .model-savebar > button {
     flex: 1;
-  }
-  .model-next-step {
-    align-items: start;
-    flex-wrap: wrap;
   }
   .model-environment {
     align-items: start;

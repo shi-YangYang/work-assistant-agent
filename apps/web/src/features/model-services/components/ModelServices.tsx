@@ -1,7 +1,7 @@
+import { protocolPurpose } from '@web/features/model-services/types'
 import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
-import utilitiesStyles from '../../../styles/utilities.module.css'
 import modelServicesStyles from '../styles/model-services.module.css'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { EnvironmentServices } from '@web/features/model-services/components/service/EnvironmentServices'
@@ -17,7 +17,7 @@ import { ServiceList } from '@web/features/model-services/components/service/Ser
 import { ServiceModelLibrary } from '@web/features/model-services/components/service/ServiceModelLibrary'
 import { UnsavedKeysDialog } from '@web/features/model-services/components/service/UnsavedKeysDialog'
 import { useModelServiceController } from '@web/features/model-services/hooks/useModelServiceController'
-import { Check, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 
 export function ModelServices() {
   const {
@@ -34,8 +34,6 @@ export function ModelServices() {
     setPicker,
     modelOpen,
     setModelOpen,
-    assignServiceId,
-    setAssignServiceId,
     testPurpose,
     setTestPurpose,
     removeOpen,
@@ -111,10 +109,7 @@ export function ModelServices() {
           aria-selected={tab === 'routing'}
           data-active={tab === 'routing'}
           disabled={!!busy}
-          onClick={() => {
-            setAssignServiceId('')
-            setTab('routing')
-          }}
+          onClick={() => setTab('routing')}
         >
           用途分配
         </button>
@@ -128,31 +123,11 @@ export function ModelServices() {
         handleError={handleError}
       />
       {tab === 'routing' ? (
-        <>
-          {assignServiceId && (
-            <div className={modelServicesStyles['model-next-step']}>
-              <Check size={18} />
-              <span>服务已保存，选择下方各功能使用的模型。</span>
-              <button
-                className={`${controlsStyles['text-button']} ${modelServicesStyles['slot-text-button']}`}
-                onClick={() => setTab('services')}
-              >
-                返回服务
-              </button>
-            </div>
-          )}
-          {assignServiceId && !services.some((service) => service.id === assignServiceId) ? (
-            <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
-              正在更新可选模型…
-            </p>
-          ) : (
-            <Routing
-              services={services}
-              initial={resource.data?.routing ?? null}
-              refresh={resource.refresh}
-            />
-          )}
-        </>
+        <Routing
+          services={services}
+          initial={resource.data?.routing ?? null}
+          refresh={resource.refresh}
+        />
       ) : (
         <div className={modelServicesStyles['service-workspace']}>
           <ServiceList
@@ -181,8 +156,6 @@ export function ModelServices() {
                 error={error}
                 conflict={conflict}
                 save={save}
-                setAssignServiceId={setAssignServiceId}
-                setTab={setTab}
               >
                 <ServiceConnectionFields
                   draft={draft}
@@ -213,7 +186,7 @@ export function ModelServices() {
                   }}
                   onTest={(item) => {
                     setActiveModel(item.id)
-                    setTestPurpose(item.protocol === 'chat' ? 'assistant' : 'asr')
+                    setTestPurpose(protocolPurpose(item.protocol))
                     setError('')
                     setTestOpen(true)
                   }}

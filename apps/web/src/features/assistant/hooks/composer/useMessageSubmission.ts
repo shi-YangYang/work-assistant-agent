@@ -1,6 +1,8 @@
 import type { ExecutionMode, PersonaId } from '@paa/api-contracts'
 import type { useReasoningEffort } from '../preferences/useReasoningEffort'
 import type { PersonaInteraction } from '../preferences/useConversationPersona'
+import { beginAssistantActivity } from '@web/api/assistant-activity'
+import { identityScope } from '@web/lib/session-drafts'
 import { ApiError, isCancelled } from '@web/api/client'
 import { sendMessage, uploadAttachment } from '@web/features/assistant/api/requests'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
@@ -10,7 +12,7 @@ import {
   updateSendingDraft,
 } from '@web/features/assistant/utils/files'
 import { useWorkspace } from '@web/lib/workspace'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { RefObject } from 'react'
 export function useMessageSubmission({
@@ -30,6 +32,7 @@ export function useMessageSubmission({
   retryWait,
   refresh,
   task,
+  recordedSend,
 }: {
   composer: Composer
   composerKey: string
@@ -51,11 +54,27 @@ export function useMessageSubmission({
     accepted: (sent: { conversationId: string; messageId: string; jobId: string }) => void
     refresh: () => Promise<void>
   }
+  recordedSend?: RefObject<File | null>
 }) {
-  const { setDraft, rememberConversation } = useWorkspace()
+  const { identity, setDraft, rememberConversation } = useWorkspace()
   const [sending, setBusy] = useState(false)
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
+  useEffect(() => {
+    const file = recordedSend?.current
+    if (!recordedSend || !file || capturing || !composer.files.some((item) => item.file === file))
+      return
+    let cancelled = false
+    // Wait for the recorder's final data and the updated draft to commit.
+    queueMicrotask(() => {
+      if (cancelled || !active.current || recordedSend.current !== file) return
+      recordedSend.current = null
+      void send()
+    })
+    return () => {
+      cancelled = true
+    }
+  })
   async function send() {
     if (
       (execution && !execution.ready) ||
@@ -75,6 +94,7 @@ export function useMessageSubmission({
       return
     }
     if (interaction && !interaction.acquire('message')) return
+    const activity = beginAssistantActivity(identityScope(identity))
     sendingRef.current = true
     setBusy(true)
     setSendError('')
@@ -127,6 +147,7 @@ export function useMessageSubmission({
         )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
+      activity?.accepted(sent)
       task?.accepted(sent)
       rememberConversation(sent.conversationId)
       current.files.forEach((file) => URL.revokeObjectURL(file.url))
@@ -173,6 +194,7 @@ export function useMessageSubmission({
         else setSendError(e instanceof Error ? e : '发送未完成')
       }
     } finally {
+      activity?.finish()
       setDraft(composerKey, (previous: Composer | undefined) =>
         updateSendingDraft(previous, composer.key, { sending: false, uploading: undefined }),
       )

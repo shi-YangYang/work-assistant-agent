@@ -62,11 +62,13 @@ export const isCancelled = (error: unknown) =>
   (error instanceof DOMException && error.name === 'AbortError')
 
 export const requestBudget = (path: string) =>
-  path === '/uploads' || path.startsWith('/settings/voiceprints/')
-    ? 120000
-    : /^\/settings\/model-services\/(test|models)$/.test(path)
-      ? 180000
-      : 30000
+  path === '/settings/model-services/test-image'
+    ? 310000
+    : path === '/uploads' || path.startsWith('/settings/voiceprints/')
+      ? 120000
+      : /^\/settings\/model-services\/(test|models)$/.test(path)
+        ? 180000
+        : 30000
 
 const uuid = (value: unknown): string | null =>
   typeof value === 'string' &&

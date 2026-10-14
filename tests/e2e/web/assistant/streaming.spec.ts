@@ -191,7 +191,8 @@ for (const { width, cancel } of [
           )
       })
       await expect(page.getByText('迟到正文不可显示', { exact: true })).toHaveCount(0)
-      await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
+      await expect(page.getByRole('textbox', { name: '工作消息' })).toBeEnabled()
+      await expect(page.getByRole('button', { name: '中断', exact: true })).toHaveCount(0)
       await expect(page.getByRole('alert')).toHaveCount(0)
       await capture('controlled-cancelled')
       return
@@ -236,7 +237,8 @@ for (const { width, cancel } of [
     job = { ...job, state: 'succeeded' }
     message = { ...message, reply: text, job }
     await emit(text, 'finalizing', 'succeeded')
-    await expect(page.getByRole('button', { name: '发送', exact: true })).toBeVisible()
+    await expect(page.getByRole('textbox', { name: '工作消息' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: '中断', exact: true })).toHaveCount(0)
     await expect(page.getByRole('heading', { name: '受控流式预览', exact: true })).toHaveCount(1)
     await expect(page.locator('[data-reply-state="streaming"]')).toHaveCount(0)
     await capture(`stream-final-${width}`)

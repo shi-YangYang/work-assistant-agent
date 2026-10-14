@@ -200,6 +200,7 @@ describe('company HTTP boundary', () => {
     expect(requestBudget('/settings/model-services/test')).toBeGreaterThan(
       requestBudget('/uploads'),
     )
+    expect(requestBudget('/settings/model-services/test-image')).toBeGreaterThan(300000)
   })
   it('expires once, aborts authorized requests and rejects late old-session reads after relogin', async () => {
     const expire = vi.fn()

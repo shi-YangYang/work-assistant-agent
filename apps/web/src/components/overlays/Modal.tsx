@@ -1,7 +1,7 @@
 import controlsStyles from '../../styles/controls.module.css'
 import styles from '../../styles/patterns/Modal.module.css'
 import { X } from 'lucide-react'
-import type { KeyboardEventHandler, ReactNode } from 'react'
+import type { KeyboardEventHandler, ReactNode, RefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import { ErrorNoticeOutlet, ErrorNoticeScope } from '../feedback/ErrorNoticeScope'
 
@@ -13,6 +13,9 @@ export function Modal({
   bodyClassName = '',
   variant = 'default',
   onKeyDown,
+  closeDisabled = false,
+  descriptionId,
+  initialFocusRef,
 }: {
   title: string
   className?: string
@@ -21,30 +24,35 @@ export function Modal({
   children: ReactNode
   onClose: () => void
   onKeyDown?: KeyboardEventHandler<HTMLDialogElement>
+  closeDisabled?: boolean
+  descriptionId?: string
+  initialFocusRef?: RefObject<HTMLElement | null>
 }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     const dialog = ref.current!
     const previous = document.activeElement as HTMLElement
     dialog.showModal()
+    initialFocusRef?.current?.focus()
     return () => {
       dialog.close()
       previous?.focus()
     }
-  }, [])
+  }, [initialFocusRef])
   return (
     <ErrorNoticeScope priority={100} isolate>
       <dialog
         aria-label={title}
+        aria-describedby={descriptionId}
         className={`${styles['dialog']} ${variant === 'media' ? styles['media-dialog'] : variant === 'drawer' ? styles['team-detail-drawer'] : ''} ${className}`}
         ref={ref}
         onKeyDown={onKeyDown}
         onCancel={(event) => {
           event.preventDefault()
-          onClose()
+          if (!closeDisabled) onClose()
         }}
         onClick={(e) => {
-          if (e.target === e.currentTarget) onClose()
+          if (e.target === e.currentTarget && !closeDisabled) onClose()
         }}
       >
         <div className={styles['dialog-content']}>
@@ -53,6 +61,7 @@ export function Modal({
             <button
               type="button"
               aria-label="关闭"
+              disabled={closeDisabled}
               className={controlsStyles['icon-button']}
               onClick={onClose}
             >

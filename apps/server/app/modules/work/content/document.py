@@ -35,16 +35,18 @@ def validate_nodes(nodes):
         allowed = {'id'} | ({'level'} if kind == 'heading' else {'checked'} if kind == 'taskItem' else {'start'} if kind == 'orderedList' else {'language'} if kind == 'codeBlock' else {'materialId'} if kind == 'material' else set())
         if not isinstance(attrs, dict) or set(attrs) - allowed:
             raise ValueError('工作内容属性无效')
-        if depth == 0:
-            identifier = attrs.get('id') or str(uuid5(NAMESPACE_URL, 'work-block:' + str(len(ids)) + ':' + json.dumps(node, sort_keys=True, ensure_ascii=False)))
+        if depth == 0 or kind == 'taskItem':
+            identifier = attrs.get('id') or str(uuid5(NAMESPACE_URL, ('work-task:' if kind == 'taskItem' else 'work-block:') + str(len(ids)) + ':' + json.dumps(node, sort_keys=True, ensure_ascii=False)))
             if not isinstance(identifier, str) or len(identifier) > 80 or identifier in ids:
                 raise ValueError('内容块编号无效或重复')
             attrs['id'] = identifier
             ids.add(identifier)
         if kind == 'heading' and attrs.get('level', 2) not in (1, 2, 3):
             raise ValueError('仅支持三级标题')
-        if kind == 'taskItem' and not isinstance(attrs.get('checked', False), bool):
-            raise ValueError('清单状态无效')
+        if kind == 'taskItem':
+            if not isinstance(attrs.get('checked', False), bool):
+                raise ValueError('清单状态无效')
+            attrs.setdefault('checked', False)
         if kind == 'material' and (not isinstance(attrs.get('materialId'), str) or not 1 <= len(attrs['materialId']) <= 80):
             raise ValueError('材料编号无效')
         if 'text' in node and (kind != 'text' or not isinstance(node['text'], str)):
@@ -83,7 +85,12 @@ class WorkDocument(Input):
 
 def plain_text(body):
     def walk(node):
-        return node.get('text', '') + ('\n' if node.get('type') == 'hardBreak' else '') + ''.join(walk(c) for c in node.get('content', []))
+        kind = node.get('type')
+        if kind == 'hardBreak':
+            return '\n'
+        separator = '\n' if kind in ('taskList', 'bulletList', 'orderedList', 'taskItem', 'listItem', 'blockquote') else ''
+        text = node.get('text', '') + separator.join(walk(c) for c in node.get('content', []))
+        return ('☑ ' if node.get('attrs', {}).get('checked') else '☐ ') + text if kind == 'taskItem' else text
     return '\n'.join(walk(n) for n in (body or {}).get('content', []))
 
 
@@ -98,21 +105,67 @@ def from_text(text):
 
 
 def edit_document(body, edits):
+    from app.modules.work.content.checklist import checked_edits, checklist_block, checklist_items, reject_overlapping_targets
     nodes = copy.deepcopy(body.get('content', []))
+    edits = checked_edits(edits)
+    reject_overlapping_targets(nodes, edits)
+    existing_items = checklist_items(body)
     for edit in edits:
-        if not isinstance(edit, dict) or set(edit) - {'action', 'blockId', 'blocks'} or edit.get('action') not in ('append', 'replace', 'remove'):
-            raise ValueError('正文修改操作无效')
         action = edit['action']
-        if not isinstance(edit.get('blocks', []), list):
-            raise ValueError('正文修改 blocks 必须为数组')
-        if action == 'append':
-            nodes.extend(edit.get('blocks', []))
+        if action == 'set_checked':
+            if edit['itemId'] not in existing_items:
+                raise ValueError('清单事项已变化，请重新读取工作正文')
+            if edit.get('blockId'):
+                target = next((node for node in body.get('content', []) if node.get('attrs', {}).get('id') == edit['blockId']), None)
+                if target is None or target['type'] != 'taskList' or edit['itemId'] not in checklist_items({'content': [target]}):
+                    raise ValueError('清单事项不属于指定清单，请重新读取工作正文')
+            checklist_items({'content': nodes})[edit['itemId']]['attrs']['checked'] = edit['checked']
             continue
-        index = next((i for i, n in enumerate(nodes) if n.get('attrs', {}).get('id') == edit.get('blockId')), None)
+        if action == 'append_checklist' and edit.get('blockId'):
+            target = next((node for node in nodes if node.get('attrs', {}).get('id') == edit['blockId']), None)
+            if target is None or target['type'] != 'taskList':
+                raise ValueError('目标清单已变化，请重新读取工作正文中的清单块')
+            target.setdefault('content', []).extend(checklist_block(edit['items'])['content'])
+            continue
+        if action in ('append', 'append_checklist'):
+            nodes.extend([checklist_block(edit['items'])] if action == 'append_checklist' else edit.get('blocks', []))
+            continue
+        index = next((i for i, n in enumerate(nodes) if n.get('attrs', {}).get('id') == edit['blockId']), None)
         if index is None:
             raise ValueError('内容块已变化，请重新读取工作正文')
-        replacement = validate_nodes(edit.get('blocks', [])) if action == 'replace' else []
+        if action == 'replace_checklist' and checklist_items({'content': [nodes[index]]}):
+            raise ValueError('已有清单请保留事项编号编辑；勾选请使用 set_checked')
+        replacement = validate_nodes([checklist_block(edit['items'])] if action == 'replace_checklist' else edit.get('blocks', [])) if action != 'remove' else []
         if replacement:
             replacement[0].setdefault('attrs', {})['id'] = edit['blockId']
         nodes[index:index + 1] = replacement
     return WorkDocument(content=nodes).model_dump()
+
+
+def edit_previews(body, edits):
+    from app.modules.work.content.checklist import checklist_items
+    # Validate the batch first, including overlapping targets; previews may not
+    # turn individually valid operations into an invalid atomic request.
+    edit_document(body, edits)
+    current, previews = body, []
+    for edit in edits:
+        if edit['action'] == 'set_checked':
+            item = checklist_items(current)[edit['itemId']]
+            previews.append({**edit, 'text': plain_text({'content': item.get('content', [])}), 'beforeChecked': item['attrs'].get('checked', False)})
+            updated = edit_document(current, [edit])
+        else:
+            nodes = current['content']
+            before = [node for node in nodes if node.get('attrs', {}).get('id') == edit.get('blockId')] if edit.get('blockId') else []
+            updated = edit_document(current, [edit])
+            index = nodes.index(before[0]) if before else len(nodes)
+            count = len(updated['content']) - len(nodes) + len(before)
+            blocks = updated['content'][index:index + count]
+            if edit['action'] == 'append_checklist' and before:
+                # Append previews describe only the new items; the original
+                # list and its completed items are not being appended again.
+                block = copy.deepcopy(blocks[0])
+                block['content'] = block['content'][len(before[0].get('content', [])):]
+                blocks = [block]
+            previews.append({**edit, 'before': before, 'blocks': blocks})
+        current = updated
+    return previews

@@ -42,7 +42,12 @@ export function WorkHistory({ work }: { work: Work }) {
                 </summary>
                 <dl className={styles.changes}>
                   {changes.map((change) => (
-                    <div key={change.key}>
+                    <div
+                      key={change.key}
+                      className={
+                        change.key.startsWith('check:') ? styles['check-change'] : undefined
+                      }
+                    >
                       <dt>{change.label}</dt>
                       <dd>
                         {change.before !== undefined && (

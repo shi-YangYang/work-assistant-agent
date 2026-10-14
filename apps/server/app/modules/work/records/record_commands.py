@@ -8,7 +8,7 @@ from app.modules.work.content.document import WorkDocument, edit_document, mater
 from app.modules.work.materials.service import bind_materials, require_materials
 from app.modules.work.updates.service import save_update, update_dto
 from app.modules.work.service import save_work
-from app.modules.work.serializers import work_dto
+from app.modules.work.serializers import work_content, work_dto
 from app.security.ownership import owned
 from app.security.access import require
 from app.security.locks import company_lock
@@ -34,7 +34,7 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
     if work:
         await require(db, actor, work.access, retained=True)
         version(work, expected)
-    base = dict(work.content) if work else {}
+    base = work_content(work.content, work.id) if work else {}
     previous_revision = work.revision if work else None
     scalar_fields = ('title', 'status', 'dueDate', 'blocker', 'nextStep')
     patch = {key: value for key, value in changes.items() if key in scalar_fields}
@@ -44,10 +44,13 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
     current_ids = list(base.get('materialIds', []))
     if 'body' in changes or 'bodyEdits' in changes:
         body = WorkDocument.model_validate(changes['body']).model_dump() if 'body' in changes else edit_document(base.get('body', {'schemaVersion': 1, 'content': []}), changes['bodyEdits'])
+        from app.modules.work.content.checklist import assign_new_item_ids
+        body = assign_new_item_ids(body, base.get('body', {}))
         body, mapping = await normalize_material_refs(db, work, body, bound)
         refs = material_ids(body)
         await require_materials(db, actor, work, refs)
-        patch.update(body=body, bodyText=plain_text(body))
+        if body != WorkDocument.model_validate(base.get('body', {'schemaVersion': 1, 'content': []})).model_dump() or any(edit['action'] != 'set_checked' for edit in changes.get('bodyEdits', [])) or 'body' in changes:
+            patch.update(body=body, bodyText=plain_text(body))
     else:
         refs, mapping = material_ids(base.get('body', {})), {}
     requested_ids = [mapping.get(value, value) for value in changes.get('materialIds', [])]

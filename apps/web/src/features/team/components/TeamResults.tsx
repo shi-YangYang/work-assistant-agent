@@ -10,6 +10,20 @@ import { obligationLabel } from '@web/features/reports/utils/obligations'
 import { isWork, type TeamRow as Row } from '@web/features/team/types'
 import { dateLabel } from '@web/utils/date'
 import { BriefcaseBusiness, ChevronRight, ClipboardCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+function TeamLoading() {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 200)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div className={recordLayoutStyles['records-loading']} aria-busy="true">
+      {visible && <span role="status">正在读取团队记录…</span>}
+    </div>
+  )
+}
 
 export function TeamResults({
   data,
@@ -17,7 +31,6 @@ export function TeamResults({
   view,
   scope,
   params,
-  status,
   update,
   open,
 }: {
@@ -26,40 +39,12 @@ export function TeamResults({
   view: 'reports' | 'work'
   scope: 'updated' | 'current'
   params: URLSearchParams
-  status: string
   update: (values: Record<string, string>, reset?: boolean) => void
   open: (row: Row, replace?: boolean) => void
 }) {
   return (
     <div className={teamStyles['team-results']}>
-      {!data && !list.error && (
-        <p className={recordLayoutStyles['records-loading']} role="status">
-          正在读取团队记录…
-        </p>
-      )}
-      {data && (
-        <div className={teamStyles['team-result-caption']}>
-          <span>
-            {view === 'work'
-              ? scope === 'current'
-                ? '当前工作状态'
-                : '期间更新 · 截至所选期末的状态'
-              : '所选周期的汇报'}{' '}
-            · {data.total} 条
-          </span>
-          {(params.get('q') ||
-            params.get('member') ||
-            (params.get('members') && params.get('members') !== 'active') ||
-            status) && (
-            <button
-              className={`${controlsStyles['text-button']} ${teamStyles['slot-text-button']}`}
-              onClick={() => update({ q: '', member: '', members: '', [`${view}Status`]: '' })}
-            >
-              清除筛选
-            </button>
-          )}
-        </div>
-      )}
+      {!data && !list.error && <TeamLoading key={`${view}:${params.toString()}`} />}
       {data?.items.length ? (
         <div>
           {data.items.map((row) => (

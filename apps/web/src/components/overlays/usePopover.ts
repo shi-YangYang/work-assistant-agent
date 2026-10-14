@@ -6,7 +6,7 @@ export function usePopover({
   disabled = false,
   scopeKey = '',
 }: {
-  placement?: 'top-start' | 'right-end'
+  placement?: 'top-start' | 'bottom-start' | 'right-end'
   disabled?: boolean
   scopeKey?: string
 } = {}) {
@@ -46,11 +46,18 @@ export function usePopover({
       const y =
         placement === 'right-end'
           ? rect.bottom - element.offsetHeight
-          : rect.top - element.offsetHeight - 10
+          : placement === 'bottom-start'
+            ? rect.bottom + 8 + element.offsetHeight <= top + height - 24
+              ? rect.bottom + 8
+              : rect.top - element.offsetHeight - 8
+            : rect.top - element.offsetHeight - 10
       element.style.left = `${Math.max(left, Math.min(x, left + width - 24 - element.offsetWidth))}px`
       element.style.top = `${Math.max(top, Math.min(y, top + height - 24 - element.offsetHeight))}px`
     }
     position()
+    const resizeObserver =
+      typeof ResizeObserver === 'function' ? new ResizeObserver(position) : null
+    resizeObserver?.observe(element)
     const outside = (event: Event) => {
       if (!element.contains(event.target as Node) && !button.contains(event.target as Node))
         close(false)
@@ -73,6 +80,7 @@ export function usePopover({
     window.visualViewport?.addEventListener('resize', position)
     window.visualViewport?.addEventListener('scroll', position)
     return () => {
+      resizeObserver?.disconnect()
       document.removeEventListener('pointerdown', outside)
       document.removeEventListener('focusin', outside)
       document.removeEventListener('keydown', keydown, true)

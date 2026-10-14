@@ -5,10 +5,14 @@ from app.modules.conversations.models import Conversation
 from app.modules.deliverables.models import Deliverable, DeliverableRevision
 from app.modules.members.models import Member
 from app.modules.executions.models import SandboxExecution
+from app.modules.executions.quota import lock_storage
 from app.tasks.models import Job
 
 
 async def clean_files(db, settings):
+    # Take the retention snapshot after publication commits, or complete deletion
+    # before a publisher's final file check. A stale snapshot cannot delete it.
+    await lock_storage(db)
     rows = (await db.execute(select(DeliverableRevision, Conversation.deleted, Member.deleted).join(Deliverable, Deliverable.id == DeliverableRevision.deliverable_id)
         .join(Conversation, Conversation.id == Deliverable.conversation_id).join(Member, Member.id == Deliverable.owner_id))).all()
     retained = set()
@@ -17,6 +21,13 @@ async def clean_files(db, settings):
             record.files = []
         else:
             retained.update(file['storageKey'] for file in record.files or [])
+    from app.modules.image_generation.models import ImageGeneration
+    from datetime import timedelta
+    from app.db.base import now
+    pending = (await db.execute(select(ImageGeneration).join(Conversation, Conversation.id == ImageGeneration.conversation_id)
+        .join(Member, Member.id == ImageGeneration.owner_id).where(Conversation.deleted.is_(False), Member.deleted.is_(False),
+        ImageGeneration.state.in_(('publishing', 'retryable')), ImageGeneration.updated_at > now() - timedelta(hours=24)))).scalars().all()
+    retained.update(file['storageKey'] for operation in pending for file in operation.files or [])
     root = settings.media_dir / 'generated'
     if root.exists():
         for path in root.iterdir():

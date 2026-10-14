@@ -113,14 +113,7 @@ async def test_owned_media_failure_and_cleanup(owned_fault_environment, setup, m
 async def test_owned_worker_sigkill_and_real_lease_recovery(owned_fault_environment, setup, monkeypatch, tmp_path):
     import _support.agent.process_worker_recovery as existing
     isolated_url(setup[0])
-    source = (Path(__file__).resolve().parents[1] / 'probes/full_system_worker_probe.py').read_text()
-    old = "('-csearch_path=spec044_', '-csearch_path=spec054_')"
-    assert old in source
-    # The prior probe only names old suites. Adapt its test-only guard while
-    # preserving every crash barrier, real lease duration and assertion.
-    schema_option = isolated_url(setup[0]).query['options']
-    (tmp_path / 'full_system_worker_probe.py').write_text(source.replace(old, repr((schema_option,))))
-    await existing.test_owned_worker_sigkill_before_write_after_commit_and_after_delivery(setup, tmp_path, probe=tmp_path / 'full_system_worker_probe.py')
+    await existing.test_owned_worker_sigkill_before_write_after_commit_and_after_delivery(setup, tmp_path)
 
 
 @pytest.mark.parametrize('concurrency', [1, 5, 10])

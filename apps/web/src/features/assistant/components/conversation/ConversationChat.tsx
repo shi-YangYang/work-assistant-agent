@@ -159,12 +159,8 @@ export function ConversationChat({
   const retryWait = useRetryWait(sendError)
   const pending = !!composer.pending
   const [limitError, setLimitError] = useState('')
-  const { captureState, capturing, seconds, capture, active } = useRecording(
-    composerKey,
-    setDraft,
-    setSendError,
-    setLimitError,
-  )
+  const { captureState, capturing, seconds, capture, active, pendingSend, stop, cancel } =
+    useRecording(composerKey, setDraft, setSendError, setLimitError)
   const { busy, sendingRef, send } = useMessageSubmission({
     composer,
     composerKey,
@@ -182,6 +178,7 @@ export function ConversationChat({
     retryWait,
     refresh: invalidate,
     task,
+    recordedSend: pendingSend,
   })
   const locked =
     busy ||
@@ -236,9 +233,15 @@ export function ConversationChat({
     const scroll = scroller.current
     const content = scroll?.querySelector('[data-chat-content]')
     if (!scroll || !content) return
+    let previousHeight = 0
     const observer = new ResizeObserver(() => {
+      // Composer changes adjust bottom padding, not the message content itself.
+      const messageHeight =
+        content.getBoundingClientRect().height -
+        parseFloat(getComputedStyle(content).paddingBottom || '0')
       if (atBottomRef.current) scroll.scrollTop = scroll.scrollHeight
-      else setNewReply(true)
+      else if (previousHeight && Math.abs(messageHeight - previousHeight) > 1) setNewReply(true)
+      previousHeight = messageHeight
     })
     observer.observe(content)
     return () => observer.disconnect()
@@ -262,17 +265,17 @@ export function ConversationChat({
     setSendError('')
   }
   async function startRecording() {
-    if (locked) return
+    if (locked) return false
     if (
       composer.files.length >= MAX_ATTACHMENTS ||
       composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
         MAX_AUDIO_ATTACHMENTS
     ) {
       setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
-      return
+      return false
     }
     setSendError('')
-    await capture.current?.start()
+    return (await capture.current?.start()) ?? false
   }
   const previewImages: PreviewImage[] = composer.files
     .filter((item) => fileKind(item.file) === 'image')
@@ -334,7 +337,7 @@ export function ConversationChat({
     if (task.job) receiveContext(task.job, task.feedback)
   }, [task.job, task.feedback, receiveContext])
   const nextCursor = data?.nextCursor
-  const empty = !messages.length && !error && (!conversationId || !!data)
+  const empty = !messages.length && !busy && !task.job && !error && (!conversationId || !!data)
   const retryPage = () => {
     void execution.refresh()
     void reasoning.refresh()
@@ -420,6 +423,7 @@ export function ConversationChat({
           </button>
         )}
         <ChatHistory
+          sending={busy}
           onContextUpdate={context.receive}
           task={task}
           onContinuation={(continuation) => {
@@ -534,7 +538,8 @@ export function ConversationChat({
             state: captureState,
             seconds,
             start: startRecording,
-            stop: () => capture.current?.stop(),
+            stop,
+            cancel,
           }}
         >
           <ComposerAttachments

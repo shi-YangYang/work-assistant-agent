@@ -198,6 +198,12 @@ it.each(['succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled']
       source.onerror?.()
       surface.dispatchEvent(new Event('online'))
       await reconnectJobFeedback('terminal')
+      await reconnectJobFeedback('terminal', {
+        id: 'terminal',
+        state: 'running',
+        attempt: 1,
+        fence: 1,
+      })
       await vi.advanceTimersByTimeAsync(60000)
       expect(source.close).toHaveBeenCalledTimes(1)
       expect(error).toHaveBeenLastCalledWith('')
@@ -279,4 +285,47 @@ it('ignores an older terminal event without closing the healthy stream or refetc
   expect(source.close).toHaveBeenCalledTimes(1)
   expect(refresh).toHaveBeenCalledTimes(1)
   dispose()
+})
+
+it('clears a stopped attempt error for all consumers when a new attempt replaces its shared stream', async () => {
+  vi.stubGlobal('window', new EventTarget())
+  vi.stubGlobal('navigator', { onLine: true, userAgent: '' })
+  vi.stubGlobal('EventSource', Source)
+  const oldReceive = vi.fn(),
+    oldError = vi.fn(),
+    receive = vi.fn(),
+    error = vi.fn()
+  const release = subscribeJobFeedback('retry', 'running', 1, 1, oldReceive, oldError, vi.fn())!
+  const old = Source.current
+  old.dispatchEvent(new MessageEvent('unavailable', { data: '{"status":403}' }))
+  await Promise.resolve()
+  const releaseNew = subscribeJobFeedback('retry', 'queued', 2, 3, receive, error, vi.fn())!
+  try {
+    const source = Source.current
+    expect(source).not.toBe(old)
+    expect(old.close).toHaveBeenCalledTimes(1)
+    expect(error).toHaveBeenLastCalledWith('')
+    expect(oldError).toHaveBeenLastCalledWith('')
+    const releaseSame = subscribeJobFeedback('retry', 'queued', 2, 3, vi.fn(), vi.fn(), vi.fn())!
+    expect(Source.current).toBe(source)
+    releaseSame()
+    old.dispatchEvent(new MessageEvent('unavailable', { data: '{"status":401}' }))
+    old.dispatchEvent(
+      new MessageEvent('snapshot', {
+        data: JSON.stringify({ jobId: 'retry', attempt: 1, fence: 1, seq: 99, state: 'failed' }),
+      }),
+    )
+    source.dispatchEvent(
+      new MessageEvent('snapshot', {
+        data: JSON.stringify({ jobId: 'retry', attempt: 2, fence: 3, seq: 1, state: 'running' }),
+      }),
+    )
+    expect(receive).toHaveBeenCalledTimes(1)
+    expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ attempt: 2 }))
+    expect(oldReceive).toHaveBeenLastCalledWith(expect.objectContaining({ attempt: 2 }))
+    expect(source.close).not.toHaveBeenCalled()
+  } finally {
+    releaseNew()
+    release()
+  }
 })

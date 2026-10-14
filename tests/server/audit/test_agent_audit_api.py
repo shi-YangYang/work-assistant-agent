@@ -17,10 +17,13 @@ pytestmark = pytest.mark.asyncio
 
 async def test_all_agent_routes_reject_unauthenticated_requests(setup):
     app = setup[3]['employee']._transport.app
+    routes = inventory()['apis']
+    expected = {(route['method'], route['path']) for route in routes}
+    assert expected and len(expected) == len(routes)
     observed = []
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
                                 headers={'Origin': 'http://test'}) as client:
-        for route in inventory()['apis']:
+        for route in routes:
             parameters = {'view': 'work', 'action': 'confirm', 'choice': 'confirm'}
             path = re.sub(r'\{([^}]+)\}', lambda match: parameters.get(match[1], str(uuid4())), route['path'])
             response = await client.request(route['method'], path)
@@ -28,7 +31,8 @@ async def test_all_agent_routes_reject_unauthenticated_requests(setup):
             assert response.status_code == 401, observed[-1]
             assert response.json()['error']['message']
     evidence('api-unauthenticated', {'requests': observed, 'assertion': 'all routes reject before revealing resources'})
-    assert len(observed) == 73
+    assert {(row['method'], row['path']) for row in observed} == expected
+    assert len(observed) == len(expected)
 
 
 async def test_record_request_boundaries_preserve_real_work_and_report(setup):

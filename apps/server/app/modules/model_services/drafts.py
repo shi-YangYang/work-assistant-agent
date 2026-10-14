@@ -27,5 +27,5 @@ async def draft_config(db, actor, body, settings):
     model = next((m.model_dump() for m in body.models if m.id == body.modelId), None)
     config = None
     if model:
-        config = {'baseUrl': url, 'model': model['model'], 'protocol': model['protocol'], 'streaming': model['streaming'] if model['protocol'] == 'chat' else False, 'parameters': request_options(model), 'language': model['language']}
+        config = {'baseUrl': url, 'model': model['model'], 'protocol': model['protocol'], 'streaming': model['streaming'] if model['protocol'] == 'chat' else False, 'parameters': request_options(model), 'language': model['language'], 'imageSettings': model.get('imageSettings')}
     return config, key, fingerprint

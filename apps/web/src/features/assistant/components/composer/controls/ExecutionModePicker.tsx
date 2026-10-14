@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { Modal } from '@web/components/overlays/Modal'
 import controlsStyles from '../../../../../styles/controls.module.css'
 import layoutStyles from '../../../../../styles/layout.module.css'
+import { useMobileComposerControl } from '../../../hooks/composer/useMobileComposerPanel'
 import styles from './ExecutionModePicker.module.css'
 
 export const executionModes = [
@@ -24,19 +25,34 @@ export function ExecutionModePicker({
   acknowledged: boolean
   onChange: (mode: ExecutionMode, acknowledged?: boolean) => void
 }) {
-  const [position, setPosition] = useState<{ left: number; bottom: number } | null>(null)
+  const { mobile, available, activate, deactivate } = useMobileComposerControl('execution')
+  const [requestedOpen, setOpen] = useState(false)
+  const [position, setPosition] = useState({ left: 0, bottom: 0 })
+  const [previousMobile, setPreviousMobile] = useState(mobile)
   const [confirm, setConfirm] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
   const menu = useRef<HTMLDivElement>(null)
+  const selectedItem = useRef<HTMLButtonElement>(null)
   const options = useRef<(HTMLButtonElement | null)[]>([])
   const id = useId()
-  const open = !!position && !disabled
+  const open = available && requestedOpen && !disabled
   const name = executionModes.find((mode) => mode.id === value)!.name
-  const close = () => {
-    setPosition(null)
-    trigger.current?.focus()
+  const close = (restore = true) => {
+    setOpen(false)
+    if (restore) {
+      deactivate()
+      trigger.current?.focus()
+    }
+  }
+  if (previousMobile !== mobile || (!available && (requestedOpen || confirm))) {
+    setPreviousMobile(mobile)
+    setOpen(false)
+    setConfirm(false)
   }
   const show = () => {
+    activate()
+    setOpen(true)
+    if (mobile) return
     const rect = trigger.current?.getBoundingClientRect()
     if (rect)
       setPosition({
@@ -45,35 +61,109 @@ export function ExecutionModePicker({
       })
   }
   useEffect(() => {
-    if (!open) return
+    if (!open || mobile) return
     options.current[executionModes.findIndex((mode) => mode.id === value)]?.focus()
     const outside = (event: PointerEvent) => {
       if (
         !trigger.current?.contains(event.target as Node) &&
         !menu.current?.contains(event.target as Node)
-      )
-        setPosition(null)
+      ) {
+        setOpen(false)
+        deactivate()
+      }
     }
-    const resize = () => setPosition(null)
+    const resize = () => {
+      setOpen(false)
+      deactivate()
+    }
     document.addEventListener('pointerdown', outside)
     window.addEventListener('resize', resize)
+    window.visualViewport?.addEventListener('resize', resize)
     return () => {
       document.removeEventListener('pointerdown', outside)
       window.removeEventListener('resize', resize)
+      window.visualViewport?.removeEventListener('resize', resize)
     }
-  }, [open, value])
+  }, [open, mobile, value, deactivate])
+  const choices = (
+    <div
+      ref={menu}
+      id={id}
+      role="menu"
+      data-composer-layer="execution"
+      aria-label="执行权限"
+      className={styles.menu}
+      data-inline={mobile}
+      style={mobile ? undefined : position}
+      onBlur={(event) => {
+        if (!mobile && !event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setOpen(false)
+          deactivate()
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+          event.preventDefault()
+          event.stopPropagation()
+          close()
+        }
+        const index = options.current.indexOf(document.activeElement as HTMLButtonElement)
+        const next =
+          event.key === 'ArrowDown'
+            ? (index + 1) % 3
+            : event.key === 'ArrowUp'
+              ? (index + 2) % 3
+              : event.key === 'Home'
+                ? 0
+                : event.key === 'End'
+                  ? 2
+                  : null
+        if (next !== null) {
+          event.preventDefault()
+          options.current[next]?.focus()
+        }
+      }}
+    >
+      {executionModes.map((mode, index) => (
+        <button
+          key={mode.id}
+          ref={(element) => {
+            options.current[index] = element
+            if (value === mode.id) selectedItem.current = element
+          }}
+          type="button"
+          role="menuitemradio"
+          data-mode={mode.id}
+          aria-checked={value === mode.id}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            close(!(mode.id === 'full' && !acknowledged))
+            if (mode.id === 'full' && !acknowledged) setConfirm(true)
+            else onChange(mode.id)
+          }}
+        >
+          <span>
+            {mode.name}
+            <small>{mode.description}</small>
+          </span>
+          {value === mode.id && <Check size={16} aria-hidden="true" />}
+        </button>
+      ))}
+    </div>
+  )
   return (
     <>
       <button
         ref={trigger}
         type="button"
         className={styles.trigger}
+        data-panel={mobile}
         data-mode={value}
-        title={`执行权限：${name}，适用于所有会话`}
+        title={`执行权限：${name}`}
         aria-label={`执行权限：${name}`}
-        aria-haspopup="menu"
+        aria-haspopup={mobile ? 'dialog' : 'menu'}
         aria-expanded={open}
-        aria-controls={open ? id : undefined}
+        aria-controls={open && !mobile ? id : undefined}
         disabled={disabled}
         onClick={() => (open ? close() : show())}
         onKeyDown={(event) => {
@@ -83,6 +173,7 @@ export function ExecutionModePicker({
           }
         }}
       >
+        {mobile && <span className={styles['panel-title']}>执行权限</span>}
         {value === 'full' ? (
           <ShieldAlert size={16} aria-hidden="true" />
         ) : (
@@ -92,76 +183,45 @@ export function ExecutionModePicker({
         <ChevronDown size={12} aria-hidden="true" />
       </button>
       {open &&
-        createPortal(
-          <div
-            ref={menu}
-            id={id}
-            role="menu"
-            aria-label="执行权限"
-            className={styles.menu}
-            style={position!}
-            onBlur={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                setPosition(null)
-            }}
+        (mobile ? (
+          <Modal
+            title="执行权限"
+            className={styles['mobile-dialog']}
+            initialFocusRef={selectedItem}
+            onClose={() => close()}
             onKeyDown={(event) => {
-              if (event.key === 'Escape') {
+              if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
                 event.preventDefault()
                 event.stopPropagation()
                 close()
               }
-              const index = options.current.indexOf(document.activeElement as HTMLButtonElement)
-              const next =
-                event.key === 'ArrowDown'
-                  ? (index + 1) % 3
-                  : event.key === 'ArrowUp'
-                    ? (index + 2) % 3
-                    : event.key === 'Home'
-                      ? 0
-                      : event.key === 'End'
-                        ? 2
-                        : null
-              if (next !== null) {
-                event.preventDefault()
-                options.current[next]?.focus()
-              }
             }}
           >
-            {executionModes.map((mode, index) => (
-              <button
-                key={mode.id}
-                ref={(element) => {
-                  options.current[index] = element
-                }}
-                type="button"
-                role="menuitemradio"
-                data-mode={mode.id}
-                aria-checked={value === mode.id}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  close()
-                  if (mode.id === 'full' && !acknowledged) setConfirm(true)
-                  else onChange(mode.id)
-                }}
-              >
-                <span>
-                  {mode.name}
-                  <small>{mode.description}</small>
-                </span>
-                {value === mode.id && <Check size={16} aria-hidden="true" />}
-              </button>
-            ))}
-          </div>,
-          document.body,
-        )}
+            {choices}
+          </Modal>
+        ) : (
+          createPortal(choices, document.body)
+        ))}
       {confirm && (
-        <Modal title="开启自主执行" onClose={() => setConfirm(false)}>
+        <Modal
+          title="开启自主执行"
+          onClose={() => {
+            setConfirm(false)
+            deactivate()
+          }}
+        >
           <p>
             此账号的所有会话中，你明确要求的工作和报告操作将直接执行，包括提交与删除，不再逐项确认。
           </p>
           <p>缺少必要信息时仍会向你提问；可访问的数据和账号权限保持不变。</p>
           <div className={layoutStyles['form-actions']}>
-            <button type="button" onClick={() => setConfirm(false)}>
+            <button
+              type="button"
+              onClick={() => {
+                setConfirm(false)
+                deactivate()
+              }}
+            >
               取消
             </button>
             <button
@@ -170,6 +230,7 @@ export function ExecutionModePicker({
               className={controlsStyles.primary}
               onClick={() => {
                 setConfirm(false)
+                deactivate()
                 onChange('full', true)
               }}
             >

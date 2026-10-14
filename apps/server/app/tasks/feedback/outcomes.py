@@ -48,7 +48,13 @@ def record(job, action, arguments, result):
                     | {issue['field'] for issue in issues if issue.get('code') == 'missing'})
     if action == 'create_work':
         fields = []  # A created object fulfills the whole selected item.
-    identity = {'action': action, 'target': arguments.get('target_id') or '', 'references': references}
+    # Report generation captures its sources from the authenticated request on
+    # the server. source_tokens is an admin follow-up parameter, not a report
+    # selector; correcting it must not invent a different report task. Keep the
+    # original references in the receipt, and every other identity boundary.
+    identity_references = {name: value for name, value in references.items()
+                           if action != 'generate_report' or name != 'source_tokens'}
+    identity = {'action': action, 'target': arguments.get('target_id') or '', 'references': identity_references}
     # A create has no object ID yet. Its source item (or exact effect) is the
     # only reliable discriminator; an ordinal or duplicate title is not one.
     if action in ('create_work', 'propose_progress', 'propose_followup') and not arguments.get('target_id') and not has_reference:
@@ -93,6 +99,7 @@ def record(job, action, arguments, result):
             resolved_keys.update(entry['key'] for entry in previous
                 if not entry.get('planRejection') and entry.get('taskItemId') == item['taskItemId'] and entry.get('action') == action
                 and entry.get('target') == item['target'] and entry.get('fields') == item['fields']
+                and (action != 'generate_report' or entry.get('identity') == item['identity'])
                 and (not entry.get('references') or entry['references'] == references)
                 and entry['category'] in BLOCKING)
     values = [entry for entry in previous if entry['key'] not in resolved_keys]

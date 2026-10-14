@@ -61,10 +61,18 @@ class Reasoning(Input):
         return self
 
 
+class ImageSettings(Input):
+    api: Literal['auto', 'multimodal-sync', 'image-async'] = 'auto'
+    sizeMode: Literal['auto', 'provider', 'fixed'] = 'auto'
+    sizes: list[str] = Field(default_factory=list, max_length=16)
+    defaultSize: str | None = None
+
+
 class ServiceModel(Input):
     id: str = Field(min_length=1, max_length=80)
     model: str = Field(min_length=1, max_length=200)
-    protocol: Literal['chat', 'transcriptions', 'qwen-asr', 'dashscope-asr'] = 'chat'
+    protocol: Literal['chat', 'transcriptions', 'qwen-asr', 'dashscope-asr', 'dashscope-image'] = 'chat'
+    imageSettings: ImageSettings | None = None
     # UI selection mode; execution always uses the saved concrete protocol.
     protocolMode: Literal['auto', 'manual'] = 'manual'
     reasoning: Reasoning = Field(default_factory=Reasoning)
@@ -81,7 +89,14 @@ class ServiceModel(Input):
             raise ValueError('模型 ID 无效')
         parameters(self.parameters)
         if self.protocol != 'chat' and (self.reasoning.efforts or self.parameters):
-            raise ValueError('语音接口不接受聊天推理参数')
+            raise ValueError('非聊天接口不接受聊天推理参数')
+        if self.protocol == 'dashscope-image':
+            if self.language or self.contextWindow is not None:
+                raise ValueError('图片协议不接受语音或上下文设置')
+            from app.integrations.models.images.profiles import validate_settings
+            validate_settings(self.imageSettings.model_dump() if self.imageSettings else {}, self.model)
+        elif self.imageSettings is not None:
+            raise ValueError('只有图片协议接受图片设置')
         from app.modules.model_services.reasoning.policy import effort_options
         for effort in self.reasoning.efforts:
             effort_options(self.model_dump(), effort)
@@ -114,7 +129,7 @@ class ServiceInput(Input):
 class ConfigRequest(ServiceInput):
     serviceId: str | None = None
     modelId: str | None = None
-    purpose: Literal['assistant', 'report', 'asr'] = 'assistant'
+    purpose: Literal['assistant', 'report', 'asr', 'image'] = 'assistant'
     draftVersion: str = Field(min_length=1, max_length=80)
 
 
@@ -141,8 +156,10 @@ class Selection(Input):
 class RoutingInput(Input):
     expectedRevision: int = Field(ge=0)
     assistant: Selection | None = None
+    # Accepted for old clients; new routing always shares the text model.
     report: Selection | Literal['follow'] | None = 'follow'
     asr: Selection | None = None
+    image: Selection | None = None
 
 
 class RetryJob(Input):

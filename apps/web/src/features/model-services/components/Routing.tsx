@@ -10,7 +10,7 @@ import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { PanelSection } from '@web/components/content/PanelSection'
 import { readModelRouting, saveModelRouting } from '@web/features/model-services/api/requests'
 import type { Purpose } from '@web/features/model-services/types'
-import { purposeNames } from '@web/features/model-services/types'
+import { purposeNames, supportsPurpose } from '@web/features/model-services/types'
 import { useDraftSubmission } from '@web/hooks/useDraftSubmission'
 import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
@@ -25,14 +25,24 @@ export function Routing({
   refresh: () => void
 }) {
   const { drafts, setDraft, notify } = useWorkspace()
-  const value = (drafts.modelRouting as ModelRouting) || initial
+  const stored = (drafts.modelRouting as ModelRouting) || initial
+  const legacyReport = stored?.report
+  const value = stored && {
+    ...stored,
+    assistant:
+      stored.assistant ||
+      (legacyReport && typeof legacyReport === 'object'
+        ? { serviceId: legacyReport.serviceId, modelId: legacyReport.modelId }
+        : null),
+    report: 'follow' as const,
+  }
   const { busy, submit } = useDraftSubmission('modelRouting')
   const [error, setError] = useState<Error | string>('')
   const [conflict, setConflict] = useState(false)
   const [recovering, setRecovering] = useState(false)
   if (!value) return <p>正在读取用途…</p>
   if (
-    [value.assistant, value.report, value.asr].some(
+    [value.assistant, value.asr, value.image].some(
       (choice) => choice && typeof choice === 'object' && 'presetId' in choice,
     )
   )
@@ -61,7 +71,7 @@ export function Routing({
       </section>
     )
 
-  const change = (purpose: Purpose, choice: ModelSelection | 'follow' | null) => {
+  const change = (purpose: Exclude<Purpose, 'report'>, choice: ModelSelection | null) => {
     setDraft('modelRouting', { ...value, [purpose]: choice })
     setError('')
   }
@@ -69,11 +79,11 @@ export function Routing({
     <section
       className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${modelServicesStyles['model-routing']}`}
     >
-      {(['assistant', 'report', 'asr'] as const).map((purpose) => {
+      {(['assistant', 'asr', 'image'] as const).map((purpose) => {
         const choice = value[purpose]
         const options = services.flatMap((service) =>
           service.models
-            .filter((m) => (purpose === 'asr' ? m.protocol !== 'chat' : m.protocol === 'chat'))
+            .filter((m) => supportsPurpose(m.protocol, purpose))
             .map((model) => ({ service, model })),
         )
         const selected =
@@ -86,13 +96,7 @@ export function Routing({
           <PanelSection
             key={purpose}
             title={purposeNames[purpose]}
-            status={
-              choice === 'follow'
-                ? '同工作助手'
-                : selected
-                  ? `${selected.service.name} · ${selected.model.model}`
-                  : '未配置'
-            }
+            status={selected ? `${selected.service.name} · ${selected.model.model}` : '未配置'}
             defaultOpen={purpose === 'assistant'}
           >
             <div className={modelServicesStyles['routing-fields']}>
@@ -100,32 +104,23 @@ export function Routing({
                 使用的模型
                 <select
                   disabled={busy}
-                  value={
-                    choice === 'follow'
-                      ? 'follow'
-                      : choice
-                        ? `${choice.serviceId}/${choice.modelId}`
-                        : ''
-                  }
+                  value={choice ? `${choice.serviceId}/${choice.modelId}` : ''}
                   onChange={(e) => {
                     const option = options.find(
                       (x) => `${x.service.id}/${x.model.id}` === e.target.value,
                     )
                     change(
                       purpose,
-                      e.target.value === 'follow'
-                        ? 'follow'
-                        : option
-                          ? {
-                              serviceId: option.service.id,
-                              modelId: option.model.id,
-                            }
-                          : null,
+                      option
+                        ? {
+                            serviceId: option.service.id,
+                            modelId: option.model.id,
+                          }
+                        : null,
                     )
                   }}
                 >
                   <option value="">未配置</option>
-                  {purpose === 'report' && <option value="follow">同工作助手</option>}
                   {options.map(({ service, model }) => (
                     <option key={`${service.id}/${model.id}`} value={`${service.id}/${model.id}`}>
                       {service.name} · {model.model}
@@ -133,9 +128,9 @@ export function Routing({
                   ))}
                 </select>
               </label>
-              {choice === 'follow' && (
+              {purpose === 'assistant' && (
                 <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
-                  使用工作助手当前分配的模型、初始思考强度和请求方式。
+                  聊天搭子和日报周报生成共用此模型。聊天可单独选择思考强度，报告使用模型的初始强度。
                 </p>
               )}
             </div>
@@ -170,8 +165,8 @@ export function Routing({
                 () =>
                   saveModelRouting({
                     assistant: value.assistant,
-                    report: value.report,
                     asr: value.asr,
+                    image: value.image,
                     expectedRevision: value.revision,
                   }),
                 () => {

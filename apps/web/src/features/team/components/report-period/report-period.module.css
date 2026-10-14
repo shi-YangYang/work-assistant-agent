@@ -1,0 +1,218 @@
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+}
+.picker button {
+  min-height: 36px;
+  font-size: 13px;
+}
+.picker .arrow {
+  width: 30px;
+  flex-shrink: 0;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+}
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  min-width: 0;
+}
+.trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.picker .return {
+  background: transparent;
+  border: 0;
+  padding: 6px;
+}
+.panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: 320px;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow:
+    var(--raised),
+    0 12px 32px #0002;
+}
+.panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel strong {
+  font-size: 14px;
+}
+.panel button {
+  font-size: 13px;
+  min-height: 32px;
+}
+.panel header button,
+.month button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  padding: 6px;
+  background: transparent;
+  border: 0;
+}
+.shortcuts {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+.shortcuts button {
+  flex: 1;
+  padding: 5px 8px;
+}
+.month {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+}
+.month input {
+  min-width: 0;
+  width: auto;
+  flex: 1;
+  text-align: center;
+  padding: 4px;
+  border: 0;
+  min-height: 32px;
+  font-size: 13px;
+  background: transparent;
+}
+.week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.week span {
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 0;
+  color: var(--muted);
+}
+.week button {
+  border: 0;
+  background: transparent;
+  border-radius: 6px;
+  padding: 0;
+  height: 36px;
+  font-variant-numeric: tabular-nums;
+}
+.week button[data-outside='true'] {
+  color: var(--muted);
+}
+.week button[aria-current='date'] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.weekChoice:has(button:hover:not(:disabled)) {
+  background: var(--hover);
+  border-radius: 6px;
+}
+.weekChoice button {
+  border-radius: 0;
+}
+.weekChoice button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.weekChoice button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.week button[aria-selected='true'] {
+  background: var(--selection);
+  color: var(--text);
+  font-weight: 600;
+}
+.more {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.more summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+.more > button {
+  width: 100%;
+  margin: 8px 0;
+}
+.range {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.range label {
+  font-size: 12px;
+  min-width: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.range input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px;
+  font-size: 12px;
+}
+.range small,
+.range > button {
+  grid-column: 1 / -1;
+}
+.range small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.range small[role='alert'] {
+  color: var(--danger);
+}
+.panel .timezone {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+@media (max-width: 760px) {
+  .picker button {
+    min-height: 44px;
+  }
+  .picker .arrow {
+    width: 36px;
+  }
+  .panel {
+    width: 336px;
+  }
+  .panel button,
+  .month input {
+    min-height: 44px;
+  }
+  .week button {
+    height: 42px;
+    min-height: 42px;
+  }
+  .more summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+}

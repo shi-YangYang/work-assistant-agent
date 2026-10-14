@@ -1,0 +1,1 @@
+"""announcements regression tests."""

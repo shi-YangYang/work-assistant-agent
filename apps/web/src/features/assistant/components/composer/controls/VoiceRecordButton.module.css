@@ -1,0 +1,66 @@
+.button {
+  position: relative;
+  flex-shrink: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.bar {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-align: center;
+}
+.bar:active:where(:not(:disabled)) {
+  background: var(--hover);
+}
+.button[data-recording='true'] {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.button[data-recording='true'] > svg {
+  transform: translateY(-4px);
+}
+.time {
+  position: absolute;
+  inset: auto 0 0;
+  text-align: center;
+  font-size: 9px;
+  line-height: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.hint {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: 220px;
+  max-width: calc(100vw - 32px);
+  padding: 24px 16px;
+  border-radius: 20px;
+  color: var(--text);
+  background: var(--glass);
+  border: 1px solid var(--control);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  font-size: 14px;
+  backdrop-filter: blur(16px);
+}
+.hint[data-cancelling='true'] {
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+.hint strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}

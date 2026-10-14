@@ -10,6 +10,7 @@ import { BusyButton } from '@web/components/actions/BusyButton'
 import { ConflictRecovery } from '@web/components/forms/ConflictRecovery'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { PanelSection } from '@web/components/content/PanelSection'
+import { SectionTabs, TabSection } from '@web/components/navigation/section-tabs/SectionTabs'
 import { TimeField } from '@web/components/forms/TimeField'
 import {
   readReportRules,
@@ -23,6 +24,12 @@ import { useWorkspace } from '@web/lib/workspace'
 import { companyTimezones, timezoneLabel } from '@web/utils/timezones'
 import { useLayoutEffect, useRef, useState } from 'react'
 
+const ruleTabs = [
+  { id: 'timezone', label: '时间设置' },
+  { id: 'daily', label: '日报' },
+  { id: 'weekly', label: '周报' },
+] as const
+
 export function RulesPage() {
   const { data, error, refresh } = useResource<Rules>(reportRulesPath())
   const { identity, drafts, setDraft, notify } = useWorkspace()
@@ -30,6 +37,7 @@ export function RulesPage() {
   const { busy, submit } = useDraftSubmission('rules')
   const [failure, setFailure] = useState<Error | string>('')
   const [attempted, setAttempted] = useState(0)
+  const [tab, setTab] = useState<(typeof ruleTabs)[number]['id']>('timezone')
   const form = useRef<HTMLFormElement>(null)
   const fieldErrors = attempted && value ? reportRuleErrors(value) : {}
   useLayoutEffect(() => {
@@ -42,6 +50,16 @@ export function RulesPage() {
   return (
     <div className={`${layoutStyles['settings-page']} ${layoutStyles['settings-form-page']}`}>
       <PageHeader title="汇报规则" />
+      {canEdit && (
+        <SectionTabs
+          scope="rules"
+          label="汇报规则"
+          tabs={ruleTabs}
+          selected={tab}
+          onChange={setTab}
+          disabled={busy}
+        />
+      )}
       <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
       {value && !canEdit && (
         <div
@@ -100,12 +118,16 @@ export function RulesPage() {
         <form
           ref={form}
           noValidate
-          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']}`}
+          className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${layoutStyles['settings-tab-panels']}`}
           onSubmit={async (e) => {
             e.preventDefault()
             setAttempted((previous) => previous + 1)
             setFailure('')
-            if (Object.keys(reportRuleErrors(value)).length) return
+            const firstError = Object.keys(reportRuleErrors(value))[0]
+            if (firstError) {
+              setTab(firstError.startsWith('daily.') ? 'daily' : 'weekly')
+              return
+            }
             await submit(
               () =>
                 saveReportRules({
@@ -122,7 +144,12 @@ export function RulesPage() {
             )
           }}
         >
-          <PanelSection title="时间设置" status={timezoneLabel(value.timezone)} defaultOpen>
+          <TabSection
+            tab={{ scope: 'rules', id: 'timezone', selected: tab }}
+            title="时间设置"
+            status={timezoneLabel(value.timezone)}
+            defaultOpen
+          >
             <label className={styles['timezone-field']}>
               公司时区
               <select
@@ -137,9 +164,10 @@ export function RulesPage() {
                 ))}
               </select>
             </label>
-          </PanelSection>
+          </TabSection>
           {(['daily', 'weekly'] as const).map((kind) => (
-            <PanelSection
+            <TabSection
+              tab={{ scope: 'rules', id: kind, selected: tab }}
               separated={kind === 'daily'}
               key={kind}
               title={kind === 'daily' ? '日报' : '周报'}
@@ -265,7 +293,7 @@ export function RulesPage() {
                   </p>
                 )}
               </div>
-            </PanelSection>
+            </TabSection>
           ))}
           <div className={layoutStyles['panel-footer']}>
             <p className={utilitiesStyles['muted']}>

@@ -32,13 +32,22 @@ export function TaskProgress({
         .find((node) => ['awaiting_input', 'awaiting_confirmation'].includes(node.state))
     : undefined
   const reply = ['running', 'succeeded', 'awaiting_input'].includes(job.state) && !!replyActivity
+  const generatingImages =
+    job.state === 'running' &&
+    active.some(
+      (node) => node.kind === 'tool' && node.label === '生成图片' && node.state === 'running',
+    )
+  const images = job.imageGeneration ?? []
+  const imageSummary = `正在生成图片${images.length ? ` · 已完成 ${images.filter((slot) => slot.state === 'ready').length}/${images.length} 张` : ''}`
   // Keep transport/model phases in one visible activity. Delivery is part of
   // generating the reply, so it does not introduce a brief third label.
-  const activity = reply
-    ? '生成回答'
-    : job.state === 'running' && !retrying && !attention
-      ? '思考中'
-      : undefined
+  const activity = generatingImages
+    ? undefined
+    : reply
+      ? '生成回答'
+      : job.state === 'running' && !retrying && !attention
+        ? '思考中'
+        : undefined
   const { now, seconds } = useProgressClock(
     `${job.id}:${job.attempt}:${job.fence}`,
     job.state === 'running' && (!!activity || waiting),
@@ -49,21 +58,23 @@ export function TaskProgress({
   const outcome = complete ? job.taskOutcome : null
   const retryCount = active.reduce((count, node) => Math.max(count, node.retries), 0)
   const activityStatus = `${activity === '思考中' ? `${seconds} 秒` : '处理中'}${retryCount ? ` · 第 ${retryCount}/3 次重试` : ''}`
-  const summary = activity
-    ? `${activity} · ${activityStatus}`
-    : complete
-      ? completionSummary(job, completed, retries)
-      : job.state === 'queued'
-        ? '等待继续处理'
-        : job.state === 'cancelled'
-          ? `已中断${completed ? ` · 已完成 ${completed} 项操作` : ''}`
-          : retrying
-            ? active.length === 1
-              ? nodeStatus(active[0], now)
-              : '多项操作重试中'
-            : attention
-              ? `${nodeName(attention)} · ${nodeStatus(attention, now)}`
-              : '处理请求'
+  const summary = generatingImages
+    ? imageSummary
+    : activity
+      ? `${activity} · ${activityStatus}`
+      : complete
+        ? completionSummary(job, completed, retries)
+        : job.state === 'queued'
+          ? '等待继续处理'
+          : job.state === 'cancelled'
+            ? `已中断${completed ? ` · 已完成 ${completed} 项操作` : ''}`
+            : retrying
+              ? active.length === 1
+                ? nodeStatus(active[0], now)
+                : '多项操作重试中'
+              : attention
+                ? `${nodeName(attention)} · ${nodeStatus(attention, now)}`
+                : '处理请求'
   const running =
     !!activity || (job.state === 'running' && active.some((node) => node.state === 'running'))
   if (['failed', 'awaiting_retry'].includes(job.state))

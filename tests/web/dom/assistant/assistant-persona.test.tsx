@@ -2,7 +2,14 @@
 import type { Attachment, Conversation } from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
-import { MemoryRouter, Route, Routes, useParams } from 'react-router'
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  Route,
+  RouterProvider,
+  Routes,
+  useParams,
+} from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../../apps/web/src/api/client'
 import {
@@ -372,4 +379,86 @@ it('preserves the preview upload lock when leaving and returning to the draft', 
     text: '图片草稿',
     files: [{ attachment: { id: 'uploaded' } }],
   })
+})
+
+it('assigns immediately typed text to the new conversation before the navigation handler returns', async () => {
+  const vault = createVault()
+  vault.writer()('composer:first', { text: '旧会话草稿', files: [], key: '' })
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <Routes>
+            <Route path="/assistant/:id?" element={<AssistantRoute />} />
+          </Routes>
+        ),
+      },
+    ],
+    {
+      initialEntries: ['/assistant/first'],
+    },
+  )
+  render(
+    <TestWorkspace vault={vault}>
+      <RouterProvider router={router} />
+    </TestWorkspace>,
+  )
+  await screen.findByRole('textbox', { name: '工作消息' })
+  act(() => {
+    screen.getByRole('button', { name: '新会话' }).click()
+    fireEvent.change(screen.getByRole('textbox', { name: '工作消息' }), {
+      target: { value: '新会话立即输入' },
+    })
+  })
+  expect(vault.getSnapshot()['composer:first']).toMatchObject({ text: '旧会话草稿' })
+  expect(vault.getSnapshot()['composer:new']).toMatchObject({ text: '新会话立即输入' })
+  await act(async () => router.navigate(-1))
+  expect((screen.getByRole('textbox', { name: '工作消息' }) as HTMLTextAreaElement).value).toBe(
+    '旧会话草稿',
+  )
+  await act(async () => router.navigate(1))
+  expect((screen.getByRole('textbox', { name: '工作消息' }) as HTMLTextAreaElement).value).toBe(
+    '新会话立即输入',
+  )
+  router.dispose()
+})
+
+it('does not let a late resume response replace the explicitly started new draft', async () => {
+  const resumed = deferred<Response>()
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!
+  vi.mocked(fetch).mockImplementation((url, options) =>
+    String(url) === '/api/v1/conversations' ? resumed.promise : originalFetch(url, options),
+  )
+  const vault = createVault()
+  const router = createMemoryRouter(
+    [
+      {
+        path: '*',
+        element: (
+          <Routes>
+            <Route path="/assistant/:id?" element={<AssistantRoute />} />
+          </Routes>
+        ),
+      },
+    ],
+    { initialEntries: ['/assistant'] },
+  )
+  render(
+    <TestWorkspace vault={vault}>
+      <RouterProvider router={router} />
+    </TestWorkspace>,
+  )
+  await screen.findByText('正在打开上次会话…')
+  fireEvent.click(screen.getByRole('button', { name: '新会话' }))
+  fireEvent.change(screen.getByRole('textbox', { name: '工作消息' }), {
+    target: { value: '从现在开始的新草稿' },
+  })
+  await act(async () =>
+    resumed.resolve(new Response(JSON.stringify({ items: [conversation], nextCursor: null }))),
+  )
+  expect(router.state.location.pathname + router.state.location.search).toBe('/assistant?new=1')
+  expect(vault.getSnapshot()['composer:new']).toMatchObject({ text: '从现在开始的新草稿' })
+  expect(vault.getSnapshot()['composer:first']).toBeUndefined()
+  router.dispose()
 })

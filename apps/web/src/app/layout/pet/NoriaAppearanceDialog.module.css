@@ -23,3 +23,22 @@
   margin: 0;
   color: var(--secondary);
 }
+.notifications {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 12px;
+  margin-bottom: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--text);
+  text-decoration: none;
+}
+.notifications:hover {
+  background: var(--hover);
+  text-decoration: none;
+}
+.notification-label {
+  margin-right: auto;
+}

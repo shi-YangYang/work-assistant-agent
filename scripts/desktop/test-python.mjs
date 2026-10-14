@@ -14,22 +14,9 @@ if (version.error || version.status !== 0) {
   console.error('Python 3.12 is required. Create .venv or set PAA_PYTHON; see README.')
   process.exit(1)
 }
-const result = spawnSync(
-  command,
-  [
-    ...args,
-    '-c',
-    [
-      'import faulthandler, unittest',
-      'faulthandler.dump_traceback_later(120, exit=True)',
-      "unittest.main(module=None, argv=['unittest', 'discover', '-s', 'tests/core', '-v'])",
-    ].join('\n'),
-  ],
-  {
-    stdio: 'inherit',
-    timeout: 150_000,
-    killSignal: 'SIGKILL',
-  },
-)
+const result = spawnSync(command, [...args, resolve(root, 'scripts/desktop/test-python.py')], {
+  stdio: 'inherit',
+  // Python bounds each test and fixture phase; CI retains the overall job deadline.
+})
 if (result.error) console.error(`Python tests could not complete: ${result.error.message}`)
 process.exit(result.status ?? 1)

@@ -578,3 +578,60 @@ async def test_continuing_pending_suggestion_reuses_card_in_dto_and_feedback(set
     async with sessions() as db:
         from app.modules.work.models import ProgressDraft
         assert await db.scalar(select(func.count()).select_from(ProgressDraft).where(ProgressDraft.owner_id == users['employee'].id)) == 1
+
+
+async def test_account_activity_is_private_minimal_and_spans_conversations(setup):
+    from app.modules.conversations.models import Conversation
+    _, sessions, users, clients = setup
+    expected = {}
+    async with sessions.begin() as db:
+        for role in users:
+            actor = users[role]
+            expected[role] = []
+            for index, state in enumerate(('running', 'queued', 'succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled')):
+                conversation = Conversation(company_id=actor.company_id, owner_id=actor.id)
+                db.add(conversation); await db.flush()
+                message = Message(company_id=actor.company_id, owner_id=actor.id,
+                    conversation_id=conversation.id, text='不能返回的正文', reply='不能返回的答复')
+                db.add(message); await db.flush()
+                job = Job(company_id=actor.company_id, owner_id=actor.id, kind='message',
+                    target_id=message.id, state=state, attempt=2, fence=3,
+                    feedback={'seq': 4, 'stage': 'generating', 'text': '不能返回的模型信息'})
+                db.add(job); await db.flush()
+                if index < 2: expected[role].append((job.id, conversation.id))
+    for role, client in clients.items():
+        result = await client.get('/api/v1/assistant/activity')
+        assert result.status_code == 200, result.text
+        assert result.headers['cache-control'] == 'no-store'
+        rows = result.json()['jobs']
+        assert [(item['id'], item['conversationId']) for item in rows] == expected[role]
+        assert all(set(item) == {'id', 'conversationId', 'targetId', 'state', 'stage', 'attempt', 'fence', 'seq', 'updatedAt'} for item in rows)
+        assert all(item['attempt'] == 2 and item['fence'] == 3 and item['seq'] == 4 for item in rows)
+        assert '不能返回' not in result.text
+    clients['employee'].cookies.clear()
+    assert (await clients['employee'].get('/api/v1/assistant/activity')).status_code == 401
+
+
+async def test_account_activity_excludes_deleted_inaccessible_and_non_chat_jobs(setup):
+    from app.modules.conversations.models import Conversation
+    from app.security.access import scope
+    _, sessions, users, clients = setup
+    actor = users['admin']
+    visible = []
+    async with sessions.begin() as db:
+        for variant in ('visible', 'legacy', 'conversation_deleted', 'message_deleted', 'job_access', 'message_access', 'role', 'report', 'document'):
+            conversation = Conversation(company_id=actor.company_id, owner_id=actor.id, deleted=variant == 'conversation_deleted')
+            db.add(conversation); await db.flush()
+            forbidden = {**scope(actor), 'team': True, 'invalidated': True}
+            message = Message(company_id=actor.company_id, owner_id=actor.id,
+                conversation_id=None if variant == 'legacy' else conversation.id,
+                deleted=variant == 'message_deleted', access=forbidden if variant == 'message_access' else {})
+            db.add(message); await db.flush()
+            job = Job(company_id=actor.company_id, owner_id=actor.id, target_id=message.id,
+                kind=variant if variant in ('report', 'document') else 'message', state='queued',
+                access=forbidden if variant == 'job_access' else {'role': 'employee'} if variant == 'role' else {})
+            db.add(job); await db.flush()
+            if variant in ('visible', 'legacy'): visible.append(job.id)
+    result = await clients['admin'].get('/api/v1/assistant/activity')
+    assert result.status_code == 200, result.text
+    assert [item['id'] for item in result.json()['jobs']] == visible

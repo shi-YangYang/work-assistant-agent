@@ -1,5 +1,7 @@
 import {
   AudioLines,
+  Bell,
+  Megaphone,
   Brain,
   BriefcaseBusiness,
   CalendarClock,
@@ -9,7 +11,6 @@ import {
   LayoutDashboard,
   LifeBuoy,
   MessageSquare,
-  Palette,
   UserRound,
   Users,
 } from 'lucide-react'
@@ -42,7 +43,21 @@ export const pages = [
     icon: Users,
     admin: true,
   },
+  {
+    path: '/announcement-management',
+    title: '公告管理',
+    detail: '发布、编辑与撤回公司公告',
+    icon: Megaphone,
+    admin: true,
+  },
 ]
+
+export const notificationPage = {
+  path: '/notifications',
+  title: '通知',
+  detail: '查看个人提醒与公司公告',
+  icon: Bell,
+}
 
 export const settingsPages = [
   {
@@ -65,12 +80,6 @@ export const settingsPages = [
     icon: LifeBuoy,
   },
   { path: '/settings/account', title: '账户', detail: '查看账号信息与修改密码', icon: UserRound },
-  {
-    path: '/settings/appearance',
-    title: '外观',
-    detail: '浅色、深色或跟随系统主题',
-    icon: Palette,
-  },
   {
     path: '/settings/rules',
     title: '汇报规则',

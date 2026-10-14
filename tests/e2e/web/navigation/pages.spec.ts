@@ -75,7 +75,7 @@ test('W03 @cross employee navigation, reports and role restricted deep links', a
     '/team',
   ]) {
     await page.goto(state.origin + path)
-    await expect(page.getByRole('navigation', { name: '工作空间' })).toBeAttached()
+    await expect(page.getByRole('navigation', { name: /工作空间|系统设置/ })).toBeAttached()
     await expect(
       page.getByRole('heading', { name: /成员管理|模型服务管理|用户声纹|登录方式|团队看板/ }),
     ).toHaveCount(0)
@@ -287,8 +287,9 @@ test('W03 employee notification, report and message source retain local navigati
   await login('employee')
   await page.setViewportSize({ width: 360, height: 780 })
   await page.getByRole('button', { name: '展开导航', exact: true }).click()
-  await page.getByRole('button', { name: '汇报通知，1 条未读' }).click()
-  await expect(page.getByRole('dialog', { name: '汇报通知', exact: true })).toBeVisible()
+  await page.getByRole('link', { name: /^通知/ }).click()
+  await page.getByRole('tab', { name: /^提醒/ }).click()
+  await expect(page.getByRole('heading', { name: '通知', exact: true })).toBeVisible()
   await capture('employee-notifications-mobile')
   await page.getByRole('button', { name: /日报 · 草稿已就绪/ }).click()
   await expect(page).toHaveURL(/\/reports\/pet-report$/)

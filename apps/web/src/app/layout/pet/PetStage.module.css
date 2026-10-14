@@ -25,17 +25,48 @@
 .trigger:hover {
   background: transparent;
 }
-.name {
+.avatar {
   position: relative;
+  display: block;
+}
+.unread {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #fbe7e9;
+  color: #b84451;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   margin-top: -7px;
   min-width: 66px;
   padding: 3px 12px;
   border: 1px solid #00000008;
-  border-radius: 999px;
+  border-radius: 22px;
   background: #fff;
   box-shadow:
     0 2px 5px #0000000d,
     0 4px 14px #00000006;
+}
+.name {
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
@@ -57,14 +88,33 @@
   .trigger {
     top: calc(8px + env(safe-area-inset-top));
   }
-  .name {
+  .bubble {
     margin-top: -5px;
     min-width: 58px;
     padding: 2px 10px;
+  }
+  .name {
     font-size: 12px;
   }
   .navigation {
     left: 8px;
     top: calc(8px + env(safe-area-inset-top));
+  }
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+  color: #636363;
+}
+@media (max-width: 760px) {
+  .status {
+    font-size: 10px;
+    line-height: 14px;
   }
 }

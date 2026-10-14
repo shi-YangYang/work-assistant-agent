@@ -168,7 +168,7 @@ describe('service presets and protocol selection', () => {
     ['qwen-audio-3.0-asr-flash-streaming', null],
     ['qwen3-asr-flash-realtime', null],
     ['qwen-audio-3.0-tts-plus', null],
-    ['wan2.7-image', null],
+    ['wan2.7-image', 'dashscope-image'],
     ['unknown-model', null],
   ])('distinguishes model API families: %s', (id, protocol) => {
     expect(matchModelProtocol(tokenPlan, id).protocol).toBe(protocol)

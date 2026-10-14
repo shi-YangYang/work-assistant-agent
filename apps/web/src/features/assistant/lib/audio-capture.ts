@@ -77,6 +77,7 @@ type Session = {
   chunks: BlobPart[]
   keep: boolean
   finished: boolean
+  stopping: boolean
 }
 
 // Own both the pending permission request and every acquired stream. React may
@@ -90,15 +91,15 @@ export class AudioCapture {
   constructor(private callbacks: CaptureCallbacks) {}
 
   async start(maxBytes = MAX_FILE_BYTES) {
-    if (this.disposed || this.pending || this.session) return
+    if (this.disposed || this.pending || this.session) return false
     const generation = ++this.generation
     if (typeof window !== 'undefined' && window.isSecureContext === false) {
       this.callbacks.error('此地址不是安全连接，无法录音。请使用 HTTPS，或发送文字、语音文件。')
-      return
+      return false
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       this.callbacks.error('当前浏览器不支持录音，请输入文字或选择语音文件。')
-      return
+      return false
     }
     this.pending = true
     this.callbacks.state('requesting')
@@ -107,13 +108,20 @@ export class AudioCapture {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (this.disposed || generation !== this.generation) {
         stream.getTracks().forEach((track) => track.stop())
-        return
+        return false
       }
       const mime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find((type) =>
         MediaRecorder.isTypeSupported(type),
       )
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
-      const session: Session = { stream, recorder, chunks: [], keep: true, finished: false }
+      const session: Session = {
+        stream,
+        recorder,
+        chunks: [],
+        keep: true,
+        finished: false,
+        stopping: false,
+      }
       this.session = session
       let bytes = 0
       recorder.ondataavailable = (event) => {
@@ -137,9 +145,10 @@ export class AudioCapture {
       recorder.start(1000)
       this.pending = false
       this.callbacks.state('recording')
+      return true
     } catch (error) {
       stream?.getTracks().forEach((track) => track.stop())
-      if (this.disposed || generation !== this.generation) return
+      if (this.disposed || generation !== this.generation) return false
       const session = this.session
       if (session) {
         session.keep = false
@@ -149,6 +158,7 @@ export class AudioCapture {
       this.pending = false
       this.callbacks.state('idle')
       this.callbacks.error(microphoneError(error))
+      return false
     }
   }
 
@@ -159,7 +169,8 @@ export class AudioCapture {
       if (!this.disposed) this.callbacks.state('idle')
     }
     const session = this.session
-    if (!session || session.finished) return
+    if (!session || session.finished || session.stopping) return
+    session.stopping = true
     if (!this.disposed) this.callbacks.state('stopping')
     try {
       if (session.recorder.state !== 'inactive') session.recorder.stop()
@@ -169,6 +180,11 @@ export class AudioCapture {
     } finally {
       session.stream.getTracks().forEach((track) => track.stop())
     }
+  }
+
+  cancel() {
+    if (this.session) this.session.keep = false
+    this.stop()
   }
 
   dispose() {
@@ -199,11 +215,15 @@ export class AudioCapture {
 
 export function microphoneError(error: unknown) {
   const name = error instanceof Error ? error.name : ''
-  if (['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name))
-    return '麦克风权限未获允许，请在浏览器设置中允许录音，或输入文字、选择语音文件。'
   if (['NotFoundError', 'DevicesNotFoundError'].includes(name))
     return '未找到麦克风，请连接设备，或输入文字、选择语音文件。'
-  if (['NotReadableError', 'TrackStartError', 'AbortError'].includes(name))
-    return '麦克风暂时不可用，可能正被其他应用占用。请关闭占用后重试，或输入文字、选择语音文件。'
-  return '无法开始录音，请检查麦克风，或输入文字、选择语音文件。'
+  const userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent
+  const permissionHint = /DingTalk/i.test(userAgent)
+    ? '请在系统设置中检查钉钉的麦克风权限，允许后重新打开页面。'
+    : '请检查系统和浏览器的麦克风权限，允许后重新打开页面。'
+  // Startup errors alone do not establish microphone occupation or permission denial.
+  const reason = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'].includes(name)
+    ? '麦克风权限未获允许。'
+    : '无法启动麦克风。'
+  return `${reason}${permissionHint}也可以输入文字或选择语音文件。`
 }

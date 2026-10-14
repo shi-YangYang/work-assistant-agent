@@ -46,8 +46,21 @@ class WorkEdit(Progress, Revision):
 
 from app.modules.work.content.document import WorkDocument
 from app.modules.work.records.record_schemas import MaterialSource
+from app.modules.work.content.checklist import checked_edits
 
 
 class WorkCreate(Progress):
     body: WorkDocument | None = None
+    bodyEdits: list[dict] | None = Field(default=None, max_length=100)
     materials: list[MaterialSource] = Field(default_factory=list, max_length=9)
+
+    @field_validator('bodyEdits')
+    @classmethod
+    def validate_edits(cls, value):
+        return checked_edits(value) if value is not None else value
+
+    @model_validator(mode='after')
+    def exclusive_body(self):
+        if self.body is not None and self.bodyEdits is not None:
+            raise ValueError('不能同时替换正文和修改内容块')
+        return self

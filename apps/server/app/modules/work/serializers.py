@@ -1,5 +1,17 @@
+from app.modules.work.content.checklist import compatible_body
+from app.modules.work.content.document import plain_text
+
+
+def work_content(content, identifier):
+    result = dict(content)
+    if result.get('body') is not None:
+        result['body'] = compatible_body(result['body'], identifier)
+        result['bodyText'] = plain_text(result['body'])
+    return result
+
+
 def work_dto(work, *, overview=False):
-    content = {key: value for key, value in work.content.items() if not key.startswith("_")}
+    content = {key: value for key, value in work_content(work.content, work.id).items() if not key.startswith("_")}
     if overview:
         content.pop("body", None)
         content["bodyText"] = content.get("bodyText", "")[:240]
@@ -23,4 +35,4 @@ def revision_origin(revision):
 
 
 def revision_work(work, revision):
-    return {**work_dto(work), 'dueDate': None, **revision.content, 'revision': revision.revision, 'updatedAt': revision.created_at.isoformat(), 'historical': True, 'hasBusinessLinks':bool(revision.business_links)}
+    return {**work_dto(work), 'dueDate': None, **work_content(revision.content, work.id), 'revision': revision.revision, 'updatedAt': revision.created_at.isoformat(), 'historical': True, 'hasBusinessLinks':bool(revision.business_links)}

@@ -66,7 +66,8 @@ async def probe(request_db, sessions, settings, actor, body, config, key, finger
             totals['outputTokens'] += int(usage.get('completion_tokens', 0))
         return response['choices'][0]['message']
     try:
-        if not config or ((body.purpose == 'asr') != (config['protocol'] != 'chat')):
+        from app.modules.model_services.service import PROTOCOLS
+        if not config or config['protocol'] not in PROTOCOLS.get(body.purpose, set()):
             raise ProviderError('protocol', '请选择适用于当前用途的模型协议')
         if body.purpose == 'asr':
             usage_id = await reserve_probe(sessions, settings, actor, choice)

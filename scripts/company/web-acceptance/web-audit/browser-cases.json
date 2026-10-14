@@ -1,0 +1,136 @@
+[
+  {
+    "id": "B68-01",
+    "role": "realEmployee",
+    "persona": "dabao",
+    "mode": "auto",
+    "effort": "low",
+    "family": "ordinary",
+    "expected": "短答不触发公司写入；后续缩写连续且可见",
+    "maxWrites": 0,
+    "turns": [
+      { "prompt": "请用三句话解释浏览器缓存，不用联网，不要保存任何记录。" },
+      { "prompt": "将刚才说明改成一个厨房收纳的比喻，用两句话。" }
+    ]
+  },
+  {
+    "id": "B68-02",
+    "role": "realAdmin",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "high",
+    "family": "writing-stream",
+    "expected": "四段原创短文有连续可见正文，后续保留主题改稿，无公司写入",
+    "maxWrites": 0,
+    "verifyAfterReload": true,
+    "turns": [
+      {
+        "prompt": "为同事写一篇四段的内部协作短文，主题是清晰交接，约400字。不要搜索，不要保存工作。"
+      },
+      { "prompt": "把刚才文章改为五条可操作的交接检查建议。" }
+    ]
+  },
+  {
+    "id": "B68-03",
+    "role": "realEmployee",
+    "persona": "professional",
+    "mode": "full",
+    "effort": "low",
+    "family": "work-checklist",
+    "expected": "只创建一项含三条清单的工作；第二轮只勾选第二项；读取应保留正文和另两项",
+    "maxWrites": 2,
+    "turns": [
+      {
+        "prompt": "创建并保存一项工作，标题B68设备验收，正文为仅供合成验收。工作内添加三项可勾选清单：核对数量、测试启动、整理记录。都未完成，工作状态进行中。不要把它们拆成三项工作。"
+      },
+      { "prompt": "把刚才B68设备验收里的测试启动这一项勾选完成，其余内容保持原样。" },
+      { "prompt": "读取B68设备验收，列出清单和完成情况，不要修改。" }
+    ]
+  },
+  {
+    "id": "B68-04",
+    "role": "realAdmin",
+    "persona": "professional",
+    "mode": "ask",
+    "effort": "high",
+    "family": "confirmation",
+    "expected": "创建需确认；确认一次写入一条，后续取消更新不变更状态",
+    "maxWrites": 1,
+    "turns": [
+      {
+        "prompt": "为我创建一项工作B68发布检查，内容为检查登录和附件上传，状态进行中。",
+        "confirmation": "confirm"
+      },
+      { "prompt": "把B68发布检查状态改成已完成。", "confirmation": "cancel" },
+      { "prompt": "读取B68发布检查现在的状态，不要修改。" }
+    ]
+  },
+  {
+    "id": "B68-05",
+    "role": "realEmployee",
+    "persona": "dabao",
+    "mode": "full",
+    "effort": "high",
+    "family": "memory",
+    "expected": "记忆跨会话可召回，忘记后无同义条目，无重复写入",
+    "resetMemory": true,
+    "turns": [
+      { "prompt": "请记住，我希望通知里把时间用24小时制写出来。" },
+      { "prompt": "我希望通知里的时间用哪种格式？仅回答已有记忆。", "newConversation": true },
+      { "prompt": "请忘记我希望通知使用24小时制这条偏好。" }
+    ]
+  },
+  {
+    "id": "B68-06",
+    "role": "realAdmin",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "attachment",
+    "expected": "上传合成材料可读、预算和时间不丢失，不擅自保存工作",
+    "maxWrites": 0,
+    "turns": [
+      {
+        "prompt": "读附件，回答预算和交付时间，并列出三个必做功能，不保存工作。",
+        "attachment": {
+          "name": "B68验收需求.txt",
+          "text": "项目预算是18000元，交付时间为2026年11月5日。必须包含账号登录、全文搜索、附件上传；不能加入支付功能。"
+        }
+      },
+      { "prompt": "用一行列出明确不包含的功能。" }
+    ]
+  },
+  {
+    "id": "B68-07",
+    "role": "realEmployee",
+    "persona": "professional",
+    "mode": "auto",
+    "effort": "low",
+    "family": "reload-stream",
+    "expected": "流式刷新恢复同任务，取消下一轮后终态正确，无工具和公司写入",
+    "maxWrites": 0,
+    "verifyAfterReload": true,
+    "turns": [
+      {
+        "prompt": "写一篇约600字的四段文章，主题是科学安排休息，不要调用工具或保存记录。",
+        "reloadDuringStream": true
+      },
+      { "prompt": "写一篇详细的6000字培训讲义，解释数据库索引，不要调用工具。", "cancel": true },
+      { "prompt": "停止长文，只回复收到。" }
+    ]
+  },
+  {
+    "id": "B68-08",
+    "role": "realAdmin",
+    "persona": "professional",
+    "mode": "full",
+    "effort": "low",
+    "family": "image-batch",
+    "expected": "一次任务生成四张，串行槽位正确、最多四张、最终一条查看入口，图片真文件可下载",
+    "turns": [
+      {
+        "prompt": "请生成4张不同构图的极简黑白山水插画，都用方形。只生成这4张，作为一次任务交付，不保存到工作。"
+      }
+    ]
+  }
+]

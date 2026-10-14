@@ -76,31 +76,31 @@
   background: transparent;
   color: var(--muted);
 }
-.panel .value {
+.details .value {
   margin-block: 14px;
   font-size: 23px;
   font-weight: 600;
   letter-spacing: -0.5px;
 }
-.panel dl {
+.details dl {
   margin: 0;
   font-size: 12px;
 }
-.panel dl > div {
+.details dl > div {
   display: flex;
   justify-content: space-between;
   gap: 8px;
   margin-block: 8px;
 }
-.panel dt {
+.details dt {
   color: var(--muted);
 }
-.panel dd {
+.details dd {
   margin: 0;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
-.panel p {
+.details p {
   margin: 10px 0 0;
   line-height: 1.6;
 }
@@ -135,5 +135,57 @@
 @media (prefers-reduced-motion: reduce) {
   .used {
     transition: none;
+  }
+}
+
+.trigger[data-panel='true'] {
+  flex-direction: column;
+  width: 100%;
+  height: auto;
+  gap: 8px;
+  padding: 8px 2px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.panel-label {
+  font-size: 10px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 3px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+.panel-caption > span {
+  flex-shrink: 0;
+}
+.panel-caption .panel-label {
+  min-width: 0;
+}
+.mobile-dialog {
+  width: 360px;
+}
+.mobile-dialog .value {
+  margin: 0 0 16px;
+  font-size: 28px;
+}
+.mobile-dialog dl {
+  font-size: 13px;
+}
+@media (max-width: 360px) {
+  .panel-caption {
+    gap: 2px;
+    font-size: 11px;
+  }
+  .panel-label {
+    font-size: 9px;
   }
 }

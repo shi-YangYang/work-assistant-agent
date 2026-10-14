@@ -171,6 +171,13 @@ export interface WorkDocument {
   schemaVersion: 1
   content: WorkNode[]
 }
+export type WorkBodyEdit =
+  | { action: 'append'; blocks: WorkNode[] }
+  | { action: 'replace'; blockId: string; blocks: WorkNode[] }
+  | { action: 'remove'; blockId: string }
+  | { action: 'append_checklist'; blockId?: string; items: { text: string; checked?: boolean }[] }
+  | { action: 'replace_checklist'; blockId: string; items: { text: string; checked?: boolean }[] }
+  | { action: 'set_checked'; itemId: string; checked: boolean; blockId?: string }
 export interface WorkMaterialSource {
   attachmentId?: string
   deliverableId?: string
@@ -207,6 +214,7 @@ export interface WorkRecordFields {
   materialIds?: string[]
 }
 export interface WorkPatch extends Partial<Omit<Progress, 'summary'>>, WorkRecordFields {
+  bodyEdits?: WorkBodyEdit[]
   expectedRevision: number
   materials?: WorkMaterialSource[]
 }
@@ -330,7 +338,24 @@ export interface TaskOutcome {
   reason?: string
   nextAction: 'none' | 'reply' | 'confirm' | 'retry'
 }
+export interface ImageGenerationSlot {
+  operation: number
+  state:
+    | 'queued'
+    | 'generating'
+    | 'ready'
+    | 'failed'
+    | 'unknown'
+    | 'interrupted'
+    | 'not_started'
+    | 'cancelled'
+  width?: number
+  height?: number
+  deliverableId?: string
+  revision?: number
+}
 export interface Job {
+  imageGeneration?: ImageGenerationSlot[]
   replyStream?: ReplyStream | null
   taskOutcome?: TaskOutcome | null
   contextUsage?: ContextUsage | null
@@ -355,12 +380,28 @@ export interface Job {
   error: string
   updatedAt: string
 }
+export interface AssistantActivityJob {
+  id: string
+  conversationId: string | null
+  targetId: string
+  state: Job['state']
+  stage: string
+  attempt: number
+  fence: number
+  seq: number
+  updatedAt: string
+}
+export interface AssistantActivity {
+  jobs: AssistantActivityJob[]
+}
 export interface DeliverableReference {
   id: string
   revision: number
   itemIds: string[]
 }
 export interface DeliverableFile {
+  width?: number
+  height?: number
   id: string
   name: string
   mimeType: string
@@ -526,12 +567,19 @@ export interface ContextCapability {
   maxOutput: number | null
   source: string
 }
+export interface ImageModelSettings {
+  api: 'auto' | 'multimodal-sync' | 'image-async'
+  sizeMode: 'auto' | 'provider' | 'fixed'
+  sizes: string[]
+  defaultSize: string | null
+}
 export interface CompanyModel {
+  imageSettings?: ImageModelSettings | null
   contextWindow?: number | null
   contextCapability?: ContextCapability
   id: string
   model: string
-  protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr'
+  protocol: 'chat' | 'transcriptions' | 'qwen-asr' | 'dashscope-asr' | 'dashscope-image'
   protocolMode?: 'auto' | 'manual'
   reasoning: ModelReasoning
   parameters: Record<string, import('@paa/model-config').JsonValue>
@@ -557,9 +605,12 @@ export interface ModelSelection {
 export interface ModelRouting {
   revision: number
   source: 'environment' | 'database'
+  /** Shared text model for chat and daily/weekly reports. */
   assistant: ModelSelection | null
+  /** Legacy field; the server returns 'follow' for the shared text model. */
   report: ModelSelection | 'follow' | null
   asr: ModelSelection | null
+  image?: ModelSelection | null
   environment: {
     assistant: { baseUrl: string; model: string; hasKey: boolean }
     asr: { baseUrl: string; model: string; hasKey: boolean }
@@ -571,7 +622,7 @@ export interface ModelCheck {
   service: string
   model: string
   revision: number
-  purpose: 'assistant' | 'report' | 'asr'
+  purpose: 'assistant' | 'report' | 'asr' | 'image'
   time: string
   elapsedMs: number
   checks: {
@@ -605,6 +656,8 @@ export interface ReplyStream {
 }
 
 export interface JobFeedback {
+  imageGeneration?: ImageGenerationSlot[]
+  imageDeliveryCount?: number
   replyStream?: ReplyStream | null
   interactions?: AssistantInteraction[]
   taskOutcome?: TaskOutcome | null
@@ -796,4 +849,30 @@ export interface AssistantMemory {
   markdown: string
   updatedAt: string | null
   maxCharacters: number
+}
+
+export interface AnnouncementSummary {
+  id: string
+  title: string
+  summary: string
+  state: 'published' | 'withdrawn'
+  revision: number
+  authorName: string
+  editorName: string
+  publishedAt: string
+  updatedAt: string
+  withdrawnAt: string | null
+  unread: boolean
+}
+export interface Announcement extends Omit<AnnouncementSummary, 'summary'> {
+  markdown: string
+}
+export interface AnnouncementContent {
+  title: string
+  markdown: string
+}
+export interface NotificationSummary {
+  remindersUnread: number
+  announcementsUnread: number
+  totalUnread: number
 }
