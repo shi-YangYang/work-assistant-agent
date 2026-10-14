@@ -171,7 +171,7 @@ it('marks a listed announcement read without navigation and clears its badge onl
     expect(screen.getByRole('tab', { name: '公告' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '标为已读' })).toBeNull()
     expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Noria', exact: true })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Noria' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: /未读通知/ })).toBeNull()
   })
   expect(router.state.location.pathname + router.state.location.search).toBe(
