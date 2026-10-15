@@ -87,7 +87,7 @@ async def read_executions(db, actor, job, current, *, identifier='', offset=0, c
     row, message, origin = record
     await authorize(db, actor, job, row, message, origin)
     if context is not None:
-        remember_sources(job, context, row.sources)
+        await remember_sources(db, job, context, row.sources)
     delivery_state, delivery = await delivery_reference(db, actor, job, row)
     fields = {'code': row.code, 'stdout': str(row.result.get('stdout', '')),
               'stderr': str(row.result.get('stderr', '')), 'message': str(row.result.get('message', '')),

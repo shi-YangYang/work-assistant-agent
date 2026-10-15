@@ -1,3 +1,5 @@
+from sqlalchemy import select
+
 from app.core.errors import problem
 from app.modules.attachments.models import Attachment
 from app.modules.messages.service import active_message
@@ -23,11 +25,16 @@ async def check_sources(db, actor, sources):
             problem(403, '文件来源无效')
 
 
-def remember_sources(job, context, sources):
+async def remember_sources(db, job, context, sources):
     previous = job.result.get('sandboxSources', [])
     retained = list({entry['id']: entry for entry in [*previous, *sources]}.values())
     job.result = {**job.result, 'sandboxSources': retained}
-    context.document_versions.update({item['id']: item['revision'] for item in sources})
+    if sources:
+        documents = set(await db.scalars(select(Attachment.id).where(
+            Attachment.id.in_([item['id'] for item in sources]), Attachment.kind == 'document')))
+        # Images/audio stay in sandboxSources for access/hash/version checks;
+        # only documents may enter the stream's document-specific validator.
+        context.document_versions.update({item['id']: item['revision'] for item in sources if item['id'] in documents})
 
 
 async def task_sources(db, actor, job, context, direct_sources):
@@ -46,7 +53,7 @@ async def task_sources(db, actor, job, context, direct_sources):
             problem(403, '生成文件的来源已变化或被删除')
         sources.append({'kind': 'attachment', 'id': item.id, 'sha256': item.sha256,
                         'revision': revision, 'access': job.access})
-    remember_sources(job, context, sources)
+    await remember_sources(db, job, context, sources)
     retained = job.result['sandboxSources']
     await check_sources(db, actor, retained)
     return retained

@@ -10,17 +10,17 @@ from app.tasks.context import BudgetExceeded, RunContext
 from app.tasks.lease import lease
 
 GROUPS = {
-    'images': frozenset({'generate_image'}),
+    'images': frozenset({'generate_image', 'read_images'}),
     'work': frozenset({'find_work_items', 'get_work_item', 'list_work_updates', 'list_work_materials', 'read_work_material', 'propose_progress', 'execute_business_action', 'get_business_actions', *TEAM_TOOL_NAMES}),
     'reports': frozenset({'query_reports', 'query_report_obligations', 'execute_business_action', 'get_business_actions', 'query_team_business', 'read_team_source'}),
     'research': frozenset({'web_search', 'web_fetch'}),
-    'documents': frozenset({'find_documents', 'read_document', 'get_message_context', 'read_file', 'save_deliverable', 'read_deliverable'}),
+    'documents': frozenset({'read_images', 'find_documents', 'read_document', 'get_message_context', 'read_file', 'save_deliverable', 'read_deliverable'}),
     'files': EXECUTION_TOOLS | frozenset({'read_execution', 'read_deliverable'}),
     'memory': frozenset({'save_memory', 'forget_memory'}),
     'task_context': frozenset({'set_task_context', 'request_user_input'}),
 }
 DESCRIPTIONS = {
-    'images': '按文字生成私人图片（不支持图片编辑），公司需配置图片模型',
+    'images': '读取当前会话各批图片；文字生图（不支持编辑，需配置图片模型）',
     'work': '查询和修改本人工作、进展、材料',
     'reports': '查询本人报告/待办，生成、编辑和提交报告',
     'research': '搜索和读取公开网页',

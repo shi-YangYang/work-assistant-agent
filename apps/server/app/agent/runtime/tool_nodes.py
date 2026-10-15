@@ -7,7 +7,7 @@ from app.agent.runtime.progress.tools import tool_presentation
 
 # Replay safety is an execution policy, independent of display-label registration.
 REPLAYABLE_TOOLS = frozenset({
-    'generate_image', 'save_memory', 'forget_memory', 'set_task_context',
+    'generate_image', 'read_images', 'save_memory', 'forget_memory', 'set_task_context',
     'inspect_table', 'export_table', 'create_chart', 'create_document', 'create_slides',
     'run_python', 'request_user_input', 'find_work_items', 'get_work_item',
     'list_work_updates', 'list_work_materials', 'read_work_material', 'get_message_context', 'get_business_actions', 'query_reports', 'query_report_obligations',

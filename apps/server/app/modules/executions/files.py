@@ -74,8 +74,15 @@ async def prepare_inputs(db, actor, job, message, settings, references):
         expected = source['sha256'] if ref.get('attachment_id') else item['sha256']
         if hashlib.sha256(data).hexdigest() != expected:
             problem(409, '源文件校验失败，请重新上传或生成')
-        if any(entry['name'] == name for entry in files):
-            name = f'{len(files) + 1}-{name}'
+        used_names = {entry['name'] for entry in files}
+        if name in used_names:
+            suffix = Path(name).suffix
+            stem = name[:-len(suffix)] if suffix else name
+            number = len(files) + 1
+            while name in used_names:
+                prefix = f'{number}-'
+                name = prefix + stem[:180 - len(prefix) - len(suffix)] + suffix
+                number += 1
         files.append({'name': name, 'data': base64.b64encode(data).decode()})
     return files, list({item['id']: item for item in sources}.values())
 
