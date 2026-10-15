@@ -77,7 +77,7 @@ async def submit_message(db, actor, body, idempotency_key, settings):
     if any(a.message_id for a in attached):
         problem(422, '附件已用于其他消息，请重新上传')
     if any(a.size > (MAX_IMAGE_BYTES if a.kind == 'image' else MAX_FILE_BYTES) for a in attached):
-        problem(422, '每张图片不能超过 30 MiB，其他单个文件不能超过 20 MiB')
+        problem(422, '每张图片不能超过 30 MB，其他单个文件不能超过 20 MB')
     if sum(a.kind == 'audio' for a in attached) > MAX_AUDIO_ATTACHMENTS:
         problem(422, '每次最多 3 段语音，每段最长 3 分钟')
     voice_ids = body.voiceCommandAttachmentIds or ([body.voiceCommandAttachmentId] if body.voiceCommandAttachmentId else [])

@@ -41,7 +41,7 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
             while block := await file.read(65536):
                 size += len(block)
                 if size > (MAX_IMAGE_BYTES if kind == 'image' else MAX_FILE_BYTES):
-                    problem(413, '每张图片不能超过 30 MiB' if kind == 'image' else '文件不能超过 20 MiB')
+                    problem(413, '每张图片不能超过 30 MB' if kind == 'image' else '文件不能超过 20 MB')
                 digest.update(block)
                 await run_in_threadpool(target.write, block)
         if not size:

@@ -73,7 +73,7 @@ class ExecutionRequest(BaseModel):
         if len({item.name for item in self.inputs}) != len(self.inputs):
             raise ValueError('Duplicate filenames')
         if sum(len(item.bytes()) for item in self.inputs) > MAX_INPUT_BYTES:
-            raise ValueError('Input exceeds 40 MiB')
+            raise ValueError('Input exceeds 40 MB')
 
 
 def execution_id(value):

@@ -27,14 +27,14 @@ describe('document composer', () => {
     expect(
       fileSelectionError(Array.from({ length: 9 }, (_, i) => file(`${i}.jpg`, 30 * 1024 * 1024))),
     ).toBe('')
-    expect(fileSelectionError([file('image.jpg', 30 * 1024 * 1024 + 1)])).toContain('30 MiB')
-    expect(fileSelectionError([file('large.pdf', 20 * 1024 * 1024 + 1)])).toContain('20 MiB')
+    expect(fileSelectionError([file('image.jpg', 30 * 1024 * 1024 + 1)])).toContain('30 MB')
+    expect(fileSelectionError([file('large.pdf', 20 * 1024 * 1024 + 1)])).toContain('20 MB')
     expect(fileSelectionError([file('audio.m4a'), file('text.txt'), file('photo.heic')])).toBe('')
     expect(fileSelectionError([file('one.m4a'), file('two.mp3'), file('three.wav')])).toBe('')
     expect(fileSelectionError(Array.from({ length: 4 }, (_, i) => file(`${i}.mp3`)))).toContain(
       '3 段语音',
     )
-    expect(fileSelectionError([file('audio.wav', 20 * 1024 * 1024 + 1)])).toContain('20 MiB')
+    expect(fileSelectionError([file('audio.wav', 20 * 1024 * 1024 + 1)])).toContain('20 MB')
     expect(fileSelectionError([file('zero.txt', 0)])).toContain('空文件')
     for (const extension of ['doc', 'ppt', 'xls', 'docm'])
       expect(fileSelectionError([file(`old.${extension}`)])).toContain('转换')

@@ -69,7 +69,7 @@ async def prepare_inputs(db, actor, job, message, settings, references):
             problem(404, '源文件已不可用')
         total += path.stat().st_size
         if total > MAX_INPUT:
-            problem(422, '本次执行输入超过 40 MiB，请减少文件')
+            problem(422, '本次执行输入超过 40 MB，请减少文件')
         data = path.read_bytes()
         expected = source['sha256'] if ref.get('attachment_id') else item['sha256']
         if hashlib.sha256(data).hexdigest() != expected:

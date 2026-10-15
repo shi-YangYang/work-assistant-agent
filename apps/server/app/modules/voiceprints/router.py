@@ -56,7 +56,7 @@ async def upload(identifier: str, file: UploadFile, consent: bool = Form(...), e
         problem(422, '每家公司最多登记 500 位成员声纹')
     data = await file.read(MAX_BYTES + 1)
     if not data or len(data) > MAX_BYTES:
-        problem(413, '请选择不超过 20 MiB 的录音')
+        problem(413, '请选择不超过 20 MB 的录音')
     audio_mime(data)
     filename = safe_name(file.filename)[:160]
     root = settings.media_dir / 'voiceprints'

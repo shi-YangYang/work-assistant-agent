@@ -47,16 +47,16 @@ export function fileSelectionError(files: File[]) {
   if (files.filter((file) => fileKind(file) === 'audio').length > MAX_AUDIO_ATTACHMENTS)
     return '每次最多 3 段语音，每段最长 3 分钟'
   if (files.some((file) => fileKind(file) === 'image' && file.size > MAX_IMAGE_BYTES))
-    return '每张图片不能超过 30 MiB'
+    return '每张图片不能超过 30 MB'
   if (files.some((file) => fileKind(file) !== 'image' && file.size > MAX_FILE_BYTES))
-    return '单个文档或语音文件不能超过 20 MiB'
+    return '单个文档或语音文件不能超过 20 MB'
   return ''
 }
 
 export function fileSize(bytes: number) {
   return bytes >= 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MiB`
-    : `${Math.ceil(bytes / 1024)} KiB`
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.ceil(bytes / 1024)} KB`
 }
 
 export function currentCitation(citations: DocumentCitation[], selected: DocumentCitation | null) {

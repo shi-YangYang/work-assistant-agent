@@ -35,7 +35,7 @@ export function EnrollmentForm({
           e.preventDefault()
           if (!file || !consent) return
           if (file.size > 20 * 1024 * 1024) {
-            setError('录音不能超过 20 MiB')
+            setError('录音不能超过 20 MB')
             return
           }
           const form = new FormData()
@@ -66,7 +66,7 @@ export function EnrollmentForm({
           />
         </label>
         <small className={utilitiesStyles['muted']}>
-          最长 3 分钟，最大 20 MiB。替换处理成功前保留原声纹。
+          最长 3 分钟，最大 20 MB。替换处理成功前保留原声纹。
         </small>
         <label className={`${layoutStyles['check']} ${voiceprintsStyles['slot-check']}`}>
           <input
