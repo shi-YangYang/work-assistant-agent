@@ -1,0 +1,139 @@
+.player {
+  flex: 1;
+  min-width: 0;
+}
+.player audio {
+  display: none;
+}
+.controls {
+  display: grid;
+  grid-template-columns: 36px minmax(24px, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.play {
+  position: relative;
+  isolation: isolate;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  color: var(--text);
+  background: transparent;
+}
+.play::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: var(--selection);
+}
+.play:hover:where(:not(:disabled)) {
+  background: transparent;
+}
+.play:hover:where(:not(:disabled))::before {
+  background: var(--control);
+}
+.play:focus-visible {
+  outline-offset: 0;
+}
+.controls input.seek {
+  appearance: none;
+  width: 100%;
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+.controls input.seek:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 0;
+  box-shadow: none;
+}
+.seek::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 99px;
+  background: linear-gradient(
+    to right,
+    var(--secondary) var(--progress),
+    var(--control) var(--progress)
+  );
+}
+.seek::-moz-range-track {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--control);
+}
+.seek::-moz-range-progress {
+  height: 3px;
+  border-radius: 99px;
+  background: var(--secondary);
+}
+.seek::-webkit-slider-thumb {
+  appearance: none;
+  width: 8px;
+  height: 8px;
+  margin-top: -2.5px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--secondary);
+}
+.seek::-moz-range-thumb {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--secondary);
+}
+.seek:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.time {
+  color: var(--secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.error {
+  margin: 6px 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.spinner {
+  animation: spin 1s linear infinite;
+}
+@media (max-width: 760px) {
+  .controls {
+    grid-template-columns: 44px minmax(24px, 1fr) auto;
+    gap: 4px;
+  }
+  .play {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+  .controls input.seek {
+    height: 44px;
+    min-height: 44px;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
