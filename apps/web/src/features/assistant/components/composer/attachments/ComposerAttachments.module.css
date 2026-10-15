@@ -1,11 +1,11 @@
 .pending-attachments {
   display: flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: 12px;
   min-width: 0;
-  max-width: 100%;
-  margin: -4px 0 12px;
-  padding: 4px 0;
+  max-width: calc(100% + 14px);
+  margin: -8px -7px 8px;
+  padding: 8px 7px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -15,16 +15,21 @@
 .pending-file {
   position: relative;
   display: flex;
-  flex: 0 0 168px;
+  flex: 0 0 176px;
   align-items: center;
   gap: 8px;
-  width: 168px;
+  width: 176px;
   height: 56px;
-  min-width: 168px;
-  padding: 6px 32px 6px 8px;
+  min-width: 0;
+  padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface);
+}
+.pending-file[data-kind='image'] {
+  flex-basis: 56px;
+  width: 56px;
+  padding: 0;
 }
 .pending-file[data-failed='true'] {
   border-color: var(--danger);
@@ -39,6 +44,10 @@
   border-radius: 6px;
   color: var(--muted);
 }
+.thumbnail[data-format='PDF'] {
+  color: var(--surface);
+  background: var(--danger);
+}
 .thumbnail img {
   display: block;
   width: 100%;
@@ -48,17 +57,8 @@
 .thumbnail > span {
   font-size: 10px;
 }
-.thumbnail .spinner {
-  position: absolute;
-  border-radius: 50%;
-  background: var(--surface);
-}
-.document {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr);
-  align-items: center;
-  justify-content: start;
-  gap: 8px;
+.document,
+.image {
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -68,7 +68,41 @@
   background: transparent;
   text-align: left;
 }
-.document:disabled {
+.document {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
+}
+.image {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 13px;
+}
+.image .thumbnail {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+.image-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  color: var(--muted);
+}
+.image-status small {
+  font-size: 10px;
+  font-weight: 400;
+}
+.document:disabled,
+.image:disabled {
   opacity: 1;
 }
 .document > span {
@@ -79,7 +113,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--secondary);
   transition: color 160ms;
@@ -93,63 +127,45 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
-  font-size: 10px;
-}
-.pending-file[data-failed='true'] .document small {
-  color: var(--danger);
+  font-size: 11px;
 }
 .remove {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
   display: grid;
   place-items: center;
-  width: 28px;
-  min-width: 28px;
-  height: 100%;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
   min-height: 0;
   padding: 0;
-  border: 0;
-  border-radius: 0 11px 11px 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
   color: var(--secondary);
   background: var(--surface);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 160ms,
+    color 160ms;
+}
+.pending-file:hover .remove,
+.pending-file:focus-within .remove {
+  opacity: 1;
+  pointer-events: auto;
 }
 .remove:hover:not(:disabled) {
   color: var(--text);
   background: var(--surface);
 }
-.pending-file[data-failed='true'] {
-  padding-right: 60px;
-}
-.retry {
-  position: absolute;
-  right: 28px;
-  top: 0;
-  display: grid;
-  place-items: center;
-  width: 28px;
-  min-width: 28px;
-  height: 100%;
-  min-height: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--secondary);
-}
 .document:hover,
-.retry:hover {
+.image:hover {
   background: transparent;
 }
 .spinner {
   animation: attachment-spin 0.9s linear infinite;
-}
-.audio-spinner {
-  position: absolute;
-  left: 16px;
-  bottom: 4px;
-  border-radius: 50%;
-  background: var(--surface);
 }
 .full-name {
   overflow-wrap: anywhere;
@@ -159,8 +175,28 @@
     transform: rotate(360deg);
   }
 }
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .remove {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .remove::after {
+    position: absolute;
+    inset: -7px;
+    content: '';
+  }
+}
+@media (max-width: 760px) {
+  .pending-file:not([data-kind='image']) {
+    flex-basis: 148px;
+    width: 148px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation: none;
+  }
+  .remove {
+    transition: none;
   }
 }

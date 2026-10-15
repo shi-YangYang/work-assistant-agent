@@ -46,31 +46,34 @@ export function ComposerAttachments({
         {files.map((item) => {
           const kind = fileKind(item.file)
           const uploading = item.uploadState === 'uploading' || composer.uploading === item.id
+          const failed = !!item.failed && !uploading
           const status = uploading
             ? '上传中…'
-            : item.failed
+            : failed
               ? item.uploadError || '上传失败'
               : !item.attachment
                 ? '等待上传'
                 : ''
           const title = `${item.file.name} · ${fileSize(item.file.size)}`
           const label = item.recorded ? `语音 ${audioFiles.indexOf(item) + 1}` : item.file.name
+          const format = item.file.name.split('.').slice(1).pop()?.toUpperCase() || '文件'
           return (
             <article
               key={item.id}
               className={styles['pending-file']}
               data-kind={kind}
-              data-failed={!!item.failed}
+              data-failed={failed}
               aria-label={label}
               aria-busy={uploading}
             >
-              {kind === 'audio' ? (
+              {kind === 'audio' && !failed ? (
                 <ComposerAudioPreview
                   file={item.file}
                   src={item.attachment?.previewUrl ?? item.url}
                   recorded={item.recorded}
                   label={label}
                   status={status}
+                  uploading={uploading}
                   onPlay={(audio) => {
                     if (playing.current !== audio) playing.current?.pause()
                     playing.current = audio
@@ -79,57 +82,59 @@ export function ComposerAttachments({
               ) : (
                 <button
                   type="button"
-                  className={styles.document}
-                  title={title}
-                  aria-label={`预览${item.file.name}`}
+                  className={kind === 'image' ? styles.image : styles.document}
+                  title={failed ? status : title}
+                  aria-label={failed ? `重试上传${label}` : `预览${item.file.name}`}
                   disabled={locked}
                   onClick={() =>
-                    kind === 'image'
-                      ? setGallery(previewImages.findIndex((image) => image.id === item.id))
-                      : item.file.name.toLowerCase().endsWith('.pdf')
-                        ? setPdf(item.file)
-                        : setName(item.file.name)
+                    failed
+                      ? attachmentUploads.retry(item.id)
+                      : kind === 'image'
+                        ? setGallery(previewImages.findIndex((image) => image.id === item.id))
+                        : item.file.name.toLowerCase().endsWith('.pdf')
+                          ? setPdf(item.file)
+                          : setName(item.file.name)
                   }
                 >
-                  <span className={styles.thumbnail}>
+                  <span
+                    className={styles.thumbnail}
+                    data-format={!failed && !uploading ? format : undefined}
+                  >
                     {kind === 'image' ? (
                       isHeif(item.file) && !item.attachment ? (
                         <span>HEIC</span>
                       ) : (
                         <img src={item.attachment?.previewUrl ?? item.url} alt="" />
                       )
+                    ) : failed ? (
+                      <RotateCw size={20} />
+                    ) : uploading ? (
+                      <LoaderCircle size={20} className={styles.spinner} aria-label="上传中" />
                     ) : (
-                      !uploading && <FileText size={18} />
-                    )}
-                    {uploading && (
-                      <LoaderCircle size={18} className={styles.spinner} aria-label="上传中" />
+                      <FileText size={20} />
                     )}
                   </span>
-                  <span>
-                    <strong>{item.file.name}</strong>
-                    <small title={status || title} role={status ? 'status' : undefined}>
-                      {status || fileSize(item.file.size)}
-                    </small>
-                  </span>
-                </button>
-              )}
-              {kind === 'audio' && uploading && (
-                <LoaderCircle
-                  size={16}
-                  className={`${styles.spinner} ${styles['audio-spinner']}`}
-                  aria-label="上传中"
-                />
-              )}
-              {item.failed && (
-                <button
-                  type="button"
-                  className={styles.retry}
-                  disabled={locked}
-                  aria-label={`重试上传${label}`}
-                  title="重试上传"
-                  onClick={() => attachmentUploads.retry(item.id)}
-                >
-                  <RotateCw size={14} />
+                  {kind === 'image' ? (
+                    (uploading || failed) && (
+                      <span className={styles['image-status']} title={status} role="status">
+                        {uploading ? (
+                          <LoaderCircle size={20} className={styles.spinner} aria-label="上传中" />
+                        ) : (
+                          <>
+                            <RotateCw size={18} />
+                            <small>上传失败</small>
+                          </>
+                        )}
+                      </span>
+                    )
+                  ) : (
+                    <span>
+                      <strong>{label}</strong>
+                      <small title={status || title} role={status ? 'status' : undefined}>
+                        {status || `${format} · ${fileSize(item.file.size)}`}
+                      </small>
+                    </span>
+                  )}
                 </button>
               )}
               <button
