@@ -54,9 +54,11 @@ function Notifications({ children }: { children: ReactNode }) {
 function Harness({
   variant = 'icon',
   retryWait = 0,
+  newConversation = false,
 }: {
   variant?: 'icon' | 'bar'
   retryWait?: number
+  newConversation?: boolean
 }) {
   const { drafts, setDraft } = useWorkspace()
   const composer = (drafts.draft as Composer | undefined) ?? { text: '', key: '', files: [] }
@@ -66,7 +68,7 @@ function Harness({
   const submission = useMessageSubmission({
     composer,
     composerKey: 'draft',
-    conversationId: 'chat',
+    conversationId: newConversation ? undefined : 'chat',
     personaId: 'professional',
     onSent: vi.fn(),
     previewUploading: false,
@@ -113,14 +115,14 @@ const flush = async (ms = 0) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms)
   })
-function view(variant: 'icon' | 'bar' = 'icon', retryWait = 0) {
+function view(variant: 'icon' | 'bar' = 'icon', retryWait = 0, newConversation = false) {
   const vault = createVault()
   vault.writer()('draft', { text: '原来的文字', files: [], key: 'draft' })
   return {
     ...render(
       <TestWorkspace vault={vault}>
         <Notifications>
-          <Harness variant={variant} retryWait={retryWait} />
+          <Harness variant={variant} retryWait={retryWait} newConversation={newConversation} />
         </Notifications>
       </TestWorkspace>,
     ),
@@ -193,11 +195,15 @@ it('keeps short presses as record, stop and manual send', async () => {
   fireEvent.click(screen.getByRole('button', { name: '发送' }))
   await flush()
   expect(sendMessage).toHaveBeenCalledOnce()
+  expect(sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ text: '原来的文字' }),
+    expect.any(String),
+  )
 })
 it.each(['icon', 'bar'] as const)(
   'sends once from the %s control after release and the final audio event, preserving the current draft',
   async (variant) => {
-    view(variant)
+    const { vault } = view(variant)
     const button = await hold(
       screen.getByRole('button', { name: variant === 'bar' ? '点击录音，长按发送' : '录制语音' }),
     )
@@ -213,7 +219,7 @@ it.each(['icon', 'bar'] as const)(
     expect(uploadAttachment).toHaveBeenCalledOnce()
     expect(sendMessage).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
-        text: '原来的文字',
+        text: '',
         attachmentIds: ['voice'],
         voiceCommandAttachmentIds: ['voice'],
       }),
@@ -221,6 +227,11 @@ it.each(['icon', 'bar'] as const)(
     )
     expect(screen.queryByRole('status')).toBeNull()
     expect(recordingPreview).not.toHaveBeenCalled()
+    expect(vault.getSnapshot().draft).toMatchObject({
+      text: '原来的文字',
+      files: [],
+      sending: false,
+    })
   },
 )
 it.each(['slide', 'pointercancel', 'lostpointercapture'])(
@@ -336,9 +347,9 @@ it.each(['upload', 'message'] as const)(
     expect(vault.getSnapshot().draft).toMatchObject({
       text: '原来的文字',
       files: [existing],
-      pending: undefined,
       sending: false,
     })
+    expect((vault.getSnapshot().draft as Composer).pending).toBeUndefined()
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:recording')
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:existing')
     await flush(5000)
@@ -351,26 +362,86 @@ it('sends a held recording without mounting a draft preview during upload or mes
   const accepted = deferred<Awaited<ReturnType<typeof sendMessage>>>()
   vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
   vi.mocked(sendMessage).mockReturnValue(accepted.promise)
-  view('bar')
+  const { vault } = view('bar')
+  const existing = {
+    id: 'existing',
+    file: new File(['notes'], 'notes.txt', { type: 'text/plain' }),
+    url: 'blob:existing',
+  }
+  const original = {
+    text: '原来的文字',
+    key: 'draft',
+    files: [existing],
+    replyTo: 'previous-message',
+    workReference: { workId: 'work' },
+  }
+  act(() => vault.writer()('draft', original))
   const button = await hold(screen.getByRole('button', { name: '点击录音，长按发送' }))
   fireEvent.pointerUp(button, pointer)
   act(() => Recorder.latest.finish())
   await flush()
   expect(screen.getByLabelText('发送状态').textContent).toBe('正在发送')
-  expect(screen.queryByRole('region', { name: /待发送附件/ })).toBeNull()
+  expect(screen.getByRole('region', { name: '待发送附件，共 1 个，可横向滚动' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '播放语音 1' })).toBeNull()
   expect(recordingPreview).not.toHaveBeenCalled()
   await act(async () => upload.resolve({ id: 'voice', kind: 'audio' } as never))
   await flush()
   expect(sendMessage).toHaveBeenCalledOnce()
-  expect(screen.queryByRole('region', { name: /待发送附件/ })).toBeNull()
+  expect(uploadAttachment).toHaveBeenCalledOnce()
+  expect((vi.mocked(uploadAttachment).mock.calls[0][0].body as FormData).get('file')).not.toBe(
+    existing.file,
+  )
+  expect(vi.mocked(sendMessage).mock.calls[0][0]).toMatchObject({
+    text: '',
+    attachmentIds: ['voice'],
+    voiceCommandAttachmentIds: ['voice'],
+    replyTo: null,
+  })
+  expect(vi.mocked(sendMessage).mock.calls[0][0].workReference).toBeUndefined()
+  expect(screen.getByRole('region', { name: '待发送附件，共 1 个，可横向滚动' })).toBeTruthy()
   expect(recordingPreview).not.toHaveBeenCalled()
   await act(async () =>
     accepted.resolve({ conversationId: 'chat', messageId: 'message', jobId: 'job' }),
   )
   await flush()
   expect(screen.getByLabelText('发送状态').textContent).toBe('空闲')
-  expect(screen.getByLabelText('附件数量').textContent).toBe('0')
+  expect(screen.getByLabelText('附件数量').textContent).toBe('1')
+  expect(vault.getSnapshot().draft).toMatchObject({
+    ...original,
+    key: expect.any(String),
+    sending: false,
+  })
+  expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:existing')
   expect(recordingPreview).not.toHaveBeenCalled()
+  vi.mocked(uploadAttachment).mockResolvedValue({ id: 'notes', kind: 'document' } as never)
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  await flush()
+  expect(sendMessage).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      text: original.text,
+      attachmentIds: ['notes'],
+      replyTo: original.replyTo,
+      workReference: original.workReference,
+    }),
+    expect.any(String),
+  )
+})
+it('carries the unsent draft into a conversation created by a voice-only message', async () => {
+  const { vault } = view('bar', 0, true)
+  const button = await hold(screen.getByRole('button', { name: '点击录音，长按发送' }))
+  fireEvent.pointerUp(button, pointer)
+  act(() => Recorder.latest.finish())
+  await flush()
+  expect(sendMessage).toHaveBeenCalledWith(
+    expect.objectContaining({ newConversation: true, text: '', attachmentIds: ['voice'] }),
+    expect.any(String),
+  )
+  expect(vault.getSnapshot().draft).toBeUndefined()
+  expect(vault.getSnapshot()['composer:chat']).toMatchObject({
+    text: '原来的文字',
+    files: [],
+    sending: false,
+  })
 })
 it('only shows a notice when automatic voice submission is blocked', async () => {
   view('bar', 1)

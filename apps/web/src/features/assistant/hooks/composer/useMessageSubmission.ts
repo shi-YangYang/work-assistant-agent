@@ -62,6 +62,28 @@ export function useMessageSubmission({
   const directSendingFile = recordedSend?.current ?? sendingRecording.file
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
+  function finishDirectRecording(file: File, createdConversationId?: string) {
+    const destination =
+      !conversationId && createdConversationId && active.current
+        ? `composer:${createdConversationId}`
+        : composerKey
+    let retained: Composer | undefined
+    setDraft(composerKey, (previous: Composer | undefined) => {
+      if (previous?.key !== composer.key) return previous
+      previous.files
+        .filter((item) => item.file === file)
+        .forEach((item) => URL.revokeObjectURL(item.url))
+      retained = {
+        ...previous,
+        key: crypto.randomUUID(),
+        files: previous.files.filter((item) => item.file !== file),
+        sending: false,
+        uploading: undefined,
+      }
+      return destination === composerKey ? retained : undefined
+    })
+    if (destination !== composerKey && retained) setDraft(destination, retained)
+  }
   useEffect(() => {
     const file = recordedSend?.current
     if (!recordedSend || !file || capturing || !composer.files.some((item) => item.file === file))
@@ -75,19 +97,7 @@ export function useMessageSubmission({
       void send(file)
         .then((sent) => {
           if (sent) return
-          setDraft(composerKey, (previous: Composer | undefined) => {
-            if (previous?.key !== composer.key) return previous
-            previous.files
-              .filter((item) => item.file === file)
-              .forEach((item) => URL.revokeObjectURL(item.url))
-            return {
-              ...previous,
-              key: crypto.randomUUID(),
-              files: previous.files.filter((item) => item.file !== file),
-              pending: undefined,
-              submissionPersonaId: undefined,
-            }
-          })
+          finishDirectRecording(file)
           if (active.current) notify('语音发送未完成')
         })
         .finally(() => {
@@ -112,7 +122,11 @@ export function useMessageSubmission({
       (!composer.text.trim() && !composer.files.length)
     )
       return
-    const selectionError = fileSelectionError(composer.files.map((item) => item.file))
+    const files = directFile
+      ? composer.files.filter((item) => item.file === directFile)
+      : composer.files
+    if (directFile && !files.length) return
+    const selectionError = fileSelectionError(files.map((item) => item.file))
     if (selectionError) {
       if (!directFile) setLimitError(selectionError)
       return
@@ -122,13 +136,13 @@ export function useMessageSubmission({
     sendingRef.current = true
     setBusy(true)
     setSendError('')
-    let current = {
-      ...composer,
+    let current: Composer & { submissionPersonaId: PersonaId } = {
+      ...(directFile ? { text: '', key: crypto.randomUUID() } : composer),
       submissionPersonaId: composer.submissionPersonaId ?? personaId,
-      files: composer.files.map((file) => ({ ...file })),
+      files: files.map((file) => ({ ...file })),
     }
     let uploading: string | undefined
-    setDraft(composerKey, { ...current, sending: true })
+    setDraft(composerKey, { ...(directFile ? composer : current), sending: true })
     try {
       if (!current.pending) {
         for (let i = 0; i < current.files.length; i++) {
@@ -147,12 +161,13 @@ export function useMessageSubmission({
               ),
             }
           }
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, {
-              files: current.files,
-              uploading: undefined,
-            }),
-          )
+          if (!directFile)
+            setDraft(composerKey, (previous: Composer | undefined) =>
+              updateSendingDraft(previous, composer.key, {
+                files: current.files,
+                uploading: undefined,
+              }),
+            )
         }
         uploading = undefined
         const reasoningReference = reasoning?.reference()
@@ -166,25 +181,29 @@ export function useMessageSubmission({
           execution?.selected,
           reasoningReference,
         )
-        setDraft(composerKey, (previous: Composer | undefined) =>
-          updateSendingDraft(previous, composer.key, { pending: current.pending }),
-        )
+        if (!directFile)
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, { pending: current.pending }),
+          )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
       activity?.accepted(sent)
       task?.accepted(sent)
       rememberConversation(sent.conversationId)
-      current.files.forEach((file) => URL.revokeObjectURL(file.url))
-      setDraft(composerKey, (previous: Composer | undefined) =>
-        updateSendingDraft(previous, composer.key, null),
-      )
+      if (directFile) finishDirectRecording(directFile, sent.conversationId)
+      else {
+        current.files.forEach((file) => URL.revokeObjectURL(file.url))
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, null),
+        )
+      }
       if (active.current) {
         refresh()
         onSent(sent.conversationId, current.pending.body.personaId ?? current.submissionPersonaId)
       }
       return true
     } catch (e) {
-      if (uploading) {
+      if (uploading && !directFile) {
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, {
             files: current.files.map((file) =>
@@ -196,6 +215,7 @@ export function useMessageSubmission({
       // A structured 4xx rejection is definite, except authentication interruption
       // and an idempotency conflict. Network/5xx/invalid replies remain uncertain.
       if (
+        !directFile &&
         e instanceof ApiError &&
         ([400, 403, 404, 413, 415, 422, 429].includes(e.status) ||
           [

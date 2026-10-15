@@ -9,7 +9,7 @@ import styles from './VoiceRecordButton.module.css'
 export type VoiceRecording = {
   state: CaptureState
   seconds: number
-  start: () => Promise<boolean | void>
+  start: (directSend?: boolean) => Promise<boolean | void>
   stop: (send?: boolean) => void
   cancel: () => void
 }
@@ -126,7 +126,7 @@ export function VoiceRecordButton({
         suppressClick.current = true
         setHolding(true)
         beforeStart?.()
-        void recording.start().then((started) => {
+        void recording.start(true).then((started) => {
           if (started === false && press.current === current) clearPress()
         })
       }, 350),
