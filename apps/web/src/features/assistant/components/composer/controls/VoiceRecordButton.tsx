@@ -1,5 +1,5 @@
-import { Mic, Square } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Mic, Square, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { CaptureState } from '../../../lib/audio-capture'
@@ -39,6 +39,7 @@ export function VoiceRecordButton({
 }) {
   const [holding, setHolding] = useState(false)
   const [cancelling, setCancelling] = useState(false)
+  const [hintTop, setHintTop] = useState(96)
   const press = useRef<Press | null>(null)
   const suppressClick = useRef(false)
   const button = useRef<HTMLButtonElement>(null)
@@ -94,6 +95,19 @@ export function VoiceRecordButton({
     },
     [],
   )
+  useLayoutEffect(() => {
+    if (!holding) return
+    const position = () => {
+      if (button.current) setHintTop(Math.max(96, button.current.getBoundingClientRect().top - 12))
+    }
+    position()
+    window.addEventListener('resize', position)
+    window.addEventListener('scroll', position, true)
+    return () => {
+      window.removeEventListener('resize', position)
+      window.removeEventListener('scroll', position, true)
+    }
+  }, [holding])
 
   function down(event: PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || event.isPrimary === false || press.current) return
@@ -126,7 +140,8 @@ export function VoiceRecordButton({
       if (Math.hypot(event.clientY - current.y, event.clientX - current.x) > 12) abort()
       return
     }
-    current.cancel = current.y - event.clientY >= 60
+    // Keep a return threshold so small finger movements at the boundary do not flicker.
+    current.cancel = current.y - event.clientY >= (current.cancel ? 40 : 60)
     setCancelling(current.cancel)
   }
   function up(event: PointerEvent<HTMLButtonElement>) {
@@ -146,6 +161,8 @@ export function VoiceRecordButton({
         type="button"
         className={`${variant === 'bar' ? styles.bar : controls['icon-button']} ${styles.button}`}
         data-recording={capturing}
+        data-holding={holding}
+        data-cancelling={holding && cancelling}
         aria-label={label}
         title={capturing || onActivate ? label : '点击录音，长按说话、松开发送，上滑取消'}
         disabled={capturing ? recording.state === 'stopping' : disabled}
@@ -197,12 +214,26 @@ export function VoiceRecordButton({
       </button>
       {holding &&
         createPortal(
-          <div className={styles.hint} data-cancelling={cancelling} role="status">
-            <Mic size={32} aria-hidden="true" />
-            <strong>
-              {recording.state === 'requesting' ? '正在申请麦克风…' : `${recording.seconds} 秒`}
-            </strong>
-            <span>{cancelling ? '松开取消' : '松开发送，上滑取消'}</span>
+          <div
+            className={styles.hint}
+            style={{ top: hintTop }}
+            data-cancelling={cancelling}
+            role="status"
+          >
+            <span className={styles['hint-icon']} aria-hidden="true">
+              <Mic size={22} className={styles['record-icon']} />
+              <X size={22} className={styles['cancel-icon']} />
+            </span>
+            <span className={styles['hint-copy']}>
+              <strong>
+                {cancelling
+                  ? '松开取消'
+                  : recording.state === 'requesting'
+                    ? '正在申请麦克风…'
+                    : `录音中 · ${recording.seconds} 秒`}
+              </strong>
+              <span>{cancelling ? '下移可继续录音' : '松开发送，上滑取消'}</span>
+            </span>
           </div>,
           document.body,
         )}
