@@ -79,7 +79,7 @@ async def read_deliverable(runtime: ToolRuntime[RunContext], deliverable_id: str
             remember_source(job, actor, item, record)
             result = await detail(db, actor, item, record)
             from app.modules.executions.sources import remember_sources
-            remember_sources(job, context, [source for file in record.files or [] for source in file.get('sources', [])])
+            await remember_sources(db, job, context, [source for file in record.files or [] for source in file.get('sources', [])])
             context.deliverable_reads[item.id] = record.revision
             job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision}}
             result = model_page(result, offset)
