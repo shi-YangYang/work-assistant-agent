@@ -449,8 +449,11 @@ it('does not let a late resume response replace the explicitly started new draft
       <RouterProvider router={router} />
     </TestWorkspace>,
   )
-  await screen.findByText('正在打开上次会话…')
-  fireEvent.click(screen.getByRole('button', { name: '新会话' }))
+  expect(screen.getByRole('status').textContent).toBe('正在加载页面')
+  expect(screen.queryByText('正在打开上次会话…')).toBeNull()
+  expect(screen.queryByRole('button', { name: '新会话' })).toBeNull()
+  await act(async () => router.navigate('/assistant?new=1'))
+  expect(screen.queryByRole('status')).toBeNull()
   fireEvent.change(screen.getByRole('textbox', { name: '工作消息' }), {
     target: { value: '从现在开始的新草稿' },
   })

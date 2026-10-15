@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Assistant } from '../../../../apps/web/src/features/assistant/components/conversation/Conversations'
 import { assistantQuery } from '../../../../apps/web/src/features/assistant/api/queries'
 import { latestChat } from '../../../../apps/web/src/features/assistant/api/restore-conversation'
+import { routePage } from '../../../../apps/web/src/app/route-page'
 import { createVault, deferred, dialogs, TestWorkspace } from '../helpers'
 
 const conversation = {
@@ -65,13 +66,14 @@ function Page() {
     </>
   )
 }
-function view(route = '/assistant/chat') {
+const RoutedPage = routePage(async () => ({ default: Page }), { waitForContent: true })
+function view(route = '/assistant/chat', managedLoading = false) {
   return render(
     <StrictMode>
       <TestWorkspace vault={createVault()}>
         <MemoryRouter initialEntries={[route]}>
           <Routes>
-            <Route path="/assistant/:id?" element={<Page />} />
+            <Route path="/assistant/:id?" element={managedLoading ? <RoutedPage /> : <Page />} />
           </Routes>
         </MemoryRouter>
       </TestWorkspace>
@@ -128,7 +130,10 @@ async function ready() {
 
 it('deduplicates account settings and six conversation resources in a StrictMode-mounted assistant and stays idle', async () => {
   view()
+  expect(screen.getByRole('status').textContent).toBe('正在加载页面')
+  expect(screen.queryByRole('heading', { name: '工作助手' })).toBeNull()
   await ready()
+  expect(screen.queryByText('正在加载页面')).toBeNull()
   expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
   vi.useFakeTimers()
   await act(async () => {
@@ -137,6 +142,38 @@ it('deduplicates account settings and six conversation resources in a StrictMode
   })
   expect(counts()).toEqual(Object.fromEntries(resources.map((path) => [path, 1])))
 })
+
+it.each(['/assistant', '/assistant/chat'])(
+  'keeps one continuous loading view through conversation and message restoration from %s',
+  async (route) => {
+    const detail = deferred<Response>()
+    const history = deferred<Response>()
+    const normal = vi.mocked(fetch).getMockImplementation()!
+    delayMessages = history.promise
+    vi.mocked(fetch).mockImplementation(async (...args) => {
+      if (String(args[0]) === resources[0]) return detail.promise
+      if (String(args[0]) === '/api/v1/conversations')
+        return new Response(JSON.stringify({ items: [conversation], nextCursor: null }))
+      return normal(...args)
+    })
+    view(route, true)
+    const loading = screen.getByRole('status')
+    await waitFor(() => expect(counts()[resources[0]]).toBe(1))
+    expect(screen.getByRole('status')).toBe(loading)
+    await act(async () => detail.resolve(new Response(JSON.stringify(conversation))))
+    await waitFor(() => expect(counts()[resources[1]]).toBe(1))
+    expect(screen.getByRole('status')).toBe(loading)
+    expect(screen.queryByRole('heading', { name: conversation.title })).toBeNull()
+    expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
+    await act(async () =>
+      history.resolve(new Response(JSON.stringify({ items: [], nextCursor: null }))),
+    )
+    await screen.findByRole('button', { name: '发送' })
+    expect(screen.queryByText('正在加载页面')).toBeNull()
+    expect(screen.getByRole('heading', { name: conversation.title })).toBeTruthy()
+    for (const path of resources) expect(counts()[path]).toBe(1)
+  },
+)
 
 it('merges online, visibility and repeated focus events including neighboring event-loop turns', async () => {
   view()
@@ -166,7 +203,7 @@ it.each([
       return new Response(JSON.stringify({ id: 'work', ownerId: 'owner', title: '待引用工作' }))
     return normal(...args)
   })
-  view(route)
+  view(route, true)
   await screen.findByText('服务暂时不可用，请稍后重试。')
   expect(counts()[restorePath]).toBe(1)
   available = true
@@ -186,7 +223,7 @@ it.each(['online', 'manual'] as const)(
       if (String(args[0]) === resources[0] && !available) return new Response('{}', { status: 503 })
       return normal(...args)
     })
-    view()
+    view('/assistant/chat', true)
     await screen.findByText('服务暂时不可用，请稍后重试。')
     expect(counts()).toEqual({ [resources[0]]: 1, [resources[6]]: 1 })
     expect(screen.queryByRole('button', { name: '发送' })).toBeNull()

@@ -1,5 +1,6 @@
 import { Component, useEffect, useState, type ComponentType, type ReactNode } from 'react'
 import { PageLoading } from '@web/components/feedback/PageLoading'
+import { PageReadyContext } from '@web/components/feedback/PageReadiness'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 
 const MIN_VISIBLE_DURATION = 300
@@ -29,7 +30,10 @@ class RouteFailure extends Component<
   }
 }
 
-export function routePage<Props extends object>(load: () => Promise<PageModule<Props>>) {
+export function routePage<Props extends object>(
+  load: () => Promise<PageModule<Props>>,
+  options: { waitForContent?: boolean } = {},
+) {
   // Cache page code only; page state and account data remain owned by the mounted page.
   let loaded: PageModule<Props> | undefined
   let pending: Promise<PageModule<Props>> | undefined
@@ -54,6 +58,7 @@ export function routePage<Props extends object>(load: () => Promise<PageModule<P
 
   function DeferredPage(props: Props) {
     const [state, setState] = useState<PageState<Props>>({ status: 'loading' })
+    const [contentReady, setContentReady] = useState(false)
     useEffect(() => {
       let cancelled = false
       const visibleAt = performance.now()
@@ -75,6 +80,21 @@ export function routePage<Props extends object>(load: () => Promise<PageModule<P
     }, [])
 
     if (state.status === 'error') throw state.error
+    if (options.waitForContent) {
+      const Page = state.status === 'ready' ? state.module.default : null
+      return (
+        <>
+          {(!Page || !contentReady) && <PageLoading />}
+          {Page && (
+            <PageReadyContext.Provider value={setContentReady}>
+              <div style={{ display: contentReady ? 'contents' : 'none' }}>
+                <Page {...props} />
+              </div>
+            </PageReadyContext.Provider>
+          )}
+        </>
+      )
+    }
     if (state.status === 'loading') return <PageLoading />
     const Page = state.module.default
     return <Page {...props} />

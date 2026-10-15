@@ -9,6 +9,7 @@ import type {
   WorkMessage,
 } from '@paa/api-contracts'
 import { Modal } from '@web/components/overlays/Modal'
+import { usePageReady } from '@web/components/feedback/PageReadiness'
 import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
 import {
   conversationMessagesPath,
@@ -362,6 +363,7 @@ export function ConversationChat({
       ...(pageNotice ? [pageNotice] : []),
     ] satisfies AssistantNoticeData[]
   ).find((item) => item.error)
+  usePageReady(!conversationId || !!data || !!notice)
   return (
     <>
       <AssistantNotice notice={notice} pending={pending && !busy} />

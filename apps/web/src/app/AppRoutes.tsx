@@ -51,9 +51,10 @@ const RulesPage = routePage(async () => ({
 const VoiceprintsPage = routePage(async () => ({
   default: (await import('@web/features/voiceprints/components/VoiceprintsPage')).VoiceprintsPage,
 }))
-const AssistantPage = routePage(async () => ({
-  default: (await import('@web/pages/AssistantPage')).AssistantPage,
-}))
+const AssistantPage = routePage(
+  async () => ({ default: (await import('@web/pages/AssistantPage')).AssistantPage }),
+  { waitForContent: true },
+)
 const ReportDetailPage = routePage(async () => ({
   default: (await import('@web/pages/ReportDetailPage')).ReportDetailPage,
 }))
