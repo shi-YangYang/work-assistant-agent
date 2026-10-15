@@ -17,8 +17,7 @@ import { DocumentCard } from '@web/components/media/Documents'
 import { ImageGallery } from '@web/components/media/ImageGallery'
 import { AssistantReply } from './reply/AssistantReply'
 import { replyPresentation } from './reply/reply-presentation'
-import { MessageTranscript } from '@web/features/assistant/components/messages/transcript/MessageTranscript'
-import { TranscriptEditor } from '@web/features/assistant/components/messages/transcript/TranscriptEditor'
+import { MessageVoice } from './MessageVoice'
 import { JobNotice } from '@web/features/jobs/components/JobNotice'
 import { messageSourcesPath } from '@web/features/sources/api/requests'
 import { BusinessSources } from '@web/features/sources/components/BusinessSources'
@@ -103,8 +102,6 @@ export function MessageCard({
       original: item.url,
       warnings: item.image?.warnings,
     }))
-  const [transcript, setTranscript] = useState(false)
-  const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const { notify, drafts: storedDrafts, setDraft } = useWorkspace()
@@ -160,8 +157,9 @@ export function MessageCard({
             {message.text}
           </p>
         )}
+        <MessageVoice message={message} own={own} onChange={onChange} />
         <div className={styles['user-attachments']}>
-          {(['audio', 'image', 'document'] as const).map((kind) => {
+          {(['image', 'document'] as const).map((kind) => {
             const items = message.attachments.filter((a) => a.kind === kind)
             return (
               items.length > 0 && (
@@ -176,16 +174,8 @@ export function MessageCard({
                       >
                         <img src={a.previewUrl ?? a.url} alt={a.name} loading="lazy" />
                       </button>
-                    ) : a.kind === 'document' ? (
-                      <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
                     ) : (
-                      <audio
-                        key={a.id}
-                        controls
-                        src={a.previewUrl ?? a.url}
-                        preload="metadata"
-                        aria-label={a.name}
-                      />
+                      <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
                     ),
                   )}
                 </div>
@@ -193,15 +183,6 @@ export function MessageCard({
             )
           })}
         </div>
-        {(message.transcript || message.attachments.some((a) => a.kind === 'audio')) && (
-          <MessageTranscript
-            transcriptOpen={transcriptOpen}
-            message={message}
-            setTranscriptOpen={setTranscriptOpen}
-            own={own}
-            setTranscript={setTranscript}
-          />
-        )}
       </div>
       {hasAssistant && (
         <div className={styles['assistant-turn']}>
@@ -371,14 +352,6 @@ export function MessageCard({
           }}
         />
       )}
-      <TranscriptEditor
-        transcript={transcript}
-        setTranscript={setTranscript}
-        setBusy={setBusy}
-        message={message}
-        onChange={onChange}
-        busy={busy}
-      />
     </article>
   )
 }

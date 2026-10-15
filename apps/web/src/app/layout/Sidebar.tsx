@@ -1,19 +1,9 @@
-import brandMark from '@paa/ui-web/mark.png'
 import controlsStyles from '../../styles/controls.module.css'
 import layoutStyles from '../../styles/layout.module.css'
 import styles from './Sidebar.module.css'
 import type { Identity } from '@paa/api-contracts'
 import type { LucideIcon } from 'lucide-react'
-import {
-  ArrowLeft,
-  ChevronRight,
-  Cloud,
-  Search,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
-} from 'lucide-react'
+import { ArrowLeft, ChevronRight, Cloud, Search, LogOut, Settings } from 'lucide-react'
 import type * as React from 'react'
 import { identityScope } from '@web/lib/session-drafts'
 import { useSidebarNavigation } from './useSidebarNavigation'
@@ -70,37 +60,22 @@ export function Sidebar({
       aria-modal={expandedNav || undefined}
       aria-label={expandedNav ? '导航' : undefined}
     >
-      <button
-        className={`${controlsStyles['icon-button']} ${styles['slot-icon-button']} ${styles['sidebar-toggle']}`}
-        aria-label={expandedNav ? '收起导航' : '展开导航'}
-        aria-expanded={expandedNav}
-        onClick={() => setExpandedNav(!expandedNav)}
-      >
-        {expandedNav ? <PanelLeftClose size={19} /> : <PanelLeftOpen size={19} />}
-      </button>
-      <Link
-        to={identity.member.role === 'admin' ? '/team' : '/assistant'}
-        className={styles['brand']}
-        aria-label="Noria 首页"
-      >
-        <img src={brandMark} className={styles['brand-mark']} alt="" aria-hidden="true" />
-        <span className={styles['nav-label']}>
-          Noria<small>你的AI伙伴</small>
-        </span>
-      </Link>
-      <button
-        className={styles['search-launch']}
-        title="查找页面与操作"
-        aria-label="查找页面与操作"
-        onClick={() => setCommands(true)}
-      >
-        <Search size={17} /> <span className={styles['nav-label']}>查找页面与操作</span>
-        <kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd>
-      </button>
+      <div className={styles['sidebar-header']}>
+        <Link to="/assistant" className={styles['brand']} aria-label="Noria 首页">
+          Noria
+        </Link>
+        <button
+          type="button"
+          className={styles['search-launch']}
+          title={`查找页面与操作（${navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}）`}
+          aria-label="查找页面与操作"
+          onClick={() => setCommands(true)}
+        >
+          <Search size={20} aria-hidden="true" />
+        </button>
+      </div>
       <nav aria-label={settingsMenu ? '系统设置' : '工作空间'}>
-        {settingsMenu && (
-          <span className={`${styles['navigation-label']} ${styles['nav-label']}`}>系统设置</span>
-        )}
+        {settingsMenu && <span className={styles['navigation-label']}>系统设置</span>}
         {entries.map((p) => (
           <NavLink
             key={p.path}
@@ -110,7 +85,7 @@ export function Sidebar({
             onClick={() => setExpandedNav(false)}
           >
             <p.icon size={18} />
-            <span className={styles['nav-label']}>{p.title}</span>
+            <span>{p.title}</span>
           </NavLink>
         ))}
         {!settingsMenu && (
@@ -122,8 +97,8 @@ export function Sidebar({
             title="云搭子 beta · 即将开放"
           >
             <Cloud size={18} aria-hidden="true" />
-            <span className={styles['nav-label']}>云搭子</span>
-            <span className={`${styles['nav-label']} ${styles['beta-badge']}`}>beta</span>
+            <span>云搭子</span>
+            <span className={styles['beta-badge']}>beta</span>
           </button>
         )}
       </nav>
@@ -138,7 +113,7 @@ export function Sidebar({
             onClick={() => selectMenu('main')}
           >
             <ArrowLeft size={18} aria-hidden="true" />
-            <span className={styles['nav-label']}>返回主菜单</span>
+            <span>返回主菜单</span>
           </button>
         ) : (
           <button
@@ -154,18 +129,13 @@ export function Sidebar({
             }}
           >
             <Settings size={18} />
-            <span className={styles['nav-label']}>系统设置</span>
-            <ChevronRight
-              size={15}
-              className={`${styles['settings-chevron']} ${styles['nav-label']}`}
-            />
+            <span>系统设置</span>
+            <ChevronRight size={15} className={styles['settings-chevron']} />
           </button>
         )}
         <div className={styles['identity']}>
-          <span className={`${layoutStyles['avatar']} ${styles['slot-avatar']}`}>
-            {accountName.slice(0, 1)}
-          </span>
-          <span className={styles['nav-label']}>
+          <span className={layoutStyles['avatar']}>{accountName.slice(0, 1)}</span>
+          <span>
             {accountName}
             <small>{identity.member.role === 'admin' ? '公司管理' : '个人工作空间'}</small>
           </span>

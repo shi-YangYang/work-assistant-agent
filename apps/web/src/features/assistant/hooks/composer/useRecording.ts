@@ -35,9 +35,10 @@ export function useRecording(
       },
       file: (file) => {
         if (active.current && sendOnFinish.current) pendingSend.current = file
+        const directSend = !!pendingSend.current
         sendOnFinish.current = false
         setDraft(composerKey, (previous: Composer | undefined) =>
-          appendRecordedFile(previous, file),
+          appendRecordedFile(previous, file, directSend),
         )
       },
     })

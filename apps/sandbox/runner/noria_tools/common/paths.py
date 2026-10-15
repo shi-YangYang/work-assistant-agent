@@ -38,7 +38,7 @@ def output_file(name, suffix):
     try:
         yield temp
         if temp.is_symlink() or not temp.is_file() or not 0 < temp.stat().st_size <= 32 * 1024 * 1024:
-            raise ValueError('生成文件为空或超过32 MiB')
+            raise ValueError('生成文件为空或超过32 MB')
         temp.replace(final)
     finally:
         temp.unlink(missing_ok=True)

@@ -6,7 +6,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 log = logging.getLogger('paa.latency')
-ALLOWED = frozenset({'call', 'kind', 'reason', 'generation', 'seq', 'bytes', 'input_tokens', 'output_tokens', 'state', 'error', 'elapsed_ms', 'queue_ms'})
+ALLOWED = frozenset({'call', 'kind', 'reason', 'generation', 'seq', 'bytes', 'input_tokens', 'output_tokens', 'state', 'error', 'elapsed_ms', 'queue_ms',
+                     'response_type', 'choices_count', 'finish_reason', 'body_chars', 'tool_count', 'tool_index', 'argument_chars'})
 _parent = ContextVar('latency_parent', default=None)
 
 

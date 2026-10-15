@@ -6,6 +6,7 @@ import type { ComponentProps } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Shell } from '../../../../apps/web/src/app/layout/Shell'
+import { usePageReady } from '../../../../apps/web/src/components/feedback/PageReadiness'
 import type { PetStage } from '../../../../apps/web/src/app/layout/pet/PetStage'
 import { useWorkspace } from '../../../../apps/web/src/lib/workspace'
 import { createVault, dialogs, identity } from '../helpers'
@@ -19,6 +20,7 @@ const lifecycle = vi.hoisted(() => ({
 
 // Keep Shell, routing, notifications and the drawer real; no model or microphone is needed.
 function AssistantFixture() {
+  usePageReady(true)
   const { drafts, setDraft } = useWorkspace()
   const [answer, setAnswer] = useState('正在回复')
   useEffect(() => {
@@ -244,7 +246,7 @@ it('does not carry a manual menu choice across member, company or role changes',
   expect(visibleLinks(settings())).toEqual(['记忆', '账户', '汇报规则', '问题反馈'])
 })
 
-it('expands the tablet rail into the same drawer, preserves focus and menu when closing or resizing', async () => {
+it('preserves drawer focus and menu when closing or resizing', async () => {
   Object.assign(drawerMedia, { matches: true })
   mount('/assistant/current', admin)
   await screen.findByRole('textbox', { name: '聊天草稿' })
@@ -271,7 +273,7 @@ it('expands the tablet rail into the same drawer, preserves focus and menu when 
   expect(settings()).toBeTruthy()
 })
 
-it('keeps the mobile drawer on menu changes, supports backdrop and close, and closes only for an accepted link', async () => {
+it('keeps the mobile drawer on menu changes, supports backdrop and Escape, and closes only for an accepted link', async () => {
   Object.assign(drawerMedia, { matches: true })
   const { router, vault } = mount()
   await screen.findByRole('textbox', { name: '聊天草稿' })
@@ -280,7 +282,8 @@ it('keeps the mobile drawer on menu changes, supports backdrop and close, and cl
   const drawer = screen.getByRole('dialog', { name: '导航' })
   goBack()
   expect(screen.getByRole('dialog', { name: '导航' })).toBe(drawer)
-  fireEvent.click(within(drawer).getByRole('button', { name: '收起导航' }))
+  expect(within(drawer).queryByRole('button', { name: '收起导航' })).toBeNull()
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(screen.queryByRole('dialog', { name: '导航' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
   expect(main()).toBeTruthy()

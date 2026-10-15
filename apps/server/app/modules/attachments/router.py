@@ -26,12 +26,11 @@ router = APIRouter()
 
 @router.post('/api/v1/uploads', status_code=201)
 async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
+    from app.modules.attachments.policy import attachment_kind
+    kind = attachment_kind(file.filename or 'attachment')
     name = safe_name(file.filename)
     mime = document_type(name, file.content_type)
     suffix = Path(name).suffix.lower()
-    kind = 'document' if mime else 'image' if (file.content_type or '').startswith('image/') or suffix in ('.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif') else 'audio'
-    if kind != 'image' and not mime and not ((file.content_type or '').startswith(('audio/', 'image/')) or Path(name).suffix.lower() in ('.m4a', '.wav', '.webm', '.mp4', '.aac', '.mp3')):
-        problem(415, '请使用 PDF、DOCX、PPTX、XLSX、TXT、JSON、MD、CSV、图片或语音文件')
     identifier = str(uuid4())
     settings.media_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = settings.media_dir / identifier
@@ -42,7 +41,7 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
             while block := await file.read(65536):
                 size += len(block)
                 if size > (MAX_IMAGE_BYTES if kind == 'image' else MAX_FILE_BYTES):
-                    problem(413, '每张图片不能超过 30 MiB' if kind == 'image' else '文件不能超过 20 MiB')
+                    problem(413, '每张图片不能超过 30 MB' if kind == 'image' else '文件不能超过 20 MB')
                 digest.update(block)
                 await run_in_threadpool(target.write, block)
         if not size:
@@ -75,6 +74,16 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
         path.unlink(missing_ok=True)
         raise
     return attachment_dto(item)
+
+
+@router.delete('/api/v1/uploads/{identifier}')
+async def delete_upload(identifier: str, actor=AUTH, db=DB, settings=SETTINGS):
+    from app.modules.attachments.lifecycle import retire_upload, clean_retired_upload
+    item = await retire_upload(db, actor, identifier)
+    # A committed tombstone must exist before irreversible filesystem removal.
+    await db.commit()
+    cleaned = clean_retired_upload(item, settings)
+    return {'ok': True, 'cleanupPending': not cleaned}
 
 
 @router.get('/api/v1/uploads/{identifier}/content')

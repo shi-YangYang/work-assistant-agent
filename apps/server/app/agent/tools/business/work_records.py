@@ -85,7 +85,7 @@ async def read_work_material(work_id: str, material_id: str, runtime: ToolRuntim
             if attachment.extraction_status not in ('ready', 'partial'):
                 return json.dumps({'state': 'unavailable', 'message': '材料仍在解析或解析失败，请稍后重试读取', 'extraction': attachment.extraction_status})
             context.document_versions[attachment.id] = attachment.extraction_revision
-            return document_tool_result(context, attachment, await chunk_page(db, attachment, max(0, min(start, 2000))), job)
+            return await document_tool_result(db, context, attachment, await chunk_page(db, attachment, max(0, min(start, 2000))), job)
         cached = attachment.extraction_info.get('transcript') if attachment.kind == 'audio' else None
         context.document_versions[attachment.id] = attachment.extraction_revision
     if attachment.kind == 'audio':

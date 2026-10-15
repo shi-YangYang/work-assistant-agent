@@ -23,6 +23,8 @@ def safe_name(name):
 
 
 def document_type(name, supplied_mime):
+    from app.modules.attachments.policy import attachment_kind
+    kind = attachment_kind(name)
     suffix = Path(name).suffix.lower()
     if suffix in DOCUMENT_TYPES:
         permitted = {DOCUMENT_TYPES[suffix], 'application/octet-stream', '', 'application/zip' if suffix in ('.docx', '.pptx', '.xlsx') else 'text/plain'}
@@ -31,9 +33,7 @@ def document_type(name, supplied_mime):
         if (supplied_mime or '').split(';')[0].lower() not in permitted:
             problem(415, '文件类型与扩展名不一致，请重新导出后上传')
         return DOCUMENT_TYPES[suffix]
-    if suffix in ('.doc', '.ppt', '.xls', '.xlsm', '.docm', '.pptm'):
-        problem(415, '暂不支持旧版 Office 或含宏格式；请转换为 PDF、DOCX、PPTX、XLSX 或 CSV')
-    return None
+    return 'text/plain' if kind == 'document' else None
 
 
 def attachment_dto(a):
@@ -163,6 +163,10 @@ async def material_coverage(db, actor, job, documents, reads):
         else:
             detail = f'文字工具读取 {read}/{total} 个分段'
             old_detail = f'实际读取 {read}/{total} 个文字分段'
+            reused = sum(token in job.result.get('documentReadAliases', {}) for token, entry in reads.items()
+                         if entry[0] == document.id and entry[1] == document.extraction_revision)
+            if reused:
+                detail = f'文字工具读取/复用 {read}/{total} 个分段，其中 {reused} 个复用自相同内容附件'
             if document.extraction_status == 'partial':
                 detail += '；文件文字仅部分可读'
                 old_detail += '；文件仅部分可读'

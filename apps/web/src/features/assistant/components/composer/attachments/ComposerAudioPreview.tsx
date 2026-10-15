@@ -1,5 +1,5 @@
 import { recordingPreview } from '@web/features/assistant/lib/audio-preview'
-import { Pause, Play, X } from 'lucide-react'
+import { LoaderCircle, Pause, Play, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import styles from './ComposerAudioPreview.module.css'
 import { usePopover } from '@web/components/overlays/usePopover'
@@ -10,6 +10,7 @@ export function ComposerAudioPreview({
   recorded,
   label,
   status,
+  uploading = false,
   onPlay,
 }: {
   file: File
@@ -17,6 +18,7 @@ export function ComposerAudioPreview({
   recorded?: boolean
   label: string
   status: string
+  uploading?: boolean
   onPlay: (audio: HTMLAudioElement) => void
 }) {
   const [preview, setPreview] = useState<{ file: File; url?: string; failed?: boolean }>()
@@ -82,10 +84,16 @@ export function ComposerAudioPreview({
         type="button"
         className={styles.play}
         aria-label={`${playing ? '暂停' : '播放'}${label}`}
-        disabled={!url}
+        disabled={!url || uploading}
         onClick={togglePlayback}
       >
-        {playing ? <Pause size={16} /> : <Play size={16} />}
+        {uploading ? (
+          <LoaderCircle size={20} className={styles.spinner} aria-label="上传中" />
+        ) : playing ? (
+          <Pause size={16} />
+        ) : (
+          <Play size={16} />
+        )}
       </button>
       <button
         type="button"
@@ -97,7 +105,8 @@ export function ComposerAudioPreview({
       >
         <strong>{label}</strong>
         <span role="status" data-failed={failed || status === '上传失败'}>
-          {status || (failed ? '无法试听' : time)}
+          <span>{uploading ? status : failed ? '无法试听' : time}</span>
+          {!uploading && status && <span title={status}> · {status}</span>}
         </span>
       </button>
       <div

@@ -16,10 +16,10 @@ import {
   mountAssistantActivity,
 } from '../../../../apps/web/src/api/assistant-activity'
 import { ApiError } from '../../../../apps/web/src/api/client'
+import { uploadAttachment } from '../../../../apps/web/src/api/attachments'
 import {
   readActiveAssistantJob,
   sendMessage,
-  uploadAttachment,
 } from '../../../../apps/web/src/features/assistant/api/requests'
 import { cancelJob, retryJob } from '../../../../apps/web/src/features/jobs/api/requests'
 import { MessageCard } from '../../../../apps/web/src/features/assistant/components/messages/MessageCard'
@@ -28,11 +28,15 @@ import { useAssistantTask } from '../../../../apps/web/src/features/assistant/ho
 import { useExecutionMode } from '../../../../apps/web/src/features/assistant/hooks/preferences/useExecutionMode'
 import { useConversationPersona } from '../../../../apps/web/src/features/assistant/hooks/preferences/useConversationPersona'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from '../helpers'
+import { TestAttachmentUploads } from './attachment-upload-lifecycle'
 
 vi.mock('@web/features/assistant/api/requests', async (load) => ({
   ...(await load<typeof import('../../../../apps/web/src/features/assistant/api/requests')>()),
   readActiveAssistantJob: vi.fn(),
   sendMessage: vi.fn(),
+}))
+vi.mock('@web/api/attachments', async (load) => ({
+  ...(await load<typeof import('../../../../apps/web/src/api/attachments')>()),
   uploadAttachment: vi.fn(),
 }))
 vi.mock('@web/features/jobs/api/requests', async (load) => ({
@@ -96,6 +100,7 @@ beforeEach(() => {
   dialogs()
   vi.resetAllMocks()
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
   sources.length = 0
   history = []
   vi.stubGlobal('EventSource', Source)
@@ -141,9 +146,10 @@ function Chat({ initial = 'first' }: { initial?: string }) {
     />
   )
 }
-function view(initial = 'first', vault = createVault()) {
+function view(initial = 'first', vault = createVault(), uploads = false) {
   return render(
     <TestWorkspace vault={vault}>
+      {uploads && <TestAttachmentUploads />}
       <MemoryRouter>
         <Chat initial={initial} />
       </MemoryRouter>
@@ -177,7 +183,7 @@ const voice: Attachment = {
 }
 
 it.each(['', 'first'])(
-  'keeps voice submission visible through upload, acceptance and transcription in conversation %s',
+  'keeps voice upload separate from agent activity, then shows submission and transcription in conversation %s',
   async (initial) => {
     const activity = observeActivity()
     const upload = deferred<Attachment>()
@@ -186,19 +192,25 @@ it.each(['', 'first'])(
     voiceDraft(vault, initial)
     vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
     vi.mocked(sendMessage).mockReturnValue(submission.promise)
-    const mounted = view(initial, vault)
+    const mounted = view(initial, vault, true)
     const send = await screen.findByRole<HTMLButtonElement>('button', { name: '发送' })
-    await waitFor(() => expect(send.disabled).toBe(false))
+    await waitFor(() => expect(uploadAttachment).toHaveBeenCalledTimes(1))
+    expect(send.disabled).toBe(true)
     fireEvent.click(send)
-    expect(screen.getByText('正在上传语音…')).toBeTruthy()
+    expect(screen.getByText('上传中…')).toBeTruthy()
+    expect(activity.getSnapshot()).toBe('idle')
+    expect(mounted.container.querySelector('[data-pending-assistant]')).toBeNull()
+    expect(sendMessage).not.toHaveBeenCalled()
+    await act(async () => upload.resolve(voice))
+    await waitFor(() => expect(send.disabled).toBe(false))
+    expect(sendMessage).not.toHaveBeenCalled()
+    fireEvent.click(send)
+    expect(screen.getByText('正在发送消息…')).toBeTruthy()
     expect(activity.getSnapshot()).toBe('working')
     expect(mounted.container.querySelector('[data-pending-assistant]')?.textContent).toContain(
       'Noria',
     )
     expect(screen.queryByText('今天，想推进什么？')).toBeNull()
-    expect(sendMessage).not.toHaveBeenCalled()
-    await act(async () => upload.resolve(voice))
-    expect(screen.getByText('正在发送消息…')).toBeTruthy()
     vi.mocked(readActiveAssistantJob).mockResolvedValue({
       job: { ...running, state: 'queued', stage: 'queued' },
     })
@@ -253,21 +265,40 @@ it.each(['upload', 'send'])(
     voiceDraft(vault)
     vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
     vi.mocked(sendMessage).mockReturnValue(submission.promise)
-    const mounted = view('first', vault)
+    const mounted = view('first', vault, true)
     const send = await screen.findByRole<HTMLButtonElement>('button', { name: '发送' })
-    await waitFor(() => expect(send.disabled).toBe(false))
-    fireEvent.click(send)
-    expect(screen.getByText('正在上传语音…')).toBeTruthy()
-    expect(activity.getSnapshot()).toBe('working')
-    if (stage === 'send') await act(async () => upload.resolve(voice))
+    await waitFor(() => expect(uploadAttachment).toHaveBeenCalledTimes(1))
+    expect(send.disabled).toBe(true)
+    expect(screen.getByText('上传中…')).toBeTruthy()
+    expect(activity.getSnapshot()).toBe('idle')
+    if (stage === 'send') {
+      await act(async () => upload.resolve(voice))
+      await waitFor(() => expect(send.disabled).toBe(false))
+      fireEvent.click(send)
+      expect(activity.getSnapshot()).toBe('working')
+    }
     await act(async () => (stage === 'upload' ? upload : submission).reject(new Error('网络中断')))
-    await screen.findByText('网络中断')
+    await screen.findByText(stage === 'upload' ? '文件上传失败，请重试或移除。' : '网络中断')
     expect(activity.getSnapshot()).toBe('idle')
     expect(mounted.container.querySelector('[data-pending-assistant]')).toBeNull()
     expect(vault.getSnapshot()['composer:first']).toMatchObject({
-      sending: false,
       files: [{ id: 'voice' }],
     })
+    const draft = vault.getSnapshot()['composer:first'] as { sending?: boolean }
+    expect(!!draft.sending).toBe(false)
+    if (stage === 'upload') {
+      expect(sendMessage).not.toHaveBeenCalled()
+      expect(send.disabled).toBe(true)
+      expect(vault.getSnapshot()['composer:first']).toMatchObject({
+        files: [{ failed: true, uploadState: 'failed' }],
+      })
+    } else {
+      expect(sendMessage).toHaveBeenCalledTimes(1)
+      expect(vault.getSnapshot()['composer:first']).toMatchObject({
+        pending: { body: { attachmentIds: [voice.id] } },
+        files: [{ attachment: voice, uploadState: 'ready' }],
+      })
+    }
   },
 )
 

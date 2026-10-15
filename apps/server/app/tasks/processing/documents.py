@@ -15,7 +15,7 @@ from weakref import WeakKeyDictionary
 _parse_limits = WeakKeyDictionary()
 
 
-async def prepare_document(context, identifier):
+async def prepare_document(context, identifier, *, parse_cache=None):
     from app.tasks.lease import lease
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
@@ -29,6 +29,8 @@ async def prepare_document(context, identifier):
         revision, checksum = item.extraction_revision, item.sha256
         item.extraction_status, item.parser_version, item.extraction_info = 'processing', PARSER_VERSION, {}
         name = item.name
+        from app.modules.attachments.duplicates import content_key
+        cache_key = (*content_key(item), PARSER_VERSION)
         from app.tasks.feedback.feedback_state import update_feedback
         update_feedback(job, 'parsing', '')
         job.phase, job.updated_at = 'document', now()
@@ -41,8 +43,22 @@ async def prepare_document(context, identifier):
         if actual != checksum:
             raise ValueError('原文件校验失败，请重新上传')
         limit = _parse_limits.setdefault(asyncio.get_running_loop(), asyncio.Semaphore(2))
-        async with limit:
-            result = await parse_process(path, Path(name).suffix.lower())
+        async def parse():
+            async with limit:
+                return await parse_process(path, Path(name).suffix.lower())
+        if parse_cache is None:
+            result = await parse()
+        else:
+            # Shared only inside this message preparation. Each attachment still
+            # verifies its own bytes and stores independent chunks/revisions.
+            shared = parse_cache.get(cache_key)
+            if shared is None:
+                shared = parse_cache[cache_key] = asyncio.create_task(parse())
+                result = await shared
+            else:
+                result = await shared
+                if result['status'] not in ('ready', 'partial', 'empty'):
+                    result = await parse()
     except asyncio.CancelledError:
         # An orderly worker shutdown/time budget must not leave a permanent
         # processing card. Hard crashes are recovered by the job lease instead.

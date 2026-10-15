@@ -16,6 +16,20 @@ from app.tasks.runtime.conversation_activity import require_idle
 from sqlalchemy import select
 
 
+async def message_attachment(db, actor, identifier):
+    # idem_begin already holds the company and member locks before attachment
+    # locking. Only this owner's tombstones get the specific recovery guidance.
+    item = await db.scalar(select(Attachment).where(
+        Attachment.id == identifier, Attachment.company_id == actor.company_id,
+        Attachment.owner_id == actor.id,
+    ).with_for_update().execution_options(populate_existing=True))
+    if item is None:
+        problem(404, '记录不存在或无权查看')
+    if item.deleted:
+        problem(404, '附件已不可用，请移除后重新添加。', 'attachment_unavailable')
+    return item
+
+
 async def submit_message(db, actor, body, idempotency_key, settings):
     payload = body.model_dump()
     if body.reasoning is None:
@@ -59,11 +73,14 @@ async def submit_message(db, actor, body, idempotency_key, settings):
     if body.deliverableReference:
         from app.modules.deliverables.queries import check_reference
         await check_reference(db, actor, body.deliverableReference.model_dump(), conversation.id)
-    attached = [await owned(db, Attachment, aid, actor, lock=True) for aid in body.attachmentIds]
+    attached = [await message_attachment(db, actor, aid) for aid in body.attachmentIds]
     if any(a.message_id for a in attached):
         problem(422, '附件已用于其他消息，请重新上传')
+    from app.modules.attachments.duplicates import unique_names
+    for attachment, name in zip(attached, unique_names([a.name for a in attached])):
+        attachment.name = name
     if any(a.size > (MAX_IMAGE_BYTES if a.kind == 'image' else MAX_FILE_BYTES) for a in attached):
-        problem(422, '每张图片不能超过 30 MiB，其他单个文件不能超过 20 MiB')
+        problem(422, '每张图片不能超过 30 MB，其他单个文件不能超过 20 MB')
     if sum(a.kind == 'audio' for a in attached) > MAX_AUDIO_ATTACHMENTS:
         problem(422, '每次最多 3 段语音，每段最长 3 分钟')
     voice_ids = body.voiceCommandAttachmentIds or ([body.voiceCommandAttachmentId] if body.voiceCommandAttachmentId else [])

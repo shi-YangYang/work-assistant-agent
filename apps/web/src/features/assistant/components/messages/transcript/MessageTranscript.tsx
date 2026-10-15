@@ -1,57 +1,58 @@
 import utilitiesStyles from '../../../../../styles/utilities.module.css'
-import controlsStyles from '../../../../../styles/controls.module.css'
 import styles from './MessageTranscript.module.css'
 import type { WorkMessage } from '@paa/api-contracts'
-import { ChevronDown, Pencil } from 'lucide-react'
-import type * as React from 'react'
+import { ChevronDown } from 'lucide-react'
 
-export function MessageTranscript({
+export function MessageTranscriptControls({
   transcriptOpen,
   message,
-  setTranscriptOpen,
+  onToggle,
   own,
-  setTranscript,
+  onEdit,
 }: {
   transcriptOpen: boolean
   message: WorkMessage
-  setTranscriptOpen: React.Dispatch<React.SetStateAction<boolean>>
+  onToggle: () => void
   own: boolean
-  setTranscript: React.Dispatch<React.SetStateAction<boolean>>
+  onEdit: () => void
 }) {
   return (
-    <section className={styles['transcript']}>
-      <div className={styles['transcript-heading']}>
-        <button
-          className={styles['transcript-toggle']}
-          aria-expanded={transcriptOpen}
-          aria-controls={`transcript-${message.id}`}
-          onClick={() => setTranscriptOpen((open) => !open)}
-        >
-          <ChevronDown size={16} aria-hidden="true" />
-          语音文字
-          {!message.transcript && (
-            <span className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-              待识别
-            </span>
-          )}
-        </button>
-        {own && (
-          <button
-            className={`${controlsStyles['text-button']} ${styles['transcript-edit']}`}
-            onClick={() => setTranscript(true)}
-          >
-            <Pencil size={14} aria-hidden="true" />
-            修正文字
-          </button>
-        )}
-      </div>
-      <div
-        id={`transcript-${message.id}`}
-        hidden={!transcriptOpen}
-        className={styles['transcript-body']}
+    <div className={styles['transcript-controls']}>
+      <button
+        type="button"
+        className={styles['transcript-toggle']}
+        aria-expanded={transcriptOpen}
+        aria-controls={`transcript-${message.id}`}
+        title={message.transcript ? '查看本条消息的语音转写' : '等待识别'}
+        onClick={onToggle}
       >
-        <p className={utilitiesStyles['preserve']}>{message.transcript || '等待识别'}</p>
-      </div>
-    </section>
+        转文字
+        <ChevronDown size={12} aria-hidden="true" />
+        {!message.transcript && <span className="sr-only">待识别</span>}
+      </button>
+      {own && (
+        <button type="button" onClick={onEdit}>
+          改文字
+        </button>
+      )}
+    </div>
+  )
+}
+
+export function MessageTranscript({
+  message,
+  transcriptOpen,
+}: {
+  message: WorkMessage
+  transcriptOpen: boolean
+}) {
+  return (
+    <div
+      id={`transcript-${message.id}`}
+      hidden={!transcriptOpen}
+      className={styles['transcript-body']}
+    >
+      <p className={utilitiesStyles['preserve']}>{message.transcript || '等待识别'}</p>
+    </div>
   )
 }

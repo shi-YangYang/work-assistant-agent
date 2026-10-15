@@ -24,19 +24,19 @@ pytestmark = pytest.mark.asyncio
 MIB = 1024 * 1024
 
 
-def png():
+def png(color='red'):
     stream = io.BytesIO()
-    Image.new('RGB', (2, 2), 'red').save(stream, 'PNG')
+    Image.new('RGB', (2, 2), color).save(stream, 'PNG')
     return stream.getvalue()
 
 
-def wav():
+def wav(sample=0):
     stream = io.BytesIO()
     with wave.open(stream, 'wb') as out:
         out.setnchannels(1)
         out.setsampwidth(2)
         out.setframerate(16000)
-        out.writeframes(b'\0\0' * 1600)
+        out.writeframes(sample.to_bytes(2, 'little') * 1600)
     return stream.getvalue()
 
 
@@ -67,7 +67,7 @@ async def test_nine_images_and_30_mib_upload_reach_model_and_followup(setup):
     too_large = await client.post('/api/v1/uploads', files={'file': ('too-large.png', large + b'\0', 'image/png')})
     assert too_large.status_code == 413
     assert (await client.get(first['url'])).content == large
-    images = [first, *[await upload(client, f'{index}.png', png(), 'image/png') for index in range(9)]]
+    images = [first, *[await upload(client, f'{index}.png', png((index, 0, 0)), 'image/png') for index in range(9)]]
     conv = await conversation(client)
     rejected = await client.post('/api/v1/messages', json={'conversationId': conv['id'], 'attachmentIds': [item['id'] for item in images]}, headers=keyed())
     assert rejected.status_code == 422
@@ -86,7 +86,7 @@ async def test_nine_images_and_30_mib_upload_reach_model_and_followup(setup):
 async def test_three_audio_order_partial_retry_and_separate_instruction_sources(setup, monkeypatch):
     settings, sessions, users, clients = setup
     client, actor = clients['employee'], users['employee']
-    clips = [await upload(client, f'{index}.wav', wav(), 'audio/wav') for index in range(4)]
+    clips = [await upload(client, f'{index}.wav', wav(index), 'audio/wav') for index in range(4)]
     rejected = await client.post('/api/v1/messages', json={'attachmentIds': [item['id'] for item in clips]}, headers=keyed())
     assert rejected.status_code == 422 and '3 段' in rejected.text
     # Different from upload order, so neither timestamp nor UUID order is enough.

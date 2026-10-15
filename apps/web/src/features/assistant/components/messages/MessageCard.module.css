@@ -45,6 +45,9 @@
 .user-attachments > div {
   justify-content: flex-end;
 }
+.user-attachments:empty {
+  display: none;
+}
 .assistant-turn {
   min-width: 0;
 }

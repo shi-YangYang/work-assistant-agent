@@ -14,15 +14,6 @@
   border-radius: 8px;
   border: 1px solid var(--line);
 }
-.attachments audio {
-  width: 300px;
-  max-width: 100%;
-  height: 42px;
-}
-.attachments[data-kind='audio'] audio {
-  width: 100%;
-  height: 48px;
-}
 @media (max-width: 760px) {
   .attachments:empty {
     display: none;

@@ -104,6 +104,41 @@ async def test_inspection_reuses_receipt_but_parameter_or_input_changes_execute_
     assert builtin_receipts.count == 3 and await revision_count(context) == 0
 
 
+async def test_inspection_does_not_inherit_files_and_empty_input_failure_explains_recovery(setup, builtin_receipts, monkeypatch):
+    context, sent = await runtime(setup, '先检查附件，再用 Python 汇总')
+    identifier = await attachment(setup, sent)
+    reference = {'attachment_id': identifier}
+    assert (await invoke(context, 'inspect_table', source={'input_ref': reference}))['state'] == 'succeeded'
+    original = builtin_receipts.submit
+    async def execute(self, body):
+        result = await original(self, body)
+        if body.get('code') == 'print(3)':
+            result.update(state='succeeded', stdout='3', stderr='', exitCode=0)
+        elif not body['inputs']:
+            result.update(state='failed', stdout='[]', stderr='IndexError: list index out of range', exitCode=1)
+        else:
+            result.update(state='succeeded', stdout='8', stderr='', exitCode=0)
+        return result
+    monkeypatch.setattr(builtin_receipts, 'submit', execute)
+    async def python(**arguments):
+        return json.loads(await run_python.coroutine(runtime=SimpleNamespace(context=context), **arguments))
+    code = "import os\nf=[p for p in os.listdir('/work/inputs') if p.endswith('.csv')][0]"
+    failed = await python(code=code, title='汇总')
+    assert failed['state'] == 'failed' and failed['inputRefs'] == [] and failed['inputFiles'] == []
+    assert 'IndexError' in failed['stderr'] and '未挂载输入文件' in failed['inputHint']
+    assert 'input_refs' in failed['inputHint'] and '不会自动继承' in failed['inputHint']
+    assert await python(code=code, title='汇总') == failed
+    assert builtin_receipts.count == 2
+    corrected = await python(code=code, title='汇总', input_refs=[reference])
+    assert corrected['state'] == 'succeeded' and corrected['stdout'] == '8'
+    assert corrected['inputFiles'] == ['输入.csv'] and 'inputHint' not in corrected
+    assert builtin_receipts.bodies[-1]['inputs'][0]['name'] == '输入.csv'
+    calculation = await python(code='print(3)', title='纯计算')
+    assert calculation['state'] == 'succeeded' and calculation['stdout'] == '3'
+    assert calculation['inputRefs'] == [] and 'inputHint' not in calculation
+    assert builtin_receipts.count == 4 and await revision_count(context) == 0
+
+
 async def test_request_and_result_readback_are_bounded_and_reconstructable_without_sandbox(setup, builtin_receipts):
     context, sent = await runtime(setup, '生成长文档')
     paragraph = '这是原始中文内容。' * 650

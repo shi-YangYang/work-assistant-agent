@@ -47,14 +47,16 @@ async def run_python(code: str, title: str, runtime: ToolRuntime[RunContext], in
     It can import noria_tools (same fixed helper API). No network or pip install.
     Libraries: pandas,numpy,openpyxl,matplotlib,python-docx,python-pptx,reportlab,
     Pillow,pypdf. LibreOffice/Poppler and Noto CJK fonts available for render checks.
-    Input references: {attachment_id: real ID} or {deliverable_id,revision,file_id}
-    from current conversation. Copied files are under /work/inputs; list this
-    directory to get exact filenames. Write final files ONLY in /work/output.
+    For file tasks, pass input_refs EVERY call: [{attachment_id: real ID}] or
+    [{deliverable_id,revision,file_id}] from this conversation. Omit only when no
+    input files are needed. List /work/inputs for exact copied filenames.
+    Write final files ONLY in /work/output.
     Use /work/tmp for intermediates; print compact computed results to stdout.
     For behavior experiments print Python/relevant library versions and observed
     values, states or exceptions. Use bounded inputs; observations apply only to
     the tested environment/conditions, not all versions or cases.
-    Each call is a NEW environment, no persistent Python variables. Read existing
+    Each call starts fresh: files and variables are NOT inherited, even after
+    inspect_table. Read existing
     observations with read_execution for follow-ups; rerun for changed inputs,
     missing observations or explicit reproduction, not just to recall a result.
     Read the previous deliverable then reference its files to continue. To publish a new version,

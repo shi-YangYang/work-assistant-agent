@@ -9,11 +9,14 @@ import type {
 } from '@paa/api-contracts'
 import { MAX_FILE_BYTES } from '../utils/attachment-limits'
 
-type PendingFile = {
+export type PendingFile = {
   id: string
   file: File
   url: string
   recorded?: boolean
+  directSend?: boolean
+  uploadState?: 'queued' | 'uploading' | 'ready' | 'failed'
+  uploadError?: string
   attachment?: Attachment
   failed?: boolean
 }
@@ -50,7 +53,11 @@ export type Composer = {
   }
 }
 
-export function appendRecordedFile(previous: Composer | undefined, file: File): Composer {
+export function appendRecordedFile(
+  previous: Composer | undefined,
+  file: File,
+  directSend = false,
+): Composer {
   const current = previous ?? { text: '', files: [], key: '' }
   return {
     ...current,
@@ -58,7 +65,7 @@ export function appendRecordedFile(previous: Composer | undefined, file: File): 
     submissionPersonaId: undefined,
     files: [
       ...current.files,
-      { id: crypto.randomUUID(), file, url: URL.createObjectURL(file), recorded: true },
+      { id: crypto.randomUUID(), file, url: URL.createObjectURL(file), recorded: true, directSend },
     ],
   }
 }

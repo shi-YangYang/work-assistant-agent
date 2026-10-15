@@ -9,12 +9,9 @@ import type {
   WorkMessage,
 } from '@paa/api-contracts'
 import { Modal } from '@web/components/overlays/Modal'
+import { usePageReady } from '@web/components/feedback/PageReadiness'
 import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
-import {
-  conversationMessagesPath,
-  orphanActionsPath,
-  uploadAttachment,
-} from '@web/features/assistant/api/requests'
+import { conversationMessagesPath, orphanActionsPath } from '@web/features/assistant/api/requests'
 import { AssistantSuggestions } from '@web/features/assistant/components/composer/AssistantSuggestions'
 import { exampleText } from '@web/features/assistant/utils/session'
 import { ChatHistory } from '@web/features/assistant/components/messages/ChatHistory'
@@ -36,6 +33,7 @@ import { useContextUsage } from '@web/features/assistant/hooks/composer/useConte
 import { useMessageSubmission } from '@web/features/assistant/hooks/composer/useMessageSubmission'
 import { useRecording } from '@web/features/assistant/hooks/composer/useRecording'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import { numberedFiles } from '../../lib/attachment-names'
 import {
   MAX_ATTACHMENTS,
   MAX_AUDIO_ATTACHMENTS,
@@ -45,7 +43,6 @@ import {
   fileKind,
   fileSelectionError,
   isHeif,
-  updateSendingDraft,
 } from '@web/features/assistant/utils/files'
 import { usePagedResource } from '@web/hooks/usePagedResource'
 import { useQueryResource } from '@web/hooks/useQueryResource'
@@ -149,8 +146,7 @@ export function ConversationChat({
       ...(questionsByMessage.get(question.messageId) ?? []),
       question,
     ])
-  const [previewBusy, setPreviewUploading] = useState(false)
-  const previewUploading = previewBusy || (!!composer.uploading && !composer.sending)
+  const previewUploading = false
   const [gallery, setGallery] = useState<number | null>(null)
   const [pdf, setPdf] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -161,7 +157,7 @@ export function ConversationChat({
   const [limitError, setLimitError] = useState('')
   const { captureState, capturing, seconds, capture, active, pendingSend, stop, cancel } =
     useRecording(composerKey, setDraft, setSendError, setLimitError)
-  const { busy, sendingRef, send } = useMessageSubmission({
+  const { busy, sendingRef, send, directSendingFile } = useMessageSubmission({
     composer,
     composerKey,
     conversationId,
@@ -259,17 +255,25 @@ export function ConversationChat({
       key: '',
       files: [
         ...existing.files,
-        ...files.map((file) => ({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) })),
+        ...numberedFiles(
+          files,
+          existing.files.map((item) => item.file),
+        ).map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          url: URL.createObjectURL(file),
+        })),
       ],
     })
     setSendError('')
   }
-  async function startRecording() {
+  async function startRecording(directSend = false) {
     if (locked) return false
     if (
-      composer.files.length >= MAX_ATTACHMENTS ||
-      composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
-        MAX_AUDIO_ATTACHMENTS
+      !directSend &&
+      (composer.files.length >= MAX_ATTACHMENTS ||
+        composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
+          MAX_AUDIO_ATTACHMENTS)
     ) {
       setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
       return false
@@ -286,32 +290,8 @@ export function ConversationChat({
       src: item.attachment?.previewUrl ?? (isHeif(item.file) ? undefined : item.url),
       warnings: item.attachment?.image?.warnings,
       prepare: async () => {
-        if (locked || capturing || sendingRef.current) throw new Error('请等待当前操作结束后再预览')
-        if (!interaction.acquire('preview')) throw new Error('请等待人设保存后再预览')
-        setPreviewUploading(true)
-        setDraft(composerKey, (previous: Composer | undefined) =>
-          updateSendingDraft(previous, composer.key, { uploading: item.id }),
-        )
-        try {
-          const form = new FormData()
-          form.append('file', item.file)
-          const attachment = await uploadAttachment({ method: 'POST', body: form })
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, {
-              files:
-                previous?.files.map((file) =>
-                  file.id === item.id ? { ...file, attachment, failed: false } : file,
-                ) ?? [],
-            }),
-          )
-          return attachment.previewUrl ?? attachment.url
-        } finally {
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, { uploading: undefined }),
-          )
-          interaction.release('preview')
-          if (active.current) setPreviewUploading(false)
-        }
+        if (!item.attachment) throw new Error('图片尚未上传完成，请稍后再预览')
+        return item.attachment.previewUrl ?? item.attachment.url
       },
     }))
   const latestJob =
@@ -361,6 +341,7 @@ export function ConversationChat({
       ...(pageNotice ? [pageNotice] : []),
     ] satisfies AssistantNoticeData[]
   ).find((item) => item.error)
+  usePageReady(!conversationId || !!data || !!notice)
   return (
     <>
       <AssistantNotice notice={notice} pending={pending && !busy} />
@@ -544,6 +525,7 @@ export function ConversationChat({
         >
           <ComposerAttachments
             composer={composer}
+            directSendingFile={directSendingFile}
             locked={locked}
             setGallery={setGallery}
             previewImages={previewImages}

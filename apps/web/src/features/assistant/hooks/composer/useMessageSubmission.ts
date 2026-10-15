@@ -1,3 +1,5 @@
+import { deleteDraftAttachment } from '@web/api/attachments'
+import { attachmentsReady } from '../../lib/attachment-uploads'
 import type { ExecutionMode, PersonaId } from '@paa/api-contracts'
 import type { useReasoningEffort } from '../preferences/useReasoningEffort'
 import type { PersonaInteraction } from '../preferences/useConversationPersona'
@@ -56,10 +58,34 @@ export function useMessageSubmission({
   }
   recordedSend?: RefObject<File | null>
 }) {
-  const { identity, setDraft, rememberConversation } = useWorkspace()
+  const { identity, setDraft, rememberConversation, notify } = useWorkspace()
   const [sending, setBusy] = useState(false)
+  const [sendingRecording, setSendingRecording] = useState<{ file: File | null }>({ file: null })
+  const directSendingFile = recordedSend?.current ?? sendingRecording.file
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
+  function finishDirectRecording(file: File, createdConversationId?: string) {
+    const destination =
+      !conversationId && createdConversationId && active.current
+        ? `composer:${createdConversationId}`
+        : composerKey
+    let retained: Composer | undefined
+    setDraft(composerKey, (previous: Composer | undefined) => {
+      if (previous?.key !== composer.key) return previous
+      previous.files
+        .filter((item) => item.file === file)
+        .forEach((item) => URL.revokeObjectURL(item.url))
+      retained = {
+        ...previous,
+        key: crypto.randomUUID(),
+        files: previous.files.filter((item) => item.file !== file),
+        sending: false,
+        uploading: undefined,
+      }
+      return destination === composerKey ? retained : undefined
+    })
+    if (destination !== composerKey && retained) setDraft(destination, retained)
+  }
   useEffect(() => {
     const file = recordedSend?.current
     if (!recordedSend || !file || capturing || !composer.files.some((item) => item.file === file))
@@ -68,14 +94,24 @@ export function useMessageSubmission({
     // Wait for the recorder's final data and the updated draft to commit.
     queueMicrotask(() => {
       if (cancelled || !active.current || recordedSend.current !== file) return
+      setSendingRecording({ file })
       recordedSend.current = null
-      void send()
+      void send(file)
+        .then((sent) => {
+          if (sent) return
+          finishDirectRecording(file)
+          if (active.current) notify('语音发送未完成')
+        })
+        .finally(() => {
+          if (active.current)
+            setSendingRecording((current) => (current.file === file ? { file: null } : current))
+        })
     })
     return () => {
       cancelled = true
     }
   })
-  async function send() {
+  async function send(directFile?: File) {
     if (
       (execution && !execution.ready) ||
       (reasoning && !reasoning.reference()) ||
@@ -88,9 +124,14 @@ export function useMessageSubmission({
       (!composer.text.trim() && !composer.files.length)
     )
       return
-    const selectionError = fileSelectionError(composer.files.map((item) => item.file))
+    const files = directFile
+      ? composer.files.filter((item) => item.file === directFile)
+      : composer.files
+    if (directFile && !files.length) return
+    if (!directFile && !composer.pending && !attachmentsReady(files)) return
+    const selectionError = fileSelectionError(files.map((item) => item.file))
     if (selectionError) {
-      setLimitError(selectionError)
+      if (!directFile) setLimitError(selectionError)
       return
     }
     if (interaction && !interaction.acquire('message')) return
@@ -98,37 +139,21 @@ export function useMessageSubmission({
     sendingRef.current = true
     setBusy(true)
     setSendError('')
-    let current = {
-      ...composer,
+    const current: Composer & { submissionPersonaId: PersonaId } = {
+      ...(directFile ? { text: '', key: crypto.randomUUID() } : composer),
       submissionPersonaId: composer.submissionPersonaId ?? personaId,
-      files: composer.files.map((file) => ({ ...file })),
+      files: files.map((file) => ({ ...file })),
     }
     let uploading: string | undefined
-    setDraft(composerKey, { ...current, sending: true })
+    setDraft(composerKey, { ...(directFile ? composer : current), sending: true })
     try {
       if (!current.pending) {
-        for (let i = 0; i < current.files.length; i++) {
-          if (!current.files[i].attachment) {
-            uploading = current.files[i].id
-            setDraft(composerKey, (previous: Composer | undefined) =>
-              updateSendingDraft(previous, composer.key, { uploading }),
-            )
-            const form = new FormData()
-            form.append('file', current.files[i].file)
-            const attachment = await uploadAttachment({ method: 'POST', body: form })
-            current = {
-              ...current,
-              files: current.files.map((file, index) =>
-                index === i ? { ...file, attachment, failed: false } : file,
-              ),
-            }
-          }
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, {
-              files: current.files,
-              uploading: undefined,
-            }),
-          )
+        if (directFile && !current.files[0].attachment) {
+          uploading = current.files[0].id
+          const body = new FormData()
+          body.append('file', directFile)
+          const attachment = await uploadAttachment({ method: 'POST', body })
+          current.files[0] = { ...current.files[0], attachment, failed: false }
         }
         uploading = undefined
         const reasoningReference = reasoning?.reference()
@@ -142,24 +167,29 @@ export function useMessageSubmission({
           execution?.selected,
           reasoningReference,
         )
-        setDraft(composerKey, (previous: Composer | undefined) =>
-          updateSendingDraft(previous, composer.key, { pending: current.pending }),
-        )
+        if (!directFile)
+          setDraft(composerKey, (previous: Composer | undefined) =>
+            updateSendingDraft(previous, composer.key, { pending: current.pending }),
+          )
       }
       const sent = await sendMessage(current.pending.body, current.pending.key)
       activity?.accepted(sent)
       task?.accepted(sent)
       rememberConversation(sent.conversationId)
-      current.files.forEach((file) => URL.revokeObjectURL(file.url))
-      setDraft(composerKey, (previous: Composer | undefined) =>
-        updateSendingDraft(previous, composer.key, null),
-      )
+      if (directFile) finishDirectRecording(directFile, sent.conversationId)
+      else {
+        current.files.forEach((file) => URL.revokeObjectURL(file.url))
+        setDraft(composerKey, (previous: Composer | undefined) =>
+          updateSendingDraft(previous, composer.key, null),
+        )
+      }
       if (active.current) {
         refresh()
         onSent(sent.conversationId, current.pending.body.personaId ?? current.submissionPersonaId)
       }
+      return true
     } catch (e) {
-      if (uploading) {
+      if (uploading && !directFile) {
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, {
             files: current.files.map((file) =>
@@ -171,6 +201,7 @@ export function useMessageSubmission({
       // A structured 4xx rejection is definite, except authentication interruption
       // and an idempotency conflict. Network/5xx/invalid replies remain uncertain.
       if (
+        !directFile &&
         e instanceof ApiError &&
         ([400, 403, 404, 413, 415, 422, 429].includes(e.status) ||
           [
@@ -183,12 +214,20 @@ export function useMessageSubmission({
           updateSendingDraft(previous, composer.key, { pending: undefined }),
         )
       }
+      if (
+        directFile &&
+        (!current.pending ||
+          (e instanceof ApiError && [400, 403, 404, 413, 415, 422, 429].includes(e.status)))
+      ) {
+        for (const file of current.files)
+          if (file.attachment) void deleteDraftAttachment(file.attachment.id).catch(() => {})
+      }
       if (e instanceof ApiError && e.code === 'reasoning_settings_changed')
         void reasoning?.refresh()
       if (e instanceof ApiError && e.code === 'execution_settings_changed')
         void execution?.refresh()
       if (e instanceof ApiError && e.code === 'conversation_busy') void task?.refresh()
-      if (active.current && !isCancelled(e)) {
+      if (!directFile && active.current && !isCancelled(e)) {
         if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
           setLimitError(e.message)
         else setSendError(e instanceof Error ? e : '发送未完成')
@@ -203,5 +242,12 @@ export function useMessageSubmission({
       if (active.current) setBusy(false)
     }
   }
-  return { busy, sendingRef, send }
+  return {
+    busy: busy || !!directSendingFile,
+    sendingRef,
+    send: async () => {
+      await send()
+    },
+    directSendingFile,
+  }
 }

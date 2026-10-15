@@ -88,6 +88,6 @@ class BodyLimit:
             message = await receive()
             size += len(message.get('body', b''))
             if size > MAX_UPLOAD_BODY_BYTES:
-                problem(413, '单次上传请求不能超过 32 MiB')
+                problem(413, '单次上传请求不能超过 32 MB')
             return message
         await self.app(scope, bounded, send)

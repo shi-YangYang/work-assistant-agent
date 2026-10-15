@@ -1,4 +1,3 @@
-import utilitiesStyles from '../../../../styles/utilities.module.css'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import styles from './Conversations.module.css'
@@ -6,6 +5,8 @@ import type { Conversation } from '@paa/api-contracts'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { PageLoading } from '@web/components/feedback/PageLoading'
+import { usePageReady } from '@web/components/feedback/PageReadiness'
 import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
 import { ErrorNoticeScope } from '@web/components/feedback/ErrorNoticeScope'
 import { FormField } from '@web/components/forms/FormField'
@@ -59,7 +60,7 @@ function AssistantContent({ conversationId: routeConversationId }: { conversatio
   const needsWorkRestore = !!workEntry && !conversationId && resolvedWorkEntry !== workEntry
   const explicitNew = startingNew || (!workEntry && params.get('new') === '1')
   const showConversations = params.get('conversations') === '1'
-  const [resumed, setResumed] = useState(false)
+  const [noSavedConversation, setNoSavedConversation] = useState(false)
   const [resumeError, setResumeError] = useState<Error | string>('')
   const [resumeRevision, setResumeRevision] = useState(0)
   const attemptedResumeRevision = useRef(0)
@@ -160,7 +161,7 @@ function AssistantContent({ conversationId: routeConversationId }: { conversatio
         if (!active) return
         rememberConversation(id)
         setResumeError('')
-        setResumed(true)
+        setNoSavedConversation(!id)
         if (workEntry && !id) setResolvedWorkEntry(workEntry)
         if (id)
           navigate(
@@ -231,7 +232,7 @@ function AssistantContent({ conversationId: routeConversationId }: { conversatio
       current.data ||
       createdHere ||
       (!conversationId &&
-        (explicitNew || newDraft || (resumed && !lastConversationId && !resumeError)))
+        (explicitNew || newDraft || (noSavedConversation && !lastConversationId && !resumeError)))
     )
   const pageNotice = (
     [
@@ -243,6 +244,9 @@ function AssistantContent({ conversationId: routeConversationId }: { conversatio
       { error: restoring ? resumeError : '', retry: () => setResumeRevision((value) => value + 1) },
     ] satisfies AssistantNoticeData[]
   ).find((notice) => notice.error)
+  const managedLoading = usePageReady(showChat ? undefined : !!pageNotice)
+  if (!showChat && !pageNotice) return managedLoading ? null : <PageLoading />
+
   return (
     <div className={styles['assistant-workspace']}>
       <section className={styles['conversation-main']}>
@@ -289,13 +293,6 @@ function AssistantContent({ conversationId: routeConversationId }: { conversatio
           />
         </header>
         {!showChat && <AssistantNotice notice={pageNotice} />}
-        {restoring && (
-          <>
-            {(needsWorkRestore || !resumed || lastConversationId) && !resumeError && (
-              <p className={utilitiesStyles['muted']}>正在打开上次会话…</p>
-            )}
-          </>
-        )}
         {showChat && (
           <ConversationChat
             key={chatSession.key}

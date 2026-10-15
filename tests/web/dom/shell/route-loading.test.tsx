@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { routePage } from '../../../../apps/web/src/app/route-page'
+import { usePageReady } from '../../../../apps/web/src/components/feedback/PageReadiness'
 import { deferred } from '../helpers'
 
 const page = { default: () => <p>页面内容</p> }
@@ -61,6 +62,27 @@ it('shows a slow page as soon as it is ready without another 300ms wait', async 
   expect(screen.getByText('页面内容')).toBeTruthy()
   expect(screen.queryByRole('status')).toBeNull()
   expect(load).toHaveBeenCalledTimes(1)
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('keeps the same loading element mounted from module loading until the page content is ready', async () => {
+  function Content({ ready }: { ready: boolean }) {
+    usePageReady(ready)
+    return <button>页面内容</button>
+  }
+  const request = deferred<{ default: typeof Content }>()
+  const Page = routePage(() => request.promise, { waitForContent: true })
+  const view = render(<Page ready={false} />)
+  const loading = screen.getByRole('status')
+  const emblem = loading.querySelector('img')
+  await advance(500)
+  await act(async () => request.resolve({ default: Content }))
+  expect(screen.getByRole('status')).toBe(loading)
+  expect(screen.getByRole('status').querySelector('img')).toBe(emblem)
+  expect(screen.queryByRole('button', { name: '页面内容' })).toBeNull()
+  view.rerender(<Page ready />)
+  expect(screen.queryByRole('status')).toBeNull()
+  expect(screen.getByRole('button', { name: '页面内容' })).toBeTruthy()
   expect(vi.getTimerCount()).toBe(0)
 })
 

@@ -30,7 +30,9 @@
   display: block;
 }
 .unread {
+  --badge-color: #0788f5;
   position: absolute;
+  isolation: isolate;
   top: 0;
   right: -4px;
   display: flex;
@@ -41,14 +43,40 @@
   padding: 0 4px;
   border: 2px solid #fff;
   border-radius: 999px;
-  background: #fbe7e9;
-  color: #b84451;
+  background: var(--badge-color);
+  color: #fff;
   font-size: 10px;
   font-weight: 600;
   line-height: 16px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
+}
+.unread::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--badge-color);
+  animation: unread-pulse 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes unread-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  75%,
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .unread::before {
+    animation: none;
+    opacity: 0;
+  }
 }
 .bubble {
   position: relative;

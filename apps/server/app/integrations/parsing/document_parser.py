@@ -5,7 +5,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-PARSER_VERSION = 'text-v2:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
+PARSER_VERSION = 'text-v3:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
 
 
 MAX_TEXT = 200_000
@@ -132,7 +132,7 @@ def text_decode(data):
     except UnicodeError:
         raise ParseFailure('无法识别文本编码，请保存为 UTF-8 或带 BOM 的 UTF-16') from None
     if any(ord(c) < 32 and c not in '\n\r\t' for c in text):
-        raise ParseFailure('文件含有二进制或不支持的控制字符，请保存为纯文本')
+        raise ParseFailure('该文件无法按文本读取，暂不支持此二进制格式。')
     return text
 
 
@@ -345,13 +345,11 @@ def extract(path, suffix):
                 reader = csv.reader(io.StringIO(text, newline=''), strict=True)
                 for n, row in enumerate(reader, 1):
                     add(f'记录 {n} · 至行 {reader.line_num}', '\n'.join(f'列 {i}：{value}' for i, value in enumerate(row, 1)))
-            elif suffix in ('.txt', '.md'):
+            else:
                 # Group bounded consecutive lines, retaining physical positions.
                 lines = text.splitlines()
                 for start in range(0, len(lines), 30):
                     add(f'行 {start + 1}–{min(start + 30, len(lines))}', '\n'.join(lines[start:start + 30]))
-            else:
-                raise ParseFailure('不支持的文档格式')
     except Full:
         warnings.append('已达到 20 万字符或 2000 分段上限，剩余内容未读取')
     if not chunks:
@@ -368,7 +366,7 @@ def main():
     except (MemoryError, RecursionError):
         result = {'status': 'failed', 'chunks': [], 'info': {'error': '文档超出解析资源限制，请拆分文件'}}
     except Exception:
-        result = {'status': 'failed', 'chunks': [], 'info': {'error': '文件损坏或结构无法读取，请重新导出后上传'}}
+        result = {'status': 'failed', 'chunks': [], 'info': {'error': '文件读取失败，请确认文件可以正常打开，或重新导出后上传。'}}
     print(json.dumps(result, ensure_ascii=False))
 
 if __name__ == '__main__':

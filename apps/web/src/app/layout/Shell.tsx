@@ -1,3 +1,4 @@
+import { useAttachmentUploads } from '@web/features/assistant/hooks/composer/useAttachmentUploads'
 import { NotificationProvider } from '@web/features/notifications/components/NotificationProvider'
 import styles from './Shell.module.css'
 import type { Identity } from '@paa/api-contracts'
@@ -45,6 +46,7 @@ export function Shell({
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
   const writerGeneration = vault.version
   const setDraft = useMemo(() => vault.writer(writerGeneration), [vault, writerGeneration])
+  useAttachmentUploads(identityScope(identity), drafts, setDraft)
   const [toast, setToast] = useState('')
   const [logoutError, setLogoutError] = useState<Error | string>('')
   const [commands, setCommands] = useState(false)

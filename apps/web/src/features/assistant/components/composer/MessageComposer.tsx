@@ -1,3 +1,4 @@
+import { attachmentsReady } from '../../lib/attachment-uploads'
 import controlsStyles from '../../../../styles/controls.module.css'
 import styles from './MessageComposer.module.css'
 import { WorkReferenceChip } from '../work-reference/WorkReferenceChip'
@@ -13,7 +14,7 @@ import { ContextUsage, contextUsageLabel } from './controls/ContextUsage'
 import { VoiceRecordButton, type VoiceRecording } from './controls/VoiceRecordButton'
 import type { ContextUsage as Usage } from '@paa/api-contracts'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
-import { clipboardImages, fileAccept } from '@web/features/assistant/utils/files'
+import { clipboardFiles, fileAccept } from '@web/features/assistant/utils/files'
 import { submitOnEnter } from '@web/features/assistant/utils/session'
 import { CornerUpLeft, Plus, ArrowUp, Square, X, Keyboard } from 'lucide-react'
 import type { useAssistantTask } from '../../hooks/conversation/useAssistantTask'
@@ -212,7 +213,7 @@ export function MessageComposer({
             }}
             onChange={(e) => change({ ...composer, text: e.target.value, key: '' })}
             onPaste={(event) => {
-              const images = clipboardImages(event.clipboardData)
+              const images = clipboardFiles(event.clipboardData)
               if (!images.length) return
               event.preventDefault()
               void addFiles(images)
@@ -330,6 +331,7 @@ export function MessageComposer({
                 : busy ||
                   !!retryWait ||
                   previewUploading ||
+                  (!pending && !attachmentsReady(composer.files)) ||
                   personaSaving ||
                   reasoningSaving ||
                   capturing ||

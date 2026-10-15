@@ -21,3 +21,7 @@ export function documentExtractionPath(
 export function uploadAttachment(options: RequestInit) {
   return api<Attachment>('/uploads', options)
 }
+
+export function deleteDraftAttachment(id: string) {
+  return api<{ ok: boolean; cleanupPending?: boolean }>(`/uploads/${id}`, { method: 'DELETE' })
+}
