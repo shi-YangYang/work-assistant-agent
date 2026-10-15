@@ -1,11 +1,13 @@
 import asyncio
+import json
+import httpx
 from datetime import timedelta
 from fastapi import HTTPException
 from app.core.pagination import cursor_decode, cursor_encode
 from app.core.periods import period_range
 from app.db.base import now
 from app.integrations.models.chat import token_usage
-from app.integrations.models.transport import safe_error
+from app.integrations.models.transport import ProviderError, safe_error
 from app.modules.members.models import Company
 from app.modules.model_services.models import ModelUsage
 from app.tasks.models import Job
@@ -15,6 +17,23 @@ from sqlalchemy import and_, case, func, select, tuple_
 def usage_fields(choice=None, *, attempt=None, fence=None):
     choice = choice or {}
     return dict(status='reserved', service_id=choice.get('serviceId'), service_name=choice.get('name'), model_name=choice.get('model'), job_attempt=attempt, job_fence=fence)
+
+
+def _usage_error(error):
+    # Stream callbacks also validate application sources and permissions. Only
+    # transport/protocol errors should be described as provider failures.
+    if isinstance(error, (ProviderError, httpx.HTTPError, asyncio.TimeoutError, json.JSONDecodeError)):
+        return safe_error(error)
+    if isinstance(error, asyncio.CancelledError):
+        return ProviderError('cancelled', '本次处理已取消')
+    from app.tasks.context import LostLease
+    if isinstance(error, LostLease):
+        return ProviderError('cancelled', '任务执行权已变化，本次处理已停止')
+    from app.tasks.nodes.node_failures import classify
+    failure = classify(error)
+    if failure.code == 'unknown':
+        return ProviderError('internal_error', '内部处理未完成，请重试或联系管理员')
+    return ProviderError(failure.code, failure.message[:300])
 
 
 class RequestRecord:
@@ -48,7 +67,7 @@ class RequestRecord:
             if row.status not in ('reserved', 'running'):
                 return
             row.finished_at = now()
-            failure = safe_error(error) if error is not None else None
+            failure = _usage_error(error) if error is not None else None
             # Address validation without an HTTP status rejects before sending;
             # redirects carry a status and remain actual, failed requests.
             if failure and (failure.sent is False or failure.code == 'address' and failure.status is None):
