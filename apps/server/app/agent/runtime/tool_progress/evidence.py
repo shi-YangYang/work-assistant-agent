@@ -4,7 +4,7 @@ from dataclasses import asdict
 from app.core.digests import digest
 
 WRITES = frozenset({'generate_image', 'execute_business_action', 'propose_progress', 'propose_followup', 'save_memory', 'forget_memory', 'save_deliverable', 'request_user_input'})
-CURSORS = {'read_document': 'start', 'find_documents': 'start', 'read_deliverable': 'offset',
+CURSORS = {'read_images': 'start', 'read_document': 'start', 'find_documents': 'start', 'read_deliverable': 'offset',
            'find_work_items': 'cursor', 'get_work_item': 'body_start',
            'list_work_updates': 'start', 'list_work_materials': 'start', 'read_work_material': 'start',
            'find_team_members': 'cursor', 'query_team_business': 'cursor', 'read_team_source': 'start',

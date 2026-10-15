@@ -153,6 +153,8 @@ async def material_coverage(db, actor, job, documents, reads):
         SandboxExecution.state == 'succeeded'))).all()
     coverage, legacy = [], []
     for document in documents:
+        if document.kind != 'document':
+            continue
         read = len({entry[2] for entry in reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
         total = document.extraction_info.get('chunks', 0)
         if document.extraction_status == 'failed':
@@ -178,6 +180,8 @@ async def material_coverage(db, actor, job, documents, reads):
 
 def append_material_coverage(answer, coverage, legacy):
     """Replace only an identical terminal scope note, preserving answer prose."""
+    if not coverage:
+        return answer
     normalize = lambda value: re.sub(r'\s+', '', value)
     equivalents = {normalize('\n'.join(lines)) for lines in (coverage, legacy)}
     while True:
