@@ -64,24 +64,7 @@ export function ComposerAttachments({
               aria-label={label}
               aria-busy={uploading}
             >
-              {kind === 'image' ? (
-                <button
-                  type="button"
-                  className={styles.image}
-                  title={title}
-                  aria-label={`预览${item.file.name}`}
-                  disabled={locked}
-                  onClick={() =>
-                    setGallery(previewImages.findIndex((image) => image.id === item.id))
-                  }
-                >
-                  {isHeif(item.file) && !item.attachment ? (
-                    <span>HEIC</span>
-                  ) : (
-                    <img src={item.attachment?.previewUrl ?? item.url} alt="" />
-                  )}
-                </button>
-              ) : kind === 'audio' ? (
+              {kind === 'audio' ? (
                 <ComposerAudioPreview
                   file={item.file}
                   src={item.attachment?.previewUrl ?? item.url}
@@ -101,16 +84,27 @@ export function ComposerAttachments({
                   aria-label={`预览${item.file.name}`}
                   disabled={locked}
                   onClick={() =>
-                    item.file.name.toLowerCase().endsWith('.pdf')
-                      ? setPdf(item.file)
-                      : setName(item.file.name)
+                    kind === 'image'
+                      ? setGallery(previewImages.findIndex((image) => image.id === item.id))
+                      : item.file.name.toLowerCase().endsWith('.pdf')
+                        ? setPdf(item.file)
+                        : setName(item.file.name)
                   }
                 >
-                  {uploading ? (
-                    <LoaderCircle size={18} className={styles.spinner} aria-label="上传中" />
-                  ) : (
-                    <FileText size={18} />
-                  )}
+                  <span className={styles.thumbnail}>
+                    {kind === 'image' ? (
+                      isHeif(item.file) && !item.attachment ? (
+                        <span>HEIC</span>
+                      ) : (
+                        <img src={item.attachment?.previewUrl ?? item.url} alt="" />
+                      )
+                    ) : (
+                      !uploading && <FileText size={18} />
+                    )}
+                    {uploading && (
+                      <LoaderCircle size={18} className={styles.spinner} aria-label="上传中" />
+                    )}
+                  </span>
                   <span>
                     <strong>{item.file.name}</strong>
                     <small title={status || title} role={status ? 'status' : undefined}>
@@ -118,14 +112,6 @@ export function ComposerAttachments({
                     </small>
                   </span>
                 </button>
-              )}
-              {status && kind === 'image' && (
-                <span className={styles.status} role="status">
-                  {uploading && (
-                    <LoaderCircle size={12} className={styles.spinner} aria-hidden="true" />
-                  )}{' '}
-                  {status}
-                </span>
               )}
               {kind === 'audio' && uploading && (
                 <LoaderCircle
