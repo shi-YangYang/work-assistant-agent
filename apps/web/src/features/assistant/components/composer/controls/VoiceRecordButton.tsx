@@ -1,9 +1,9 @@
-import { Mic, Square, X } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Mic, Square } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent } from 'react'
-import { createPortal } from 'react-dom'
 import type { CaptureState } from '../../../lib/audio-capture'
 import controls from '@web/styles/controls.module.css'
+import { VoiceHoldOverlay } from './VoiceHoldOverlay'
 import styles from './VoiceRecordButton.module.css'
 
 export type VoiceRecording = {
@@ -39,7 +39,6 @@ export function VoiceRecordButton({
 }) {
   const [holding, setHolding] = useState(false)
   const [cancelling, setCancelling] = useState(false)
-  const [hintTop, setHintTop] = useState(96)
   const press = useRef<Press | null>(null)
   const suppressClick = useRef(false)
   const button = useRef<HTMLButtonElement>(null)
@@ -95,20 +94,6 @@ export function VoiceRecordButton({
     },
     [],
   )
-  useLayoutEffect(() => {
-    if (!holding) return
-    const position = () => {
-      if (button.current) setHintTop(Math.max(96, button.current.getBoundingClientRect().top - 12))
-    }
-    position()
-    window.addEventListener('resize', position)
-    window.addEventListener('scroll', position, true)
-    return () => {
-      window.removeEventListener('resize', position)
-      window.removeEventListener('scroll', position, true)
-    }
-  }, [holding])
-
   function down(event: PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0 || event.isPrimary === false || press.current) return
     suppressClick.current = false
@@ -212,31 +197,13 @@ export function VoiceRecordButton({
           <Mic size={20} />
         )}
       </button>
-      {holding &&
-        createPortal(
-          <div
-            className={styles.hint}
-            style={{ top: hintTop }}
-            data-cancelling={cancelling}
-            role="status"
-          >
-            <span className={styles['hint-icon']} aria-hidden="true">
-              <Mic size={22} className={styles['record-icon']} />
-              <X size={22} className={styles['cancel-icon']} />
-            </span>
-            <span className={styles['hint-copy']}>
-              <strong>
-                {cancelling
-                  ? '松开取消'
-                  : recording.state === 'requesting'
-                    ? '正在申请麦克风…'
-                    : `录音中 · ${recording.seconds} 秒`}
-              </strong>
-              <span>{cancelling ? '下移可继续录音' : '松开发送，上滑取消'}</span>
-            </span>
-          </div>,
-          document.body,
-        )}
+      {holding && (
+        <VoiceHoldOverlay
+          state={recording.state}
+          seconds={recording.seconds}
+          cancelling={cancelling}
+        />
+      )}
     </>
   )
 }

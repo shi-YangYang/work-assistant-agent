@@ -45,85 +45,8 @@
   line-height: 11px;
   font-variant-numeric: tabular-nums;
 }
-.hint {
-  position: fixed;
-  left: 50%;
-  transform: translate(-50%, -100%);
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 248px;
-  max-width: calc(100vw - 32px);
-  padding: 16px;
-  border-radius: 18px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--control);
-  box-shadow: var(--shadow);
-  pointer-events: none;
-  font-size: 14px;
-  animation: hint-enter 160ms ease-out;
-}
-.hint-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--hover);
-  transition:
-    color 160ms ease,
-    background-color 160ms ease;
-}
-.hint-icon svg {
-  grid-area: 1 / 1;
-  transition: opacity 160ms ease;
-}
-.cancel-icon {
-  opacity: 0;
-}
-.hint[data-cancelling='true'] .hint-icon {
-  color: var(--danger);
-  background: var(--danger-bg);
-}
-.hint[data-cancelling='true'] .record-icon {
-  opacity: 0;
-}
-.hint[data-cancelling='true'] .cancel-icon {
-  opacity: 1;
-}
-.hint-copy {
-  display: grid;
-  gap: 4px;
-  line-height: 20px;
-}
-.hint-copy strong {
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-.hint-copy > span {
-  color: var(--muted);
-  font-size: 12px;
-}
-@keyframes hint-enter {
-  from {
-    opacity: 0;
-    translate: 0 4px;
-  }
-  to {
-    opacity: 1;
-    translate: 0 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .button,
-  .hint-icon,
-  .hint-icon svg {
+  .button {
     transition: none;
-  }
-  .hint {
-    animation: none;
   }
 }
