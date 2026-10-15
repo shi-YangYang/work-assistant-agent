@@ -163,6 +163,10 @@ async def material_coverage(db, actor, job, documents, reads):
         else:
             detail = f'文字工具读取 {read}/{total} 个分段'
             old_detail = f'实际读取 {read}/{total} 个文字分段'
+            reused = sum(token in job.result.get('documentReadAliases', {}) for token, entry in reads.items()
+                         if entry[0] == document.id and entry[1] == document.extraction_revision)
+            if reused:
+                detail = f'文字工具读取/复用 {read}/{total} 个分段，其中 {reused} 个复用自相同内容附件'
             if document.extraction_status == 'partial':
                 detail += '；文件文字仅部分可读'
                 old_detail += '；文件仅部分可读'

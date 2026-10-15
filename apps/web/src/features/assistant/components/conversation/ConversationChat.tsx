@@ -33,6 +33,7 @@ import { useContextUsage } from '@web/features/assistant/hooks/composer/useConte
 import { useMessageSubmission } from '@web/features/assistant/hooks/composer/useMessageSubmission'
 import { useRecording } from '@web/features/assistant/hooks/composer/useRecording'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
+import { numberedFiles } from '../../lib/attachment-names'
 import {
   MAX_ATTACHMENTS,
   MAX_AUDIO_ATTACHMENTS,
@@ -254,7 +255,14 @@ export function ConversationChat({
       key: '',
       files: [
         ...existing.files,
-        ...files.map((file) => ({ id: crypto.randomUUID(), file, url: URL.createObjectURL(file) })),
+        ...numberedFiles(
+          files,
+          existing.files.map((item) => item.file),
+        ).map((file) => ({
+          id: crypto.randomUUID(),
+          file,
+          url: URL.createObjectURL(file),
+        })),
       ],
     })
     setSendError('')

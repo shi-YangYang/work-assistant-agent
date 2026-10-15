@@ -6,6 +6,7 @@ import {
   attachmentsReady,
 } from '../../../apps/web/src/features/assistant/lib/attachment-uploads'
 import type { DraftStore } from '../../../apps/web/src/lib/workspace'
+import { numberedFiles } from '../../../apps/web/src/features/assistant/lib/attachment-names'
 
 const attachment = (id: string): Attachment => ({
   id,
@@ -119,4 +120,25 @@ it('pauses requests at session boundaries and ignores direct-recording files', a
   h.manager.bind('next-account', vi.fn())
   h.manager.sync({})
   expect(h.upload).toHaveBeenCalledTimes(1)
+})
+
+it('uploads duplicate selections separately and removes only the selected attachment', async () => {
+  const h = setup()
+  const original = new File(['identical'], 'file.txt')
+  h.current().files = numberedFiles([original, original], []).map((file, index) => ({
+    id: String(index),
+    file,
+    url: 'blob:' + index,
+  }))
+  h.sync()
+  expect(h.upload.mock.calls.map(([file]) => file.name)).toEqual(['file.txt', 'file (2).txt'])
+  h.pending[0].resolve(attachment('first'))
+  h.pending[1].resolve(attachment('second'))
+  await flush()
+  h.sync()
+  h.current().files = [h.current().files[1]]
+  h.sync()
+  expect(h.remove).toHaveBeenCalledExactlyOnceWith('first')
+  expect(h.current().files[0].attachment?.id).toBe('second')
+  expect(attachmentsReady(h.current().files)).toBe(true)
 })

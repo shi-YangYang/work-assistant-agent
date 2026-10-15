@@ -20,13 +20,19 @@ async def prepare_transcripts(context, attachments, transcript, revision, provid
     if not audio:
         return transcript, revision, result
     parts = dict(result.get('audioTranscripts', {}))
+    from app.modules.attachments.duplicates import content_key
+    recognized = {content_key(item): parts[item.id]['text'] for item in audio if item.id in parts}
     for attachment in audio:
         if attachment.id not in parts:
-            await publish(context, 'transcribing', force=True)
-            text = await (provider(context, attachment) if provider else asr(context, attachment))
+            key = content_key(attachment)
+            text = recognized.get(key)
+            if text is None:
+                await publish(context, 'transcribing', force=True)
+                text = await (provider(context, attachment) if provider else asr(context, attachment))
             if not text or not text.strip():
                 raise ValueError(f'语音“{attachment.name}”未识别出文字，请检查录音后重试或修正语音文字；其他材料已保留')
             parts[attachment.id] = {'name': attachment.name, 'text': text.strip()}
+            recognized[key] = text.strip()
             async with context.sessions.begin() as db:
                 live, _ = await lease(db, context)
                 live.result = {**live.result, 'audioTranscripts': parts}

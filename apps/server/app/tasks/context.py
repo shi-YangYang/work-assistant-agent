@@ -57,6 +57,7 @@ class RunContext:
     document_versions: dict[str, int] = field(default_factory=dict)
     deliverable_reads: dict[str, int] = field(default_factory=dict)
     document_reads: dict[str, tuple] = field(default_factory=dict)
+    document_equivalents: dict[str, dict[str, int]] = field(default_factory=dict)
     image_sources: dict[str, str] = field(default_factory=dict)
     image_generation_lock: Any = field(default_factory=asyncio.Lock, repr=False, compare=False)
     model_binding: dict | None = None

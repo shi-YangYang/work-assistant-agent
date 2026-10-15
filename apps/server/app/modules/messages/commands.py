@@ -76,6 +76,9 @@ async def submit_message(db, actor, body, idempotency_key, settings):
     attached = [await message_attachment(db, actor, aid) for aid in body.attachmentIds]
     if any(a.message_id for a in attached):
         problem(422, '附件已用于其他消息，请重新上传')
+    from app.modules.attachments.duplicates import unique_names
+    for attachment, name in zip(attached, unique_names([a.name for a in attached])):
+        attachment.name = name
     if any(a.size > (MAX_IMAGE_BYTES if a.kind == 'image' else MAX_FILE_BYTES) for a in attached):
         problem(422, '每张图片不能超过 30 MB，其他单个文件不能超过 20 MB')
     if sum(a.kind == 'audio' for a in attached) > MAX_AUDIO_ATTACHMENTS:
