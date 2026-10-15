@@ -46,6 +46,12 @@ function Playback({ src, name, duration: initialDuration, label, suspended = fal
   const canSeek = seekable && duration !== null && duration > 0 && !suspended
   const accessibleName = label ?? name
 
+  // Reset the UI with the prop change, even if a pending play has no pause event.
+  if (suspended && (playing || waiting)) {
+    setPlaying(false)
+    setWaiting(false)
+  }
+
   const stop = () => {
     requested.current = false
     attempt.current++
@@ -61,16 +67,20 @@ function Playback({ src, name, duration: initialDuration, label, suspended = fal
     element.setAttribute('src', src)
     return () => {
       requested.current = false
-      attempt.current++
       if (activePlayer?.element === element) activePlayer = undefined
       element.pause()
       element.removeAttribute('src')
       element.load()
     }
-  }, [])
+  }, [src])
 
   useEffect(() => {
-    if (suspended) stop()
+    if (!suspended) return
+    requested.current = false
+    attempt.current++
+    const element = audio.current
+    element?.pause()
+    if (activePlayer?.element === element) activePlayer = undefined
   }, [suspended])
 
   useEffect(() => {

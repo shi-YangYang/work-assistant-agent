@@ -139,7 +139,7 @@ export function useMessageSubmission({
     sendingRef.current = true
     setBusy(true)
     setSendError('')
-    let current: Composer & { submissionPersonaId: PersonaId } = {
+    const current: Composer & { submissionPersonaId: PersonaId } = {
       ...(directFile ? { text: '', key: crypto.randomUUID() } : composer),
       submissionPersonaId: composer.submissionPersonaId ?? personaId,
       files: files.map((file) => ({ ...file })),
