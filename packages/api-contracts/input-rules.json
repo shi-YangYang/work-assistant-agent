@@ -1,11 +1,61 @@
 {
   "member": {
-    "name": { "min": 1, "max": 80 },
+    "name": {
+      "min": 1,
+      "max": 80
+    },
     "username": {
       "min": 3,
       "max": 80,
       "pattern": "^[a-zA-Z0-9._@-]{3,80}$"
     },
-    "password": { "min": 4, "max": 128 }
+    "password": {
+      "min": 4,
+      "max": 128
+    }
+  },
+  "attachment": {
+    "blocked": {
+      "program": [
+        "exe",
+        "com",
+        "scr",
+        "dll",
+        "sys",
+        "ocx",
+        "cpl",
+        "so",
+        "dylib",
+        "msi",
+        "msp",
+        "msix",
+        "appx",
+        "apk",
+        "dmg",
+        "pkg",
+        "deb",
+        "rpm",
+        "iso",
+        "img",
+        "vhd",
+        "vhdx",
+        "vmdk",
+        "qcow2",
+        "lnk",
+        "url",
+        "scf",
+        "pif",
+        "pyc",
+        "pyo",
+        "class",
+        "jar",
+        "wasm"
+      ],
+      "macro": ["docm", "dotm", "xlsm", "xltm", "xlam", "pptm", "potm", "ppam"],
+      "archive": ["zip", "rar", "7z", "tar", "gz", "tgz", "bz2", "xz", "zst", "cab"]
+    },
+    "legacyOffice": ["doc", "xls", "ppt"],
+    "images": ["jpg", "jpeg", "png", "webp", "heic", "heif"],
+    "audio": ["wav", "webm", "mp4", "m4a", "aac", "mp3"]
   }
 }

@@ -15,18 +15,19 @@
 .pending-file {
   position: relative;
   display: flex;
-  flex: 0 0 180px;
+  flex: 0 0 168px;
   align-items: center;
   gap: 8px;
-  height: 64px;
+  height: 48px;
   min-width: 0;
-  padding: 8px 30px 8px 10px;
+  padding: 6px 32px 6px 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
 }
 .pending-file[data-kind='image'] {
   flex-basis: 64px;
+  height: 64px;
   padding: 0;
 }
 .pending-file[data-failed='true'] {
@@ -56,7 +57,7 @@
 .document {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
   padding: 0;
@@ -83,18 +84,22 @@
   font-weight: 500;
 }
 .document small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
   font-size: 10px;
 }
 .remove {
   position: absolute;
-  top: 3px;
-  right: 3px;
+  top: 0;
+  right: 0;
   display: grid;
   place-items: center;
-  width: 24px;
-  min-width: 24px;
-  min-height: 24px;
+  width: 28px;
+  min-width: 28px;
+  min-height: 46px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -121,14 +126,69 @@
 [data-failed='true'] > .status {
   color: var(--danger);
 }
-@media (max-width: 760px) {
-  .remove {
-    width: 28px;
-    min-width: 28px;
-    min-height: 28px;
+
+.pending-file[data-kind='audio'] {
+  flex-basis: 192px;
+  height: 64px;
+}
+.pending-file[data-failed='true']:not([data-kind='image']) {
+  padding-right: 60px;
+}
+.pending-file[data-kind='image'] .remove {
+  min-height: 28px;
+}
+.retry {
+  position: absolute;
+  right: 28px;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  min-height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--secondary);
+}
+.pending-file[data-kind='image'] .retry {
+  right: auto;
+  left: 0;
+  min-height: 28px;
+  background: var(--surface);
+}
+.spinner {
+  animation: attachment-spin 0.9s linear infinite;
+}
+.audio-spinner {
+  position: absolute;
+  left: 8px;
+  bottom: 5px;
+}
+.status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status svg {
+  vertical-align: middle;
+}
+.full-name {
+  overflow-wrap: anywhere;
+}
+@keyframes attachment-spin {
+  to {
+    transform: rotate(360deg);
   }
-  .pending-file:not([data-kind='image']) {
-    flex-basis: 192px;
-    padding-right: 32px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+@media (max-width: 760px) {
+  .pending-file:not([data-kind='image']):not([data-kind='audio']) {
+    flex-basis: 164px;
   }
 }

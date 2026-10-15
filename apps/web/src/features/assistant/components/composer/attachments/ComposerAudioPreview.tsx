@@ -97,7 +97,8 @@ export function ComposerAudioPreview({
       >
         <strong>{label}</strong>
         <span role="status" data-failed={failed || status === '上传失败'}>
-          {status || (failed ? '无法试听' : time)}
+          <span>{failed ? '无法试听' : time}</span>
+          {status && <span title={status}> · {status}</span>}
         </span>
       </button>
       <div

@@ -193,6 +193,6 @@ async def clean_files(db, settings, owner_id=None):
         query = query.where(Attachment.owner_id == owner_id)
     items = (await db.scalars(query)).all()
     for item in items:
-        from app.integrations.media import remove_media
-        remove_media(settings, item.id)
+        from app.modules.attachments.lifecycle import clean_retired_upload
+        clean_retired_upload(item, settings)
     return len(items)

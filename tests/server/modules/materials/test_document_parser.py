@@ -161,3 +161,24 @@ async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok)
     else:
         with pytest.raises(OSError, match='资源限制'): windows_resource_limits()
         assert calls == ['configured', 'assigned', 'closed']
+
+
+@pytest.mark.parametrize('suffix', ['.py', '.js', '.tsx', '.sh', '.bat', '.ps1', '.unknown', '', '.html', '.svg'])
+async def test_generic_text_preserves_source_and_line_locations(tmp_path, suffix):
+    raw = 'if broken syntax:\n<script>保留原文</script>\n第二行\n'
+    path = tmp_path / 'original'
+    path.write_text(raw, encoding='utf-8')
+    result = await parse_process(path, suffix)
+    assert result['status'] == 'ready'
+    assert result['chunks'][0]['location'] == '行 1–3'
+    assert result['chunks'][0]['text'] == raw.rstrip('\n')
+
+
+@pytest.mark.parametrize('data, expected', [(b'\x00abc', '二进制'), (b'\x80\xfe', '编码'), ('编码测试'.encode('utf-16'), None)])
+async def test_generic_text_encoding_and_binary_errors(tmp_path, data, expected):
+    path = tmp_path / 'original'; path.write_bytes(data)
+    result = await parse_process(path, '.custom')
+    if expected:
+        assert result['status'] == 'failed' and expected in result['info']['error']
+    else:
+        assert result['status'] == 'ready' and result['chunks'][0]['text'] == '编码测试'

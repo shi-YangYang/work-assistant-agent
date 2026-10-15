@@ -36,6 +36,8 @@ async def require_materials(db, actor, work, ids, *, allow_removed=False):
 async def bind_materials(db, actor, work, sources, settings, *, conversation_id=None):
     if not sources:
         return []
+    from app.security.locks import company_lock
+    await company_lock(db, actor.company_id)
     if settings is None:
         raise ValueError('工作材料保存缺少存储配置')
     if len(sources) > 9:
@@ -52,7 +54,7 @@ async def bind_materials(db, actor, work, sources, settings, *, conversation_id=
                 problem(422, '单次最多添加 3 段语音')
             continue
         if source.get('attachmentId'):
-            original = await visible_attachment(db, source['attachmentId'], actor)
+            original = await visible_attachment(db, source['attachmentId'], actor, lock=True)
             if original.owner_id != actor.id:
                 problem(403, '只能保存本人明确选中的材料')
             if original.message_id:

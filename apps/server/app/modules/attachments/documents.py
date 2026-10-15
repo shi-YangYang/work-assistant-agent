@@ -23,6 +23,8 @@ def safe_name(name):
 
 
 def document_type(name, supplied_mime):
+    from app.modules.attachments.policy import attachment_kind
+    kind = attachment_kind(name)
     suffix = Path(name).suffix.lower()
     if suffix in DOCUMENT_TYPES:
         permitted = {DOCUMENT_TYPES[suffix], 'application/octet-stream', '', 'application/zip' if suffix in ('.docx', '.pptx', '.xlsx') else 'text/plain'}
@@ -31,9 +33,7 @@ def document_type(name, supplied_mime):
         if (supplied_mime or '').split(';')[0].lower() not in permitted:
             problem(415, '文件类型与扩展名不一致，请重新导出后上传')
         return DOCUMENT_TYPES[suffix]
-    if suffix in ('.doc', '.ppt', '.xls', '.xlsm', '.docm', '.pptm'):
-        problem(415, '暂不支持旧版 Office 或含宏格式；请转换为 PDF、DOCX、PPTX、XLSX 或 CSV')
-    return None
+    return 'text/plain' if kind == 'document' else None
 
 
 def attachment_dto(a):

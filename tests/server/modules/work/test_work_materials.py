@@ -63,7 +63,7 @@ async def test_failed_bind_rolls_back_file_and_record_and_keeps_other_materials(
     assert response.status_code == 404
     assert set(settings.media_dir.iterdir()) == before
     async with sessions() as db:
-        assert await db.scalar(select(func.count()).select_from(WorkMaterial)) == 0
+        assert await db.scalar(select(func.count()).select_from(WorkMaterial).where(WorkMaterial.work_id == work['id'])) == 0
         assert (await db.get(WorkItem, work['id'])).revision == 1
 
 

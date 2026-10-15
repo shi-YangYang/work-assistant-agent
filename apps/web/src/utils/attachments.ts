@@ -6,34 +6,42 @@ import {
   MAX_FILE_BYTES,
 } from './attachment-limits'
 
-const documents = new Set(['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx'])
+import { inputRules } from '@paa/api-contracts'
 
-const images = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'])
+const policy = inputRules.attachment
+export const fileAccept = undefined
 
-const audio = new Set(['wav', 'webm', 'mp4', 'm4a', 'aac', 'mp3'])
+function extensionOf(name: string) {
+  const basename = name
+    .replaceAll('\\', '/')
+    .split('/')
+    .pop()!
+    .toLowerCase()
+    .replace(/[. ]+$/, '')
+  return basename.includes('.') ? basename.split('.').pop()! : ''
+}
 
-export const fileAccept =
-  '.pdf,.docx,.pptx,.txt,.json,.md,.csv,.xlsx,.jpg,.jpeg,.png,.webp,.heic,.heif,.wav,.webm,.mp4,.m4a,.aac,.mp3'
+export function blockedFileMessage(name: string) {
+  const suffix = extensionOf(name)
+  if (policy.blocked.archive.includes(suffix)) return '暂不支持压缩包，请解压后选择需要处理的文件。'
+  if (policy.blocked.macro.includes(suffix) || policy.legacyOffice.includes(suffix))
+    return '暂不支持旧版 Office 或含宏文件，请转换为 PDF、DOCX、PPTX、XLSX 或 CSV。'
+  if (policy.blocked.program.includes(suffix)) return '暂不支持上传程序、安装包、镜像或编译文件。'
+  return ''
+}
 
 export function fileKind(file: Pick<File, 'name' | 'type'>) {
-  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
-  if (documents.has(extension)) return 'document'
-  if (
-    images.has(extension) ||
-    ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'].includes(file.type)
-  )
-    return 'image'
-  if (
-    audio.has(extension) ||
-    ['audio/wav', 'audio/webm', 'audio/mp4', 'audio/aac', 'audio/mpeg'].includes(file.type)
-  )
-    return 'audio'
-  return null
+  if (blockedFileMessage(file.name)) return null
+  const extension = extensionOf(file.name)
+  if (policy.images.includes(extension)) return 'image'
+  if (policy.audio.includes(extension)) return 'audio'
+  // Unknown suffixes and misleading MIME values remain text candidates.
+  return 'document'
 }
 
 export function fileSelectionError(files: File[]) {
-  if (files.some((file) => !fileKind(file)))
-    return '支持 PDF、DOCX、PPTX、XLSX、TXT、JSON、MD、CSV、图片和语音；旧版 Office 或含宏文件请先转换。'
+  const blocked = files.map((file) => blockedFileMessage(file.name)).find(Boolean)
+  if (blocked) return blocked
   if (files.some((file) => !file.size)) return '不能添加空文件'
   if (files.length > MAX_ATTACHMENTS) return '每次最多 9 个附件'
   if (files.filter((file) => fileKind(file) === 'audio').length > MAX_AUDIO_ATTACHMENTS)
@@ -78,4 +86,11 @@ export function droppedFiles(data: DataTransfer) {
   if (items.some((item) => item.webkitGetAsEntry?.()?.isDirectory))
     return { files: [], error: '请添加文件，不支持直接添加文件夹' }
   return { files: Array.from(data.files), error: '' }
+}
+
+export function clipboardFiles(data: DataTransfer): File[] {
+  return Array.from(data.items)
+    .filter((item) => item.kind === 'file')
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null)
 }

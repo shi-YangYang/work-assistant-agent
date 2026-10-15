@@ -1,3 +1,5 @@
+import { deleteDraftAttachment } from '@web/api/attachments'
+import { attachmentsReady } from '../../lib/attachment-uploads'
 import type { ExecutionMode, PersonaId } from '@paa/api-contracts'
 import type { useReasoningEffort } from '../preferences/useReasoningEffort'
 import type { PersonaInteraction } from '../preferences/useConversationPersona'
@@ -126,6 +128,7 @@ export function useMessageSubmission({
       ? composer.files.filter((item) => item.file === directFile)
       : composer.files
     if (directFile && !files.length) return
+    if (!directFile && !composer.pending && !attachmentsReady(files)) return
     const selectionError = fileSelectionError(files.map((item) => item.file))
     if (selectionError) {
       if (!directFile) setLimitError(selectionError)
@@ -145,29 +148,12 @@ export function useMessageSubmission({
     setDraft(composerKey, { ...(directFile ? composer : current), sending: true })
     try {
       if (!current.pending) {
-        for (let i = 0; i < current.files.length; i++) {
-          if (!current.files[i].attachment) {
-            uploading = current.files[i].id
-            setDraft(composerKey, (previous: Composer | undefined) =>
-              updateSendingDraft(previous, composer.key, { uploading }),
-            )
-            const form = new FormData()
-            form.append('file', current.files[i].file)
-            const attachment = await uploadAttachment({ method: 'POST', body: form })
-            current = {
-              ...current,
-              files: current.files.map((file, index) =>
-                index === i ? { ...file, attachment, failed: false } : file,
-              ),
-            }
-          }
-          if (!directFile)
-            setDraft(composerKey, (previous: Composer | undefined) =>
-              updateSendingDraft(previous, composer.key, {
-                files: current.files,
-                uploading: undefined,
-              }),
-            )
+        if (directFile && !current.files[0].attachment) {
+          uploading = current.files[0].id
+          const body = new FormData()
+          body.append('file', directFile)
+          const attachment = await uploadAttachment({ method: 'POST', body })
+          current.files[0] = { ...current.files[0], attachment, failed: false }
         }
         uploading = undefined
         const reasoningReference = reasoning?.reference()
@@ -227,6 +213,14 @@ export function useMessageSubmission({
         setDraft(composerKey, (previous: Composer | undefined) =>
           updateSendingDraft(previous, composer.key, { pending: undefined }),
         )
+      }
+      if (
+        directFile &&
+        (!current.pending ||
+          (e instanceof ApiError && [400, 403, 404, 413, 415, 422, 429].includes(e.status)))
+      ) {
+        for (const file of current.files)
+          if (file.attachment) void deleteDraftAttachment(file.attachment.id).catch(() => {})
       }
       if (e instanceof ApiError && e.code === 'reasoning_settings_changed')
         void reasoning?.refresh()

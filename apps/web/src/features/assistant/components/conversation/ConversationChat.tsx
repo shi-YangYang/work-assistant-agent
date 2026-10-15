@@ -11,11 +11,7 @@ import type {
 import { Modal } from '@web/components/overlays/Modal'
 import { usePageReady } from '@web/components/feedback/PageReadiness'
 import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
-import {
-  conversationMessagesPath,
-  orphanActionsPath,
-  uploadAttachment,
-} from '@web/features/assistant/api/requests'
+import { conversationMessagesPath, orphanActionsPath } from '@web/features/assistant/api/requests'
 import { AssistantSuggestions } from '@web/features/assistant/components/composer/AssistantSuggestions'
 import { exampleText } from '@web/features/assistant/utils/session'
 import { ChatHistory } from '@web/features/assistant/components/messages/ChatHistory'
@@ -46,7 +42,6 @@ import {
   fileKind,
   fileSelectionError,
   isHeif,
-  updateSendingDraft,
 } from '@web/features/assistant/utils/files'
 import { usePagedResource } from '@web/hooks/usePagedResource'
 import { useQueryResource } from '@web/hooks/useQueryResource'
@@ -150,8 +145,7 @@ export function ConversationChat({
       ...(questionsByMessage.get(question.messageId) ?? []),
       question,
     ])
-  const [previewBusy, setPreviewUploading] = useState(false)
-  const previewUploading = previewBusy || (!!composer.uploading && !composer.sending)
+  const previewUploading = false
   const [gallery, setGallery] = useState<number | null>(null)
   const [pdf, setPdf] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -288,32 +282,8 @@ export function ConversationChat({
       src: item.attachment?.previewUrl ?? (isHeif(item.file) ? undefined : item.url),
       warnings: item.attachment?.image?.warnings,
       prepare: async () => {
-        if (locked || capturing || sendingRef.current) throw new Error('请等待当前操作结束后再预览')
-        if (!interaction.acquire('preview')) throw new Error('请等待人设保存后再预览')
-        setPreviewUploading(true)
-        setDraft(composerKey, (previous: Composer | undefined) =>
-          updateSendingDraft(previous, composer.key, { uploading: item.id }),
-        )
-        try {
-          const form = new FormData()
-          form.append('file', item.file)
-          const attachment = await uploadAttachment({ method: 'POST', body: form })
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, {
-              files:
-                previous?.files.map((file) =>
-                  file.id === item.id ? { ...file, attachment, failed: false } : file,
-                ) ?? [],
-            }),
-          )
-          return attachment.previewUrl ?? attachment.url
-        } finally {
-          setDraft(composerKey, (previous: Composer | undefined) =>
-            updateSendingDraft(previous, composer.key, { uploading: undefined }),
-          )
-          interaction.release('preview')
-          if (active.current) setPreviewUploading(false)
-        }
+        if (!item.attachment) throw new Error('图片尚未上传完成，请稍后再预览')
+        return item.attachment.previewUrl ?? item.attachment.url
       },
     }))
   const latestJob =

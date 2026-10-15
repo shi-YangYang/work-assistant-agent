@@ -36,7 +36,7 @@ describe('document composer', () => {
     )
     expect(fileSelectionError([file('audio.wav', 20 * 1024 * 1024 + 1)])).toContain('20 MiB')
     expect(fileSelectionError([file('zero.txt', 0)])).toContain('空文件')
-    for (const extension of ['doc', 'ppt', 'xls', 'docm', 'exe'])
+    for (const extension of ['doc', 'ppt', 'xls', 'docm'])
       expect(fileSelectionError([file(`old.${extension}`)])).toContain('转换')
   })
   it('late uploads and sends only update their original operation draft', () => {
@@ -130,4 +130,28 @@ it('marks directly recorded voice as an instruction and keeps uploaded audio as 
   })
   expect(mixed.body.voiceCommandAttachmentIds).toEqual(['audio', 'recorded-again'])
   expect(messageSubmission({ ...composer, pending: recorded })).toBe(recorded)
+})
+
+it('accepts arbitrary text filenames and blocks the shared policy before MIME classification', () => {
+  for (const name of [
+    'main.py',
+    'main.js',
+    '.env',
+    'Dockerfile',
+    'document.unknown',
+    'source.html',
+    'image.svg',
+  ])
+    expect(fileKind(file(name, 100, 'application/octet-stream'))).toBe('document')
+  for (const name of [
+    'program.EXE',
+    'archive.tar.gz',
+    'macro.xlsm',
+    'disk.iso',
+    'program.EXE. ',
+    '.exe',
+  ]) {
+    expect(fileKind(file(name, 100, 'image/png'))).toBeNull()
+    expect(fileSelectionError([file(name, 100, 'audio/wav')])).not.toBe('')
+  }
 })

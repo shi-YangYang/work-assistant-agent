@@ -1,6 +1,7 @@
+import { useAttachmentUploads } from '../../../../apps/web/src/features/assistant/hooks/composer/useAttachmentUploads'
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { VoiceRecordButton } from '../../../../apps/web/src/features/assistant/components/composer/controls/VoiceRecordButton'
 import { ComposerAttachments } from '../../../../apps/web/src/features/assistant/components/composer/attachments/ComposerAttachments'
@@ -19,6 +20,13 @@ vi.mock('@web/features/assistant/api/requests', () => ({
   sendMessage: vi.fn(),
   uploadAttachment: vi.fn(),
 }))
+vi.mock('@web/api/attachments', async () => {
+  const requests = await import('@web/features/assistant/api/requests')
+  return {
+    uploadAttachment: requests.uploadAttachment,
+    deleteDraftAttachment: vi.fn(async () => ({ ok: true })),
+  }
+})
 vi.mock('@web/features/assistant/lib/audio-preview', () => ({
   recordingPreview: vi.fn(async (file: File) => file),
 }))
@@ -62,6 +70,11 @@ function Harness({
 }) {
   const { drafts, setDraft } = useWorkspace()
   const composer = (drafts.draft as Composer | undefined) ?? { text: '', key: '', files: [] }
+  const uploadWriter = useCallback(
+    (_key: string, value: unknown) => setDraft('draft', value),
+    [setDraft],
+  )
+  useAttachmentUploads('voice-test', { 'composer:first': composer }, uploadWriter)
   const [error, setError] = useState<Error | string>('')
   const [limit, setLimit] = useState('')
   const recording = useRecording('draft', setDraft, setError, setLimit)
@@ -360,7 +373,13 @@ it.each(['upload', 'message'] as const)(
 it('sends a held recording without mounting a draft preview during upload or message acceptance', async () => {
   const upload = deferred<Awaited<ReturnType<typeof uploadAttachment>>>()
   const accepted = deferred<Awaited<ReturnType<typeof sendMessage>>>()
-  vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
+  const notesUpload = deferred<Awaited<ReturnType<typeof uploadAttachment>>>()
+  vi.mocked(uploadAttachment).mockImplementation((options) =>
+    (options.body as FormData).get('file') instanceof File &&
+    ((options.body as FormData).get('file') as File).name === 'notes.txt'
+      ? notesUpload.promise
+      : upload.promise,
+  )
   vi.mocked(sendMessage).mockReturnValue(accepted.promise)
   const { vault } = view('bar')
   const existing = {
@@ -387,8 +406,8 @@ it('sends a held recording without mounting a draft preview during upload or mes
   await act(async () => upload.resolve({ id: 'voice', kind: 'audio' } as never))
   await flush()
   expect(sendMessage).toHaveBeenCalledOnce()
-  expect(uploadAttachment).toHaveBeenCalledOnce()
-  expect((vi.mocked(uploadAttachment).mock.calls[0][0].body as FormData).get('file')).not.toBe(
+  expect(uploadAttachment).toHaveBeenCalledTimes(2)
+  expect((vi.mocked(uploadAttachment).mock.calls[1][0].body as FormData).get('file')).not.toBe(
     existing.file,
   )
   expect(vi.mocked(sendMessage).mock.calls[0][0]).toMatchObject({
@@ -408,12 +427,14 @@ it('sends a held recording without mounting a draft preview during upload or mes
   expect(screen.getByLabelText('附件数量').textContent).toBe('1')
   expect(vault.getSnapshot().draft).toMatchObject({
     ...original,
+    files: [expect.objectContaining(existing)],
     key: expect.any(String),
     sending: false,
   })
   expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:existing')
   expect(recordingPreview).not.toHaveBeenCalled()
-  vi.mocked(uploadAttachment).mockResolvedValue({ id: 'notes', kind: 'document' } as never)
+  await act(async () => notesUpload.resolve({ id: 'notes', kind: 'document' } as never))
+  await flush()
   fireEvent.click(screen.getByRole('button', { name: '发送' }))
   await flush()
   expect(sendMessage).toHaveBeenLastCalledWith(
@@ -467,6 +488,8 @@ it('keeps a manually sent recording in the draft after failure', async () => {
   fireEvent.click(screen.getByRole('button', { name: '发送' }))
   await flush()
   expect(screen.getByRole('button', { name: '播放语音 1' })).toBeTruthy()
-  expect(screen.getByLabelText('错误').textContent).toContain('网络中断')
+  expect(screen.getByRole('button', { name: '重试上传语音 1' })).toBeTruthy()
+  expect(screen.getByText(/文件上传失败，请重试或移除/)).toBeTruthy()
+  expect(sendMessage).not.toHaveBeenCalled()
   expect(notify).not.toHaveBeenCalled()
 })

@@ -62,13 +62,17 @@ async function clickPlay(name = '播放voice.wav') {
 }
 beforeEach(() => {
   dialogs()
-  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function () {
+  vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (
+    this: HTMLMediaElement,
+  ) {
     pauseState(this, false)
     this.dispatchEvent(new Event('play'))
     this.dispatchEvent(new Event('playing'))
     return Promise.resolve()
   })
-  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function () {
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+    this: HTMLMediaElement,
+  ) {
     if (this.paused) return
     pauseState(this, true)
     this.dispatchEvent(new Event('pause'))

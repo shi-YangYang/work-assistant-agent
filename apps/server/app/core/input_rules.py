@@ -10,3 +10,6 @@ MEMBER_RULES = INPUT_RULES['member']
 
 
 PASSWORD_RULES = MEMBER_RULES['password']
+
+
+ATTACHMENT_RULES = INPUT_RULES['attachment']
