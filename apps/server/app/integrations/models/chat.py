@@ -1,8 +1,36 @@
 import json
+import logging
 import time
 from app.integrations.models import transport
 from app.integrations.models.stream_events import ModelDelta, ToolDelta, tool_arguments
 from app.integrations.models.transport import ProviderError, normalize_url, status_error, structured_error, retry_after
+
+
+log = logging.getLogger(__name__)
+
+
+def _invalid_response_diagnostic(result, reason, tool_index, on_timing):
+    """Failure-only shape metadata; never include provider text or arguments."""
+    choices = result.get('choices') if isinstance(result, dict) else None
+    choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+    message = choice.get('message')
+    message = message if isinstance(message, dict) else {}
+    content, calls = message.get('content'), message.get('tool_calls')
+    finish = choice.get('finish_reason')
+    fields = {'reason': reason, 'response_type': type(result).__name__,
+              'choices_count': len(choices) if isinstance(choices, list) else None,
+              'finish_reason': finish if finish in ('stop', 'tool_calls', 'length', 'content_filter', None) else 'other',
+              'body_chars': len(content) if isinstance(content, str) else None,
+              'tool_count': len(calls) if isinstance(calls, list) else None}
+    if isinstance(calls, list) and tool_index is not None and tool_index < len(calls):
+        call = calls[tool_index]
+        function = call.get('function') if isinstance(call, dict) else None
+        arguments = function.get('arguments') if isinstance(function, dict) else None
+        fields.update(tool_index=tool_index, argument_chars=len(arguments) if isinstance(arguments, str) else None)
+    if on_timing:
+        on_timing('model.invalid_response', **fields)
+    else:
+        log.warning('model.invalid_response %s', json.dumps(fields, separators=(',', ':')))
 
 
 def token_usage(value):
@@ -188,20 +216,50 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                 result = {'choices': [{'message': {'role': 'assistant', 'content': content, 'tool_calls': [calls[i] for i in sorted(calls)]}, 'finish_reason': finish}], 'usage': usage or {}}
     if on_timing:
         on_timing('model.received')
+    reason, tool_index = 'choices_structure', None
     try:
         choice = result['choices'][0]
+        reason = 'choice_structure'
         if choice.get('finish_reason') == 'content_filter':
             raise structured_error({'code': 'content_filter'})
         if choice.get('finish_reason') not in ('stop', 'tool_calls'):
             raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制', output_limit=choice.get('finish_reason') == 'length')
+        reason = 'message_structure'
         message = choice['message']
+        reason = 'content_type'
         if not isinstance(message.get('content') or '', str):
             raise ValueError()
         calls = message.get('tool_calls') or []
-        if len(calls) > 16 or (not calls and not (message.get('content') or '').strip()):
+        reason = 'tool_calls_structure'
+        if not isinstance(calls, list):
             raise ValueError()
-        for call in calls:
-            if not call['id'] or len(call['id']) > 200 or not call['function']['name'] or len(call['function']['name']) > 80 or (call['function']['name'] not in text_tools and len(call['function']['arguments']) > 32000) or not isinstance(tool_arguments(call['function']['arguments']), dict):
+        reason = 'too_many_tool_calls'
+        if len(calls) > 16:
+            raise ValueError()
+        reason = 'empty_response'
+        if not calls and not (message.get('content') or '').strip():
+            raise ValueError()
+        for tool_index, call in enumerate(calls):
+            reason = 'tool_call_id'
+            if not call['id'] or len(call['id']) > 200:
+                raise ValueError()
+            reason = 'tool_function'
+            if not call['function']['name'] or len(call['function']['name']) > 80:
+                raise ValueError()
+            reason = 'tool_arguments_size'
+            if call['function']['name'] not in text_tools and len(call['function']['arguments']) > 32000:
+                raise ValueError()
+            reason = 'tool_arguments_json'
+            try:
+                arguments = tool_arguments(call['function']['arguments'])
+            except json.JSONDecodeError:
+                raise
+            except ValueError as error:
+                reason = {'Duplicate JSON key': 'tool_arguments_duplicate_key',
+                          'Invalid JSON constant': 'tool_arguments_nonfinite'}.get(str(error), 'tool_arguments_json')
+                raise
+            reason = 'tool_arguments_object'
+            if not isinstance(arguments, dict):
                 raise ValueError()
         result['usage'] = token_usage(result.get('usage')) or {}
         if on_timing:
@@ -209,5 +267,6 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
         return result
     except ProviderError:
         raise
-    except (KeyError, TypeError, ValueError, IndexError):
+    except (KeyError, TypeError, ValueError, IndexError, AttributeError):
+        _invalid_response_diagnostic(result, reason, tool_index, on_timing)
         raise ProviderError('invalid_response', '模型未返回完整文字或有效工具调用') from None

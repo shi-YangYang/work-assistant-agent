@@ -84,6 +84,8 @@ async def execute(context, *, code='', title, references=None, identifier='', re
                  'exitCode': result.get('exitCode'), 'message': result.get('error', ''), 'inputFiles': [item['name'] for item in inputs],
                  'inputRefs': references}
         clean['kind'] = 'builtin' if task else 'python'
+        if task is None and result['state'] == 'failed' and not inputs:
+            clean['inputHint'] = '本次执行未挂载输入文件。如需处理附件或已有成果，请在本次 run_python 的 input_refs 中传入文件引用；此前检查过的文件也不会自动继承。纯计算不需要文件引用。'
         if task:
             clean['tool'] = task['name']
             if result['state'] == 'succeeded':
