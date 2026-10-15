@@ -192,7 +192,13 @@ async def clean_files(db, settings, owner_id=None):
     if owner_id:
         query = query.where(Attachment.owner_id == owner_id)
     items = (await db.scalars(query)).all()
+    pending = False
     for item in items:
         from app.modules.attachments.lifecycle import clean_retired_upload
-        clean_retired_upload(item, settings)
+        if not clean_retired_upload(item, settings):
+            pending = True
+    if pending:
+        # Keep attempting the remaining files, but never report full cleanup
+        # when a durable tombstone still needs a later retry.
+        raise OSError('Attachment cleanup remains pending')
     return len(items)
