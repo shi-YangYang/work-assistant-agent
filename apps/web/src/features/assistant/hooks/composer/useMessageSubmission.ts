@@ -56,8 +56,10 @@ export function useMessageSubmission({
   }
   recordedSend?: RefObject<File | null>
 }) {
-  const { identity, setDraft, rememberConversation } = useWorkspace()
+  const { identity, setDraft, rememberConversation, notify } = useWorkspace()
   const [sending, setBusy] = useState(false)
+  const [sendingRecording, setSendingRecording] = useState<{ file: File | null }>({ file: null })
+  const directSendingFile = recordedSend?.current ?? sendingRecording.file
   const busy = sending || !!composer.sending
   const sendingRef = useRef(false)
   useEffect(() => {
@@ -68,14 +70,36 @@ export function useMessageSubmission({
     // Wait for the recorder's final data and the updated draft to commit.
     queueMicrotask(() => {
       if (cancelled || !active.current || recordedSend.current !== file) return
+      setSendingRecording({ file })
       recordedSend.current = null
-      void send()
+      void send(file)
+        .then((sent) => {
+          if (sent) return
+          setDraft(composerKey, (previous: Composer | undefined) => {
+            if (previous?.key !== composer.key) return previous
+            previous.files
+              .filter((item) => item.file === file)
+              .forEach((item) => URL.revokeObjectURL(item.url))
+            return {
+              ...previous,
+              key: crypto.randomUUID(),
+              files: previous.files.filter((item) => item.file !== file),
+              pending: undefined,
+              submissionPersonaId: undefined,
+            }
+          })
+          if (active.current) notify('语音发送未完成')
+        })
+        .finally(() => {
+          if (active.current)
+            setSendingRecording((current) => (current.file === file ? { file: null } : current))
+        })
     })
     return () => {
       cancelled = true
     }
   })
-  async function send() {
+  async function send(directFile?: File) {
     if (
       (execution && !execution.ready) ||
       (reasoning && !reasoning.reference()) ||
@@ -90,7 +114,7 @@ export function useMessageSubmission({
       return
     const selectionError = fileSelectionError(composer.files.map((item) => item.file))
     if (selectionError) {
-      setLimitError(selectionError)
+      if (!directFile) setLimitError(selectionError)
       return
     }
     if (interaction && !interaction.acquire('message')) return
@@ -158,6 +182,7 @@ export function useMessageSubmission({
         refresh()
         onSent(sent.conversationId, current.pending.body.personaId ?? current.submissionPersonaId)
       }
+      return true
     } catch (e) {
       if (uploading) {
         setDraft(composerKey, (previous: Composer | undefined) =>
@@ -188,7 +213,7 @@ export function useMessageSubmission({
       if (e instanceof ApiError && e.code === 'execution_settings_changed')
         void execution?.refresh()
       if (e instanceof ApiError && e.code === 'conversation_busy') void task?.refresh()
-      if (active.current && !isCancelled(e)) {
+      if (!directFile && active.current && !isCancelled(e)) {
         if (e instanceof ApiError && [413, 415, 422].includes(e.status) && current.files.length)
           setLimitError(e.message)
         else setSendError(e instanceof Error ? e : '发送未完成')
@@ -203,5 +228,12 @@ export function useMessageSubmission({
       if (active.current) setBusy(false)
     }
   }
-  return { busy, sendingRef, send }
+  return {
+    busy: busy || !!directSendingFile,
+    sendingRef,
+    send: async () => {
+      await send()
+    },
+    directSendingFile,
+  }
 }

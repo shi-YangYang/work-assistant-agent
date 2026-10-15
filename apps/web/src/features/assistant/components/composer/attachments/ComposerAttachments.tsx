@@ -8,6 +8,7 @@ import { useRef, type Dispatch, type SetStateAction } from 'react'
 
 export function ComposerAttachments({
   composer,
+  directSendingFile,
   locked,
   setGallery,
   previewImages,
@@ -15,6 +16,7 @@ export function ComposerAttachments({
   change,
 }: {
   composer: Composer
+  directSendingFile?: File | null
   locked: boolean
   setGallery: Dispatch<SetStateAction<number | null>>
   previewImages: PreviewImage[]
@@ -22,15 +24,17 @@ export function ComposerAttachments({
   change: (next: Composer) => void
 }) {
   const playing = useRef<HTMLAudioElement | null>(null)
-  const audioFiles = composer.files.filter((item) => fileKind(item.file) === 'audio')
+  const files = composer.files.filter((item) => item.file !== directSendingFile)
+  const audioFiles = files.filter((item) => fileKind(item.file) === 'audio')
+  if (!files.length) return null
   return (
     <div
       className={styles['pending-attachments']}
       role="region"
-      aria-label={`待发送附件，共 ${composer.files.length} 个，可横向滚动`}
+      aria-label={`待发送附件，共 ${files.length} 个，可横向滚动`}
       tabIndex={0}
     >
-      {composer.files.map((item) => {
+      {files.map((item) => {
         const kind = fileKind(item.file)
         const status = composer.uploading === item.id ? '上传中…' : item.failed ? '上传失败' : ''
         const title = `${item.file.name} · ${fileSize(item.file.size)}`

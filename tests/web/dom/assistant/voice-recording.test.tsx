@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { VoiceRecordButton } from '../../../../apps/web/src/features/assistant/components/composer/controls/VoiceRecordButton'
+import { ComposerAttachments } from '../../../../apps/web/src/features/assistant/components/composer/attachments/ComposerAttachments'
+import { recordingPreview } from '../../../../apps/web/src/features/assistant/lib/audio-preview'
 import { useRecording } from '../../../../apps/web/src/features/assistant/hooks/composer/useRecording'
 import { useMessageSubmission } from '../../../../apps/web/src/features/assistant/hooks/composer/useMessageSubmission'
 import type { Composer } from '../../../../apps/web/src/features/assistant/lib/audio-capture'
@@ -10,12 +12,15 @@ import {
   sendMessage,
   uploadAttachment,
 } from '../../../../apps/web/src/features/assistant/api/requests'
-import { useWorkspace } from '../../../../apps/web/src/lib/workspace'
+import { Workspace, useWorkspace } from '../../../../apps/web/src/lib/workspace'
 import { createVault, deferred, TestWorkspace } from '../helpers'
 
 vi.mock('@web/features/assistant/api/requests', () => ({
   sendMessage: vi.fn(),
   uploadAttachment: vi.fn(),
+}))
+vi.mock('@web/features/assistant/lib/audio-preview', () => ({
+  recordingPreview: vi.fn(async (file: File) => file),
 }))
 class Recorder {
   static latest: Recorder
@@ -41,7 +46,18 @@ class Recorder {
 const stopTrack = vi.fn()
 const stream = { getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream
 const getUserMedia = vi.fn()
-function Harness({ variant = 'icon' }: { variant?: 'icon' | 'bar' }) {
+const notify = vi.fn()
+function Notifications({ children }: { children: ReactNode }) {
+  const workspace = useWorkspace()
+  return <Workspace value={{ ...workspace, notify }}>{children}</Workspace>
+}
+function Harness({
+  variant = 'icon',
+  retryWait = 0,
+}: {
+  variant?: 'icon' | 'bar'
+  retryWait?: number
+}) {
   const { drafts, setDraft } = useWorkspace()
   const composer = (drafts.draft as Composer | undefined) ?? { text: '', key: '', files: [] }
   const [error, setError] = useState<Error | string>('')
@@ -58,7 +74,7 @@ function Harness({ variant = 'icon' }: { variant?: 'icon' | 'bar' }) {
     active: recording.active,
     setSendError: setError,
     setLimitError: setLimit,
-    retryWait: 0,
+    retryWait,
     refresh: vi.fn(),
     recordedSend: recording.pendingSend,
   })
@@ -75,7 +91,19 @@ function Harness({ variant = 'icon' }: { variant?: 'icon' | 'bar' }) {
           cancel: recording.cancel,
         }}
       />
-      <button onClick={() => void submission.send()}>发送</button>
+      <ComposerAttachments
+        composer={composer}
+        directSendingFile={submission.directSendingFile}
+        locked={submission.busy}
+        setGallery={vi.fn()}
+        previewImages={[]}
+        setPdf={vi.fn()}
+        change={(next) => setDraft('draft', next)}
+      />
+      <button disabled={submission.busy} onClick={() => void submission.send()}>
+        发送
+      </button>
+      <div aria-label="发送状态">{submission.busy ? '正在发送' : '空闲'}</div>
       <div aria-label="附件数量">{composer.files.length}</div>
       <div aria-label="错误">{String(error || limit)}</div>
     </>
@@ -85,13 +113,15 @@ const flush = async (ms = 0) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms)
   })
-function view(variant: 'icon' | 'bar' = 'icon') {
+function view(variant: 'icon' | 'bar' = 'icon', retryWait = 0) {
   const vault = createVault()
   vault.writer()('draft', { text: '原来的文字', files: [], key: 'draft' })
   return {
     ...render(
       <TestWorkspace vault={vault}>
-        <Harness variant={variant} />
+        <Notifications>
+          <Harness variant={variant} retryWait={retryWait} />
+        </Notifications>
       </TestWorkspace>,
     ),
     vault,
@@ -107,6 +137,7 @@ async function hold(button = mic()) {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.resetAllMocks()
+  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
   getUserMedia.mockResolvedValue(stream)
   vi.stubGlobal('MediaRecorder', Recorder)
   vi.stubGlobal(
@@ -139,6 +170,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.useRealTimers()
   vi.unstubAllGlobals()
 })
@@ -156,6 +188,7 @@ it('keeps short presses as record, stop and manual send', async () => {
   act(() => Recorder.latest.finish())
   await flush()
   expect(screen.getByLabelText('附件数量').textContent).toBe('1')
+  expect(screen.getByRole('button', { name: '播放语音 1' })).toBeTruthy()
   expect(sendMessage).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '发送' }))
   await flush()
@@ -187,6 +220,7 @@ it.each(['icon', 'bar'] as const)(
       expect.any(String),
     )
     expect(screen.queryByRole('status')).toBeNull()
+    expect(recordingPreview).not.toHaveBeenCalled()
   },
 )
 it.each(['slide', 'pointercancel', 'lostpointercapture'])(
@@ -276,16 +310,92 @@ it('does not send existing draft text when the recording yields no file', async 
   await flush()
   expect(sendMessage).not.toHaveBeenCalled()
 })
-it('retains audio after an upload failure and waits for manual retry', async () => {
-  vi.mocked(uploadAttachment).mockRejectedValue(new Error('网络中断'))
-  view()
-  const button = await hold()
+it.each(['upload', 'message'] as const)(
+  'discards held audio after %s failure and only shows a notice',
+  async (phase) => {
+    vi.mocked(phase === 'upload' ? uploadAttachment : sendMessage).mockRejectedValue(
+      new Error('网络中断'),
+    )
+    const { vault } = view()
+    const existing = {
+      id: 'existing',
+      file: new File(['notes'], 'notes.txt', { type: 'text/plain' }),
+      url: 'blob:existing',
+      attachment: { id: 'existing', kind: 'document' },
+    }
+    act(() => vault.writer()('draft', { text: '原来的文字', key: 'draft', files: [existing] }))
+    const button = await hold()
+    fireEvent.pointerUp(button, pointer)
+    act(() => Recorder.latest.finish())
+    await flush()
+    expect(screen.getByLabelText('附件数量').textContent).toBe('1')
+    expect(screen.queryByRole('button', { name: '播放语音 1' })).toBeNull()
+    expect(screen.getByLabelText('错误').textContent).toBe('')
+    expect(notify).toHaveBeenCalledExactlyOnceWith('语音发送未完成')
+    expect(recordingPreview).not.toHaveBeenCalled()
+    expect(vault.getSnapshot().draft).toMatchObject({
+      text: '原来的文字',
+      files: [existing],
+      pending: undefined,
+      sending: false,
+    })
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:recording')
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith('blob:existing')
+    await flush(5000)
+    expect(uploadAttachment).toHaveBeenCalledOnce()
+    expect(sendMessage).toHaveBeenCalledTimes(phase === 'upload' ? 0 : 1)
+  },
+)
+it('sends a held recording without mounting a draft preview during upload or message acceptance', async () => {
+  const upload = deferred<Awaited<ReturnType<typeof uploadAttachment>>>()
+  const accepted = deferred<Awaited<ReturnType<typeof sendMessage>>>()
+  vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
+  vi.mocked(sendMessage).mockReturnValue(accepted.promise)
+  view('bar')
+  const button = await hold(screen.getByRole('button', { name: '点击录音，长按发送' }))
   fireEvent.pointerUp(button, pointer)
   act(() => Recorder.latest.finish())
   await flush()
-  expect(screen.getByLabelText('附件数量').textContent).toBe('1')
-  expect(screen.getByLabelText('错误').textContent).toContain('网络中断')
-  await flush(5000)
-  expect(uploadAttachment).toHaveBeenCalledOnce()
+  expect(screen.getByLabelText('发送状态').textContent).toBe('正在发送')
+  expect(screen.queryByRole('region', { name: /待发送附件/ })).toBeNull()
+  expect(recordingPreview).not.toHaveBeenCalled()
+  await act(async () => upload.resolve({ id: 'voice', kind: 'audio' } as never))
+  await flush()
+  expect(sendMessage).toHaveBeenCalledOnce()
+  expect(screen.queryByRole('region', { name: /待发送附件/ })).toBeNull()
+  expect(recordingPreview).not.toHaveBeenCalled()
+  await act(async () =>
+    accepted.resolve({ conversationId: 'chat', messageId: 'message', jobId: 'job' }),
+  )
+  await flush()
+  expect(screen.getByLabelText('发送状态').textContent).toBe('空闲')
+  expect(screen.getByLabelText('附件数量').textContent).toBe('0')
+  expect(recordingPreview).not.toHaveBeenCalled()
+})
+it('only shows a notice when automatic voice submission is blocked', async () => {
+  view('bar', 1)
+  const button = await hold(screen.getByRole('button', { name: '点击录音，长按发送' }))
+  fireEvent.pointerUp(button, pointer)
+  act(() => Recorder.latest.finish())
+  await flush()
+  expect(screen.getByLabelText('发送状态').textContent).toBe('空闲')
+  expect(screen.queryByRole('button', { name: '播放语音 1' })).toBeNull()
+  expect(screen.getByLabelText('附件数量').textContent).toBe('0')
+  expect(notify).toHaveBeenCalledExactlyOnceWith('语音发送未完成')
+  expect(uploadAttachment).not.toHaveBeenCalled()
   expect(sendMessage).not.toHaveBeenCalled()
+})
+it('keeps a manually sent recording in the draft after failure', async () => {
+  vi.mocked(uploadAttachment).mockRejectedValue(new Error('网络中断'))
+  view()
+  fireEvent.click(mic())
+  await flush()
+  fireEvent.click(screen.getByRole('button', { name: '停止录音 · 0 秒' }))
+  act(() => Recorder.latest.finish())
+  await flush()
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  await flush()
+  expect(screen.getByRole('button', { name: '播放语音 1' })).toBeTruthy()
+  expect(screen.getByLabelText('错误').textContent).toContain('网络中断')
+  expect(notify).not.toHaveBeenCalled()
 })

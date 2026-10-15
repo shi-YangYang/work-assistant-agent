@@ -161,7 +161,7 @@ export function ConversationChat({
   const [limitError, setLimitError] = useState('')
   const { captureState, capturing, seconds, capture, active, pendingSend, stop, cancel } =
     useRecording(composerKey, setDraft, setSendError, setLimitError)
-  const { busy, sendingRef, send } = useMessageSubmission({
+  const { busy, sendingRef, send, directSendingFile } = useMessageSubmission({
     composer,
     composerKey,
     conversationId,
@@ -544,6 +544,7 @@ export function ConversationChat({
         >
           <ComposerAttachments
             composer={composer}
+            directSendingFile={directSendingFile}
             locked={locked}
             setGallery={setGallery}
             previewImages={previewImages}
