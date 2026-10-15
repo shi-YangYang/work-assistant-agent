@@ -2,8 +2,9 @@ import type { Identity } from '@paa/api-contracts'
 import type { ReactNode } from 'react'
 import { useMemo, useSyncExternalStore } from 'react'
 import { vi } from 'vitest'
-import { SessionDrafts } from '../../../apps/web/src/lib/session-drafts'
-import { Workspace } from '../../../apps/web/src/lib/workspace'
+import { identityScope, SessionDrafts } from '../../../apps/web/src/lib/session-drafts'
+import { Workspace, useWorkspace } from '../../../apps/web/src/lib/workspace'
+import { useAttachmentUploads } from '../../../apps/web/src/features/assistant/hooks/composer/useAttachmentUploads'
 
 export const identity = {
   company: { id: 'company', name: 'Company' },
@@ -27,10 +28,12 @@ export function TestWorkspace({
   children,
   vault,
   account = identity,
+  uploads = false,
 }: {
   children: ReactNode
   vault: SessionDrafts
   account?: Identity
+  uploads?: boolean
 }) {
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
   const setDraft = useMemo(() => vault.writer(), [vault, account])
@@ -45,9 +48,15 @@ export function TestWorkspace({
         rememberConversation: vi.fn(),
       }}
     >
+      {uploads && <TestAttachmentUploads />}
       {children}
     </Workspace>
   )
+}
+function TestAttachmentUploads() {
+  const { identity, drafts, setDraft } = useWorkspace()
+  useAttachmentUploads(identityScope(identity), drafts, setDraft)
+  return null
 }
 export function dialogs() {
   globalThis.ResizeObserver = class {

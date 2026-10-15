@@ -12,12 +12,12 @@ import {
 } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../../apps/web/src/api/client'
+import { uploadAttachment } from '../../../../apps/web/src/api/attachments'
 import {
   readConversation,
   readActiveAssistantJob,
   sendMessage,
   updateConversationPersona,
-  uploadAttachment,
 } from '../../../../apps/web/src/features/assistant/api/requests'
 import { Assistant } from '../../../../apps/web/src/features/assistant/components/conversation/Conversations'
 import { PersonaPicker } from '../../../../apps/web/src/features/assistant/components/conversation/controls/PersonaPicker'
@@ -31,6 +31,9 @@ vi.mock('@web/features/assistant/api/requests', async (load) => ({
   readConversation: vi.fn(),
   readActiveAssistantJob: vi.fn(),
   sendMessage: vi.fn(),
+}))
+vi.mock('@web/api/attachments', async (load) => ({
+  ...(await load<typeof import('../../../../apps/web/src/api/attachments')>()),
   uploadAttachment: vi.fn(),
 }))
 const conversation: Conversation = {
@@ -61,9 +64,9 @@ function AssistantRoute() {
   const { id } = useParams()
   return <Assistant conversationId={id} />
 }
-function assistantView(vault = createVault(), route = '/assistant?new=1') {
+function assistantView(vault = createVault(), route = '/assistant?new=1', uploads = false) {
   return (
-    <TestWorkspace vault={vault}>
+    <TestWorkspace vault={vault} uploads={uploads}>
       <MemoryRouter initialEntries={[route]}>
         <Routes>
           <Route path="/assistant/:id?" element={<AssistantRoute />} />
@@ -246,7 +249,7 @@ it('does not overwrite a newer record response with an older save response', asy
   expect(screen.getByRole('button', { name: '选择人设：专业人设' })).toBeTruthy()
 })
 
-it('freezes the persona before upload and reuses the same pending body after a later selection change', async () => {
+it('waits for upload, freezes the persona on send and reuses the pending body after a later selection change', async () => {
   const upload = deferred<Attachment>(),
     firstSend = deferred<{ conversationId: string; messageId: string; jobId: string }>(),
     vault = createVault()
@@ -265,20 +268,16 @@ it('freezes the persona before upload and reuses the same pending body after a l
   vi.mocked(sendMessage)
     .mockReturnValueOnce(firstSend.promise)
     .mockResolvedValueOnce({ conversationId: 'created', messageId: 'message', jobId: 'job' })
-  render(assistantView(vault))
+  render(assistantView(vault, undefined, true))
   choose('专业人设')
   const sendButton = screen.getByRole('button', { name: '发送' })
   const contextButton = screen.getByRole('button', { name: /^上下文使用情况/ })
   const sendIcon = sendButton.querySelector('svg')
-  await waitFor(() => expect((sendButton as HTMLButtonElement).disabled).toBe(false))
+  await waitFor(() => expect(uploadAttachment).toHaveBeenCalledTimes(1))
+  expect((sendButton as HTMLButtonElement).disabled).toBe(true)
   fireEvent.click(sendButton)
-  expect(vault.getSnapshot()['composer:new']).toMatchObject({
-    submissionPersonaId: 'professional',
-    sending: true,
-  })
-  expect((screen.getByRole('button', { name: /^选择人设/ }) as HTMLButtonElement).disabled).toBe(
-    true,
-  )
+  fireEvent.keyDown(screen.getByRole('textbox', { name: '工作消息' }), { key: 'Enter' })
+  expect(sendMessage).not.toHaveBeenCalled()
   await act(async () =>
     upload.resolve({
       id: 'uploaded',
@@ -288,6 +287,16 @@ it('freezes the persona before upload and reuses the same pending body after a l
       mime: 'text/plain',
       size: 4,
     } as Attachment),
+  )
+  await waitFor(() => expect((sendButton as HTMLButtonElement).disabled).toBe(false))
+  expect(sendMessage).not.toHaveBeenCalled()
+  fireEvent.click(sendButton)
+  expect(vault.getSnapshot()['composer:new']).toMatchObject({
+    submissionPersonaId: 'professional',
+    sending: true,
+  })
+  expect((screen.getByRole('button', { name: /^选择人设/ }) as HTMLButtonElement).disabled).toBe(
+    true,
   )
   await waitFor(() => expect(sendMessage).toHaveBeenCalledTimes(1))
   const sendingButton = screen.getByRole('button', { name: '正在发送' })
@@ -336,7 +345,7 @@ it('isolates an empty draft choice between accounts and restores a persisted ser
   expect(updateConversationPersona).not.toHaveBeenCalled()
 })
 
-it('preserves the preview upload lock when leaving and returning to the draft', async () => {
+it('continues image upload across page navigation without locking persona selection or uploading twice for preview', async () => {
   const upload = deferred<Attachment>(),
     vault = createVault()
   vault.writer()('composer:new', {
@@ -351,15 +360,31 @@ it('preserves the preview upload lock when leaving and returning to the draft', 
     ],
   })
   vi.mocked(uploadAttachment).mockReturnValue(upload.promise)
-  const mounted = render(assistantView(vault))
+  const router = createMemoryRouter(
+    [
+      { path: '/assistant', element: <AssistantRoute /> },
+      { path: '/other', element: <p>其他页面</p> },
+    ],
+    { initialEntries: ['/assistant?new=1'] },
+  )
+  render(
+    <TestWorkspace vault={vault} uploads>
+      <RouterProvider router={router} />
+    </TestWorkspace>,
+  )
+  await waitFor(() => expect(uploadAttachment).toHaveBeenCalledTimes(1))
   fireEvent.click(screen.getByRole('button', { name: '预览image.heic' }))
   fireEvent.click(screen.getByRole('button', { name: '生成预览' }))
-  expect(vault.getSnapshot()['composer:new']).toMatchObject({ uploading: 'image' })
-  mounted.unmount()
-  render(assistantView(vault))
+  await screen.findByText('图片尚未上传完成，请稍后再预览')
+  expect(vault.getSnapshot()['composer:new']).toMatchObject({
+    files: [{ id: 'image', uploadState: 'uploading' }],
+  })
+  await act(async () => router.navigate('/other'))
+  await act(async () => router.navigate('/assistant?new=1'))
   expect((screen.getByRole('button', { name: /^选择人设/ }) as HTMLButtonElement).disabled).toBe(
-    true,
+    false,
   )
+  choose('专业人设')
   expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
   await act(async () =>
     upload.resolve({
@@ -377,8 +402,14 @@ it('preserves the preview upload lock when leaving and returning to the draft', 
   )
   expect(vault.getSnapshot()['composer:new']).toMatchObject({
     text: '图片草稿',
-    files: [{ attachment: { id: 'uploaded' } }],
+    personaId: 'professional',
+    files: [{ attachment: { id: 'uploaded' }, uploadState: 'ready' }],
   })
+  fireEvent.click(screen.getByRole('button', { name: '预览image.heic' }))
+  expect(screen.getByRole('img', { name: 'image.heic' }).getAttribute('src')).toBe('/preview')
+  expect(uploadAttachment).toHaveBeenCalledTimes(1)
+  expect(sendMessage).not.toHaveBeenCalled()
+  router.dispose()
 })
 
 it('assigns immediately typed text to the new conversation before the navigation handler returns', async () => {

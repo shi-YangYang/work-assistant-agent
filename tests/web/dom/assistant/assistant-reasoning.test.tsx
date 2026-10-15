@@ -29,17 +29,17 @@ let controller: ReturnType<typeof useReasoningEffort>
 let send: () => Promise<void>
 const vault = () => {
   const result = createVault()
-  result.writer()('draft', { text: '保留的草稿', key: 'draft-key', files: [] })
+  result.writer()('composer:first', { text: '保留的草稿', key: 'draft-key', files: [] })
   return result
 }
 function Harness({ running = false }: { running?: boolean }) {
   controller = useReasoningEffort()
   const { drafts, setDraft } = useWorkspace()
-  const composer = (drafts.draft as Composer) ?? { text: '', key: '', files: [] }
+  const composer = (drafts['composer:first'] as Composer) ?? { text: '', key: '', files: [] }
   const active = useRef(true)
   const submission = useMessageSubmission({
     composer,
-    composerKey: 'draft',
+    composerKey: 'composer:first',
     personaId: 'professional',
     reasoning: controller,
     onSent: vi.fn(),
@@ -61,7 +61,7 @@ function Harness({ running = false }: { running?: boolean }) {
         containerRef={useRef(null)}
         textInput={useRef(null)}
         composer={composer}
-        change={(next) => setDraft('draft', next)}
+        change={(next) => setDraft('composer:first', next)}
         send={send}
         addFiles={async () => {}}
         locked={false}
@@ -195,7 +195,7 @@ it('serializes rapid selection, blocks sending until saved and includes the comm
   })
 })
 
-it('keeps an uploaded draft when another conversation starts saving and sends only after an explicit retry', async () => {
+it('keeps an uploading draft while another conversation saves reasoning and requires an explicit send', async () => {
   const upload = deferred<Response>()
   const save = deferred<Response>()
   uploadResponse = upload.promise
@@ -207,7 +207,7 @@ it('keeps an uploaded draft when another conversation starts saving and sends on
     },
   )
   const currentVault = vault()
-  currentVault.writer()('draft', {
+  currentVault.writer()('composer:first', {
     text: '保留的草稿',
     key: 'draft-key',
     files: [
@@ -224,16 +224,14 @@ it('keeps an uploaded draft when another conversation starts saving and sends on
     return null
   }
   render(
-    <TestWorkspace vault={currentVault}>
+    <TestWorkspace vault={currentVault} uploads>
       <Harness />
       <OtherConversation />
     </TestWorkspace>,
   )
   await screen.findByRole('button', { name: '思考强度：high' })
-  let sending!: Promise<void>
-  act(() => {
-    sending = send()
-  })
+  await act(() => send())
+  expect(posts()).toHaveLength(0)
   await waitFor(() =>
     expect(
       vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/uploads')),
@@ -245,15 +243,15 @@ it('keeps an uploaded draft when another conversation starts saving and sends on
   })
   await act(async () => {
     upload.resolve(new Response(JSON.stringify({ id: 'attachment', kind: 'document' })))
-    await sending
   })
+  await act(() => send())
   expect(posts()).toHaveLength(0)
-  const draft = currentVault.getSnapshot().draft as Composer
+  const draft = currentVault.getSnapshot()['composer:first'] as Composer
   expect(draft.text).toBe('保留的草稿')
   expect(draft.pending).toBeUndefined()
   expect(draft.files[0].attachment?.id).toBe('attachment')
   expect(draft.files[0].failed).toBe(false)
-  expect(draft.sending).toBe(false)
+  expect(!!draft.sending).toBe(false)
   expect(draft.uploading).toBeUndefined()
   await act(async () => {
     save.resolve(
@@ -287,9 +285,9 @@ it('replays an uncertain pending request with its original reasoning reference a
   await screen.findByRole('button', { name: '思考强度：high' })
   await act(() => send())
   const first = posts()[0][1]!
-  expect((currentVault.getSnapshot().draft as Composer).pending?.body.reasoning?.effort).toBe(
-    'high',
-  )
+  expect(
+    (currentVault.getSnapshot()['composer:first'] as Composer).pending?.body.reasoning?.effort,
+  ).toBe('high')
   await act(() => controller.choose('low'))
   expect(controller.reference()?.effort).toBe('low')
   sentResponse = undefined
@@ -297,7 +295,7 @@ it('replays an uncertain pending request with its original reasoning reference a
   expect(posts()).toHaveLength(2)
   expect(posts()[1][1]?.body).toBe(first.body)
   expect(posts()[1][1]?.headers).toEqual(first.headers)
-  expect(currentVault.getSnapshot().draft).toBeUndefined()
+  expect(currentVault.getSnapshot()['composer:first']).toBeUndefined()
 })
 
 it('retains draft and effective choice on save failure; synchronizes a conflict once without a message POST', async () => {
@@ -353,7 +351,7 @@ it('resynchronizes stale sends once, clears rejected pending request and keeps i
   await act(() => send())
   await screen.findByRole('button', { name: '思考强度：low' })
   expect(posts()).toHaveLength(1)
-  const draft = currentVault.getSnapshot().draft as Composer
+  const draft = currentVault.getSnapshot()['composer:first'] as Composer
   expect(draft.text).toBe('保留的草稿')
   expect(draft.pending).toBeUndefined()
   expect(error).toContain('设置已变化')
