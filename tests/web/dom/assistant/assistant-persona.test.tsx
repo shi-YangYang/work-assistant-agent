@@ -24,6 +24,7 @@ import { PersonaPicker } from '../../../../apps/web/src/features/assistant/compo
 import { useConversationPersona } from '../../../../apps/web/src/features/assistant/hooks/preferences/useConversationPersona'
 import type { Composer } from '../../../../apps/web/src/features/assistant/lib/audio-capture'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from '../helpers'
+import { TestAttachmentUploads } from './attachment-upload-lifecycle'
 
 vi.mock('@web/features/assistant/api/requests', async (load) => ({
   ...(await load<typeof import('../../../../apps/web/src/features/assistant/api/requests')>()),
@@ -66,7 +67,8 @@ function AssistantRoute() {
 }
 function assistantView(vault = createVault(), route = '/assistant?new=1', uploads = false) {
   return (
-    <TestWorkspace vault={vault} uploads={uploads}>
+    <TestWorkspace vault={vault}>
+      {uploads && <TestAttachmentUploads />}
       <MemoryRouter initialEntries={[route]}>
         <Routes>
           <Route path="/assistant/:id?" element={<AssistantRoute />} />
@@ -368,7 +370,8 @@ it('continues image upload across page navigation without locking persona select
     { initialEntries: ['/assistant?new=1'] },
   )
   render(
-    <TestWorkspace vault={vault} uploads>
+    <TestWorkspace vault={vault}>
+      <TestAttachmentUploads />
       <RouterProvider router={router} />
     </TestWorkspace>,
   )

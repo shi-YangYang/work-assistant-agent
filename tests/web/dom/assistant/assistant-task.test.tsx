@@ -28,6 +28,7 @@ import { useAssistantTask } from '../../../../apps/web/src/features/assistant/ho
 import { useExecutionMode } from '../../../../apps/web/src/features/assistant/hooks/preferences/useExecutionMode'
 import { useConversationPersona } from '../../../../apps/web/src/features/assistant/hooks/preferences/useConversationPersona'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from '../helpers'
+import { TestAttachmentUploads } from './attachment-upload-lifecycle'
 
 vi.mock('@web/features/assistant/api/requests', async (load) => ({
   ...(await load<typeof import('../../../../apps/web/src/features/assistant/api/requests')>()),
@@ -147,7 +148,8 @@ function Chat({ initial = 'first' }: { initial?: string }) {
 }
 function view(initial = 'first', vault = createVault(), uploads = false) {
   return render(
-    <TestWorkspace vault={vault} uploads={uploads}>
+    <TestWorkspace vault={vault}>
+      {uploads && <TestAttachmentUploads />}
       <MemoryRouter>
         <Chat initial={initial} />
       </MemoryRouter>

@@ -12,6 +12,7 @@ import { assistantQuery } from '../../../../apps/web/src/features/assistant/api/
 import { clearQueryResources } from '../../../../apps/web/src/lib/query-resource'
 import type { Composer } from '../../../../apps/web/src/features/assistant/lib/audio-capture'
 import { createVault, deferred, identity, TestWorkspace } from '../helpers'
+import { TestAttachmentUploads } from './attachment-upload-lifecycle'
 
 const options = [{ effort: 'low' }, { effort: 'high' }, { effort: 'max' }]
 const initial: ReasoningSettings = {
@@ -224,7 +225,8 @@ it('keeps an uploading draft while another conversation saves reasoning and requ
     return null
   }
   render(
-    <TestWorkspace vault={currentVault} uploads>
+    <TestWorkspace vault={currentVault}>
+      <TestAttachmentUploads />
       <Harness />
       <OtherConversation />
     </TestWorkspace>,
