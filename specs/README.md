@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 072：完整文件读取与图文联合理解](spec-072-document-completeness-and-vision/spec.md) — 已实施并通过限定范围的本地独立验收：补齐原件续读、Word／PPT／PDF 页面视觉输入及真实覆盖范围；短文预载减少模型往返，页面缓存复用。low／high 质量、耗时及网络阻塞／模型漏答限制见 [性能对照](spec-072-document-completeness-and-vision/performance.md) 与 [验收结果](spec-072-document-completeness-and-vision/acceptance.md)，[实施目录](spec-072-document-completeness-and-vision/plan.md)。
+
 - [Spec 071：旧版 Office 兼容与附件解析流程优化](spec-071-office-compatibility-and-parsing/spec.md) — 已实施并通过本地独立验收：DOC／XLS／PPT、RTF／ODF 由 worker 统一转换，复用现有解析器；含公式完整性检查、轻重调度与耗时对照，不依赖 Agent 沙盒。[实施计划与目录](spec-071-office-compatibility-and-parsing/plan.md)、[验收与环境限制](spec-071-office-compatibility-and-parsing/acceptance.md)、[性能对照](spec-071-office-compatibility-and-parsing/performance.md)。
 
 - [Spec 070：附件即时上传与广泛文本支持](spec-070-attachment-upload-and-text-support/spec.md) — 已实施并通过独立验收：宽泛文本／源码支持、明确禁止项、选中即上传与紧凑附件卡片、发送后读取，以及临时附件安全清理；[实施计划与目录](spec-070-attachment-upload-and-text-support/plan.md)、[验收与已知检查限制](spec-070-attachment-upload-and-text-support/acceptance.md)。
@@ -55,4 +57,4 @@
 
 ## 生命周期
 
-新 Spec 从 **072** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+新 Spec 从 **073** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

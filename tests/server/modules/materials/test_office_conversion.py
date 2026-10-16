@@ -87,7 +87,7 @@ async def test_odf_blank_padding_preserves_cells_but_formula_expansion_is_bounde
         assert '表格展开后过大' in result['info']['error'], result
     else:
         assert result['status'] == 'partial', result
-        row = next(row for row in result['chunks'] if row['location'] == '工作表「金额」!A2:G2')
+        row = {'text': '\n'.join(row['text'] for row in result['chunks'] if row['location'].startswith('工作表「金额」!')) + '\n'}
         assert 'B2：1234.5' in row['text'] and '文件保存值（非实时计算）：2469' in row['text']
 
 
@@ -98,7 +98,7 @@ async def test_odf_boolean_formula_keeps_verified_original_cache_type(tmp_path, 
     result = await office.parse_office(path, '.ods')
     assert result['status'] == 'partial', result
     assert path.read_bytes() == original
-    row = next(row for row in result['chunks'] if row['location'] == '工作表「金额」!A2:G2')
+    row = {'text': '\n'.join(row['text'] for row in result['chunks'] if row['location'].startswith('工作表「金额」!')) + '\n'}
     expected = '1' if numeric else 'True'
     assert 'E2：=1=1；文件保存值（非实时计算）：' + expected + '\n' in row['text']
 
@@ -111,7 +111,7 @@ async def test_odf_boolean_cache_requires_valid_value_and_keeps_xml_booleans(tmp
     assert path.read_bytes() == original
     if saved in ('1', '0'):
         assert result['status'] == 'partial', result
-        row = next(row for row in result['chunks'] if row['location'] == '工作表「金额」!A2:G2')
+        row = {'text': '\n'.join(row['text'] for row in result['chunks'] if row['location'].startswith('工作表「金额」!')) + '\n'}
         formula, value = ('1=1', 'True') if saved == '1' else ('1=0', 'False')
         assert 'E2：=' + formula + '；文件保存值（非实时计算）：' + value + '\n' in row['text']
     else:

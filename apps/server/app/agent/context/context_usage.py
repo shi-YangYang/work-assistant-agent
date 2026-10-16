@@ -19,11 +19,11 @@ def _size(value):
     return len(json.dumps(value, ensure_ascii=False, default=str))
 
 
-def estimate_request(messages, tools=(), system=None):
+def estimate_request(messages, tools=(), system=None, *, document_images=True):
     normalized = []
     for message in messages:
         if isinstance(message, BaseMessage):
-            item = {'role': message.type, 'content': message.content}
+            item = {'role': {'human': 'user', 'ai': 'assistant'}.get(message.type, message.type), 'content': message.content}
             for key in ('tool_calls', 'tool_call_id', 'name'):
                 value = getattr(message, key, None)
                 if value:
@@ -33,7 +33,11 @@ def estimate_request(messages, tools=(), system=None):
         normalized.append(item)
     # One token per Unicode character intentionally overestimates most Latin text.
     # Include envelopes, tool schemas and tool arguments, not just visible prose.
-    return _size(normalized) + _size(list(tools)) + (_size(system) if system else 0) + 16
+    reserve = 0
+    if document_images:
+        from app.agent.context.document_input import referenced_pages
+        reserve = min(36, len(set(referenced_pages(normalized)))) * 4096
+    return _size(normalized) + _size(list(tools)) + (_size(system) if system else 0) + 16 + reserve
 
 
 def capacity(context):

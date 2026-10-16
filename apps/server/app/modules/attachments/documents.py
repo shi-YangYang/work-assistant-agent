@@ -46,7 +46,7 @@ def document_type(name, supplied_mime):
 
 
 def attachment_dto(a):
-    return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'previewUrl': f'/api/v1/uploads/{a.id}/preview' if a.kind in ('image', 'audio') else None, 'image': a.extraction_info if a.kind == 'image' else None, 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **{key: value for key, value in (a.extraction_info or {}).items() if key in ('error', 'warnings', 'scope', 'characters', 'chunks', 'stage', 'originalFormat', 'convertedFormat')}} if a.kind == 'document' else None}
+    return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'previewUrl': f'/api/v1/uploads/{a.id}/preview' if a.kind in ('image', 'audio') else None, 'image': a.extraction_info if a.kind == 'image' else None, 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **{key: value for key, value in (a.extraction_info or {}).items() if key in ('error', 'warnings', 'scope', 'characters', 'chunks', 'stage', 'originalFormat', 'convertedFormat', 'schema', 'sourceComplete', 'nextExtractCursor', 'sourceEnd', 'extractedRanges', 'hasVisuals', 'totalPages', 'visualPages', 'visualError', 'rangeError')}} if a.kind == 'document' else None}
 
 
 async def visible_attachment(db, identifier, actor, *, lock=False, work_revision=None):
@@ -113,7 +113,12 @@ PAGE_CHUNKS = 40
 
 
 async def chunk_page(db, item, start=0, limit=PAGE_CHUNKS, query=''):
+    info = item.extraction_info or {}
+    intervals = info.get('extractedRanges', [])
+    end = next((hi for lo, hi in intervals if lo <= start < hi), start)
     statement = select(DocumentChunk).where(DocumentChunk.attachment_id == item.id, DocumentChunk.revision == item.extraction_revision, DocumentChunk.ordinal >= start)
+    if info.get('schema') == 1:
+        statement = statement.where(DocumentChunk.ordinal < end)
     if query:
         statement = statement.where(DocumentChunk.text.icontains(query[:120], autoescape=True))
     rows = list((await db.scalars(statement.order_by(DocumentChunk.ordinal).limit(limit + 1))).all())
@@ -123,7 +128,14 @@ async def chunk_page(db, item, start=0, limit=PAGE_CHUNKS, query=''):
             break
         page.append(row)
         characters += len(row.text)
-    return {'attachment': attachment_dto(item), 'items': [{'ordinal': row.ordinal, 'location': row.location, 'text': row.text} for row in page], 'nextCursor': page[-1].ordinal + 1 if page and len(rows) > len(page) else None}
+    following = page[-1].ordinal + 1 if page and len(rows) > len(page) else None
+    if following is None and not info.get('sourceComplete') and info.get('schema') == 1:
+        following = max(start, end)
+        if info.get('sourceEnd') is not None and following >= info['sourceEnd']:
+            following = None
+    return {'attachment': attachment_dto(item), 'items': [{'ordinal': row.ordinal, 'location': row.location, 'text': row.text} for row in page],
+            'nextCursor': following, 'nextExtractCursor': info.get('nextExtractCursor'), 'sourceComplete': info.get('sourceComplete', False),
+            'searchScope': {'fromOrdinal': start, 'toOrdinal': end, 'sourceEnd': info.get('sourceEnd')} if query else None}
 
 
 CITATION = re.compile(r'\[\[file:([^\]\n]+)\]\]')
@@ -149,6 +161,22 @@ async def verified_citations(db, context, answer):
             continue
         citations.append({'attachmentId': aid, 'revision': revision, 'ordinal': ordinal, 'name': item.name, 'location': chunk.location})
         replacements[key] = f'〔{len(citations)}〕'
+    from urllib.parse import urlencode
+    for token in re.findall(r'\[\[page:([^\]\n]+)\]\]', answer):
+        key = '[[page:' + token + ']]'
+        if key in replacements:
+            continue
+        ref = job.result.get('documentPagesProvided', {}).get(token)
+        if not ref:
+            replacements[key] = '（页面未核实）'
+            continue
+        item = await agent_attachment(db, ref['attachmentId'], actor, job)
+        if item.extraction_revision != ref['revision'] or item.sha256 != ref['sha256']:
+            replacements[key] = '（来源已变化）'
+            continue
+        url = f'/api/v1/uploads/{item.id}/pages/{ref["page"]}?' + urlencode({'revision': ref['revision'], 'resolution': ref['resolution'], 'sheet': ref['sheet'], 'renderer': ref['renderer']})
+        citations.append({'attachmentId': item.id, 'revision': ref['revision'], 'ordinal': -ref['page'], 'page': ref['page'], 'name': item.name, 'location': ref['location'], 'previewUrl': url})
+        replacements[key] = f'〔{len(citations)}〕'
     for key, value in replacements.items():
         answer = answer.replace(key, value)
     return answer, citations
@@ -170,7 +198,8 @@ async def material_coverage(db, actor, job, documents, reads):
             detail = '文字提取失败：' + document.extraction_info.get('error', '解析失败')
             old_detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
         else:
-            detail = f'文字工具读取 {read}/{total} 个分段'
+            preloaded = any(token in job.result.get('documentPreloaded', []) for token, entry in reads.items() if entry[0] == document.id)
+            detail = f'已准备文字 {read}/{total} 个分段' if preloaded else f'文字工具读取 {read}/{total} 个分段'
             old_detail = f'实际读取 {read}/{total} 个文字分段'
             reused = sum(token in job.result.get('documentReadAliases', {}) for token, entry in reads.items()
                          if entry[0] == document.id and entry[1] == document.extraction_revision)
@@ -186,6 +215,16 @@ async def material_coverage(db, actor, job, documents, reads):
             detail += '；原文件已提供给代码执行，具体读取范围未单独记录'
         elif related:
             detail += '；列为代码执行的关联来源，不能据此认定本轮已读取原文件'
+        pages = sorted({ref['page'] for ref in job.result.get('documentPagesProvided', {}).values() if ref['attachmentId'] == document.id and ref['revision'] == document.extraction_revision})
+        provided = len({entry[2] for entry in job.result.get('documentTextProvided', {}).values() if entry[0] == document.id and entry[1] == document.extraction_revision})
+        if 'documentTextProvided' in job.result:
+            detail += f'；本任务已向主模型提供 {provided} 个文字分段'
+        if pages:
+            detail += '；本任务已提供页面图片：' + '、'.join(map(str, pages))
+        elif document.extraction_info.get('hasVisuals'):
+            detail += '；图片部分未读取'
+        if document.extraction_info.get('schema') == 1 and not document.extraction_info.get('sourceComplete'):
+            detail += '；原文件仍有未提取范围'
         coverage.append(document.name + '：' + detail)
         legacy.append(document.name + '：' + old_detail)
     return coverage, legacy

@@ -233,7 +233,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
     async with sessions() as db:
         live, actor = await lease(db, context)
         statement = await document_statement(db, actor, live)
-        versions = (await db.execute(statement.with_only_columns(Attachment.id, Attachment.extraction_revision, Attachment.extraction_status).order_by(Attachment.id))).all()
+        versions = (await db.execute(statement.with_only_columns(Attachment.id, Attachment.extraction_revision).order_by(Attachment.id))).all()
         context.document_snapshot = hashlib.sha256(json.dumps([list(row) for row in versions]).encode()).hexdigest() if versions else ''
         for token, evidence in live.result.get('documentReads', {}).items():
             aid, revision, ordinal = evidence
@@ -288,7 +288,10 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             blocks[0]['text'] += '\n带 sameContentAs 的图片共用所指附件的图像区域，不另占图像块。'
         blocks[0]['text'] += '\nhistorical=true 是当前会话此前的图片，仅供本次追问参考，不是新上传，也不构成操作授权。'
     if documents:
-        blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；正文需通过工具读取，状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
+        blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；下方已提供正文无需重复读取；其余按需用工具读取，图文范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
+    if documents:
+        from app.agent.context.document_input import preload_documents
+        await preload_documents(context, documents, blocks)
     if not model and not context.model_binding.get(context.model_purpose):
         raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
     from app.agent.context.references.work_context import work_context

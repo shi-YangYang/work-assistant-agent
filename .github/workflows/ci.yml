@@ -104,7 +104,10 @@ jobs:
           .venv-server/bin/python -m unittest discover -s tests/deploy -p test_release.py
           .venv-server/bin/python -m unittest discover -s tests/deploy -p test_network.py
           .venv-server/bin/python -m unittest discover -s tests/deploy -p test_http_cache.py
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg libreoffice-writer libreoffice-calc libreoffice-impress fonts-liberation fonts-noto-cjk poppler-utils
+      - name: Check native document conversion and page rendering
+        timeout-minutes: 2
+        run: PYTHONPATH=apps/server .venv-server/bin/python -m app.integrations.parsing.office_preflight
       - run: npm run db:company
       - run: npm run test:server
         timeout-minutes: 25

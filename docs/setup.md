@@ -51,7 +51,19 @@ DOC／RTF／ODT、XLS／ODS、PPT／ODP 在发送消息后，由 worker 分别�
 
 本地开发需安装 LibreOffice（macOS：`brew install --cask libreoffice`；Debian／Ubuntu：`sudo apt-get install libreoffice-writer libreoffice-calc libreoffice-impress`；Windows 安装官方桌面发行版）。将 `soffice` 加入 PATH，或设置 `PAA_OFFICE_BINARY` 为其绝对路径；macOS 默认 `/Applications/LibreOffice.app/Contents/MacOS/soffice` 也会识别。重启 worker 后只检查一次版本，未安装不会阻止普通聊天及原有格式读取。
 
-生产仅 worker 镜像安装固定版本的转换依赖，不增加容器，不依赖 Agent 沙盒，也不放入 API 镜像。CD 在切换服务前实际执行 DOC／XLS／PPT 转换与内容读取预检，失败则停止发布。手动检查可在 worker 环境运行 `python -m app.integrations.parsing.office_preflight`。回滚保留原件及分段；旧 worker 不能继续解析新增格式，需恢复带转换依赖的版本或让用户上传新格式。
+生产仅 worker 镜像安装转换、页面渲染与中文字体依赖，不增加容器，不依赖 Agent 沙盒，也不放入 API 镜像。CD 在切换服务前实际执行 DOC／XLS／PPT 转换、内容读取及 Office→PDF→PNG 页面预检，失败则停止发布。手动检查可在 worker 环境运行 `python -m app.integrations.parsing.office_preflight`。回滚保留原件及分段；旧 worker 不能继续解析新增格式，需恢复带转换依赖的版本或让用户上传新格式。
+
+### 长文件与图文内容读取
+
+发送后先准备有界的文字范围。短文件正文直接提供给主模型，长文件可按需继续提取和搜索后续范围；不再把首次提取上限当作文件结尾。表格保留单元格定位、日期及公式保存值，不执行公式刷新或外部数据更新；隐藏内容及不支持对象仍明确标注。
+
+图表、扫描件和版式通过文档页面图片补充。Word／PPT／表格按需由 worker 生成 PDF，再用 Poppler 渲染指定页面；PDF 直接渲染。页面图片随正常主模型请求提供，不增加一个单独的图片描述模型或固定核对轮次。模型需要支持图像输入；纯文字读取不需要渲染。Word 页码是“转换后第 N 页”，可能与本机 Office 排版不同；表格页面按指定工作表生成，精确计算仍使用单元格数据。
+
+本地页面读取还需 `pdftoppm` 在 PATH 中（macOS：`brew install poppler`；Debian／Ubuntu：`sudo apt-get install poppler-utils fonts-noto-cjk`；Windows 配置 Poppler 的 bin 目录）。缺少页面依赖时保留可读正文并提示图片未读到，不会自动换模型。上传本身仍然不解析、不渲染、不调用 Agent。
+
+处理后的文件存放在媒体目录的 `.documents/`，与原件身份和解析／转换版本绑定，首次处理后复用。它们是持久化附件产物，随附件保留和删除，不按页数或短期 TTL 淘汰，也不设总量或单附件累计容量额度。提取的文字随附件保存在数据库中，附件删除时一并清理。
+
+每次转换／渲染仍为单次最多 32 MiB 输出预留空间，并保留至少 512 MiB 磁盘空闲；跨 worker 共享重任务槽位。实际磁盘空间不足时只停止新的对应页面准备，已读正文、已有页面和原文件仍保留；扩容磁盘或正常删除不再需要的附件后可重试。不要手工清空 `.documents/`，否则历史页面预览会失效。成功保存到工作中的文件有独立原件，源聊天删除后仍可读取或重建页面。
 
 ### 旧本地容器迁移
 

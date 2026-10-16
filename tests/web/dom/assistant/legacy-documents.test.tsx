@@ -8,7 +8,10 @@ import {
   retryDocument,
   uploadAttachment,
 } from '../../../../apps/web/src/api/attachments'
-import { DocumentCard } from '../../../../apps/web/src/components/media/Documents'
+import {
+  DocumentCard,
+  DocumentCitations,
+} from '../../../../apps/web/src/components/media/Documents'
 import { Assistant } from '../../../../apps/web/src/features/assistant/components/conversation/Conversations'
 import {
   readActiveAssistantJob,
@@ -225,4 +228,66 @@ it('keeps failed converted materials downloadable and retries only on an explici
   expect(retryDocument).toHaveBeenCalledExactlyOnceWith(attachment, {})
   await act(async () => request.resolve({ ok: true }))
   expect(refresh).toHaveBeenCalledOnce()
+})
+
+it('opens a private rendered page citation and removes stale selections after refresh', () => {
+  const citation = {
+    attachmentId: 'owned-document',
+    revision: 1,
+    ordinal: -1,
+    name: '合同.docx',
+    location: '转换后第 1 页',
+    page: 1,
+    previewUrl: '/api/v1/uploads/owned-document/pages/1?revision=1&renderer=owned',
+  }
+  const view = render(<DocumentCitations citations={[citation]} />)
+  fireEvent.click(screen.getByRole('button', { name: /合同.docx/ }))
+  const preview = screen.getByRole('img', { name: '转换后第 1 页' })
+  expect(preview.getAttribute('src')).toBe(citation.previewUrl)
+  expect(screen.getByRole('dialog').textContent).toContain('合同.docx')
+  view.rerender(
+    <DocumentCitations
+      citations={[{ ...citation, previewUrl: citation.previewUrl + '&sheet=Other' }]}
+    />,
+  )
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
+it('distinguishes scan pages, deferred source ranges, and a failed visual range', () => {
+  const attachment = uploaded('扫描.pdf')
+  const extraction = {
+    status: 'partial' as const,
+    revision: 1,
+    parserVersion: 'ranges-v1',
+    characters: 0,
+    hasVisuals: true,
+  }
+  const view = render(
+    <DocumentCard attachment={{ ...attachment, extraction }} own refresh={() => {}} />,
+  )
+  expect(screen.getByText(/可查看页面/)).toBeTruthy()
+  expect(screen.getByText('将通过页面图片读取内容。')).toBeTruthy()
+  view.rerender(
+    <DocumentCard
+      attachment={{ ...attachment, extraction: { ...extraction, visualError: '部分页面没读到' } }}
+      own
+      refresh={() => {}}
+    />,
+  )
+  expect(screen.getByText('图片部分没读到。')).toBeTruthy()
+  view.rerender(
+    <DocumentCard
+      attachment={{
+        ...attachment,
+        extraction: {
+          ...extraction,
+          characters: 200000,
+          warnings: ['部分内容尚未读取，可继续读取后续范围'],
+        },
+      }}
+      own
+      refresh={() => {}}
+    />,
+  )
+  expect(screen.getByText('其余内容可按需读取。')).toBeTruthy()
 })

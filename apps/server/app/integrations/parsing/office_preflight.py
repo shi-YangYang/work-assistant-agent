@@ -27,6 +27,17 @@ async def check():
             result = await parse_office(path, '.' + old)
             if result['status'] not in ('ready', 'partial') or 'NORIA-OFFICE-READY' not in str(result['chunks']):
                 raise RuntimeError('LibreOffice conversion/read check failed: ' + old)
+        import shutil
+        if not shutil.which('pdftoppm'):
+            raise RuntimeError('Poppler is required in the worker image')
+        pdf = root / 'page-check.pdf'
+        result = await parse_office(root / 'check.docx', '.docx', mode='pdf', destination=pdf)
+        if result['status'] != 'ready':
+            raise RuntimeError('Office PDF rendering preflight failed')
+        image = root / 'page-check.png'
+        result = await parse_office(pdf, '.pdf', mode='page', destination=image, start=1, timeout=30)
+        if result['status'] != 'ready' or image.read_bytes()[:8] != b'\x89PNG\r\n\x1a\n':
+            raise RuntimeError('PDF page rasterization preflight failed')
     print('Office conversion ready: ' + version)
 
 

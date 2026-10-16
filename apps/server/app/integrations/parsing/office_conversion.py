@@ -74,10 +74,10 @@ async def office_version():
     return 'office-v1:' + fingerprint
 
 
-async def parse_office(path, suffix, *, timeout=60, on_stage=None):
-    executable, _ = await asyncio.to_thread(converter)
+async def parse_office(path, suffix, *, timeout=60, on_stage=None, destination=None, mode="parse", start=0, sheet=""):
+    executable, _ = await asyncio.to_thread(converter) if mode != 'page' else (shutil.which('pdftoppm'), '')
     if not executable:
-        return failure(MISSING)
+        return failure('页面图片读取服务暂不可用' if mode == 'page' else MISSING)
     async def stage(name):
         if on_stage:
             await on_stage(name)
@@ -88,7 +88,7 @@ async def parse_office(path, suffix, *, timeout=60, on_stage=None):
         try:
             workspace = Path(tempfile.mkdtemp(prefix='noria-office-'))
             (workspace / 'owner.json').write_text(json.dumps({'worker': os.getpid(), 'supervisor': os.getpid()}))
-            process = await asyncio.create_subprocess_exec(sys.executable, '-I', str(Path(__file__).with_name('office_process.py')), str(Path(path).absolute()), suffix, executable, str(timeout), str(workspace), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=environment(), start_new_session=os.name == 'posix')
+            process = await asyncio.create_subprocess_exec(sys.executable, '-I', str(Path(__file__).with_name('office_process.py')), str(Path(path).absolute()), suffix, executable, str(timeout), str(workspace), json.dumps({"destination": str(destination) if destination else "", "mode": mode, "start": start, "sheet": sheet}), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=environment(), start_new_session=os.name == 'posix')
             async def receive():
                 pending, total, result = bytearray(), 0, None
                 while block := await process.stdout.read(65536):

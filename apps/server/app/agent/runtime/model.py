@@ -108,10 +108,16 @@ class BoundedChatModel(ChatOpenAI):
         from app.agent.runtime.budget import final_answer_call, instruction
         internal_kind = internal_call_kind.get()
         note = instruction(context) if not internal_kind and self._completion_validator else None
+        budget_note_index = len(payload['messages'])
         if note:
             payload['messages'] = [*payload['messages'], {'role': 'system', 'content': note}]
-        estimate = estimate_request(payload['messages'], payload.get('tools', ()))
+        from app.agent.context.document_input import assemble_pages, record_page_delivery, record_text_delivery
+        text_messages = list(payload['messages'])
+        document_pages = {}
         output_limit = output_reserve(context, self.max_tokens)
+        if not internal_kind and not self._verification:
+            payload['messages'], document_pages = await assemble_pages(context, payload['messages'], tools=payload.get('tools', ()), output_reserve=output_limit)
+        estimate = estimate_request(payload['messages'], payload.get('tools', ()), document_images=False)
         ensure_input(context, estimate, output_limit)
         from app.modules.model_services.bindings import resolve_bound
         from app.integrations.models.chat import chat
@@ -133,7 +139,7 @@ class BoundedChatModel(ChatOpenAI):
                                           final_answer=final_answer_call.get() and not internal_kind and bool(self._completion_validator))
             record = RequestRecord(context.sessions, usage_id)
             if note:
-                payload['messages'][-1] = {'role': 'system', 'content': instruction(context)}
+                payload['messages'][budget_note_index] = {'role': 'system', 'content': instruction(context)}
         from app.tasks.nodes.node_execution import active_node
         parent = active_node.get()
         from langchain_core.messages import HumanMessage
@@ -149,7 +155,7 @@ class BoundedChatModel(ChatOpenAI):
             if context.timing:
                 context.timing.mark(event, call=usage_id, kind=kind, **fields)
         if note:
-            payload['messages'][-1] = {'role': 'system', 'content': instruction(context)}
+            payload['messages'][budget_note_index] = {'role': 'system', 'content': instruction(context)}
         is_reply = not internal_kind and bool(payload.get('tools') or self._completion_validator) and context.model_purpose == 'assistant'
         publisher = candidate = None
         if is_reply and not self._verification:
@@ -194,7 +200,24 @@ class BoundedChatModel(ChatOpenAI):
                 if is_reply and not self._verification:
                     await activity('waiting')
                 return await chat(context.settings, config, key, payload['messages'], tools=payload.get('tools'), tool_choice=payload.get('tool_choice'), max_tokens=None if context.model_purpose == 'assistant' else output_limit, text_tools=('finish_task',) if context.model_purpose == 'assistant' else (), on_event=usage_event, on_retry=compatibility_retry, on_timing=timing, on_delta=receive if is_reply and not self._verification else None, on_progress=progress, stream_timeout=timeout if streaming and context.node_retry else None)
-            response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
+            try:
+                response = await request_with_deadline(request, timeout=timeout, idle_timeout=60 if streaming else None)
+            except Exception as error:
+                from app.integrations.models.transport import ProviderError
+                if not document_pages or not isinstance(error, ProviderError) or error.code != 'protocol' or error.status not in (400, 415, 422) or not error.image_input_unsupported:
+                    raise
+                # One bounded, explicit degradation on rejected document pixels;
+                # never retry quota/auth/network errors or change the model.
+                async with context.sessions.begin() as db:
+                    live, _ = await lease(db, context)
+                    live.result = {**live.result, 'documentVisionDisabled': True}
+                await compatibility_retry(error)
+                payload['messages'] = [*text_messages, {'role': 'user', 'content': '本次文档页面图片未能提供，保留了可读文字。仅据已读内容作答，并说明图片部分没读到；不要猜测。'}]
+                document_pages = {}
+                response = await request_with_deadline(request, timeout=response_timeout(context, streaming), idle_timeout=60 if streaming else None)
+            await record_page_delivery(context, document_pages)
+            if not internal_kind and not self._verification:
+                await record_text_delivery(context, payload['messages'])
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
             try:

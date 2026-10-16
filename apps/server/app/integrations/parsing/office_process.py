@@ -58,7 +58,9 @@ def limits():
 
 def main():
     source, suffix, executable, budget = Path(sys.argv[1]), sys.argv[2], sys.argv[3], float(sys.argv[4])
-    if suffix not in OFFICE_TARGETS or not source.is_file() or source.stat().st_size > 20 * 1024 * 1024:
+    options = json.loads(sys.argv[6]) if len(sys.argv) > 6 else {}
+    mode = options.get('mode', 'parse')
+    if suffix not in (*OFFICE_TARGETS, '.docx', '.pptx', '.xlsx', '.pdf') or not source.is_file() or source.stat().st_size > (MAX_OUTPUT if mode in ('page', 'pdf') else 20 * 1024 * 1024):
         raise ParseFailure('文件格式或大小不支持')
     limits()
     parent = os.getppid()
@@ -95,9 +97,35 @@ def main():
     watcher = threading.Thread(target=watch, daemon=True)
     watcher.start()
     try:
-        actual, formulas = inspect(source, suffix)
-        target = OFFICE_TARGETS[suffix]
-        if actual == '.docx':
+        if mode == 'page':
+            from pypdf import PdfReader
+            reader = PdfReader(source, strict=True)
+            page = int(options.get('start', 1))
+            if reader.is_encrypted or not 1 <= page <= len(reader.pages):
+                raise ParseFailure('页面不存在或文件已加密')
+            destination = Path(options['destination'])
+            output = workspace / 'page'
+            pixels = 2400 if options.get('sheet') == 'detail' else 1440
+            child = subprocess.Popen([executable, '-f', str(page), '-l', str(page), '-singlefile', '-scale-to', str(pixels), '-png', str(source), str(output)],
+                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env={'LANG': 'C.UTF-8', 'PATH': os.defpath}, cwd=workspace)
+            children.append(child)
+            child.wait(timeout=max(.01, deadline - time.monotonic()))
+            output = output.with_suffix('.png')
+            if child.returncode or not output.is_file() or not 0 < output.stat().st_size <= 12 * 1024 * 1024:
+                raise ParseFailure('页面图片无法读取')
+            temporary = destination.with_name(destination.name + '.pending-' + str(os.getpid()))
+            shutil.copyfile(output, temporary); temporary.chmod(0o600); temporary.replace(destination)
+            emit({'result': {'status': 'ready', 'chunks': [], 'info': {'totalPages': len(reader.pages), 'page': page}}})
+            return
+        if suffix in OFFICE_TARGETS:
+            actual, formulas = inspect(source, suffix)
+        else:
+            office_check(source, suffix)
+            from office_visual_validation import validate
+            validate(source)
+            actual, formulas = suffix, {}
+        target = '.pdf' if mode == 'pdf' else OFFICE_TARGETS.get(suffix, suffix)
+        if actual == target:
             output = source
         else:
             profile, out = workspace / 'profile', workspace / 'output'
@@ -105,11 +133,14 @@ def main():
             (profile / 'user' / 'registrymodifications.xcu').write_text(PROFILE)
             original = workspace / ('source' + actual)
             shutil.copyfile(source, original)
+            if actual == '.xlsx' and options.get('sheet'):
+                from office_visual_validation import select_sheet
+                select_sheet(original, options['sheet'])
             env = {'HOME': str(workspace), 'TMPDIR': str(workspace), 'TMP': str(workspace), 'TEMP': str(workspace), 'LANG': 'C.UTF-8', 'PATH': os.defpath}
             if 'SYSTEMROOT' in os.environ:
                 env['SYSTEMROOT'] = os.environ['SYSTEMROOT']
             emit({'stage': 'converting'})
-            child = subprocess.Popen([executable, '-env:UserInstallation=' + profile.as_uri(), '--headless', '--nologo', '--nodefault', '--norestore', '--convert-to', target[1:] + ':' + FILTERS[target], '--outdir', str(out), str(original)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, cwd=workspace)
+            child = subprocess.Popen([executable, '-env:UserInstallation=' + profile.as_uri(), '--headless', '--nologo', '--nodefault', '--norestore', '--convert-to', target[1:] + ':' + ({'.docx': 'writer_pdf_Export', '.pptx': 'impress_pdf_Export', '.xlsx': 'calc_pdf_Export'}.get(actual, 'writer_pdf_Export') if target == '.pdf' else FILTERS[target]), '--outdir', str(out), str(original)], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env, cwd=workspace)
             children.append(child)
             try:
                 code = child.wait(timeout=max(.01, deadline - time.monotonic()))
@@ -118,11 +149,25 @@ def main():
             output = out / ('source' + target)
             if code or not output.is_file() or not 0 < output.stat().st_size <= MAX_OUTPUT:
                 raise ParseFailure('文件转换失败，请确认能正常打开，或用 Office／WPS 重新导出后上传')
-            office_check(output, target)
+            if target != '.pdf':
+                office_check(output, target)
             if target == '.xlsx':
                 verify_formula_caches(output, formulas)
+        if options.get('destination'):
+            destination = Path(options['destination'])
+            temporary = destination.with_name(destination.name + '.pending-' + str(os.getpid()))
+            shutil.copyfile(output, temporary)
+            temporary.chmod(0o600)
+            temporary.replace(destination)
+        if mode in ('pdf', 'convert'):
+            info = {'convertedFormat': target[1:]}
+            if mode == 'pdf':
+                from pypdf import PdfReader
+                info['totalPages'] = len(PdfReader(output, strict=True).pages)
+            emit({'result': {'status': 'ready', 'chunks': [], 'info': info}})
+            return
         emit({'stage': 'parsing'})
-        child = subprocess.Popen([sys.executable, '-I', str(Path(__file__).with_name('document_parser.py')), str(output), target], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env={'LANG': 'C.UTF-8', **({'SYSTEMROOT': os.environ['SYSTEMROOT']} if 'SYSTEMROOT' in os.environ else {})})
+        child = subprocess.Popen([sys.executable, '-I', str(Path(__file__).with_name('document_parser.py')), str(output), target, str(options.get('start', 0))], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env={'LANG': 'C.UTF-8', **({'SYSTEMROOT': os.environ['SYSTEMROOT']} if 'SYSTEMROOT' in os.environ else {})})
         children.append(child)
         try:
             raw = child.stdout.read(2 * 1024 * 1024 + 1)

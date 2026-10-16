@@ -152,7 +152,7 @@ async def media_preview(identifier: str, request: Request, workRevision: int | N
 
 
 @router.get('/api/v1/uploads/{identifier}/extraction')
-async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
+async def extraction(identifier: str, start: int = Query(0, ge=0, le=10_000_000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
     item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
     if item.kind != 'document':
         problem(422, '该附件没有文档提取内容')
@@ -182,3 +182,19 @@ async def retry_extraction(identifier: str, actor=AUTH, db=DB):
     db.add(job)
     await db.flush()
     return job_dto(job)
+
+
+@router.get('/api/v1/uploads/{identifier}/pages/{page}')
+async def document_page(identifier: str, page: int, revision: int, resolution: str = 'normal', sheet: str = '', renderer: str = '', workRevision: str | None = None, actor=AUTH, db=DB, settings=SETTINGS):
+    from types import SimpleNamespace
+    from app.integrations.parsing.document_rendering import page_path
+    item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
+    if item.kind != 'document' or item.extraction_revision != revision:
+        problem(404, '页面来源不可用')
+    try:
+        path = page_path(SimpleNamespace(settings=settings), item, {'revision': revision, 'sha256': item.sha256, 'renderer': renderer, 'page': page, 'resolution': resolution, 'sheet': sheet})
+    except ValueError:
+        problem(404, '页面来源不可用')
+    if not path.is_file() or path.is_symlink():
+        problem(404, '页面预览已过期，可在对话中重新读取')
+    return FileResponse(path, media_type='image/png', headers={'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline'})

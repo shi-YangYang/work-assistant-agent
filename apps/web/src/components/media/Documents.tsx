@@ -20,9 +20,13 @@ const statuses: Record<string, string> = {
   ready: '文字可读',
   partial: '部分可读',
   failed: '解析失败',
+  empty: '未找到文字',
 }
 
 function extractionStatus(extraction: Attachment['extraction']) {
+  if (extraction?.hasVisuals && extraction.characters === 0 && extraction.status !== 'failed')
+    return '可查看页面'
+
   if (extraction?.status === 'processing') {
     switch (extraction.stage) {
       case 'queued':
@@ -54,6 +58,7 @@ const failureHints: [RegExp, string][] = [
 const warningHints: [RegExp, string][] = [
   [/^内容由 .+ 转换为 .+ 后提取/, '图片和复杂排版可能不完整'],
   [/^读取的是转换后的表格；公式保存结果已核对/, ''],
+  [/部分内容尚未读取/, '其余内容可按需读取'],
   [/隐藏/, '隐藏的内容未读取'],
   [/前 100 页/, '只读取了前 100 页'],
   [/前 100 张幻灯片/, '只读取了前 100 张幻灯片'],
@@ -65,6 +70,10 @@ const warningHints: [RegExp, string][] = [
 ]
 
 function documentHint(extraction: Attachment['extraction']) {
+  if (extraction?.visualError) return '图片部分没读到。'
+  if (extraction?.hasVisuals && extraction.characters === 0 && extraction.status !== 'failed')
+    return '将通过页面图片读取内容。'
+
   if (extraction?.status === 'failed') {
     const error = extraction.error ?? ''
     return (
@@ -240,22 +249,35 @@ export function DocumentCitations({ citations }: { citations: DocumentCitation[]
         <button
           type="button"
           className={`${controlsStyles['text-button']}`}
-          key={`${citation.attachmentId}:${citation.ordinal}`}
+          key={`${citation.attachmentId}:${citation.previewUrl ?? citation.ordinal}`}
           onClick={() => setSelected(citation)}
         >
           〔{index + 1}〕{citation.name} · {citation.location}
         </button>
       ))}
-      {selected && currentCitation(citations, selected) && (
-        <DocumentPreview
-          key={`${selected.attachmentId}:${selected.ordinal}`}
-          attachmentId={selected.attachmentId}
-          revision={selected.revision}
-          ordinal={selected.ordinal}
-          name={selected.name}
-          onClose={() => setSelected(null)}
-        />
-      )}
+      {selected &&
+        currentCitation(citations, selected) &&
+        (selected.previewUrl ? (
+          <Modal
+            title={`${selected.name} · ${selected.location}`}
+            onClose={() => setSelected(null)}
+          >
+            <img
+              src={selected.previewUrl}
+              alt={selected.location}
+              style={{ maxWidth: '100%', height: 'auto' }}
+            />
+          </Modal>
+        ) : (
+          <DocumentPreview
+            key={`${selected.attachmentId}:${selected.ordinal}`}
+            attachmentId={selected.attachmentId}
+            revision={selected.revision}
+            ordinal={selected.ordinal}
+            name={selected.name}
+            onClose={() => setSelected(null)}
+          />
+        ))}
     </details>
   )
 }

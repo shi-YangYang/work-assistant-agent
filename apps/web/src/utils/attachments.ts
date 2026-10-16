@@ -69,7 +69,8 @@ export function currentCitation(citations: DocumentCitation[], selected: Documen
         (citation) =>
           citation.attachmentId === selected.attachmentId &&
           citation.revision === selected.revision &&
-          citation.ordinal === selected.ordinal,
+          citation.ordinal === selected.ordinal &&
+          citation.previewUrl === selected.previewUrl,
       )
     : undefined
 }

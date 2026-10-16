@@ -40,6 +40,8 @@ def preview_path(settings, identifier, kind='image'):
 
 
 def remove_media(settings, identifier):
+    from app.modules.attachments.document_assets import remove
+    remove(settings, identifier)
     (settings.media_dir / identifier).unlink(missing_ok=True)
     # Known conversion versions only; no untrusted filename/glob path.
     preview_path(settings, identifier).unlink(missing_ok=True)

@@ -42,7 +42,7 @@ async def shared_parse(cache, key, operation, *, reuse_failure=False):
             await asyncio.gather(entry.task, return_exceptions=True)
 
 
-async def prepare_document(context, identifier, *, parse_cache=None):
+async def prepare_document(context, identifier, *, parse_cache=None, allow_source=False):
     from app.tasks.lease import lease
     def mark(event, **fields):
         if context.timing is not None:
@@ -50,26 +50,32 @@ async def prepare_document(context, identifier, *, parse_cache=None):
     async def initialize(version=None):
         async with context.sessions.begin() as db:
             job, actor = await lease(db, context)
+            if allow_source:
+                from app.modules.attachments.documents import agent_attachment
+                await agent_attachment(db, identifier, actor, job)
             item = await owned(db, Attachment, identifier, actor, lock=True)
-            if item.kind != 'document' or (job.kind == 'message' and item.message_id != job.target_id) or (job.kind == 'document' and item.id != job.target_id):
+            if item.kind != 'document' or (job.kind == 'message' and item.message_id != job.target_id and not allow_source) or (job.kind == 'document' and item.id != job.target_id):
                 problem(404, '文档来源不可用')
             suffix = Path(item.name).suffix.lower()
             converting = suffix in OFFICE_TARGETS
             if converting and version is None:
                 return None, suffix
             version = version if converting else PARSER_VERSION
-            if item.extraction_status in ('ready', 'partial') and item.parser_version == version:
+            if item.extraction_status in ('ready', 'partial', 'empty') and item.parser_version == version:
                 mark('document.cache_hit', kind=suffix)
                 return {'cached': attachment_dto(item)}, suffix
+            previous = {'revision': item.extraction_revision, 'status': item.extraction_status, 'parser': item.parser_version, 'info': item.extraction_info}
             item.extraction_revision += 1
             revision, checksum = item.extraction_revision, item.sha256
+            if allow_source:
+                context.document_versions[identifier] = revision
             item.extraction_status, item.parser_version, item.extraction_info = 'processing', version, {'stage': 'queued'} if converting else {}
             from app.modules.attachments.duplicates import content_key
             cache_key = (*content_key(item), version)
             from app.tasks.feedback.feedback_state import update_feedback
             update_feedback(job, 'parsing', '')
             job.phase, job.updated_at = 'document', now()
-            return {'actor': actor, 'converting': converting, 'revision': revision, 'checksum': checksum, 'cache_key': cache_key}, suffix
+            return {'previous': previous, 'item': item, 'actor': actor, 'converting': converting, 'revision': revision, 'checksum': checksum, 'cache_key': cache_key}, suffix
     state, suffix = await initialize()
     if state is None:
         # A missing/cold executable probe must not hold a DB transaction/lock.
@@ -97,7 +103,12 @@ async def prepare_document(context, identifier, *, parse_cache=None):
                     current.extraction_info = {'stage': value}
         async def parse():
             if converting:
-                return await parse_office(path, suffix, on_stage=stage)
+                from app.modules.attachments.document_assets import generation, heavy_slot, trim
+                target = generation(context.settings, state['item']) / ('source' + OFFICE_TARGETS[suffix])
+                target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                async with heavy_slot(context.settings):
+                    trim(context.settings)
+                    return await parse_office(path, suffix, on_stage=stage, destination=target)
             async with limit:
                 return await parse_process(path, suffix)
         result = await parse() if parse_cache is None else await shared_parse(parse_cache, cache_key, parse, reuse_failure=converting)
@@ -124,9 +135,20 @@ async def prepare_document(context, identifier, *, parse_cache=None):
         if item.extraction_revision != revision or item.sha256 != checksum:
             from app.tasks.context import InputChanged
             raise InputChanged(document=True)
+        if allow_source and result['status'] == 'failed':
+            previous = state['previous']
+            item.extraction_revision, item.extraction_status, item.parser_version = previous['revision'], previous['status'], previous['parser']
+            item.extraction_info = {**previous['info'], 'rangeError': result['info'].get('error', '后续内容暂时无法读取')}
+            context.document_versions[identifier] = previous['revision']
+            return attachment_dto(item)
         await db.execute(delete(DocumentChunk).where(DocumentChunk.attachment_id == item.id))
-        for ordinal, chunk in enumerate(result['chunks']):
+        for index, chunk in enumerate(result['chunks']):
+            ordinal = chunk.get('ordinal', index)
             db.add(DocumentChunk(company_id=item.company_id, owner_id=item.owner_id, attachment_id=item.id, revision=revision, ordinal=ordinal, location=chunk['location'], text=chunk['text']))
-        item.extraction_status, item.extraction_info = result['status'], result['info']
+        info = dict(result['info'])
+        if info.get('schema') == 1:
+            info['extractedRanges'] = [info['extractedRange']]
+            info['sourceEnd'] = info.get('sourceEnd', info['extractedRange'][1]) if info.get('sourceComplete') else None
+        item.extraction_status, item.extraction_info = result['status'], info
         mark('document.prepared', kind=suffix, state=result['status'])
         return attachment_dto(item)

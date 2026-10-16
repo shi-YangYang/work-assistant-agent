@@ -67,15 +67,24 @@ async def test_slow_conversion_queue_does_not_block_modern_files_or_another_acco
     first_started, second_waiting, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
     heavy_slot = asyncio.Semaphore(1)
     converts = []
-    async def slow(path, suffix, *, on_stage):
+    async def slow(path, suffix, *, on_stage, **_kwargs):
         converts.append(str(path))
-        if len(converts) == 2:
-            second_waiting.set()
         async with heavy_slot:
             await on_stage('converting')
             first_started.set()
             await release.wait()
             return {'status': 'ready', 'chunks': [{'text': 'controlled slow conversion', 'location': '段落 1'}], 'info': {}}
+    from app.modules.attachments import document_assets
+    actual_slot = document_assets.heavy_slot
+    queued = []
+    @asynccontextmanager
+    async def observed_slot(settings):
+        queued.append(True)
+        if len(queued) == 2:
+            second_waiting.set()
+        async with actual_slot(settings):
+            yield
+    monkeypatch.setattr(document_assets, 'heavy_slot', observed_slot)
     monkeypatch.setattr(documents, 'parse_office', slow)
     client = clients['employee']
     files = [await upload(client, f'排队-{index}.doc', b'{\\rtf1 owned queue ' + str(index).encode() + b'}') for index in range(2)]
@@ -197,14 +206,14 @@ async def test_api_cancel_conversion_at_each_boundary_then_retry(setup, real_doc
     client = clients['employee']
     entered, released, cleaned = asyncio.Event(), asyncio.Event(), asyncio.Event()
     convert = documents.parse_office
-    async def paused(path, suffix, *, on_stage):
+    async def paused(path, suffix, *, on_stage, **kwargs):
         async def stage(value):
             await on_stage(value)
             if value == stop_at:
                 entered.set()
                 await released.wait()
         try:
-            result = await convert(path, suffix, on_stage=stage)
+            result = await convert(path, suffix, on_stage=stage, **kwargs)
             if stop_at == 'before_persist':
                 assert result['status'] == 'ready', result
                 entered.set()

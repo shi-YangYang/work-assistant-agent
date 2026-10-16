@@ -28,7 +28,7 @@ export interface Attachment {
   mime: string
   duration: number | null
   extraction?: {
-    status: 'unsent' | 'pending' | 'processing' | 'ready' | 'partial' | 'failed'
+    status: 'unsent' | 'pending' | 'processing' | 'ready' | 'partial' | 'empty' | 'failed'
     revision: number
     parserVersion: string
     stage?: 'queued' | 'converting' | 'parsing'
@@ -39,12 +39,18 @@ export interface Attachment {
     scope?: string
     characters?: number
     chunks?: number
+    sourceComplete?: boolean
+    hasVisuals?: boolean
+    visualError?: string
+    totalPages?: number
   } | null
   url: string
   previewUrl?: string | null
   image?: { width: number; height: number; warnings: string[] } | null
 }
 export interface DocumentCitation {
+  page?: number
+  previewUrl?: string
   attachmentId: string
   revision: number
   ordinal: number

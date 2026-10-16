@@ -5,7 +5,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-PARSER_VERSION = 'text-v3:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
+PARSER_VERSION = 'ranges-v2:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
 
 
 MAX_TEXT = 200_000
@@ -362,7 +362,10 @@ def extract(path, suffix):
 def main():
     resource_limits()
     try:
-        result = extract(sys.argv[1], sys.argv[2])
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        sys.modules.setdefault('document_parser', sys.modules[__name__])
+        from document_ranges import extract_batch
+        result = extract_batch(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 0)
     except ParseFailure as error:
         result = {'status': 'failed', 'chunks': [], 'info': {'error': str(error)}}
     except (MemoryError, RecursionError):

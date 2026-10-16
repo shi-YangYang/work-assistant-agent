@@ -22,7 +22,7 @@ ARG LIBREOFFICE_VERSION=4:7.4.7-1+deb12u14
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-writer="$LIBREOFFICE_VERSION" libreoffice-calc="$LIBREOFFICE_VERSION" libreoffice-impress="$LIBREOFFICE_VERSION" \
-    procps fonts-liberation && rm -rf /var/lib/apt/lists/*
+    procps fonts-liberation fonts-noto-cjk poppler-utils && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/voiceprints \
     && /opt/voiceprints/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" --extra-index-url "$TORCH_INDEX_URL" 'torch==2.11.0+cpu' 'torchaudio==2.11.0+cpu' \
     && /opt/voiceprints/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" './packages/voiceprint-engine[runtime]' \

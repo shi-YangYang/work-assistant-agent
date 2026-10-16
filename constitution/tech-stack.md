@@ -80,6 +80,8 @@
 
 ## Office 兼容读取
 
-- worker 固定安装 LibreOffice Writer／Calc／Impress，仅将 DOC／RTF／ODT、XLS／ODS、PPT／ODP 转为 OOXML 后送现有受限解析器。API 镜像不安装，读取不依赖 Agent 沙盒；上传不解析。
+- worker 安装固定 LibreOffice Writer／Calc／Impress、Poppler 和中文字体：旧 Office／RTF／ODF 转为 OOXML 后提取；Office 图文按需转 PDF、渲染指定页。API 镜像不安装重依赖，读取不依赖 Agent 沙盒；上传不解析。
 - `olefile` 固定版本只负责 OLE 结构与公式保存结果核对；不增加第二套旧格式正文解析器。转换策略、LibreOffice 版本与现有解析版本一起构成新增格式缓存指纹。
-- `python -m app.integrations.parsing.office_preflight` 在 worker 镜像发布前验证三种真实旧格式。模块／流程检查位于 `tests/server/modules/materials/test_office_conversion.py`、`test_document_preparation.py` 和 `tests/server/scenarios/test_legacy_document_workflow.py`；本地依赖及限制见 [安装说明](../docs/setup.md#旧版-office-文件读取)。
+- `python -m app.integrations.parsing.office_preflight` 在 worker 镜像发布前验证三种真实旧格式及 Office→PDF→PNG。模块／流程检查位于 `tests/server/modules/materials/test_office_conversion.py`、`test_document_preparation.py` 和 `tests/server/scenarios/test_legacy_document_workflow.py`；本地依赖及限制见 [安装说明](../docs/setup.md#旧版-office-文件读取)。
+
+- 原件范围续提取和页面像素装配分别归属 `integrations/parsing`、`tasks/processing`、`agent/context/document_input.py`；不新增向量检索或描述模型。私有处理产物按原件与版本隔离，随附件持久化和删除，不设累计容量额度；磁盘空间保护见[图文读取说明](../docs/setup.md#长文件与图文内容读取)。相关检查为 `test_document_ranges.py`、`test_document_vision.py`，low／high 对照入口为 `scripts/benchmarks/document-understanding.py`。
