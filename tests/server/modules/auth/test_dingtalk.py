@@ -69,6 +69,7 @@ async def test_new_employee_reuses_identity_concurrently_and_keeps_local_passwor
         assert a['member']['id'] == b['member']['id']
         assert a['member']['role'] == 'employee' and 'mustChangePassword' not in a['member'] and not a['member']['hasPassword']
         assert a['member']['username'].startswith('dd_')
+        assert (await first.get('/api/v1/assistant/execution-settings')).json() == {'executionMode': 'full', 'fullAccessConfirmed': False, 'modeRevision': 1}
         assert (await first.post('/api/v1/auth/login', json={'username': a['member']['username'], 'password': 'controlled-test-password'})).status_code == 401
         async with sessions() as db:
             actor = await db.get(Member, a['member']['id'])

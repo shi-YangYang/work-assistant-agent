@@ -27,7 +27,7 @@ export function useExecutionMode(interaction: PersonaInteraction) {
   }, [scope])
   const valid = () => committed.current === scope && epoch === generation
   const [error, setError] = useState<{ scope: string; value: Error | string } | null>(null)
-  const selected = settings.data?.executionMode ?? 'auto'
+  const selected = settings.data?.executionMode ?? 'full'
   const acknowledged = settings.data?.fullAccessConfirmed ?? false
   async function choose(mode: ExecutionMode, fullAccessConfirmed = acknowledged) {
     const current = resource.getSnapshot().data
