@@ -256,8 +256,13 @@ async def test_todos_no_work_reminders_read_submission_permissions_and_delete(se
     monkeypatch.setattr('app.modules.reports.scheduling.schedule.now',lambda:instant)
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     data=(await c['employee'].get('/api/v1/report-obligations')).json()
-    assert len(data['items'])==1 and data['items'][0]['job']['phase']=='empty'
+    assert len(data['items'])==1 and data['items'][0]['job'] is None and data['items'][0]['reportId'] is None
     obligation=data['items'][0]
+    missing=await c['employee'].post(f"/api/v1/report-obligations/{obligation['id']}/prepare",json={},headers=keyed())
+    assert missing.status_code==422 and missing.json()['error']['code']=='report_sources_empty'
+    async with sessions() as db:
+        assert not await db.scalar(select(Report.id).where(Report.owner_id==users['employee'].id))
+        assert not await db.scalar(select(Job.id).where(Job.owner_id==users['employee'].id,Job.kind=='report'))
     assert data['counts']['expected']==1 and data['counts']['submitted']==0
     assert (await c['admin'].get('/api/v1/report-obligations')).status_code==403
     assert (await c['peer'].post(f"/api/v1/report-obligations/{obligation['id']}/prepare",json={},headers=keyed())).status_code==404
@@ -277,7 +282,11 @@ async def test_todos_no_work_reminders_read_submission_permissions_and_delete(se
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     notices=(await c['employee'].get('/api/v1/notifications')).json()
     assert len(notices['items'])==1 and notices['items'][0]['stage']=='overdue' and notices['unread']==1
-    report=(await c['employee'].get('/api/v1/reports/'+obligation['reportId'])).json()
+    # A real source later becomes available; generation can be requested again.
+    await prepared(setup,day=obligation['period'])
+    ready=await c['employee'].post(f"/api/v1/report-obligations/{obligation['id']}/prepare",json={},headers=keyed())
+    assert ready.status_code==200
+    report=(await c['employee'].get('/api/v1/reports/'+ready.json()['reportId'])).json()
     edit=await c['employee'].patch('/api/v1/reports/'+report['id'],json={'expectedRevision':report['revision'],'content':{**dict.fromkeys(CONTENT,''),'ongoing':'本期无新增进展'}})
     assert edit.status_code==200
     assert (await c['employee'].post(f"/api/v1/reports/{report['id']}/submit",json={'expectedRevision':edit.json()['revision']},headers=keyed())).status_code==200
@@ -300,6 +309,12 @@ async def test_bounded_outage_backfill_current_priority_future_rules_and_activat
     settings,sessions,users,c=setup
     instant=datetime(2027,2,8,17,15,tzinfo=timezone.utc)
     await arrange(setup,instant,days_back=120)
+    async with sessions.begin() as db:
+        for actor in (users['employee'],users['peer']):
+            for days_back in (0,1,100):
+                work=WorkItem(company_id=actor.company_id,owner_id=actor.id,title='有效工作来源',content={'title':'有效工作来源','summary':'已完成初稿','status':'in_progress'})
+                db.add(work);await db.flush()
+                db.add(WorkRevision(company_id=actor.company_id,owner_id=actor.id,work_id=work.id,revision=1,content=work.content,source_ids=[],created_at=instant-timedelta(days=days_back)))
     await schedule_company(sessions,users['employee'].company_id,instant,4)
     async with sessions() as db:
         rows=(await db.scalars(select(ReportObligation).where(ReportObligation.company_id==users['employee'].company_id))).all()
@@ -398,6 +413,7 @@ async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(
     settings,sessions,users,c=setup
     instant=datetime(2027,3,1,17,tzinfo=timezone.utc)
     await arrange(setup,instant)
+    await prepared(setup,day=instant.date().isoformat())
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     async with sessions.begin() as db:
         obligation=await db.scalar(select(ReportObligation).where(ReportObligation.owner_id==users['employee'].id))

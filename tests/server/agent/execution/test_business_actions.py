@@ -297,8 +297,8 @@ async def test_empty_report_and_failed_dependency_do_not_claim_submission(setup)
     _, _, _, c = setup
     context, sent = await runtime(setup, '生成今天日报并提交')
     result = await execute(context, step=1, action='generate_report', report_date='2026-09-16', submit_after=True)
-    assert result['state'] == 'succeeded' and not result.get('canConfirm')
-    assert result['action'] == 'generate_report' and '没有内容' in result['message']
+    assert result['state'] == 'failed' and not result.get('canConfirm') and not result.get('objectId')
+    assert result['action'] == 'generate_report' and '暂无可用于生成日报的工作记录' in result['message']
     # Missing prerequisite cannot be silently treated as a successful step.
     blocked = await execute(context, step=3, action='create_work', changes={'title': '依赖任务'}, requires_step=2)
     assert blocked['state'] == 'waiting'

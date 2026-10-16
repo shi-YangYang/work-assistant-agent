@@ -23,7 +23,12 @@ async def refresh_generation(db, actor, row):
         row.state = 'succeeded'
         row.result = {**row.result, 'revision': report.revision}
         if job.phase == 'empty':
-            row.result = {**row.result, 'message': '本期没有已确认工作，已准备报告草稿；可在报告页填写。'}
+            from app.modules.reports.service import no_report_sources_message
+            # Old empty jobs are not generated reports, including submit-after requests.
+            row.state, row.params = 'failed', {}
+            row.result = {**row.result, 'message': no_report_sources_message(report.kind)}
+            row.revision += 1
+            return
         if row.result.get('submitAfter'):
             if not any(str(v).strip() for v in report.content.values()):
                 row.result = {**row.result, 'message': '报告还没有内容，请先填写后再提交。'}

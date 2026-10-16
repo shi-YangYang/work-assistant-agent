@@ -315,6 +315,9 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
                         context.context_sources = {}
                         context.read_versions.pop(target_id, None)
         except HTTPException as error:
+            # Report brief capture may change job access inside the savepoint.
+            # Rollback expires that object; reload before recording a failed tool.
+            await db.refresh(job)
             row.state = 'conflict' if error.status_code == 409 else 'failed'
             row.params = {}
             row.result = {'message': error.detail['message']}

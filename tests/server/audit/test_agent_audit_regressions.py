@@ -21,7 +21,6 @@ from app.modules.attachments.models import Attachment
 from app.modules.members.models import Member
 from app.modules.messages.models import Message
 from app.modules.reports.models import Report
-from app.modules.reports.service import ensure_report
 from app.modules.work.models import WorkItem
 from app.tasks.processing.documents import prepare_document
 from app.tasks.processing.handlers import process_job
@@ -200,7 +199,12 @@ async def test_report_list_is_bounded_and_full_content_is_retrievable(setup):
     reports = []
     for offset in range(2):
         async with sessions.begin() as db:
-            report, _ = await ensure_report(db, users['employee'], 'daily', now().date() - timedelta(days=offset))
+            # Existing manually written reports do not depend on generation sources.
+            day = (now().date() - timedelta(days=offset)).isoformat()
+            actor = users['employee']
+            report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period=day, period_end=day, timezone='Asia/Shanghai', content={})
+            db.add(report)
+            await db.flush()
         content = {'completed': '甲' * 8000, 'ongoing': '乙' * 7999 + '末'}
         saved = await clients['employee'].patch('/api/v1/reports/' + report.id, json={'expectedRevision': 1, 'content': content})
         assert saved.status_code == 200, saved.text

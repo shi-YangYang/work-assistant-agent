@@ -4,6 +4,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.agent.runtime.model import BoundedChatModel
 from app.db.base import now
 from app.modules.reports.models import Report
+from app.modules.reports.service import no_report_sources_message
 from app.modules.reports.generation.parsing import parse_report
 from app.modules.reports.generation.results import save_candidate
 from app.modules.reports.generation.sources import sources_for
@@ -84,11 +85,7 @@ async def generate(context, model=None):
             return
         sources = await sources_for(db, report, actor, job.result.get('sourceIds', []))
         if not sources:
-            job.state, job.phase, job.error, job.lease_until, job.updated_at = 'succeeded', 'empty', '', None, now()
-            update_feedback(job, 'complete', '')
-            from app.modules.operations.mutations.report_completion import complete_report
-            await complete_report(db, actor, job)
-            return
+            raise ValueError(no_report_sources_message(report.kind))
         payload = {'kind': report.kind, 'period': report.period, 'periodEnd': report.period_end, 'confirmed': [{'content': report_source_content(r)} for r in sources], 'workContextsForPlansOnly': report_plan_contexts(sources), 'userRequest': job.result.get('instructions', ''), 'conversationForReferenceOnly': await load_brief(db, actor, job), 'materialsForInstructionsOnly': await load_materials(db, actor, job)}
     from app.modules.model_services.bindings import bind_job
     async with context.sessions.begin() as db:
