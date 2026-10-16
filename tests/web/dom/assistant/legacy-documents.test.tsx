@@ -169,13 +169,35 @@ it('uses processing stages without letting stale stages override terminal or his
       />,
     )
     expect(screen.getByText(new RegExp(label))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '查看提取内容' })).toBeNull()
     expect(screen.getByRole('link', { name: '下载原文件' }).getAttribute('href')).toBe(
       attachment.url,
     )
   }
-  expect(screen.getByText('文件已加密，请解密后重新上传。')).toBeTruthy()
+  expect(screen.getByText('文件有密码，请解密后上传。')).toBeTruthy()
   expect(screen.queryByText(/正在读取/)).toBeNull()
-  expect(screen.queryByRole('button', { name: '查看提取内容' })).toBeNull()
+  view.rerender(
+    <DocumentCard
+      attachment={{
+        ...attachment,
+        extraction: {
+          status: 'partial',
+          revision: 1,
+          parserVersion: 'office-test',
+          warnings: [
+            '内容由 XLS 转换为 XLSX 后提取，复杂版式、图形及嵌入内容可能不完整。',
+            '工作表「隐藏」已隐藏，未读取',
+            '工作表「金额」隐藏的行／列未读取',
+            '读取的是转换后的表格；公式保存结果已核对，未运行宏或刷新外部数据。',
+          ],
+        },
+      }}
+      own
+      refresh={refresh}
+    />,
+  )
+  expect(screen.getByText('图片和复杂排版可能不完整；隐藏的内容未读取。')).toBeTruthy()
+  expect(screen.queryByText(/未运行宏或刷新外部数据/)).toBeNull()
 })
 
 it('keeps failed converted materials downloadable and retries only on an explicit action', async () => {

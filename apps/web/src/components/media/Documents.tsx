@@ -36,6 +36,54 @@ function extractionStatus(extraction: Attachment['extraction']) {
   return statuses[extraction?.status ?? 'pending']
 }
 
+const failureHints: [RegExp, string][] = [
+  [/已加密或结构损坏/, '文件有密码或已损坏，请检查后重新上传。'],
+  [/加密|密码/, '文件有密码，请解密后上传。'],
+  [/公式/, '公式结果无法确认，请用 Office 或 WPS 另存为 XLSX 后上传。'],
+  [/没有可提取文字/, '没找到文字，请上传带文字的文件。'],
+  [/编码/, '文字编码不支持，请保存为 UTF-8 后上传。'],
+  [/宏|外部数据|嵌入对象/, '文件含宏或外部内容，请移除后上传。'],
+  [/超时|超过 \d+ 秒/, '读取超时，请拆分文件后重试。'],
+  [/过大|过多|资源限制/, '文件内容太大，请拆分后上传。'],
+  [/中断/, '读取已中断，请重试。'],
+  [/转换.*不可用|转换.*监测失败|进程未返回/, '暂时没读出来，请重试。'],
+  [/格式|扩展名/, '暂时读不了这个格式，请另存为常用格式后上传。'],
+  [/重新导出|结构/, '文件没读出来，请重新保存后上传。'],
+]
+
+const warningHints: [RegExp, string][] = [
+  [/^内容由 .+ 转换为 .+ 后提取/, '图片和复杂排版可能不完整'],
+  [/^读取的是转换后的表格；公式保存结果已核对/, ''],
+  [/隐藏/, '隐藏的内容未读取'],
+  [/前 100 页/, '只读取了前 100 页'],
+  [/前 100 张幻灯片/, '只读取了前 100 张幻灯片'],
+  [/前 20 个工作表/, '只读取了前 20 个工作表'],
+  [/上限|20000 行|8000 字符/, '内容较多，只读了部分'],
+  [/合并范围/, '部分合并单元格信息未读取'],
+  [/公式.*缺少保存值/, '部分公式没有保存结果'],
+  [/无可提取文字/, '部分页面没有文字，可能是扫描件'],
+]
+
+function documentHint(extraction: Attachment['extraction']) {
+  if (extraction?.status === 'failed') {
+    const error = extraction.error ?? ''
+    return (
+      failureHints.find(([pattern]) => pattern.test(error))?.[1] ||
+      error ||
+      '文件没读出来，请重试或重新保存后上传。'
+    )
+  }
+  if (!extraction || !['ready', 'partial'].includes(extraction.status)) return ''
+  const hints = (extraction.warnings ?? []).map((warning) =>
+    (warningHints.find(([pattern]) => pattern.test(warning))?.[1] ?? warning).replace(
+      /[。；]+$/,
+      '',
+    ),
+  )
+  const summary = [...new Set(hints.filter(Boolean))].join('；')
+  return summary ? `${summary}。` : extraction.status === 'partial' ? '部分内容未能读取。' : ''
+}
+
 export function DocumentCard({
   attachment,
   own,
@@ -47,11 +95,11 @@ export function DocumentCard({
   refresh: () => void
   compact?: boolean
 }) {
-  const [open, setOpen] = useState(false)
   const [pdf, setPdf] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error | string>('')
   const extraction = attachment.extraction
+  const hint = documentHint(extraction)
   return (
     <div className={documentsStyles['document-card']} data-compact={compact}>
       <div className={documentsStyles['document-heading']}>
@@ -62,19 +110,7 @@ export function DocumentCard({
         {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)} ·{' '}
         {extractionStatus(extraction)}
       </p>
-      {extraction?.error && (
-        <p className={documentsStyles['document-warning']}>{extraction.error}</p>
-      )}
-      {extraction?.warnings?.map((warning) => (
-        <p className={documentsStyles['document-warning']} key={warning}>
-          {warning}
-        </p>
-      ))}
-      {extraction?.status === 'failed' && (
-        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-          可重新解析，或修正文件后重新发送。
-        </p>
-      )}
+      {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
       <ErrorNotice>{error}</ErrorNotice>
       <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
         {attachment.mime === 'application/pdf' && (
@@ -84,15 +120,6 @@ export function DocumentCard({
             onClick={() => setPdf(true)}
           >
             查看原页
-          </button>
-        )}
-        {['ready', 'partial'].includes(extraction?.status ?? '') && (
-          <button
-            type="button"
-            className={`${controlsStyles['text-button']}`}
-            onClick={() => setOpen(true)}
-          >
-            查看提取内容
           </button>
         )}
         <a href={attachment.url} download={attachment.name}>
@@ -127,15 +154,6 @@ export function DocumentCard({
       </div>
       {pdf && (
         <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
-      )}
-      {open && (
-        <DocumentPreview
-          attachmentId={attachment.id}
-          workRevision={attachment.workRevision}
-          revision={extraction?.revision}
-          name={attachment.name}
-          onClose={() => setOpen(false)}
-        />
       )}
     </div>
   )
