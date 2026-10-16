@@ -46,6 +46,7 @@ function mount(path = '/notifications') {
         element: (
           <>
             <PetStage
+              visible
               animate={false}
               navTriggerRef={createRef()}
               expandedNav={false}

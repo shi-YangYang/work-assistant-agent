@@ -2,12 +2,10 @@
 import type { Identity } from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { useEffect, useState } from 'react'
-import type { ComponentProps } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Shell } from '../../../../apps/web/src/app/layout/Shell'
 import { usePageReady } from '../../../../apps/web/src/components/feedback/PageReadiness'
-import type { PetStage } from '../../../../apps/web/src/app/layout/pet/PetStage'
 import { useWorkspace } from '../../../../apps/web/src/lib/workspace'
 import { createVault, dialogs, identity } from '../helpers'
 
@@ -64,13 +62,6 @@ vi.mock('@web/hooks/useAssistantActivity', () => ({
     return undefined
   },
 }))
-vi.mock('@web/app/layout/pet/PetStage', () => ({
-  PetStage: ({ navTriggerRef, setExpandedNav }: ComponentProps<typeof PetStage>) => (
-    <button ref={navTriggerRef} onClick={() => setExpandedNav(true)}>
-      打开导航
-    </button>
-  ),
-}))
 
 const admin = { ...identity, member: { ...identity.member, role: 'admin' as const } }
 let drawerMedia: MediaQueryList
@@ -79,6 +70,7 @@ let breakpointListeners: Set<() => void>
 beforeEach(() => {
   dialogs()
   sessionStorage.clear()
+  localStorage.clear()
   Object.values(lifecycle).forEach((spy) => spy.mockClear())
   breakpointListeners = new Set()
   drawerMedia = {
@@ -126,6 +118,82 @@ const visibleLinks = (nav: HTMLElement) =>
   within(nav)
     .getAllByRole('link')
     .map((node) => node.textContent)
+
+it.each([identity, admin])(
+  'toggles the initially hidden pet and remembers the browser preference for $member.role',
+  async (account) => {
+    const view = mount('/assistant/current', account)
+    const draft = await screen.findByRole('textbox', { name: '聊天草稿' })
+    fireEvent.change(draft, { target: { value: '保留草稿' } })
+    expect(screen.queryByRole('button', { name: 'Noria' })).toBeNull()
+    openSettings()
+    const location = view.router.state.location
+    const fetchCount = vi.mocked(fetch).mock.calls.length
+    fireEvent.click(within(settings()).getByRole('button', { name: '显示宠物' }))
+    expect(screen.getByRole('button', { name: 'Noria' })).toBeTruthy()
+    expect(within(settings()).getByRole('button', { name: '隐藏宠物' })).toBeTruthy()
+    expect(localStorage.getItem('paa.company.pet-visible')).toBe('true')
+    expect(view.router.state.location).toBe(location)
+    expect(screen.getByRole('textbox', { name: '聊天草稿' })).toBe(draft)
+    expect(view.vault.getSnapshot().message).toBe('保留草稿')
+    expect(fetch).toHaveBeenCalledTimes(fetchCount)
+    view.unmount()
+
+    const reopened = mount('/assistant/current', account)
+    await screen.findByRole('textbox', { name: '聊天草稿' })
+    expect(screen.getByRole('button', { name: 'Noria' })).toBeTruthy()
+    openSettings()
+    fireEvent.click(within(settings()).getByRole('button', { name: '隐藏宠物' }))
+    expect(screen.queryByRole('button', { name: 'Noria' })).toBeNull()
+    expect(within(settings()).getByRole('button', { name: '显示宠物' })).toBeTruthy()
+    expect(localStorage.getItem('paa.company.pet-visible')).toBe('false')
+    reopened.unmount()
+    mount('/assistant/current', account)
+    await screen.findByRole('textbox', { name: '聊天草稿' })
+    expect(screen.queryByRole('button', { name: 'Noria' })).toBeNull()
+  },
+)
+
+it('keeps the mobile drawer usable with the pet hidden and syncs visibility across tabs', async () => {
+  Object.assign(drawerMedia, { matches: true })
+  mount()
+  await screen.findByRole('textbox', { name: '聊天草稿' })
+  fireEvent.click(screen.getByRole('button', { name: '展开导航' }))
+  openSettings()
+  const drawer = screen.getByRole('dialog', { name: '导航' })
+  fireEvent.click(within(drawer).getByRole('button', { name: '显示宠物' }))
+  expect(screen.getByRole('dialog', { name: '导航' })).toBe(drawer)
+  fireEvent.click(within(drawer).getByRole('button', { name: '隐藏宠物' }))
+  fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: '导航' })).toBeNull()
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '展开导航' }))
+  act(() => {
+    localStorage.setItem('paa.company.pet-visible', 'true')
+    window.dispatchEvent(new StorageEvent('storage', { key: 'paa.company.pet-visible' }))
+  })
+  expect(screen.getByRole('button', { name: 'Noria' })).toBeTruthy()
+  act(() => {
+    localStorage.clear()
+    window.dispatchEvent(new StorageEvent('storage', { key: null }))
+  })
+  expect(screen.queryByRole('button', { name: 'Noria' })).toBeNull()
+})
+
+it('keeps the pet toggle usable when browser storage is unavailable', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new Error('Storage blocked')
+  })
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('Storage blocked')
+  })
+  mount()
+  await screen.findByRole('textbox', { name: '聊天草稿' })
+  openSettings()
+  fireEvent.click(within(settings()).getByRole('button', { name: '显示宠物' }))
+  expect(screen.getByRole('button', { name: 'Noria' })).toBeTruthy()
+  fireEvent.click(within(settings()).getByRole('button', { name: '隐藏宠物' }))
+  expect(screen.queryByRole('button', { name: 'Noria' })).toBeNull()
+})
 
 it.each([
   [identity, ['记忆', '账户', '汇报规则', '问题反馈']],
@@ -257,8 +325,8 @@ it('preserves drawer focus and menu when closing or resizing', async () => {
   expect(document.activeElement).toBe(within(drawer).getByRole('button', { name: '退出登录' }))
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(screen.queryByRole('dialog', { name: '导航' })).toBeNull()
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: '打开导航' }))
-  fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '展开导航' }))
+  fireEvent.click(screen.getByRole('button', { name: '展开导航' }))
   expect(settings()).toBeTruthy()
   drawer = screen.getByRole('dialog', { name: '导航' })
   goBack()
@@ -277,7 +345,7 @@ it('keeps the mobile drawer on menu changes, supports backdrop and Escape, and c
   Object.assign(drawerMedia, { matches: true })
   const { router, vault } = mount()
   await screen.findByRole('textbox', { name: '聊天草稿' })
-  fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
+  fireEvent.click(screen.getByRole('button', { name: '展开导航' }))
   openSettings()
   const drawer = screen.getByRole('dialog', { name: '导航' })
   goBack()
@@ -285,14 +353,14 @@ it('keeps the mobile drawer on menu changes, supports backdrop and Escape, and c
   expect(within(drawer).queryByRole('button', { name: '收起导航' })).toBeNull()
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(screen.queryByRole('dialog', { name: '导航' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
+  fireEvent.click(screen.getByRole('button', { name: '展开导航' }))
   expect(main()).toBeTruthy()
   openSettings()
   const backdrop = screen
     .getAllByRole('button', { name: '收起导航' })
     .find((button) => button.tabIndex === -1)!
   fireEvent.click(backdrop)
-  fireEvent.click(screen.getByRole('button', { name: '打开导航' }))
+  fireEvent.click(screen.getByRole('button', { name: '展开导航' }))
   expect(settings()).toBeTruthy()
   act(() => vault.writer()('recording', true))
   const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)

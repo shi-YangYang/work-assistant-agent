@@ -8,21 +8,20 @@ import { useNotificationSummary } from '@web/features/notifications/hooks/useNot
 import styles from './PetStage.module.css'
 
 export function PetStage({
+  visible,
   animate,
   activity = 'idle',
   navTriggerRef,
   expandedNav,
   setExpandedNav,
 }: {
+  visible: boolean
   animate: boolean
   activity?: AssistantActivityState
   navTriggerRef: RefObject<HTMLButtonElement | null>
   expandedNav: boolean
   setExpandedNav: (expanded: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const unread = useNotificationSummary()?.data?.totalUnread ?? 0
-  const label = unread > 0 ? `Noria，${unread} 条未读通知` : 'Noria'
   return (
     <>
       <div className={styles.stage}>
@@ -37,6 +36,25 @@ export function PetStage({
         >
           <Menu size={19} />
         </button>
+      </div>
+      {visible && <PetCompanion animate={animate} activity={activity} />}
+    </>
+  )
+}
+
+function PetCompanion({
+  animate,
+  activity,
+}: {
+  animate: boolean
+  activity: AssistantActivityState
+}) {
+  const [open, setOpen] = useState(false)
+  const unread = useNotificationSummary()?.data?.totalUnread ?? 0
+  const label = unread > 0 ? `Noria，${unread} 条未读通知` : 'Noria'
+  return (
+    <>
+      <div className={styles.stage}>
         <button
           type="button"
           className={styles.trigger}
