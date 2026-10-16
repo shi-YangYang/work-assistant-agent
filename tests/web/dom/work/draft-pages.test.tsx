@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import type { Report, Rules } from '@paa/api-contracts'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { api, write } from '../../../../apps/web/src/api/client'
 import { ReportDetail } from '../../../../apps/web/src/features/reports/components/detail/ReportDetail'
+import { ReportHeader } from '../../../../apps/web/src/features/reports/components/detail/ReportHeader'
 import { RulesPage } from '../../../../apps/web/src/features/settings/components/rules/RulesPage'
 import { createVault, deferred, dialogs, identity, TestWorkspace } from '../helpers'
 
@@ -35,6 +36,81 @@ const report: Report = {
   updatedAt: '2026-09-22T00:00:00Z',
   sourceIds: [],
 }
+it.each([
+  ['daily', '2026-10-12', '2026-10-12', '日报', '2026/10/12'],
+  ['weekly', '2026-10-12', '2026-10-18', '周报', '2026/10/12 — 10/18'],
+  ['weekly', '2026-12-28', '2027-01-03', '周报', '2026/12/28 — 2027/01/03'],
+] as const)('keeps %s report metadata compact for %s', (kind, period, periodEnd, title, range) => {
+  render(
+    <ReportHeader
+      compact={false}
+      report={{ ...report, kind, period, periodEnd, ownerName: '段晓华' }}
+    />,
+  )
+  expect(screen.getByRole('heading', { name: title })).toBeTruthy()
+  expect(screen.getByText('草稿')).toBeTruthy()
+  expect(screen.getByText(range)).toBeTruthy()
+  expect(screen.getByText('段晓华').parentElement).toBe(screen.getByText('北京时间').parentElement)
+  expect(screen.getByText('北京时间').title).toContain('UTC+08:00')
+})
+it('keeps return and management in navigation while retaining the report submission flow', async () => {
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.includes('/sources') ? { items: [] } : report,
+  )
+  vi.mocked(write).mockResolvedValue({ ok: true })
+  render(
+    <MemoryRouter
+      initialEntries={[
+        {
+          pathname: '/reports/report',
+          state: { returnTo: { path: '/assistant/current', state: null } },
+        },
+      ]}
+    >
+      <TestWorkspace vault={createVault()}>
+        <ReportDetail recordId="report" />
+      </TestWorkspace>
+    </MemoryRouter>,
+  )
+  const navigation = screen.getByRole('navigation', { name: '报告导航' })
+  expect(within(navigation).getByRole('link', { name: '返回会话' }).getAttribute('href')).toBe(
+    '/assistant/current',
+  )
+  fireEvent.click(await within(navigation).findByRole('button', { name: '管理报告' }))
+  expect(screen.getByRole('menuitem', { name: '删除报告' })).toBeTruthy()
+  fireEvent.click(within(navigation).getByRole('button', { name: '管理报告' }))
+  const actions = screen.getByRole('group', { name: '报告操作' })
+  expect(within(actions).getByRole('button', { name: '编辑草稿' })).toBeTruthy()
+  fireEvent.click(within(actions).getByRole('button', { name: '提交报告' }))
+  fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: '确认提交' }))
+  await waitFor(() =>
+    expect(write).toHaveBeenCalledWith(
+      '/reports/report/submit',
+      { expectedRevision: 1 },
+      'POST',
+      expect.any(String),
+    ),
+  )
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+})
+it('keeps embedded historical reports read-only without adding standalone navigation', async () => {
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.includes('/sources')
+      ? { items: [] }
+      : { ...report, historical: true, revision: 2, publishedRevision: 3 },
+  )
+  render(
+    <MemoryRouter initialEntries={['/team']}>
+      <TestWorkspace vault={createVault()}>
+        <ReportDetail compact recordId="report" />
+      </TestWorkspace>
+    </MemoryRouter>,
+  )
+  expect(await screen.findByText('已提交第 2 版')).toBeTruthy()
+  expect(screen.queryByRole('navigation', { name: '报告导航' })).toBeNull()
+  expect(screen.queryByRole('group', { name: '报告操作' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '管理报告' })).toBeNull()
+})
 it('locks report fields during save and preserves the reopened draft from a stale response', async () => {
   vi.mocked(api).mockImplementation(async (path) =>
     path.includes('/sources') ? { items: [] } : report,
