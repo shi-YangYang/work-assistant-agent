@@ -10,6 +10,10 @@ from app.tasks.runtime.runner import run_slots
 
 async def main():
     settings = Settings()
+    from app.integrations.parsing.office_conversion import converter, cleanup_abandoned
+    await asyncio.to_thread(cleanup_abandoned)
+    executable, version = await asyncio.to_thread(converter)
+    logging.getLogger('paa.company').info('Office conversion: %s', version if executable else 'unavailable; install LibreOffice for DOC/XLS/PPT/RTF/ODF')
     engine, sessions = database(settings)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

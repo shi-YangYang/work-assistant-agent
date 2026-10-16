@@ -8,6 +8,11 @@ from pathlib import Path
 from sqlalchemy import select
 
 DOCUMENT_TYPES = {
+    '.doc': 'application/msword', '.xls': 'application/vnd.ms-excel',
+    '.ppt': 'application/vnd.ms-powerpoint', '.rtf': 'application/rtf',
+    '.odt': 'application/vnd.oasis.opendocument.text',
+    '.ods': 'application/vnd.oasis.opendocument.spreadsheet',
+    '.odp': 'application/vnd.oasis.opendocument.presentation',
     '.pdf': 'application/pdf',
     '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -28,6 +33,10 @@ def document_type(name, supplied_mime):
     suffix = Path(name).suffix.lower()
     if suffix in DOCUMENT_TYPES:
         permitted = {DOCUMENT_TYPES[suffix], 'application/octet-stream', '', 'application/zip' if suffix in ('.docx', '.pptx', '.xlsx') else 'text/plain'}
+        if suffix == '.rtf':
+            permitted.add('text/rtf')
+        if suffix in ('.odt', '.ods', '.odp', '.doc'):
+            permitted.add('application/zip')
         if suffix in ('.json', '.csv', '.md'):
             permitted |= {'text/json', 'application/csv', 'application/vnd.ms-excel', 'text/x-markdown'}
         if (supplied_mime or '').split(';')[0].lower() not in permitted:
@@ -37,7 +46,7 @@ def document_type(name, supplied_mime):
 
 
 def attachment_dto(a):
-    return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'previewUrl': f'/api/v1/uploads/{a.id}/preview' if a.kind in ('image', 'audio') else None, 'image': a.extraction_info if a.kind == 'image' else None, 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **(a.extraction_info or {})} if a.kind == 'document' else None}
+    return {'id': a.id, 'kind': a.kind, 'name': a.name, 'size': a.size, 'mime': a.mime, 'duration': a.duration, 'url': f'/api/v1/uploads/{a.id}/content', 'previewUrl': f'/api/v1/uploads/{a.id}/preview' if a.kind in ('image', 'audio') else None, 'image': a.extraction_info if a.kind == 'image' else None, 'extraction': {'status': a.extraction_status, 'revision': a.extraction_revision, 'parserVersion': a.parser_version, **{key: value for key, value in (a.extraction_info or {}).items() if key in ('error', 'warnings', 'scope', 'characters', 'chunks', 'stage', 'originalFormat', 'convertedFormat')}} if a.kind == 'document' else None}
 
 
 async def visible_attachment(db, identifier, actor, *, lock=False, work_revision=None):

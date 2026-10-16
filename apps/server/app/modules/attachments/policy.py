@@ -9,8 +9,8 @@ def check_filename(name):
     blocked = ATTACHMENT_RULES['blocked']
     if suffix in blocked['archive']:
         problem(415, '暂不支持压缩包，请解压后选择需要处理的文件。')
-    if suffix in blocked['macro'] or suffix in ATTACHMENT_RULES['legacyOffice']:
-        problem(415, '暂不支持旧版 Office 或含宏文件，请转换为 PDF、DOCX、PPTX、XLSX 或 CSV。')
+    if suffix in blocked['macro']:
+        problem(415, '暂不支持含宏文件，请移除宏并另存为 DOCX、PPTX、XLSX 或 PDF。')
     if suffix in blocked['program']:
         problem(415, '暂不支持上传程序、安装包、镜像或编译文件。')
     return suffix

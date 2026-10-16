@@ -91,3 +91,4 @@ zstandard==0.25.0
 pillow-heif==1.7.0
 openpyxl==3.1.5
 et_xmlfile==2.0.0
+olefile==0.47

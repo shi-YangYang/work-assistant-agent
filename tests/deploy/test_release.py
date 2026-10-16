@@ -51,6 +51,8 @@ elif tool == 'docker':
     if 'run' in args and 'worker' in args and 'PAA_MODEL_KEY_FILE' in args[-1]:
         # Real Compose creates even the unused pgdata volume during this preflight.
         Path(os.environ['DEPLOY_TEST_LOG']).with_suffix('.volume').touch()
+    if failure == 'office' and 'app.integrations.parsing.office_preflight' in args:
+        sys.exit(1)
     if failure == 'pull' and 'pull' in args:
         sys.exit(1)
     if failure == 'key' and 'run' in args and 'python' in args and 'worker' in args:
@@ -222,7 +224,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_preflight_failures_leave_previous_release_running(self):
         previous = self.previous_release()
-        for failure in ('build-service', 'build-worker', 'build-web', 'image-id', 'pull', 'key', 'inspect-database'):
+        for failure in ('build-service', 'build-worker', 'build-web', 'image-id', 'pull', 'key', 'office', 'inspect-database'):
             with self.subTest(failure=failure):
                 (self.release / '.release.env').unlink(missing_ok=True)
                 (self.release / 'apps/server/.env.web').unlink(missing_ok=True)

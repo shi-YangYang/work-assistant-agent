@@ -45,6 +45,14 @@ npm run dev:web
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令统一管理 Docker 的 `paa-company` 项目：PostgreSQL、正文流 Redis，以及可选的沙盒 control/runtime；等待健康检查通过后启动宿主机上的 Web、API、worker。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用及本次启动的 Redis，数据库继续运行；原已运行的 Redis 不会被停止。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；同一环境只允许一个开发管理命令运行，第二个终端不会接管服务。分开运行 API／worker 时，先在 Docker Desktop 启动已经创建的 postgres、redis 服务；独立命令不管理这些依赖。
 
+### 旧版 Office 文件读取
+
+DOC／RTF／ODT、XLS／ODS、PPT／ODP 在发送消息后，由 worker 分别转换为 DOCX、XLSX、PPTX 再读取。上传不会触发转换，原件保留供下载和沙盒使用；PDF、新版 Office、文本与代码继续直接读取。复杂版式、图形和嵌入内容不保证完整，建议先用 Office／WPS 另存为新格式。包含宏、外部数据或活动对象，以及转换导致公式保存结果变化的文件会给出明确失败，不猜测缺失内容。
+
+本地开发需安装 LibreOffice（macOS：`brew install --cask libreoffice`；Debian／Ubuntu：`sudo apt-get install libreoffice-writer libreoffice-calc libreoffice-impress`；Windows 安装官方桌面发行版）。将 `soffice` 加入 PATH，或设置 `PAA_OFFICE_BINARY` 为其绝对路径；macOS 默认 `/Applications/LibreOffice.app/Contents/MacOS/soffice` 也会识别。重启 worker 后只检查一次版本，未安装不会阻止普通聊天及原有格式读取。
+
+生产仅 worker 镜像安装固定版本的转换依赖，不增加容器，不依赖 Agent 沙盒，也不放入 API 镜像。CD 在切换服务前实际执行 DOC／XLS／PPT 转换与内容读取预检，失败则停止发布。手动检查可在 worker 环境运行 `python -m app.integrations.parsing.office_preflight`。回滚保留原件及分段；旧 worker 不能继续解析新增格式，需恢复带转换依赖的版本或让用户上传新格式。
+
 ### 旧本地容器迁移
 
 升级前先退出 API、worker、Web 和独立沙盒命令，再执行：

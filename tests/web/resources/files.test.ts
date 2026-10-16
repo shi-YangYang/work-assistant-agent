@@ -7,6 +7,7 @@ import {
   fileKind,
   fileSelectionError,
   isHeif,
+  isLegacyOfficeFile,
   messageSubmission,
   updateSendingDraft,
 } from '../../../apps/web/src/features/assistant/utils/files'
@@ -14,7 +15,23 @@ const file = (name: string, size = 100, type = '') => ({ name, size, type }) as 
 
 describe('document composer', () => {
   it('accepts all supported documents with mixed images and enforces per-file and per-message boundaries', () => {
-    for (const extension of ['pdf', 'docx', 'pptx', 'txt', 'json', 'md', 'csv', 'xlsx']) {
+    for (const extension of [
+      'pdf',
+      'docx',
+      'pptx',
+      'txt',
+      'json',
+      'md',
+      'csv',
+      'xlsx',
+      'doc',
+      'xls',
+      'ppt',
+      'rtf',
+      'odt',
+      'ods',
+      'odp',
+    ]) {
       expect(fileKind(file(`项目.${extension.toUpperCase()}`))).toBe('document')
       expect(fileSelectionError([file(`项目.${extension}`), file('photo.png')])).toBe('')
     }
@@ -36,8 +53,26 @@ describe('document composer', () => {
     )
     expect(fileSelectionError([file('audio.wav', 20 * 1024 * 1024 + 1)])).toContain('20 MB')
     expect(fileSelectionError([file('zero.txt', 0)])).toContain('空文件')
-    for (const extension of ['doc', 'ppt', 'xls', 'docm'])
+    for (const extension of ['docm', 'xlsm', 'pptm'])
       expect(fileSelectionError([file(`old.${extension}`)])).toContain('转换')
+  })
+  it('only identifies legacy Office names for the advisory, independent of MIME and case', () => {
+    for (const name of ['报告.DOC', '预算.XLS', '演示.ppt', 'C:\\材料\\记录.Doc. ']) {
+      expect(isLegacyOfficeFile(name)).toBe(true)
+      expect(fileKind(file(name, 100, 'application/octet-stream'))).toBe('document')
+      expect(fileSelectionError([file(name)])).toBe('')
+    }
+    for (const name of [
+      '报告.docx',
+      '预算.xlsx',
+      '演示.pptx',
+      '记录.rtf',
+      '材料.odt',
+      '表格.ods',
+      '方案.odp',
+      'sample.doc.txt',
+    ])
+      expect(isLegacyOfficeFile(name)).toBe(false)
   })
   it('late uploads and sends only update their original operation draft', () => {
     const first: Composer = { text: '保留文字', files: [], key: 'original', sending: true }

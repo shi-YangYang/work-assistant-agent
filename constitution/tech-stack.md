@@ -77,3 +77,9 @@
 - 可选配置 `PAA_SANDBOX_URL`、`PAA_SANDBOX_TOKEN`，部署使用 `sandbox` profile；默认关闭，未启用不影响既有聊天与业务工具。
 - 本地执行一次 `npm run sandbox:setup`，配置写入 `apps/server/.env.web`。`dev:web` 将数据库、Redis 与本地沙盒统一归入 `paa-company` 项目；只停止本次拥有的 Redis／沙盒，数据库继续运行。沙盒与业务网络隔离，停止保留镜像与缓存，不改宿主 Docker 配置。
 - `tests/sandbox/test_protocol.py` 验证控制协议；`tests/sandbox/real_execution.py` 仅显式启用时对本地隔离执行服务运行真实破坏性测试；真实模型评测入口 `scripts/benchmarks/sandbox-evaluation.py`。
+
+## Office 兼容读取
+
+- worker 固定安装 LibreOffice Writer／Calc／Impress，仅将 DOC／RTF／ODT、XLS／ODS、PPT／ODP 转为 OOXML 后送现有受限解析器。API 镜像不安装，读取不依赖 Agent 沙盒；上传不解析。
+- `olefile` 固定版本只负责 OLE 结构与公式保存结果核对；不增加第二套旧格式正文解析器。转换策略、LibreOffice 版本与现有解析版本一起构成新增格式缓存指纹。
+- `python -m app.integrations.parsing.office_preflight` 在 worker 镜像发布前验证三种真实旧格式。模块／流程检查位于 `tests/server/modules/materials/test_office_conversion.py`、`test_document_preparation.py` 和 `tests/server/scenarios/test_legacy_document_workflow.py`；本地依赖及限制见 [安装说明](../docs/setup.md#旧版-office-文件读取)。

@@ -31,6 +31,9 @@ export interface Attachment {
     status: 'unsent' | 'pending' | 'processing' | 'ready' | 'partial' | 'failed'
     revision: number
     parserVersion: string
+    stage?: 'queued' | 'converting' | 'parsing'
+    originalFormat?: string
+    convertedFormat?: string
     error?: string
     warnings?: string[]
     scope?: string

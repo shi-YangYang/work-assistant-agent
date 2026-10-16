@@ -62,6 +62,11 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
                 magic = raw.read(8)
             if not (magic.startswith(b'%PDF-') if name.lower().endswith('.pdf') else magic.startswith(b'PK\x03\x04')):
                 problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
+        elif suffix in ('.doc', '.xls', '.ppt', '.rtf', '.odt', '.ods', '.odp'):
+            from app.integrations.parsing.formats import header_matches
+            with path.open('rb') as raw:
+                if not header_matches(suffix, raw.read(8)):
+                    problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
         initial_company = actor.company_id
         await business_company_lock(db, initial_company)
         actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))

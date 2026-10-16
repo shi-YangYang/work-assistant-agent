@@ -180,8 +180,8 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         live, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
-        order = job.result.get('attachmentOrder', [])
-        attachments = sorted(attachments, key=lambda a: order.index(a.id) if a.id in order else a.created_at.timestamp())
+        order = {identifier: index for index, identifier in enumerate(job.result.get('attachmentOrder', []))}
+        attachments = sorted(attachments, key=lambda a: (order.get(a.id, len(order)), a.created_at, a.id))
         context.persona_id = message.persona_id
         transcript_revision = message.transcript_revision
         text, transcript = message.text, message.transcript
@@ -197,8 +197,20 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
     async def parse_document(attachment):
         with context.timing.span('document', call=attachment.id):
             return await prepare_document(context, attachment.id, parse_cache=parse_cache if attachment.id in duplicate_ids else None)
-    documents = await map_limited([item for item in attachments if item.kind == 'document'], parse_document)
-    parse_cache.clear()
+    from app.integrations.parsing.formats import OFFICE_TARGETS
+    from pathlib import Path
+    document_inputs = [item for item in attachments if item.kind == 'document']
+    # At most the message attachment limit (9) awaits preparation; actual parse
+    # and conversion work retains its separate process-level semaphore.
+    concurrency = max(1, len(document_inputs)) if any(Path(item.name).suffix.lower() in OFFICE_TARGETS for item in document_inputs) else 2
+    try:
+        documents = await map_limited(document_inputs, parse_document, concurrency=concurrency)
+    finally:
+        for entry in parse_cache.values():
+            if not entry.task.done():
+                entry.task.cancel()
+        await asyncio.gather(*(entry.task for entry in parse_cache.values()), return_exceptions=True)
+        parse_cache.clear()
     prepared = {item['id']: item['extraction'] for item in documents}
     for group in document_groups:
         equivalent = {item.id: prepared[item.id]['revision'] for item in group

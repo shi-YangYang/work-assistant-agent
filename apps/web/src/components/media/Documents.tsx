@@ -22,6 +22,20 @@ const statuses: Record<string, string> = {
   failed: '解析失败',
 }
 
+function extractionStatus(extraction: Attachment['extraction']) {
+  if (extraction?.status === 'processing') {
+    switch (extraction.stage) {
+      case 'queued':
+        return '等待转换'
+      case 'converting':
+        return '正在转换'
+      case 'parsing':
+        return '正在读取'
+    }
+  }
+  return statuses[extraction?.status ?? 'pending']
+}
+
 export function DocumentCard({
   attachment,
   own,
@@ -46,7 +60,7 @@ export function DocumentCard({
       </div>
       <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
         {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)} ·{' '}
-        {statuses[extraction?.status ?? 'pending']}
+        {extractionStatus(extraction)}
       </p>
       {extraction?.error && (
         <p className={documentsStyles['document-warning']}>{extraction.error}</p>
@@ -155,7 +169,7 @@ function DocumentPreview({
           <>
             <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
               {data.attachment.extraction?.scope ?? '提取文字'} ·{' '}
-              {statuses[data.attachment.extraction?.status ?? 'pending']}
+              {extractionStatus(data.attachment.extraction)}
             </p>
             {data.attachment.extraction?.warnings?.map((warning) => (
               <p className={documentsStyles['document-warning']} key={warning}>

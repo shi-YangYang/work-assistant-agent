@@ -134,7 +134,8 @@ async def test_pdf_decompression_is_bounded(tmp_path):
 
 
 @pytest.mark.parametrize('assign_ok', [True, False])
-async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok):
+@pytest.mark.parametrize('processes,memory', [(1, 512 * 1024 * 1024), (32, 1024 * 1024 * 1024)])
+async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok, processes, memory):
     """API contract only; does not claim a real Windows kernel execution."""
     import ctypes
     from types import SimpleNamespace
@@ -146,20 +147,21 @@ async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok)
     def configure(handle, information_class, pointer, size):
         limits = pointer._obj
         assert handle == 101 and information_class == 9
-        assert limits.ProcessMemoryLimit == 512 * 1024 * 1024
+        assert limits.ProcessMemoryLimit == memory
+        assert limits.JobMemoryLimit == memory
         assert limits.BasicLimitInformation.PerProcessUserTimeLimit == 450_000_000
-        assert limits.BasicLimitInformation.ActiveProcessLimit == 1
-        assert limits.BasicLimitInformation.LimitFlags == 0x210A
+        assert limits.BasicLimitInformation.ActiveProcessLimit == processes
+        assert limits.BasicLimitInformation.LimitFlags == 0x230A
         assert size == (144 if ctypes.sizeof(ctypes.c_void_p) == 8 else 112)
         calls.append('configured')
         return True
     kernel = SimpleNamespace(CreateJobObjectW=Function(lambda *args: 101), SetInformationJobObject=Function(configure), AssignProcessToJobObject=Function(lambda *args: calls.append('assigned') or assign_ok), GetCurrentProcess=Function(lambda: 202), CloseHandle=Function(lambda *args: calls.append('closed') or True))
     monkeypatch.setattr(ctypes, 'WinDLL', lambda *args, **kwargs: kernel, raising=False)
     if assign_ok:
-        windows_resource_limits()
+        windows_resource_limits(processes=processes, memory=memory)
         assert calls == ['configured', 'assigned']
     else:
-        with pytest.raises(OSError, match='资源限制'): windows_resource_limits()
+        with pytest.raises(OSError, match='资源限制'): windows_resource_limits(processes=processes, memory=memory)
         assert calls == ['configured', 'assigned', 'closed']
 
 

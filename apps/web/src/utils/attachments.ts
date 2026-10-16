@@ -24,10 +24,14 @@ function extensionOf(name: string) {
 export function blockedFileMessage(name: string) {
   const suffix = extensionOf(name)
   if (policy.blocked.archive.includes(suffix)) return '暂不支持压缩包，请解压后选择需要处理的文件。'
-  if (policy.blocked.macro.includes(suffix) || policy.legacyOffice.includes(suffix))
-    return '暂不支持旧版 Office 或含宏文件，请转换为 PDF、DOCX、PPTX、XLSX 或 CSV。'
+  if (policy.blocked.macro.includes(suffix))
+    return '暂不支持含宏文件，请转换为 PDF、DOCX、PPTX、XLSX 或 CSV。'
   if (policy.blocked.program.includes(suffix)) return '暂不支持上传程序、安装包、镜像或编译文件。'
   return ''
+}
+
+export function isLegacyOfficeFile(name: string) {
+  return policy.legacyOffice.includes(extensionOf(name))
 }
 
 export function fileKind(file: Pick<File, 'name' | 'type'>) {

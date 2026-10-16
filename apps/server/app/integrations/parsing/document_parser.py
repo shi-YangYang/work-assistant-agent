@@ -34,7 +34,7 @@ class Full(Exception):
 _WINDOWS_JOB = None
 
 
-def windows_resource_limits():
+def windows_resource_limits(*, processes=1, memory=MEMORY_BYTES):
     """Windows has no resource module. Bind this child to a private Job Object
     before loading parsers; the kernel enforces process memory/CPU/process count.
     The handle remains open for this process's lifetime (kill on close).
@@ -67,8 +67,10 @@ def windows_resource_limits():
     limits = ExtendedLimits()
     limits.BasicLimitInformation.LimitFlags = 0x2 | 0x8 | 0x100 | 0x2000
     limits.BasicLimitInformation.PerProcessUserTimeLimit = 45 * 10_000_000
-    limits.BasicLimitInformation.ActiveProcessLimit = 1
-    limits.ProcessMemoryLimit = MEMORY_BYTES
+    limits.BasicLimitInformation.ActiveProcessLimit = processes
+    limits.ProcessMemoryLimit = memory
+    limits.JobMemoryLimit = memory
+    limits.BasicLimitInformation.LimitFlags |= 0x200
     if not kernel.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)) or not kernel.AssignProcessToJobObject(handle, kernel.GetCurrentProcess()):
         kernel.CloseHandle(handle)
         raise OSError('无法启用文档解析资源限制')
