@@ -1,4 +1,6 @@
 .document-card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   flex: 1 1 290px;
   max-width: 100%;
@@ -24,6 +26,8 @@
   margin: 8px 0;
 }
 .document-card .slot-card-actions {
+  margin-top: auto;
+  padding-top: 12px;
   flex-wrap: wrap;
 }
 .document-card a {
@@ -55,7 +59,7 @@
   font-size: 12px;
 }
 .document-card[data-compact='true'] .slot-card-actions {
-  margin-top: 6px;
+  padding-top: 6px;
   gap: 6px 12px;
 }
 .document-card[data-compact='true'] .slot-card-actions button {

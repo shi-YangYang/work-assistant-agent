@@ -70,6 +70,12 @@ export function DocumentCard({
           {warning}
         </p>
       ))}
+      {extraction?.status === 'failed' && (
+        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
+          可重新解析，或修正文件后重新发送。
+        </p>
+      )}
+      <ErrorNotice>{error}</ErrorNotice>
       <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
         {attachment.mime === 'application/pdf' && (
           <button
@@ -119,12 +125,6 @@ export function DocumentCard({
           </BusyButton>
         )}
       </div>
-      {extraction?.status === 'failed' && (
-        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-          可重新解析，或修正文件后重新发送。
-        </p>
-      )}
-      <ErrorNotice>{error}</ErrorNotice>
       {pdf && (
         <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
       )}
