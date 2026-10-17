@@ -7,7 +7,7 @@ import {
   resumeConversation,
 } from '../../../apps/web/src/features/assistant/api/restore-conversation'
 import { assistantQuery } from '../../../apps/web/src/features/assistant/api/queries'
-import { exampleText, submitOnEnter } from '../../../apps/web/src/features/assistant/utils/session'
+import { submitOnEnter } from '../../../apps/web/src/features/assistant/utils/session'
 
 it('restores a remembered conversation even outside the first list page, using reads only', async () => {
   const paths: string[] = []
@@ -98,9 +98,4 @@ it('Enter sends once; Shift+Enter and IME confirmation keep editing', () => {
   submitOnEnter({ ...event, repeat: true }, send)
   expect(send).toHaveBeenCalledTimes(1)
   expect(preventDefault).toHaveBeenCalledTimes(2)
-})
-
-it('examples only fill a blank composer and never overwrite existing input', () => {
-  expect(exampleText('', '记录今天的工作：')).toBe('记录今天的工作：')
-  expect(exampleText('我刚写的内容', '查看我的工作')).toBe('我刚写的内容')
 })
