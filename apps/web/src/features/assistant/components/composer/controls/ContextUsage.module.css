@@ -151,18 +151,18 @@
 .panel-label {
   font-size: 10px;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .panel-caption {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: center;
   gap: 3px;
   max-width: 100%;
   min-width: 0;
-  white-space: nowrap;
+  white-space: normal;
 }
 .panel-caption > span {
   flex-shrink: 0;

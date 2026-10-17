@@ -390,7 +390,7 @@ async def test_scope_distinguishes_original_code_input_from_inherited_document_s
     await run(settings, sessions, users, sent, object())
     first = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert first['job']['state'] == 'succeeded', first
-    assert '已准备文字 3/3 个分段' in first['reply']  # Shared short-file preload, not code execution coverage.
+    assert '文字已准备（3/3 段），未记录是否提供给主模型' in first['reply']  # Preloading is not model delivery.
     assert '已向主模型提供' not in first['reply']  # This controlled harness never calls the model.
     assert '原文件已提供给代码执行，具体读取范围未单独记录' in first['reply']
     assert '实际读取 0/3' not in first['reply'] and '完整读取' not in first['reply']
@@ -401,7 +401,7 @@ async def test_scope_distinguishes_original_code_input_from_inherited_document_s
     await run(settings, sessions, users, following, object())
     second = (await clients['employee'].get('/api/v1/messages/' + following['messageId'])).json()
     assert second['job']['state'] == 'succeeded', second
-    assert '列为代码执行的关联来源，不能据此认定本轮已读取原文件' in second['reply']
+    assert '仅关联代码执行，不能据此认定已读取原文件' in second['reply']
     assert '原文件已提供给代码执行' not in second['reply']
 
 
@@ -424,7 +424,7 @@ async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup,
     assert result['job']['state'] == 'awaiting_input', result
     assert result['reply'].count('材料范围：') == 1
     assert result['reply'].startswith('销售额合计为300。')
-    assert '已准备文字 3/3 个分段' in result['reply']
+    assert '文字已准备（3/3 段），未记录是否提供给主模型' in result['reply']
 
 
 async def test_content_sized_pages_keep_small_json_whole_and_large_file_citations(setup):

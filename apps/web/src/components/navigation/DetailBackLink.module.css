@@ -26,11 +26,14 @@
 }
 @media (max-width: 760px) {
   .back {
-    margin-top: 88px;
+    margin-top: 0;
+    margin-left: 44px;
+    max-width: calc(100% - 44px);
     min-height: 44px;
   }
 }
 .embedded {
   margin-top: 0;
   margin-left: 0;
+  max-width: 100%;
 }

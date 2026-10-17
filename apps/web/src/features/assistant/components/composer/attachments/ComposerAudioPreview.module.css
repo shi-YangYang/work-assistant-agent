@@ -125,6 +125,14 @@
 .info:hover {
   background: transparent;
 }
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .play {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
 .panel header button:hover {
   background: var(--hover);
 }

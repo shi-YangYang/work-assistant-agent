@@ -7,6 +7,7 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import voiceprintsStyles from '../styles/voiceprints.module.css'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ConfirmDialog } from '@web/components/overlays/ConfirmDialog'
 import { manageVoiceprint, voiceprintsPath } from '@web/features/voiceprints/api/requests'
 import type { Enrollment, VoiceprintList } from '@web/features/voiceprints/api/types'
 import { status } from '@web/features/voiceprints/api/types'
@@ -23,7 +24,7 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export function VoiceprintsPage() {
   const resource = useResource<VoiceprintList>(voiceprintsPath())
@@ -35,6 +36,20 @@ export function VoiceprintsPage() {
   const [error, setError] = useState<Error | string>('')
   const [busy, setBusy] = useState('')
   const [search, setSearch] = useState('')
+  const [removing, setRemoving] = useState<Enrollment | null>(null)
+  const [deleteError, setDeleteError] = useState<Error | string>('')
+  const pending = useRef(false)
+  const deletedMember = useRef('')
+  const uploadButtons = useRef(new Map<string, HTMLButtonElement>())
+  const library = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!removing && deletedMember.current) {
+      const upload = uploadButtons.current.get(deletedMember.current)
+      if (upload && !upload.disabled) upload.focus()
+      else library.current?.focus()
+      deletedMember.current = ''
+    }
+  }, [removing])
   useEffect(() => {
     if (!processing || loadError) return
     const timer = window.setInterval(() => {
@@ -47,19 +62,23 @@ export function VoiceprintsPage() {
       v.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
     ) ?? []
   const act = async (item: Enrollment, action: 'retry' | 'delete') => {
-    if (
-      action === 'delete' &&
-      !window.confirm(`删除 ${item.name} 的声纹及登记录音？已下载到离线桌面的副本不会被移除。`)
-    )
-      return
+    if (pending.current) return
+    pending.current = true
     setBusy(item.memberId)
     setError('')
+    setDeleteError('')
     try {
       await manageVoiceprint(item, action, {}, action === 'retry' ? 'POST' : 'DELETE')
+      if (action === 'delete') {
+        deletedMember.current = item.memberId
+        setRemoving(null)
+      }
       resource.refresh()
     } catch (e) {
-      setError(e as Error)
+      if (action === 'delete') setDeleteError(e as Error)
+      else setError(e as Error)
     } finally {
+      pending.current = false
       setBusy('')
     }
   }
@@ -79,7 +98,7 @@ export function VoiceprintsPage() {
         }
       />
       <ErrorNotice retry={resource.refresh}>{resource.error || error}</ErrorNotice>
-      <section className={voiceprintsStyles['voiceprint-library']}>
+      <section ref={library} tabIndex={-1} className={voiceprintsStyles['voiceprint-library']}>
         <ListToolbar
           actions={
             <span className={voiceprintsStyles['voiceprint-count']}>
@@ -128,16 +147,17 @@ export function VoiceprintsPage() {
                 </div>
                 <div className={voiceprintsStyles['voiceprint-actions']}>
                   {item.state === 'failed' && (
-                    <button
-                      disabled={busy === item.memberId}
-                      onClick={() => void act(item, 'retry')}
-                    >
+                    <button disabled={!!busy} onClick={() => void act(item, 'retry')}>
                       <RefreshCw size={15} />
                       重试
                     </button>
                   )}
                   <button
-                    disabled={!item.active || processing || busy === item.memberId}
+                    ref={(button) => {
+                      if (button) uploadButtons.current.set(item.memberId, button)
+                      else uploadButtons.current.delete(item.memberId)
+                    }}
+                    disabled={!item.active || processing || !!busy}
                     onClick={() => setSelected(item)}
                   >
                     <Upload size={15} />
@@ -147,8 +167,12 @@ export function VoiceprintsPage() {
                     <button
                       className={controlsStyles['icon-button']}
                       aria-label={`删除 ${item.name} 的声纹`}
-                      disabled={busy === item.memberId}
-                      onClick={() => void act(item, 'delete')}
+                      disabled={!!busy}
+                      onClick={(event) => {
+                        event.currentTarget.focus()
+                        setDeleteError('')
+                        setRemoving(item)
+                      }}
                     >
                       <Trash2 size={16} />
                     </button>
@@ -165,6 +189,21 @@ export function VoiceprintsPage() {
         </div>
       </section>
       <VoiceprintCleanup refresh={resource.refresh} />
+      {removing && (
+        <ConfirmDialog
+          title="删除声纹"
+          confirmLabel="确认删除"
+          danger
+          busy={!!busy}
+          error={deleteError}
+          onClose={() => {
+            if (!pending.current) setRemoving(null)
+          }}
+          onConfirm={() => void act(removing, 'delete')}
+        >
+          <p>删除 {removing.name} 的声纹及登记录音？已下载到离线桌面的副本不会被移除。</p>
+        </ConfirmDialog>
+      )}
       {selected && (
         <EnrollmentForm
           item={selected}

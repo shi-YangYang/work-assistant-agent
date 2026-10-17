@@ -182,27 +182,38 @@ async def verified_citations(db, context, answer):
     return answer, citations
 
 
+class _MaterialCoverage(list):
+    def __init__(self):
+        super().__init__()
+        # Retain exact prior-format notes for terminal-note replacement only.
+        self.previous = []
+
+
 async def material_coverage(db, actor, job, documents, reads):
     """Keep extracted-text reads distinct from files supplied for computation."""
     from app.modules.executions.models import SandboxExecution
     executions = (await db.scalars(select(SandboxExecution).where(SandboxExecution.job_id == job.id,
         SandboxExecution.owner_id == actor.id, SandboxExecution.company_id == actor.company_id,
         SandboxExecution.state == 'succeeded'))).all()
-    coverage, legacy = [], []
+    coverage, legacy = _MaterialCoverage(), []
+    complete, reused_complete = 0, 0
     for document in documents:
         if document.kind != 'document':
             continue
         read = len({entry[2] for entry in reads.values() if entry[0] == document.id and entry[1] == document.extraction_revision})
-        total = document.extraction_info.get('chunks', 0)
+        info = document.extraction_info or {}
+        total = info.get('chunks', 0)
+        preloaded = any(token in job.result.get('documentPreloaded', []) for token, entry in reads.items()
+                        if entry[0] == document.id and entry[1] == document.extraction_revision)
+        reused = sum(token in job.result.get('documentReadAliases', {}) for token, entry in reads.items()
+                     if entry[0] == document.id and entry[1] == document.extraction_revision)
         if document.extraction_status == 'failed':
             detail = '文字提取失败：' + document.extraction_info.get('error', '解析失败')
             old_detail = '未能使用：' + document.extraction_info.get('error', '解析失败')
         else:
-            preloaded = any(token in job.result.get('documentPreloaded', []) for token, entry in reads.items() if entry[0] == document.id)
-            detail = f'已准备文字 {read}/{total} 个分段' if preloaded else f'文字工具读取 {read}/{total} 个分段'
+            previously_preloaded = any(token in job.result.get('documentPreloaded', []) for token, entry in reads.items() if entry[0] == document.id)
+            detail = f'已准备文字 {read}/{total} 个分段' if previously_preloaded else f'文字工具读取 {read}/{total} 个分段'
             old_detail = f'实际读取 {read}/{total} 个文字分段'
-            reused = sum(token in job.result.get('documentReadAliases', {}) for token, entry in reads.items()
-                         if entry[0] == document.id and entry[1] == document.extraction_revision)
             if reused:
                 detail = f'文字工具读取/复用 {read}/{total} 个分段，其中 {reused} 个复用自相同内容附件'
             if document.extraction_status == 'partial':
@@ -215,7 +226,9 @@ async def material_coverage(db, actor, job, documents, reads):
             detail += '；原文件已提供给代码执行，具体读取范围未单独记录'
         elif related:
             detail += '；列为代码执行的关联来源，不能据此认定本轮已读取原文件'
-        pages = sorted({ref['page'] for ref in job.result.get('documentPagesProvided', {}).values() if ref['attachmentId'] == document.id and ref['revision'] == document.extraction_revision})
+        page_refs = [ref for ref in job.result.get('documentPagesProvided', {}).values()
+                     if ref['attachmentId'] == document.id and ref['revision'] == document.extraction_revision]
+        pages = sorted({ref['page'] for ref in page_refs})
         provided = len({entry[2] for entry in job.result.get('documentTextProvided', {}).values() if entry[0] == document.id and entry[1] == document.extraction_revision})
         if 'documentTextProvided' in job.result:
             detail += f'；本任务已向主模型提供 {provided} 个文字分段'
@@ -225,8 +238,54 @@ async def material_coverage(db, actor, job, documents, reads):
             detail += '；图片部分未读取'
         if document.extraction_info.get('schema') == 1 and not document.extraction_info.get('sourceComplete'):
             detail += '；原文件仍有未提取范围'
-        coverage.append(document.name + '：' + detail)
+        coverage.previous.append(document.name + '：' + detail)
         legacy.append(document.name + '：' + old_detail)
+
+        # Only explicit delivery records permit a complete-text summary. A
+        # preload/tool read alone does not prove delivery to the main model.
+        fully_provided = 'documentTextProvided' in job.result and total > 0 and provided == total
+        unextracted = info.get('schema') == 1 and not info.get('sourceComplete')
+        if (fully_provided and read == total and document.extraction_status == 'ready'
+                and not info.get('hasVisuals') and not pages and not unextracted and not related):
+            complete += 1
+            reused_complete += bool(reused)
+            continue
+        if document.extraction_status == 'failed':
+            detail = '文字提取失败：' + info.get('error', '解析失败')
+        elif not total:
+            detail = '未提取到可读文字'
+        elif fully_provided:
+            detail = '已提取文字已全部提供给主模型'
+        elif 'documentTextProvided' in job.result:
+            detail = f'仅向主模型提供 {provided}/{total} 段已提取文字，其余文字未提供' if provided else '文字尚未提供给主模型'
+        elif preloaded:
+            detail = f'文字已准备（{read}/{total} 段），未记录是否提供给主模型'
+        else:
+            detail = f'工具已读取 {read}/{total} 段文字' if read else f'尚未读取文字（共 {total} 段）'
+        if reused:
+            detail += f'；含 {reused} 段复用自相同内容附件'
+        if document.extraction_status == 'partial':
+            detail += '；文件文字仅部分可读'
+        if direct:
+            detail += '；原文件已提供给代码执行，具体读取范围未单独记录'
+        elif related:
+            detail += '；仅关联代码执行，不能据此认定已读取原文件'
+        if pages:
+            detail += '；已向主模型提供第 ' + '、'.join(map(str, pages)) + ' 页图片'
+            if any(ref.get('imageComplete') is False for ref in page_refs):
+                detail += '；所提供页面仍有图片区域未读取'
+            if info.get('totalPages', 0) > len(pages):
+                detail += '；其余页面图片未读取'
+        elif info.get('hasVisuals'):
+            detail += '；图片部分未读取'
+        if unextracted:
+            detail += '；原文件仍有未提取范围'
+        coverage.append(document.name + '：' + detail)
+    if complete:
+        summary = f'{complete} 份文件的已提取文字已全部提供给主模型'
+        if reused_complete:
+            summary += f'，其中 {reused_complete} 份复用了相同内容附件的文字'
+        coverage.insert(0, summary)
     return coverage, legacy
 
 
@@ -235,7 +294,7 @@ def append_material_coverage(answer, coverage, legacy):
     if not coverage:
         return answer
     normalize = lambda value: re.sub(r'\s+', '', value)
-    equivalents = {normalize('\n'.join(lines)) for lines in (coverage, legacy)}
+    equivalents = {normalize('\n'.join(lines)) for lines in (coverage, legacy, getattr(coverage, 'previous', [])) if lines}
     while True:
         prefix, separator, tail = answer.rpartition('\n\n材料范围：')
         if not separator and answer.startswith('材料范围：'):

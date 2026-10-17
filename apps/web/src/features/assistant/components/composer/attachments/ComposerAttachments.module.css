@@ -184,20 +184,43 @@
   }
 }
 @media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .pending-file {
+    flex-basis: 208px;
+    width: 208px;
+    height: 60px;
+    padding: 7px;
+  }
+  .pending-file[data-kind='image'] {
+    flex-basis: 112px;
+    width: 112px;
+    padding: 7px;
+  }
+  .image {
+    border-radius: 7px;
+  }
   .remove {
+    position: relative;
+    inset: auto;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    border: 0;
+    background: transparent;
     opacity: 1;
     pointer-events: auto;
   }
-  .remove::after {
+  .remove::before {
     position: absolute;
-    inset: -7px;
+    inset: 11px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    pointer-events: none;
     content: '';
   }
-}
-@media (max-width: 760px) {
-  .pending-file:not([data-kind='image']) {
-    flex-basis: 148px;
-    width: 148px;
+  .remove:hover:not(:disabled) {
+    background: transparent;
   }
 }
 @media (prefers-reduced-motion: reduce) {

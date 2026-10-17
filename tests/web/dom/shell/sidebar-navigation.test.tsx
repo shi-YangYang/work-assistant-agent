@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import type { Identity } from '@paa/api-contracts'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect, useState } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -212,13 +212,13 @@ it.each([
         ? ['聊天搭子', '我的工作', '团队看板', '成员管理', '公告管理']
         : ['聊天搭子', '我的工作', '我的报告'],
     )
-    expect(screen.queryByRole('link', { name: /^通知/ })).toBeNull()
+    expect(screen.getByRole('link', { name: '通知' }).getAttribute('href')).toBe('/notifications')
     expect(screen.getByRole('button', { name: '云搭子 beta' }).hasAttribute('disabled')).toBe(true)
     openSettings()
     expect(visibleLinks(settings())).toEqual(entries)
     expect(screen.queryByRole('navigation', { name: '工作空间' })).toBeNull()
     expect(screen.queryByRole('button', { name: '云搭子 beta' })).toBeNull()
-    expect(screen.queryByRole('link', { name: /^通知/ })).toBeNull()
+    expect(screen.getByRole('link', { name: '通知' }).getAttribute('href')).toBe('/notifications')
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '返回主菜单' }))
     goBack()
@@ -226,6 +226,45 @@ it.each([
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '系统设置' }))
   },
 )
+
+it('shares unread state between hidden-pet navigation and its header entry without extra subscriptions', async () => {
+  Object.assign(drawerMedia, { matches: true })
+  let unread = 3
+  vi.mocked(fetch).mockImplementation(
+    async (url) =>
+      new Response(
+        JSON.stringify(
+          String(url).includes('/notification-summary')
+            ? { totalUnread: unread, remindersUnread: unread, announcementsUnread: 0 }
+            : { items: [], nextCursor: null },
+        ),
+      ),
+  )
+  const view = mount()
+  await screen.findByRole('textbox', { name: '聊天草稿' })
+  const trigger = await screen.findByRole('button', { name: '展开导航，3 条未读通知' })
+  fireEvent.click(trigger)
+  const link = screen.getByRole('link', { name: '通知，3 条未读' })
+  expect(link.textContent).toBe('3')
+  const summaryRequests = () =>
+    vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/notification-summary'))
+      .length
+  expect(summaryRequests()).toBe(1)
+  openSettings()
+  fireEvent.click(within(settings()).getByRole('button', { name: '显示宠物' }))
+  expect(screen.queryByRole('link', { name: /^通知/ })).toBeNull()
+  expect(screen.getByRole('button', { name: 'Noria，3 条未读通知' })).toBeTruthy()
+  expect(summaryRequests()).toBe(1)
+  fireEvent.click(within(settings()).getByRole('button', { name: '隐藏宠物' }))
+  expect(screen.getByRole('link', { name: '通知，3 条未读' })).toBeTruthy()
+  unread = 0
+  act(() => window.dispatchEvent(new Event('paa-notifications-changed')))
+  await screen.findByRole('link', { name: '通知' })
+  expect(screen.queryByRole('button', { name: /条未读通知/ })).toBeNull()
+  fireEvent.click(screen.getByRole('link', { name: '通知' }))
+  await waitFor(() => expect(view.router.state.location.pathname).toBe('/notifications'))
+  expect(screen.queryByRole('dialog', { name: '导航' })).toBeNull()
+})
 
 it('keeps route history, page instance, drafts, streaming and recording unchanged on menu switches', async () => {
   const { router, vault } = mount()

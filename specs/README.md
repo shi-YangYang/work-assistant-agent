@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 073：手机端全量 UI 排版与交互检查](spec-073-mobile-ui-layout-audit/spec.md) — 审计完成；授权的 8 项问题已修复，修复独立验收 PASS，提供每项前后截图，保留真机等未验证范围。[修复结果与前后图](spec-073-mobile-ui-layout-audit/repair-report.md)、[修复验收](spec-073-mobile-ui-layout-audit/repair-acceptance-final.md)、[原报告](spec-073-mobile-ui-layout-audit/report.md)、[原问题清单](spec-073-mobile-ui-layout-audit/issues.md)、[检查计划与目录](spec-073-mobile-ui-layout-audit/plan.md)。
+
 - [Spec 072：完整文件读取与图文联合理解](spec-072-document-completeness-and-vision/spec.md) — 已实施并通过限定范围的本地独立验收：补齐原件续读、Word／PPT／PDF 页面视觉输入及真实覆盖范围；短文预载减少模型往返，页面缓存复用。low／high 质量、耗时及网络阻塞／模型漏答限制见 [性能对照](spec-072-document-completeness-and-vision/performance.md) 与 [验收结果](spec-072-document-completeness-and-vision/acceptance.md)，[实施目录](spec-072-document-completeness-and-vision/plan.md)。
 
 - [Spec 071：旧版 Office 兼容与附件解析流程优化](spec-071-office-compatibility-and-parsing/spec.md) — 已实施并通过本地独立验收：DOC／XLS／PPT、RTF／ODF 由 worker 统一转换，复用现有解析器；含公式完整性检查、轻重调度与耗时对照，不依赖 Agent 沙盒。[实施计划与目录](spec-071-office-compatibility-and-parsing/plan.md)、[验收与环境限制](spec-071-office-compatibility-and-parsing/acceptance.md)、[性能对照](spec-071-office-compatibility-and-parsing/performance.md)。
@@ -57,4 +59,4 @@
 
 ## 生命周期
 
-新 Spec 从 **073** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+新 Spec 从 **074** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

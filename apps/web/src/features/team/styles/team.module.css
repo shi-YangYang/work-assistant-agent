@@ -293,15 +293,19 @@ button.team-record-content {
 @media (max-width: 760px) {
   .team-filter-row {
     padding: 0 0 8px;
-    gap: 8px;
+    gap: 4px;
   }
   .team-page > .slot-tabs button,
   .segmented-control button {
     min-height: 44px;
   }
   .team-toolbar .slot-work-search {
-    flex: 1 1 200px;
+    flex: 1 1 0;
+    width: 0;
     max-width: none;
+  }
+  .team-filter-row > .segmented-control {
+    margin-left: 0;
   }
   .team-toolbar select {
     max-width: 100%;

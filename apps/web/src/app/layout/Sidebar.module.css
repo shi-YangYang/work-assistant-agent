@@ -37,7 +37,15 @@
 .brand:hover {
   text-decoration: none;
 }
-.search-launch {
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+}
+.search-launch,
+.notification-launch {
+  position: relative;
   display: grid;
   place-items: center;
   flex: 0 0 36px;
@@ -49,9 +57,26 @@
   background: transparent;
   color: var(--muted);
 }
-.search-launch:hover:not(:disabled) {
+.search-launch:hover:not(:disabled),
+.notification-launch:hover {
   color: var(--text);
   background: transparent;
+  text-decoration: none;
+}
+.notification-count {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  min-width: 18px;
+  padding: 0 4px;
+  border: 2px solid var(--sidebar);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface);
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 .sidebar nav,
 .sidebar-bottom {
@@ -159,7 +184,8 @@
     box-shadow: var(--shadow);
     animation: enter 220ms var(--ease);
   }
-  .search-launch {
+  .search-launch,
+  .notification-launch {
     flex-basis: 44px;
     width: 44px;
     height: 44px;

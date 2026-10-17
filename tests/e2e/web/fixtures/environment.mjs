@@ -4,18 +4,24 @@ import { dirname, resolve } from 'node:path'
 
 // Every browser mutation must first verify the disposable schema's ownership marker.
 export function isolatedEnvironment() {
-  const manifestPath = process.env.SPEC068_ENVIRONMENT
-    ? resolve(process.env.SPEC068_ENVIRONMENT)
-    : process.env.SPEC054_ENVIRONMENT
-      ? resolve(process.env.SPEC054_ENVIRONMENT)
-      : process.env.SPEC044_STATE
-        ? resolve(dirname(process.env.SPEC044_STATE), 'environment.json')
-        : null
+  const manifestPath = process.env.SPEC073_ENVIRONMENT
+    ? resolve(process.env.SPEC073_ENVIRONMENT)
+    : process.env.SPEC068_ENVIRONMENT
+      ? resolve(process.env.SPEC068_ENVIRONMENT)
+      : process.env.SPEC054_ENVIRONMENT
+        ? resolve(process.env.SPEC054_ENVIRONMENT)
+        : process.env.SPEC044_STATE
+          ? resolve(dirname(process.env.SPEC044_STATE), 'environment.json')
+          : null
   if (!manifestPath)
-    throw new Error('SPEC068_ENVIRONMENT, SPEC054_ENVIRONMENT or SPEC044_STATE is required')
+    throw new Error(
+      'SPEC073_ENVIRONMENT, SPEC068_ENVIRONMENT, SPEC054_ENVIRONMENT or SPEC044_STATE is required',
+    )
   const metadata = JSON.parse(readFileSync(manifestPath, 'utf8'))
   if (
-    !['spec044', 'spec054', 'spec055', 'spec056', 'spec068'].includes(metadata.suite ?? 'spec044')
+    !['spec044', 'spec054', 'spec055', 'spec056', 'spec068', 'spec073'].includes(
+      metadata.suite ?? 'spec044',
+    )
   )
     throw new Error('Unrecognized acceptance suite')
   if (metadata.purpose !== 'web') throw new Error('Not a browser acceptance environment')

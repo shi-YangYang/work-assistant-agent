@@ -22,6 +22,8 @@ export function PetStage({
   expandedNav: boolean
   setExpandedNav: (expanded: boolean) => void
 }) {
+  const unread = useNotificationSummary()?.data?.totalUnread ?? 0
+  const navigationLabel = expandedNav ? '收起导航' : '展开导航'
   return (
     <>
       <div className={styles.stage}>
@@ -29,12 +31,17 @@ export function PetStage({
           type="button"
           ref={navTriggerRef}
           className={`${controls['icon-button']} ${styles.navigation}`}
-          aria-label={expandedNav ? '收起导航' : '展开导航'}
+          aria-label={
+            !visible && unread > 0 ? `${navigationLabel}，${unread} 条未读通知` : navigationLabel
+          }
           aria-expanded={expandedNav}
           aria-controls="sidebar-navigation"
           onClick={() => setExpandedNav(!expandedNav)}
         >
           <Menu size={19} />
+          {!visible && unread > 0 && (
+            <span className={styles['navigation-unread']} aria-hidden="true" />
+          )}
         </button>
       </div>
       {visible && <PetCompanion animate={animate} activity={activity} />}
