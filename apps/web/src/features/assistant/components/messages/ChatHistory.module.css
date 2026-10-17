@@ -115,6 +115,10 @@
   }
 }
 @media (max-width: 760px) {
+  .chat-scroll[data-empty='true'] {
+    flex: 1;
+    overflow: auto;
+  }
   .chat-content {
     padding: 15px 18px 5px;
   }
