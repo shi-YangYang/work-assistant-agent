@@ -45,6 +45,12 @@ npm run dev:web
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令统一管理 Docker 的 `paa-company` 项目：PostgreSQL、正文流 Redis，以及可选的沙盒 control/runtime；等待健康检查通过后启动宿主机上的 Web、API、worker。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用及本次启动的 Redis，数据库继续运行；原已运行的 Redis 不会被停止。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；同一环境只允许一个开发管理命令运行，第二个终端不会接管服务。分开运行 API／worker 时，先在 Docker Desktop 启动已经创建的 postgres、redis 服务；独立命令不管理这些依赖。
 
+### 联网搜索与网页读取
+
+worker 使用固定版本的 Python `curl_cffi` 读取公开网页和 Bing RSS。安装公司 Python 依赖即可使用，不需要安装 Chrome、Playwright 或浏览器沙盒。使用库内完整 Chrome 请求特征及中文语言头，支持服务端返回的 HTML／RSS，不执行网页 JavaScript；需要登录或人机验证的页面会明确返回读取失败。
+
+网页读取不继承系统／环境代理，不携带用户 Cookie、账号或公司凭据。每次请求校验公开地址、固定已验证的公网 IP，并在每次跳转时重新校验；保留 TLS 证书检查。单次请求最多 8 秒、连接最多 5 秒，整次抓取最多 20 秒；解压后正文最多 1 MB，超限立即停止接收。网站是否可访问仍取决于部署网络与网站访问策略。
+
 ### 旧版 Office 文件读取
 
 DOC／RTF／ODT、XLS／ODS、PPT／ODP 在发送消息后，由 worker 分别转换为 DOCX、XLSX、PPTX 再读取。上传不会触发转换，原件保留供下载和沙盒使用；PDF、新版 Office、文本与代码继续直接读取。复杂版式、图形和嵌入内容不保证完整，建议先用 Office／WPS 另存为新格式。包含宏、外部数据或活动对象，以及转换导致公式保存结果变化的文件会给出明确失败，不猜测缺失内容。
@@ -272,12 +278,12 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 
 在仓库 **Settings → Secrets and variables → Actions** 添加四项 Secrets，无需 Environment 或 Variables：
 
-| Secret | 内容 |
-| --- | --- |
-| `DEPLOY_HOST` | 服务器公网 IPv4 或主机名 |
-| `DEPLOY_USER` | 部署用户，能够运行 Docker、读写部署目录 |
-| `DEPLOY_SSH_KEY` | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
-| `DEPLOY_KNOWN_HOSTS` | 已核对服务器指纹的 SSH known_hosts 记录 |
+| Secret               | 内容                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| `DEPLOY_HOST`        | 服务器公网 IPv4 或主机名                                      |
+| `DEPLOY_USER`        | 部署用户，能够运行 Docker、读写部署目录                       |
+| `DEPLOY_SSH_KEY`     | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
+| `DEPLOY_KNOWN_HOSTS` | 已核对服务器指纹的 SSH known_hosts 记录                       |
 
 默认 SSH 端口 `22`，目录 `/srv/work-assistant-agent`；修改位置为工作流的 `DEPLOY_PORT`／`DEPLOY_PATH`。有仓库写权限的维护者可从 main 手动发布。
 
@@ -304,13 +310,13 @@ Web 缓存由 `deploy/company/Caddyfile.app` 管理：HTML（含前端路由）�
 
 常规操作使用五个内置工具，无需用户配置：
 
-| 工具 | 输入与结果 |
-| --- | --- |
-| `inspect_table` | 附件／成果中的 CSV、XLSX；返回列、缺失、重复和最多 20 行样本 |
-| `export_table` | 内联表格或文件引用；导出 CSV、XLSX |
-| `create_chart` | 指定横轴与数值列；生成中文柱状图／折线图 PNG |
-| `create_document` | 标题、段落、列表、表格、图片；生成 DOCX、PDF |
-| `create_slides` | 页面标题与内容块；生成可编辑 PPTX，长内容自动拆页 |
+| 工具              | 输入与结果                                                   |
+| ----------------- | ------------------------------------------------------------ |
+| `inspect_table`   | 附件／成果中的 CSV、XLSX；返回列、缺失、重复和最多 20 行样本 |
+| `export_table`    | 内联表格或文件引用；导出 CSV、XLSX                           |
+| `create_chart`    | 指定横轴与数值列；生成中文柱状图／折线图 PNG                 |
+| `create_document` | 标题、段落、列表、表格、图片；生成 DOCX、PDF                 |
+| `create_slides`   | 页面标题与内容块；生成可编辑 PPTX，长内容自动拆页            |
 
 常规文件可直接说“把这份计划生成 PDF”。工具不自动清洗、汇总或执行公式；特殊算法与布局仍可用 `run_python`。CSV 默认保留文本与前导零，指定列类型后才转换。表格最多 40 列、20000 行（内联最多 2000 行）；图表最多 60 行，重复类别需先明确汇总规则。文档宽表超过 8 列、PPT 表格超过 6 列或单行过长会明确失败。格式可读与视觉排版检查是不同事项。
 
@@ -321,12 +327,11 @@ Web 缓存由 `deploy/company/Caddyfile.app` 管理：HTML（含前端路由）�
   "filename": "实施计划.pdf",
   "format": "pdf",
   "title": "实施计划",
-  "blocks": [{"type": "paragraph", "text": "先确认需求，再完成验证。"}]
+  "blocks": [{ "type": "paragraph", "text": "先确认需求，再完成验证。" }]
 }
 ```
 
 `run_python` 也可 `from noria_tools import export_table`，调用 `export_table(filename="结果.xlsx", data={"columns":["数量"],"rows":[[3]]})`。文件引用使用真实附件或成果 ID，不传宿主机路径；每次执行是新环境，继续处理使用已保存成果。
-
 
 Linux 执行主机先按 [gVisor 安装说明](https://gvisor.dev/docs/user_guide/install/)安装 `runsc` 并注册到 Docker。安装或调整 Docker 配置安排在维护时段；CD 只检查运行时，不自动安装。使用完整发行包及其校验文件，保留 `runsc` 同目录的 `gvisor-bin/`，不能只复制单个可执行文件。
 
@@ -468,12 +473,12 @@ npm run package
 
 Noria 桌面端沿用旧内部名称对应的目录和密钥身份，品牌更新不会迁移或清空已有资料。
 
-| 内容 | 位置 |
-| --- | --- |
-| macOS 桌面资料 | `~/Library/Application Support/个人工作助手/` |
-| Windows 桌面资料 | `%APPDATA%/个人工作助手/` |
-| 公司业务数据 | PostgreSQL；原始附件在共享私有目录，生产环境默认使用 Docker 卷 |
-| 公司密钥 | 数据库保存密文，主密钥单独保管；本地默认为 `data/company/model-master.key` |
+| 内容             | 位置                                                                       |
+| ---------------- | -------------------------------------------------------------------------- |
+| macOS 桌面资料   | `~/Library/Application Support/个人工作助手/`                              |
+| Windows 桌面资料 | `%APPDATA%/个人工作助手/`                                                  |
+| 公司业务数据     | PostgreSQL；原始附件在共享私有目录，生产环境默认使用 Docker 卷             |
+| 公司密钥         | 数据库保存密文，主密钥单独保管；本地默认为 `data/company/model-master.key` |
 
 桌面备份须关闭应用并复制整个资料目录；公司备份保留数据库、附件及独立主密钥。环境文件、密钥和业务资料不入 Git。
 

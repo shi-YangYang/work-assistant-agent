@@ -23,3 +23,4 @@ pillow-heif==1.7.0
 openpyxl==3.1.5
 redis==5.2.1
 olefile==0.47
+curl_cffi==0.16.3

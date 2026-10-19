@@ -11,7 +11,7 @@ def create(scope):
     return {'version': VERSION, 'scope': scope, 'calls': [], 'seen': [], 'stalled': 0, 'stopped': False}
 
 
-def admit(state, identifier, request, dependencies, *, prevent_duplicate=False, exhausted=False):
+def admit(state, identifier, request, dependencies, *, prevent_duplicate=False, exhausted=False, track_progress=True):
     value = copy.deepcopy(state)
     replay = next((row for row in value['calls'] if row['id'] == identifier), None)
     if replay:
@@ -20,7 +20,7 @@ def admit(state, identifier, request, dependencies, *, prevent_duplicate=False, 
         and row.get('decision') == 'execute' and row.get('executed') is not False for row in value['calls'])
     decision = 'stop' if value['stopped'] else 'repeat' if duplicate or exhausted else 'execute'
     value['calls'] = [*value['calls'], {'id': identifier, 'request': request, 'dependencies': dependencies, 'decision': decision}][-HISTORY:]
-    if decision != 'execute':
+    if decision != 'execute' and track_progress:
         value['stalled'] += 1
         value['stopped'] = value['stopped'] or value['stalled'] >= STOP_AFTER
         if value['stopped']:
@@ -28,7 +28,7 @@ def admit(state, identifier, request, dependencies, *, prevent_duplicate=False, 
     return value, decision
 
 
-def complete(state, identifier, result, dependencies, *, failed=False, executed=True, no_progress=False, soft_stall=False):
+def complete(state, identifier, result, dependencies, *, failed=False, executed=True, no_progress=False, soft_stall=False, track_progress=True):
     value = copy.deepcopy(state)
     row = next((row for row in value['calls'] if row['id'] == identifier), None)
     if row is None or row.get('result'):
@@ -39,7 +39,7 @@ def complete(state, identifier, result, dependencies, *, failed=False, executed=
         # A distinct research attempt can find no evidence without being a
         # repeated operation. It neither consumes nor resets the hard counter.
         row['softStall'] = True
-    else:
+    elif track_progress:
         value['stalled'] = value['stalled'] + 1 if repeated else 0
     value['seen'] = [*value['seen'], result][-HISTORY:]
     value['stopped'] = value['stopped'] or value['stalled'] >= STOP_AFTER

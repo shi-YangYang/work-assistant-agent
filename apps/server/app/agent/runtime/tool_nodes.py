@@ -97,11 +97,12 @@ async def tool_node(context, request, operation):
         from app.agent.tools.resources.web import unavailable
         value = call.get('args', {}).get('url' if call['name'] == 'web_fetch' else 'query', '')
         content = await unavailable(context, value, error.failure.message,
-                                    is_fetch=call['name'] == 'web_fetch', code='web_network', attempts_exhausted=True)
+                                    is_fetch=call['name'] == 'web_fetch', code='web_network', attempts_exhausted=True,
+                                    category=error.failure.category)
         return ToolMessage(content=content, tool_call_id=call['id'], name=call['name'])
     return await execute_node(context, identity=identity, kind='tool', label=label, operation=operation,
                               presentation=presentation,
-                              retry_policy=Policy(max_attempts=2) if call['name'] == 'web_fetch' else Policy(),
+                              retry_policy=Policy(max_attempts=2) if call['name'] in ('web_fetch', 'web_search') else Policy(),
                               result_presentation=lambda result: tool_presentation(call['name'], call.get('args'), result),
                               outcome=outcome, encode=lambda m: {'content': m.content, 'tool_call_id': m.tool_call_id, 'name': m.name, 'status': m.status, 'id': m.id},
                               decode=lambda data: ToolMessage(**data),

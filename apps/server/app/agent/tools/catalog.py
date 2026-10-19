@@ -112,12 +112,12 @@ def remember_call_capability(context, job, call):
     remember_groups(context, job, [preferred if preferred in candidates else candidates[0]])
 
 
-def catalog_schema(context):
+def catalog_schema(context, *, exclude=()):
     descriptions = dict(DESCRIPTIONS)
     if context.role == 'admin':
         descriptions['work'] += '；查询员工已授权业务，关联本人督办'
         descriptions['reports'] = '查询员工已提交报告/汇报待办，准备报告删除；不能写本人或员工报告'
-    available = available_groups(context)
+    available = {name: tools for name, tools in available_groups(context).items() if name not in exclude}
     # read_execution remains usable for past receipts even with sandbox disabled.
     if 'files' not in available:
         descriptions['documents'] += '；读取已有执行记录'
@@ -146,6 +146,9 @@ async def load_tools(groups: Annotated[list[str], Field(min_length=1, max_length
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
         available = available_groups(context)
+        from app.agent.runtime.tool_progress.service import research_stopped
+        if research_stopped(context, job):
+            available.pop('research', None)
         if any(group not in available for group in groups):
             return json.dumps({'state': 'unavailable', 'available': list(available)}, ensure_ascii=False)
         loaded = remember_groups(context, job, groups)

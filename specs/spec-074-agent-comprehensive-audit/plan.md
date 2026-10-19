@@ -2,7 +2,45 @@
 
 ## 对应规格与涉及模块
 
+原测试执行与问题汇总已完成。后续获准修复的范围、真实对照及未解决项见 [搜索修复](repair-search-latency.md)；轻量抓取修复会改变 Python 依赖和出站实现，不沿用下文测试阶段“无产品变化”的描述。
+
+轻量抓取修复的相关目录保持原位；未完成的 Chromium 候选已撤回，不引入浏览器安装、沙盒、CI 或发布预检：
+
+```text
+apps/server/
+├── requirements.in / requirements.lock          [修改] 固定 curl_cffi 依赖
+└── app/
+    ├── integrations/web_research.py              [修改] 搜索／正文读取入口
+    └── integrations/web_curl.py                  [新增] 固定公网 IP、请求指纹与有界异步接收
+tests/server/agent/tools/
+├── test_web_curl.py                              [新增] 受控真实网络、取消、限额与证书校验
+├── test_web_research.py                          [修改] 新 transport 与原有解析契约
+└── test_research_progress.py                     [修改] 人机验证失败的重复读取保护
+docs/setup.md / docs/architecture.md              [修改] 安装与实际运行边界
+constitution/tech-stack.md                       [修改] 实际抓取依赖
+```
+
 对应 [Spec](spec.md) 和 [测试矩阵](test-matrix.md)。复用现有 Agent 审计，不新建并行测试框架。
+
+搜索收敛修复继续原位实现；不增加搜索服务、代理或额外模型核对：
+
+```text
+apps/server/app/
+├── agent/runtime/tool_progress/research.py       [新增] 研究进展、整批结算与只读快照
+├── agent/runtime/tool_progress/{service,state,evidence}.py [修改] 研究范围停止与失败复用
+├── agent/runtime/middleware.py                  [修改] 工具展示及调用入口约束
+├── agent/prompts/main.py                        [修改] 精简研究规则，区分链接与正文需求
+├── agent/tools/catalog.py                       [修改] 收束后不重复加载研究能力
+├── agent/tools/resources/web.py                 [修改] 快照读取与真实跳转链接回执
+├── integrations/web_research.py                 [修改] 保留失败前实际观察到的跳转
+├── integrations/web_page_cache.py               [修改] 刷新失败保留有效旧正文
+└── tasks/nodes/node_execution.py                [修改] 新输入清理上轮跳转与失败记录
+tests/server/agent/tools/
+├── test_research_convergence.py                 [新增] 收束、并行、恢复及业务不受影响
+├── test_research_closed_loop.py                 [新增] 实际 HTTP 工具绑定与关闭后空转恢复
+├── test_redirect_evidence.py                    [新增] 跳转证据与错误边界
+└── test_{research_progress,web_research,web_research_recovery}.py [修改] 对应契约
+```
 
 | 模块 | 取证重点 |
 | --- | --- |

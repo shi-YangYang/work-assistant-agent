@@ -15,6 +15,7 @@
 | Agent | Deep Agents、LangGraph、PostgreSQL checkpoint；业务工具、来源校验、操作回执和人工确认 |
 | 模型接入 | Chat Completions、独立语音协议、万相文生图（百炼原生异步／Token Plan 同步）；公司凭证使用 AES-GCM，桌面使用 safeStorage |
 | 文档与媒体 | pypdf、python-docx、python-pptx、openpyxl、Pillow／pillow-heif、PDF.js、FFmpeg |
+| 公开网页读取 | curl_cffi、固定 Chrome TLS／HTTP/2 指纹；Bing RSS 搜索、HTML 正文提取、固定公网连接 IP |
 | 部署与打包 | Docker Compose、Caddy；electron-builder、PyInstaller |
 | 检查 | Vitest、unittest、pytest、Playwright、TypeScript、ESLint、Prettier |
 
@@ -65,6 +66,7 @@
 - 正式桌面包自带 Python；开发模式使用 `.venv` 或 `PAA_PYTHON`。macOS 与 Windows 分别验证，不推定所有系统版本和硬件均受支持。
 - 公司 API／worker 使用同一业务包和数据库，桌面本地核心独立运行；Web 不依赖 `window.paa`。
 - 公司聊天、图片理解和 ASR 调用外部 API；声纹提取使用独立 CPU 环境。部署资源限制由 Compose 管理。
+- 网页抓取直接调用 `curl_cffi` 异步库，不启动浏览器或 shell；依赖随公司 Python 锁文件安装，不增加 Chromium、浏览器沙盒和浏览器发布预检。环境代理不自动继承；本地临时代理测试不改变 API／worker 配置。
 - 原始材料、账号数据、密钥和用户模型缓存不入 Git；固定公共说话人权重随包分发，保留许可证。
 - Web 与 Electron 独立维护 CSS，共享[视觉规范](../docs/design/README.md)和品牌图片。
 - 桌面人工验收使用日常用户目录；自动故障测试使用临时数据，不能清理或破坏用户资料。

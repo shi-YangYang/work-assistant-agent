@@ -22,6 +22,8 @@ class ToolBoundary(AgentMiddleware):
             from app.tasks.budget import service as budget
             from app.tasks.budget.state import TaskBudgetStopped
             budget.ensure(job, context)
+            from app.agent.runtime.tool_progress.service import research_stopped
+            research_closed = research_stopped(context, job, request.messages)
             snapshot = budget.current(context)
             if snapshot and snapshot['phase'] in ('exhausted', 'ended'):
                 raise TaskBudgetStopped(snapshot['reason'])
@@ -57,7 +59,8 @@ class ToolBoundary(AgentMiddleware):
             from app.agent.runtime.budget import final_answer_call
             token = final_answer_call.set(True)
             try:
-                return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+                return await handler(request.override(tools=[], system_message=system, tool_choice='none',
+                    model_settings={**getattr(request, 'model_settings', {}), 'tool_choice': 'none'}))
             finally:
                 final_answer_call.reset(token)
         if finish_only:
@@ -65,14 +68,25 @@ class ToolBoundary(AgentMiddleware):
             from app.agent.runtime.budget import final_answer_call
             token = final_answer_call.set(True)
             try:
-                return await handler(request.override(tools=[], system_message=system, tool_choice='none'))
+                # The framework's empty-tools branch binds model_settings only;
+                # request.tool_choice alone never reaches the HTTP payload.
+                return await handler(request.override(tools=[], system_message=system, tool_choice='none',
+                    model_settings={**getattr(request, 'model_settings', {}), 'tool_choice': 'none'}))
             finally:
                 final_answer_call.reset(token)
         names = visible_tools(context, groups)
+        if research_closed:
+            from app.agent.runtime.tool_progress.research import TOOLS, has_snapshot
+            names -= TOOLS
+            if has_snapshot(context.web_pages):
+                names.add('web_fetch')
         offered = [tool for tool in visible if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) in names]
         policy = capability_policy(groups, context.role)
+        if research_closed:
+            from app.agent.runtime.tool_progress.research import NOTICE
+            policy += '\n' + NOTICE + ' web_fetch 仅能读取保留的页面快照。'
         system = SystemMessage(content=(request.system_message.text if request.system_message else '') + ('\n' + policy if policy else ''))
-        return await handler(request.override(tools=[catalog_schema(context), *offered], system_message=system, tool_choice='auto'))
+        return await handler(request.override(tools=[catalog_schema(context, exclude={'research'} if research_closed else ()), *offered], system_message=system, tool_choice='auto'))
 
     async def awrap_tool_call(self, request, handler):
         context = request.runtime.context
@@ -85,6 +99,10 @@ class ToolBoundary(AgentMiddleware):
         from app.core.digests import digest
         batch = next((m for m in reversed(request.state.get('messages', [])) if isinstance(m, AIMessage)), None)
         progress_call = {**request.tool_call, 'progressId': digest({'message': getattr(batch, 'id', None), 'call': request.tool_call['id']})}
+        if batch:
+            from app.agent.runtime.tool_progress.research import TOOLS
+            peers = [digest({'message': batch.id, 'call': call['id']}) for call in batch.tool_calls if call['name'] in TOOLS]
+            progress_call.update(progressBatch=digest({'message': batch.id, 'calls': peers}), progressPeers=peers)
         stopped = await begin(context, progress_call)
         if stopped is not None:
             return stopped

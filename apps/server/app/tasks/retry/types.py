@@ -9,6 +9,7 @@ class Failure:
     retryable: bool = False
     retry_after: float | None = None
     cancelled: bool = False
+    category: str = ''
 
 
 @dataclass(frozen=True)

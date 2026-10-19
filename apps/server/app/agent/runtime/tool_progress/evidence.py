@@ -66,14 +66,28 @@ def reusable_read(call, result):
     if call['name'] in ('web_search', 'find_documents'):
         return not failed_result(result)
     if call['name'] == 'web_fetch':
-        return (not failed_result(result) or result.get('errorCode') in ('http_401', 'http_403', 'http_404', 'http_410', 'blocked_url')
+        return (not failed_result(result) or result.get('errorCode') in ('http_401', 'http_403', 'http_404', 'http_410', 'blocked_url', 'web_challenge')
                 or result.get('errorCode') == 'web_network' and result.get('attemptsExhausted') is True)
     return False
 
 
+def terminal_web_failure(result):
+    return (result.get('errorCode') in ('http_401', 'http_403', 'http_404', 'http_410', 'blocked_url', 'web_challenge')
+            or result.get('errorCode') == 'web_network' and result.get('attemptsExhausted') is True)
+
+
 def web_address(call):
     url = call.get('args', {}).get('url')
-    return digest(url.partition('#')[0]) if call['name'] == 'web_fetch' and isinstance(url, str) and url else None
+    if call['name'] != 'web_fetch' or not isinstance(url, str) or not url:
+        return None
+    from app.integrations.web_research import WebResearchError, public_url
+    try:
+        parsed = public_url(url)
+        # Canonicalize a missing root slash without decoding an encoded path.
+        url = str(parsed.copy_with(path='/') if parsed.raw_path.partition(b'?')[0] in (b'', b'/') else parsed)
+    except WebResearchError:
+        url = url.partition('#')[0]
+    return digest(url)
 
 
 def exploratory_result(journal, call, result, identifier, deps):
@@ -81,7 +95,7 @@ def exploratory_result(journal, call, result, identifier, deps):
     search = call['name'] == 'web_search' and not failed_result(result)
     code = result.get('errorCode', '')
     unavailable = call['name'] == 'web_fetch' and result.get('state') == 'unavailable' and (
-        code == 'web_network' or isinstance(code, str) and code.startswith('http_'))
+        code in ('web_network', 'web_challenge') or isinstance(code, str) and code.startswith('http_'))
     if not search and not unavailable:
         return False
     previous = [row for row in journal['calls'] if row['id'] != identifier

@@ -56,7 +56,7 @@ async def initialize(context, input_key):
             # scope as the graph. Business receipts remain for safe replay.
             stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete', 'workChangeRequirements'}
             if previous_scope:
-                stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources'))
+                stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources', 'webRedirects', 'webReadFailures'))
             job.result = {key: value for key, value in job.result.items() if key not in stale}
         state['deadline'] = context.node_deadline
         state.setdefault('nodes', [])
@@ -144,7 +144,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             return decode(row['output'])
         if row['state'] in ('failed', 'cancelled') and not row.get('receiptId'):
             prior_failure = NodeFailed(Failure(row.get('errorCode', 'failed'), row.get('error', '此步骤未完成'),
-                                               cancelled=row['state'] == 'cancelled'), identifier)
+                                               cancelled=row['state'] == 'cancelled', category=row.get('errorCategory', '')), identifier)
             if on_failure is None:
                 raise prior_failure
         if kind == 'tool' and not row.get('receiptId') and not prior_failure:
@@ -182,6 +182,10 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row['totalRetries'] += max(0, current.count - max(1, row['attempts']))
             row.update(state=status, attempts=current.count, nextAt=current.next_at,
                        errorCode=failure.code if failure else '', error=failure.message[:240] if failure else '')
+            if failure and failure.category:
+                row['errorCategory'] = failure.category
+            else:
+                row.pop('errorCategory', None)
             if kind == 'model' and status == 'retry_wait':
                 from app.tasks.feedback.reply_stream import transition
                 transition(job, 'withdrawn', new=True)
@@ -218,12 +222,17 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row.update(state='failed' if final_failure else status, nextAt=None,
                        error=(final_failure.message if final_failure else detail)[:240],
                        errorCode=final_failure.code if final_failure else 'business' if detail else '', resumable=False)
+            if final_failure and final_failure.category:
+                row['errorCategory'] = final_failure.category
+            else:
+                row.pop('errorCategory', None)
             # Normalized graph messages / validated verdicts only; no request
             # arguments, credentials, provider wire response or reasoning fields.
             row['output'] = encoded
             row['readVersions'] = dict(context.read_versions)
             if len(json.dumps(state, ensure_ascii=False).encode()) > MAX_OUTPUT_BYTES:
                 row.pop('output')
+                row.pop('errorCategory', None)
                 row.update(state='failed', error='恢复数据超过本次限制，请缩小处理范围', errorCode='budget', resumable=False)
                 save(job, state)
                 raise BudgetExceeded('恢复数据超过本次限制，请缩小处理范围')

@@ -59,6 +59,7 @@ def reopen_failed(job):
             # Keep only a bounded round summary, never raw exception logs.
             row['history'] = [*row.get('history', []), {'round': row.get('round', 0), 'attempts': row['attempts'], 'errorCode': row.get('errorCode', '')}][-8:]
             row.update(state='waiting', attempts=0, nextAt=None, error='', errorCode='', round=job.attempt + 1)
+            row.pop('errorCategory', None)
     state.pop('deadline', None)
     state.pop('budgetBlockedTools', None)
     state['actualCalls'] = state['inputTokens'] = state['outputTokens'] = 0
@@ -78,6 +79,7 @@ def cancel_unfinished(job, *, succeeded_receipts=()):
                 committed = row.get('receiptId') in succeeded_receipts
                 row.update(state='succeeded' if committed else 'cancelled', nextAt=None,
                            error='' if committed else '已中断', errorCode='' if committed else 'cancelled', resumable=False)
+                row.pop('errorCategory', None)
         save(job, state)
 
 

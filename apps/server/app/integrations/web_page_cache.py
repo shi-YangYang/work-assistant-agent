@@ -14,10 +14,10 @@ class WebPageCache:
     async def get(self, key, download, *, refresh=False):
         instant = self.clock()
         for old, (at, value, size) in list(self.pages.items()):
-            if instant - at >= self.ttl or old == key and refresh:
+            if instant - at >= self.ttl:
                 self.pages.pop(old)
                 self.bytes -= size
-        if key in self.pages:
+        if key in self.pages and not refresh:
             self.pages.move_to_end(key)
             return self.pages[key][1], True
         if key in self.pending:
@@ -26,6 +26,12 @@ class WebPageCache:
             try:
                 value = await download()
                 size = len(json.dumps(value, ensure_ascii=False).encode()) + len(key.encode())
+                # A failed refresh must not discard still-valid source text.
+                # Replace it only after a successful download, even if the new
+                # page is too large to retain.
+                previous = self.pages.pop(key, None)
+                if previous:
+                    self.bytes -= previous[2]
                 if size <= self.max_bytes:
                     while self.pages and (len(self.pages) >= self.max_pages or self.bytes + size > self.max_bytes):
                         _, (_, _, removed) = self.pages.popitem(last=False)
