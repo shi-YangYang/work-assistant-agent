@@ -1,0 +1,116 @@
+[
+  {
+    "id": "S01",
+    "role": "realAdmin",
+    "actorRole": "admin",
+    "group": "团队目录与原始来源",
+    "effort": "low",
+    "mode": "full",
+    "persona": "professional",
+    "turns": [
+      "请列出我们公司姓名包含“审计”的员工名单；这里只查目录，不查他们的私人聊天。",
+      "请找出团队当前有阻碍的工作，打开其中一项的原始已保存记录，给我标题、阻碍和来源。",
+      "基于刚查到的这项阻碍，为我准备一条待我确认的督办建议：我协助解决阻碍，下一步跟进负责人。先展示建议卡，不要直接保存为工作，也不要修改员工原记录。"
+    ],
+    "attachments": [],
+    "goal": "目录与授权团队来源可读；至多一张待确认建议，无工作写入",
+    "mutationBounds": [
+      {
+        "workCreate": 0,
+        "workUpdate": 0,
+        "workDelete": 0,
+        "reportCreate": 0,
+        "reportUpdate": 0,
+        "reportSubmit": 0,
+        "reportDelete": 0
+      },
+      {
+        "workCreate": 0,
+        "workUpdate": 0,
+        "workDelete": 0,
+        "reportCreate": 0,
+        "reportUpdate": 0,
+        "reportSubmit": 0,
+        "reportDelete": 0
+      },
+      {
+        "workCreate": 0,
+        "workUpdate": 0,
+        "workDelete": 0,
+        "reportCreate": 0,
+        "reportUpdate": 0,
+        "reportSubmit": 0,
+        "reportDelete": 0
+      }
+    ],
+    "loopFocus": true,
+    "holdout": true,
+    "approveActions": false
+  },
+  {
+    "id": "S02",
+    "role": "realEmployee",
+    "actorRole": "employee",
+    "group": "待确认进展建议",
+    "effort": "low",
+    "mode": "ask",
+    "persona": "professional",
+    "turns": [
+      "把“补充核对-S074”准备成一条待我确认的工作进展建议：已经核对3份资料，尚余2份，进行中，下一步核对余下2份。请给建议卡，先不要保存到我的工作。"
+    ],
+    "attachments": [],
+    "goal": "一张待确认建议，无已确认工作写入",
+    "mutationBounds": [
+      {
+        "workCreate": 0,
+        "workUpdate": 0,
+        "workDelete": 0,
+        "reportCreate": 0,
+        "reportUpdate": 0,
+        "reportSubmit": 0,
+        "reportDelete": 0
+      }
+    ],
+    "loopFocus": true,
+    "holdout": true,
+    "approveActions": false
+  },
+  {
+    "id": "S03",
+    "role": "realEmployee",
+    "actorRole": "employee",
+    "group": "持续任务边界",
+    "effort": "high",
+    "mode": "full",
+    "persona": "professional",
+    "turns": [
+      "我们接下来分三步完成一个方案：先整理培训目标，再等我提供预算，最后给排期。当前先给三个培训目标，预算没到就停在这一步；后续只讨论，不要创建任何工作。",
+      "将持续要求改成：后面只考虑新员工入职培训，仍然只讨论不写工作；预算暂时没有，保留等待预算的下一步。"
+    ],
+    "attachments": [],
+    "goal": "阶段与持续只讨论限制保留；无业务写入；不强迫某具体工具",
+    "mutationBounds": [
+      {
+        "workCreate": 0,
+        "workUpdate": 0,
+        "workDelete": 0,
+        "reportCreate": 0,
+        "reportUpdate": 0,
+        "reportSubmit": 0,
+        "reportDelete": 0
+      },
+      {
+        "workCreate": 0,
+        "workUpdate": 0,
+        "workDelete": 0,
+        "reportCreate": 0,
+        "reportUpdate": 0,
+        "reportSubmit": 0,
+        "reportDelete": 0
+      }
+    ],
+    "loopFocus": true,
+    "holdout": true,
+    "approveActions": false
+  }
+]

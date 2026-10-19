@@ -2,6 +2,7 @@
 import json
 from langchain_core.messages import ToolMessage
 from app.tasks.nodes.node_execution import execute_node
+from app.tasks.retry import Policy
 from app.agent.runtime.progress.tools import tool_presentation
 
 
@@ -91,15 +92,16 @@ async def tool_node(context, request, operation):
         result = await restore(db, actor, json.loads(value['content']), job=job)
         return {**value, 'content': json.dumps(result, ensure_ascii=False)}
     async def unavailable_web(error):
-        if error.failure.code != 'web_network' or error.failure.cancelled:
+        if error.failure.code not in ('web_network', 'exhausted') or error.failure.cancelled:
             raise error
         from app.agent.tools.resources.web import unavailable
         value = call.get('args', {}).get('url' if call['name'] == 'web_fetch' else 'query', '')
         content = await unavailable(context, value, error.failure.message,
-                                    is_fetch=call['name'] == 'web_fetch', code=error.failure.code)
+                                    is_fetch=call['name'] == 'web_fetch', code='web_network', attempts_exhausted=True)
         return ToolMessage(content=content, tool_call_id=call['id'], name=call['name'])
     return await execute_node(context, identity=identity, kind='tool', label=label, operation=operation,
                               presentation=presentation,
+                              retry_policy=Policy(max_attempts=2) if call['name'] == 'web_fetch' else Policy(),
                               result_presentation=lambda result: tool_presentation(call['name'], call.get('args'), result),
                               outcome=outcome, encode=lambda m: {'content': m.content, 'tool_call_id': m.tool_call_id, 'name': m.name, 'status': m.status, 'id': m.id},
                               decode=lambda data: ToolMessage(**data),

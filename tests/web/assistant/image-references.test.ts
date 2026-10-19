@@ -16,7 +16,7 @@ const item: DeliverableSummary = {
 it('removes only redundant exact file references while keeping the image descriptions', () => {
   const reply = `已生成图片。\n\n1. 圆月孤舟\n   ${url}\n\n2. 深谷飞瀑\n[查看深谷]( ${url})\n[圆月孤舟](${url})\n![图像说明](${url})`
   expect(compactImageReferences(reply, [item])).toBe(
-    `已生成图片。\n\n1. 圆月孤舟\n\n\n2. 深谷飞瀑\n[查看深谷]( ${url})\n圆月孤舟\n图像说明`,
+    '已生成图片。\n\n1. 圆月孤舟\n\n\n2. 深谷飞瀑\n查看深谷\n圆月孤舟\n图像说明',
   )
   expect(compactImageReferences(`\`${url}\`\n<${url}>`, [item])).toBe(`\`${url}\`\n`)
 })

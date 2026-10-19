@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 _task_transports = ContextVar('task_model_transports', default=None)
 _request_timing = ContextVar('model_request_timing', default=None)
 _request_scheme = ContextVar('model_request_scheme', default=None)
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 def network_timing(event, **fields):
@@ -163,11 +164,11 @@ class LimitedStream(httpx.AsyncByteStream):
             if self.streaming:
                 for newline in re.finditer(b'[\r\n]', chunk):
                     size += newline.start() - offset
-                    if size > 2 * 1024 * 1024:
+                    if size > MAX_RESPONSE_BYTES:
                         raise ProviderError('limit', '模型单段流式响应过大，已停止接收')
                     size, offset = 0, newline.end()
             size += len(chunk) - offset
-            if size > 2 * 1024 * 1024:
+            if size > MAX_RESPONSE_BYTES:
                 message = '模型单段流式响应过大，已停止接收' if self.streaming else '模型响应内容过大，已停止接收'
                 raise ProviderError('limit', message)
             yield chunk
@@ -219,6 +220,30 @@ def client(settings):
     else:
         transport = BorrowedTransport(shared, settings)
     return httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(60, connect=10), trust_env=False, follow_redirects=False, headers={'Accept-Encoding': 'identity'})
+
+
+async def stream_data(lines):
+    """Assemble bounded SSE events; a line is not necessarily a JSON message."""
+    values, size, first = [], 0, True
+    async for line in lines:
+        if first:
+            line = line.removeprefix('\ufeff')
+            first = False
+        if not line:
+            if values:
+                data = '\n'.join(values)
+                values, size = [], 0
+                yield data
+            continue
+        field, _, value = line.partition(':')
+        if field != 'data':
+            continue
+        value = value.removeprefix(' ')
+        size += len(value.encode('utf-8')) + 1
+        if size > MAX_RESPONSE_BYTES:
+            raise ProviderError('limit', '模型单段流式响应过大，已停止接收')
+        values.append(value)
+    # An event without its final blank line is truncated, never complete.
 
 
 async def finish_stream(lines):

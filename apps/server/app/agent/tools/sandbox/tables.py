@@ -7,13 +7,16 @@ from .common import invoke
 
 @tool
 async def inspect_table(source: TableSource, runtime: ToolRuntime[RunContext], sample_rows: int = 8) -> str:
-    """Inspect an authorized CSV/XLSX without writing Python. Returns row/column
-    counts, missing/duplicate counts, actual types and up to 20 sample rows; samples
-    can be truncated explicitly. source.input_ref is a real attachment_id OR
+    """Inspect CSV/XLSX structure/statistics when missing; reuse supplied facts.
+    Returns row/column counts, missing/duplicate counts and actual types.
+    sample is a consecutive prefix; contentSamples adds first/last nonempty
+    rows with rowNumber. Both share sample_rows (0..20), with explicit truncation.
+    Counts cover all loaded rows, samples do not. source.input_ref is a real attachment_id OR
     {deliverable_id,revision,file_id} from this conversation, never a path.
     CSV keeps strings/leading zeros unless column_types explicitly requests
-    string/number/boolean. No implicit cleaning, aggregation or formula execution.
-    Use this before choosing columns. Errors are corrective feedback, not evidence.
+    string/number/boolean. Without a valid first-row header, returns raw row/column
+    positions including the first/blank rows; leave column_types empty in that case.
+    No implicit cleaning, aggregation or formula execution. Errors are not evidence.
     """
     return await invoke(runtime, 'inspect_table', {'source': source, 'sample_rows': sample_rows}, title='检查表格')
 

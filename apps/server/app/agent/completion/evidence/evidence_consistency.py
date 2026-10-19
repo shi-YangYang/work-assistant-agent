@@ -49,7 +49,7 @@ def observed_evidence(context):
         ):
             pass
         elif tool in ('run_python', 'inspect_table', 'export_table', 'create_chart', 'create_document', 'create_slides') and result.get('state') == 'succeeded' and (
-            str(result.get('stdout') or '').strip() or result.get('data')
+            str(result.get('stdout') or '').strip() or result.get('data') or result.get('fileResults')
         ):
             pass
         else:

@@ -67,7 +67,8 @@ def word_units(path):
                     yield f'{location} · 段落 {index}', ''.join(texts), {'unit': 'paragraph', 'part': part, 'index': index}
 
 
-def sheet_units(path, warnings):
+def sheet_units(path, info):
+    warnings = info['warnings']
     from openpyxl import load_workbook
     from openpyxl.utils.cell import coordinate_to_tuple
     book = load_workbook(io.BytesIO(Path(path).read_bytes()), read_only=True, data_only=False, keep_links=False)
@@ -86,8 +87,10 @@ def sheet_units(path, warnings):
                 hidden_cols = [(int(col.get('min')), int(col.get('max'))) for col in root.iter(S + 'col') if col.get('hidden') in ('1', 'true')]
                 if hidden_rows or hidden_cols:
                     warnings.append(f'工作表「{sheet.title}」隐藏的行／列未读取')
-                for merge in root.iter(S + 'mergeCell'):
+                merges = list(root.iter(S + 'mergeCell'))
+                for merge in merges:
                     yield f'工作表「{sheet.title}」· 合并 {merge.get("ref")}', '合并范围仅以左上角单元格表示：' + merge.get('ref'), {'unit': 'sheet', 'sheet': sheet.title}
+                content_rows, cells = set(), 0
                 # Traverse physical cells, not the untrusted dimension rectangle.
                 for cell in root.iter(S + 'c'):
                     address = cell.get('r')
@@ -123,7 +126,28 @@ def sheet_units(path, warnings):
                             if warning not in warnings:
                                 warnings.append(warning)
                     if text:
+                        content_rows.add(row)
+                        cells += 1
                         yield f'工作表「{sheet.title}」!{address}', f'{address}：{text}', {'unit': 'cell', 'sheet': sheet.title, 'cell': address}
+                # Reached only after the entire visible sheet was traversed.
+                # Do not turn an unfinished batch or a styled dimension into
+                # a full-sheet statistic; no second source scan is required.
+                structure = info.setdefault('tableStructure', {
+                    'basis': '完整遍历可见单元格值或公式；行间数量仅计首末内容行之间无值的可见行。隐藏内容未读；合并表不判空行，格式不算内容。',
+                    'sheets': [], 'omittedSheets': 0,
+                })
+                if len(structure['sheets']) < 20:
+                    first, last = min(content_rows, default=None), max(content_rows, default=None)
+                    hidden_between = sum(first < row < last for row in hidden_rows) if content_rows else 0
+                    structure['sheets'].append({
+                        'sheet': sheet.title, 'firstContentRow': first, 'lastContentRow': last,
+                        'visibleContentRows': len(content_rows), 'visibleContentCells': cells,
+                        'visibleRowsWithoutValuesBetween': (last - first + 1 - len(content_rows) - hidden_between if content_rows else 0) if not merges else None,
+                        'mergedCellsPresent': bool(merges),
+                        'hiddenRowsExcluded': bool(hidden_rows), 'hiddenColumnsExcluded': bool(hidden_cols),
+                    })
+                else:
+                    structure['omittedSheets'] += 1
     finally:
         book.close()
 
@@ -142,7 +166,7 @@ def source_units(path, suffix, info):
                 warnings.append('部分嵌入内容、修订删除内容或特殊符号未作为文字提取；可查看页面或原文件')
         yield from word_units(path)
     elif suffix == '.xlsx':
-        yield from sheet_units(path, warnings)
+        yield from sheet_units(path, info)
     elif suffix == '.pptx':
         from pptx import Presentation
         slides = Presentation(path).slides

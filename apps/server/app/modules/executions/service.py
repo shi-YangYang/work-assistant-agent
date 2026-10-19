@@ -13,6 +13,7 @@ from app.modules.executions.models import SandboxExecution
 from app.modules.executions.requests import builtin_request, references_for, bind_inputs, execution_key
 from app.modules.executions.builtin.results import structured_result
 from app.modules.executions.builtin.schemas import LABELS
+from app.modules.executions.output_evidence import file_results
 from app.modules.messages.models import Message
 from app.security.ownership import owned
 from app.tasks.lease import lease
@@ -118,6 +119,10 @@ async def execute(context, *, code='', title, references=None, identifier='', re
                 item, record = await save(db, actor, message, job, {'title': title, 'body': '已生成可下载文件。'}, identifier=identifier,
                     expected_revision=revision, read_revision=read_revision, step=step, files=files)
                 clean['delivery'] = await detail(db, actor, item, record)
+                if task is None:
+                    excerpts = file_results(files, payloads)
+                    if excerpts:
+                        clean['fileResults'] = excerpts
                 context.deliverable_reads[item.id] = record.revision
                 job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision}}
             row.state, row.fence, row.result = result['state'], job.fence, clean

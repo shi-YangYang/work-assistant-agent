@@ -12,7 +12,7 @@ from app.tasks.nodes.node_failures import classify
 from app.tasks.nodes.node_state import MAX_NODES, MAX_OUTPUT_BYTES, execution, save
 from app.tasks.budget import service as budget
 from app.tasks.budget.state import TaskBudgetStopped, policy
-from app.tasks.retry import Attempt, Failure, NodeFailed, run
+from app.tasks.retry import Attempt, Failure, NodeFailed, Policy, run
 
 active_node = contextvars.ContextVar('assistant_node', default=None)
 
@@ -110,7 +110,7 @@ async def recover_receipt(db, context, job, actor, row):
 async def execute_node(context, *, identity, kind, label, operation, encode=lambda x: x,
                        decode=lambda x: x, outcome=None, safe_replay=True, restore=None,
                        receipt_output=lambda x: x, on_failure=None, presentation=None, result_presentation=None,
-                       allow_work_refresh=False):
+                       allow_work_refresh=False, retry_policy=Policy()):
     if not context.node_retry:
         return await operation()
     parent = active_node.get()
@@ -127,7 +127,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                 raise TaskBudgetStopped('nodes')
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,
-                   'round': job.attempt, 'totalRetries': 0, 'resumable': True}
+                   'round': job.attempt, 'totalRetries': 0, 'resumable': True,
+                   'maxAttempts': retry_policy.max_attempts}
             if presentation is not None:
                 row['presentation'] = presentation
             state['nodes'].append(row)
@@ -152,6 +153,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             except TaskBudgetStopped as error:
                 raise ToolBudgetExceeded(str(error)) from error
         attempt = Attempt(row['attempts'], row.get('nextAt'))
+        # Restored nodes retain the policy they started with. Older journals
+        # predate per-node policies and used four attempts.
+        retry_policy = Policy(max_attempts=row.get('maxAttempts', 4), delays=retry_policy.delays)
         if row['state'] == 'running':
             if not safe_replay and not row.get('receiptId'):
                 raise NodeFailed(Failure('uncertain', '上次操作结果未知，请核对业务记录后再处理'), identifier)
@@ -193,6 +197,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                 raise prior_failure
             result = await run(operation, classify=classify, before=lambda: check(context, allow_work_refresh=allow_work_refresh), emit=emit,
                                attempt=attempt, deadline=context.node_deadline, jitter=lambda: random.uniform(0, .2),
+                               policy=retry_policy,
                                recover=recover if kind == 'tool' else None)
         except NodeFailed as error:
             if on_failure is None:

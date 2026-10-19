@@ -1,0 +1,12 @@
+{
+  "revision": "074-supplement-1",
+  "applicationCommit": "26db8f9bb8af64da403696362b158df7a94ebe1a",
+  "caseFile": "supplement-cases.json",
+  "caseSha256": "7d6a2ed58754e43bac3d2dd4e7bc3d5df26fe92e6fe983c9d069913c6adfaecb",
+  "watchdogSeconds": 1920,
+  "highRiskRepetition": {
+    "caseIds": []
+  },
+  "modelResponses": "real-provider-only",
+  "firstResults": "immutable"
+}

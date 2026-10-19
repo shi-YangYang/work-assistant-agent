@@ -8,10 +8,11 @@ function inline(
   text: string,
   depth = 0,
   renderCitation?: (index: number) => ReactNode,
+  renderInternalLink?: (href: string, label: string) => ReactNode,
 ): ReactNode[] {
   if (depth > 4) return [text]
   const pattern =
-    /(〔来源\s*\d+〕|`[^`\n]+`|!\[[^\]\n]*\]\([^\n]*?\)|\[[^\]\n]+\]\([^\s\n]*?\)|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/g
+    /(〔来源\s*\d+〕|`[^`\n]+`|!\[[^\]\n]*\]\([^\n]*?\)|\[[^\]\n]+\]\([ \t]*[^\s\n]*?[ \t]*\)|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/g
   const result: ReactNode[] = []
   let offset = 0
   for (const match of text.matchAll(pattern)) {
@@ -28,7 +29,11 @@ function inline(
     else if (token.startsWith('[')) {
       const separator = token.indexOf('](')
       const label = token.slice(1, separator)
-      const href = token.slice(separator + 2, -1)
+      const href = token.slice(separator + 2, -1).trim()
+      const internal =
+        href.startsWith('/') && !href.startsWith('//')
+          ? renderInternalLink?.(href, label)
+          : undefined
       let safe = false
       try {
         const url = new URL(href)
@@ -41,9 +46,11 @@ function inline(
         /* Unsupported links remain readable text. */
       }
       result.push(
-        safe ? (
+        internal != null ? (
+          <React.Fragment key={index}>{internal}</React.Fragment>
+        ) : safe ? (
           <a key={index} href={href} target="_blank" rel="noreferrer noopener">
-            {inline(label, depth + 1, renderCitation)}
+            {inline(label, depth + 1, renderCitation, renderInternalLink)}
           </a>
         ) : (
           token
@@ -51,9 +58,16 @@ function inline(
       )
     } else if (token.startsWith('**') || token.startsWith('__')) {
       result.push(
-        <strong key={index}>{inline(token.slice(2, -2), depth + 1, renderCitation)}</strong>,
+        <strong key={index}>
+          {inline(token.slice(2, -2), depth + 1, renderCitation, renderInternalLink)}
+        </strong>,
       )
-    } else result.push(<em key={index}>{inline(token.slice(1, -1), depth + 1, renderCitation)}</em>)
+    } else
+      result.push(
+        <em key={index}>
+          {inline(token.slice(1, -1), depth + 1, renderCitation, renderInternalLink)}
+        </em>,
+      )
     offset = index + token.length
   }
   result.push(text.slice(offset))
@@ -63,9 +77,11 @@ function inline(
 export function Markdown({
   text,
   renderBusinessCitation,
+  renderInternalLink,
 }: {
   text: string
   renderBusinessCitation?: (index: number) => ReactNode
+  renderInternalLink?: (href: string, label: string) => ReactNode
 }) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const blocks: ReactNode[] = []
@@ -112,7 +128,9 @@ export function Markdown({
             <thead>
               <tr>
                 {headings.map((cell, column) => (
-                  <th key={column}>{inline(cell, 0, renderBusinessCitation)}</th>
+                  <th key={column}>
+                    {inline(cell, 0, renderBusinessCitation, renderInternalLink)}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -120,7 +138,9 @@ export function Markdown({
               {rows.map((row, number) => (
                 <tr key={number}>
                   {headings.map((_, column) => (
-                    <td key={column}>{inline(row[column] ?? '', 0, renderBusinessCitation)}</td>
+                    <td key={column}>
+                      {inline(row[column] ?? '', 0, renderBusinessCitation, renderInternalLink)}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -132,7 +152,9 @@ export function Markdown({
     }
     const heading = line.match(/^#{1,6}\s+(.+)$/)
     if (heading) {
-      blocks.push(<h4 key={key}>{inline(heading[1], 0, renderBusinessCitation)}</h4>)
+      blocks.push(
+        <h4 key={key}>{inline(heading[1], 0, renderBusinessCitation, renderInternalLink)}</h4>,
+      )
       index++
       continue
     }
@@ -143,7 +165,9 @@ export function Markdown({
       while (index < lines.length) {
         const item = lines[index].match(/^\s*([-*+]|\d+[.)])\s+(.+)$/)
         if (!item || /^\d/.test(item[1]) !== ordered) break
-        items.push(<li key={index}>{inline(item[2], 0, renderBusinessCitation)}</li>)
+        items.push(
+          <li key={index}>{inline(item[2], 0, renderBusinessCitation, renderInternalLink)}</li>,
+        )
         index++
       }
       blocks.push(
@@ -160,7 +184,11 @@ export function Markdown({
     const paragraph = [line]
     index++
     while (index < lines.length && !startsBlock(lines[index])) paragraph.push(lines[index++])
-    blocks.push(<p key={key}>{inline(paragraph.join('\n'), 0, renderBusinessCitation)}</p>)
+    blocks.push(
+      <p key={key}>
+        {inline(paragraph.join('\n'), 0, renderBusinessCitation, renderInternalLink)}
+      </p>,
+    )
   }
   return <div className={styles['markdown']}>{blocks}</div>
 }

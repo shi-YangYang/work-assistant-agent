@@ -1,4 +1,5 @@
 import asyncio
+import anyio
 import json
 import re
 import time
@@ -20,6 +21,7 @@ from app.tasks.models import Job
 from sqlalchemy import select
 
 TERMINAL = frozenset({'succeeded', 'awaiting_input', 'failed', 'awaiting_retry', 'cancelled'})
+SSE_SNAPSHOT_TIMEOUT = 5
 
 
 async def publish(context, stage, text='', call_id=None, *, force=False):
@@ -114,6 +116,19 @@ def event(name, value):
     return 'event: ' + name + '\ndata: ' + json.dumps(value, ensure_ascii=False) + '\n\n'
 
 
+async def stream_snapshot(sessions, token_hash, job_id, **kwargs):
+    # Starlette cancels its SSE task group on disconnect. AnyIO's repeated
+    # cancellation can interrupt psycopg's pre-ping cleanup while PostgreSQL is
+    # still ACTIVE. Finish this short transaction before observing disconnect;
+    # a separate edge-triggered deadline still bounds a slow pool/query.
+    await anyio.lowlevel.checkpoint_if_cancelled()
+    with anyio.CancelScope(shield=True):
+        async with asyncio.timeout(SSE_SNAPSHOT_TIMEOUT):
+            value = await snapshot(sessions, token_hash, job_id, **kwargs)
+    await anyio.lowlevel.checkpoint_if_cancelled()
+    return value
+
+
 async def events(sessions, token_hash, job_id, *, settings=None, version=1):
     if settings is None:
         # Existing callers/tests that only exercise durable state.
@@ -149,7 +164,7 @@ async def events(sessions, token_hash, job_id, *, settings=None, version=1):
             heartbeat_at = instant
         if instant >= next_state:
             try:
-                value = await snapshot(sessions, token_hash, job_id, transport=True)
+                value = await stream_snapshot(sessions, token_hash, job_id, transport=True)
             except HTTPException as error:
                 yield emit('unavailable', {'status': error.status_code})
                 return
@@ -168,7 +183,7 @@ async def events(sessions, token_hash, job_id, *, settings=None, version=1):
                 yield withdraw(value, {**identity.public(), 'generation': control.get('generation', 0), 'seq': 0})
             elif cached_data:
                 try:
-                    checked = await snapshot(sessions, token_hash, job_id, temporary=cached_data)
+                    checked = await stream_snapshot(sessions, token_hash, job_id, temporary=cached_data)
                 except HTTPException as error:
                     yield emit('unavailable', {'status': error.status_code})
                     return
@@ -199,7 +214,7 @@ async def events(sessions, token_hash, job_id, *, settings=None, version=1):
             if not current and generation is not None:
                 raise StreamUnavailable('reply_stream_lost')
             if current and current.get('sealed'):
-                finished = await snapshot(sessions, token_hash, job_id)
+                finished = await stream_snapshot(sessions, token_hash, job_id)
                 if finished['state'] in TERMINAL:
                     yield emit('snapshot', finished)
                     return
@@ -213,7 +228,7 @@ async def events(sessions, token_hash, job_id, *, settings=None, version=1):
                 continue
             # Permission/source validation is independent of the publisher and
             # repeated before each exposed batch, with no transaction across yield.
-            authorized = await snapshot(sessions, token_hash, job_id, temporary=current)
+            authorized = await stream_snapshot(sessions, token_hash, job_id, temporary=current)
             if authorized['state'] in TERMINAL:
                 yield emit('snapshot', authorized)
                 return
@@ -256,7 +271,7 @@ async def legacy_events(sessions, token_hash, job_id):
     previous = None
     for index in count():
         try:
-            value = await snapshot(sessions, token_hash, job_id)
+            value = await stream_snapshot(sessions, token_hash, job_id)
         except HTTPException as error:
             yield event('unavailable', {'status': error.status_code})
             return

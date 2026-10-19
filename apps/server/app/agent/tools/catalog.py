@@ -15,7 +15,7 @@ GROUPS = {
     'reports': frozenset({'query_reports', 'query_report_obligations', 'execute_business_action', 'get_business_actions', 'query_team_business', 'read_team_source'}),
     'research': frozenset({'web_search', 'web_fetch'}),
     'documents': frozenset({'read_images', 'find_documents', 'read_document', 'get_message_context', 'read_file', 'save_deliverable', 'read_deliverable'}),
-    'files': EXECUTION_TOOLS | frozenset({'read_execution', 'read_deliverable'}),
+    'files': EXECUTION_TOOLS | frozenset({'find_documents', 'get_message_context', 'read_execution', 'read_deliverable'}),
     'memory': frozenset({'save_memory', 'forget_memory'}),
     'task_context': frozenset({'set_task_context', 'request_user_input'}),
 }
@@ -25,7 +25,7 @@ DESCRIPTIONS = {
     'reports': '查询本人报告/待办，生成、编辑和提交报告',
     'research': '搜索和读取公开网页',
     'documents': '读取私人附件/历史消息，保存与修改私人方案、文稿、清单及稳定条目',
-    'files': '表格检查、文件/图表/文档生成、Python计算及执行记录',
+    'files': '定位上传原件、表格检查、文件/图表/文档生成、Python计算及执行记录',
     'memory': '保存或忘记用户直接自述的稳定个人背景',
     'task_context': '临时提问框（用户明确要求时使用）、集中澄清、持续指令与承接任务',
 }

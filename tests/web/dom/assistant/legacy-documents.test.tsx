@@ -253,6 +253,35 @@ it('opens a private rendered page citation and removes stale selections after re
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
+it('opens table source coverage without inventing an extracted text fragment', () => {
+  const view = render(
+    <DocumentCitations
+      citations={[
+        {
+          sourceKind: 'table',
+          attachmentId: 'table-source',
+          revision: 1,
+          name: '报销.csv',
+          location: '表格统计与返回样本',
+          contentUrl: '/api/v1/uploads/table-source/content',
+          sampleRows: [2, 3, 14],
+          rowCount: 13,
+          sampleTruncated: true,
+        },
+      ]}
+    />,
+  )
+  fireEvent.click(screen.getByRole('button', { name: /报销.csv/ }))
+  expect(screen.getByRole('dialog').textContent).toContain('第 2、3、14 行')
+  expect(screen.getByRole('dialog').textContent).toContain('其余行未作为样本展示')
+  expect(screen.queryByText(/分段/)).toBeNull()
+  expect(screen.getByRole('link', { name: '下载原文件' }).getAttribute('href')).toBe(
+    '/api/v1/uploads/table-source/content',
+  )
+  view.rerender(<DocumentCitations citations={[]} />)
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
 it('distinguishes scan pages, deferred source ranges, and a failed visual range', () => {
   const attachment = uploaded('扫描.pdf')
   const extraction = {

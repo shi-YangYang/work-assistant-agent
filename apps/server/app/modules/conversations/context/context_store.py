@@ -4,6 +4,7 @@ from collections import defaultdict
 from app.core.digests import digest
 from app.db.base import now
 from app.modules.conversations.models import Conversation, ConversationContext
+from app.modules.conversations.references import REPORT_RECEIPT_PROJECTION, has_legacy_report_reference
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.modules.reports.models import Report
@@ -50,7 +51,12 @@ async def manifest(db, actor, conversation_id):
             targets.update({row.id: tuple(row) for row in records})
     action_stamps = defaultdict(list)
     for action in actions:
-        action_stamps[action.message_id].append([action.id, action.revision, action.state, action.result, targets.get(action.result.get('objectId'))])
+        stamp = [action.id, action.revision, action.state, action.result, targets.get(action.result.get('objectId'))]
+        if action.action.endswith('_report'):
+            # Upgrade only report-bearing history, including entries already
+            # summarized by an older projection. Ordinary history stays cached.
+            stamp.append(REPORT_RECEIPT_PROJECTION)
+        action_stamps[action.message_id].append(stamp)
     # Pending report completion must refresh the reference even before its action
     # row is lazily projected by message_actions.
     child_ids = [action.result['jobId'] for action in actions if action.result.get('jobId')]
@@ -148,9 +154,12 @@ async def references(db, actor, job, current, *, include_current=False):
                 continue
             accesses = merge_access(accesses, stamp['access'])
             covered = identifier in summary_sources and identifier != current.reply_to
-            if covered and old.get('sources', {}).get(identifier, {}).get('result') == stamp['result']:
+            # A refreshed receipt is not part of the already-written summary.
+            # Keep its cached reference until a new summary captures that result.
+            if covered and summary_sources[identifier].get('result') == stamp['result']:
                 continue
-            if cached.get(identifier) and old.get('sources', {}).get(identifier) == stamp:
+            if (cached.get(identifier) and old.get('sources', {}).get(identifier) == stamp
+                    and not has_legacy_report_reference(cached[identifier])):
                 selected.append(cached[identifier])
             else:
                 missing.append(identifier)
@@ -168,7 +177,9 @@ async def references(db, actor, job, current, *, include_current=False):
     if not future_summary and payload != store.payload:
         store.payload, store.revision, store.updated_at = payload, store.revision + 1, now()
     job.access = merge_access(job.access or scope(actor), accesses)
-    result = [*([summary_reference(payload)] if payload.get('summary') else []), *selected]
+    from app.modules.conversations.references import material_scope_reference
+    result = [*([summary_reference(payload)] if payload.get('summary') else []),
+              *(material_scope_reference(row) for row in selected)]
     return [{**row, 'explicitReplyTarget': row['id'] == current.reply_to} for row in result]
 
 

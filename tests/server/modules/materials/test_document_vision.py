@@ -73,23 +73,32 @@ async def test_search_continuation_retains_generation_citations_and_sparse_range
     first = json.loads(await read_document_result(context, aid, start=0, limit=1))
     citation = first['items'][0]['citation']
     search = json.loads(await read_document_result(context, aid, query='Z9P4T7', limit=3))
-    assert not search['items'] and search['nextCursor'] > 0 and not search['sourceComplete']
-    tail = json.loads(await read_document_result(context, aid, start=search['nextCursor'], query='Z9P4T7', limit=3))
-    assert '6842' in str(tail['items']) and tail['sourceComplete'] and tail['nextCursor'] is None
+    assert '6842' in str(search['items']) and search['sourceComplete'] and search['nextCursor'] is None
+    assert search['searchScope']['batches'] == 2 and search['searchScope']['stopReason'] == 'matches'
+    assert search['searchScope']['ranges'][0][1] == search['searchScope']['ranges'][1][0]
+    assert search['readScope']['returnedChunksThisTask'] == 2
     async with context.sessions() as db:
         item = await db.get(Attachment, aid)
         assert item.extraction_revision == revision
         count = await db.scalar(select(func.count()).select_from(DocumentChunk).where(DocumentChunk.attachment_id == aid))
-        answer, sources = await verified_citations(db, context, citation + tail['items'][0]['citation'])
+        answer, sources = await verified_citations(db, context, citation + search['items'][0]['citation'])
         assert len(sources) == 2 and '变化' not in answer
-    await read_document_result(context, aid, start=search['nextCursor'])
+    await read_document_result(context, aid, start=search['items'][0]['ordinal'])
     async with context.sessions() as db:
         assert count == await db.scalar(select(func.count()).select_from(DocumentChunk).where(DocumentChunk.attachment_id == aid))
 
 
 async def test_short_preload_budget_is_shared_and_pure_text_never_renders(setup, samples, monkeypatch):
-    context, files, prepared_files, _, _ = await prepared(setup, samples, ['brief.txt', 'settings.py', 'brief.docx', 'brief.pdf', 'orders.xlsx'])
+    line_text = '\n'.join(['x' * 110] * 30 + ['TAIL'])
+    context, files, prepared_files, _, sent = await prepared(setup, {**samples, 'locations.txt': line_text.encode()}, ['brief.txt', 'settings.py', 'brief.docx', 'brief.pdf', 'orders.xlsx', 'locations.txt'])
     assert not any(document['extraction']['hasVisuals'] for document in prepared_files)
+    aid = files[-1]['id']
+    async with context.sessions.begin() as db:
+        rows = (await db.scalars(select(DocumentChunk).where(DocumentChunk.attachment_id == aid).order_by(DocumentChunk.ordinal))).all()
+        assert [row.location for row in rows] == ['行 1–30 · 字符 1–3000', '行 1–30 · 字符 3001–3329', '行 31–31']
+        # Mixed persisted generations must remain readable without rewriting them.
+        rows[1].location = '行 1–30 · 该范围内字符 3001–3329'
+        stored_locations = [row.location for row in rows]
     render = AsyncMock(side_effect=AssertionError('Pure text must not render'))
     monkeypatch.setattr('app.integrations.parsing.document_rendering.render_pages', render)
     blocks = [{'type': 'text', 'text': 'Question'}]
@@ -97,6 +106,31 @@ async def test_short_preload_budget_is_shared_and_pure_text_never_renders(setup,
     assert 'L8N4V6' in blocks[0]['text'] and '7319.25' in blocks[0]['text']
     assert len(blocks[0]['text']) < 12000 and len(context.document_reads) >= 5
     render.assert_not_called()
+    expected = ['行 1–30 · 该范围内字符 1–3000', '行 1–30 · 该范围内字符 3001–3329', '行 31–31']
+    preloads = [json.loads(value) for value in blocks[0]['text'].split('\n已提供文档正文：')[1:]]
+    preload = next(value for value in preloads if value['attachment']['id'] == aid)
+    result = json.loads(await read_document_result(context, aid))
+    assert preload['positionBasis'] == result['positionBasis']
+    assert 'location' in result['positionBasis'] and '不是原文段落号' in result['positionBasis']
+    assert [row['ordinal'] for row in result['items']] == [0, 1, 2]
+    assert [row['location'] for row in preload['items']] == [row['location'] for row in result['items']] == expected
+    assert ''.join(row['text'] for row in result['items']) == ''.join(row['text'] for row in preload['items'])
+    async with context.sessions() as db:
+        answer, citations = await verified_citations(db, context, ''.join(row['citation'] for row in result['items']))
+        assert '变化' not in answer and len(citations) == 3
+        assert [row['location'] for row in citations] == expected
+        rows = (await db.scalars(select(DocumentChunk).where(DocumentChunk.attachment_id == aid).order_by(DocumentChunk.ordinal))).all()
+        assert [row.location for row in rows] == stored_locations
+        from app.agent.context.references.report_context import load_materials
+        source = {'messageId': sent['messageId'], 'materials': [entry for entry in context.document_reads.values() if entry[0] == aid]}
+        material_rows = await load_materials(db, setup[2]['employee'], SimpleNamespace(result={'instructionSource': source}))
+        assert [row['location'] for row in material_rows] == expected
+    from app.modules.attachments.documents import document_chunk_location
+    for location in ('第 2 页', '段落 7', '表格 1 · 行 2', '正文 · 表格 1 · 行 2 列 3 · 段落 7', '工作表「Sheet1」!A1', 'JSON /nested', '记录 2 · 至行 3'):
+        assert document_chunk_location(location) == location
+        expected_location = location + ' · 该范围内字符 3001–3329'
+        assert document_chunk_location(location + ' · 字符 3001–3329') == expected_location
+        assert document_chunk_location(expected_location) == expected_location
     # One shared budget excludes entire files rather than silently clipping them.
     from app.agent.context import document_input
     monkeypatch.setattr(document_input, 'PRELOAD_CHARACTERS', 120)
@@ -143,6 +177,10 @@ async def test_pixels_reach_main_model_citations_are_private_and_repeat_uses_cac
         assert 'base64,' not in json.dumps(job.result)
         _, citations = await verified_citations(db, context, result['pages'][0]['citation'] + ' [[page:invented]]')
         assert len(citations) == 1
+        from app.modules.attachments.documents import delivered_citations
+        prose, cards = await delivered_citations(db, context, 'A plain answer without markers.')
+        assert prose == 'A plain answer without markers.' and cards == citations
+    assert '[[page:' not in json.dumps(captured[0])
     client = setup[3]['employee']
     response = await client.get(citations[0]['previewUrl'])
     assert response.status_code == 200 and response.content.startswith(b'\x89PNG')
@@ -472,7 +510,8 @@ async def test_multiple_upload_batches_history_merge_deliverable_and_refresh(set
         sent = await message(client, conv, 'Keep these references for later', [value['id'] for value in values])
         await execute(sent, controlled_model('clarify'))
         assert (await client.get('/api/v1/messages/' + sent['messageId'])).json()['reply']
-    class BatchModel(ReviewedFixtureModel):
+    from _support.materials.document_fakes import DocumentFixtureModel
+    class BatchModel(DocumentFixtureModel):
         sources: list = Field(default_factory=list)
         async def _agenerate(self, messages, **kwargs):
             def call(name, args, ident=None):
@@ -502,7 +541,7 @@ async def test_multiple_upload_batches_history_merge_deliverable_and_refresh(set
                 result = json.loads(last.content)
                 assert result['state'] == 'succeeded', result
                 results = [json.loads(m.content) for m in messages if isinstance(m, ToolMessage) and m.name == 'read_document']
-                reply = AIMessage(content=result['body'] + '\n' + ''.join(row['citation'] for value in results for row in value['items']))
+                reply = AIMessage(content=result['body'])
             return ChatResult(generations=[ChatGeneration(message=reply)])
     sent = await message(client, conv, 'Read every document from both batches and save a merged reference memo')
     model = BatchModel(model='controlled-batches', api_key='test', base_url='http://127.0.0.1:1', max_retries=0)
@@ -519,3 +558,156 @@ async def test_multiple_upload_batches_history_merge_deliverable_and_refresh(set
     result = json.loads(await read_document_result(context, first_ids[0]))
     assert expected[0] in str(result['items'])
     assert (await clients['peer'].get('/api/v1/messages/' + sent['messageId'])).status_code == 404
+
+
+async def test_returned_fragment_scope_does_not_inherit_complete_extraction(setup, samples):
+    context, files, _, _, _ = await prepared(setup, samples, ['records.txt'])
+    identifier = files[0]['id']
+    first = json.loads(await read_document_result(context, identifier, start=0, limit=1))
+    assert first['readScope']['returnedChunks'] == 1
+    assert first['readScope']['extractedChunks'] > 1
+    assert not first['readScope']['allExtractedTextReturned']
+    assert 'allExtractableTextReturned' not in first['readScope']
+    assert not first['readScope']['pageImagesIncluded']
+    assert first['attachment']['readText']['attachment_id'] == identifier
+
+
+async def test_tool_read_scope_counts_unique_current_revision_returns_not_search_scope(setup, samples):
+    from app.agent.context.document_input import record_text_delivery
+    context, files, _, _, _ = await prepared(setup, samples, ['records.txt'])
+    identifier = files[0]['id']
+    first = json.loads(await read_document_result(context, identifier, start=0, limit=1))
+    assert first['readScope']['returnedChunksThisTask'] == 1
+    assert first['readScope']['providedChunksBeforeThisCall'] == 0
+    await record_text_delivery(context, [{'role': 'tool', 'content': json.dumps(first)}])
+    repeated = json.loads(await read_document_result(context, identifier, start=0, limit=1))
+    assert repeated['readScope']['returnedChunksThisTask'] == 1
+    assert repeated['readScope']['providedChunksBeforeThisCall'] == 1
+    empty = json.loads(await read_document_result(context, identifier, query='ABSENT-FACT', limit=3))
+    assert empty['readScope']['returnedChunks'] == 0
+    assert empty['readScope']['returnedChunksThisTask'] == 1
+    assert empty['readScope']['unreturnedExtractedChunksThisTask'] == empty['readScope']['extractedChunks'] - 1
+    assert empty['readScope']['limitations']
+    context.document_reads['old-revision'] = (identifier, 0, 777)
+    following = json.loads(await read_document_result(context, identifier, start=1, limit=1))
+    assert following['readScope']['returnedChunksThisTask'] == 2
+    assert following['readScope']['providedChunksBeforeThisCall'] == 1
+
+
+async def test_preload_retains_conversion_uncertainty_and_structural_table_receipt(setup, samples, monkeypatch):
+    from app.modules.attachments.documents import document_reference, attachment_dto, prepared_document_reference
+    context, files, prepared_files, _, _ = await prepared(setup, samples, ['brief.docx', 'register.xlsx'])
+    identifier = files[0]['id']
+    async with context.sessions.begin() as db:
+        item = await db.get(Attachment, identifier)
+        item.extraction_info = {**item.extraction_info, 'originalFormat': 'doc', 'convertedFormat': 'docx'}
+        prepared_files[0] = attachment_dto(item)
+        reference = document_reference(item)
+        assert reference['extraction']['hasVisuals'] is None
+        assert not reference['extraction']['conversionFidelityVerified']
+        assert reference['readPages']['attachment_id'] == identifier
+        assert prepared_document_reference(prepared_files[0], message_id=item.message_id) == reference
+        assert prepared_files[0]['extraction']['hasVisuals'] is False
+    render = AsyncMock(side_effect=AssertionError('Do not add automatic conversion or page rendering'))
+    monkeypatch.setattr('app.integrations.parsing.document_rendering.render_pages', render)
+    blocks = [{'type': 'text', 'text': 'Read'}]
+    await preload_documents(context, prepared_files, blocks)
+    receipts = [json.loads(piece) for piece in blocks[0]['text'].split('已提供文档正文：')[1:]]
+    converted = next(value for value in receipts if value['attachment']['id'] == identifier)
+    assert converted['readScope']['textBasis'] == 'converted_text'
+    assert converted['attachment']['extraction']['convertedFormat'] == 'docx'
+    assert converted['readScope']['allExtractedTextReturned']
+    assert 'allExtractableTextReturned' not in converted['readScope']
+    assert 'scope' not in converted  # readScope is the one reading receipt.
+    assert any('未核验' in text for text in converted['readScope']['limitations'])
+    spreadsheet = next(value for value in receipts if value['attachment']['id'] == files[1]['id'])
+    stats = spreadsheet['tableStructure']['sheets'][0]
+    assert stats['lastContentRow'] == 22050
+    assert stats['visibleRowsWithoutValuesBetween'] == 22048
+    assert stats['visibleContentCells'] == 3
+    assert stats['hiddenRowsPresent'] is False and stats['hiddenColumnsPresent'] is False
+    assert stats['hiddenContentStatus'] == 'not_present'
+    assert 'hiddenRowsExcluded' not in stats and '隐藏内容未读' not in spreadsheet['tableStructure']['basis']
+    render.assert_not_called()
+
+
+@pytest.mark.parametrize('converted', [False, True])
+async def test_worker_initial_model_input_uses_same_document_contract_as_tools(setup, monkeypatch, converted):
+    from _support.agent.fakes import ReviewedFixtureModel, completion
+    from app.modules.attachments.documents import document_reference
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from pydantic import Field
+    if converted:
+        require_renderer()
+    settings, sessions, users, clients = setup
+    client = clients['employee']; conv = await conversation(client)
+    raw = b'{\\rtf1\\ansi Reference READ-42.}' if converted else b'Reference READ-42.'
+    file = await upload(client, 'reference.rtf' if converted else 'reference.txt', raw)
+    sent = await message(client, conv, 'Read the reference in this file.', [file['id']])
+    render = AsyncMock(side_effect=AssertionError('Metadata projection must not request page rendering'))
+    monkeypatch.setattr('app.integrations.parsing.document_rendering.render_pages', render)
+
+    class InputModel(ReviewedFixtureModel):
+        captured: list = Field(default_factory=list, exclude=True)
+
+        async def _agenerate(self, messages, **kwargs):
+            self.captured.append(messages)
+            return ChatResult(generations=[ChatGeneration(message=completion('The reference is READ-42.'))])
+
+    model = InputModel(model='controlled-input-contract', api_key='test', base_url='http://127.0.0.1:1')
+    await run(settings, sessions, users, sent, model)
+    detail = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
+    assert detail['job']['phase'] == 'complete' and detail['job']['taskOutcome']['state'] == 'completed', detail
+    assert 'READ-42' in detail['reply'] and not detail['job']['error']
+    assert len(model.captured) == 1
+    blocks = next(m.content for m in model.captured[0] if isinstance(m, HumanMessage) and isinstance(m.content, list))
+    text = '\n'.join(block.get('text', '') for block in blocks)
+    directory_line = next(line for line in text.splitlines() if line.startswith('本次文档目录'))
+    entry = json.loads(directory_line.split('：', 1)[1])[0]
+    preloaded = json.loads(text.split('已提供文档正文：', 1)[1])
+    async with sessions() as db:
+        item = await db.get(Attachment, file['id'])
+        assert entry == document_reference(item)
+    assert entry['messageId'] == sent['messageId']
+    assert text.startswith('服务端当前消息 ID（messageId）：' + sent['messageId'] + '\n用户正文：\n')
+    assert '原消息 ID' not in text
+    assert 'extractionMeaning' not in entry
+    assert entry['readText']['attachment_id'] == file['id']
+    assert 'url' not in entry and 'size' not in entry
+    assert 'allExtractableTextReturned' not in preloaded['readScope']
+    assert preloaded['readScope']['allExtractedTextReturned']
+    if converted:
+        assert detail['attachments'][0]['extraction']['hasVisuals'] is False
+        assert entry['extraction']['hasVisuals'] is None
+        assert entry['extraction']['conversionFidelityVerified'] is False
+        assert entry['readPages']['attachment_id'] == file['id']
+        assert preloaded['attachment']['extraction']['hasVisuals'] is None
+        assert preloaded['readScope']['textBasis'] == 'converted_text'
+        assert any('未核验' in value for value in preloaded['readScope']['limitations'])
+    else:
+        assert entry['extraction']['hasVisuals'] is False
+        assert 'readPages' not in entry
+        assert preloaded['readScope']['textBasis'] == 'extracted_text'
+    render.assert_not_called()
+
+
+@pytest.mark.parametrize('flags,expected', [
+    ({'hiddenRowsExcluded': False, 'hiddenColumnsExcluded': False}, (False, False, 'not_present')),
+    ({'hiddenRowsExcluded': True, 'hiddenColumnsExcluded': False}, (True, False, 'not_read')),
+    ({'hiddenRowsExcluded': False, 'hiddenColumnsExcluded': True}, (False, True, 'not_read')),
+    ({}, (None, None, 'unknown')),
+    ({'hiddenRowsExcluded': False}, (False, None, 'unknown')),
+])
+async def test_stored_table_projection_preserves_unknown_hidden_regions(flags, expected):
+    from copy import deepcopy
+    from app.modules.attachments.documents import table_structure_reference
+    info = {'tableStructure': {'basis': '隐藏内容未读', 'sheets': [
+        {'sheet': 'Data', 'visibleContentRows': 2, **flags}], 'omittedSheets': 0}}
+    stored = deepcopy(info)
+    projected = table_structure_reference(info)
+    row = projected['sheets'][0]
+    assert (row['hiddenRowsPresent'], row['hiddenColumnsPresent'], row['hiddenContentStatus']) == expected
+    assert 'hiddenRowsExcluded' not in row and 'hiddenColumnsExcluded' not in row
+    assert row['visibleContentRows'] == 2 and projected['omittedSheets'] == 0
+    assert info == stored
+    assert table_structure_reference({}) is None

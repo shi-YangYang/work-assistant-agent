@@ -257,7 +257,25 @@ export function DocumentCitations({ citations }: { citations: DocumentCitation[]
       ))}
       {selected &&
         currentCitation(citations, selected) &&
-        (selected.previewUrl ? (
+        (selected.sourceKind === 'table' ? (
+          <Modal title={selected.name} onClose={() => setSelected(null)}>
+            <div className={documentsStyles['document-preview']}>
+              <p>{selected.location}</p>
+              {selected.rowCount !== null && (
+                <p>本次读取的行数：{selected.rowCount}（包含空行）。</p>
+              )}
+              <p>
+                {selected.sampleRows.length
+                  ? `已返回的样本：第 ${selected.sampleRows.join('、')} 行。`
+                  : '本次仅返回表格统计，没有返回行样本。'}
+                {selected.sampleTruncated && '其余行未作为样本展示。'}
+              </p>
+              <a href={selected.contentUrl} download className={controlsStyles['text-button']}>
+                <Download size={14} /> 下载原文件
+              </a>
+            </div>
+          </Modal>
+        ) : selected.previewUrl ? (
           <Modal
             title={`${selected.name} · ${selected.location}`}
             onClose={() => setSelected(null)}

@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 def no_report_sources_message(kind):
     label = '周报' if kind == 'weekly' else '日报'
-    return f'所选周期内暂无可用于生成{label}的工作记录。请先补充工作，或让我根据当前会话整理一份{label}正文。'
+    return f'所选周期内暂无可用于生成{label}的工作记录。请先记录工作进展；只有工作正文或计划还不能生成报告。也可以让我根据当前会话整理一份{label}正文。'
 
 
 async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezone=None, instructions='', instruction_source=None):

@@ -111,12 +111,14 @@ class BoundedChatModel(ChatOpenAI):
         budget_note_index = len(payload['messages'])
         if note:
             payload['messages'] = [*payload['messages'], {'role': 'system', 'content': note}]
-        from app.agent.context.document_input import assemble_pages, record_page_delivery, record_text_delivery
+        from app.agent.context.document_input import assemble_pages, project_document_messages, record_page_delivery, record_text_delivery
         text_messages = list(payload['messages'])
         document_pages = {}
         output_limit = output_reserve(context, self.max_tokens)
         if not internal_kind and not self._verification:
             payload['messages'], document_pages = await assemble_pages(context, payload['messages'], tools=payload.get('tools', ()), output_reserve=output_limit)
+        payload['messages'], document_text = project_document_messages(context, payload['messages'])
+        text_messages = payload['messages'][:len(text_messages)]
         estimate = estimate_request(payload['messages'], payload.get('tools', ()), document_images=False)
         ensure_input(context, estimate, output_limit)
         from app.modules.model_services.bindings import resolve_bound
@@ -217,20 +219,12 @@ class BoundedChatModel(ChatOpenAI):
                 response = await request_with_deadline(request, timeout=response_timeout(context, streaming), idle_timeout=60 if streaming else None)
             await record_page_delivery(context, document_pages)
             if not internal_kind and not self._verification:
-                await record_text_delivery(context, payload['messages'])
+                await record_text_delivery(context, text_messages, supplied=document_text)
             # Framework conversion/tool validation remains after a fully received
             # provider response. A later business failure is not a request failure.
-            try:
-                result = self._create_chat_result(response)
-                if any(g.message.invalid_tool_calls for g in result.generations):
-                    raise ValueError('Incomplete tool call')
-                required_completion = payload.get('tool_choice') == {'type': 'function', 'function': {'name': 'finish_task'}}
-                if self._completion_validator and not internal_kind:
-                    for generation in result.generations:
-                        self._completion_validator(generation.message, required=required_completion)
-            except (ValueError, TypeError, KeyError):
-                from app.integrations.models.transport import ProviderError
-                raise ProviderError('invalid_response', '模型未返回完整有效的工具参数') from None
+            required_completion = payload.get('tool_choice') == {'type': 'function', 'function': {'name': 'finish_task'}}
+            result = self._checked_chat_result(response, required_completion=required_completion,
+                                               internal_kind=internal_kind, timing=timing)
             if self._response_validator:
                 self._response_validator(result.generations[0].message)
             if context.node_retry:
@@ -267,6 +261,26 @@ class BoundedChatModel(ChatOpenAI):
         if context.model_purpose != 'assistant' and context.output_tokens > (32000 if context.node_retry else 8000):
             raise BudgetExceeded('模型响应超过本次输出限制，已停止后续处理')
         return result
+
+    def _checked_chat_result(self, response, *, required_completion, internal_kind, timing):
+        # Keep post-transport failures distinct and correlated with model.received;
+        # exception messages can contain private model output and must not be logged.
+        reason = 'framework_conversion'
+        try:
+            result = self._create_chat_result(response)
+            reason = 'framework_tool_calls'
+            if any(g.message.invalid_tool_calls for g in result.generations):
+                raise ValueError('Incomplete tool call')
+            reason = 'completion_validation'
+            if self._completion_validator and not internal_kind:
+                for generation in result.generations:
+                    self._completion_validator(generation.message, required=required_completion)
+            return result
+        except (ValueError, TypeError, KeyError):
+            from app.integrations.models.chat import invalid_response_diagnostic
+            from app.integrations.models.transport import ProviderError
+            invalid_response_diagnostic(response, reason, None, timing)
+            raise ProviderError('invalid_response', '模型未返回完整有效的工具参数') from None
 
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
         # Even framework streaming goes through the same reservation and complete

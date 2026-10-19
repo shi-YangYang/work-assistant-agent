@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.db.base import uid
 from app.agent.tools.business.work_records import read_work_material
-from app.modules.attachments.documents import material_coverage, append_material_coverage
+from app.modules.attachments.documents import material_coverage, append_material_coverage, detach_material_coverage
 from app.modules.attachments.models import Attachment
 from app.tasks.lease import lease
 from app.tasks.models import Job
@@ -51,7 +51,7 @@ async def test_successful_media_read_keeps_source_checks_and_only_documents_have
                               extraction_revision=1, extraction_info={'chunks': 1}, sha256='a' * 64)
         coverage, legacy = await material_coverage(db, users['employee'], job, [*sources, document], {'read': [document.id, 1, 0]})
         assert coverage == ['需求.txt：工具已读取 1/1 段文字']
-        assert append_material_coverage('已经读取材料。', coverage, legacy).endswith('\n\n材料范围：\n需求.txt：工具已读取 1/1 段文字')
+        assert append_material_coverage('已经读取材料。', coverage, legacy).endswith('\n\n本次材料范围：\n需求.txt：工具已读取 1/1 段文字')
     async with sessions.begin() as db:
         (await db.get(Attachment, material['attachment']['id'])).deleted = True
     async with sessions() as db:
@@ -146,9 +146,46 @@ async def test_append_replaces_only_equivalent_terminal_notes_and_is_idempotent(
     lines = {'current': coverage, 'previous': coverage.previous, 'legacy': legacy}[format_name]
     note = '\n\n材料范围：' + separator + '\n'.join(lines)
     original = '结论保持不变。\n\n材料范围：这是正文中的独立说明。\n\n后续建议仍需保留。'
-    expected = original + '\n\n材料范围：\n' + '\n'.join(coverage)
+    expected = original + '\n\n本次材料范围：\n' + '\n'.join(coverage)
     actual = append_material_coverage(original + note + note, coverage, legacy)
     assert actual == expected
     assert append_material_coverage(actual, coverage, legacy) == expected
     unrelated = original + '\n\n材料范围：\ntext.txt：仅提供一半，仍需检查。'
     assert append_material_coverage(unrelated, coverage, legacy).startswith(unrelated + '\n\n')
+
+
+async def test_previous_scope_footer_is_not_presented_as_current_reading():
+    old = '3 份文件的已提取文字已全部提供给主模型'
+    previous = '三份文件合计为 250。\n\n材料范围：\n' + old
+    prose, historical = detach_material_coverage(previous, {})
+    assert prose == '三份文件合计为 250。' and historical == [old]
+    coverage, legacy = await coverage_for([coverage_document()], result={'documentTextProvided': {}})
+    updated = append_material_coverage(previous, coverage, legacy)
+    assert old not in updated and '本次材料范围：' in updated
+    assert '文字尚未提供给主模型' in updated
+    prose, historical = detach_material_coverage(updated, {'materialCoverage': list(coverage)})
+    assert prose == '三份文件合计为 250。' and historical == coverage
+    ordinary = '材料范围：请同时比较第二份文件中的报价。'
+    assert detach_material_coverage(ordinary, {}) == (ordinary, [])
+
+
+@pytest.mark.parametrize('stored', [True, False])
+async def test_material_scope_keeps_following_image_warning_and_answer_prose(stored):
+    coverage = ['sample.txt：工具已读取 3/3 段文字']
+    prose = '编号是 R7K9Q2。'
+    following = '图片范围：\n照片.png：图片过大，仅提供缩略图\n\n下一步请核对报价。'
+    note = '\n\n本次材料范围：\n' + '\n'.join(coverage)
+    original = prose + note + '\n\n' + following
+    assert detach_material_coverage(original, {'materialCoverage': coverage} if stored else {}) == (prose + '\n\n' + following, coverage)
+    wrong = {'materialCoverage': ['sample.txt：工具已读取 2/3 段文字']}
+    assert detach_material_coverage(original, wrong) == (original, [])
+    appended = append_material_coverage(original, ['sample.txt：文字尚未提供给主模型'], [])
+    assert appended == prose + '\n\n' + following + '\n\n本次材料范围：\nsample.txt：文字尚未提供给主模型'
+
+
+async def test_converted_text_coverage_never_certifies_original_graphics_or_layout():
+    document = coverage_document()
+    document.extraction_info.update(originalFormat='doc', convertedFormat='docx', hasVisuals=False)
+    reads = {'a': ['text', 1, 0], 'b': ['text', 1, 1]}
+    coverage, _ = await coverage_for([document], reads, {'documentTextProvided': reads})
+    assert coverage == ['text.txt：已提取文字已全部提供给主模型；转换后内容，原件图形及版式是否完整未核验']

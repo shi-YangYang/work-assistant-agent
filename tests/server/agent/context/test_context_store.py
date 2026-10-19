@@ -320,3 +320,88 @@ async def test_other_employee_deletion_does_not_interrupt_private_file_generatio
         assert (await db.get(WorkItem, work.id)).deleted
         saved = await db.get(Job, job.id)
         assert not saved.error and not saved.access.get('team')
+
+
+@pytest.mark.parametrize('suffix', ['', '\n\n图片范围：\n照片.png：仅提供缩略图'])
+async def test_old_cached_material_footer_is_historical_without_rebuilding(setup, monkeypatch, suffix):
+    settings, sessions, users, clients = setup
+    first = await sent(clients['employee'], '读取材料')
+    second = await legacy_message(sessions, users['employee'], '追问', first['conversationId'])
+    actor = users['employee']
+    job = await claim(sessions, actor.id)
+    footer = 'sample.txt：工具已读取 3/3 段文字'
+    async with sessions.begin() as db:
+        previous = await db.get(Message, first['messageId'])
+        previous.reply = '编号是 R7K9Q2。\n\n材料范围：\n' + footer + suffix
+        job_row = await db.get(type(job), job.id)
+        job_row.result = {**job_row.result, 'materialCoverage': [footer]}
+    async with sessions.begin() as db:
+        current = await db.get(Message, second['messageId'])
+        references = await conversation_references(db, actor, job, current)
+        assert references[0]['assistantReference'] == '编号是 R7K9Q2。' + suffix
+        assert references[0]['historicalMaterialCoverage']['items'] == [footer]
+        assert references[0]['historicalMaterialCoverage']['readSource'] == {
+            'tool': 'get_message_context', 'message_id': first['messageId']}
+        store = await db.get(ConversationContext, first['conversationId'])
+        # Simulate a pre-fix cache with the same source/reply stamps.
+        cached = {**store.payload['recentMessages'][0], 'assistantReference': previous.reply}
+        cached.pop('historicalMaterialCoverage', None)
+        store.payload = {**store.payload, 'recentMessages': [cached]}
+    async def should_not_rebuild(*args, **kwargs):
+        raise AssertionError('Scope normalization rebuilt unchanged history')
+    monkeypatch.setattr('app.modules.conversations.references.message_reference', should_not_rebuild)
+    async with sessions.begin() as db:
+        current = await db.get(Message, second['messageId'])
+        references = await conversation_references(db, actor, job, current)
+        assert references[0]['assistantReference'] == '编号是 R7K9Q2。' + suffix
+        assert references[0]['historicalMaterialCoverage']['items'] == [footer]
+        assert references[0]['historicalMaterialCoverage']['readSource'] == {
+            'tool': 'get_message_context', 'message_id': first['messageId']}
+
+
+async def test_historical_material_entry_resolves_actual_file_and_respects_access(setup):
+    import json
+    from types import SimpleNamespace
+    from _support.http.management import conversation, message
+    from _support.materials.documents import upload, running_context
+    from app.agent.tools.resources.messages import get_message_context
+    from app.agent.tools.resources.documents import read_document_result
+    from app.tasks.processing.documents import prepare_document
+    from app.tasks.models import Job
+    settings, sessions, users, clients = setup
+    client = clients['employee']; conv = await conversation(client)
+    file = await upload(client, 'reference.txt', b'Historical reference READ-42.')
+    first = await message(client, conv, 'Read this file', [file['id']])
+    context = await running_context(settings, sessions, users['employee'], first)
+    await prepare_document(context, file['id'])
+    footer = 'reference.txt：工具已读取 1/1 段文字'
+    async with sessions.begin() as db:
+        previous = await db.get(Message, first['messageId'])
+        previous.reply = 'The reference is READ-42.\n\n本次材料范围：\n' + footer
+        job = await db.get(Job, first['jobId'])
+        job.state, job.lease_until, job.result = 'succeeded', None, {**job.result, 'materialCoverage': [footer]}
+    following = await message(client, conv, 'Read the earlier file again')
+    context = await running_context(settings, sessions, users['employee'], following)
+    async with sessions.begin() as db:
+        current = await db.get(Message, following['messageId'])
+        job = await db.get(Job, following['jobId'])
+        references = await conversation_references(db, users['employee'], job, current)
+    entry = references[0]['historicalMaterialCoverage']['readSource']
+    assert entry == {'tool': 'get_message_context', 'message_id': first['messageId']}
+    assert 'documents' not in references[0]  # Discovery does not preload history.
+    from app.agent.context.history import conversation_history
+    history = await conversation_history(context, job, '')
+    historical = next(item.content for item in history if getattr(item, 'id', '') == 'history:' + first['messageId'])
+    metadata = json.loads(historical.split('该历史消息的服务端参考信息（messageId 为消息 ID）：', 1)[1])
+    assert metadata['messageId'] == first['messageId'] and 'id' not in metadata
+    assert metadata['historicalMaterialCoverage']['readSource'] == entry
+    result = json.loads(await get_message_context.coroutine(entry['message_id'], SimpleNamespace(context=context)))
+    assert result['messageId'] == first['messageId'] and 'id' not in result
+    document = result['documents'][0]
+    assert document['id'] == file['id']
+    text = json.loads(await read_document_result(context, document['readText']['attachment_id']))
+    assert 'READ-42' in text['items'][0]['text']
+    peer_sent = await message(clients['peer'], await conversation(clients['peer']), 'Inspect another account')
+    peer = await running_context(settings, sessions, users['peer'], peer_sent)
+    denied = await get_message_context.coroutine(entry['message_id'], SimpleNamespace(context=peer))
+    assert '无权查看' in denied and 'READ-42' not in denied

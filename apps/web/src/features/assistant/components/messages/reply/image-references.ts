@@ -37,10 +37,12 @@ function compactProse(text: string, urls: Set<string>) {
       )
         return ''
       // Preserve labels, but never rewrite links inside a code example.
-      return line.replace(/!?\[([^\]\n]*)\]\(([^\s\n]*?)\)/g, (token, label, href, index) =>
-        urls.has(href) && !intersectsCode(start + index, start + index + token.length)
-          ? label
-          : token,
+      return line.replace(
+        /!?\[([^\]\n]*)\]\([ \t]*([^\s\n]*?)[ \t]*\)/g,
+        (token, label, href, index) =>
+          urls.has(href) && !intersectsCode(start + index, start + index + token.length)
+            ? label
+            : token,
       )
     })
     .join('\n')

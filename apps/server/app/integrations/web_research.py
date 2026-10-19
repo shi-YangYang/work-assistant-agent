@@ -331,6 +331,6 @@ async def web_search(query, *, domains=None, transport=None):
     if scope:
         result.update(domains=scope, filteredCount=filtered)
         if not results:
-            result['coverage'] = '搜索服务未返回符合指定站点的结果；不代表相关网页不存在。不能以站外结果代替指定来源。'
-            result['nextStep'] = '可读取已知且可访问的发布机构首页，从返回的实际页面链接寻找正文或新的官网入口；不要猜测网址或反复请求被拒绝的页面。'
+            result['coverage'] = '本次搜索未返回符合查询域名筛选的结果；不代表相关网页不存在，也不否定此前有效来源。查询筛选不等于用户指定来源。'
+            result['nextStep'] = '按用户原请求核对已有证据，已齐则交付，只为尚缺的用户要求继续研究；用户明确指定的网址、域名和正文要求仍须满足。不要因自选筛选为空新增要求，也不要猜测网址或重复请求被拒绝的页面。'
     return result

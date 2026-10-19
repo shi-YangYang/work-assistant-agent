@@ -3,6 +3,7 @@ from app.core.digests import digest
 from app.core.errors import problem
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.policy.rules import LABELS
+from app.modules.operations.report_receipts import snapshot as report_snapshot
 from app.modules.operations.targets import preview, source_check
 from app.modules.reports.models import Report
 from app.modules.work.models import WorkItem, WorkRevision
@@ -14,14 +15,22 @@ from app.tasks.serializers import job_dto
 from sqlalchemy import select
 
 
+GENERATION_FAILURE_MESSAGE = '报告尚未生成，请打开报告查看原因或重试。'
+
+
 async def refresh_generation(db, actor, row):
     if row.action != 'generate_report' or row.state != 'running':
         return
     report = await owned(db, Report, row.result['objectId'], actor)
     job = await owned(db, Job, row.result['jobId'], actor)
+    if job.state in ('queued', 'running', 'succeeded') and row.result.get('message') == GENERATION_FAILURE_MESSAGE:
+        # Only this projection owns the attempt-failure hint. Other messages
+        # (candidate review or missing report content) remain authoritative.
+        row.result = {key: value for key, value in row.result.items() if key != 'message'}
     if job.state == 'succeeded':
         row.state = 'succeeded'
-        row.result = {**row.result, 'revision': report.revision}
+        row.result = {**row.result, 'revision': report.revision,
+                      'reportSnapshot': report_snapshot(report, candidate=bool(report.candidate))}
         if job.phase == 'empty':
             from app.modules.reports.service import no_report_sources_message
             # Old empty jobs are not generated reports, including submit-after requests.
@@ -46,10 +55,10 @@ async def refresh_generation(db, actor, row):
         row.revision += 1
     elif job.state in ('failed', 'awaiting_retry', 'cancelled'):
         # Keep the job reference so the existing report retry UI remains usable.
-        row.result = {**row.result, 'message': '报告尚未生成，请打开报告查看原因或重试。'}
+        row.result = {**row.result, 'message': GENERATION_FAILURE_MESSAGE}
 
 
-async def action_dto(db, actor, row):
+async def action_dto(db, actor, row, *, refresh_child=True):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
     base = {'confirmLabel': '确认' + LABELS[row.action], 'executionMode': row.execution_mode, 'continuation': row.continuation or None, 'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key or row.result.get('originalTaskItemId'), 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
@@ -58,7 +67,8 @@ async def action_dto(db, actor, row):
     if row.access.get('role') != actor.role or not await business_valid(db, actor, row.access):
         return {**base, 'state': 'unavailable', 'message': '关联资料已变化或无权查看'}
     try:
-        await refresh_generation(db, actor, row)
+        if refresh_child:
+            await refresh_generation(db, actor, row)
         base.update(action=row.action, label=LABELS[row.action], confirmLabel='确认' + LABELS[row.action], state=row.state, revision=row.revision)
         if row.state == 'pending':
             await source_check(db, actor, row)
@@ -83,12 +93,23 @@ async def action_dto(db, actor, row):
         if row.result.get('jobId'):
             job = await owned(db, Job, row.result['jobId'], actor)
             result['job'] = job_dto(job)
+            # The durable running receipt remains attached to its retryable
+            # child. Public state describes the current attempt, not an endless
+            # spinner; retrying that same child restores running/succeeded.
+            if row.state == 'running' and job.state in ('failed', 'awaiting_retry', 'cancelled'):
+                result['state'] = 'cancelled' if job.state == 'cancelled' else 'failed'
+        if kind == 'report' and row.state == 'succeeded':
+            evidence = row.result.get('reportSnapshot')
+            if not evidence and item.revision == row.result.get('revision'):
+                evidence = report_snapshot(item, candidate=row.action == 'generate_report' and bool(item.candidate))
+            if evidence:
+                result['reportSnapshot'] = evidence
         return result
     except HTTPException as error:
         return {**base, 'state': 'conflict' if error.status_code == 409 else 'unavailable', 'message': error.detail['message']}
 
 
-async def message_actions(db, actor, message):
+async def message_actions(db, actor, message, *, refresh_child=True):
     if message.owner_id != actor.id:
         return []
     job = await db.scalar(select(Job).where(Job.kind == 'message', Job.target_id == message.id, Job.owner_id == actor.id))
@@ -97,7 +118,7 @@ async def message_actions(db, actor, message):
     # A continuation can carry earlier receipts, never actions added by future turns.
     association = association | (BusinessAction.id.in_(references) & (BusinessAction.conversation_id == message.conversation_id))
     rows = (await db.scalars(select(BusinessAction).where(association, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).order_by(BusinessAction.step))).all()
-    return [await action_dto(db, actor, row) for row in rows]
+    return [await action_dto(db, actor, row, refresh_child=refresh_child) for row in rows]
 
 
 def receipt_summary(cards, drafts=()):

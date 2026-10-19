@@ -2,6 +2,7 @@ from langchain.tools import ToolRuntime, tool
 from app.agent.tools.common import clip, referenced_record, text_page
 from app.modules.attachments.inventory import attachment_inventory
 from app.modules.attachments.models import Attachment
+from app.modules.attachments.documents import document_reference
 from app.modules.messages.models import Message
 from app.modules.work.models import ProgressDraft, WorkItem, WorkRevision
 from app.security.access import merge_access as business_merge_access, require as business_require, scope as business_scope
@@ -22,7 +23,7 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext],
         _, actor = await lease(db, runtime.context)
         message = await referenced_record(db, Message, message_id, actor)
         if message is None:
-            return '消息不存在或无权查看。请使用本次上下文中的原消息 ID，不要猜测 ID。'
+            return '消息不存在或无权查看。请使用上下文中的 messageId，不要猜测 ID。'
         current_job, _ = await lease(db, runtime.context)
         if current_job.kind == 'message':
             current = await owned(db, Message, current_job.target_id, actor)
@@ -37,4 +38,4 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext],
         from app.agent.context.references.conversation_context import message_reference
         reference = await message_reference(db, actor, message)
         content, page = text_page({'text': message.text, 'transcript': message.transcript, 'userRequest': reference['userText'], 'reply': reference['assistantReference']}, start)
-        return clip({'id': message.id, 'attachments': attachment_inventory(attachments, message.transcript, message.transcript_revision), 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], **content, **page, 'replyIsHistorical': True, 'currentActions': reference['currentActions'], 'documents': [{'id': item.id, 'name': item.name, 'status': item.extraction_status} for item in attachments if item.kind == 'document']})
+        return clip({'messageId': message.id, 'attachments': attachment_inventory(attachments, message.transcript, message.transcript_revision), 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], **content, **page, 'replyIsHistorical': True, 'currentActions': reference['currentActions'], 'documents': [document_reference(item) for item in attachments if item.kind == 'document']})

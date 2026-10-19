@@ -28,14 +28,19 @@ def admit(state, identifier, request, dependencies, *, prevent_duplicate=False, 
     return value, decision
 
 
-def complete(state, identifier, result, dependencies, *, failed=False, executed=True):
+def complete(state, identifier, result, dependencies, *, failed=False, executed=True, no_progress=False, soft_stall=False):
     value = copy.deepcopy(state)
     row = next((row for row in value['calls'] if row['id'] == identifier), None)
     if row is None or row.get('result'):
         return value, False
     row.update(result=result, dependencies=dependencies, executed=executed)
-    repeated = failed or result in value['seen']
-    value['stalled'] = value['stalled'] + 1 if repeated else 0
+    repeated = failed or no_progress or result in value['seen']
+    if repeated and soft_stall:
+        # A distinct research attempt can find no evidence without being a
+        # repeated operation. It neither consumes nor resets the hard counter.
+        row['softStall'] = True
+    else:
+        value['stalled'] = value['stalled'] + 1 if repeated else 0
     value['seen'] = [*value['seen'], result][-HISTORY:]
     value['stopped'] = value['stopped'] or value['stalled'] >= STOP_AFTER
-    return value, repeated and value['stalled'] >= WARN_AFTER
+    return value, repeated and (soft_stall or value['stalled'] >= WARN_AFTER)

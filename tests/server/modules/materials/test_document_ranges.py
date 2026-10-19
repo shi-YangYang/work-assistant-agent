@@ -247,3 +247,60 @@ def test_word_xml_annotations_preserve_text_and_active_field_checks(tmp_path, ki
     word.save(path)
     with pytest.raises(ParseFailure, match='活动字段'):
         validate(path)
+
+
+@pytest.mark.parametrize('row', [1, 2, 12050])
+def test_sheet_structure_counts_visible_row_gaps_without_styled_extent(tmp_path, row):
+    from openpyxl import Workbook
+    from openpyxl.styles import PatternFill
+    book = Workbook(); sheet = book.active
+    sheet['A1'] = 'Header'
+    sheet.cell(row, 2, 'Tail'); sheet.cell(row, 3, 6842)
+    sheet['Z50000'].fill = PatternFill('solid', fgColor='FF0000')
+    path = tmp_path / 'sparse.xlsx'; book.save(path)
+    result = extract_batch(path, '.xlsx')
+    stats = result['info']['tableStructure']['sheets'][0]
+    assert stats['firstContentRow'] == 1 and stats['lastContentRow'] == row
+    assert stats['visibleContentCells'] == 3
+    assert stats['visibleContentRows'] == (1 if row == 1 else 2)
+    assert stats['visibleRowsWithoutValuesBetween'] == max(0, row - 2)
+    assert not stats['mergedCellsPresent']
+    assert result['info']['sourceComplete']
+    assert len(result['chunks']) == 3
+
+
+def test_sheet_structure_excludes_hidden_content_and_does_not_invent_merged_blank_rows(tmp_path):
+    from openpyxl import Workbook
+    book = Workbook(); sheet = book.active
+    sheet['A1'] = 'Header'; sheet['A10'] = 'Tail'
+    sheet['A3'] = 'HIDDEN'; sheet.row_dimensions[3].hidden = True
+    sheet['C4'] = 'HIDDEN'; sheet.column_dimensions['C'].hidden = True
+    book.create_sheet('Secret').sheet_state = 'hidden'
+    path = tmp_path / 'scoped.xlsx'; book.save(path)
+    result = extract_batch(path, '.xlsx')
+    stats = result['info']['tableStructure']['sheets']
+    assert len(stats) == 1 and stats[0]['visibleContentCells'] == 2
+    assert stats[0]['visibleRowsWithoutValuesBetween'] == 7
+    assert stats[0]['hiddenRowsExcluded'] and stats[0]['hiddenColumnsExcluded']
+    assert 'HIDDEN' not in str(result['chunks'])
+    sheet.merge_cells('A6:A8'); sheet['A6'] = 'Merged'
+    book.save(path)
+    merged = extract_batch(path, '.xlsx')['info']['tableStructure']['sheets'][0]
+    assert merged['mergedCellsPresent'] and merged['visibleRowsWithoutValuesBetween'] is None
+
+
+def test_sheet_structure_does_not_describe_unfinished_sheet_as_complete(tmp_path, monkeypatch):
+    from openpyxl import Workbook
+    from app.integrations.parsing import document_ranges
+    book = Workbook(); book.active['A1'] = 'Small'
+    dense = book.create_sheet('Dense')
+    for row in range(1, 6): dense.cell(row, 1, str(row))
+    path = tmp_path / 'partial.xlsx'; book.save(path)
+    monkeypatch.setattr(document_ranges, 'MAX_CHUNKS', 3)
+    first = extract_batch(path, '.xlsx')
+    assert not first['info']['sourceComplete']
+    assert [s['sheet'] for s in first['info']['tableStructure']['sheets']] == ['Sheet']
+    final = extract_batch(path, '.xlsx', first['info']['nextExtractCursor'])
+    assert final['info']['sourceComplete']
+    assert final['info']['tableStructure']['sheets'][1]['visibleContentRows'] == 5
+    assert [c['ordinal'] for c in first['chunks'] + final['chunks']] == list(range(6))

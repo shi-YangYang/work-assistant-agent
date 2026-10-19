@@ -258,11 +258,18 @@ async def test_search_scope_filters_lookalike_hosts_and_preserves_real_subdomain
     assert all(item['evidenceType'] == 'search_snippet' for item in found['items'])
 
 
-async def test_unavailable_scoped_search_does_not_present_an_unrelated_source_as_official():
+@pytest.mark.parametrize('domains,query', [(['museum.example'], 'museum news'), (None, 'site:museum.example museum news')])
+async def test_unavailable_scoped_search_does_not_present_an_unrelated_source_as_official(domains, query):
     xml = '<rss><channel><item><title>Official guide</title><link>https://thirdparty.example/</link></item></channel></rss>'
-    result = await web_search('museum news', domains=['museum.example'], transport=httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'application/rss+xml'}, text=xml)))
+    result = await web_search(query, domains=domains, transport=httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'application/rss+xml'}, text=xml)))
     assert result['items'] == [] and result['filteredCount'] == 1
-    assert '不代表相关网页不存在' in result['coverage'] and '首页' in result['nextStep']
+    assert result['domains'] == ['museum.example'] and result['untrusted']
+    assert '不代表相关网页不存在' in result['coverage'] and '不否定此前有效来源' in result['coverage']
+    assert '查询筛选不等于用户指定来源' in result['coverage']
+    assert '只为尚缺的用户要求继续研究' in result['nextStep']
+    assert '用户明确指定的网址、域名和正文要求仍须满足' in result['nextStep']
+    assert '不要因自选筛选为空新增要求' in result['nextStep']
+    assert '不能以站外结果代替指定来源' not in result['coverage'] and '首页' not in result['nextStep']
 
 
 @pytest.mark.parametrize('domains', ['example.org', ['https://example.org'], ['example.org/path'], ['localhost'], ['127.0.0.1'], ['a b'], ['a\nsite:b'], ['*.example.org'], [1], ['a.example'] * 6])

@@ -56,3 +56,19 @@ it('renders numbered business references only through the supplied verified-sour
   expect(html).not.toContain('href=')
   expect(render('保留未知标记〔来源 1〕')).toContain('〔来源 1〕')
 })
+
+it('resolves internal file links only through an explicit resolver, preserving unknown paths and code', () => {
+  const url = '/api/v1/deliverables/real/files/file?revision=1'
+  const html = renderToStaticMarkup(
+    createElement(Markdown, {
+      text: `[结果]( ${url} ) [未知](/api/v1/deliverables/unknown) [危险](javascript:alert)\n\n\`[示例](${url})\``,
+      renderInternalLink: (href, label) =>
+        href === url ? createElement('button', { type: 'button' }, label) : undefined,
+    }),
+  )
+  expect(html).toContain('<button type="button">结果</button>')
+  expect(html).toContain('[未知](/api/v1/deliverables/unknown)')
+  expect(html).toContain('[危险](javascript:alert)')
+  expect(html).toContain(`<code>[示例](${url})</code>`)
+  expect(render(`[结果](${url})`)).not.toContain('<button')
+})

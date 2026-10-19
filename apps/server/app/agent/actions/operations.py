@@ -226,6 +226,12 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             proposal['deliverableSelection'] = selected
         if attachments:
             proposal['sharedAttachments'] = attachments
+        if action == 'submit_report':
+            from app.modules.operations.report_receipts import snapshot
+            # The authorization sees the exact version already read and checked
+            # above, rather than inferring its content from earlier failed edits.
+            proposal['targetReport'] = {'id': target.id, 'kind': target.kind, 'period': target.period,
+                'candidateAvailable': bool(target.candidate), **snapshot(target)}
         if action == 'edit_report':
             proposal['targetContent'] = target.content
             proposal['reportSourceFacts'] = await report_fact_basis(db, actor, target, full=True)

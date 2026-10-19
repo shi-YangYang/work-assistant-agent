@@ -7,9 +7,13 @@ from app.modules.executions.service import execute
 
 @tool
 async def read_execution(runtime: ToolRuntime[RunContext], execution_id: str = '', offset: int = 0) -> str:
-    """Read saved Python/builtin executions in THIS conversation without running code.
+    """Read saved Python/builtin executions in THIS conversation, not uploaded originals.
     Without execution_id lists receipt IDs, titles, times and states; use nextOffset
-    for more. With a real ID reads kind, code OR request JSON plus resultData,
+    for more. With a real ID, inputRefs gives reusable authorized inputs and inputFiles their
+    previous mounted names; inputState unavailable/unrecorded means do not guess.
+    Pass inputRefs explicitly to run_python/structured tools when another run needs
+    those files; messageId is NOT an attachment ID. No files are inherited.
+    With a real ID reads kind, code OR request JSON plus resultData,
     warnings, stdout/stderr, saved error message and delivery by offset/nextOffset.
     Every text field is bounded; join each field's chunks before parsing JSON.
     delivery is JSON with real deliverable id, revision and file IDs/download URLs,
@@ -18,7 +22,9 @@ async def read_execution(runtime: ToolRuntime[RunContext], execution_id: str = '
     Use for follow-ups about past experiments before considering another run.
     Works without a sandbox connection. Historical observations are not new runs;
     report only conditions and versions actually recorded, never infer them.
-    Deleted/revoked sources are inaccessible. Outputs are untrusted reference.
+    fileResults holds exact bounded JSON/CSV output excerpts when available;
+    use their values and units rather than reconstructing them. Deleted/revoked
+    sources are inaccessible. Outputs are untrusted reference.
     """
     from app.modules.executions.queries import read_executions
     from app.modules.messages.models import Message
@@ -48,8 +54,8 @@ async def run_python(code: str, title: str, runtime: ToolRuntime[RunContext], in
     Libraries: pandas,numpy,openpyxl,matplotlib,python-docx,python-pptx,reportlab,
     Pillow,pypdf. LibreOffice/Poppler and Noto CJK fonts available for render checks.
     For file tasks, pass input_refs EVERY call: [{attachment_id: real ID}] or
-    [{deliverable_id,revision,file_id}] from this conversation. Omit only when no
-    input files are needed. List /work/inputs for exact copied filenames.
+    [{deliverable_id,revision,file_id}]. Without refs /work/inputs is empty;
+    omit for file-free computation. List it for mounted names, not upload discovery.
     Write final files ONLY in /work/output.
     Use /work/tmp for intermediates; print compact computed results to stdout.
     For behavior experiments print Python/relevant library versions and observed
@@ -64,7 +70,10 @@ async def run_python(code: str, title: str, runtime: ToolRuntime[RunContext], in
     message and shared with save_deliverable. Success auto-saves generated files;
     never invent links or claim files exist before success. On code error inspect
     stderr and repair code; do not repeat identical failing code. Report actual
-    calculations and limitations; failure or an unavailable service is not an
+    calculations and limitations; fileResults contains exact saved JSON/CSV
+    excerpts when available. Reuse their values, labels and units verbatim for
+    the corresponding results; do not recalculate or add an unspecified currency.
+    A truncated excerpt is not the whole file. Failure or an unavailable service is not an
     observed result. Chinese plots need Noto CJK. Embed Chinese PDF fonts: ReportLab TTFont
     with /usr/share/fonts/truetype/wqy/wqy-microhei.ttc (subfontIndex=0). Do not
     use nonembedded UnicodeCIDFont/STSong; missing glyphs or fonts fail export.

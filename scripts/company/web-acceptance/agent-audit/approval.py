@@ -49,7 +49,13 @@ def install(http):
                 if any([follow(c.get('continuation')) for c in cards.values()]):
                     continue
                 busy = any(v.get('job', {}).get('state') not in http.TERMINAL for v in values)
-                busy = busy or any(c['state'] == 'running' or (c.get('job') or {}).get('state') in ('queued', 'running') for c in cards.values())
+                # A report action can remain running while its child explicitly
+                # awaits a user retry. Observe that terminal failure; do not
+                # manufacture 32 minutes of extra waiting or retry the model.
+                busy = busy or any(
+                    (c.get('job') or {}).get('state') in ('queued', 'running')
+                    or c['state'] == 'running' and (c.get('job') or {}).get('state') not in http.TERMINAL
+                    for c in cards.values())
                 if not busy:
                     pending = [c for c in cards.values() if c['state'] == 'pending' and c.get('canConfirm') is True]
                     # Count automatic successes too: an extra card cannot consume

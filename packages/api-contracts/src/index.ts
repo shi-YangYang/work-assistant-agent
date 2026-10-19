@@ -48,15 +48,26 @@ export interface Attachment {
   previewUrl?: string | null
   image?: { width: number; height: number; warnings: string[] } | null
 }
-export interface DocumentCitation {
-  page?: number
-  previewUrl?: string
+interface DocumentSource {
   attachmentId: string
   revision: number
-  ordinal: number
   name: string
   location: string
 }
+export type DocumentCitation = DocumentSource &
+  (
+    | { sourceKind?: 'text'; ordinal: number; page?: number; previewUrl?: string }
+    | {
+        sourceKind: 'table'
+        ordinal?: never
+        page?: never
+        previewUrl?: never
+        contentUrl: string
+        sampleRows: number[]
+        rowCount: number | null
+        sampleTruncated: boolean | null
+      }
+  )
 export interface BusinessCitation {
   kind: 'business'
   token?: string
@@ -136,6 +147,15 @@ export interface BusinessAction {
   materialIds?: string[]
   title?: string
   details?: Partial<Progress & WorkRecordFields>
+  reportSnapshot?: {
+    revision: number
+    status: 'saved' | 'candidate'
+    publishedRevision: number
+    content: Record<keyof ReportContent, string | null>
+    fieldChars: Record<keyof ReportContent, number | null>
+    emptyFields: (keyof ReportContent)[]
+    truncatedFields: (keyof ReportContent)[]
+  }
   changedFields?: string[]
   message?: string
   canConfirm?: boolean

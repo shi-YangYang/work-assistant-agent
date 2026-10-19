@@ -7,7 +7,22 @@ from pydantic import Field
 
 
 
-class DocumentModel(ReviewedFixtureModel):
+class DocumentFixtureModel(ReviewedFixtureModel):
+    """Fixed graph fixture participates in the same successful text delivery API."""
+    async def ainvoke(self, input, config=None, *, stop=None, **kwargs):
+        from langgraph.runtime import get_runtime
+        from app.agent.context.document_input import project_document_messages, record_text_delivery
+        context = get_runtime().context
+        payload = self._get_request_payload(input, stop=stop, **kwargs)
+        messages, supplied = project_document_messages(context, payload['messages'])
+        original = self._convert_input(input).to_messages()
+        projected = [source.model_copy(update={'content': wire['content']}) for source, wire in zip(original, messages, strict=True)]
+        result = await super().ainvoke(projected, config, stop=stop, **kwargs)
+        await record_text_delivery(context, messages, supplied=supplied)
+        return result
+
+
+class DocumentModel(DocumentFixtureModel):
     seen: list = Field(default_factory=list, exclude=True)
     query: str = ''
 
@@ -22,7 +37,7 @@ class DocumentModel(ReviewedFixtureModel):
             if 'attachment' in data:
                 self.seen.append(data)
                 row = data['items'][0] if data['items'] else None
-                reply = AIMessage(content='仅查看匹配片段：' + (row['text'] + row['citation'] if row else '没有匹配片段。'))
+                reply = AIMessage(content='仅查看匹配片段：' + (row['text'] if row else '没有匹配片段。'))
             elif data['items']:
                 item = next((row for row in data['items'] if row['name'].endswith('.txt')), data['items'][0])
                 reply = call('find_documents', {'attachment_id': item['id'], 'query': self.query}) if self.query else call('read_document', {'attachment_id': item['id'], 'start': 0})
@@ -31,7 +46,7 @@ class DocumentModel(ReviewedFixtureModel):
         elif isinstance(last, ToolMessage) and last.name == 'read_document':
             data = json.loads(last.content); self.seen.append(data)
             row = data['items'][0] if data['items'] else None
-            reply = AIMessage(content='已查看样本的部分文字，供演示使用。' + (row['citation'] if row else '该文件没有可读文字。') + '需要总结还是提取安排？')
+            reply = AIMessage(content='已查看样本的部分文字，供演示使用。' + ('' if row else '该文件没有可读文字。') + '需要总结还是提取安排？')
         else:
             reply = AIMessage(content='样本已保存。')
         return ChatResult(generations=[ChatGeneration(message=reply)])

@@ -31,6 +31,31 @@ def work_scope(changes):
     return sorted(scopes)
 
 
+def corrected_draft_identity(job, item, result, identity):
+    """Resolve an unexecuted submit proposal only through its authorized draft.
+
+    The ordinary identity still includes submitAfter. A real pending submit,
+    a different task, and an unbound/model-supplied receipt are never equivalent.
+    """
+    if (item['action'] != 'generate_report' or identity['report']['submitAfter']
+            or item['category'] not in ('success', 'processing') or not item['taskItemId']
+            or result.get('action') != 'generate_report' or not item.get('receiptId')
+            or result.get('messageId') != getattr(job, 'target_id', None)):
+        return None
+    bound = next((row for row in job.result.get('taskItems', [])
+                  if row['id'] == item['taskItemId']), {})
+    operation = bound.get('attemptedOperation') or {}
+    child = result.get('job') or {}
+    if (bound.get('receiptId') != item['receiptId'] or bound.get('state') not in ('running', 'succeeded')
+            or bound.get('action') != 'generate_report' or operation.get('action') != 'generate_report'
+            or operation.get('submitAfter') is not False
+            or (bound.get('userSource') or {}).get('messageId') != getattr(job, 'target_id', None)
+            or child.get('kind') != 'report' or not result.get('objectId')
+            or child.get('targetId') != result['objectId']):
+        return None
+    return digest({**identity, 'report': {**identity['report'], 'submitAfter': True}})
+
+
 def record(job, action, arguments, result):
     key = digest({'action': action, **{k: v for k, v in arguments.items() if k not in ('step', 'expected_revision')}})
     reference_fields = ('deliverable_id', 'deliverable_revision', 'item_id')
@@ -91,6 +116,13 @@ def record(job, action, arguments, result):
                              if same_item(entry, item) and entry.get('effect') == effect and entry.get('hasReference') is False
                              and entry['category'] in BLOCKING)
     if resolved:
+        corrected_identity = corrected_draft_identity(job, item, result, identity)
+        if corrected_identity:
+            resolved_keys.update(entry['key'] for entry in previous
+                                 if entry.get('taskItemId') == item['taskItemId']
+                                 and entry.get('identity') == corrected_identity
+                                 and entry['category'] == 'invalid_arguments'
+                                 and not entry.get('receiptId'))
         resolved_keys.update(entry['key'] for entry in previous
             if same_item(entry, item) and not entry.get('planRejection')
             and entry.get('identity') == item['identity'] and entry.get('fields') == item['fields']
@@ -206,7 +238,10 @@ def dto(job):
     if not value:
         return None
     if job.state in ('queued', 'running', 'cancelled', 'failed', 'awaiting_retry'):
-        return derive(job)
+        # Preserve completion authenticated by refresh/cancellation. Deriving
+        # without cards is only a queue-state override, not evidence that no
+        # business effect happened before an interruption.
+        return {**derive(job), 'completed': value.get('completed', [])}
     return value
 
 

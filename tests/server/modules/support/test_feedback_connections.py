@@ -5,7 +5,8 @@ import json
 
 import httpx
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, event, text
+from starlette.responses import StreamingResponse
 
 from app.modules.auth.models import Session
 from app.tasks.feedback import feedback
@@ -88,3 +89,66 @@ async def test_stream_remains_open_past_the_old_one_minute_limit(monkeypatch):
     received = [json.loads(item.split('data: ', 1)[1]) async for item in feedback.events(None, '', 'job')]
     assert len(received) == 125
     assert received[-1]['state'] == 'succeeded'
+
+
+async def test_sse_disconnect_during_pool_ping_finishes_snapshot_and_releases_connection(setup, monkeypatch):
+    _, sessions, _, clients = setup
+    sent = await send(clients['employee'])
+    token = hashlib.sha256(clients['employee'].cookies.get('paa_company_session').encode()).hexdigest()
+    engine = sessions.kw['bind']
+    # Warm an existing connection, then hold only the real PostgreSQL pool ping
+    # long enough to deterministically disconnect while that command is ACTIVE.
+    async with sessions.begin() as db:
+        await db.scalar(text('SELECT 1'))
+    monkeypatch.setattr(engine.sync_engine.dialect, '_dialect_specific_select_one', 'SELECT pg_sleep(0.05)')
+    original_ping = engine.sync_engine.dialect.do_ping
+    entered = asyncio.Event()
+    errors = []
+
+    def ping(connection):
+        entered.set()
+        return original_ping(connection)
+
+    def observe(ctx):
+        errors.append(type(ctx.original_exception).__name__)
+
+    monkeypatch.setattr(engine.sync_engine.dialect, 'do_ping', ping)
+    event.listen(engine.sync_engine, 'handle_error', observe)
+    received = []
+
+    async def receive():
+        await entered.wait()
+        await asyncio.sleep(.005)
+        return {'type': 'http.disconnect'}
+
+    async def send_frame(value):
+        received.append(value)
+
+    try:
+        await asyncio.wait_for(StreamingResponse(feedback.events(sessions, token, sent['jobId']))(
+            {'type': 'http', 'asgi': {'spec_version': '2.3'}}, receive, send_frame), timeout=2)
+        assert errors == []
+        assert engine.pool.checkedout() == 0
+        assert not any(item.get('body') for item in received)
+        # Disconnect must not cancel the user's background task or poison reuse.
+        async with sessions.begin() as db:
+            assert (await db.get(Job, sent['jobId'])).state == 'queued'
+    finally:
+        event.remove(engine.sync_engine, 'handle_error', observe)
+
+
+async def test_sse_snapshot_timeout_still_bounds_slow_queries_and_releases_pool(setup, monkeypatch):
+    _, sessions, _, _ = setup
+    engine = sessions.kw['bind']
+
+    async def slow(*args, **kwargs):
+        async with sessions.begin() as db:
+            await db.execute(text('SELECT pg_sleep(1)'))
+
+    monkeypatch.setattr(feedback, 'snapshot', slow)
+    monkeypatch.setattr(feedback, 'SSE_SNAPSHOT_TIMEOUT', .05)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(feedback.stream_snapshot(sessions, '', ''), timeout=2)
+    assert engine.pool.checkedout() == 0
+    async with sessions.begin() as db:
+        assert await db.scalar(text('SELECT 1')) == 1

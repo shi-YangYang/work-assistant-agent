@@ -35,7 +35,7 @@ async def run(operation, *, classify, before, emit, attempt=None, deadline=None,
             attempt.next_at = None
             continue
         if attempt.count >= policy.max_attempts:
-            failure = Failure('exhausted', '此步骤已用完 3 次自动重试，可重试此步骤')
+            failure = Failure('exhausted', f'此步骤已用完 {max(0, policy.max_attempts - 1)} 次自动重试，可重试此步骤')
             await emit('failed', attempt, failure)
             raise NodeFailed(failure)
         attempt.count += 1

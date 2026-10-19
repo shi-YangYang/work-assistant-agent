@@ -19,6 +19,8 @@ from app.agent.tools.resources.image_reads import read_images
 from app.db.base import uid
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
+from app.modules.members.models import Member
+from app.security.access import scope
 from app.tasks.lease import lease
 from app.tasks.models import Job
 from app.tasks.nodes.node_execution import initialize
@@ -31,15 +33,15 @@ from _support.http.management import conversation
 pytestmark = pytest.mark.asyncio
 
 
-async def batches(setup, counts=(2, 1, 1)):
+async def batches(setup, counts=(2, 1, 1), who='employee'):
     settings, sessions, users, _ = setup
-    context, sent = await runtime(setup, '比较之前分批发送的图片')
+    context, sent = await runtime(setup, '比较之前分批发送的图片', who=who)
     result = []
     settings.media_dir.mkdir(parents=True, exist_ok=True)
     for batch, count in enumerate(counts):
         if batch:
             await finish(context)
-            context = await followup(setup, sent['conversationId'])
+            context = await followup(setup, sent['conversationId'], who=who)
         rows = []
         async with sessions.begin() as db:
             message_id = (await db.get(Job, context.job_id)).target_id
@@ -48,8 +50,8 @@ async def batches(setup, counts=(2, 1, 1)):
                 Image.new('RGB', (32, 32), (40 * (batch + 1), 40 * (index + 1), 80)).save(data, format='PNG')
                 raw, identifier = data.getvalue(), uid()
                 (settings.media_dir / identifier).write_bytes(raw)
-                db.add(Attachment(id=identifier, company_id=users['employee'].company_id,
-                                  owner_id=users['employee'].id, message_id=message_id,
+                db.add(Attachment(id=identifier, company_id=users[who].company_id,
+                                  owner_id=users[who].id, message_id=message_id,
                                   kind='image', mime='image/png', name=f'第{batch + 1}批-{index}.png',
                                   size=len(raw), sha256=hashlib.sha256(raw).hexdigest()))
                 rows.append(identifier)
@@ -200,3 +202,64 @@ async def test_oversized_or_corrupt_batch_returns_recoverable_tool_result(setup,
     vision.assert_not_awaited()
     async with context.sessions() as db:
         await lease(db, context)
+
+
+async def test_document_pages_are_discovered_in_historical_image_directory_without_vision_call(setup, monkeypatch):
+    context, groups = await batches(setup, (1, 1))
+    _, sessions, _, _ = setup
+    identifier = groups[0][0]
+    async with sessions.begin() as db:
+        item = await db.get(Attachment, identifier)
+        item.kind = 'document'; item.mime = 'application/msword'; item.name = '历史材料.doc'
+        item.extraction_status = 'ready'; item.extraction_revision = 1
+        item.extraction_info = {'originalFormat': 'DOC', 'convertedFormat': 'DOCX', 'hasVisuals': True, 'chunks': 2, 'sourceComplete': True}
+    vision = AsyncMock(side_effect=AssertionError('Discovery must not call a model'))
+    monkeypatch.setattr('app.agent.runtime.model.BoundedChatModel.ainvoke', vision)
+    directory = await read(context)
+    document = next(item for item in directory['items'] if item['id'] == identifier)
+    assert document['kind'] == 'document'
+    assert document['extraction']['originalFormat'] == 'DOC'
+    assert document['extraction']['convertedFormat'] == 'DOCX'
+    assert document['readPages'] == {'tool': 'read_document', 'attachment_id': identifier, 'start': 0, 'view': 'pages', 'pages': [1]}
+    result = await read(context, [identifier, groups[1][0]], question='复核文档中的图表')
+    assert result['state'] == 'document_pages' and result['items'][0]['id'] == identifier
+    assert result['imageIds'] == groups[1] and '尚未读取像素' in result['message']
+    assert not context.image_sources
+    vision.assert_not_awaited()
+    async with sessions.begin() as db:
+        (await db.get(Attachment, identifier)).deleted = True
+    assert identifier not in {item['id'] for item in (await read(context))['items']}
+    assert (await read(context, [identifier]))['state'] == 'unavailable'
+
+
+@pytest.mark.parametrize('mixed', [False, True])
+async def test_document_redirect_inherits_all_source_access_and_revocation(setup, monkeypatch, mixed):
+    context, groups = await batches(setup, (1, 1), who='admin')
+    _, sessions, users, _ = setup
+    identifiers = [groups[0][0], *groups[1]] if mixed else groups[0]
+    expected = {}
+    async with sessions.begin() as db:
+        document = await db.get(Attachment, groups[0][0])
+        document.kind, document.name, document.mime = 'document', '历史材料.doc', 'application/msword'
+        for identifier, member in zip(identifiers, (users['employee'], users['peer'])):
+            attachment = await db.get(Attachment, identifier)
+            parent = await db.get(Message, attachment.message_id)
+            evidence = {'type': 'member', 'id': member.id, 'ownerId': member.id}
+            parent.access = {**scope(users['admin']), 'team': True, 'reads': {identifier: evidence}}
+            expected[identifier] = evidence
+        assert not (await db.get(Job, context.job_id)).access.get('team')
+    vision = AsyncMock(side_effect=AssertionError('Redirect must not call a model'))
+    monkeypatch.setattr('app.agent.runtime.model.BoundedChatModel.ainvoke', vision)
+    result = await read(context, identifiers)
+    assert result['state'] == 'document_pages'
+    assert result['imageIds'] == (groups[1] if mixed else [])
+    async with sessions.begin() as db:
+        job = await db.get(Job, context.job_id)
+        assert job.access['team'] and job.access['reads'] == expected
+        await lease(db, context)
+        (await db.get(Member, users['employee'].id)).role = 'admin'
+    async with sessions() as db:
+        with pytest.raises(HTTPException) as denied:
+            await lease(db, context)
+        assert denied.value.status_code == 403
+    vision.assert_not_awaited()

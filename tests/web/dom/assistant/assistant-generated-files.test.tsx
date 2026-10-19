@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-import type { Deliverable, DeliverableFile, DeliverableSummary } from '@paa/api-contracts'
+import type {
+  Deliverable,
+  DeliverableFile,
+  DeliverableSummary,
+  WorkMessage,
+} from '@paa/api-contracts'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setCsrf } from '../../../../apps/web/src/api/client'
@@ -9,6 +14,7 @@ import {
 } from '../../../../apps/web/src/features/assistant/components/deliverables/Deliverable'
 import { GeneratedFiles } from '../../../../apps/web/src/features/assistant/components/deliverables/GeneratedFiles'
 import { deferred, dialogs } from '../helpers'
+import { AssistantReply } from '../../../../apps/web/src/features/assistant/components/messages/reply/AssistantReply'
 
 const summary: DeliverableSummary = {
   id: 'result',
@@ -59,6 +65,54 @@ afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+})
+
+function replyMessage(output: DeliverableFile): WorkMessage {
+  return {
+    id: 'message',
+    ownerId: 'owner',
+    conversationId: 'conversation',
+    text: '计算并导出',
+    reply: `[下载计算结果]( ${output.url} ) [未知文件](/api/v1/deliverables/other/files/file?revision=2)`,
+    replyTo: null,
+    transcript: '',
+    transcriptRevision: 0,
+    createdAt: summary.updatedAt,
+    attachments: [],
+    drafts: [],
+    suggestions: [],
+    job: null,
+    deliverables: [{ ...summary, files: [output] }],
+  }
+}
+
+it('turns only authorized reply file references into downloads through the common API', async () => {
+  const output = file('结果.csv', 'text/csv')
+  const message = replyMessage(output)
+  const view = render(<AssistantReply message={message} job={null} feedback={null} own />)
+  expect(fetch).not.toHaveBeenCalled()
+  expect(screen.getByText(/\[未知文件\]/)).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '下载计算结果' }))
+  await waitFor(() => expect(clicked).toEqual([{ url: 'blob:generated', name: '结果.csv' }]))
+  expect(vi.mocked(fetch).mock.calls[0][0]).toBe(output.url)
+  view.rerender(<AssistantReply message={message} job={null} feedback={null} own={false} />)
+  expect(screen.queryByRole('button', { name: '下载计算结果' })).toBeNull()
+  view.rerender(
+    <AssistantReply message={{ ...message, deliverables: [] }} job={null} feedback={null} own />,
+  )
+  expect(screen.queryByRole('button', { name: '下载计算结果' })).toBeNull()
+})
+
+it('shows revoked file failures without following an arbitrary model URL', async () => {
+  const message = replyMessage(file('结果.csv', 'text/csv'))
+  vi.mocked(fetch).mockResolvedValue(
+    new Response(JSON.stringify({ code: 'not_found', message: '不存在' }), { status: 404 }),
+  )
+  render(<AssistantReply message={message} job={null} feedback={null} own />)
+  fireEvent.click(screen.getByRole('button', { name: '下载计算结果' }))
+  expect(await screen.findByRole('alert')).toBeTruthy()
+  expect(clicked).toEqual([])
+  expect(fetch).toHaveBeenCalledTimes(1)
 })
 
 it('leaves existing text-only deliverables unchanged and does not fetch generated files', () => {

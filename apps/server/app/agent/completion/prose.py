@@ -2,7 +2,7 @@
 
 MARKER = '<!--noria:'
 HEADER_LIMIT = 1024
-PROSE_POLICY = '''最终正文直接完整交付，首行 <!--noria:{}--> 后换行；仅当本次请求仍有未完成项时，在同一标记填写 remaining，例如 <!--noria:{"remaining":["未完成的具体事项及原因"]}-->，不为此另调工具。普通追问、建议和未来可选事项不算未完成。标记不展示，工具前说明不用；无需 finish_task 或任务元数据表单。\n'''
+PROSE_POLICY = '''直接完整交付正文；完成时不输出内部标记。仅本次请求有未完成项时，首行写 <!--noria:{"remaining":["未完成事项及原因"]}--> 后换行写正文；标记不得放正文中或末尾。普通追问、建议和未来可选事项不算未完成。工具前说明不用标记，无需 finish_task 或额外元数据调用。\n'''
 
 
 def parse_header(raw, *, complete=False):
@@ -23,14 +23,19 @@ def parse_header(raw, *, complete=False):
         raise ValueError('最终正文标记过长')
     from app.integrations.models.stream_events import tool_arguments
     header = tool_arguments(value[len(MARKER):end])
-    if not isinstance(header, dict) or set(header) - {'length', 'remaining'}:
+    if not isinstance(header, dict) or set(header) - {'length', 'remaining', 'waitingOperationIds'}:
         raise ValueError('最终正文标记无效')
     # Read old preview headers without turning their metadata into a new
     # instruction, local length gate, or another model call.
     remaining = header.get('remaining', [])
     if not isinstance(remaining, list) or len(remaining) > 8 or any(not isinstance(item, str) or not item.strip() or len(item) > 240 for item in remaining):
         raise ValueError('未完成范围无效')
+    waiting = header.get('waitingOperationIds', [])
+    if not isinstance(waiting, list) or len(waiting) > 8 or any(not isinstance(item, str) or not item.strip() or len(item) > 80 for item in waiting):
+        raise ValueError('等待回执引用无效')
     task = {'state': 'blocked', 'remaining': remaining} if remaining else None
+    if waiting:
+        task = {**(task or {}), 'waitingOperationIds': list(dict.fromkeys(waiting))}
     return value[end + 3:].lstrip('\r\n'), task, True
 
 

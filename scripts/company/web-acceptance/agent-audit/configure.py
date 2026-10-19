@@ -19,6 +19,7 @@ from app.db.session import database
 from app.db import registry
 from app.modules.members.models import Member
 from app.modules.model_services.models import ModelRouting, ModelService, ModelServiceRevision
+from app.modules.model_services.routing_choices import unified_choices
 from app.security.secrets import decrypt, encrypt
 from sqlalchemy import select, text
 
@@ -35,8 +36,8 @@ async def configure(path, username):
                 raise RuntimeError('Expected one local source account')
             company = members[0].company_id
             routing = await db.get(ModelRouting, company)
-            for purpose, choice in routing.choices.items():
-                if not choice:
+            for purpose, choice in unified_choices(routing.choices if routing else None).items():
+                if not isinstance(choice, dict):
                     continue
                 service = await db.get(ModelService, choice['serviceId'])
                 revision = await db.scalar(select(ModelServiceRevision).where(ModelServiceRevision.service_id == service.id, ModelServiceRevision.revision == service.revision))

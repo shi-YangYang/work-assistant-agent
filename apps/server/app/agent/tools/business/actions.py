@@ -105,6 +105,9 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     - Read latest report/revision before edit/submit/delete. Edit only requested
       completed/ongoing/blockers/next fields, preserving factual progress.
       Source next steps are plans; titles alone prove no achievement.
+    - reportSnapshot is the actual saved/candidate revision; emptyFields were
+      not written. A submitted report does not include risks or edits discussed
+      only in chat. Do not claim missing fields were saved or repeat the write.
 
     Admin: own follow-ups use create_work, not propose_followup, with exact read
     work/report source_tokens (token field, not [[business:...]] citations).
@@ -112,6 +115,8 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     """
     try:
         result = await actions_execute(runtime.context, step=step, action=action, target_id=target_id, expected_revision=expected_revision, changes=changes, report_kind=report_kind, report_date=report_date, obligation_id=obligation_id, source_tokens=source_tokens, submit_after=submit_after, requires_step=requires_step, copy_index=copy_index, deliverable_id=deliverable_id, deliverable_revision=deliverable_revision, item_id=item_id, shared_attachment_ids=shared_attachment_ids, task_item_id=task_item_id)
+        from app.tasks.feedback.report_waits import completion_wait
+        result = {**result, **completion_wait(result, submit_after=submit_after)}
         return json.dumps(result, ensure_ascii=False, default=str)
     except HTTPException as error:
         return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']}, ensure_ascii=False)

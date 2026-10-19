@@ -64,7 +64,10 @@ async def test_repeated_uploads_parse_once_keep_names_references_and_model_call_
         assert {item['name'] for item in data['attachments']} == {'发票.txt', '发票 (2).txt', '发票 (3).txt'}
         assert len(data['citations']) == 1
         assert len(model.seen[0]['sameContentAttachments']) == 2
-        assert '复用自相同内容附件' in data['reply']
+        assert '材料范围' not in data['reply']
+        async with sessions() as db:
+            scope = (await db.get(Job, sent['jobId'])).result['materialCoverage']
+            assert '复用自相同内容附件' in '\n'.join(scope)
         for item in data['attachments']:
             assert (await client.get(item['url'])).content == b'UNIQUE_MARKER: one invoice, amount 100'
             extraction = (await client.get('/api/v1/uploads/' + item['id'] + '/extraction')).json()

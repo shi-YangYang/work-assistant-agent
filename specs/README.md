@@ -4,6 +4,8 @@
 
 ## 当前规格
 
+- [Spec 074：Agent 全量功能、可靠性与性能测试](spec-074-agent-comprehensive-audit/spec.md) — 原审计主 80 项 73 PASS／7 FAIL，另有配对、真实浏览器、故障与并发验证，保留未测分支；后续按授权修复，首轮审计与失败证据不覆盖。[审计结果](spec-074-agent-comprehensive-audit/report.md)、[覆盖](spec-074-agent-comprehensive-audit/coverage.md)、[问题](spec-074-agent-comprehensive-audit/issues.md)、[耗时](spec-074-agent-comprehensive-audit/performance.md)、[审计验收](spec-074-agent-comprehensive-audit/acceptance.md)、[修复结果与限制](spec-074-agent-comprehensive-audit/repair-results.md)。
+
 - [Spec 073：手机端全量 UI 排版与交互检查](spec-073-mobile-ui-layout-audit/spec.md) — 审计完成；授权的 8 项问题已修复，修复独立验收 PASS，提供每项前后截图，保留真机等未验证范围。[修复结果与前后图](spec-073-mobile-ui-layout-audit/repair-report.md)、[修复验收](spec-073-mobile-ui-layout-audit/repair-acceptance-final.md)、[原报告](spec-073-mobile-ui-layout-audit/report.md)、[原问题清单](spec-073-mobile-ui-layout-audit/issues.md)、[检查计划与目录](spec-073-mobile-ui-layout-audit/plan.md)。
 
 - [Spec 072：完整文件读取与图文联合理解](spec-072-document-completeness-and-vision/spec.md) — 已实施并通过限定范围的本地独立验收：补齐原件续读、Word／PPT／PDF 页面视觉输入及真实覆盖范围；短文预载减少模型往返，页面缓存复用。low／high 质量、耗时及网络阻塞／模型漏答限制见 [性能对照](spec-072-document-completeness-and-vision/performance.md) 与 [验收结果](spec-072-document-completeness-and-vision/acceptance.md)，[实施目录](spec-072-document-completeness-and-vision/plan.md)。
@@ -59,4 +61,4 @@
 
 ## 生命周期
 
-新 Spec 从 **074** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+新 Spec 从 **075** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
