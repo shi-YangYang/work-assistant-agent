@@ -110,7 +110,9 @@ jobs:
         run: PYTHONPATH=apps/server .venv-server/bin/python -m app.integrations.parsing.office_preflight
       - run: npm run db:company
       - run: npm run test:server
-        timeout-minutes: 25
+        # The full suite takes about 25 minutes; allow bounded shutdown/protocol
+        # test headroom while retaining the 35-minute limit for the whole job.
+        timeout-minutes: 30
         env:
           # run.mjs supplies -q; -vv keeps the active test visible on timeout.
           PYTEST_ADDOPTS: -vv --tb=short --durations=20 -o faulthandler_timeout=90 --junitxml=artifacts/ci/server-tests.xml

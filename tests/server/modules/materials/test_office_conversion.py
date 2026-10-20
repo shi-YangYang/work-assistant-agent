@@ -257,6 +257,7 @@ async def test_worker_sigkill_supervisor_cleans_its_group(tmp_path):
     source = tmp_path / 'input.rtf'; source.write_bytes(b'{\\rtf1 safe}')
     code = 'import asyncio\nfrom app.integrations.parsing import office_conversion as m\nm.converter=lambda:('+repr(str(executable))+',"LibreOffice controlled")\nasyncio.run(m.parse_office('+repr(str(source))+',".rtf",timeout=20))'
     worker = subprocess.Popen([sys.executable, '-c', code], env={**os.environ, 'PYTHONPATH': str(Path('apps/server').resolve())}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    supervisor = None
     try:
         deadline = time.monotonic() + 3
         while not pidfile.exists() and time.monotonic() < deadline: await asyncio.sleep(.02)
@@ -264,13 +265,28 @@ async def test_worker_sigkill_supervisor_cleans_its_group(tmp_path):
         supervisor, child, grandchild, workspace = pidfile.read_text().split(' ', 3)
         worker.kill(); worker.wait()
         deadline = time.monotonic() + 4
-        while Path(workspace).exists() and time.monotonic() < deadline: await asyncio.sleep(.05)
+        while True:
+            states = {
+                pid: subprocess.run(['/bin/ps', '-o', 'stat=', '-p', pid], capture_output=True, text=True, timeout=1).stdout.strip()
+                for pid in (supervisor, child, grandchild)
+            }
+            active = {pid: state for pid, state in states.items() if state and not state.startswith('Z')}
+            # Removing the workspace precedes supervisor exit. Observe both
+            # outcomes within the same deadline; removal alone is not completion.
+            if not Path(workspace).exists() and not active:
+                break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(.05)
         assert not Path(workspace).exists()
-        for pid in (supervisor, child, grandchild):
-            state = subprocess.run(['/bin/ps', '-o', 'stat=', '-p', pid], capture_output=True, text=True).stdout.strip()
-            assert not state or state.startswith('Z')
+        assert not active, f'Office processes survived worker termination: {active}'
     finally:
         if worker.poll() is None: worker.kill(); worker.wait()
+        if supervisor:
+            try:
+                os.killpg(int(supervisor), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 async def test_odf_external_relative_resources_and_formula_links_never_reach_converter(tmp_path, monkeypatch, real_samples):
