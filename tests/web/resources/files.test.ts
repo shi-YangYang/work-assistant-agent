@@ -35,23 +35,29 @@ describe('document composer', () => {
       expect(fileKind(file(`项目.${extension.toUpperCase()}`))).toBe('document')
       expect(fileSelectionError([file(`项目.${extension}`), file('photo.png')])).toBe('')
     }
-    expect(fileSelectionError(Array.from({ length: 10 }, (_, i) => file(`${i}.txt`)))).toContain(
-      '最多 9',
+    expect(fileSelectionError(Array.from({ length: 21 }, (_, i) => file(`${i}.txt`)))).toContain(
+      '最多 20',
     )
     expect(
       fileSelectionError([file('large.pdf', 16 * 1024 * 1024), file('image.png', 5 * 1024 * 1024)]),
     ).toBe('')
     expect(
-      fileSelectionError(Array.from({ length: 9 }, (_, i) => file(`${i}.jpg`, 30 * 1024 * 1024))),
+      fileSelectionError(Array.from({ length: 20 }, (_, i) => file(`${i}.jpg`, 40 * 1024 * 1024))),
     ).toBe('')
-    expect(fileSelectionError([file('image.jpg', 30 * 1024 * 1024 + 1)])).toContain('30 MB')
-    expect(fileSelectionError([file('large.pdf', 20 * 1024 * 1024 + 1)])).toContain('20 MB')
+    expect(fileSelectionError([file('image.jpg', 40 * 1024 * 1024 + 1)])).toContain('40 MB')
+    expect(fileSelectionError([file('large.pdf', 100 * 1024 * 1024 + 1)])).toContain('100 MB')
     expect(fileSelectionError([file('audio.m4a'), file('text.txt'), file('photo.heic')])).toBe('')
     expect(fileSelectionError([file('one.m4a'), file('two.mp3'), file('three.wav')])).toBe('')
     expect(fileSelectionError(Array.from({ length: 4 }, (_, i) => file(`${i}.mp3`)))).toContain(
       '3 段语音',
     )
-    expect(fileSelectionError([file('audio.wav', 20 * 1024 * 1024 + 1)])).toContain('20 MB')
+    expect(fileSelectionError([file('audio.wav', 30 * 1024 * 1024 + 1)])).toContain('30 MB')
+    expect(
+      fileSelectionError([
+        file('large.pdf', 100 * 1024 * 1024),
+        file('voice.wav', 30 * 1024 * 1024),
+      ]),
+    ).toBe('')
     expect(fileSelectionError([file('zero.txt', 0)])).toContain('空文件')
     for (const extension of ['docm', 'xlsm', 'pptm'])
       expect(fileSelectionError([file(`old.${extension}`)])).toContain('转换')

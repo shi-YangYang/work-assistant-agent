@@ -1,8 +1,9 @@
 import hashlib
+import shutil
 from fastapi import APIRouter, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from app.core.errors import problem
-from app.core.attachment_limits import MAX_IMAGE_BYTES, MAX_FILE_BYTES
+from app.core.attachment_limits import attachment_byte_limit, attachment_size_error
 from app.db.base import now
 from app.http.dependencies import AUTH, DB, SETTINGS
 from app.integrations.media import audio_mime, audio_wav, image_process, preview_path
@@ -36,12 +37,14 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
     path = settings.media_dir / identifier
     size, digest = 0, hashlib.sha256()
     try:
+        if shutil.disk_usage(settings.media_dir).free < attachment_byte_limit(kind) + 512 * 1024 * 1024:
+            problem(507, '文件存储空间不足，请稍后重试或联系管理员', 'storage_full')
         with path.open('xb') as target:
             path.chmod(0o600)
             while block := await file.read(65536):
                 size += len(block)
-                if size > (MAX_IMAGE_BYTES if kind == 'image' else MAX_FILE_BYTES):
-                    problem(413, '每张图片不能超过 30 MB' if kind == 'image' else '文件不能超过 20 MB')
+                if size > attachment_byte_limit(kind):
+                    problem(413, attachment_size_error(kind))
                 digest.update(block)
                 await run_in_threadpool(target.write, block)
         if not size:

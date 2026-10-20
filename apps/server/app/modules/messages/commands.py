@@ -1,5 +1,5 @@
 from app.core.personas import DEFAULT_PERSONA
-from app.core.attachment_limits import MAX_AUDIO_ATTACHMENTS, MAX_IMAGE_BYTES, MAX_FILE_BYTES
+from app.core.attachment_limits import MAX_AUDIO_ATTACHMENTS, attachment_byte_limit, attachment_size_error
 from app.core.errors import problem
 from app.db.base import now
 from app.db.idempotency import idem_begin, idem_save
@@ -79,8 +79,9 @@ async def submit_message(db, actor, body, idempotency_key, settings):
     from app.modules.attachments.duplicates import unique_names
     for attachment, name in zip(attached, unique_names([a.name for a in attached])):
         attachment.name = name
-    if any(a.size > (MAX_IMAGE_BYTES if a.kind == 'image' else MAX_FILE_BYTES) for a in attached):
-        problem(422, '每张图片不能超过 30 MB，其他单个文件不能超过 20 MB')
+    for attachment in attached:
+        if attachment.size > attachment_byte_limit(attachment.kind):
+            problem(422, attachment_size_error(attachment.kind))
     if sum(a.kind == 'audio' for a in attached) > MAX_AUDIO_ATTACHMENTS:
         problem(422, '每次最多 3 段语音，每段最长 3 分钟')
     voice_ids = body.voiceCommandAttachmentIds or ([body.voiceCommandAttachmentId] if body.voiceCommandAttachmentId else [])

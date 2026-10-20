@@ -19,6 +19,12 @@ MAX_PAGES = 100
 
 MAX_EXPANDED = 64 * 1024 * 1024
 
+# Compressed Office originals may contain large images. Keep XML and PDF
+# decompression guards separate from the container's expanded media budget.
+MAX_OFFICE_EXPANDED = 256 * 1024 * 1024
+MAX_OFFICE_OUTPUT = 128 * 1024 * 1024
+MAX_OFFICE_WORKSPACE = 512 * 1024 * 1024
+
 
 MEMORY_BYTES = 512 * 1024 * 1024
 
@@ -103,21 +109,28 @@ def resource_limits():
     sys.addaudithook(audit)
 
 
+def office_entries(archive):
+    entries = archive.infolist()
+    if len(entries) > 10000 or len({e.filename for e in entries}) != len(entries) or sum(e.file_size for e in entries) > MAX_OFFICE_EXPANDED:
+        raise ParseFailure('文档解压后过大或条目过多，请拆分文件')
+    for entry in entries:
+        if entry.flag_bits & 1:
+            raise ParseFailure('不支持加密文档，请先解密')
+        limit = 16 * 1024 * 1024 if entry.filename.lower().endswith(('.xml', '.rels')) else MAX_OFFICE_OUTPUT
+        if entry.file_size > limit or entry.file_size > max(1024 * 1024, entry.compress_size * 200):
+            raise ParseFailure('文档压缩比例或单个内容过大，请拆分文件')
+    return entries
+
+
 def office_check(path, suffix):
     with zipfile.ZipFile(path) as archive:
-        entries = archive.infolist()
+        entries = office_entries(archive)
         names = {entry.filename for entry in entries}
         required = {'.docx': 'word/document.xml', '.pptx': 'ppt/presentation.xml', '.xlsx': 'xl/workbook.xml'}[suffix]
         if required not in names or '[Content_Types].xml' not in names:
             raise ParseFailure('文件结构与扩展名不符，请保存为正确的 DOCX／PPTX／XLSX')
-        if len(entries) > 2048 or len(names) != len(entries) or sum(e.file_size for e in entries) > MAX_EXPANDED:
-            raise ParseFailure('文档解压后过大或条目过多，请拆分文件')
         for entry in entries:
             name = entry.filename.lower()
-            if entry.flag_bits & 1:
-                raise ParseFailure('不支持加密文档，请先解密')
-            if entry.file_size > 16 * 1024 * 1024 or entry.file_size > max(1024 * 1024, entry.compress_size * 200):
-                raise ParseFailure('文档压缩比例或单个内容过大，请拆分文件')
             if 'vbaproject' in name or name.endswith('.bin') and ('embeddings/' in name or 'activex/' in name):
                 raise ParseFailure('文档包含宏或活动嵌入对象，请移除后重新保存')
             if name.endswith(('.xml', '.rels')):

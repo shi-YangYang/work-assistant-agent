@@ -131,10 +131,14 @@ export class AttachmentUploads {
         .catch((error: unknown) => {
           if (entry.removed || generation !== this.generation) return
           const message =
-            error instanceof ApiError &&
-            ['validation', 'forbidden', 'rate_limited'].includes(error.category)
-              ? error.message
-              : '文件上传失败，请重试或移除。'
+            error instanceof ApiError && error.code === 'storage_full'
+              ? '文件存储空间不足，请稍后重试或联系管理员。'
+              : error instanceof ApiError && error.code === 'upload_busy'
+                ? '上传服务繁忙，请稍后重试。'
+                : error instanceof ApiError &&
+                    ['validation', 'forbidden', 'rate_limited'].includes(error.category)
+                  ? error.message
+                  : '文件上传失败，请重试或移除。'
           entry.file = { ...entry.file, failed: true }
           this.publish(entry, {
             failed: true,

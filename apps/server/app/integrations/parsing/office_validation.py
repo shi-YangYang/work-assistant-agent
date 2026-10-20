@@ -6,7 +6,7 @@ import struct
 import zipfile
 from pathlib import Path
 from lxml import etree
-from document_parser import ParseFailure, MAX_EXPANDED, office_check
+from document_parser import ParseFailure, office_entries, office_check
 from formats import OLE_MAGIC, header_matches
 
 NS = {'office': 'urn:oasis:names:tc:opendocument:xmlns:office:1.0', 'table': 'urn:oasis:names:tc:opendocument:xmlns:table:1.0', 'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
@@ -166,7 +166,8 @@ def ppt_check(data):
 
 
 def inspect(path, suffix):
-    head = Path(path).read_bytes()[:8]
+    with Path(path).open('rb') as source:
+        head = source.read(8)
     if not header_matches(suffix, head):
         raise ParseFailure('文件结构与扩展名不符，请重新导出')
     if head.startswith(b'{\\rtf'):
@@ -199,21 +200,15 @@ def inspect(path, suffix):
                         raise ParseFailure(ACTIVE)
             return suffix, {}
     with zipfile.ZipFile(path) as archive:
-        entries = archive.infolist()
+        entries = office_entries(archive)
         names = {e.filename for e in entries}
         if suffix == '.doc' and 'word/document.xml' in names:
             office_check(path, '.docx')
             return '.docx', {}
-        if len(entries) > 2048 or len(names) != len(entries) or sum(e.file_size for e in entries) > MAX_EXPANDED:
-            raise ParseFailure('文档解压后过大，请拆分文件')
         for name in names:
             if name.startswith('/') or '\\' in name or any(part in ('.', '..') for part in name.split('/')):
                 raise ParseFailure(ACTIVE)
         for entry in entries:
-            if entry.file_size > 16 * 1024 * 1024 or entry.file_size > max(1024 * 1024, entry.compress_size * 200):
-                raise ParseFailure('文档压缩比例或内容过大，请拆分文件')
-            if entry.flag_bits & 1:
-                raise ParseFailure('文件已加密，请解密后重新上传')
             if entry.filename.lower().startswith(('basic/', 'scripts/', 'object ')):
                 raise ParseFailure(ACTIVE)
             if entry.filename.endswith('.xml'):

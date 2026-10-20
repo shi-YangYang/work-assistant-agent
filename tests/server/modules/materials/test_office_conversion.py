@@ -314,7 +314,7 @@ async def test_actual_libreoffice_loads_locked_down_user_profile(tmp_path, monke
 
 async def test_temp_permission_failure_and_oversized_output_are_local(tmp_path, monkeypatch):
     source = tmp_path / 'source.rtf'; source.write_bytes(b'{\\rtf1 safe}')
-    executable = fake_converter(tmp_path, 'import os, sys\nfrom pathlib import Path\nout=Path(sys.argv[sys.argv.index("--outdir")+1])/"source.docx"\nwith out.open("wb") as f: f.truncate(33*1024*1024)\n')
+    executable = fake_converter(tmp_path, 'import os, sys\nfrom pathlib import Path\nout=Path(sys.argv[sys.argv.index("--outdir")+1])/"source.docx"\nwith out.open("wb") as f: f.truncate(129*1024*1024)\n')
     monkeypatch.setattr(office, 'converter', lambda: (str(executable), 'LibreOffice controlled'))
     assert (await office.parse_office(source, '.rtf'))['status'] == 'failed'
     with monkeypatch.context() as scoped:

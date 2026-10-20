@@ -3,6 +3,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_AUDIO_ATTACHMENTS,
   MAX_IMAGE_BYTES,
+  MAX_AUDIO_BYTES,
   MAX_FILE_BYTES,
 } from './attachment-limits'
 
@@ -47,13 +48,15 @@ export function fileSelectionError(files: File[]) {
   const blocked = files.map((file) => blockedFileMessage(file.name)).find(Boolean)
   if (blocked) return blocked
   if (files.some((file) => !file.size)) return '不能添加空文件'
-  if (files.length > MAX_ATTACHMENTS) return '每次最多 9 个附件'
+  if (files.length > MAX_ATTACHMENTS) return `每次最多 ${MAX_ATTACHMENTS} 个附件`
   if (files.filter((file) => fileKind(file) === 'audio').length > MAX_AUDIO_ATTACHMENTS)
     return '每次最多 3 段语音，每段最长 3 分钟'
   if (files.some((file) => fileKind(file) === 'image' && file.size > MAX_IMAGE_BYTES))
-    return '每张图片不能超过 30 MB'
-  if (files.some((file) => fileKind(file) !== 'image' && file.size > MAX_FILE_BYTES))
-    return '单个文档或语音文件不能超过 20 MB'
+    return '每张图片不能超过 40 MB'
+  if (files.some((file) => fileKind(file) === 'document' && file.size > MAX_FILE_BYTES))
+    return '单个文档不能超过 100 MB'
+  if (files.some((file) => fileKind(file) === 'audio' && file.size > MAX_AUDIO_BYTES))
+    return '每段语音不能超过 30 MB'
   return ''
 }
 

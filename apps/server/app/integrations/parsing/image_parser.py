@@ -6,7 +6,7 @@ import runpy
 import sys
 from pathlib import Path
 
-MAX_PIXELS = 20_000_000
+MAX_PIXELS = 30_000_000
 
 
 MAX_TILES = 4
@@ -43,21 +43,31 @@ def convert(path, mode):
         types = {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'WEBP': 'image/webp', 'HEIF': 'image/heic'}
         mime = types.get(source.format)
         if not mime or source.width * source.height > MAX_PIXELS:
-            raise ValueError('请使用不超过 2,000 万像素的 JPEG、PNG、WebP 或 HEIC／HEIF 图片')
+            raise ValueError('请使用不超过 3,000 万像素的 JPEG、PNG、WebP 或 HEIC／HEIF 图片')
         warnings = []
         # Pillow HEIF opens the container's primary image; do not iterate frames.
         if getattr(source, 'n_frames', 1) > 1:
             warnings.append('多图或动态内容仅使用主图／首帧')
         source.load()
+        if mode == 'validate':
+            # Decode to validate, but do not keep several full-size 30MP copies
+            # just to return metadata. Preview/model work runs on demand.
+            width, height = source.size
+            if source.getexif().get(274) in (5, 6, 7, 8):
+                width, height = height, width
+            return {'status': 'ready', 'mime': mime, 'width': width, 'height': height, 'warnings': warnings, 'version': VERSION}
         original_format = source.format
         oriented = ImageOps.exif_transpose(source)
+        source.close()
         width, height = oriented.size
         if 'A' in oriented.getbands() or 'transparency' in oriented.info:
             rgba = oriented.convert('RGBA')
             image = Image.new('RGB', rgba.size, 'white')
             image.paste(rgba, mask=rgba.getchannel('A'))
+            rgba.close()
         else:
             image = oriented.convert('RGB')
+        oriented.close()
         image.info.clear()
     result = {'status': 'ready', 'mime': mime, 'width': width, 'height': height, 'warnings': warnings, 'version': VERSION}
     if mode == 'validate':

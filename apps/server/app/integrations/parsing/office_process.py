@@ -11,7 +11,7 @@ import time
 
 # -I intentionally excludes the working directory and PYTHONPATH.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from document_parser import ParseFailure, office_check
+from document_parser import ParseFailure, office_check, MAX_OFFICE_OUTPUT, MAX_OFFICE_WORKSPACE
 from formats import OFFICE_TARGETS
 from office_validation import inspect, verify_formula_caches
 
@@ -30,7 +30,7 @@ PROFILE = '''<?xml version="1.0" encoding="UTF-8"?>
 <prop oor:name="OOXMLRecalcMode" oor:op="fuse"><value>0</value></prop></item>
 </oor:items>'''
 FILTERS = {'.docx': 'Office Open XML Text', '.xlsx': 'Calc Office Open XML', '.pptx': 'Impress MS PowerPoint 2007 XML'}
-MAX_OUTPUT = 32 * 1024 * 1024
+MAX_OUTPUT = MAX_OFFICE_OUTPUT
 
 
 def emit(value):
@@ -60,7 +60,7 @@ def main():
     source, suffix, executable, budget = Path(sys.argv[1]), sys.argv[2], sys.argv[3], float(sys.argv[4])
     options = json.loads(sys.argv[6]) if len(sys.argv) > 6 else {}
     mode = options.get('mode', 'parse')
-    if suffix not in (*OFFICE_TARGETS, '.docx', '.pptx', '.xlsx', '.pdf') or not source.is_file() or source.stat().st_size > (MAX_OUTPUT if mode in ('page', 'pdf') else 20 * 1024 * 1024):
+    if suffix not in (*OFFICE_TARGETS, '.docx', '.pptx', '.xlsx', '.pdf') or not source.is_file() or source.stat().st_size > (MAX_OUTPUT if mode in ('page', 'pdf') else 100 * 1024 * 1024):
         raise ParseFailure('文件格式或大小不支持')
     limits()
     parent = os.getppid()
@@ -81,7 +81,7 @@ def main():
                 os.kill(os.getpid(), signal.SIGTERM); return
             try:
                 size = sum(p.stat().st_size for p in workspace.rglob('*') if p.is_file())
-                if size > 96 * 1024 * 1024:
+                if size > MAX_OFFICE_WORKSPACE:
                     os.kill(os.getpid(), signal.SIGTERM); return
                 if os.name == 'posix':
                     # Includes the supervisor and every process in its child groups.

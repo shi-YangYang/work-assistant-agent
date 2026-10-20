@@ -1,5 +1,6 @@
 """One mutation boundary shared by REST and authenticated agent actions."""
 from sqlalchemy import select
+from app.core.attachment_limits import MAX_ATTACHMENTS, MAX_AUDIO_ATTACHMENTS
 from app.core.errors import problem
 from app.core.versions import version
 from app.db.idempotency import idem_begin, idem_save
@@ -55,8 +56,8 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
         refs, mapping = material_ids(base.get('body', {})), {}
     requested_ids = [mapping.get(value, value) for value in changes.get('materialIds', [])]
     _, selected_attachments = await require_materials(db, actor, work, list(dict.fromkeys([*requested_ids, *bound])))
-    if len(selected_attachments) > 9 or sum(a.kind == 'audio' for a in selected_attachments) > 3:
-        problem(422, '单次最多添加 9 个附件，其中语音最多 3 段')
+    if len(selected_attachments) > MAX_ATTACHMENTS or sum(a.kind == 'audio' for a in selected_attachments) > MAX_AUDIO_ATTACHMENTS:
+        problem(422, '单次最多添加 20 个附件，其中语音最多 3 段')
     all_ids = list(dict.fromkeys([*current_ids, *refs, *bound, *requested_ids]))
     patch['materialIds'] = all_ids
     update = None

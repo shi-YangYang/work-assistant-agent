@@ -7,6 +7,7 @@ import {
 } from '../../../apps/web/src/features/assistant/lib/attachment-uploads'
 import type { DraftStore } from '../../../apps/web/src/lib/workspace'
 import { numberedFiles } from '../../../apps/web/src/features/assistant/lib/attachment-names'
+import { ApiError } from '../../../apps/web/src/api/client'
 
 const attachment = (id: string): Attachment => ({
   id,
@@ -68,6 +69,28 @@ it('uploads two at a time, starts queued files immediately, and retries only the
   h.sync()
   expect(h.upload).toHaveBeenCalledTimes(4)
 })
+
+it.each([
+  [507, 'storage_full', '文件存储空间不足，请稍后重试或联系管理员。'],
+  [429, 'upload_busy', '上传服务繁忙，请稍后重试。'],
+] as const)(
+  'keeps a failed upload recoverable with a clear %s message',
+  async (status, code, message) => {
+    const h = setup()
+    h.current().files = [file('a')]
+    h.sync()
+    h.pending[0].reject(new ApiError(status, code, '服务暂时不可用', 'server'))
+    await flush()
+    h.sync()
+    expect(h.current().files[0].uploadError).toBe(message)
+    expect(attachmentsReady(h.current().files)).toBe(false)
+    expect(h.upload).toHaveBeenCalledTimes(1)
+    h.manager.retry('a')
+    h.pending[1].resolve(attachment('a'))
+    await flush()
+    expect(attachmentsReady(h.current().files)).toBe(true)
+  },
+)
 
 it('removes queued/inflight/ready files and cleans late results without resurrecting drafts', async () => {
   const h = setup()

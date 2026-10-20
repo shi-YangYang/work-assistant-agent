@@ -105,7 +105,8 @@ def trim(settings):
                 path.unlink(missing_ok=True)
         except FileNotFoundError:
             continue  # An authorized source deletion may run concurrently.
-    reserve = 32 * 1024 * 1024  # Native child output is bounded by the same cap.
+    from app.integrations.parsing.document_parser import MAX_OFFICE_OUTPUT, MAX_OFFICE_WORKSPACE
+    reserve = MAX_OFFICE_WORKSPACE + MAX_OFFICE_OUTPUT
     if shutil.disk_usage(settings.media_dir).free < reserve + 512 * 1024 * 1024:
         raise ValueError('文件处理空间不足，本次页面暂时无法读取')
 

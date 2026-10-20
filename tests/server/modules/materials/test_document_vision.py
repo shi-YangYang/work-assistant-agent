@@ -76,14 +76,21 @@ async def test_search_continuation_retains_generation_citations_and_sparse_range
     assert '6842' in str(search['items']) and search['sourceComplete'] and search['nextCursor'] is None
     assert search['searchScope']['batches'] == 2 and search['searchScope']['stopReason'] == 'matches'
     assert search['searchScope']['ranges'][0][1] == search['searchScope']['ranges'][1][0]
-    assert search['readScope']['returnedChunksThisTask'] == 2
+    assert len(search['items']) == 1 and len(search['contextItems']) == 1
+    search_rows = [*search['items'], *search['contextItems']]
+    returned_ordinals = {row['ordinal'] for row in [*first['items'], *search_rows]}
+    assert len(returned_ordinals) == 3
+    assert search['readScope']['returnedChunks'] == 2
+    assert search['readScope']['returnedChunksThisTask'] == len(returned_ordinals)
     async with context.sessions() as db:
         item = await db.get(Attachment, aid)
         assert item.extraction_revision == revision
         count = await db.scalar(select(func.count()).select_from(DocumentChunk).where(DocumentChunk.attachment_id == aid))
-        answer, sources = await verified_citations(db, context, citation + search['items'][0]['citation'])
-        assert len(sources) == 2 and '变化' not in answer
-    await read_document_result(context, aid, start=search['items'][0]['ordinal'])
+        answer, sources = await verified_citations(db, context, citation + ''.join(row['citation'] for row in search_rows))
+        assert len(sources) == 3 and '变化' not in answer
+    reread = json.loads(await read_document_result(context, aid, start=search['items'][0]['ordinal'], limit=1))
+    assert reread['items'][0]['citation'] == search['items'][0]['citation']
+    assert reread['readScope']['returnedChunksThisTask'] == len(returned_ordinals)
     async with context.sessions() as db:
         assert count == await db.scalar(select(func.count()).select_from(DocumentChunk).where(DocumentChunk.attachment_id == aid))
 

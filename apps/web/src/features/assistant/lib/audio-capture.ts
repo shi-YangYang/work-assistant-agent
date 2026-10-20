@@ -7,7 +7,7 @@ import type {
   WorkReference,
   WorkReferenceView,
 } from '@paa/api-contracts'
-import { MAX_FILE_BYTES } from '../utils/attachment-limits'
+import { MAX_AUDIO_BYTES } from '../utils/attachment-limits'
 
 export type PendingFile = {
   id: string
@@ -97,7 +97,7 @@ export class AudioCapture {
 
   constructor(private callbacks: CaptureCallbacks) {}
 
-  async start(maxBytes = MAX_FILE_BYTES) {
+  async start(maxBytes = MAX_AUDIO_BYTES) {
     if (this.disposed || this.pending || this.session) return false
     const generation = ++this.generation
     if (typeof window !== 'undefined' && window.isSecureContext === false) {

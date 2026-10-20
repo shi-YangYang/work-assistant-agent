@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 from weakref import WeakKeyDictionary
-from app.integrations.parsing.document_parser import PARSER_VERSION
+from app.integrations.parsing.document_parser import PARSER_VERSION, MAX_OFFICE_WORKSPACE
 
 _limits = WeakKeyDictionary()
 log = logging.getLogger('paa.company')
@@ -86,6 +86,8 @@ async def parse_office(path, suffix, *, timeout=60, on_stage=None, destination=N
     async with limit:
         process, workspace = None, None
         try:
+            if shutil.disk_usage(tempfile.gettempdir()).free < MAX_OFFICE_WORKSPACE + 512 * 1024 * 1024:
+                return failure('文件处理空间不足，请稍后重试或联系管理员')
             workspace = Path(tempfile.mkdtemp(prefix='noria-office-'))
             (workspace / 'owner.json').write_text(json.dumps({'worker': os.getpid(), 'supervisor': os.getpid()}))
             process = await asyncio.create_subprocess_exec(sys.executable, '-I', str(Path(__file__).with_name('office_process.py')), str(Path(path).absolute()), suffix, executable, str(timeout), str(workspace), json.dumps({"destination": str(destination) if destination else "", "mode": mode, "start": start, "sheet": sheet}), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env=environment(), start_new_session=os.name == 'posix')

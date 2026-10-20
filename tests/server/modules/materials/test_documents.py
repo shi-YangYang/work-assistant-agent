@@ -113,7 +113,7 @@ async def test_filename_and_upload_boundaries(setup):
     for name, data, mime in [('old.doc', b'old', 'application/msword'), ('fake.pdf', b'not pdf', 'application/pdf'), ('fake.txt', b'text', 'image/png'), ('sheet.xlsx', b'PK', 'application/octet-stream'), ('unknown.exe', b'exe', 'application/octet-stream')]:
         response = await c['employee'].post('/api/v1/uploads', files={'file': (name, data, mime)})
         assert response.status_code == 415, response.text
-    assert (await c['employee'].post('/api/v1/uploads', files={'file': ('large.txt', b'x' * (20 * 1024 * 1024 + 1), 'text/plain')})).status_code == 413
+    assert (await c['employee'].post('/api/v1/uploads', files={'file': ('large.txt', b'x' * (100 * 1024 * 1024 + 1), 'text/plain')})).status_code == 413
     conv = await conversation(c['employee'])
     docs = [await upload(c['employee'], f'large{i}.txt', b'x' * (6 * 1024 * 1024)) for i in range(4)]
     result = await c['employee'].post('/api/v1/messages', json={'conversationId': conv['id'], 'attachmentIds': [d['id'] for d in docs]}, headers=keyed())

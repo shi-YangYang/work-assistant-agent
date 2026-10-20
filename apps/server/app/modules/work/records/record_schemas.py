@@ -1,3 +1,4 @@
+from app.core.attachment_limits import MAX_ATTACHMENTS
 from datetime import date
 from typing import Literal
 from pydantic import Field, field_validator, model_validator
@@ -29,7 +30,7 @@ class RecordPatch(Input):
     nextStep: str | None = Field(default=None, max_length=2000)
     body: WorkDocument | None = None
     bodyEdits: list[dict] | None = Field(default=None, max_length=100)
-    materials: list[MaterialSource] = Field(default_factory=list, max_length=9)
+    materials: list[MaterialSource] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
     materialIds: list[str] | None = Field(default=None, max_length=1000)
 
     @field_validator('bodyEdits')
@@ -55,8 +56,8 @@ class WorkPatch(RecordPatch, Revision):
 
 class UpdateInput(Input):
     text: str = Field(default='', max_length=12000)
-    materialIds: list[str] = Field(default_factory=list, max_length=9)
-    materials: list[MaterialSource] = Field(default_factory=list, max_length=9)
+    materialIds: list[str] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
+    materials: list[MaterialSource] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
     status: Literal['in_progress', 'blocked', 'done'] | None = None
     dueDate: date | None = None
     blocker: str | None = Field(default=None, max_length=2000)
@@ -66,8 +67,8 @@ class UpdateInput(Input):
     def nonempty(self):
         if not self.text.strip() and not self.materialIds and not self.materials and not isinstance(self, UpdateEdit):
             raise ValueError('请填写进展或添加材料')
-        if len(self.materialIds) + len(self.materials) > 9:
-            raise ValueError('每条进展最多添加 9 个附件')
+        if len(self.materialIds) + len(self.materials) > MAX_ATTACHMENTS:
+            raise ValueError('每条进展最多添加 20 个附件')
         return self
 
 
@@ -92,8 +93,8 @@ class UpdateChange(Input):
     id: str | None = None
     expectedRevision: int | None = Field(default=None, ge=1)
     text: str = Field(default='', max_length=12000)
-    materialIds: list[str] = Field(default_factory=list, max_length=9)
-    materials: list[MaterialSource] = Field(default_factory=list, max_length=9)
+    materialIds: list[str] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
+    materials: list[MaterialSource] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
 
     @model_validator(mode='after')
     def valid_target(self):

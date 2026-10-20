@@ -274,7 +274,7 @@ export function ConversationChat({
         composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
           MAX_AUDIO_ATTACHMENTS)
     ) {
-      setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
+      setLimitError('每次最多 20 个附件，其中最多 3 段语音；请先移除一个附件')
       return false
     }
     setSendError('')
