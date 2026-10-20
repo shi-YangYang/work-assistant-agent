@@ -5,7 +5,6 @@ import { ApiError } from '../../../apps/web/src/api/client'
 import { BusyButton } from '../../../apps/web/src/components/actions/BusyButton'
 import { ErrorNotice } from '../../../apps/web/src/components/feedback/ErrorNotice'
 import { FormField } from '../../../apps/web/src/components/forms/FormField'
-import { PageHeader } from '../../../apps/web/src/components/layout/page-header/PageHeader'
 import { Modal } from '../../../apps/web/src/components/overlays/Modal'
 import { correctTranscript } from '../../../apps/web/src/features/assistant/api/requests'
 import { TranscriptEditor } from '../../../apps/web/src/features/assistant/components/messages/transcript/TranscriptEditor'
@@ -101,7 +100,7 @@ function nodes(node: ReactNode): ReactElement<Record<string, unknown>>[] {
   return [
     node,
     ...nodes(node.props.children as ReactNode),
-    ...(node.type === PageHeader ? nodes(node.props.actions as ReactNode) : []),
+    ...nodes(node.props.actions as ReactNode),
   ]
 }
 function render(component: () => ReactNode) {
