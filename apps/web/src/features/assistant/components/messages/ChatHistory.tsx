@@ -116,10 +116,10 @@ export function ChatHistory({
             </div>
             <span className={styles['welcome-eyebrow']}>
               <span />
-              你的工作伙伴
+              你的AI伙伴
             </span>
             <h2>今天，想推进什么？</h2>
-            <p>从一个想法、一份材料，或手头的工作开始。</p>
+            <p>聊聊日常、分享心情，或者一起想想办法。</p>
           </div>
         )}
         {standaloneActions.map((action) => (

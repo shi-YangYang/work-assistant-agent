@@ -215,3 +215,43 @@ async def test_disabled_execution_history_has_discoverable_recovery_group(setup)
         remember_call_capability(context, job, {'name': 'read_execution', 'args': {}})
         assert loaded_groups(context, job) == ['documents']
         assert 'read_execution' in visible_tools(context, loaded_groups(context, job))
+
+
+async def test_files_group_locates_prior_uploads_without_loading_documents_or_granting_access(setup):
+    from sqlalchemy import func, select
+    from _support.http.management import conversation, message
+    from _support.materials.documents import running_context, upload
+    from app.agent.tools.resources.documents import find_documents
+    from app.agent.tools.resources.messages import get_message_context
+    from app.modules.attachments.models import DocumentChunk
+
+    settings, sessions, users, clients = setup
+    source_ids = []
+    for who in ('employee', 'peer'):
+        conv = await conversation(clients[who])
+        item = await upload(clients[who], 'original.csv', b'name,value\na,7')
+        sent = await message(clients[who], conv, 'Keep this original', [item['id']])
+        source_ids.append((conv, item, sent))
+        await finish(await running_context(settings, sessions, users[who], sent))
+    conv, item, original = source_ids[0]
+    sent = await message(clients['employee'], conv, 'Inspect the earlier table')
+    context = await running_context(settings, sessions, users['employee'], sent)
+    context.settings = replace(settings, sandbox_url='http://sandbox.invalid', sandbox_token='test-only')
+    invoke = SimpleNamespace(context=context)
+    loaded = json.loads(await load_tools.coroutine(['files'], invoke))
+    assert loaded['groups'] == ['files']
+    assert {'get_message_context', 'find_documents'} <= set(loaded['tools'])
+    directory = json.loads(await find_documents.coroutine('', invoke))
+    assert [entry['id'] for entry in directory['items']] == [item['id']]
+    source = json.loads(await get_message_context.coroutine(original['messageId'], invoke))
+    assert [entry['id'] for entry in source['documents']] == [item['id']]
+    foreign_item, foreign_message = source_ids[1][1:]
+    denied = json.loads(await find_documents.coroutine('', invoke, attachment_id=foreign_item['id']))
+    assert denied['error'] == 'document_reference_unavailable'
+    assert foreign_item['id'] not in str(denied)
+    denied_message = await get_message_context.coroutine(foreign_message['messageId'], invoke)
+    assert foreign_item['id'] not in denied_message and '无权查看' in denied_message
+    async with sessions() as db:
+        assert not await db.scalar(select(func.count()).select_from(DocumentChunk).where(
+            DocumentChunk.attachment_id.in_([item['id'], foreign_item['id']])))
+        assert loaded_groups(context, await db.get(Job, context.job_id)) == ['files']

@@ -56,6 +56,15 @@
     },
     "legacyOffice": ["doc", "xls", "ppt"],
     "images": ["jpg", "jpeg", "png", "webp", "heic", "heif"],
-    "audio": ["wav", "webm", "mp4", "m4a", "aac", "mp3"]
+    "audio": ["wav", "webm", "mp4", "m4a", "aac", "mp3"],
+    "officeConversion": {
+      "doc": "docx",
+      "rtf": "docx",
+      "odt": "docx",
+      "xls": "xlsx",
+      "ods": "xlsx",
+      "ppt": "pptx",
+      "odp": "pptx"
+    }
   }
 }

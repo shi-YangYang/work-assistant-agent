@@ -145,8 +145,8 @@ async def test_agent_resource_reads_return_missing_without_server_errors(setup):
     for route in inventory()['apis']:
         if route['method'] != 'GET' or '{identifier}' not in route['path'] and '{message_id}' not in route['path']:
             continue
-        path = re.sub(r'\{[^}]+\}', lambda _: str(uuid4()), route['path'])
-        if '/deliverables/' in path and '/files/' in path:
+        path = re.sub(r'\{[^}]+\}', lambda match: '1' if match[0] == '{page}' else str(uuid4()), route['path'])
+        if '/deliverables/' in path and '/files/' in path or '/uploads/' in path and '/pages/' in path:
             path += '?revision=1'
         client = clients['admin'] if path.startswith('/api/v1/team/') else clients['employee']
         response = await client.get(path)

@@ -202,6 +202,7 @@ async def execute_case(case, state, output, materials, timeout, *, previous=None
                 if 'markdown' in edit:
                     checked(await client.put('/api/v1/assistant/memory/document', json={'markdown': edit['markdown'], 'expectedRevision': memory['revision']}))
             began = loop.time()
+            submitted = admitted = None
             recovered = receipt is not None
             tracked = []
 
@@ -219,7 +220,9 @@ async def execute_case(case, state, output, materials, timeout, *, previous=None
                             with path.open('rb') as stream:
                                 upload = checked(await client.post('/api/v1/uploads', files={'file': (path.name, stream, mimetypes.guess_type(path.name)[0] or 'application/octet-stream')}), (200, 201))
                             body['attachmentIds'].append(upload['id'])
+                    submitted = loop.time()
                     receipt = checked(await client.post('/api/v1/messages', json=body, headers={'Idempotency-Key': str(uuid4())}), (202,))
+                    admitted = loop.time()
                 append_row(directory / 'accepted.jsonl', {'case': case['id'], 'turn': index + 1, 'receipt': receipt, 'recovered': recovered})
                 tracked.append(receipt)
                 conversation = receipt['conversationId']
@@ -228,7 +231,16 @@ async def execute_case(case, state, output, materials, timeout, *, previous=None
                     job = checked(await client.get('/api/v1/jobs/' + receipt['jobId']))
                     checked(await client.post('/api/v1/jobs/' + receipt['jobId'] + '/cancel', json={'expectedAttempt': job['attempt'], 'expectedFence': job['fence']}))
                 value, approvals = await settle(client, receipt, timeout, approve=case.get('approveActions', False), progress=progress)
+                terminal_observed = loop.time()
                 row = {'case': case['id'], 'turn': index + 1, 'prompt': prompt, 'receipt': receipt, 'message': value, 'approvals': approvals, 'files': await files(client, value, directory / 'files' / str(index + 1)), 'readback': await snapshot(client), 'seconds': round(loop.time() - began, 2), 'classification': 'review-required', 'recoveredAdmission': recovered}
+                row['measurement'] = {
+                    'preSendUploadSeconds': round(submitted - began, 4) if submitted is not None else None,
+                    'admissionSeconds': round(admitted - submitted, 4) if admitted is not None else None,
+                    'sendToTerminalSeconds': round(terminal_observed - submitted, 4) if submitted is not None else None,
+                    'acceptedToTerminalSeconds': round(terminal_observed - admitted, 4) if admitted is not None else None,
+                    'harnessDownloadReadbackSeconds': round(loop.time() - terminal_observed, 4),
+                    'basis': 'HTTP send to polling terminal observation; excludes pre-send uploads and post-result validation; not browser paint',
+                }
             except Exception as error:
                 row = {'case': case['id'], 'turn': index + 1, 'prompt': prompt, 'receipt': receipt, 'exception': type(error).__name__, 'detail': str(error)[:500], 'seconds': round(loop.time() - began, 2), 'classification': 'incomplete'}
                 row['cleanup'] = []

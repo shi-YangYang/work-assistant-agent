@@ -41,7 +41,71 @@ def dependencies(context, job, call=None):
 
 
 def request_key(call):
-    return digest({'name': call['name'], 'args': call.get('args', {})})
+    args = dict(call.get('args', {}))
+    if call['name'] == 'web_fetch':
+        args = {'offset': 0, 'find': '', 'match_index': 0, **args}
+        args.pop('refresh', None)
+        if isinstance(args.get('url'), str):
+            args['url'] = args['url'].partition('#')[0]
+    elif call['name'] == 'web_search':
+        if isinstance(args.get('query'), str):
+            args['query'] = ' '.join(args['query'].split())
+        domains = args.get('domains')
+        if domains is None or isinstance(domains, list) and all(isinstance(domain, str) for domain in domains):
+            args['domains'] = sorted(domains or [])
+    return digest({'name': call['name'], 'args': args})
+
+
+def search_evidence(result):
+    """Query wording/ranking aren't information; changed snippets and new URLs are."""
+    return sorted({digest({key: item.get(key) for key in ('url', 'title', 'snippet')})
+                   for item in result.get('items', []) if isinstance(item, dict) and item.get('url')})
+
+
+def reusable_read(call, result):
+    if call['name'] in ('web_search', 'find_documents'):
+        return not failed_result(result)
+    if call['name'] == 'web_fetch':
+        return (not failed_result(result) or result.get('errorCode') in ('http_401', 'http_403', 'http_404', 'http_410', 'blocked_url', 'web_challenge')
+                or result.get('errorCode') == 'web_network' and result.get('attemptsExhausted') is True)
+    return False
+
+
+def terminal_web_failure(result):
+    return (result.get('errorCode') in ('http_401', 'http_403', 'http_404', 'http_410', 'blocked_url', 'web_challenge')
+            or result.get('errorCode') == 'web_network' and result.get('attemptsExhausted') is True)
+
+
+def web_address(call):
+    url = call.get('args', {}).get('url')
+    if call['name'] != 'web_fetch' or not isinstance(url, str) or not url:
+        return None
+    from app.integrations.web_research import WebResearchError, public_url
+    try:
+        parsed = public_url(url)
+        # Canonicalize a missing root slash without decoding an encoded path.
+        url = str(parsed.copy_with(path='/') if parsed.raw_path.partition(b'?')[0] in (b'', b'/') else parsed)
+    except WebResearchError:
+        url = url.partition('#')[0]
+    return digest(url)
+
+
+def exploratory_result(journal, call, result, identifier, deps):
+    """Different queries / first unavailable addresses are soft, not new facts."""
+    search = call['name'] == 'web_search' and not failed_result(result)
+    code = result.get('errorCode', '')
+    unavailable = call['name'] == 'web_fetch' and result.get('state') == 'unavailable' and (
+        code in ('web_network', 'web_challenge') or isinstance(code, str) and code.startswith('http_'))
+    if not search and not unavailable:
+        return False
+    previous = [row for row in journal['calls'] if row['id'] != identifier
+                and row.get('result') and row.get('executed') is not False and row['dependencies'] == deps]
+    request = request_key(call)
+    if search:
+        return not any(row['request'] == request for row in previous)
+    address = web_address(call)
+    return bool(address and not any(row.get('address', row.get('deniedAddress')) == address
+                or row['request'] == request for row in previous))
 
 
 def failed_result(result):
@@ -52,6 +116,8 @@ def result_key(call, result):
     # Drop only transport metadata, not content, locations or source versions.
     value = {key: item for key, item in result.items() if key not in ('timestamp', 'updatedAt', 'createdAt', 'callId', 'toolCallId', 'fetchedAt', 'cacheHit')}
     args = call.get('args', {})
+    if call['name'] == 'web_search' and not failed_result(value):
+        return digest({'name': call['name'], 'evidence': search_evidence(value)})
     if call['name'] == 'web_fetch' and not failed_result(value):
         # The returned excerpt/match positions prove coverage. Refresh flags and
         # guessed offsets do not; equivalent requests share one result identity.

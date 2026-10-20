@@ -107,6 +107,16 @@
   top: 12px;
   pointer-events: auto;
 }
+.navigation-unread {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
 @media (max-width: 1023px) {
   .navigation {
     display: inline-flex;

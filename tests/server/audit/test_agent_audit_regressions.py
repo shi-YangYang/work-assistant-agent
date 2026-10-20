@@ -21,7 +21,6 @@ from app.modules.attachments.models import Attachment
 from app.modules.members.models import Member
 from app.modules.messages.models import Message
 from app.modules.reports.models import Report
-from app.modules.reports.service import ensure_report
 from app.modules.work.models import WorkItem
 from app.tasks.processing.documents import prepare_document
 from app.tasks.processing.handlers import process_job
@@ -134,14 +133,14 @@ async def test_retry_refreshes_stale_reply_and_tool_reads(setup, monkeypatch, ch
         return '最新状态：' + json.loads(evidence)['status']
     from app.tasks.processing import handlers
     from sqlalchemy.exc import OperationalError
-    original_citations = handlers.verified_citations
+    original_citations = handlers.delivered_citations
     persistence_attempts = []
     async def fail_initial_save(*args, **kwargs):
         persistence_attempts.append(True)
         if len(persistence_attempts) <= 2:
             raise OperationalError(None, None, RuntimeError('controlled final-save interruption'))
         return await original_citations(*args, **kwargs)
-    monkeypatch.setattr(handlers, 'verified_citations', fail_initial_save)
+    monkeypatch.setattr(handlers, 'delivered_citations', fail_initial_save)
     monkeypatch.setattr(handlers, 'invoke_harness', graph)
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=Review())
     first = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
@@ -200,7 +199,12 @@ async def test_report_list_is_bounded_and_full_content_is_retrievable(setup):
     reports = []
     for offset in range(2):
         async with sessions.begin() as db:
-            report, _ = await ensure_report(db, users['employee'], 'daily', now().date() - timedelta(days=offset))
+            # Existing manually written reports do not depend on generation sources.
+            day = (now().date() - timedelta(days=offset)).isoformat()
+            actor = users['employee']
+            report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period=day, period_end=day, timezone='Asia/Shanghai', content={})
+            db.add(report)
+            await db.flush()
         content = {'completed': '甲' * 8000, 'ongoing': '乙' * 7999 + '末'}
         saved = await clients['employee'].patch('/api/v1/reports/' + report.id, json={'expectedRevision': 1, 'content': content})
         assert saved.status_code == 200, saved.text

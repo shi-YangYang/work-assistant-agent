@@ -45,6 +45,32 @@ npm run dev:web
 
 访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。该命令统一管理 Docker 的 `paa-company` 项目：PostgreSQL、正文流 Redis，以及可选的沙盒 control/runtime；等待健康检查通过后启动宿主机上的 Web、API、worker。请先启动 Docker；Python 修改后需重启。`Ctrl+C` 停止应用及本次启动的 Redis，数据库继续运行；原已运行的 Redis 不会被停止。配置远程数据库或非 5432 端口时跳过本地容器，由使用者确保数据库可用；同一环境只允许一个开发管理命令运行，第二个终端不会接管服务。分开运行 API／worker 时，先在 Docker Desktop 启动已经创建的 postgres、redis 服务；独立命令不管理这些依赖。
 
+### 联网搜索与网页读取
+
+worker 使用固定版本的 Python `curl_cffi` 读取公开网页和 Bing RSS。安装公司 Python 依赖即可使用，不需要安装 Chrome、Playwright 或浏览器沙盒。使用库内完整 Chrome 请求特征及中文语言头，支持服务端返回的 HTML／RSS，不执行网页 JavaScript；需要登录或人机验证的页面会明确返回读取失败。
+
+网页读取不继承系统／环境代理，不携带用户 Cookie、账号或公司凭据。每次请求校验公开地址、固定已验证的公网 IP，并在每次跳转时重新校验；保留 TLS 证书检查。单次请求最多 8 秒、连接最多 5 秒，整次抓取最多 20 秒；解压后正文最多 1 MB，超限立即停止接收。网站是否可访问仍取决于部署网络与网站访问策略。
+
+### 旧版 Office 文件读取
+
+DOC／RTF／ODT、XLS／ODS、PPT／ODP 在发送消息后，由 worker 分别转换为 DOCX、XLSX、PPTX 再读取。上传不会触发转换，原件保留供下载和沙盒使用；PDF、新版 Office、文本与代码继续直接读取。复杂版式、图形和嵌入内容不保证完整，建议先用 Office／WPS 另存为新格式。包含宏、外部数据或活动对象，以及转换导致公式保存结果变化的文件会给出明确失败，不猜测缺失内容。
+
+本地开发需安装 LibreOffice（macOS：`brew install --cask libreoffice`；Debian／Ubuntu：`sudo apt-get install libreoffice-writer libreoffice-calc libreoffice-impress`；Windows 安装官方桌面发行版）。将 `soffice` 加入 PATH，或设置 `PAA_OFFICE_BINARY` 为其绝对路径；macOS 默认 `/Applications/LibreOffice.app/Contents/MacOS/soffice` 也会识别。重启 worker 后只检查一次版本，未安装不会阻止普通聊天及原有格式读取。
+
+生产仅 worker 镜像安装转换、页面渲染与中文字体依赖，不增加容器，不依赖 Agent 沙盒，也不放入 API 镜像。CD 在切换服务前实际执行 DOC／XLS／PPT 转换、内容读取及 Office→PDF→PNG 页面预检，失败则停止发布。手动检查可在 worker 环境运行 `python -m app.integrations.parsing.office_preflight`。回滚保留原件及分段；旧 worker 不能继续解析新增格式，需恢复带转换依赖的版本或让用户上传新格式。
+
+### 长文件与图文内容读取
+
+发送后先准备有界的文字范围。短文件正文直接提供给主模型，长文件可按需继续提取和搜索后续范围；不再把首次提取上限当作文件结尾。表格保留单元格定位、日期及公式保存值，不执行公式刷新或外部数据更新；隐藏内容及不支持对象仍明确标注。
+
+图表、扫描件和版式通过文档页面图片补充。Word／PPT／表格按需由 worker 生成 PDF，再用 Poppler 渲染指定页面；PDF 直接渲染。页面图片随正常主模型请求提供，不增加一个单独的图片描述模型或固定核对轮次。模型需要支持图像输入；纯文字读取不需要渲染。Word 页码是“转换后第 N 页”，可能与本机 Office 排版不同；表格页面按指定工作表生成，精确计算仍使用单元格数据。
+
+本地页面读取还需 `pdftoppm` 在 PATH 中（macOS：`brew install poppler`；Debian／Ubuntu：`sudo apt-get install poppler-utils fonts-noto-cjk`；Windows 配置 Poppler 的 bin 目录）。缺少页面依赖时保留可读正文并提示图片未读到，不会自动换模型。上传本身仍然不解析、不渲染、不调用 Agent。
+
+处理后的文件存放在媒体目录的 `.documents/`，与原件身份和解析／转换版本绑定，首次处理后复用。它们是持久化附件产物，随附件保留和删除，不按页数或短期 TTL 淘汰，也不设总量或单附件累计容量额度。提取的文字随附件保存在数据库中，附件删除时一并清理。
+
+每次转换／渲染仍为单次最多 32 MiB 输出预留空间，并保留至少 512 MiB 磁盘空闲；跨 worker 共享重任务槽位。实际磁盘空间不足时只停止新的对应页面准备，已读正文、已有页面和原文件仍保留；扩容磁盘或正常删除不再需要的附件后可重试。不要手工清空 `.documents/`，否则历史页面预览会失效。成功保存到工作中的文件有独立原件，源聊天删除后仍可读取或重建页面。
+
 ### 旧本地容器迁移
 
 升级前先退出 API、worker、Web 和独立沙盒命令，再执行：
@@ -104,7 +130,9 @@ Docker 启动后，执行一次 `npm run sandbox:setup`。首次下载并构建�
 
 ### 发送与查看附件
 
-工作助手支持选择、粘贴、拖入附件，可混发图片、文档和语音。每条最多 9 个附件，其中语音最多 3 段；单图最多 30 MiB／2,000 万像素，文档和语音每个最多 20 MiB，每段语音最长 3 分钟。支持 MP3、HEIC／HEIF；HEIC 预览会上传转换，发送时复用，不创建聊天消息。
+工作助手支持选择、粘贴、拖入附件，可混发图片、文档和语音。每条最多 20 个附件，其中语音最多 3 段；单图最多 40 MB／3,000 万像素，单个文档最多 100 MB，语音每段最多 30 MB、最长 3 分钟。容量沿用 1 MB = 1024 × 1024 字节。API 请求体上限 102 MB，Caddy 为 110 MB（含 multipart 开销）；每个 API 进程最多同时处理 4 个附件上传，繁忙或空间不足时明确拒绝并可手动重试。支持 MP3、HEIC／HEIF；HEIC 预览会上传转换，发送时复用，不创建聊天消息。
+
+附件容量与处理预算分开：上传不解析文档；Office 容器解压总量最多 256 MB，XML 单项仍限 16 MB；转换产物最多 128 MB、临时工作区最多 512 MB。转换进程仍受时间、内存和并发保护，复杂文件可能需拆分，失败会结束子进程并释放资源。模型单次图片输入预算不随附件数量扩大，未读区域沿用分批读取和明确提示。处理产物随附件持久化及删除，不设累计容量额度。
 
 图片可放大，PDF 可翻页和下载。XLSX 读取可见单元格及已有公式结果，不重算；不识别隐藏内容、扫描件、图表和嵌入图片。
 
@@ -112,7 +140,7 @@ Docker 启动后，执行一次 `npm run sandbox:setup`。首次下载并构建�
 
 在“我的工作”中只填标题即可创建，再逐步补充正文、清单、图片和文件。正文单独保存；“记录新进展”追加动态，不覆盖方案。状态和截止日期可独立修改，进展可更正或删除并保留历史。
 
-每次添加材料最多 9 个，其中语音最多 3 段；单图 30 MiB，文档和语音每个 20 MiB。材料保存后随工作可见，解析失败可重试。工作可以分次积累材料。
+每次添加材料最多 20 个，其中语音最多 3 段；单图 40 MB／3,000 万像素，文档 100 MB，语音每段 30 MB／3 分钟。材料保存后随工作可见，解析失败可重试。工作可以分次积累材料。
 
 点击“让助手协助”将一项工作引用带入最近聊天。可以先分析材料、修改方案；明确要求保存时才更新正文、记录进展或保存指定成果。已保存到工作的文件不受源聊天删除影响，未保存的聊天内容仍保持私有。报告根据期间进展生成，不把未来计划算作已完成工作。
 
@@ -252,12 +280,12 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 
 在仓库 **Settings → Secrets and variables → Actions** 添加四项 Secrets，无需 Environment 或 Variables：
 
-| Secret | 内容 |
-| --- | --- |
-| `DEPLOY_HOST` | 服务器公网 IPv4 或主机名 |
-| `DEPLOY_USER` | 部署用户，能够运行 Docker、读写部署目录 |
-| `DEPLOY_SSH_KEY` | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
-| `DEPLOY_KNOWN_HOSTS` | 已核对服务器指纹的 SSH known_hosts 记录 |
+| Secret               | 内容                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| `DEPLOY_HOST`        | 服务器公网 IPv4 或主机名                                      |
+| `DEPLOY_USER`        | 部署用户，能够运行 Docker、读写部署目录                       |
+| `DEPLOY_SSH_KEY`     | 专用无口令 SSH 私钥，对应公钥安装在部署用户的 authorized_keys |
+| `DEPLOY_KNOWN_HOSTS` | 已核对服务器指纹的 SSH known_hosts 记录                       |
 
 默认 SSH 端口 `22`，目录 `/srv/work-assistant-agent`；修改位置为工作流的 `DEPLOY_PORT`／`DEPLOY_PATH`。有仓库写权限的维护者可从 main 手动发布。
 
@@ -284,13 +312,13 @@ Web 缓存由 `deploy/company/Caddyfile.app` 管理：HTML（含前端路由）�
 
 常规操作使用五个内置工具，无需用户配置：
 
-| 工具 | 输入与结果 |
-| --- | --- |
-| `inspect_table` | 附件／成果中的 CSV、XLSX；返回列、缺失、重复和最多 20 行样本 |
-| `export_table` | 内联表格或文件引用；导出 CSV、XLSX |
-| `create_chart` | 指定横轴与数值列；生成中文柱状图／折线图 PNG |
-| `create_document` | 标题、段落、列表、表格、图片；生成 DOCX、PDF |
-| `create_slides` | 页面标题与内容块；生成可编辑 PPTX，长内容自动拆页 |
+| 工具              | 输入与结果                                                   |
+| ----------------- | ------------------------------------------------------------ |
+| `inspect_table`   | 附件／成果中的 CSV、XLSX；返回列、缺失、重复和最多 20 行样本 |
+| `export_table`    | 内联表格或文件引用；导出 CSV、XLSX                           |
+| `create_chart`    | 指定横轴与数值列；生成中文柱状图／折线图 PNG                 |
+| `create_document` | 标题、段落、列表、表格、图片；生成 DOCX、PDF                 |
+| `create_slides`   | 页面标题与内容块；生成可编辑 PPTX，长内容自动拆页            |
 
 常规文件可直接说“把这份计划生成 PDF”。工具不自动清洗、汇总或执行公式；特殊算法与布局仍可用 `run_python`。CSV 默认保留文本与前导零，指定列类型后才转换。表格最多 40 列、20000 行（内联最多 2000 行）；图表最多 60 行，重复类别需先明确汇总规则。文档宽表超过 8 列、PPT 表格超过 6 列或单行过长会明确失败。格式可读与视觉排版检查是不同事项。
 
@@ -301,12 +329,11 @@ Web 缓存由 `deploy/company/Caddyfile.app` 管理：HTML（含前端路由）�
   "filename": "实施计划.pdf",
   "format": "pdf",
   "title": "实施计划",
-  "blocks": [{"type": "paragraph", "text": "先确认需求，再完成验证。"}]
+  "blocks": [{ "type": "paragraph", "text": "先确认需求，再完成验证。" }]
 }
 ```
 
 `run_python` 也可 `from noria_tools import export_table`，调用 `export_table(filename="结果.xlsx", data={"columns":["数量"],"rows":[[3]]})`。文件引用使用真实附件或成果 ID，不传宿主机路径；每次执行是新环境，继续处理使用已保存成果。
-
 
 Linux 执行主机先按 [gVisor 安装说明](https://gvisor.dev/docs/user_guide/install/)安装 `runsc` 并注册到 Docker。安装或调整 Docker 配置安排在维护时段；CD 只检查运行时，不自动安装。使用完整发行包及其校验文件，保留 `runsc` 同目录的 `gvisor-bin/`，不能只复制单个可执行文件。
 
@@ -448,12 +475,12 @@ npm run package
 
 Noria 桌面端沿用旧内部名称对应的目录和密钥身份，品牌更新不会迁移或清空已有资料。
 
-| 内容 | 位置 |
-| --- | --- |
-| macOS 桌面资料 | `~/Library/Application Support/个人工作助手/` |
-| Windows 桌面资料 | `%APPDATA%/个人工作助手/` |
-| 公司业务数据 | PostgreSQL；原始附件在共享私有目录，生产环境默认使用 Docker 卷 |
-| 公司密钥 | 数据库保存密文，主密钥单独保管；本地默认为 `data/company/model-master.key` |
+| 内容             | 位置                                                                       |
+| ---------------- | -------------------------------------------------------------------------- |
+| macOS 桌面资料   | `~/Library/Application Support/个人工作助手/`                              |
+| Windows 桌面资料 | `%APPDATA%/个人工作助手/`                                                  |
+| 公司业务数据     | PostgreSQL；原始附件在共享私有目录，生产环境默认使用 Docker 卷             |
+| 公司密钥         | 数据库保存密文，主密钥单独保管；本地默认为 `data/company/model-master.key` |
 
 桌面备份须关闭应用并复制整个资料目录；公司备份保留数据库、附件及独立主密钥。环境文件、密钥和业务资料不入 Git。
 

@@ -13,7 +13,6 @@ import { usePageReady } from '@web/components/feedback/PageReadiness'
 import { AssistantNotice, type AssistantNoticeData } from './AssistantNotice'
 import { conversationMessagesPath, orphanActionsPath } from '@web/features/assistant/api/requests'
 import { AssistantSuggestions } from '@web/features/assistant/components/composer/AssistantSuggestions'
-import { exampleText } from '@web/features/assistant/utils/session'
 import { ChatHistory } from '@web/features/assistant/components/messages/ChatHistory'
 import { ComposerAttachments } from '@web/features/assistant/components/composer/attachments/ComposerAttachments'
 import type { PreviewImage } from '@web/components/media/ImageGallery'
@@ -75,7 +74,7 @@ export function ConversationChat({
 }) {
   const reasoning = useReasoningEffort()
   const composerKey = `composer:${conversationId ?? 'new'}`
-  const { drafts, setDraft, notify, identity } = useWorkspace()
+  const { drafts, setDraft, identity } = useWorkspace()
   const storedComposer = drafts[composerKey] as Composer | undefined
   const composer = useMemo(
     () => storedComposer ?? { text: '', files: [], key: '' },
@@ -275,7 +274,7 @@ export function ConversationChat({
         composer.files.filter((item) => fileKind(item.file) === 'audio').length >=
           MAX_AUDIO_ATTACHMENTS)
     ) {
-      setLimitError('每次最多 9 个附件，其中最多 3 段语音；请先移除一个附件')
+      setLimitError('每次最多 20 个附件，其中最多 3 段语音；请先移除一个附件')
       return false
     }
     setSendError('')
@@ -538,9 +537,7 @@ export function ConversationChat({
             admin={identity.member.role === 'admin'}
             disabled={locked}
             onChoose={(text) => {
-              const next = exampleText(composer.text, text)
-              if (next === composer.text) notify('输入框已有内容，请继续编辑；示例没有覆盖它。')
-              else change({ ...composer, text: next, key: '' })
+              change({ ...composer, text, key: '' })
               textInput.current?.focus()
             }}
           />

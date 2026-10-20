@@ -81,16 +81,52 @@
 }
 @media (max-width: 760px) {
   .suggestions {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
     width: calc(100% - 32px);
-    margin-bottom: 30px;
+    order: 1;
+    margin: 4px auto 8px;
   }
   .suggestions button {
-    padding: 14px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 8px;
+    border-color: var(--line);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--secondary);
+    text-align: center;
+    transition:
+      color 0.2s,
+      border-color 0.2s;
+  }
+  .suggestions button:hover {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--control);
+    transform: none;
+    box-shadow: none;
+  }
+  .shortcut-icon {
+    display: grid;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+  .shortcut-icon > svg {
+    width: 16px;
+    height: 16px;
   }
   .suggestions strong {
     font-size: 12px;
+    font-weight: 400;
   }
-  .suggestions small {
+  .suggestions small,
+  .suggestions button > svg:last-child {
     display: none;
   }
 }

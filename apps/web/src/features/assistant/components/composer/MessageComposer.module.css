@@ -177,6 +177,10 @@
 }
 
 @media (max-width: 760px) {
+  .composer-wrap[data-empty='true'] {
+    position: relative;
+    order: 2;
+  }
   .composer-wrap,
   .composer-wrap[data-empty='true'] {
     padding: 8px 8px max(8px, env(safe-area-inset-bottom));

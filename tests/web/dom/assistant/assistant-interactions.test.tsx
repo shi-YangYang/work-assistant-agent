@@ -160,6 +160,22 @@ async function modeReady(name = '自动审核') {
     ),
   )
 }
+it('uses the new account full default without saving a preference or opening a confirmation', async () => {
+  storedMode = { executionMode: 'full', modeRevision: 1, fullAccessConfirmed: false }
+  render(
+    <TestWorkspace vault={createVault()}>
+      <ModeHarness />
+    </TestWorkspace>,
+  )
+  expect(screen.getByRole('button', { name: '执行权限：自主执行' }).hasAttribute('disabled')).toBe(
+    true,
+  )
+  await modeReady('自主执行')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(updateExecutionMode).not.toHaveBeenCalled()
+  choose('逐项确认')
+  await modeReady('逐项确认')
+})
 it('shares saved mode across new/existing conversations, remounts and full page reloads', async () => {
   const vault = createVault()
   const view = (value: Conversation | null) => (

@@ -24,7 +24,9 @@ def unavailable(message):
 async def read_images(runtime: ToolRuntime[RunContext], attachment_ids: list[str] | None = None, question: str = '', start: int = 0) -> str:
     """Read images from any batch in THIS conversation when their pixels are missing.
 
-    Omit attachment_ids to list IDs/names/message IDs, 10/page; follow nextCursor.
+    Omit attachment_ids to list image/document IDs, 10/page; follow nextCursor.
+    Embedded pictures/scans/charts belong to documents: use their readPages
+    parameters with read_document, never treat an empty image list as missing files.
     A listing is NOT a visual read. Supply up to 9 IDs together and a question to
     read actual pixels in that order. Split larger sets into batches and retain
     each result. Reuse images already in model input/results; do not reread just
@@ -41,7 +43,7 @@ async def read_images(runtime: ToolRuntime[RunContext], attachment_ids: list[str
         current = await db.get(Message, job.target_id)
         query = select(Attachment, Message).join(Message, Message.id == Attachment.message_id).where(
             Attachment.company_id == actor.company_id, Attachment.owner_id == actor.id,
-            Attachment.kind == 'image', Attachment.deleted.is_(False),
+            Attachment.kind.in_(('image', 'document')), Attachment.deleted.is_(False),
             Message.company_id == actor.company_id, Message.owner_id == actor.id,
             Message.conversation_id == current.conversation_id, Message.deleted.is_(False),
             Message.created_at <= current.created_at)
@@ -51,17 +53,27 @@ async def read_images(runtime: ToolRuntime[RunContext], attachment_ids: list[str
             for image, parent in rows[:10]:
                 if await valid(db, actor, parent.access):
                     inherit(actor, job, parent)
-                    items.append({'id': image.id, 'name': image.name, 'messageId': parent.id})
+                    if image.kind == 'document':
+                        from app.modules.attachments.documents import document_reference
+                        items.append(document_reference(image))
+                    else:
+                        items.append({'id': image.id, 'kind': 'image', 'name': image.name, 'messageId': parent.id})
             return json.dumps({'state': 'listed', 'items': items, 'nextCursor': start + 10 if len(rows) > 10 else None}, ensure_ascii=False)
         rows = (await db.execute(query.where(Attachment.id.in_(identifiers)))).all()
         if len(rows) != len(identifiers):
-            return unavailable('图片不存在、已删除或不属于当前会话；请先查询图片目录。')
+            return unavailable('未找到可读取的图片来源；请先查询图片／文档目录，单个 ID 失败不能说明原文件已删除。')
         for _, parent in rows:
             if not await valid(db, actor, parent.access):
                 return unavailable('图片来源已变化或无权查看。')
+        inherit(actor, job, *(parent for _, parent in rows))
+        documents = [item for item, _ in rows if item.kind == 'document']
+        if documents:
+            from app.modules.attachments.documents import document_reference
+            return json.dumps({'state': 'document_pages', 'items': [document_reference(item) for item in documents],
+                               'imageIds': [identifier for identifier in identifiers if any(image.id == identifier and image.kind == 'image' for image, _ in rows)],
+                               'message': '本次仅提供目录，尚未读取像素。文档内嵌图片／图表用 readPages 指定的 read_document 读取；独立图片用 imageIds 分批读取。'}, ensure_ascii=False)
         selected = {image.id: (image, parent) for image, parent in rows}
         images = [selected[identifier][0] for identifier in identifiers]
-        inherit(actor, job, *(parent for _, parent in rows))
         await remember_sources(db, job, context, [
             {'kind': 'attachment', 'id': image.id, 'sha256': image.sha256,
              'revision': image.extraction_revision, 'access': selected[image.id][1].access}

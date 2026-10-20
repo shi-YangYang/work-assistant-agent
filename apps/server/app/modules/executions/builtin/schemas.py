@@ -19,7 +19,7 @@ class FileReference(Contract):
     @model_validator(mode='after')
     def reference(self):
         if self.attachment_id:
-            if self.deliverable_id or self.file_id or self.revision:
+            if self.deliverable_id or self.file_id:
                 raise ValueError('附件与成果引用不能混用')
         elif not (self.deliverable_id and self.file_id and self.revision > 0):
             raise ValueError('提供真实 attachment_id 或完整的 deliverable_id/revision/file_id')
@@ -27,7 +27,7 @@ class FileReference(Contract):
 
 
 class TableSource(Contract):
-    input_ref: FileReference
+    input_ref: FileReference = Field(description='文件引用对象，例如 source={"input_ref":{"attachment_id":"实际附件ID"}}；成果使用完整 deliverable_id/revision/file_id，不是文件路径。')
     sheet: str = Field(default='', max_length=120)
     encoding: Literal['utf-8-sig', 'utf-8', 'gb18030'] = 'utf-8-sig'
     column_types: dict[str, Literal['string', 'number', 'boolean']] = Field(default_factory=dict, max_length=40)

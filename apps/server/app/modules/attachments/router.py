@@ -1,8 +1,9 @@
 import hashlib
+import shutil
 from fastapi import APIRouter, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from app.core.errors import problem
-from app.core.attachment_limits import MAX_IMAGE_BYTES, MAX_FILE_BYTES
+from app.core.attachment_limits import attachment_byte_limit, attachment_size_error
 from app.db.base import now
 from app.http.dependencies import AUTH, DB, SETTINGS
 from app.integrations.media import audio_mime, audio_wav, image_process, preview_path
@@ -36,12 +37,14 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
     path = settings.media_dir / identifier
     size, digest = 0, hashlib.sha256()
     try:
+        if shutil.disk_usage(settings.media_dir).free < attachment_byte_limit(kind) + 512 * 1024 * 1024:
+            problem(507, '文件存储空间不足，请稍后重试或联系管理员', 'storage_full')
         with path.open('xb') as target:
             path.chmod(0o600)
             while block := await file.read(65536):
                 size += len(block)
-                if size > (MAX_IMAGE_BYTES if kind == 'image' else MAX_FILE_BYTES):
-                    problem(413, '每张图片不能超过 30 MB' if kind == 'image' else '文件不能超过 20 MB')
+                if size > attachment_byte_limit(kind):
+                    problem(413, attachment_size_error(kind))
                 digest.update(block)
                 await run_in_threadpool(target.write, block)
         if not size:
@@ -62,6 +65,11 @@ async def upload(file: UploadFile, actor=AUTH, db=DB, settings=SETTINGS):
                 magic = raw.read(8)
             if not (magic.startswith(b'%PDF-') if name.lower().endswith('.pdf') else magic.startswith(b'PK\x03\x04')):
                 problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
+        elif suffix in ('.doc', '.xls', '.ppt', '.rtf', '.odt', '.ods', '.odp'):
+            from app.integrations.parsing.formats import header_matches
+            with path.open('rb') as raw:
+                if not header_matches(suffix, raw.read(8)):
+                    problem(415, '文件结构与扩展名不符或文件已损坏，请重新导出')
         initial_company = actor.company_id
         await business_company_lock(db, initial_company)
         actor = await db.scalar(select(Member).where(Member.id == actor.id).execution_options(populate_existing=True))
@@ -147,7 +155,7 @@ async def media_preview(identifier: str, request: Request, workRevision: int | N
 
 
 @router.get('/api/v1/uploads/{identifier}/extraction')
-async def extraction(identifier: str, start: int = Query(0, ge=0, le=2000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
+async def extraction(identifier: str, start: int = Query(0, ge=0, le=10_000_000), limit: int = Query(3, ge=1, le=3), revision: int | None = None, workRevision: int | None = Query(None, ge=1), actor=AUTH, db=DB):
     item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
     if item.kind != 'document':
         problem(422, '该附件没有文档提取内容')
@@ -177,3 +185,19 @@ async def retry_extraction(identifier: str, actor=AUTH, db=DB):
     db.add(job)
     await db.flush()
     return job_dto(job)
+
+
+@router.get('/api/v1/uploads/{identifier}/pages/{page}')
+async def document_page(identifier: str, page: int, revision: int, resolution: str = 'normal', sheet: str = '', renderer: str = '', workRevision: str | None = None, actor=AUTH, db=DB, settings=SETTINGS):
+    from types import SimpleNamespace
+    from app.integrations.parsing.document_rendering import page_path
+    item = await visible_attachment(db, identifier, actor, work_revision=workRevision)
+    if item.kind != 'document' or item.extraction_revision != revision:
+        problem(404, '页面来源不可用')
+    try:
+        path = page_path(SimpleNamespace(settings=settings), item, {'revision': revision, 'sha256': item.sha256, 'renderer': renderer, 'page': page, 'resolution': resolution, 'sheet': sheet})
+    except ValueError:
+        problem(404, '页面来源不可用')
+    if not path.is_file() or path.is_symlink():
+        problem(404, '页面预览已过期，可在对话中重新读取')
+    return FileResponse(path, media_type='image/png', headers={'Cache-Control': 'private, no-store', 'Content-Disposition': 'inline'})

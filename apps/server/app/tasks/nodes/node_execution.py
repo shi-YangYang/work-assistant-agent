@@ -12,7 +12,7 @@ from app.tasks.nodes.node_failures import classify
 from app.tasks.nodes.node_state import MAX_NODES, MAX_OUTPUT_BYTES, execution, save
 from app.tasks.budget import service as budget
 from app.tasks.budget.state import TaskBudgetStopped, policy
-from app.tasks.retry import Attempt, Failure, NodeFailed, run
+from app.tasks.retry import Attempt, Failure, NodeFailed, Policy, run
 
 active_node = contextvars.ContextVar('assistant_node', default=None)
 
@@ -56,7 +56,7 @@ async def initialize(context, input_key):
             # scope as the graph. Business receipts remain for safe replay.
             stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete', 'workChangeRequirements'}
             if previous_scope:
-                stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources'))
+                stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources', 'webRedirects', 'webReadFailures'))
             job.result = {key: value for key, value in job.result.items() if key not in stale}
         state['deadline'] = context.node_deadline
         state.setdefault('nodes', [])
@@ -110,7 +110,7 @@ async def recover_receipt(db, context, job, actor, row):
 async def execute_node(context, *, identity, kind, label, operation, encode=lambda x: x,
                        decode=lambda x: x, outcome=None, safe_replay=True, restore=None,
                        receipt_output=lambda x: x, on_failure=None, presentation=None, result_presentation=None,
-                       allow_work_refresh=False):
+                       allow_work_refresh=False, retry_policy=Policy()):
     if not context.node_retry:
         return await operation()
     parent = active_node.get()
@@ -127,7 +127,8 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                 raise TaskBudgetStopped('nodes')
             row = {'id': identifier, 'scope': context.node_scope, 'kind': kind, 'label': label,
                    'parentId': parent[0] if parent else None, 'state': 'waiting', 'attempts': 0,
-                   'round': job.attempt, 'totalRetries': 0, 'resumable': True}
+                   'round': job.attempt, 'totalRetries': 0, 'resumable': True,
+                   'maxAttempts': retry_policy.max_attempts}
             if presentation is not None:
                 row['presentation'] = presentation
             state['nodes'].append(row)
@@ -143,7 +144,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             return decode(row['output'])
         if row['state'] in ('failed', 'cancelled') and not row.get('receiptId'):
             prior_failure = NodeFailed(Failure(row.get('errorCode', 'failed'), row.get('error', '此步骤未完成'),
-                                               cancelled=row['state'] == 'cancelled'), identifier)
+                                               cancelled=row['state'] == 'cancelled', category=row.get('errorCategory', '')), identifier)
             if on_failure is None:
                 raise prior_failure
         if kind == 'tool' and not row.get('receiptId') and not prior_failure:
@@ -152,6 +153,9 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             except TaskBudgetStopped as error:
                 raise ToolBudgetExceeded(str(error)) from error
         attempt = Attempt(row['attempts'], row.get('nextAt'))
+        # Restored nodes retain the policy they started with. Older journals
+        # predate per-node policies and used four attempts.
+        retry_policy = Policy(max_attempts=row.get('maxAttempts', 4), delays=retry_policy.delays)
         if row['state'] == 'running':
             if not safe_replay and not row.get('receiptId'):
                 raise NodeFailed(Failure('uncertain', '上次操作结果未知，请核对业务记录后再处理'), identifier)
@@ -178,6 +182,10 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row['totalRetries'] += max(0, current.count - max(1, row['attempts']))
             row.update(state=status, attempts=current.count, nextAt=current.next_at,
                        errorCode=failure.code if failure else '', error=failure.message[:240] if failure else '')
+            if failure and failure.category:
+                row['errorCategory'] = failure.category
+            else:
+                row.pop('errorCategory', None)
             if kind == 'model' and status == 'retry_wait':
                 from app.tasks.feedback.reply_stream import transition
                 transition(job, 'withdrawn', new=True)
@@ -193,6 +201,7 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
                 raise prior_failure
             result = await run(operation, classify=classify, before=lambda: check(context, allow_work_refresh=allow_work_refresh), emit=emit,
                                attempt=attempt, deadline=context.node_deadline, jitter=lambda: random.uniform(0, .2),
+                               policy=retry_policy,
                                recover=recover if kind == 'tool' else None)
         except NodeFailed as error:
             if on_failure is None:
@@ -213,12 +222,17 @@ async def execute_node(context, *, identity, kind, label, operation, encode=lamb
             row.update(state='failed' if final_failure else status, nextAt=None,
                        error=(final_failure.message if final_failure else detail)[:240],
                        errorCode=final_failure.code if final_failure else 'business' if detail else '', resumable=False)
+            if final_failure and final_failure.category:
+                row['errorCategory'] = final_failure.category
+            else:
+                row.pop('errorCategory', None)
             # Normalized graph messages / validated verdicts only; no request
             # arguments, credentials, provider wire response or reasoning fields.
             row['output'] = encoded
             row['readVersions'] = dict(context.read_versions)
             if len(json.dumps(state, ensure_ascii=False).encode()) > MAX_OUTPUT_BYTES:
                 row.pop('output')
+                row.pop('errorCategory', None)
                 row.update(state='failed', error='恢复数据超过本次限制，请缩小处理范围', errorCode='budget', resumable=False)
                 save(job, state)
                 raise BudgetExceeded('恢复数据超过本次限制，请缩小处理范围')

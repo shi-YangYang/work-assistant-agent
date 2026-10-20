@@ -14,6 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 _task_transports = ContextVar('task_model_transports', default=None)
 _request_timing = ContextVar('model_request_timing', default=None)
 _request_scheme = ContextVar('model_request_scheme', default=None)
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
 
 def network_timing(event, **fields):
@@ -44,10 +45,11 @@ async def task_connections():
 
 
 class ProviderError(ValueError):
-    def __init__(self, code, message, status=None, retry_after=None, *, sent=None, output_limit=False):
+    def __init__(self, code, message, status=None, retry_after=None, *, sent=None, output_limit=False, image_input_unsupported=False):
         super().__init__(message)
         self.code, self.status, self.retry_after, self.sent = code, status, retry_after, sent
         self.output_limit = output_limit
+        self.image_input_unsupported = image_input_unsupported
 
 
 RATE_LIMIT_CODES = frozenset(('rate_limit_exceeded', 'rate_limit_error', 'too_many_requests', 'throttled', 'throttling', 'throttling.ratequota'))
@@ -70,6 +72,16 @@ def structured_error(value, *, status=None, delay=None):
         return ProviderError('quota', '服务额度不足，请查看服务商账户', status or 429, delay)
     if codes & {'invalid_api_key', 'authentication_error'}:
         return ProviderError('authentication', '鉴权失败，请核对密钥、模型权限及服务地域', status or 401)
+    # An image downgrade is allowed only on explicit modality rejection. Generic
+    # model/parameter/protocol errors must keep their original failure semantics.
+    message = str(detail.get('message', ''))[:2000].lower()
+    image_rejected = bool(codes & {'image_input_not_supported', 'unsupported_image_input', 'vision_not_supported'}) or any(phrase in message for phrase in (
+        'image input is not supported', 'image input not supported', 'does not support image',
+        'does not support vision', 'image_url is not supported', 'unsupported image_url',
+        'only text is supported', '不支持图片输入', '不支持图像输入',
+    ))
+    if image_rejected and (status is None or status in (400, 415, 422)):
+        return ProviderError('protocol', '当前模型不支持图片输入', status or 400, image_input_unsupported=True)
     if codes & {'invalid_request_error', 'invalid_parameter', 'invalidparameter'}:
         return ProviderError('protocol', '服务不支持当前路径、模型或参数，请核对接口配置', status or 400)
     if codes & {'server_error', 'internal_error', 'internalerror', 'service_unavailable', 'serviceunavailable'}:
@@ -152,11 +164,11 @@ class LimitedStream(httpx.AsyncByteStream):
             if self.streaming:
                 for newline in re.finditer(b'[\r\n]', chunk):
                     size += newline.start() - offset
-                    if size > 2 * 1024 * 1024:
+                    if size > MAX_RESPONSE_BYTES:
                         raise ProviderError('limit', '模型单段流式响应过大，已停止接收')
                     size, offset = 0, newline.end()
             size += len(chunk) - offset
-            if size > 2 * 1024 * 1024:
+            if size > MAX_RESPONSE_BYTES:
                 message = '模型单段流式响应过大，已停止接收' if self.streaming else '模型响应内容过大，已停止接收'
                 raise ProviderError('limit', message)
             yield chunk
@@ -208,6 +220,30 @@ def client(settings):
     else:
         transport = BorrowedTransport(shared, settings)
     return httpx.AsyncClient(transport=transport, timeout=httpx.Timeout(60, connect=10), trust_env=False, follow_redirects=False, headers={'Accept-Encoding': 'identity'})
+
+
+async def stream_data(lines):
+    """Assemble bounded SSE events; a line is not necessarily a JSON message."""
+    values, size, first = [], 0, True
+    async for line in lines:
+        if first:
+            line = line.removeprefix('\ufeff')
+            first = False
+        if not line:
+            if values:
+                data = '\n'.join(values)
+                values, size = [], 0
+                yield data
+            continue
+        field, _, value = line.partition(':')
+        if field != 'data':
+            continue
+        value = value.removeprefix(' ')
+        size += len(value.encode('utf-8')) + 1
+        if size > MAX_RESPONSE_BYTES:
+            raise ProviderError('limit', '模型单段流式响应过大，已停止接收')
+        values.append(value)
+    # An event without its final blank line is truncated, never complete.
 
 
 async def finish_stream(lines):

@@ -1,3 +1,4 @@
+import { MAX_ATTACHMENTS } from '@web/utils/attachment-limits'
 import type { Attachment } from '@paa/api-contracts'
 import { uploadAttachment } from '@web/api/attachments'
 import { epoch, isCancelled } from '@web/api/client'
@@ -18,7 +19,7 @@ export function useWorkUpload(attachments: Attachment[], change: (files: Attachm
     const selected = latest.current.attachments
     const failure =
       fileSelectionError(files) ||
-      (selected.length + files.length > 9 ? '每次保存最多添加 9 个附件' : '') ||
+      (selected.length + files.length > MAX_ATTACHMENTS ? '每次保存最多添加 20 个附件' : '') ||
       (selected.filter((a) => a.kind === 'audio').length +
         files.filter((f) => fileKind(f) === 'audio').length >
       3

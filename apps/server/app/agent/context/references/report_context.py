@@ -79,7 +79,7 @@ async def load_brief(db, actor, job):
 
 async def load_materials(db, actor, job):
     """Resolve read source references, never promote them to confirmed facts."""
-    from app.modules.attachments.documents import agent_attachment
+    from app.modules.attachments.documents import agent_attachment, document_chunk_location
     from app.modules.attachments.models import DocumentChunk
     source = job.result.get('instructionSource') or {}
     if not source:
@@ -97,7 +97,7 @@ async def load_materials(db, actor, job):
         chunk = await db.scalar(select(DocumentChunk).where(DocumentChunk.attachment_id == identifier, DocumentChunk.revision == revision, DocumentChunk.ordinal == ordinal))
         if document.extraction_revision != revision or chunk is None:
             raise ValueError('报告引用的附件已变化，请使用最新材料重新生成')
-        result.append({'name': document.name, 'location': chunk.location, 'text': chunk.text})
+        result.append({'name': document.name, 'location': document_chunk_location(chunk.location), 'text': chunk.text})
     from app.modules.messages.input.audio import transcript_groups
     _, material_transcript = transcript_groups(message.transcript, message_job.result)
     if material_transcript:

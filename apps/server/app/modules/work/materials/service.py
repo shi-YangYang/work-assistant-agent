@@ -3,6 +3,7 @@ import hashlib
 import shutil
 from pathlib import Path
 from sqlalchemy import select, event
+from app.core.attachment_limits import MAX_ATTACHMENTS, MAX_AUDIO_ATTACHMENTS
 from app.core.errors import problem
 from app.db.base import uid
 from app.modules.attachments.models import Attachment, DocumentChunk
@@ -40,8 +41,8 @@ async def bind_materials(db, actor, work, sources, settings, *, conversation_id=
     await company_lock(db, actor.company_id)
     if settings is None:
         raise ValueError('工作材料保存缺少存储配置')
-    if len(sources) > 9:
-        problem(422, '单次最多添加 9 个附件')
+    if len(sources) > MAX_ATTACHMENTS:
+        problem(422, '单次最多添加 20 个附件')
     result, audio = [], 0
     for raw in sources:
         source = raw.model_dump(exclude_none=True) if hasattr(raw, 'model_dump') else raw
@@ -50,7 +51,7 @@ async def bind_materials(db, actor, work, sources, settings, *, conversation_id=
             result.append(prior.id)
             original = await db.get(Attachment, prior.attachment_id)
             audio += int(original.kind == 'audio')
-            if audio > 3:
+            if audio > MAX_AUDIO_ATTACHMENTS:
                 problem(422, '单次最多添加 3 段语音')
             continue
         if source.get('attachmentId'):
@@ -82,16 +83,16 @@ async def bind_materials(db, actor, work, sources, settings, *, conversation_id=
             path = file_path(settings, file['storageKey'])
             name, mime, size, checksum = file['name'], file['mimeType'], file['size'], file['sha256']
             kind, duration, original = 'image' if mime.startswith('image/') else 'document', None, None
-        from app.core.attachment_limits import MAX_IMAGE_BYTES, MAX_FILE_BYTES
+        from app.core.attachment_limits import attachment_byte_limit, attachment_size_error
         from app.modules.attachments.documents import document_type
-        if size > (MAX_IMAGE_BYTES if kind == 'image' else MAX_FILE_BYTES):
-            problem(413, '图片不得超过 30MB，其他文件不得超过 20MB')
+        if size > attachment_byte_limit(kind):
+            problem(413, attachment_size_error(kind))
         if kind == 'document' and not document_type(name, mime):
             problem(415, '此文件格式暂不支持保存为工作材料')
         if kind == 'image' and original is None and (mime not in ('image/png', 'image/jpeg', 'image/webp') or Path(name).suffix.lower() not in ('.png', '.jpg', '.jpeg', '.webp')):
             problem(415, '此成果图片格式暂不支持保存')
         audio += int(kind == 'audio')
-        if audio > 3:
+        if audio > MAX_AUDIO_ATTACHMENTS:
             problem(422, '单次最多添加 3 段语音')
         if not path.is_file() or path.is_symlink():
             problem(404, '源文件已不可用')

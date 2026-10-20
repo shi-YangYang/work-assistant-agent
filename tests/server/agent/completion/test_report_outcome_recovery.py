@@ -13,7 +13,7 @@ from app.tasks.feedback.outcomes import derive, record
 from app.tasks.models import Job
 from app.tasks.processing.handlers import process_job
 from app.tasks.runtime.queue import claim
-from _support.agent.business_actions import create, finish, runtime
+from _support.agent.business_actions import Judge, create, finish, runtime
 from _support.work.report_reliability import ReportModel
 
 
@@ -60,6 +60,102 @@ def test_corrected_arguments_without_admitted_result_do_not_resolve_failure():
     record(job, 'generate_report', BASE, {'state': 'failed', 'category': 'permission_denied', 'message': '无权生成'})
     assert len(job.result['operationFeedback']) == 2
     assert derive(job)['state'] == 'blocked'
+
+
+def corrected_draft():
+    job = task()
+    job.target_id = 'current-message'
+    arguments = {**BASE, 'task_item_id': 'same-item'}
+    record(job, 'generate_report', {**arguments, 'submit_after': True},
+           {'state': 'failed', 'category': 'invalid_arguments', 'message': '用户只要草稿，不能提交'})
+    job.result['taskItems'] = [{'id': 'same-item', 'action': 'generate_report', 'state': 'running',
+        'receiptId': 'draft-receipt', 'userSource': {'messageId': 'current-message'},
+        'attemptedOperation': {'action': 'generate_report', 'submitAfter': False}}]
+    result = {'id': 'draft-receipt', 'action': 'generate_report', 'state': 'running',
+              'messageId': 'current-message', 'objectId': 'report',
+              'job': {'kind': 'report', 'targetId': 'report'}}
+    return job, arguments, result
+
+
+def test_same_authorized_draft_correction_resolves_unexecuted_submit_rejection():
+    job, arguments, result = corrected_draft()
+    resolved = record(job, 'generate_report', arguments, result)
+    assert len(resolved) == 2
+    assert not job.result['operationFeedback']
+    assert len(job.result['toolOutcomes']) == 1
+
+
+@pytest.mark.parametrize('boundary', [
+    'different_item', 'different_period', 'different_kind', 'different_obligation', 'different_target',
+    'different_reference', 'missing_binding', 'old_message', 'different_receipt', 'different_child',
+    'old_user_source', 'submit_requested', 'unknown_submit', 'permission_denied', 'old_receipt',
+    'pending_receipt', 'failed_receipt',
+])
+def test_draft_correction_keeps_other_failures_and_real_submit_requests(boundary):
+    job, arguments, result = corrected_draft()
+    bound = job.result['taskItems'][0]
+    if boundary.startswith('different_') and boundary not in ('different_receipt', 'different_child'):
+        key, value = {'different_item': ('task_item_id', 'another-item'),
+            'different_period': ('report_date', '2026-10-19'), 'different_kind': ('report_kind', 'daily'),
+            'different_obligation': ('obligation_id', 'another-obligation'),
+            'different_target': ('target_id', 'another-target'),
+            'different_reference': ('deliverable_id', 'another-source')}[boundary]
+        arguments[key] = value
+    elif boundary == 'missing_binding':
+        job.result['taskItems'] = []
+    elif boundary == 'old_message':
+        result['messageId'] = 'old-message'
+    elif boundary == 'different_receipt':
+        bound['receiptId'] = 'another-receipt'
+    elif boundary == 'different_child':
+        result['job']['targetId'] = 'another-report'
+    elif boundary == 'old_user_source':
+        bound['userSource']['messageId'] = 'old-message'
+    elif boundary == 'submit_requested':
+        bound['attemptedOperation']['submitAfter'] = True
+    elif boundary == 'unknown_submit':
+        del bound['attemptedOperation']['submitAfter']
+    elif boundary == 'permission_denied':
+        job.result['toolOutcomes'][0]['category'] = 'permission_denied'
+    elif boundary == 'old_receipt':
+        job.result['toolOutcomes'][0]['receiptId'] = 'prior-pending-submit'
+    else:
+        result['state'] = 'pending' if boundary == 'pending_receipt' else 'failed'
+    record(job, 'generate_report', arguments, result)
+    assert job.result['operationFeedback']
+    assert any(entry['message'] == '用户只要草稿，不能提交' for entry in job.result['toolOutcomes'])
+
+
+@pytest.mark.asyncio
+async def test_corrected_submit_flag_uses_same_authorized_item_and_only_generates_one_draft(setup):
+    settings, sessions, users, clients = setup
+    await create(clients['employee'], title='方案', summary='方案初稿已完成', status='done')
+    context, sent = await runtime(setup, '根据已有工作起草本周周报草稿，先别提交', allowed=False)
+    arguments = {'step': 1, 'action': 'generate_report', 'report_kind': 'weekly',
+                 'report_date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}
+    denied = await execute(context, **arguments, submit_after=True)
+    assert denied['state'] == 'failed' and denied['taskItemId']
+    context.intent_model = Judge()
+    accepted = await execute(context, **arguments, task_item_id=denied['taskItemId'])
+    assert accepted['state'] == 'running' and accepted['taskItemId'] == denied['taskItemId']
+    assert len(context.intent_model.inputs) == 1  # Uses the existing authorization, no extra model pass.
+    async with sessions.begin() as db:
+        parent = await db.get(Job, context.job_id)
+        assert not parent.result['operationFeedback']
+        assert len(parent.result['toolOutcomes']) == 1
+        assert len(parent.result['taskItems']) == 1
+    await finish(context)
+    generation = await claim(sessions, users['employee'].id)
+    model = ReportModel(json.dumps({'completed': '方案初稿已完成', 'ongoing': '', 'blockers': '', 'next': ''}, ensure_ascii=False))
+    await process_job(generation, sessions, settings, None, model=model)
+    actual = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert actual['job']['taskOutcome']['state'] == 'completed'
+    assert actual['job']['taskOutcome']['remaining'] == []
+    assert len(actual['actions']) == 1 and actual['actions'][0]['state'] == 'succeeded'
+    async with sessions() as db:
+        report = await db.get(Report, accepted['objectId'])
+        assert report.published_revision == 0
+        assert await db.scalar(select(func.count()).select_from(Report).where(Report.owner_id == users['employee'].id)) == 1
 
 
 @pytest.mark.asyncio

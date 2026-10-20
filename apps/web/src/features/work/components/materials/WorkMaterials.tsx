@@ -41,7 +41,9 @@ function MaterialList({ work, own, saved }: { work: Work; own: boolean; saved: (
         {data?.items.map((material) => (
           <div key={material.id} className={styles.row}>
             <div className={styles.caption}>
-              <button onClick={() => setSelected(material)}>{material.attachment.name}</button>
+              <button className={styles.filename} onClick={() => setSelected(material)}>
+                {material.attachment.name}
+              </button>
               <small>{fileSize(material.attachment.size)}</small>
               {own && !bodyIds.includes(material.id) && (
                 <button

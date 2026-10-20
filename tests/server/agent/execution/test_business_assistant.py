@@ -248,11 +248,11 @@ async def test_old_edit_paths_preserve_team_access_and_links(setup, path):
     assert (await clients['admin'].get('/api/v1/work-items/' + own_id)).status_code == 403
     assert not (await clients['admin'].get('/api/v1/work-items')).json()['items']
     # A downgraded account's report must not turn protected revisions into plain text.
-    from app.modules.reports.service import ensure_report
-    async with sessions.begin() as db:
-        actor = await db.get(Member, admin.id)
-        _, report_job = await ensure_report(db, actor, 'daily', now().date())
-        assert report_job.result['sourceIds'] == []
+    denied = await clients['admin'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().date().isoformat()}, headers={'Idempotency-Key': str(uuid4())})
+    assert denied.status_code == 422 and denied.json()['error']['code'] == 'report_sources_empty'
+    async with sessions() as db:
+        assert not await db.scalar(select(Report.id).where(Report.owner_id == admin.id))
+        assert not await db.scalar(select(Job.id).where(Job.owner_id == admin.id, Job.kind == 'report'))
 
 
 async def test_relinked_draft_cannot_confirm_after_revocation(setup):

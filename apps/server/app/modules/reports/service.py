@@ -11,6 +11,11 @@ from app.tasks.models import Job
 from sqlalchemy import select
 
 
+def no_report_sources_message(kind):
+    label = '周报' if kind == 'weekly' else '日报'
+    return f'所选周期内暂无可用于生成{label}的工作记录。请先记录工作进展；只有工作正文或计划还不能生成报告。也可以让我根据当前会话整理一份{label}正文。'
+
+
 async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezone=None, instructions='', instruction_source=None):
     if actor.role != 'employee':
         problem(403, '管理员不生成个人报告')
@@ -18,24 +23,31 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezon
     start, end = period(kind, day)
     await db.scalar(select(Member).where(Member.id == actor.id).with_for_update())
     report = await db.scalar(select(Report).where(Report.owner_id == actor.id, Report.kind == kind, Report.period == start.isoformat()))
+    new_report = report is None
     if report is None:
         report = Report(company_id=actor.company_id, owner_id=actor.id, kind=kind, period=start.isoformat(), period_end=end.isoformat(), timezone=report_timezone or company.rules['timezone'], content={'completed': '', 'ongoing': '', 'blockers': '', 'next': ''})
-        db.add(report)
-        await db.flush()
     from app.modules.reports.scheduling.schedule import link_report
-    await link_report(db, report)
     if report.deleted:
         if scheduled:
             return report, None
         problem(409, '该周期报告已删除，不能重新生成')
-    existing = await db.scalar(select(Job).where(Job.owner_id == actor.id, Job.kind == 'report', Job.target_id == report.id).order_by(Job.created_at.desc()).limit(1))
+    existing = None if new_report else await db.scalar(select(Job).where(Job.owner_id == actor.id, Job.kind == 'report', Job.target_id == report.id).order_by(Job.created_at.desc()).limit(1))
     if existing is not None and (scheduled or existing.state in ('queued', 'running')):
         prior_source = existing.result.get('instructionSource') or {}
         if instructions and (instructions != existing.result.get('instructions', '') or (instruction_source or {}).get('references', []) != prior_source.get('references', [])):
             problem(409, '该报告正在生成，新的写作要求尚未应用，请完成后再修改或重新生成')
+        await link_report(db, report)
         return report, existing
     inputs = await report_inputs(db, report)
-    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued' if inputs else 'succeeded', phase='saved' if inputs else 'empty', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2, **({'instructions': instructions} if instructions else {}), **({'instructionSource': instruction_source} if instruction_source else {})})
+    if not inputs:
+        if scheduled:
+            return (None if new_report else report), None
+        problem(422, no_report_sources_message(kind), 'report_sources_empty')
+    if new_report:
+        db.add(report)
+        await db.flush()
+    await link_report(db, report)
+    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued', phase='saved', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2, **({'instructions': instructions} if instructions else {}), **({'instructionSource': instruction_source} if instruction_source else {})})
     db.add(job)
     await db.flush()
     return report, job

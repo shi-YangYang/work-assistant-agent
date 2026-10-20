@@ -110,6 +110,7 @@ async def test_fourth_attempt_committed_receipt_recovers_without_reexecution(set
     result = json.loads((await tool_node(context, request, forbidden)).content)
     assert result == committed
     assert context.intent_model.inputs == []
+
     if action in ('update_work', 'edit_report'):
         assert result['objectRevision'] == 2
         assert context.read_versions[result['objectId']] == 2
@@ -165,3 +166,24 @@ async def test_receipt_recovery_keeps_authorization_input_config_and_other_reads
     with pytest.raises(expected):
         await tool_node(context, request, forbidden)
     assert context.intent_model.inputs == []
+
+
+async def test_cancel_after_commit_preserves_completed_receipt_and_tool_node(setup, fast_nodes, monkeypatch):
+    context, _, committed = await interrupted_node(setup, monkeypatch, 'create_work')
+    client = setup[3]['employee']
+    response = await client.post('/api/v1/jobs/' + context.job_id + '/cancel',
+                                 json={'expectedAttempt': 0, 'expectedFence': context.fence})
+    assert response.status_code == 200, response.text
+    for endpoint in ('/api/v1/jobs/' + context.job_id,
+                     '/api/v1/jobs/' + context.job_id + '/feedback'):
+        data = (await client.get(endpoint)).json()
+        assert data['state'] == 'cancelled'
+        assert data['taskOutcome']['state'] == 'cancelled'
+        assert data['taskOutcome']['completed'] == ['创建工作《报价方案》']
+        tool = next(node for node in data['nodes'] if node['kind'] == 'tool')
+        assert tool['state'] == 'succeeded' and not tool['error']
+    work = (await client.get('/api/v1/work-items/' + committed['objectId'])).json()
+    assert work['title'] == '报价方案' and work['revision'] == 1
+    async with context.sessions() as db:
+        assert (await db.get(BusinessAction, committed['id'])).state == 'succeeded'
+        assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == context.owner_id)) == 1

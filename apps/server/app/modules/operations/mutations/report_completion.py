@@ -5,13 +5,15 @@ from app.db.base import now
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.policy.execution_policy import effective, decide, current_mode
 from app.modules.operations.receipts import refresh_generation
+from app.modules.operations.report_receipts import snapshot
 from app.modules.operations.targets import source_check
 from app.modules.reports.service import submit_report
 
 
 async def submit_action(db, actor, row):
     item = await submit_report(db, actor, row.params['targetId'], row.params['expectedRevision'])
-    row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision}
+    row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision,
+                  'reportSnapshot': snapshot(item)}
     row.state, row.params, row.updated_at = 'succeeded', {}, now()
 
 

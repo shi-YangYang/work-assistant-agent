@@ -46,6 +46,29 @@ def test_secret_redaction_preserves_synthetic_tool_data():
     assert value == {'arguments': {'text': 'synthetic'}, 'api_key': '[redacted]', 'credential': '[redacted]'}
 
 
+def test_database_diagnostic_keeps_control_flow_without_query_or_user_content():
+    import json
+    from types import SimpleNamespace
+    from psycopg import ProgrammingError
+    trace = module('trace')
+    request = {'route': SimpleNamespace(path='/api/v1/jobs/{identifier}/events'),
+               'state': {'request_id': 'safe-request-id'}, 'query_string': b'private-query'}
+    token = trace.http_scope.set(request)
+    try:
+        ctx = SimpleNamespace(original_exception=ProgrammingError('private-user-value'),
+                              statement="SELECT 'private-sql-value'", is_disconnect=False, is_pre_ping=True)
+        diagnostic = trace.database_diagnostic(ctx)
+        assert diagnostic['operation'] == 'SELECT'
+        assert diagnostic['route'] == '/api/v1/jobs/{identifier}/events'
+        assert diagnostic['requestId'] == 'safe-request-id'
+        assert diagnostic['constantMessage'] is None
+        assert 'private-' not in json.dumps(diagnostic)
+        ctx.original_exception = ProgrammingError("can't change 'autocommit' now: connection in transaction status ACTIVE")
+        assert trace.database_diagnostic(ctx)['constantMessage'] == str(ctx.original_exception)
+    finally:
+        trace.http_scope.reset(token)
+
+
 def test_approval_requires_current_turn_mutation_kind_and_remaining_allowance():
     approval = module('approval')
     assert not approval.allowed({'action': 'create_work'}, {'workCreate': 0}, {})

@@ -13,8 +13,26 @@ from app.modules.executions.models import SandboxExecution
 from _support.agent.builtin_execution import DATA, builtin_receipts, invoke, read
 from _support.agent.business_actions import finish, runtime
 from _support.agent.execution_evidence import followup
+from _support.agent.sandbox_execution import receipts, run
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_python_file_evidence_reuses_published_bytes_and_is_hidden_after_output_revocation(setup, receipts):
+    context, sent = await runtime(setup, '生成计算结果')
+    original = await run(context)
+    await finish(context)
+    context = await followup(setup, sent['conversationId'])
+    saved = await read(context, original['executionId'])
+    assert json.loads(saved['fileResults']) == original['fileResults']
+    assert json.loads(saved['fileResults'])[0]['content'].encode() == receipts.data
+    assert receipts.count == 1
+    async with context.sessions.begin() as db:
+        record = await db.scalar(select(DeliverableRevision).where(DeliverableRevision.deliverable_id == original['delivery']['id']))
+        await db.delete(record)
+    unavailable = await read(context, original['executionId'])
+    assert unavailable['deliveryState'] == 'unavailable' and 'fileResults' not in unavailable
+    assert receipts.count == 1
 
 
 @pytest.mark.parametrize('legacy', [False, True])

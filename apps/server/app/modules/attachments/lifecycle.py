@@ -58,7 +58,9 @@ async def retire_expired_uploads(db, cutoff):
 
 def clean_retired_upload(item, settings):
     from app.integrations.media import remove_media
+    from .document_assets import remove
     try:
+        remove(settings, item.id)
         remove_media(settings, item.id)
     except OSError:
         item.extraction_info = {**(item.extraction_info or {}), 'cleanup_pending': True}

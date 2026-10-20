@@ -161,9 +161,18 @@ async def delivery_for(context, raw, *, pending_task=None):
     async with context.sessions() as db:
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
+        cards = await message_actions(db, actor, message)
+        waiting = (unfinished or {}).get('waitingOperationIds', [])
+        if waiting:
+            from app.tasks.feedback.report_waits import invalid_waiting_ids
+            if invalid_waiting_ids(job, cards, waiting):
+                # Keep the answer and real receipts. An unbound wait cannot
+                # become success or trigger another model call to repair it.
+                unfinished = {**unfinished, 'state': 'blocked', 'remaining': [
+                    *unfinished.get('remaining', []), '报告等待未能对应当前任务的有效回执']}
         task = job.result.get('explicitTaskContext') or job.result.get('intentTaskInterpretation') or {}
         for extra in (pending_task, unfinished):
-            if not extra:
+            if not extra or 'state' not in extra:
                 continue
             remaining = list(dict.fromkeys([*task.get('remaining', []), *extra.get('remaining', [])]))
             state = task.get('state', 'completed')
@@ -171,7 +180,6 @@ async def delivery_for(context, raw, *, pending_task=None):
                 state = extra['state']
             task = {**task, 'state': state,
                     'remaining': remaining[:7] + ['；'.join(remaining[7:])] if len(remaining) > 8 else remaining}
-        cards = await message_actions(db, actor, message)
         return Delivery(version=2, answer=answer, task=task_for(job, task),
                         business_requested=bool(cards or job.result.get('explicitBusinessRequest')),
                         operation_ids=[card['id'] for card in cards], verification_requested=False)

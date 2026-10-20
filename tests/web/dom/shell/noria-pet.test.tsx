@@ -50,10 +50,26 @@ afterEach(() => {
 const render = (element: ReactElement) => renderView(element, { wrapper: MemoryRouter })
 
 const props = {
+  visible: true,
   navTriggerRef: createRef<HTMLButtonElement>(),
   expandedNav: false,
   setExpandedNav: vi.fn(),
 }
+
+it('removes the pet and its open dialog while keeping mobile navigation available', () => {
+  const view = render(<PetStage {...props} animate />)
+  fireEvent.click(screen.getByRole('button', { name: 'Noria' }))
+  expect(screen.getByRole('dialog', { name: 'Noria' })).toBeTruthy()
+  view.rerender(<PetStage {...props} animate visible={false} />)
+  expect(screen.queryByRole('button', { name: 'Noria' })).toBeNull()
+  expect(screen.queryByRole('dialog')).toBeNull()
+  expect(view.container.querySelector('canvas')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '展开导航' }))
+  expect(props.setExpandedNav).toHaveBeenCalledWith(true)
+  view.rerender(<PetStage {...props} animate />)
+  expect(screen.getByRole('button', { name: 'Noria' })).toBeTruthy()
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
 
 function setVisibility(hidden: boolean) {
   act(() => {

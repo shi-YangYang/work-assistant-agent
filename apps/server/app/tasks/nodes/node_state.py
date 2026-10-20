@@ -41,7 +41,7 @@ def node_dtos(job):
             'label': row['label'], 'state': status, 'attempts': row['attempts'],
             **({'presentation': row['presentation']} if row.get('presentation') else {}),
             **({'activity': row['activity']} if row.get('activity') and status == 'running' else {}),
-            'maxAttempts': 4, 'retries': max(0, row['attempts'] - 1),
+            'maxAttempts': row.get('maxAttempts', 4), 'retries': max(0, row['attempts'] - 1),
             'totalRetries': row.get('totalRetries', 0), 'round': row.get('round', 0),
             'nextRetryAt': iso(row.get('nextAt')) if status == 'retry_wait' else None,
             'errorCode': row.get('errorCode', ''), 'error': row.get('error', ''),
@@ -59,6 +59,7 @@ def reopen_failed(job):
             # Keep only a bounded round summary, never raw exception logs.
             row['history'] = [*row.get('history', []), {'round': row.get('round', 0), 'attempts': row['attempts'], 'errorCode': row.get('errorCode', '')}][-8:]
             row.update(state='waiting', attempts=0, nextAt=None, error='', errorCode='', round=job.attempt + 1)
+            row.pop('errorCategory', None)
     state.pop('deadline', None)
     state.pop('budgetBlockedTools', None)
     state['actualCalls'] = state['inputTokens'] = state['outputTokens'] = 0
@@ -66,14 +67,19 @@ def reopen_failed(job):
         save(job, state)
 
 
-def cancel_unfinished(job):
+def cancel_unfinished(job, *, succeeded_receipts=()):
     from app.tasks.budget.service import finish
     finish(job)
     state = execution(job)
     if state:
         for row in state.get('nodes', []):
             if row.get('scope') == state.get('scope') and row['state'] in ('waiting', 'running', 'retry_wait', 'awaiting_input', 'awaiting_confirmation'):
-                row.update(state='cancelled', nextAt=None, error='已中断', errorCode='cancelled', resumable=False)
+                # A committed business receipt can precede the tool's final
+                # journal write. Cancellation stops later work, not that effect.
+                committed = row.get('receiptId') in succeeded_receipts
+                row.update(state='succeeded' if committed else 'cancelled', nextAt=None,
+                           error='' if committed else '已中断', errorCode='' if committed else 'cancelled', resumable=False)
+                row.pop('errorCategory', None)
         save(job, state)
 
 

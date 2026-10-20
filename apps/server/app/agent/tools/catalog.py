@@ -15,7 +15,7 @@ GROUPS = {
     'reports': frozenset({'query_reports', 'query_report_obligations', 'execute_business_action', 'get_business_actions', 'query_team_business', 'read_team_source'}),
     'research': frozenset({'web_search', 'web_fetch'}),
     'documents': frozenset({'read_images', 'find_documents', 'read_document', 'get_message_context', 'read_file', 'save_deliverable', 'read_deliverable'}),
-    'files': EXECUTION_TOOLS | frozenset({'read_execution', 'read_deliverable'}),
+    'files': EXECUTION_TOOLS | frozenset({'find_documents', 'get_message_context', 'read_execution', 'read_deliverable'}),
     'memory': frozenset({'save_memory', 'forget_memory'}),
     'task_context': frozenset({'set_task_context', 'request_user_input'}),
 }
@@ -25,7 +25,7 @@ DESCRIPTIONS = {
     'reports': '查询本人报告/待办，生成、编辑和提交报告',
     'research': '搜索和读取公开网页',
     'documents': '读取私人附件/历史消息，保存与修改私人方案、文稿、清单及稳定条目',
-    'files': '表格检查、文件/图表/文档生成、Python计算及执行记录',
+    'files': '定位上传原件、表格检查、文件/图表/文档生成、Python计算及执行记录',
     'memory': '保存或忘记用户直接自述的稳定个人背景',
     'task_context': '临时提问框（用户明确要求时使用）、集中澄清、持续指令与承接任务',
 }
@@ -112,12 +112,12 @@ def remember_call_capability(context, job, call):
     remember_groups(context, job, [preferred if preferred in candidates else candidates[0]])
 
 
-def catalog_schema(context):
+def catalog_schema(context, *, exclude=()):
     descriptions = dict(DESCRIPTIONS)
     if context.role == 'admin':
         descriptions['work'] += '；查询员工已授权业务，关联本人督办'
         descriptions['reports'] = '查询员工已提交报告/汇报待办，准备报告删除；不能写本人或员工报告'
-    available = available_groups(context)
+    available = {name: tools for name, tools in available_groups(context).items() if name not in exclude}
     # read_execution remains usable for past receipts even with sandbox disabled.
     if 'files' not in available:
         descriptions['documents'] += '；读取已有执行记录'
@@ -146,6 +146,9 @@ async def load_tools(groups: Annotated[list[str], Field(min_length=1, max_length
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
         available = available_groups(context)
+        from app.agent.runtime.tool_progress.service import research_stopped
+        if research_stopped(context, job):
+            available.pop('research', None)
         if any(group not in available for group in groups):
             return json.dumps({'state': 'unavailable', 'available': list(available)}, ensure_ascii=False)
         loaded = remember_groups(context, job, groups)

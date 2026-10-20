@@ -8,6 +8,7 @@ import { useStreamingText } from './useStreamingText'
 import { replyPresentation } from './reply-presentation'
 import { WebSources } from './WebSources'
 import { compactImageReferences } from './image-references'
+import { fileReference } from './file-references'
 
 export function AssistantReply({
   message,
@@ -36,6 +37,7 @@ export function AssistantReply({
       <div className={styles.reply}>
         <BusinessReply
           text={own ? compactImageReferences(message.reply, message.deliverables) : message.reply}
+          renderInternalLink={own ? fileReference(message.deliverables) : undefined}
           sources={message.businessCitations ?? []}
           endpoint={messageSourcesPath(message.id)}
         />

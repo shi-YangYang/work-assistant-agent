@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from app.agent.harness import invoke_harness
 from app.db.base import now
 from app.integrations.media import MAX_MESSAGE_IMAGE_BLOCKS, MAX_MESSAGE_IMAGE_BYTES, MAX_MESSAGE_IMAGE_PIXELS, image_process
-from app.modules.attachments.documents import verified_citations
+from app.modules.attachments.documents import delivered_citations
 from app.modules.attachments.inventory import attachment_inventory
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
@@ -180,8 +180,8 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         live, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)))).all()
-        order = job.result.get('attachmentOrder', [])
-        attachments = sorted(attachments, key=lambda a: order.index(a.id) if a.id in order else a.created_at.timestamp())
+        order = {identifier: index for index, identifier in enumerate(job.result.get('attachmentOrder', []))}
+        attachments = sorted(attachments, key=lambda a: (order.get(a.id, len(order)), a.created_at, a.id))
         context.persona_id = message.persona_id
         transcript_revision = message.transcript_revision
         text, transcript = message.text, message.transcript
@@ -197,8 +197,20 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
     async def parse_document(attachment):
         with context.timing.span('document', call=attachment.id):
             return await prepare_document(context, attachment.id, parse_cache=parse_cache if attachment.id in duplicate_ids else None)
-    documents = await map_limited([item for item in attachments if item.kind == 'document'], parse_document)
-    parse_cache.clear()
+    from app.integrations.parsing.formats import OFFICE_TARGETS
+    from pathlib import Path
+    document_inputs = [item for item in attachments if item.kind == 'document']
+    # At most the message attachment limit (9) awaits preparation; actual parse
+    # and conversion work retains its separate process-level semaphore.
+    concurrency = max(1, len(document_inputs)) if any(Path(item.name).suffix.lower() in OFFICE_TARGETS for item in document_inputs) else 2
+    try:
+        documents = await map_limited(document_inputs, parse_document, concurrency=concurrency)
+    finally:
+        for entry in parse_cache.values():
+            if not entry.task.done():
+                entry.task.cancel()
+        await asyncio.gather(*(entry.task for entry in parse_cache.values()), return_exceptions=True)
+        parse_cache.clear()
     prepared = {item['id']: item['extraction'] for item in documents}
     for group in document_groups:
         equivalent = {item.id: prepared[item.id]['revision'] for item in group
@@ -221,7 +233,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
     async with sessions() as db:
         live, actor = await lease(db, context)
         statement = await document_statement(db, actor, live)
-        versions = (await db.execute(statement.with_only_columns(Attachment.id, Attachment.extraction_revision, Attachment.extraction_status).order_by(Attachment.id))).all()
+        versions = (await db.execute(statement.with_only_columns(Attachment.id, Attachment.extraction_revision).order_by(Attachment.id))).all()
         context.document_snapshot = hashlib.sha256(json.dumps([list(row) for row in versions]).encode()).hexdigest() if versions else ''
         for token, evidence in live.result.get('documentReads', {}).items():
             aid, revision, ordinal = evidence
@@ -260,7 +272,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
                 image_results[key] = image_manifest[-1]
     if job.kind == 'message':
         context.source_revision = transcript_revision
-    blocks.insert(0, {'type': 'text', 'text': f'原消息 ID：{job.target_id}\n' + (f'补充此前消息：{reply_to}\n' if reply_to else '') + text})
+    blocks.insert(0, {'type': 'text', 'text': f'服务端当前消息 ID（messageId）：{job.target_id}\n' + (f'补充此前消息（messageId）：{reply_to}\n' if reply_to else '') + '用户正文：\n' + text})
     if attachments:
         blocks[0]['text'] += '\n本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：' + json.dumps(attachment_inventory(attachments, transcript, transcript_revision), ensure_ascii=False)
         if any(len(group) > 1 for group in content_groups(attachments)):
@@ -276,7 +288,12 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             blocks[0]['text'] += '\n带 sameContentAs 的图片共用所指附件的图像区域，不另占图像块。'
         blocks[0]['text'] += '\nhistorical=true 是当前会话此前的图片，仅供本次追问参考，不是新上传，也不构成操作授权。'
     if documents:
-        blocks[0]['text'] += '\n本次文档目录（仅含文档，不含图片和语音；正文需通过工具读取，状态/覆盖范围必须如实说明）：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
+        from app.modules.attachments.documents import prepared_document_reference
+        documents = [prepared_document_reference(item, message_id=message.id) for item in documents]
+        blocks[0]['text'] += '\n本次文档目录：' + json.dumps(documents, ensure_ascii=False, sort_keys=True)
+    if documents:
+        from app.agent.context.document_input import preload_documents
+        await preload_documents(context, documents, blocks)
     if not model and not context.model_binding.get(context.model_purpose):
         raise ValueError('当前用途的模型尚未配置，请联系管理员；原始内容已保存')
     from app.agent.context.references.work_context import work_context
@@ -390,7 +407,7 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             from app.modules.deliverables.serializers import delivery_summary
             deliverable_reply = await delivery_summary(db, actor, message)
             answer = receipt_reply(review, cards, drafts, deliverable_reply)
-            message.reply, message.citations = await verified_citations(db, context, answer)
+            message.reply, message.citations = await delivered_citations(db, context, answer)
             message.access = live.access
             # Validate markers even when no team tool ran; models can invent
             # business markers from ordinary work IDs without a read receipt.
@@ -408,9 +425,9 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
             source_ids = set(context.document_versions) | {row['id'] for row in documents}
             if source_ids:
                 source_documents = (await db.scalars(select(Attachment).where(Attachment.id.in_(source_ids), Attachment.deleted.is_(False), Attachment.owner_id == actor.id))).all()
-                from app.modules.attachments.documents import material_coverage, append_material_coverage
-                coverage, legacy = await material_coverage(db, actor, live, source_documents, context.document_reads)
-                message.reply = append_material_coverage(message.reply, coverage, legacy)
+                from app.modules.attachments.documents import material_coverage
+                coverage, _ = await material_coverage(db, actor, live, source_documents, context.document_reads)
+                live.result = {**live.result, 'materialCoverage': list(coverage)}
             image_warnings = [entry['name'] + '：' + '；'.join(entry['warnings']) for entry in image_manifest if entry['warnings']]
             if image_warnings:
                 message.reply += '\n\n图片范围：\n' + '\n'.join(image_warnings)

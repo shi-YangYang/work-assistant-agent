@@ -70,10 +70,11 @@ async def schedule_company(sessions, company_id, instant, batch):
             if not row.generation_checked and row.generate_at <= instant:
                 if row.deadline_at >= instant:
                     report, _ = await ensure_report(db, member, row.kind, date.fromisoformat(row.period), scheduled=True, report_timezone=row.timezone)
-                    row.report_id = report.id
-                    if report.published_revision:
+                    if report is not None:
+                        row.report_id = report.id
+                    if report is not None and report.published_revision:
                         await link_report(db, report, submitted=True)
-                    elif any(report.content.values()) or report.candidate:
+                    elif report is not None and (any(report.content.values()) or report.candidate):
                         await notify(db, row, 'ready', instant)
                 row.generation_checked = True
             if instant >= row.deadline_at:

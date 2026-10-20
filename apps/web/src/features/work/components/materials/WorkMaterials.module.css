@@ -32,6 +32,19 @@
 .caption a {
   overflow-wrap: anywhere;
 }
+.filename {
+  flex: 1 1 160px;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+  justify-content: flex-start;
+}
+.caption > small {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .list {
   display: grid;
   gap: 20px;

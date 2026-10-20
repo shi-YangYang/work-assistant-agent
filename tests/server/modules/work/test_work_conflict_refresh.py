@@ -86,7 +86,7 @@ async def test_work_conflict_reloads_after_restart_before_safely_appending(setup
     await check(context, allow_work_refresh=True)
 
     boundary = ToolBoundary()
-    model_request = SimpleNamespace(runtime=SimpleNamespace(context=context), system_message=None,
+    model_request = SimpleNamespace(runtime=SimpleNamespace(context=context), system_message=None, messages=[],
                                     tools=[SimpleNamespace(name=name) for name in ('get_work_item', 'execute_business_action', 'finish_task')],
                                     override=lambda **values: values)
     model_handler = AsyncMock(return_value='reread-plan')

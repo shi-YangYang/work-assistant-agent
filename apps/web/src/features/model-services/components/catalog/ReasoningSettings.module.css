@@ -104,3 +104,12 @@
 .error {
   color: var(--danger);
 }
+@media (max-width: 760px), (hover: none), (pointer: coarse) {
+  .tagRemove {
+    flex-basis: 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}

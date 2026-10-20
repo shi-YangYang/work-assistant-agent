@@ -6,9 +6,9 @@ from app.integrations.parsing.document_parser import MEMORY_BYTES
 from pathlib import Path
 
 
-async def parse_process(path, suffix, *, timeout=60, entrypoint=None, max_output=2 * 1024 * 1024):
+async def parse_process(path, suffix, *, timeout=60, entrypoint=None, max_output=2 * 1024 * 1024, start=0):
     """No credentials/config inherited, bounded pipe, cancellation always reaps child."""
-    process = await asyncio.create_subprocess_exec(sys.executable, '-I', str(entrypoint or Path(__file__).with_name('document_parser.py')), str(path), suffix, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env={'LANG': 'C.UTF-8', **({'SYSTEMROOT': os.environ['SYSTEMROOT']} if 'SYSTEMROOT' in os.environ else {})})
+    process = await asyncio.create_subprocess_exec(sys.executable, '-I', str(entrypoint or Path(__file__).with_name('document_parser.py')), str(path), suffix, str(start), stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, env={'LANG': 'C.UTF-8', **({'SYSTEMROOT': os.environ['SYSTEMROOT']} if 'SYSTEMROOT' in os.environ else {})})
     memory_exceeded = False
     async def monitor_memory():
         nonlocal memory_exceeded

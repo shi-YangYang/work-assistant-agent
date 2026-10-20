@@ -6,6 +6,7 @@ import { AppRoutes } from '@web/app/AppRoutes'
 import { pages, settingsPages, notificationPage } from '@web/app/layout/navigation-items'
 import { Sidebar } from '@web/app/layout/Sidebar'
 import { PetStage } from '@web/app/layout/pet/PetStage'
+import { usePetVisibility } from '@web/app/layout/pet/usePetVisibility'
 import { useNavigationDrawer } from '@web/app/layout/useNavigationDrawer'
 import type { WebCommand } from '@web/components/overlays/CommandPalette'
 import { CommandPalette } from '@web/components/overlays/CommandPalette'
@@ -41,6 +42,7 @@ export function Shell({
   vault: SessionDrafts
 }) {
   useMobileViewport()
+  const pet = usePetVisibility()
   const activity = useAssistantActivity(identityScope(identity))
   const accountName = identity.member.role === 'admin' ? '管理员' : identity.member.name
   const drafts = useSyncExternalStore(vault.subscribe, vault.getSnapshot)
@@ -219,9 +221,12 @@ export function Shell({
                 allowedSettings={allowedSettings}
                 accountName={accountName}
                 logout={logout}
+                petVisible={pet.visible}
+                setPetVisible={pet.setVisible}
               />
               <section ref={mainRef} className={styles['main']}>
                 <PetStage
+                  visible={pet.visible}
                   navTriggerRef={triggerRef}
                   animate
                   activity={activity}

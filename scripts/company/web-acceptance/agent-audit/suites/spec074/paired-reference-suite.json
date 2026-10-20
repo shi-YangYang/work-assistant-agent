@@ -1,0 +1,12 @@
+{
+  "revision": "074-paired-reference-1",
+  "applicationCommit": "26db8f9bb8af64da403696362b158df7a94ebe1a",
+  "caseFile": "paired-reference-cases.json",
+  "caseSha256": "669c6d31cc7f2cfcd1cfb8a6573375d1b7321f6505ffd53365b9dd23a6907e2e",
+  "watchdogSeconds": 1920,
+  "highRiskRepetition": {
+    "caseIds": []
+  },
+  "modelResponses": "real-provider-only",
+  "firstResults": "immutable"
+}

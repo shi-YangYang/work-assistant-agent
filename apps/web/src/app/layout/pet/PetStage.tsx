@@ -8,21 +8,22 @@ import { useNotificationSummary } from '@web/features/notifications/hooks/useNot
 import styles from './PetStage.module.css'
 
 export function PetStage({
+  visible,
   animate,
   activity = 'idle',
   navTriggerRef,
   expandedNav,
   setExpandedNav,
 }: {
+  visible: boolean
   animate: boolean
   activity?: AssistantActivityState
   navTriggerRef: RefObject<HTMLButtonElement | null>
   expandedNav: boolean
   setExpandedNav: (expanded: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
   const unread = useNotificationSummary()?.data?.totalUnread ?? 0
-  const label = unread > 0 ? `Noria，${unread} 条未读通知` : 'Noria'
+  const navigationLabel = expandedNav ? '收起导航' : '展开导航'
   return (
     <>
       <div className={styles.stage}>
@@ -30,13 +31,37 @@ export function PetStage({
           type="button"
           ref={navTriggerRef}
           className={`${controls['icon-button']} ${styles.navigation}`}
-          aria-label={expandedNav ? '收起导航' : '展开导航'}
+          aria-label={
+            !visible && unread > 0 ? `${navigationLabel}，${unread} 条未读通知` : navigationLabel
+          }
           aria-expanded={expandedNav}
           aria-controls="sidebar-navigation"
           onClick={() => setExpandedNav(!expandedNav)}
         >
           <Menu size={19} />
+          {!visible && unread > 0 && (
+            <span className={styles['navigation-unread']} aria-hidden="true" />
+          )}
         </button>
+      </div>
+      {visible && <PetCompanion animate={animate} activity={activity} />}
+    </>
+  )
+}
+
+function PetCompanion({
+  animate,
+  activity,
+}: {
+  animate: boolean
+  activity: AssistantActivityState
+}) {
+  const [open, setOpen] = useState(false)
+  const unread = useNotificationSummary()?.data?.totalUnread ?? 0
+  const label = unread > 0 ? `Noria，${unread} 条未读通知` : 'Noria'
+  return (
+    <>
+      <div className={styles.stage}>
         <button
           type="button"
           className={styles.trigger}

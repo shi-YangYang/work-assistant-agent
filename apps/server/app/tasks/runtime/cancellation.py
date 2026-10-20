@@ -53,8 +53,14 @@ async def cancel_job(db, actor, identifier, body, *, temporary=None):
     from app.modules.interactions.lifecycle import expire
     await expire(db, conversation_id=message.conversation_id)
     from app.tasks.feedback.outcomes import derive
-    item.result = {**item.result, 'taskOutcome': derive(item)}
-    cancel_unfinished(item)
+    from app.modules.operations.receipts import message_actions
+    from app.modules.work.drafts.draft_receipts import message_drafts
+    # Cancellation observes committed effects only; it must not advance a
+    # completed child into a new submit-after confirmation while stopping.
+    cards = await message_actions(db, actor, message, refresh_child=False)
+    drafts = await message_drafts(db, actor, message, item)
+    item.result = {**item.result, 'taskOutcome': derive(item, cards, drafts)}
+    cancel_unfinished(item, succeeded_receipts={card['id'] for card in cards if card['state'] == 'succeeded'})
     update_feedback(item, text='')
     if item.result.get('contextUsage'):
         from app.tasks.feedback.context_feedback import usage_dto

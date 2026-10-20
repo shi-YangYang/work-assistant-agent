@@ -80,7 +80,9 @@ async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
         return
     elif row.action == 'edit_report':
         item = await writes_edit_report(db, actor, p['targetId'], p['expectedRevision'], p['changes'])
-        row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision}
+        from app.modules.operations.report_receipts import snapshot
+        row.result = {'objectType': 'report', 'objectId': item.id, 'revision': item.revision,
+                      'reportSnapshot': snapshot(item), 'changedFields': sorted(p['changes'])}
     elif row.action == 'submit_report':
         await submit_action(db, actor, row)
         return

@@ -5,7 +5,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-PARSER_VERSION = 'text-v3:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
+PARSER_VERSION = 'ranges-v2:pypdf6.18.1:docx1.2.0:pptx1.0.2:xlsx3.1.5'
 
 
 MAX_TEXT = 200_000
@@ -18,6 +18,12 @@ MAX_PAGES = 100
 
 
 MAX_EXPANDED = 64 * 1024 * 1024
+
+# Compressed Office originals may contain large images. Keep XML and PDF
+# decompression guards separate from the container's expanded media budget.
+MAX_OFFICE_EXPANDED = 256 * 1024 * 1024
+MAX_OFFICE_OUTPUT = 128 * 1024 * 1024
+MAX_OFFICE_WORKSPACE = 512 * 1024 * 1024
 
 
 MEMORY_BYTES = 512 * 1024 * 1024
@@ -34,7 +40,7 @@ class Full(Exception):
 _WINDOWS_JOB = None
 
 
-def windows_resource_limits():
+def windows_resource_limits(*, processes=1, memory=MEMORY_BYTES):
     """Windows has no resource module. Bind this child to a private Job Object
     before loading parsers; the kernel enforces process memory/CPU/process count.
     The handle remains open for this process's lifetime (kill on close).
@@ -67,8 +73,10 @@ def windows_resource_limits():
     limits = ExtendedLimits()
     limits.BasicLimitInformation.LimitFlags = 0x2 | 0x8 | 0x100 | 0x2000
     limits.BasicLimitInformation.PerProcessUserTimeLimit = 45 * 10_000_000
-    limits.BasicLimitInformation.ActiveProcessLimit = 1
-    limits.ProcessMemoryLimit = MEMORY_BYTES
+    limits.BasicLimitInformation.ActiveProcessLimit = processes
+    limits.ProcessMemoryLimit = memory
+    limits.JobMemoryLimit = memory
+    limits.BasicLimitInformation.LimitFlags |= 0x200
     if not kernel.SetInformationJobObject(handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)) or not kernel.AssignProcessToJobObject(handle, kernel.GetCurrentProcess()):
         kernel.CloseHandle(handle)
         raise OSError('无法启用文档解析资源限制')
@@ -101,21 +109,28 @@ def resource_limits():
     sys.addaudithook(audit)
 
 
+def office_entries(archive):
+    entries = archive.infolist()
+    if len(entries) > 10000 or len({e.filename for e in entries}) != len(entries) or sum(e.file_size for e in entries) > MAX_OFFICE_EXPANDED:
+        raise ParseFailure('文档解压后过大或条目过多，请拆分文件')
+    for entry in entries:
+        if entry.flag_bits & 1:
+            raise ParseFailure('不支持加密文档，请先解密')
+        limit = 16 * 1024 * 1024 if entry.filename.lower().endswith(('.xml', '.rels')) else MAX_OFFICE_OUTPUT
+        if entry.file_size > limit or entry.file_size > max(1024 * 1024, entry.compress_size * 200):
+            raise ParseFailure('文档压缩比例或单个内容过大，请拆分文件')
+    return entries
+
+
 def office_check(path, suffix):
     with zipfile.ZipFile(path) as archive:
-        entries = archive.infolist()
+        entries = office_entries(archive)
         names = {entry.filename for entry in entries}
         required = {'.docx': 'word/document.xml', '.pptx': 'ppt/presentation.xml', '.xlsx': 'xl/workbook.xml'}[suffix]
         if required not in names or '[Content_Types].xml' not in names:
             raise ParseFailure('文件结构与扩展名不符，请保存为正确的 DOCX／PPTX／XLSX')
-        if len(entries) > 2048 or len(names) != len(entries) or sum(e.file_size for e in entries) > MAX_EXPANDED:
-            raise ParseFailure('文档解压后过大或条目过多，请拆分文件')
         for entry in entries:
             name = entry.filename.lower()
-            if entry.flag_bits & 1:
-                raise ParseFailure('不支持加密文档，请先解密')
-            if entry.file_size > 16 * 1024 * 1024 or entry.file_size > max(1024 * 1024, entry.compress_size * 200):
-                raise ParseFailure('文档压缩比例或单个内容过大，请拆分文件')
             if 'vbaproject' in name or name.endswith('.bin') and ('embeddings/' in name or 'activex/' in name):
                 raise ParseFailure('文档包含宏或活动嵌入对象，请移除后重新保存')
             if name.endswith(('.xml', '.rels')):
@@ -360,7 +375,10 @@ def extract(path, suffix):
 def main():
     resource_limits()
     try:
-        result = extract(sys.argv[1], sys.argv[2])
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        sys.modules.setdefault('document_parser', sys.modules[__name__])
+        from document_ranges import extract_batch
+        result = extract_batch(sys.argv[1], sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 0)
     except ParseFailure as error:
         result = {'status': 'failed', 'chunks': [], 'info': {'error': str(error)}}
     except (MemoryError, RecursionError):

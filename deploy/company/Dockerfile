@@ -15,10 +15,14 @@ RUN useradd --uid 10001 --create-home paa && mkdir -p /data/media && chown -R pa
 USER paa
 CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
 
-# The API keeps its lightweight environment; only the worker installs CPU inference.
+# Conversion and CPU inference stay in worker; the API image remains lightweight.
 FROM service AS worker
 ARG TORCH_INDEX_URL=https://mirrors.nju.edu.cn/pytorch/whl/cpu
+ARG LIBREOFFICE_VERSION=4:7.4.7-1+deb12u14
 USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-writer="$LIBREOFFICE_VERSION" libreoffice-calc="$LIBREOFFICE_VERSION" libreoffice-impress="$LIBREOFFICE_VERSION" \
+    procps fonts-liberation fonts-noto-cjk poppler-utils && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/voiceprints \
     && /opt/voiceprints/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" --extra-index-url "$TORCH_INDEX_URL" 'torch==2.11.0+cpu' 'torchaudio==2.11.0+cpu' \
     && /opt/voiceprints/bin/pip install --no-cache-dir --index-url "$PIP_INDEX_URL" './packages/voiceprint-engine[runtime]' \

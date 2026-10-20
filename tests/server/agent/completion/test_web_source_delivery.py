@@ -127,7 +127,7 @@ async def test_discovery_cache_does_not_evict_read_receipts_and_scope_change_cle
     await initialize(context, 'original-input')
     async with context.sessions() as db:
         result = (await db.get(Job, context.job_id)).result
-        assert len(result['webSources']) == 41
+        assert len(result['webSources']) == 61
         assert [source['url'] for source in web_citations(result)] == ['https://publisher.example/article']
     await initialize(context, 'changed-input')
     async with context.sessions() as db:

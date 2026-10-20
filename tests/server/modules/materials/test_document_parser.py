@@ -25,7 +25,8 @@ async def test_real_parsers_preserve_locations(tmp_path, suffix):
     expected = {'pdf': 'Later page', 'docx': '样本核对', 'pptx': '演讲备注', 'txt': '后半部分标记', 'json': '周五讨论', 'md': '<script>', 'csv': '=1+1'}
     assert expected[suffix] in text
     if suffix == 'docx':
-        assert [row['location'].split(' · ')[0] for row in result['chunks']] == ['段落 1', '表格 1', '表格 1', '段落 2']
+        assert len(result['chunks']) == 6
+        assert [row['location'].split(' · 段落 ')[0] for row in result['chunks']] == ['正文', '正文 · 表格 1 · 行 1 列 1', '正文 · 表格 1 · 行 1 列 2', '正文 · 表格 1 · 行 2 列 1', '正文 · 表格 1 · 行 2 列 2', '正文']
     if suffix == 'json':
         assert any(row['location'] == 'JSON /项目/安排/1' for row in result['chunks'])
     if suffix == 'pptx':
@@ -56,17 +57,25 @@ async def test_invalid_documents_cannot_succeed(tmp_path, case):
         data = output.getvalue()
     path = tmp_path / 'sample'; path.write_bytes(data)
     result = await parse_process(path, suffix)
-    assert result['status'] == 'failed', result
-    assert result['chunks'] == [] and result['info']['error']
+    if case == 'scan':
+        assert result['status'] == 'partial' and result['info']['hasVisuals']
+        assert result['chunks'][0]['text'] == ''
+    else:
+        assert result['status'] == 'failed', result
+        assert result['chunks'] == [] and result['info']['error']
 
 
 async def test_partial_limits_and_blank_pages_are_explicit(tmp_path):
     path = tmp_path / 'text'; path.write_text('中' * 200_001)
     result = await parse_process(path, '.txt')
-    assert result['status'] == 'partial' and result['info']['characters'] == 200_000
+    assert result['status'] == 'partial' and result['info']['characters'] == 198_000
+    following = await parse_process(path, '.txt', start=result['info']['nextExtractCursor'])
+    assert result['info']['characters'] + following['info']['characters'] == 200_001
+    assert following['info']['sourceComplete']
     path.write_bytes(pdf_bytes(['First', '']))
     result = await parse_process(path, '.pdf')
-    assert result['status'] == 'partial' and '2' in result['info']['warnings'][0]
+    assert result['status'] == 'partial' and result['info']['visualPages'] == [2]
+    assert result['chunks'][1]['text'] == '' and result['info']['sourceComplete']
     path.write_bytes(pdf_bytes(['Page'] * 101))
     result = await parse_process(path, '.pdf')
     assert result['status'] == 'partial' and len(result['chunks']) == 100
@@ -134,7 +143,8 @@ async def test_pdf_decompression_is_bounded(tmp_path):
 
 
 @pytest.mark.parametrize('assign_ok', [True, False])
-async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok):
+@pytest.mark.parametrize('processes,memory', [(1, 512 * 1024 * 1024), (32, 1024 * 1024 * 1024)])
+async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok, processes, memory):
     """API contract only; does not claim a real Windows kernel execution."""
     import ctypes
     from types import SimpleNamespace
@@ -146,20 +156,21 @@ async def test_windows_job_object_limits_and_fail_closed(monkeypatch, assign_ok)
     def configure(handle, information_class, pointer, size):
         limits = pointer._obj
         assert handle == 101 and information_class == 9
-        assert limits.ProcessMemoryLimit == 512 * 1024 * 1024
+        assert limits.ProcessMemoryLimit == memory
+        assert limits.JobMemoryLimit == memory
         assert limits.BasicLimitInformation.PerProcessUserTimeLimit == 450_000_000
-        assert limits.BasicLimitInformation.ActiveProcessLimit == 1
-        assert limits.BasicLimitInformation.LimitFlags == 0x210A
+        assert limits.BasicLimitInformation.ActiveProcessLimit == processes
+        assert limits.BasicLimitInformation.LimitFlags == 0x230A
         assert size == (144 if ctypes.sizeof(ctypes.c_void_p) == 8 else 112)
         calls.append('configured')
         return True
     kernel = SimpleNamespace(CreateJobObjectW=Function(lambda *args: 101), SetInformationJobObject=Function(configure), AssignProcessToJobObject=Function(lambda *args: calls.append('assigned') or assign_ok), GetCurrentProcess=Function(lambda: 202), CloseHandle=Function(lambda *args: calls.append('closed') or True))
     monkeypatch.setattr(ctypes, 'WinDLL', lambda *args, **kwargs: kernel, raising=False)
     if assign_ok:
-        windows_resource_limits()
+        windows_resource_limits(processes=processes, memory=memory)
         assert calls == ['configured', 'assigned']
     else:
-        with pytest.raises(OSError, match='资源限制'): windows_resource_limits()
+        with pytest.raises(OSError, match='资源限制'): windows_resource_limits(processes=processes, memory=memory)
         assert calls == ['configured', 'assigned', 'closed']
 
 

@@ -12,7 +12,7 @@ from app.tasks.retry import Failure, NodeFailed
 def classify(error):
     from app.integrations.web_research import WebTemporaryError
     if isinstance(error, WebTemporaryError):
-        return Failure('web_network', str(error), True)
+        return Failure('web_network', str(error), True, category=error.category)
     if isinstance(error, NodeFailed):
         return Failure('child_failed', '内部核对未完成，请重试失败步骤')
     if isinstance(error, (LostLease, InputChanged, asyncio.CancelledError)):

@@ -32,3 +32,9 @@
   overflow-y: auto;
   padding-bottom: 0;
 }
+
+@media (max-width: 760px) {
+  .assistant-page[data-empty='true'] {
+    overflow: hidden;
+  }
+}

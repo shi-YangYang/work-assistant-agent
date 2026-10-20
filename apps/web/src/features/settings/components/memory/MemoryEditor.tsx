@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AssistantMemory } from '@paa/api-contracts'
 import { ApiError, isCancelled } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { Markdown } from '@web/components/content/Markdown'
 import { MarkdownEditor } from '@web/components/forms/markdown-editor/MarkdownEditor'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ConfirmDialog } from '@web/components/overlays/ConfirmDialog'
 import type { QueryResource } from '@web/lib/query-resource'
 import { useWorkspace } from '@web/lib/workspace'
 import { clearMemoryDocument, readMemory, saveMemoryDocument } from '../../api/memory'
@@ -27,6 +28,16 @@ export function MemoryEditor({
   const [error, setError] = useState<Error | string>('')
   const [latest, setLatest] = useState<AssistantMemory | null>(null)
   const [conflict, setConflict] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const clearPending = useRef(false)
+  const cleared = useRef(false)
+  const editButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!clearing && cleared.current) {
+      cleared.current = false
+      editButton.current?.focus()
+    }
+  }, [clearing])
   const length = Array.from(draft?.markdown ?? '').length
   // A switch changes the shared revision but not the document. It is safe to
   // advance that base only while the saved text still equals our original base.
@@ -55,15 +66,19 @@ export function MemoryEditor({
     }
   }
   const clear = async () => {
-    if (busy || !window.confirm('清空已保存的所有记忆？聊天原文仍保留，记忆开关不会改变。')) return
+    if (busy || settingsBusy || clearPending.current) return
+    clearPending.current = true
     setBusy(true)
     setError('')
     try {
       resource.set(await clearMemoryDocument(data.revision))
       cancel()
+      cleared.current = true
+      setClearing(false)
     } catch (value) {
       failure(value)
     } finally {
+      clearPending.current = false
       setBusy(false)
     }
   }
@@ -73,6 +88,7 @@ export function MemoryEditor({
         <h2>我的记忆</h2>
         {!draft && (
           <button
+            ref={editButton}
             type="button"
             disabled={busy}
             onClick={() => {
@@ -92,7 +108,7 @@ export function MemoryEditor({
       <p className={styles.updated}>
         最近更新：{data.updatedAt ? new Date(data.updatedAt).toLocaleString('zh-CN') : '暂无'}
       </p>
-      <ErrorNotice>{error}</ErrorNotice>
+      {!clearing && <ErrorNotice>{error}</ErrorNotice>}
       {draft ? (
         <>
           <MarkdownEditor
@@ -205,10 +221,30 @@ export function MemoryEditor({
           type="button"
           className={controls.danger}
           disabled={busy || settingsBusy}
-          onClick={() => void clear()}
+          onClick={(event) => {
+            event.currentTarget.focus()
+            setError('')
+            setClearing(true)
+          }}
         >
           清空记忆
         </button>
+      )}
+      {clearing && (
+        <ConfirmDialog
+          title="清空记忆"
+          confirmLabel="确认清空"
+          danger
+          busy={busy}
+          confirmDisabled={settingsBusy}
+          error={error}
+          onClose={() => {
+            if (!clearPending.current) setClearing(false)
+          }}
+          onConfirm={() => void clear()}
+        >
+          <p>清空已保存的所有记忆？聊天原文仍保留，记忆开关不会改变。</p>
+        </ConfirmDialog>
       )}
     </section>
   )

@@ -226,6 +226,12 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             proposal['deliverableSelection'] = selected
         if attachments:
             proposal['sharedAttachments'] = attachments
+        if action == 'submit_report':
+            from app.modules.operations.report_receipts import snapshot
+            # The authorization sees the exact version already read and checked
+            # above, rather than inferring its content from earlier failed edits.
+            proposal['targetReport'] = {'id': target.id, 'kind': target.kind, 'period': target.period,
+                'candidateAvailable': bool(target.candidate), **snapshot(target)}
         if action == 'edit_report':
             proposal['targetContent'] = target.content
             proposal['reportSourceFacts'] = await report_fact_basis(db, actor, target, full=True)
@@ -315,6 +321,9 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
                         context.context_sources = {}
                         context.read_versions.pop(target_id, None)
         except HTTPException as error:
+            # Report brief capture may change job access inside the savepoint.
+            # Rollback expires that object; reload before recording a failed tool.
+            await db.refresh(job)
             row.state = 'conflict' if error.status_code == 409 else 'failed'
             row.params = {}
             row.result = {'message': error.detail['message']}

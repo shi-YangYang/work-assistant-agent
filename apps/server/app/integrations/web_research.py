@@ -1,111 +1,89 @@
-"""Bounded public HTTP research; no browser, shell, credentials or private URLs."""
+"""Bounded public web research; no user credentials, shell or private URLs."""
 import asyncio
-import ipaddress
 import json
 import re
-import socket
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
 import httpx
+from .web_curl import PublicTransport
+from .web_policy import MAX_BYTES, WebResearchError, WebTemporaryError, public_addresses, public_url, response_body_type
 
-MAX_BYTES = 1_000_000
 PAGE_CHARS = 3000
-USER_AGENT = 'work-assistant-agent/0.1'
-
-
-class WebResearchError(ValueError):
-    def __init__(self, message, *, code='unavailable'):
-        super().__init__(message)
-        self.code = code
-
-
-class WebTemporaryError(WebResearchError):
-    pass
-
-
-def public_url(value):
-    try:
-        url = httpx.URL(value)
-        host = url.host
-        if url.scheme not in ('http', 'https') or not host or url.username or url.password or url.port not in (None, 80, 443) or len(value) > 2048:
-            raise ValueError()
-        if host.rstrip('.').lower() == 'localhost' or host.lower().endswith(('.localhost', '.local', '.internal')):
-            raise ValueError()
-        try:
-            address = ipaddress.ip_address(host)
-        except ValueError:
-            address = None
-        if address is not None and not address.is_global:
-            raise ValueError()
-        return url.copy_with(fragment=None)
-    except (ValueError, httpx.InvalidURL) as error:
-        raise WebResearchError('仅支持公开的 HTTP(S) 网页地址', code='blocked_url') from error
-
-
-async def public_addresses(host, port):
-    try:
-        rows = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as error:
-        if error.errno == socket.EAI_AGAIN:
-            raise WebTemporaryError('网页域名暂时无法解析，请稍后再试') from error
-        raise WebResearchError('网页域名无法解析') from error
-    except (OSError, UnicodeError) as error:
-        raise WebResearchError('网页域名无法解析') from error
-    addresses = list(dict.fromkeys(row[4][0] for row in rows))
-    if not addresses or any(not ipaddress.ip_address(value).is_global for value in addresses):
-        raise WebResearchError('不能访问本机、内网或非公开地址', code='blocked_url')
-    return addresses
-
-
-class PublicTransport(httpx.AsyncHTTPTransport):
-    async def handle_async_request(self, request):
-        url = public_url(str(request.url))
-        addresses = await public_addresses(url.host, url.port or (443 if url.scheme == 'https' else 80))
-        # Pin the validated IP through the actual TCP connection. Preserve the
-        # original Host and TLS SNI/certificate name; no second DNS lookup.
-        headers = request.headers.copy()
-        headers['host'] = url.netloc.decode('ascii')
-        pinned = httpx.Request(request.method, url.copy_with(host=addresses[0]), headers=headers, stream=request.stream, extensions={**request.extensions, 'sni_hostname': url.host})
-        return await super().handle_async_request(pinned)
 
 
 async def fetch_html(url, *, transport=None, xml=False):
     current = str(public_url(url))
+    redirects = []
+    rejected_location = False
+    redirected = False
+
+    def failure(error):
+        # A Location is an observed link, not evidence of a readable target.
+        # Never retain the last hop when URL/DNS policy rejected its destination.
+        links = redirects
+        if not rejected_location and (error.code == 'blocked_url' or error.category == 'dns'):
+            links = [item for item in links if item['url'] != current]
+        error.links = links
+        # This address reached a public-network attempt. A rejected URL or
+        # unresolved DNS target cannot be promoted into public source metadata.
+        if not redirected and not rejected_location and error.code != 'blocked_url' and error.category != 'dns':
+            error.failed_url = current
+        return error
+
     try:
         async with asyncio.timeout(20):
-            async with httpx.AsyncClient(transport=transport or PublicTransport(retries=0), trust_env=False, follow_redirects=False, timeout=httpx.Timeout(8, connect=5), headers={'User-Agent': USER_AGENT, 'Accept': 'text/html,text/plain;q=0.9'}) as client:
+            async with httpx.AsyncClient(transport=transport or PublicTransport(xml=xml), trust_env=False, follow_redirects=False, timeout=httpx.Timeout(8, connect=5), headers={'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8', **({'Accept': 'application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.5'} if xml else {})}) as client:
                 for _ in range(4):
+                    redirected = False
                     async with client.stream('GET', current) as response:
-                        if response.status_code in (301, 302, 303, 307, 308):
+                        mime = response_body_type(response, xml=xml)
+                        if mime is None:
+                            redirected = True
                             target = response.headers.get('location')
                             if not target:
                                 raise WebResearchError('网页跳转缺少地址')
-                            current = str(public_url(urljoin(current, target)))
+                            try:
+                                destination = str(public_url(urljoin(current, target)))
+                            except WebResearchError:
+                                rejected_location = True
+                                raise
+                            redirects.append({'url': destination, 'title': urlsplit(destination).hostname,
+                                              'evidenceType': 'page_link', 'discoveryType': 'http_redirect',
+                                              'discoveredOn': current, 'fetchState': 'not_read'})
+                            current = destination
                             continue
-                        if response.status_code in (408, 429, 500, 502, 503, 504):
-                            raise WebTemporaryError(f'公开网页服务暂时不可用（HTTP {response.status_code}）')
-                        if response.status_code != 200:
-                            raise WebResearchError(f'网页暂不可访问（HTTP {response.status_code}）', code=f'http_{response.status_code}')
-                        mime = response.headers.get('content-type', '').split(';')[0].strip().lower()
-                        if mime not in (('text/xml', 'application/xml', 'application/rss+xml', 'text/html') if xml else ('text/html', 'application/xhtml+xml', 'text/plain')):
-                            raise WebResearchError('该地址不是可读取的文字网页')
-                        if int(response.headers.get('content-length', '0')) > MAX_BYTES:
-                            raise WebResearchError('网页过大，请提供更具体的页面')
                         raw = bytearray()
                         async for chunk in response.aiter_bytes():
                             raw.extend(chunk)
                             if len(raw) > MAX_BYTES:
-                                raise WebResearchError('网页过大，请提供更具体的页面')
+                                raise WebResearchError('网页过大，请提供更具体的页面', code='web_limit')
                         encoding = response.encoding or 'utf-8'
-                        return current, raw.decode(encoding, errors='replace'), mime
+                        value = raw.decode(encoding, errors='replace')
+                        if mime in ('text/html', 'application/xhtml+xml') and challenge_page(value):
+                            raise WebResearchError('网站要求人机验证，未取得正文', code='web_challenge')
+                        return current, value, mime
                 raise WebResearchError('网页跳转次数过多')
-    except (httpx.HTTPError, TimeoutError) as error:
-        raise WebTemporaryError('网页请求超时或网络不可用，请稍后再试') from error
+    except (httpx.TimeoutException, TimeoutError) as error:
+        raise failure(WebTemporaryError(category='timeout')) from error
+    except httpx.ConnectError as error:
+        raise failure(WebTemporaryError(category='connection')) from error
+    except (httpx.ReadError, httpx.WriteError, httpx.ProtocolError) as error:
+        raise failure(WebTemporaryError(category='transfer')) from error
+    except httpx.HTTPError as error:
+        raise failure(WebTemporaryError()) from error
     except (ValueError, LookupError) as error:
         if isinstance(error, WebResearchError):
-            raise
-        raise WebResearchError('网页响应格式不受支持') from error
+            raise failure(error)
+        raise failure(WebResearchError('网页响应格式不受支持')) from error
+
+
+def challenge_page(value):
+    lowered = value.lower()
+    title = re.search(r'<title[^>]*>\s*(.*?)\s*</title>', lowered, re.DOTALL)
+    return ('/cdn-cgi/challenge-platform/' in lowered or
+            bool(title and title.group(1) in ('just a moment...', 'verify you are human', 'access denied')
+                 and ('captcha' in lowered or 'cloudflare' in lowered)))
 
 
 class TextPage(HTMLParser):
@@ -271,7 +249,7 @@ async def web_fetch(url, *, offset=0, find='', match_index=0, transport=None, ca
     end = min(offset + PAGE_CHARS, len(text))
     excerpt = text[offset:end]
     links = page_links(anchors, final, excerpt, find)
-    return {**source, **match, **({'links': links, 'linkCoverage': '页面中实际出现的链接；未读取目标正文，也不据此认定目标为官方来源。'} if links else {}), 'text': excerpt, 'offset': offset, 'endOffset': end,
+    return {**source, **match, **({'links': links, 'linkCoverage': '来源页中实际出现的标题和目标链接；目标正文未读取。'} if links else {}), 'text': excerpt, 'offset': offset, 'endOffset': end,
             'totalChars': len(text), 'nextOffset': end if end < len(text) else None,
             'truncated': offset > 0 or end < len(text), 'evidenceType': 'page_text'}
 
@@ -327,10 +305,9 @@ async def web_search(query, *, domains=None, transport=None):
         results.append(entry)
         if len(results) >= 5:
             break
-    result = {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索摘要，未读取正文；仅需要链接时可直接提供实际检索所得网址。摘要日期不能单独证明文章发布日期。', 'untrusted': True}
+    result = {'query': query, 'provider': 'Bing RSS', 'items': results, 'coverage': '搜索返回的标题、网址和摘要，可用于定位来源；不含网页正文。', 'untrusted': True}
     if scope:
         result.update(domains=scope, filteredCount=filtered)
         if not results:
-            result['coverage'] = '搜索服务未返回符合指定站点的结果；不代表相关网页不存在。不能以站外结果代替指定来源。'
-            result['nextStep'] = '可读取已知且可访问的发布机构首页，从返回的实际页面链接寻找正文或新的官网入口；不要猜测网址或反复请求被拒绝的页面。'
+            result['coverage'] = '本次域名筛选无结果，不代表网页不存在；已有来源仍有效。'
     return result

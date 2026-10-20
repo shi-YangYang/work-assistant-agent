@@ -1,0 +1,30 @@
+{
+  "revision": "074-1",
+  "applicationCommit": "26db8f9bb8af64da403696362b158df7a94ebe1a",
+  "caseFile": "cases.json",
+  "cases": 80,
+  "multiTurn": 58,
+  "roles": {
+    "realEmployee": 40,
+    "emptyEmployee": 1,
+    "realAdmin": 39
+  },
+  "holdout": 20,
+  "loopFocus": 46,
+  "efforts": {
+    "low": 67,
+    "high": 13
+  },
+  "watchdogSeconds": 1920,
+  "caseSha256": "36b7027b887ecbc70577481b0e5c634cbd4111daf2b0f1f1f500a9858bf0a625",
+  "highRiskRepetition": {
+    "caseIds": ["T11", "T12", "T14", "T19", "T29", "T37", "T61", "T63", "T67", "T69", "T70", "T75"],
+    "repetitions": 3
+  },
+  "modelResponses": "real-provider-only",
+  "firstResults": "immutable",
+  "allowProductionChanges": false,
+  "approvalPolicy": "frozen per-turn action bounds; extra cards not confirmed",
+  "historicalInputsReused": 60,
+  "historicalResponsesReused": 0
+}

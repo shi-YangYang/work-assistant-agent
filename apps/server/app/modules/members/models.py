@@ -20,7 +20,7 @@ class Member(Record, Base):
     username: Mapped[str] = mapped_column(String(80), unique=True)
     name: Mapped[str] = mapped_column(String(80))
     role: Mapped[str] = mapped_column(String(12), default='employee')
-    execution_mode: Mapped[str] = mapped_column(String(8), server_default='auto')
+    execution_mode: Mapped[str] = mapped_column(String(8), server_default='full')
     full_access_confirmed: Mapped[bool] = mapped_column(Boolean, server_default='false')
     mode_revision: Mapped[int] = mapped_column(Integer, server_default='1')
     reasoning_preference: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

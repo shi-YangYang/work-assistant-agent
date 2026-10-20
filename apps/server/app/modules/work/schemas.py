@@ -1,3 +1,4 @@
+from app.core.attachment_limits import MAX_ATTACHMENTS
 from datetime import date
 from app.core.schemas import Input, Revision
 from pydantic import Field, field_validator, model_validator
@@ -52,7 +53,7 @@ from app.modules.work.content.checklist import checked_edits
 class WorkCreate(Progress):
     body: WorkDocument | None = None
     bodyEdits: list[dict] | None = Field(default=None, max_length=100)
-    materials: list[MaterialSource] = Field(default_factory=list, max_length=9)
+    materials: list[MaterialSource] = Field(default_factory=list, max_length=MAX_ATTACHMENTS)
 
     @field_validator('bodyEdits')
     @classmethod

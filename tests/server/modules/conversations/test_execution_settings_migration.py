@@ -61,3 +61,49 @@ def test_execution_settings_migration_preserves_records_and_can_downgrade(monkey
         with engine.begin() as connection:
             connection.execute(DropSchema(schema, cascade=True))
         engine.dispose()
+
+
+def test_default_full_migration_changes_only_new_accounts(monkeypatch):
+    Settings()
+    url = make_url(os.environ['DATABASE_TEST_URL']).set(drivername='postgresql+psycopg')
+    assert url.database == 'paa_company_test'
+    schema = 'default_execution_' + uuid4().hex
+    engine = create_engine(url)
+    scoped_url = url.update_query_dict({'options': '-csearch_path=' + schema})
+    scoped = create_engine(scoped_url)
+    monkeypatch.setenv('DATABASE_URL', scoped_url.render_as_string(hide_password=False))
+    config = Config()
+    config.set_main_option('script_location', str(Path(__file__).resolve().parents[4] / 'apps/server/app/migrations'))
+    with engine.begin() as connection:
+        connection.execute(CreateSchema(schema))
+    try:
+        command.upgrade(config, '0031_announcements')
+        with scoped.begin() as connection:
+            company = connection.execute(Company.__table__.insert().values(name='默认执行权限迁移').returning(Company.id)).scalar_one()
+            for mode in (None, 'ask', 'auto', 'full'):
+                values = {} if mode is None else {'execution_mode': mode, 'mode_revision': 3, 'full_access_confirmed': mode == 'full'}
+                owner = connection.execute(Member.__table__.insert().values(company_id=company, username=str(mode), name=str(mode), **values).returning(Member.id)).scalar_one()
+                connection.execute(Job.__table__.insert().values(company_id=company, owner_id=owner, kind='message', target_id=str(uuid4()), result={} if mode is None else {'executionMode': mode, 'modeRevision': 2}))
+            before = list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings())
+            jobs = list(connection.execute(select(Job.__table__).order_by(Job.id)).mappings())
+        command.upgrade(config, '0032_default_full_execution')
+        with scoped.begin() as connection:
+            assert list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings()) == before
+            assert list(connection.execute(select(Job.__table__).order_by(Job.id)).mappings()) == jobs
+            # All creation paths share the database default, regardless of role.
+            for role in ('admin', 'employee'):
+                row = connection.execute(Member.__table__.insert().values(company_id=company, username='new_' + role, name=role, role=role).returning(Member.__table__)).mappings().one()
+                assert row['execution_mode'] == 'full' and row['mode_revision'] == 1
+                assert not row['full_access_confirmed']  # No fabricated acknowledgement.
+            after = list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings())
+        command.downgrade(config, '0031_announcements')
+        with scoped.begin() as connection:
+            assert list(connection.execute(select(Member.__table__).order_by(Member.id)).mappings()) == after
+            assert list(connection.execute(select(Job.__table__).order_by(Job.id)).mappings()) == jobs
+            row = connection.execute(Member.__table__.insert().values(company_id=company, username='after_rollback', name='回滚后新账号').returning(Member.__table__)).mappings().one()
+            assert row['execution_mode'] == 'auto'
+    finally:
+        scoped.dispose()
+        with engine.begin() as connection:
+            connection.execute(DropSchema(schema, cascade=True))
+        engine.dispose()

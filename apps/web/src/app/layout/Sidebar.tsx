@@ -3,12 +3,23 @@ import layoutStyles from '../../styles/layout.module.css'
 import styles from './Sidebar.module.css'
 import type { Identity } from '@paa/api-contracts'
 import type { LucideIcon } from 'lucide-react'
-import { ArrowLeft, ChevronRight, Cloud, Search, LogOut, Settings } from 'lucide-react'
+import {
+  ArrowLeft,
+  Bell,
+  ChevronRight,
+  Cloud,
+  Eye,
+  EyeOff,
+  Search,
+  LogOut,
+  Settings,
+} from 'lucide-react'
 import type * as React from 'react'
 import { identityScope } from '@web/lib/session-drafts'
 import { useSidebarNavigation } from './useSidebarNavigation'
 import type { Location } from 'react-router'
 import { Link, NavLink } from 'react-router'
+import { useNotificationSummary } from '@web/features/notifications/hooks/useNotificationSummary'
 
 export function Sidebar({
   sidebarRef,
@@ -21,6 +32,8 @@ export function Sidebar({
   allowedSettings,
   accountName,
   logout,
+  petVisible,
+  setPetVisible,
 }: {
   sidebarRef: React.RefObject<HTMLElement | null>
   setExpandedNav: (expanded: boolean) => void
@@ -38,7 +51,10 @@ export function Sidebar({
   )[]
   accountName: string
   logout: () => Promise<void>
+  petVisible: boolean
+  setPetVisible: (visible: boolean) => void
 }) {
+  const unread = useNotificationSummary()?.data?.totalUnread ?? 0
   const { menu, selectMenu, settingsRef, backRef } = useSidebarNavigation(
     location,
     identityScope(identity),
@@ -64,15 +80,33 @@ export function Sidebar({
         <Link to="/assistant" className={styles['brand']} aria-label="Noria 首页">
           Noria
         </Link>
-        <button
-          type="button"
-          className={styles['search-launch']}
-          title={`查找页面与操作（${navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}）`}
-          aria-label="查找页面与操作"
-          onClick={() => setCommands(true)}
-        >
-          <Search size={20} aria-hidden="true" />
-        </button>
+        <div className={styles['header-actions']}>
+          {!petVisible && (
+            <Link
+              to="/notifications"
+              className={styles['notification-launch']}
+              aria-label={unread > 0 ? `通知，${unread} 条未读` : '通知'}
+              title={unread > 0 ? `通知，${unread} 条未读` : '通知'}
+              onClick={() => setExpandedNav(false)}
+            >
+              <Bell size={20} aria-hidden="true" />
+              {unread > 0 && (
+                <span className={styles['notification-count']} aria-hidden="true">
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+            </Link>
+          )}
+          <button
+            type="button"
+            className={styles['search-launch']}
+            title={`查找页面与操作（${navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}）`}
+            aria-label="查找页面与操作"
+            onClick={() => setCommands(true)}
+          >
+            <Search size={20} aria-hidden="true" />
+          </button>
+        </div>
       </div>
       <nav aria-label={settingsMenu ? '系统设置' : '工作空间'}>
         {settingsMenu && <span className={styles['navigation-label']}>系统设置</span>}
@@ -88,6 +122,20 @@ export function Sidebar({
             <span>{p.title}</span>
           </NavLink>
         ))}
+        {settingsMenu && (
+          <button
+            type="button"
+            className={styles['settings-action']}
+            onClick={() => setPetVisible(!petVisible)}
+          >
+            {petVisible ? (
+              <EyeOff size={18} aria-hidden="true" />
+            ) : (
+              <Eye size={18} aria-hidden="true" />
+            )}
+            <span>{petVisible ? '隐藏宠物' : '显示宠物'}</span>
+          </button>
+        )}
         {!settingsMenu && (
           <button
             type="button"

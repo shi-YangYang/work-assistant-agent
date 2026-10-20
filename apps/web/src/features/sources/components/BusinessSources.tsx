@@ -10,7 +10,7 @@ import { useResource } from '@web/hooks/useResource'
 import { dateLabel } from '@web/utils/date'
 import { detailState } from '@web/utils/navigation'
 import { ChevronDown, FileText, Link2 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useLocation } from 'react-router'
 
 export function BusinessSources({
@@ -137,16 +137,19 @@ export function BusinessReply({
   text,
   sources,
   endpoint,
+  renderInternalLink,
 }: {
   text: string
   sources: BusinessCitation[]
   endpoint: string
+  renderInternalLink?: (href: string, label: string) => ReactNode
 }) {
   const [token, setToken] = useState<string | null>(null)
   return (
     <>
       <Markdown
         text={text}
+        renderInternalLink={renderInternalLink}
         renderBusinessCitation={(index) => {
           const source = sources[index - 1]
           return source?.token && !source.unavailable ? (

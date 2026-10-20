@@ -19,7 +19,8 @@ from _support.agent.prose_delivery import ProseModel
 pytestmark = pytest.mark.asyncio
 
 
-@pytest.mark.parametrize('metadata', [{'length': '约100字'}, {'remaining': ['生成文件尚未完成']}])
+@pytest.mark.parametrize('metadata', [{'length': '约100字'}, {'remaining': ['生成文件尚未完成']},
+                                    {'waitingOperationIds': ['actual-report-receipt']}])
 async def test_marker_every_split_never_exposes_control_text_and_preserves_literal_code(metadata):
     raw='<!--noria:'+json.dumps(metadata, ensure_ascii=False)+'-->\n# 正文\n\n文字😀'
     for cut in range(len(raw)+1):
@@ -73,6 +74,45 @@ async def test_unmarked_answer_streams_before_finish_and_reasoning_never_becomes
 async def test_invalid_header_is_not_silently_delivered(raw):
     with pytest.raises(ValueError):
         parse_header(raw,complete=True)
+
+
+@pytest.mark.parametrize('waiting', ['receipt', [None], [''], ['x' * 81], ['receipt'] * 9])
+async def test_invalid_structured_wait_header_is_rejected(waiting):
+    with pytest.raises(ValueError, match='等待回执引用无效'):
+        parse_header('<!--noria:' + json.dumps({'waitingOperationIds': waiting}) + '-->正文', complete=True)
+
+
+@pytest.mark.parametrize('boundary', ['unknown', 'old_message', 'unauthorized', 'other_child', 'pending_submit', 'valid'])
+async def test_structured_wait_references_require_current_authorized_report_and_keep_real_remaining(setup, monkeypatch, boundary):
+    from app.agent.completion.delivery import delivery_for
+    context, _ = await runtime(setup)
+    cards = [{'id': 'report-receipt', 'action': 'generate_report', 'state': 'running',
+              'messageId': '', 'taskItemId': 'authorized-item', 'objectId': 'report',
+              'title': '2026-10-12 周报', 'job': {'kind': 'report', 'targetId': 'report'}}]
+    async with context.sessions.begin() as db:
+        job = await db.get(Job, context.job_id)
+        cards[0]['messageId'] = job.target_id
+        item = {'id': 'authorized-item', 'receiptId': 'report-receipt',
+                'userSource': {'messageId': job.target_id},
+                'attemptedOperation': {'action': 'generate_report', 'kind': 'weekly',
+                                       'date': '2026-10-12', 'submitAfter': False}}
+        if boundary == 'unauthorized':
+            item['receiptId'] = 'unbound'
+        elif boundary == 'old_message':
+            cards[0]['messageId'] = 'old-message'
+        elif boundary == 'other_child':
+            cards[0]['job']['targetId'] = 'another-report'
+        elif boundary == 'pending_submit':
+            item['attemptedOperation']['submitAfter'] = True
+        job.result = {**job.result, 'taskItems': [item]}
+    async def observed(*args):
+        return cards
+    monkeypatch.setattr('app.modules.operations.receipts.message_actions', observed)
+    header = {'waitingOperationIds': ['unknown' if boundary == 'unknown' else 'report-receipt'],
+              'remaining': ['另一项报告缺少用户资料']}
+    delivery = await delivery_for(context, '<!--noria:' + json.dumps(header) + '-->\n正文保留')
+    assert delivery.answer == '正文保留' and delivery.task.state == 'blocked'
+    assert delivery.task.remaining == ['另一项报告缺少用户资料'] + ([] if boundary == 'valid' else ['报告等待未能对应当前任务的有效回执'])
 
 
 async def test_marked_prose_whole_once_and_task_context_only_on_demand(setup):

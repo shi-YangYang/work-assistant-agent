@@ -35,6 +35,56 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 afterEach(cleanup)
+it('confirms voiceprint deletion in the app, cancels safely and retries a failed single submission', async () => {
+  let deleted = false
+  vi.mocked(api).mockImplementation(async (path) =>
+    path.endsWith('/cleanup')
+      ? summary
+      : {
+          items: list.items.map((item) =>
+            deleted ? { ...item, state: 'empty', ready: false } : item,
+          ),
+        },
+  )
+  const pending = deferred<unknown>()
+  vi.mocked(write)
+    .mockReturnValueOnce(pending.promise)
+    .mockImplementationOnce(async () => {
+      deleted = true
+      return { ok: true }
+    })
+  render(
+    <TestWorkspace vault={createVault()}>
+      <VoiceprintsPage />
+    </TestWorkspace>,
+  )
+  const trigger = await screen.findByRole('button', { name: '删除 保留成员 的声纹' })
+  fireEvent.click(trigger)
+  let dialog = screen.getByRole('dialog', { name: '删除声纹' })
+  fireEvent.click(within(dialog).getByRole('button', { name: '取消' }))
+  expect(write).not.toHaveBeenCalled()
+  expect(document.activeElement).toBe(trigger)
+  fireEvent.click(trigger)
+  dialog = screen.getByRole('dialog', { name: '删除声纹' })
+  const confirm = within(dialog).getByRole('button', { name: '确认删除' })
+  fireEvent.click(confirm)
+  fireEvent.click(confirm)
+  expect(write).toHaveBeenCalledExactlyOnceWith('/settings/voiceprints/active', {}, 'DELETE')
+  expect((within(dialog).getByRole('button', { name: '取消' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  fireEvent(dialog, new Event('cancel', { cancelable: true }))
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  await act(async () => pending.reject(new Error('暂时无法删除')))
+  expect(await within(dialog).findByText('暂时无法删除')).toBeTruthy()
+  fireEvent.click(within(dialog).getByRole('button', { name: '确认删除' }))
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  await waitFor(() =>
+    expect(screen.queryByRole('button', { name: '删除 保留成员 的声纹' })).toBeNull(),
+  )
+  expect(write).toHaveBeenCalledTimes(2)
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '上传录音' }))
+})
 it('keeps the member library available when the independent cleanup lookup fails', async () => {
   vi.mocked(api).mockImplementation(async (path) => {
     if (path.endsWith('/cleanup')) throw new Error('清理范围暂不可用')

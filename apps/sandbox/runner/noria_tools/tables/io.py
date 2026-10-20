@@ -32,7 +32,7 @@ def _number(value):
 
 
 
-def read_table(data=None, source=None):
+def _load_table(data=None, source=None):
     warnings = []
     if data is not None:
         columns, rows = list(data['columns']), [list(row) for row in data.get('rows', [])]
@@ -43,7 +43,7 @@ def read_table(data=None, source=None):
                 raise ValueError('CSV没有工作表，sheet请留空')
             with path.open(encoding=source.get('encoding', 'utf-8-sig'), newline='') as stream:
                 reader = csv.reader(stream, strict=True)
-                columns = next(reader, [])
+                columns = next(reader, None)
                 rows = []
                 for row in reader:
                     if len(rows) >= MAX_ROWS:
@@ -63,16 +63,22 @@ def read_table(data=None, source=None):
                 values = page.iter_rows(values_only=True)
                 columns = list(next(values, []))
                 rows = [list(row) for row in values]
-                if any(isinstance(cell, str) and cell.startswith('=') for row in rows for cell in row):
+                if any(isinstance(cell, str) and cell.startswith('=') for row in [columns, *rows] for cell in row):
                     warnings.append('源文件公式保留为文本，未执行或重新计算。')
             finally:
                 book.close()
-    if not columns or len(columns) > 40 or any(not isinstance(c, str) or not c or len(c) > 120 for c in columns) or len(set(columns)) != len(columns):
-        raise ValueError('表头必须有1至40个不重复的非空文本列名')
-    if len(rows) * len(columns) > MAX_CELLS:
+    return columns, rows, warnings
+
+
+def _valid_header(columns):
+    return (bool(columns) and len(columns) <= 40 and
+            all(isinstance(c, str) and c and len(c) <= 120 for c in columns) and
+            len(set(columns)) == len(columns))
+
+
+def _normalize_rows(rows, width, warnings):
+    if len(rows) * width > MAX_CELLS:
         raise ValueError('表格单元格超过400000个')
-    if any(len(row) != len(columns) for row in rows):
-        raise ValueError('表格存在列数不一致的行，未跳过任何数据')
     dates = 0
     for row in rows:
         for index, cell in enumerate(row):
@@ -87,6 +93,14 @@ def read_table(data=None, source=None):
                 raise ValueError('单元格超过2000字，请通过Python处理长文本')
     if dates:
         warnings.append(f'{dates}个日期/时间单元格以ISO文本表示。')
+
+
+def _prepare_table(columns, rows, warnings, source):
+    if not _valid_header(columns):
+        raise ValueError('表头必须有1至40个不重复的非空文本列名')
+    if any(len(row) != len(columns) for row in rows):
+        raise ValueError('表格存在列数不一致的行，未跳过任何数据')
+    _normalize_rows(rows, len(columns), warnings)
     for column, kind in (source or {}).get('column_types', {}).items():
         if column not in columns:
             raise ValueError('指定类型的列不存在：' + column)
@@ -106,6 +120,29 @@ def read_table(data=None, source=None):
                     raise ValueError('布尔列只接受true/false，不推断其他内容')
                 row[index] = str(value).lower() == 'true'
     return columns, rows, warnings
+
+
+def read_table(data=None, source=None):
+    return _prepare_table(*_load_table(data, source), source)
+
+
+def inspection_rows(source):
+    """One file read; invalid headers are data, never inferred or repaired."""
+    columns, rows, warnings = _load_table(source=source)
+    if _valid_header(columns):
+        columns, rows, warnings = _prepare_table(columns, rows, warnings, source)
+        return columns, rows, warnings, True
+    if source.get('column_types'):
+        raise ValueError('没有有效表头，不能按列名转换类型；请清空column_types查看原始位置')
+    # Even a blank first CSV record is retained. Empty files have no record.
+    if columns is not None:
+        rows.insert(0, columns)
+    width = max((len(row) for row in rows), default=0)
+    if width > 40 or len(rows) > MAX_ROWS:
+        raise ValueError('工作表超过20000行或40列，请使用run_python分批处理')
+    _normalize_rows(rows, width, warnings)
+    warnings.append('首行不是有效表头，已按原始行列位置检查；首行和空行均保留，未推断列名。')
+    return list(range(1, width + 1)), rows, warnings, False
 
 
 def _csv_text(value):

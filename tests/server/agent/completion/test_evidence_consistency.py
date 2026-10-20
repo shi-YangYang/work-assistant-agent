@@ -61,6 +61,14 @@ def test_document_and_table_results_preserve_partial_coverage():
     assert [row['result'] for row in observed_evidence(context)] == [document, table]
 
 
+def test_saved_file_excerpt_is_observed_even_without_stdout_but_keeps_its_coverage():
+    context = SimpleNamespace(job_id='current')
+    result = {'state': 'succeeded', 'stdout': '', 'fileResults': [
+        {'fileId': 'real', 'content': '{"total":250}', 'truncated': False, 'untrusted': True}]}
+    context.reply_evidence = [page(context, tool='run_python', result=json.dumps(result))]
+    assert observed_evidence(context)[0]['result'] == result
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize('issue', [
     {'kind': 'fact', 'quote': '候选正文', 'reason': '缺少来源', 'evidence': []},

@@ -1,7 +1,7 @@
 import ipaddress
 import pytest
 import httpx
-from app.integrations.web_research import PublicTransport, WebResearchError, public_url, public_addresses, web_fetch, web_search, MAX_BYTES, PAGE_CHARS
+from app.integrations.web_research import WebResearchError, public_url, public_addresses, web_fetch, web_search, MAX_BYTES, PAGE_CHARS
 
 pytestmark = pytest.mark.asyncio
 
@@ -34,22 +34,6 @@ async def test_dns_private_and_mixed_answers_are_rejected(monkeypatch, address):
     with pytest.raises(WebResearchError): await public_addresses('example.org', 443)
 
 
-async def test_actual_tcp_url_is_pinned_and_tls_name_preserved(monkeypatch):
-    import app.integrations.web_research as web
-    async def resolve(*args): return ['8.8.8.8']
-    captured = []
-    async def parent(self, request):
-        captured.append(request)
-        return httpx.Response(200, text='ok')
-    monkeypatch.setattr(web, 'public_addresses', resolve)
-    monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', parent)
-    async with PublicTransport() as transport:
-        await transport.handle_async_request(httpx.Request('GET', 'https://example.org/docs'))
-    assert captured[0].url.host == '8.8.8.8'
-    assert captured[0].headers['host'] == 'example.org'
-    assert captured[0].extensions['sni_hostname'] == 'example.org'
-
-
 @pytest.mark.parametrize('temporary', [True, False])
 async def test_dns_failure_classification(monkeypatch, temporary):
     import asyncio
@@ -61,6 +45,7 @@ async def test_dns_failure_classification(monkeypatch, temporary):
     with pytest.raises(WebResearchError) as caught:
         await public_addresses('example.org', 443)
     assert isinstance(caught.value, WebTemporaryError) is temporary
+    assert caught.value.category == 'dns'
 
 
 async def test_redirects_limits_invalid_search_and_empty_result():
@@ -178,6 +163,7 @@ async def test_find_retains_response_and_redirect_limits():
 async def test_fetch_tool_exposes_and_passes_find_arguments(monkeypatch):
     from types import SimpleNamespace
     from app.agent.tools.resources import web
+    from app.agent.runtime.tool_progress import service
     calls = []
     async def fetch(url, **kwargs):
         calls.append((url, kwargs))
@@ -185,8 +171,12 @@ async def test_fetch_tool_exposes_and_passes_find_arguments(monkeypatch):
     async def research(context, operation, value, **kwargs):
         assert kwargs == {'is_fetch': True}
         return await operation(value)
+    async def web_cache(context, url):
+        assert url == 'https://example.org/docs'
+        return context.web_pages
     monkeypatch.setattr(web, 'research', research)
     monkeypatch.setattr(web.web_research, 'web_fetch', fetch)
+    monkeypatch.setattr(service, 'web_cache', web_cache)
     schema = web.web_fetch.tool_call_schema.model_json_schema()['properties']
     assert schema['find']['type'] == 'string' and schema['find']['default'] == ''
     assert schema['match_index']['type'] == 'integer' and schema['match_index']['default'] == 0
@@ -258,11 +248,15 @@ async def test_search_scope_filters_lookalike_hosts_and_preserves_real_subdomain
     assert all(item['evidenceType'] == 'search_snippet' for item in found['items'])
 
 
-async def test_unavailable_scoped_search_does_not_present_an_unrelated_source_as_official():
+@pytest.mark.parametrize('domains,query', [(['museum.example'], 'museum news'), (None, 'site:museum.example museum news')])
+async def test_unavailable_scoped_search_does_not_present_an_unrelated_source_as_official(domains, query):
     xml = '<rss><channel><item><title>Official guide</title><link>https://thirdparty.example/</link></item></channel></rss>'
-    result = await web_search('museum news', domains=['museum.example'], transport=httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'application/rss+xml'}, text=xml)))
+    result = await web_search(query, domains=domains, transport=httpx.MockTransport(lambda _: httpx.Response(200, headers={'content-type': 'application/rss+xml'}, text=xml)))
     assert result['items'] == [] and result['filteredCount'] == 1
-    assert '不代表相关网页不存在' in result['coverage'] and '首页' in result['nextStep']
+    assert result['domains'] == ['museum.example'] and result['untrusted']
+    assert '本次域名筛选无结果' in result['coverage']
+    assert '不代表网页不存在' in result['coverage'] and '已有来源仍有效' in result['coverage']
+    assert not {'nextStep', 'remaining', 'completed', 'blocked'}.intersection(result)
 
 
 @pytest.mark.parametrize('domains', ['example.org', ['https://example.org'], ['example.org/path'], ['localhost'], ['127.0.0.1'], ['a b'], ['a\nsite:b'], ['*.example.org'], [1], ['a.example'] * 6])

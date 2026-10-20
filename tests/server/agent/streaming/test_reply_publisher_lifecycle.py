@@ -125,13 +125,13 @@ async def test_final_database_retry_never_replays_model_or_announces_false_succe
     from app.tasks.processing import handlers
     from sqlalchemy.exc import OperationalError
     from _support.agent.response_delivery import run, model
-    original, attempts = handlers.verified_citations, []
+    original, attempts = handlers.delivered_citations, []
     async def persist(*args, **kwargs):
         attempts.append(1)
         if len(attempts) <= failures:
             raise OperationalError(None, None, RuntimeError('controlled database outage'))
         return await original(*args, **kwargs)
-    monkeypatch.setattr(handlers, 'verified_citations', persist)
+    monkeypatch.setattr(handlers, 'delivered_citations', persist)
     fake = model(answer='完整最终正文')
     result, _ = await run(setup, fake)
     assert fake.calls == 1 and len(attempts) == 2
@@ -271,7 +271,7 @@ async def test_final_and_interruption_database_failures_preserve_prefix(setup, m
         attempts.append('interruption')
         raise OperationalError(None, None, RuntimeError('controlled interruption save outage'))
     monkeypatch.setattr(handlers, 'invoke_harness', invoke)
-    monkeypatch.setattr(handlers, 'verified_citations', fail_final)
+    monkeypatch.setattr(handlers, 'delivered_citations', fail_final)
     monkeypatch.setattr(handlers, 'interrupt_usage', fail_recovery)
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         with pytest.raises(OperationalError):

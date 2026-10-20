@@ -24,6 +24,9 @@ async def test_file_delivery_is_private_versioned_download_and_retry_is_once(set
     assert first['state'] == 'succeeded', first
     delivery = first['delivery']
     file = delivery['files'][0]
+    assert first['fileResults'][0]['content'].encode() == receipts.data
+    assert first['fileResults'][0]['fileId'] == file['id']
+    assert not first['fileResults'][0]['truncated']
     assert file['url'].endswith('?revision=1')
     own = await clients['employee'].get(file['url'])
     assert own.status_code == 200 and own.content == receipts.data

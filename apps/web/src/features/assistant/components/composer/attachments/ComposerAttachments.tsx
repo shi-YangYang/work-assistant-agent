@@ -4,7 +4,7 @@ import styles from './ComposerAttachments.module.css'
 import type { PreviewImage } from '@web/components/media/ImageGallery'
 import { ComposerAudioPreview } from './ComposerAudioPreview'
 import type { Composer } from '@web/features/assistant/lib/audio-capture'
-import { fileKind, fileSize, isHeif } from '@web/features/assistant/utils/files'
+import { fileKind, fileSize, isHeif, isLegacyOfficeFile } from '@web/features/assistant/utils/files'
 import { FileText, LoaderCircle, RotateCw, X } from 'lucide-react'
 import { useRef, useState, type Dispatch, type SetStateAction } from 'react'
 
@@ -158,6 +158,12 @@ export function ComposerAttachments({
           )
         })}
       </div>
+      {files.some((item) => isLegacyOfficeFile(item.file.name)) && (
+        <p className={styles['compatibility-tip']} role="note" aria-label="旧版 Office 兼容提示">
+          旧版 Office 文件可能解析失败或内容不完整，建议先用 Microsoft Office 或 WPS 另存为
+          DOCX、XLSX、PPTX 后上传。
+        </p>
+      )}
     </>
   )
 }

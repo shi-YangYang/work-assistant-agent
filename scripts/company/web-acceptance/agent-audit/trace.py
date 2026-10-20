@@ -1,5 +1,6 @@
 """Test-process-only observations; never store system prompts or private reasoning."""
 from contextvars import ContextVar
+import base64
 import hashlib
 import json
 import os
@@ -8,7 +9,46 @@ import time
 from uuid import uuid4
 
 scope = ContextVar('audit_scope', default={})
+http_scope = ContextVar('audit_http_scope', default=None)
 OUTPUT = None
+
+
+def database_diagnostic(ctx):
+    """Driver/control-flow evidence only; never SQL parameters or exception prose."""
+    import asyncio
+    import re
+    import traceback
+    error = ctx.original_exception
+    statement = ctx.statement or ''
+    operation = statement.lstrip().split(None, 1)[0].upper() if statement.strip() else None
+    if operation not in {'SELECT', 'INSERT', 'UPDATE', 'DELETE', 'BEGIN', 'COMMIT', 'ROLLBACK', 'SAVEPOINT', 'RELEASE', 'WITH'}:
+        operation = 'other' if statement else None
+    # These messages are constants in psycopg, not PostgreSQL messages which
+    # may embed user data. A hash correlates every other message without copying it.
+    message = str(error)
+    constant = message if message in {'no result available', 'COPY cannot be mixed with other operations',
+                                     'you cannot mix COPY with other operations', 'the connection is closed'} else None
+    if re.fullmatch(r"the last operation didn't produce records \(command status: [A-Z ]+\)", message):
+        constant = message
+    if re.fullmatch(r"can't change '(?:autocommit|isolation_level|read_only|deferrable)' now: connection in transaction status [A-Z]+", message):
+        constant = message
+    frames = traceback.extract_tb(error.__traceback__)
+    request = http_scope.get()
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    return {
+        'errorObjectId': id(error), 'errorModule': type(error).__module__,
+        'error': type(error).__name__, 'sqlstate': getattr(error, 'sqlstate', None),
+        'disconnect': ctx.is_disconnect, 'isPrePing': ctx.is_pre_ping,
+        'operation': operation, 'statementSha256': digest(statement),
+        'constantMessage': constant, 'messageSha256': digest(message),
+        'stack': [{'file': Path(f.filename).name, 'line': f.lineno, 'function': f.name} for f in frames[-16:]],
+        'route': getattr(request.get('route'), 'path', '<unmatched>') if request else None,
+        'requestId': request.get('state', {}).get('request_id') if request else None,
+        'taskCancelling': task.cancelling() if task else None,
+    }
 
 
 def digest(value):
@@ -21,6 +61,53 @@ def safe(value):
     if isinstance(value, list):
         return [safe(v) for v in value]
     return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
+
+
+def transport_input(body):
+    """Describe actual synthetic chat inputs without saving prompts or pixels."""
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get('messages'), list):
+        return None
+    messages = []
+    for message in payload['messages']:
+        role = message.get('role')
+        content = message.get('content')
+        item = {'role': role, 'contentSha256': digest(content)}
+        if role in ('system', 'developer'):
+            item['characters'] = len(str(content))
+        else:
+            parts = content if isinstance(content, list) else [{'type': 'text', 'text': content}]
+            observed = []
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                if part.get('type') == 'text':
+                    text = part.get('text') or ''
+                    observed.append({'type': 'text', 'text': text[:100000],
+                                     'characters': len(text), 'truncated': len(text) > 100000})
+                elif part.get('type') == 'image_url':
+                    source = part.get('image_url', {})
+                    url = source.get('url', '') if isinstance(source, dict) else str(source)
+                    image = {'type': 'image_url', 'urlSha256': digest(url)}
+                    if url.startswith('data:') and ';base64,' in url:
+                        header, encoded = url.split(';base64,', 1)
+                        try:
+                            raw = base64.b64decode(encoded, validate=True)
+                            image.update(mime=header[5:], bytes=len(raw), pixelFileSha256=hashlib.sha256(raw).hexdigest())
+                        except ValueError:
+                            image['encoding'] = 'invalid-base64'
+                    else:
+                        image['source'] = 'remote-url'
+                    observed.append(image)
+            item['parts'] = observed
+        if message.get('tool_call_id'):
+            item['toolCallId'] = message['tool_call_id']
+        messages.append(item)
+    return {'model': payload.get('model'), 'reasoningEffort': payload.get('reasoning_effort'),
+            'stream': payload.get('stream'), 'messages': messages}
 
 
 def emit(kind, **values):
@@ -80,15 +167,105 @@ def install(path):
     OUTPUT = str(Path(path).resolve())
     Path(OUTPUT).parent.mkdir(parents=True, exist_ok=True)
     import importlib
+    from app.http.middleware import Boundaries
+    original_boundaries = Boundaries.__call__
+
+    async def observed_boundaries(self, request_scope, receive, send):
+        token = http_scope.set(request_scope if request_scope['type'] == 'http' else None)
+        try:
+            return await original_boundaries(self, request_scope, receive, send)
+        finally:
+            http_scope.reset(token)
+
+    Boundaries.__call__ = observed_boundaries
+    if os.environ.get('ACCEPTANCE_SUITE') == 'spec074':
+        import httpx
+        original_send = httpx.AsyncClient.send
+
+        async def observed_send(self, request, **kwargs):
+            external = request.url.host not in ('127.0.0.1', 'localhost', '::1')
+            observed_id = str(uuid4())
+            if external:
+                try:
+                    body_hash = hashlib.sha256(request.content).hexdigest()
+                except httpx.RequestNotRead:
+                    body_hash = None
+                emit('upstream_http_start', observationId=observed_id, method=request.method,
+                     endpoint=str(request.url.copy_with(query=None)),
+                     requestBodySha256=body_hash,
+                     input=transport_input(request.content) if body_hash else None)
+            try:
+                response = await original_send(self, request, **kwargs)
+                if external:
+                    emit('upstream_http_headers', observationId=observed_id, status=response.status_code,
+                         upstreamRequestId=next((response.headers[h] for h in ('x-request-id', 'request-id', 'x-dashscope-request-id') if h in response.headers), None))
+                    if 'text/event-stream' in response.headers.get('content-type', ''):
+                        original_stream = response.stream
+
+                        class ObservedStream(httpx.AsyncByteStream):
+                            async def __aiter__(stream_self):
+                                pending = b''
+                                size, events, text_chars = 0, 0, 0
+                                finishes, usage, first_body = [], None, False
+                                try:
+                                    async for chunk in original_stream:
+                                        size += len(chunk)
+                                        pending += chunk
+                                        while b'\n' in pending:
+                                            line, pending = pending.split(b'\n', 1)
+                                            if not line.startswith(b'data:'):
+                                                continue
+                                            try:
+                                                value = json.loads(line[5:].strip())
+                                            except (ValueError, UnicodeDecodeError):
+                                                continue
+                                            if not isinstance(value, dict):
+                                                continue
+                                            events += 1
+                                            usage = value.get('usage') or usage
+                                            for choice in value.get('choices') or []:
+                                                if not isinstance(choice, dict):
+                                                    continue
+                                                finish = choice.get('finish_reason')
+                                                if finish is not None and finish not in finishes:
+                                                    finishes.append(finish)
+                                                delta = choice.get('delta') or {}
+                                                content = delta.get('content') if isinstance(delta, dict) else None
+                                                if isinstance(content, str):
+                                                    text_chars += len(content)
+                                                    if content.strip() and not first_body:
+                                                        first_body = True
+                                                        emit('upstream_http_first_body', observationId=observed_id)
+                                        yield chunk
+                                finally:
+                                    emit('upstream_http_stream_end', observationId=observed_id,
+                                         bytes=size, events=events, bodyCharacters=text_chars,
+                                         finishReasons=finishes, usage=usage)
+
+                            async def aclose(stream_self):
+                                await original_stream.aclose()
+
+                        response.stream = ObservedStream()
+                return response
+            except BaseException as error:
+                if external:
+                    emit('upstream_http_error', observationId=observed_id, error=type(error).__name__)
+                raise
+
+        httpx.AsyncClient.send = observed_send
     chat_module = importlib.import_module('app.integrations.models.chat')
     original_chat = chat_module._chat
 
     async def provider_request(settings, config, key, messages, **kwargs):
         token = scope.set({**scope.get(), 'providerRequestId': str(uuid4())})
-        emit('provider_request_start', config={k: config.get(k) for k in ('model', 'parameters', 'streaming', 'protocol')})
+        emit('provider_request_start', config={k: config.get(k) for k in ('model', 'parameters', 'streaming', 'protocol')}, idType='local-observation-id')
         try:
             result = await original_chat(settings, config, key, messages, **kwargs)
-            emit('provider_request_end', status='succeeded')
+            observed_response = {'usage': result.get('usage'), 'choices': [
+                {'finish_reason': c.get('finish_reason'), 'message': {
+                    k: c.get('message', {}).get(k) for k in ('role', 'content', 'tool_calls')}}
+                for c in result.get('choices', [])]}
+            emit('provider_request_end', status='succeeded', **({'response': observed_response} if os.environ.get('ACCEPTANCE_SUITE') == 'spec074' else {}))
             return result
         except BaseException as error:
             emit('provider_request_end', status='failed', error=type(error).__name__, code=getattr(error, 'code', None))
@@ -208,4 +385,4 @@ def install(path):
 
     @event.listens_for(Engine, 'handle_error')
     def database_error(ctx):
-        emit('database_error', error=type(ctx.original_exception).__name__, sqlstate=getattr(ctx.original_exception, 'sqlstate', None), disconnect=ctx.is_disconnect)
+        emit('database_error', **database_diagnostic(ctx))

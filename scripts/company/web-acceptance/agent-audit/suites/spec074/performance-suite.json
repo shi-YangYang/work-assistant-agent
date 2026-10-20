@@ -1,0 +1,12 @@
+{
+  "revision": "074-performance-1",
+  "applicationCommit": "26db8f9bb8af64da403696362b158df7a94ebe1a",
+  "caseFile": "performance-cases.json",
+  "caseSha256": "9fcb32cba879516e998e073341af6b7a6fb8181c256702eb3f32187603740766",
+  "watchdogSeconds": 1920,
+  "highRiskRepetition": {
+    "caseIds": []
+  },
+  "modelResponses": "real-provider-only",
+  "firstResults": "immutable"
+}

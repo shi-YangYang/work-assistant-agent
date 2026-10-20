@@ -3,6 +3,7 @@ import {
   MAX_ATTACHMENTS,
   MAX_AUDIO_ATTACHMENTS,
   MAX_IMAGE_BYTES,
+  MAX_AUDIO_BYTES,
   MAX_FILE_BYTES,
 } from './attachment-limits'
 
@@ -24,10 +25,14 @@ function extensionOf(name: string) {
 export function blockedFileMessage(name: string) {
   const suffix = extensionOf(name)
   if (policy.blocked.archive.includes(suffix)) return '暂不支持压缩包，请解压后选择需要处理的文件。'
-  if (policy.blocked.macro.includes(suffix) || policy.legacyOffice.includes(suffix))
-    return '暂不支持旧版 Office 或含宏文件，请转换为 PDF、DOCX、PPTX、XLSX 或 CSV。'
+  if (policy.blocked.macro.includes(suffix))
+    return '暂不支持含宏文件，请转换为 PDF、DOCX、PPTX、XLSX 或 CSV。'
   if (policy.blocked.program.includes(suffix)) return '暂不支持上传程序、安装包、镜像或编译文件。'
   return ''
+}
+
+export function isLegacyOfficeFile(name: string) {
+  return policy.legacyOffice.includes(extensionOf(name))
 }
 
 export function fileKind(file: Pick<File, 'name' | 'type'>) {
@@ -43,13 +48,15 @@ export function fileSelectionError(files: File[]) {
   const blocked = files.map((file) => blockedFileMessage(file.name)).find(Boolean)
   if (blocked) return blocked
   if (files.some((file) => !file.size)) return '不能添加空文件'
-  if (files.length > MAX_ATTACHMENTS) return '每次最多 9 个附件'
+  if (files.length > MAX_ATTACHMENTS) return `每次最多 ${MAX_ATTACHMENTS} 个附件`
   if (files.filter((file) => fileKind(file) === 'audio').length > MAX_AUDIO_ATTACHMENTS)
     return '每次最多 3 段语音，每段最长 3 分钟'
   if (files.some((file) => fileKind(file) === 'image' && file.size > MAX_IMAGE_BYTES))
-    return '每张图片不能超过 30 MB'
-  if (files.some((file) => fileKind(file) !== 'image' && file.size > MAX_FILE_BYTES))
-    return '单个文档或语音文件不能超过 20 MB'
+    return '每张图片不能超过 40 MB'
+  if (files.some((file) => fileKind(file) === 'document' && file.size > MAX_FILE_BYTES))
+    return '单个文档不能超过 100 MB'
+  if (files.some((file) => fileKind(file) === 'audio' && file.size > MAX_AUDIO_BYTES))
+    return '每段语音不能超过 30 MB'
   return ''
 }
 
@@ -65,7 +72,9 @@ export function currentCitation(citations: DocumentCitation[], selected: Documen
         (citation) =>
           citation.attachmentId === selected.attachmentId &&
           citation.revision === selected.revision &&
-          citation.ordinal === selected.ordinal,
+          citation.sourceKind === selected.sourceKind &&
+          citation.ordinal === selected.ordinal &&
+          citation.previewUrl === selected.previewUrl,
       )
     : undefined
 }

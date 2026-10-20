@@ -25,7 +25,8 @@
   .panel {
     grid-area: panel;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 5em), 1fr));
+    font-size: 12px;
     gap: 8px;
     padding: 12px 8px 4px;
     margin-top: 8px;
@@ -54,7 +55,9 @@
     background: transparent;
     font-size: 12px;
     font-weight: 400;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
   .entry:hover:not(:disabled),
   .entry:active:not(:disabled) {
@@ -68,6 +71,9 @@
   }
   .context {
     align-items: stretch;
+  }
+  .entry > span {
+    max-width: 100%;
   }
   .reasoning,
   .execution {

@@ -155,11 +155,9 @@ async def test_report_schedule_rules_period_dedup_and_empty_regeneration(setup):
     async with sessions() as db:
         reports=(await db.scalars(select(Report).where(Report.owner_id==users['employee'].id))).all()
         jobs=(await db.scalars(select(Job).where(Job.owner_id==users['employee'].id,Job.kind=='report'))).all()
-        assert len(reports)==1 and len(jobs)==1
-        assert jobs[0].phase=='empty'
-    first=jobs[0].id
+        assert not reports and not jobs
     response=await c['employee'].post('/api/v1/reports/generate',json={'kind':'daily','date':instant.date().isoformat()},headers=keyed())
-    assert response.json()['jobId']!=first
+    assert response.status_code==422 and response.json()['error']['code']=='report_sources_empty'
 
 
 async def test_team_excludes_admins_and_protects_other_admin_materials(setup):

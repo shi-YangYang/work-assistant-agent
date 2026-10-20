@@ -15,6 +15,8 @@ async def message_dto(db, item, actor):
     allowed = await business_valid(db, actor, item.access)
     attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == item.id, Attachment.deleted.is_(False)))).all()
     job = await db.scalar(select(Job).where(Job.target_id == item.id, Job.kind == 'message').order_by(Job.created_at.desc()).limit(1))
+    order = {identifier: index for index, identifier in enumerate((job.result or {}).get('attachmentOrder', []))} if job else {}
+    attachments = sorted(attachments, key=lambda attachment: (order.get(attachment.id, len(order)), attachment.created_at, attachment.id))
     cards = await actions_message_actions(db, actor, item)
     from app.modules.work.drafts.draft_receipts import message_drafts
     visible_drafts = await message_drafts(db, actor, item, job)

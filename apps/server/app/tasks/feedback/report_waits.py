@@ -65,6 +65,23 @@ def owned_reports(job, cards):
     return reports
 
 
+def completion_wait(card, *, submit_after=False):
+    """Advertise the optional completion contract only for queued report tools."""
+    if (not submit_after and card.get('action') == 'generate_report' and card.get('state') == 'running'
+            and card.get('id') and (card.get('job') or {}).get('kind') == 'report'):
+        return {'completionWait': {'waitingOperationIds': [card['id']]},
+                'completionNote': '报告交给后台生成，结束本轮即可。最终 noria 标记使用 completionWait；生成等待不写入 remaining，其他真实未完成项照常保留。'}
+    return {}
+
+
+def invalid_waiting_ids(job, cards, identifiers):
+    # A model reference only delegates status to an already authorized child.
+    # It never removes prose requirements or changes the card/child state.
+    known = {card['id'] for card, item, _, _ in owned_reports(job, cards)
+             if (item.get('userSource') or {}).get('messageId') == getattr(job, 'target_id', None)}
+    return set(identifiers) - known
+
+
 def report_aliases(job, cards, day):
     aliases = {}
     reports = owned_reports(job, cards)

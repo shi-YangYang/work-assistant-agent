@@ -15,6 +15,8 @@ from app.tasks.runtime.queue import claim
 from _support.agent.business_actions import Judge, create, read_work
 from _support.http.company import keyed
 from _support.agent.execution_permissions import SETTINGS_PATH, mode_runtime, set_mode
+from _support.http.dingtalk import app_for, browser
+from uuid import uuid4
 
 pytestmark = pytest.mark.asyncio
 
@@ -27,6 +29,32 @@ async def test_policy_matrix(mode, action):
     assert decide(mode, action, explicitly_confirm=True).outcome == 'ask'
     assert effective('auto', 'full') == 'auto'
     assert effective('full', 'ask') == 'ask'
+
+
+async def test_new_account_defaults_to_full_on_first_message_without_changing_preferences(setup):
+    settings, sessions, users, clients = setup
+    credentials = {'username': 'default_' + uuid4().hex[:14], 'password': 'controlled-test-password'}
+    created = await clients['admin'].post('/api/v1/members', json={**credentials, 'name': '默认自主执行员工'})
+    assert created.status_code == 201, created.text
+    async with browser(app_for(clients)) as client:
+        login = await client.post('/api/v1/auth/login', json=credentials)
+        assert login.status_code == 200, login.text
+        client.headers['X-CSRF-Token'] = login.json()['csrf']
+        assert (await client.get(SETTINGS_PATH)).json() == {'executionMode': 'full', 'fullAccessConfirmed': False, 'modeRevision': 1}
+        work = await create(client, '待删除工作')
+        sent = await client.post('/api/v1/messages', json={'newConversation': True, 'text': '删除待删除工作'}, headers=keyed())
+        assert sent.status_code == 202, sent.text
+        job = await claim(sessions, created.json()['id'])
+        assert job.id == sent.json()['jobId'] and job.result['executionMode'] == 'full'
+        assert job.result['modeRevision'] == 1
+        context = RunContext(job.owner_id, job.company_id, job.id, job.fence, sessions, settings, source_revision=0, intent_model=Judge())
+        await read_work(context, work['id'])
+        result = await execute(context, step=1, action='delete_work', target_id=work['id'], expected_revision=1)
+        assert result['state'] == 'succeeded'
+        async with sessions() as db:
+            assert (await db.get(WorkItem, work['id'])).deleted
+        # A different account's saved preference is never changed by the default.
+        assert (await clients['employee'].get(SETTINGS_PATH)).json()['executionMode'] == 'auto'
 
 
 @pytest.mark.parametrize('mode', ['ask', 'auto', 'full'])

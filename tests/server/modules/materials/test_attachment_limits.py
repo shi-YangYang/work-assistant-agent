@@ -58,29 +58,29 @@ async def test_spoken_headings_cannot_turn_uploaded_material_into_instructions()
         transcript_groups(original.replace('参考内容', '修改后的参考内容'), result)
 
 
-async def test_nine_images_and_30_mib_upload_reach_model_and_followup(setup):
+async def test_twenty_images_and_40_mib_upload_reach_model_and_followup(setup):
     settings, sessions, users, clients = setup
     client = clients['employee']
     # Valid PNG with trailing padding exercises the full HTTP/multipart boundary.
-    large = png().ljust(30 * MIB, b'\0')
+    large = png().ljust(40 * MIB, b'\0')
     first = await upload(client, 'large.png', large, 'image/png')
     too_large = await client.post('/api/v1/uploads', files={'file': ('too-large.png', large + b'\0', 'image/png')})
     assert too_large.status_code == 413
     assert (await client.get(first['url'])).content == large
-    images = [first, *[await upload(client, f'{index}.png', png((index, 0, 0)), 'image/png') for index in range(9)]]
+    images = [first, *[await upload(client, f'{index}.png', png((index, 0, 0)), 'image/png') for index in range(20)]]
     conv = await conversation(client)
     rejected = await client.post('/api/v1/messages', json={'conversationId': conv['id'], 'attachmentIds': [item['id'] for item in images]}, headers=keyed())
     assert rejected.status_code == 422
-    sent = await message(client, conv, '查看这些图片', [item['id'] for item in images[:9]])
+    sent = await message(client, conv, '查看这些图片', [item['id'] for item in images[:20]])
     model = controlled_model('clarify')
     await run(settings, sessions, users, sent, model)
     detail = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
     assert detail['job']['state'] == 'awaiting_input', detail
-    assert len(model.seen_images) == 9
+    assert len(model.seen_images) == 20
     followup = await message(client, conv, '刚才的图片分别是什么？')
     model = controlled_model('clarify')
     await run(settings, sessions, users, followup, model)
-    assert len(model.seen_images) == 9
+    assert len(model.seen_images) == 20
 
 
 async def test_three_audio_order_partial_retry_and_separate_instruction_sources(setup, monkeypatch):
@@ -155,3 +155,73 @@ async def test_three_audio_order_partial_retry_and_separate_instruction_sources(
     await execute()
     assert calls == [ids[0], ids[1], ids[1], ids[2]]
     assert '下周工作计划' in prompts[-1]['recordedInstructions']
+
+
+async def test_100mb_document_and_30mb_audio_limits_and_failed_upload_cleanup(setup):
+    settings, _, _, clients = setup
+    client = clients['employee']
+    for name, size, data in [('large.txt', 100 * MIB, b'large document\n'), ('voice.wav', 30 * MIB, wav())]:
+        with io.BytesIO(data.ljust(size, b' ' if name.endswith('.txt') else b'\0')) as source:
+            item = await upload(client, name, source)
+        assert item['size'] == size
+        before = set(settings.media_dir.iterdir())
+        with io.BytesIO(data.ljust(size + 1, b' ' if name.endswith('.txt') else b'\0')) as source:
+            response = await client.post('/api/v1/uploads', files={'file': (name, source)})
+        assert response.status_code == 413, response.text
+        assert set(settings.media_dir.iterdir()) == before
+    # Every rejected request must leave the API able to accept another file.
+    assert (await upload(client, 'ok.txt', b'ok'))['size'] == 2
+
+
+async def test_30_megapixels_and_three_minute_audio_boundaries(setup):
+    settings, _, _, clients = setup
+    client = clients['employee']
+    for width, status in [(6000, 201), (6001, 415)]:
+        image = io.BytesIO()
+        Image.new('RGB', (width, 5000), 'white').save(image, 'PNG')
+        response = await client.post('/api/v1/uploads', files={'file': ('photo.png', image.getvalue(), 'image/png')})
+        assert response.status_code == status, response.text
+        if status == 201:
+            item = response.json()
+            # The accepted maximum also needs a usable preview and model image.
+            assert (await client.get(item['previewUrl'])).status_code == 200
+            from app.integrations.media import image_process
+            assert (await image_process(settings.media_dir / item['id'], 'model'))['tiles']
+    for seconds, status in [(180, 201), (181, 422)]:
+        audio = io.BytesIO()
+        with wave.open(audio, 'wb') as output:
+            output.setnchannels(1); output.setsampwidth(2); output.setframerate(16000)
+            output.writeframes(b'\0\0' * (16000 * seconds))
+        response = await client.post('/api/v1/uploads', files={'file': ('voice.wav', audio.getvalue(), 'audio/wav')})
+        assert response.status_code == status, response.text
+
+
+async def test_twenty_mixed_attachments_submit_process_and_save_to_work(setup):
+    from _support.work.work_records import create, key
+    settings, sessions, users, clients = setup
+    client = clients['employee']
+    # Two batches, with images, audio and documents sharing the same total cap.
+    docs = [await upload(client, f'note-{i}.txt', f'MATERIAL-{i}'.encode()) for i in range(12)]
+    images = [await upload(client, f'image-{i}.png', png((i, 10, 0))) for i in range(5)]
+    voices = [await upload(client, f'voice-{i}.wav', wav(i)) for i in range(3)]
+    items = [*docs, *images, *voices]
+    conv = await conversation(client)
+    sent = await message(client, conv, '整理这些材料', [item['id'] for item in items])
+    async def recognize(context, attachment):
+        return '语音材料 ' + attachment.name
+    async with sessions.begin() as db:
+        from app.db.base import now
+        from datetime import timedelta
+        job = await db.get(Job, sent['jobId'])
+        job.state, job.fence, job.lease_until = 'running', 1, now() + timedelta(seconds=90)
+    model = controlled_model('clarify')
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(job, sessions, settings, saver, model=model, asr_provider=recognize)
+    detail = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
+    assert detail['job']['state'] == 'awaiting_input', detail
+    assert len(model.seen_images) == 5 and all(v['name'] in detail['transcript'] for v in voices)
+    for item in docs:
+        assert (await client.get('/api/v1/uploads/' + item['id'] + '/extraction')).json()['items']
+    work = await create(client)
+    saved = await client.patch('/api/v1/work-items/' + work['id'], json={'expectedRevision': 1, 'materials': [{'attachmentId': item['id']} for item in items]}, headers=key())
+    assert saved.status_code == 200 and len(saved.json()['materialIds']) == 20, saved.text

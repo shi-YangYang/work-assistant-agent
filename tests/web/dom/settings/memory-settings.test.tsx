@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { setCsrf } from '../../../../apps/web/src/api/client'
 import { MemoryPage } from '../../../../apps/web/src/features/settings/components/memory/MemoryPage'
 import { memoryResource } from '../../../../apps/web/src/features/settings/api/memory'
-import { createVault, deferred, TestWorkspace } from '../helpers'
+import { createVault, deferred, dialogs, TestWorkspace } from '../helpers'
 
 let saved = {
   enabled: true,
@@ -25,6 +25,7 @@ function view() {
   )
 }
 beforeEach(() => {
+  dialogs()
   setCsrf('csrf', 'company:owner')
   saved = { enabled: true, revision: 0, markdown: '', updatedAt: null, maxCharacters: 6000 }
   fail = false
@@ -78,12 +79,48 @@ it('independently saves the accessible switch and edits/previews safely while di
   await screen.findByRole('button', { name: '编辑' })
   expect(saved.markdown).toContain('# 自定义')
   expect(saved.enabled).toBe(false)
-  vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
-  fireEvent.click(screen.getByRole('button', { name: '清空记忆' }))
+  const clear = screen.getByRole('button', { name: '清空记忆' })
+  fireEvent.click(clear)
+  fireEvent.click(
+    within(screen.getByRole('dialog', { name: '清空记忆' })).getByRole('button', { name: '取消' }),
+  )
   expect(saved.markdown).not.toBe('')
-  fireEvent.click(screen.getByRole('button', { name: '清空记忆' }))
+  expect(document.activeElement).toBe(clear)
+  fireEvent.click(clear)
+  fireEvent.click(screen.getByRole('button', { name: '确认清空' }))
   await screen.findByText(/还没有记忆/)
   expect(saved.enabled).toBe(false)
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: '编辑' }))
+})
+it('keeps the clear dialog open after failure, blocks duplicate submissions and allows retry', async () => {
+  saved.markdown = '保留的记忆'
+  render(view())
+  fireEvent.click(await screen.findByRole('button', { name: '清空记忆' }))
+  const pending = deferred<Response>()
+  vi.mocked(fetch).mockImplementationOnce(() => pending.promise)
+  const callsBeforeClear = vi.mocked(fetch).mock.calls.length
+  const confirm = screen.getByRole('button', { name: '确认清空' })
+  fireEvent.click(confirm)
+  fireEvent.click(confirm)
+  expect(fetch).toHaveBeenCalledTimes(callsBeforeClear + 1)
+  const dialog = screen.getByRole('dialog', { name: '清空记忆' })
+  expect((within(dialog).getByRole('button', { name: '取消' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  )
+  fireEvent(dialog, new Event('cancel', { cancelable: true }))
+  expect(screen.getByRole('dialog')).toBe(dialog)
+  await act(async () =>
+    pending.resolve(
+      new Response(JSON.stringify({ error: { code: 'unavailable', message: '暂时无法清空' } }), {
+        status: 503,
+      }),
+    ),
+  )
+  expect(await within(dialog).findByText('服务暂时不可用，请稍后重试。')).toBeTruthy()
+  expect(saved.markdown).toBe('保留的记忆')
+  fireEvent.click(screen.getByRole('button', { name: '确认清空' }))
+  await screen.findByText(/还没有记忆/)
+  expect(screen.queryByRole('dialog')).toBeNull()
 })
 it('keeps a draft through concurrent updates and requires visible conflict resolution', async () => {
   render(view())

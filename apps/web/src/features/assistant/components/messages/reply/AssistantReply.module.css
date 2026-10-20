@@ -4,3 +4,19 @@
   margin-top: 14px;
   line-height: 1.75;
 }
+
+.file-reference {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.file-reference:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}

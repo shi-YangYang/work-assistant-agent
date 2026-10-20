@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import time
 from app.integrations.models import transport
 from app.integrations.models.stream_events import ModelDelta, ToolDelta, tool_arguments
@@ -7,9 +8,33 @@ from app.integrations.models.transport import ProviderError, normalize_url, stat
 
 
 log = logging.getLogger(__name__)
+REQUEST_ID_HEADERS = ('x-request-id', 'x-dashscope-request-id', 'x-acs-request-id')
+REQUEST_ID_PATTERN = re.compile(r'(?:[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}|req_[A-Za-z0-9_-]{8,120}|[0-9a-fA-F]{16,128})')
 
 
-def _invalid_response_diagnostic(result, reason, tool_index, on_timing):
+def _response_metadata(response):
+    """Only fixed media types and recognizable opaque request identifiers leave HTTP."""
+    content_type = response.headers.get('content-type', '').partition(';')[0].strip().lower()
+    fields = {'http_status': response.status_code,
+              'content_type': content_type if content_type in (
+                  'application/json', 'application/problem+json', 'text/event-stream',
+                  'text/html', 'text/plain', 'application/octet-stream') else 'other' if content_type else None}
+    for header in REQUEST_ID_HEADERS:
+        value = response.headers.get(header, '')
+        if len(value) <= 128 and REQUEST_ID_PATTERN.fullmatch(value):
+            fields.update(provider_request_id=value, provider_request_id_header=header)
+            break
+    return fields
+
+
+def _json_error_metadata(error, scope):
+    if not isinstance(error, json.JSONDecodeError):
+        return {}
+    return {'json_scope': scope, 'json_line': error.lineno, 'json_column': error.colno,
+            'json_offset': error.pos, 'json_input_chars': len(error.doc)}
+
+
+def invalid_response_diagnostic(result, reason, tool_index, on_timing, **metadata):
     """Failure-only shape metadata; never include provider text or arguments."""
     choices = result.get('choices') if isinstance(result, dict) else None
     choice = choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
@@ -21,7 +46,11 @@ def _invalid_response_diagnostic(result, reason, tool_index, on_timing):
               'choices_count': len(choices) if isinstance(choices, list) else None,
               'finish_reason': finish if finish in ('stop', 'tool_calls', 'length', 'content_filter', None) else 'other',
               'body_chars': len(content) if isinstance(content, str) else None,
-              'tool_count': len(calls) if isinstance(calls, list) else None}
+              'tool_count': len(calls) if isinstance(calls, list) else None,
+              **metadata}
+    usage = token_usage(result.get('usage')) if isinstance(result, dict) else None
+    if usage:
+        fields.update(input_tokens=usage.get('prompt_tokens'), output_tokens=usage.get('completion_tokens'))
     if isinstance(calls, list) and tool_index is not None and tool_index < len(calls):
         call = calls[tool_index]
         function = call.get('function') if isinstance(call, dict) else None
@@ -108,8 +137,11 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
     first_event = False
     first_body = False
     reasoning_started = False
+    reasoning_chars = 0
+    stream_metadata = {}
     async with transport.client(settings) as http:
         async with http.stream('POST', endpoint, headers={'Authorization': f'Bearer {key}'}, json=body, **options) as response:
+            response_metadata = _response_metadata(response)
             if response.is_error:
                 await response.aread()
             if response.status_code in (400, 422) and tool_choice == 'required':
@@ -126,9 +158,12 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                 await response.aread()
                 try:
                     result = response.json()
-                except ValueError:
+                except ValueError as error:
+                    invalid_response_diagnostic(None, 'response_json', None, on_timing,
+                                                **response_metadata, **_json_error_metadata(error, 'response'))
                     raise ProviderError('invalid_response', '模型返回无法解析的内容') from None
                 if not isinstance(result, dict):
+                    invalid_response_diagnostic(result, 'response_structure', None, on_timing, **response_metadata)
                     raise ProviderError('invalid_response', '模型返回内容结构无效')
                 if result.get('error'):
                     raise structured_error(result) or ProviderError('provider_error', '模型服务报告请求失败，请联系管理员查看服务调用记录')
@@ -138,21 +173,29 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     await on_event('usage', result.get('usage'))
             else:
                 content, calls, finish, done, usage = '', {}, None, False, None
+                stream_events = 0
+                def stream_diagnostic(reason, **error_metadata):
+                    partial = {'choices': [{'message': {'content': content, 'tool_calls': list(calls.values())},
+                                            'finish_reason': finish}], 'usage': usage}
+                    invalid_response_diagnostic(partial, reason, None, on_timing,
+                                                **response_metadata, **error_metadata, stream_events=stream_events,
+                                                stream_complete=done, reasoning_chars=reasoning_chars)
                 lines = response.aiter_lines()
-                async for line in lines:
-                    if not line.startswith('data:'):
-                        continue
-                    raw = line[5:].strip()
+                async for raw in transport.stream_data(lines):
+                    raw = raw.strip()
                     if raw == '[DONE]':
                         done = True
                         if finish:
                             await transport.finish_stream(lines)
                         break
+                    stream_events += 1
                     try:
                         part = json.loads(raw)
-                    except ValueError:
+                    except ValueError as error:
+                        stream_diagnostic('stream_json', **_json_error_metadata(error, 'stream_event'))
                         raise ProviderError('invalid_response', '流式接口返回无效数据') from None
                     if not isinstance(part, dict):
+                        stream_diagnostic('stream_structure')
                         raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if part.get('error'):
                         raise structured_error(part, delay=retry_after(response)) or ProviderError('provider_error', '模型服务报告流式请求失败，请联系管理员查看服务调用记录')
@@ -163,8 +206,12 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     choices = part.get('choices', [])
                     if not choices:
                         continue
+                    if not isinstance(choices, list):
+                        stream_diagnostic('stream_choices_structure')
+                        raise ProviderError('invalid_response', '流式接口返回无效数据')
                     item = choices[0]
                     if not isinstance(item, dict) or not isinstance(item.get('delta', {}), dict):
+                        stream_diagnostic('stream_delta_structure')
                         raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if item.get('finish_reason') == 'content_filter':
                         raise structured_error({'code': 'content_filter'})
@@ -175,6 +222,7 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                         first_event = True
                     fragment_text = delta.get('content') or ''
                     if not isinstance(fragment_text, str):
+                        stream_diagnostic('content_type')
                         raise ProviderError('invalid_response', '模型正文无效')
                     if fragment_text.strip() and not first_body:
                         first_body = True
@@ -182,14 +230,24 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                             on_timing('model.first_body')
                     content += fragment_text
                     fragments = []
-                    for fragment in delta.get('tool_calls') or []:
+                    tool_fragments = delta.get('tool_calls') or []
+                    if not isinstance(tool_fragments, list):
+                        stream_diagnostic('tool_calls_structure')
+                        raise ProviderError('invalid_response', '工具调用分片无效')
+                    for fragment in tool_fragments:
+                        if not isinstance(fragment, dict):
+                            stream_diagnostic('tool_fragment_structure')
+                            raise ProviderError('invalid_response', '工具调用分片无效')
                         index = fragment.get('index')
                         if not isinstance(index, int) or not 0 <= index < 16:
+                            stream_diagnostic('tool_call_index')
                             raise ProviderError('invalid_response', '工具调用序号无效')
                         if not isinstance(fragment.get('function', {}), dict):
+                            stream_diagnostic('tool_function')
                             raise ProviderError('invalid_response', '工具调用分片无效')
                         values = [fragment.get('id') or '', fragment.get('function', {}).get('name') or '', fragment.get('function', {}).get('arguments') or '']
                         if any(not isinstance(value, str) for value in values):
+                            stream_diagnostic('tool_fragment_type')
                             raise ProviderError('invalid_response', '工具调用分片无效')
                         fragments.append(ToolDelta(index, values[1], values[2], values[0]))
                         call = calls.setdefault(index, {'id': '', 'type': 'function', 'function': {'name': '', 'arguments': ''}})
@@ -197,10 +255,13 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                         call['function']['name'] += fragment.get('function', {}).get('name') or ''
                         call['function']['arguments'] += fragment.get('function', {}).get('arguments') or ''
                         if len(call['id']) > 200 or len(call['function']['name']) > 80 or (call['function']['name'] not in text_tools and len(call['function']['arguments']) > 32000):
+                            stream_diagnostic('tool_fragment_size')
                             raise ProviderError('invalid_response', '工具调用无效或过长')
                     # Reasoning only signals activity; its contents never enter
                     # callbacks, replies, usage records or persisted node output.
                     reasoning = delta.get('reasoning_content')
+                    if isinstance(reasoning, str):
+                        reasoning_chars += len(reasoning)
                     if on_progress and (fragment_text.strip() or any(fragment.arguments.strip() for fragment in fragments) or isinstance(reasoning, str) and reasoning.strip()):
                         on_progress()
                     thinking = not reasoning_started and isinstance(reasoning, str) and bool(reasoning.strip())
@@ -212,10 +273,12 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     if item.get('finish_reason'):
                         finish = item['finish_reason']
                 if not done or not finish:
+                    stream_diagnostic('stream_incomplete')
                     raise ProviderError('interrupted', '流式响应未完整结束，已停止执行；请核对后重试')
                 result = {'choices': [{'message': {'role': 'assistant', 'content': content, 'tool_calls': [calls[i] for i in sorted(calls)]}, 'finish_reason': finish}], 'usage': usage or {}}
+                stream_metadata = {'stream_complete': done, 'reasoning_chars': reasoning_chars, 'stream_events': stream_events}
     if on_timing:
-        on_timing('model.received')
+        on_timing('model.received', **response_metadata, **stream_metadata)
     reason, tool_index = 'choices_structure', None
     try:
         choice = result['choices'][0]
@@ -223,6 +286,7 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
         if choice.get('finish_reason') == 'content_filter':
             raise structured_error({'code': 'content_filter'})
         if choice.get('finish_reason') not in ('stop', 'tool_calls'):
+            invalid_response_diagnostic(result, 'finish_reason', None, on_timing, **response_metadata, **stream_metadata)
             raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制', output_limit=choice.get('finish_reason') == 'length')
         reason = 'message_structure'
         message = choice['message']
@@ -267,6 +331,7 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
         return result
     except ProviderError:
         raise
-    except (KeyError, TypeError, ValueError, IndexError, AttributeError):
-        _invalid_response_diagnostic(result, reason, tool_index, on_timing)
+    except (KeyError, TypeError, ValueError, IndexError, AttributeError) as error:
+        invalid_response_diagnostic(result, reason, tool_index, on_timing,
+                                    **response_metadata, **stream_metadata, **_json_error_metadata(error, 'tool_arguments'))
         raise ProviderError('invalid_response', '模型未返回完整文字或有效工具调用') from None

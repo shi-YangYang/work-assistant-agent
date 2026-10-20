@@ -27,6 +27,17 @@ def fixture():
     return job, cards, task
 
 
+def test_wait_handoff_only_applies_to_real_running_drafts_not_submit_obligations():
+    from app.tasks.feedback.report_waits import completion_wait
+    _, cards, _ = fixture()
+    assert completion_wait(cards[0])['completionWait'] == {'waitingOperationIds': ['receipt']}
+    assert completion_wait(cards[0], submit_after=True) == {}
+    assert completion_wait({**cards[0], 'state': 'pending'}) == {}
+    assert completion_wait({**cards[0], 'state': 'failed'}) == {}
+    assert completion_wait({**cards[0], 'action': 'submit_report'}) == {}
+    assert completion_wait({**cards[0], 'job': None}) == {}
+
+
 @pytest.mark.parametrize('state', ['queued', 'running', 'succeeded', 'failed', 'awaiting_retry', 'cancelled'])
 def test_exact_wait_delegates_to_real_card_without_mutating_it(state):
     job, cards, task = fixture()
@@ -168,12 +179,14 @@ def test_authorized_result_notice_is_card_owned_without_a_model_wait_header(stat
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('trace', ['v1_high', 'v2_low', 'v2_high'])
+@pytest.mark.parametrize('trace', ['v1_high', 'v2_low', 'v2_high', 'structured_wait'])
 @pytest.mark.parametrize('terminal', ['succeeded', 'failed', 'cancelled', 'other_remaining'])
 async def test_original_high_trace_public_api_follows_real_report_without_extra_model_call(setup, monkeypatch, terminal, trace):
+    from datetime import datetime
     from sqlalchemy import func, select
     from app.agent.completion.delivery import delivery_for
     from app.modules.reports.models import Report
+    from app.modules.work.models import WorkRevision, WorkUpdate
     from app.tasks.models import Job
     from app.tasks.processing.handlers import process_job
     from app.tasks.runtime.queue import claim
@@ -181,14 +194,25 @@ async def test_original_high_trace_public_api_follows_real_report_without_extra_
     from _support.work.report_reliability import ReportModel
 
     settings, sessions, users, clients = setup
-    await create(clients['employee'], title='资料核对-R01', summary='已核对5份客户资料，尚余2份', status='in_progress')
+    work = await create(clients['employee'], title='资料核对-R01', summary='已核对5份客户资料，尚余2份', status='in_progress')
+    # The historical trace requests this fixed week; its source must be in it,
+    # independent of the CI runner's current date. Keep job/lease clocks real.
+    async with sessions.begin() as db:
+        for model in (WorkRevision, WorkUpdate):
+            for row in (await db.scalars(select(model).where(model.work_id == work['id']))).all():
+                row.created_at = datetime.fromisoformat('2026-10-14T02:00:00+08:00')
     answer = '周报草稿已发起生成，不会提交。'
-    wait = {'v1_high': WAIT, 'v2_low': LOW_WAIT, 'v2_high': HIGH_WAIT}[trace]
-    remainder = [wait] + (['另一个工作尚未保存'] if terminal == 'other_remaining' else [])
+    wait = {'v1_high': WAIT, 'v2_low': LOW_WAIT, 'v2_high': HIGH_WAIT,
+            'structured_wait': '本周周报草稿仍在生成中，尚未返回内容，需等生成完成后才能呈现并交你审阅'}[trace]
+    remainder = ([] if trace == 'structured_wait' else [wait]) + (['另一个工作尚未保存'] if terminal == 'other_remaining' else [])
+    waiting = {}
     async def enqueue(context):
         result = await execute(context, step=1, action='generate_report', report_kind='weekly', report_date='2026-10-12')
         assert result['state'] == 'running'
         assert len(context.intent_model.inputs) == 1
+        if trace == 'structured_wait':
+            from app.tasks.feedback.report_waits import completion_wait
+            waiting.update(completion_wait(result)['completionWait'])
         if trace == 'v2_high':
             async with sessions.begin() as db:
                 job = await db.get(Job, context.job_id)
@@ -196,7 +220,7 @@ async def test_original_high_trace_public_api_follows_real_report_without_extra_
                     'state': 'needs_confirmation', 'remaining': [RESULT_WAIT]}}
     async def graph(context, *args, **kwargs):
         context.request_clock = CLOCK
-        raw = '<!--noria:' + json.dumps({'remaining': remainder}, ensure_ascii=False) + '-->\n' + answer
+        raw = '<!--noria:' + json.dumps({'remaining': remainder, **waiting}, ensure_ascii=False) + '-->\n' + answer
         context.delivery = (await delivery_for(context, raw)).model_dump()
         return answer
     monkeypatch.setattr('app.tasks.processing.handlers.invoke_harness', graph)

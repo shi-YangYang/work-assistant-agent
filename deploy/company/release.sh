@@ -38,6 +38,8 @@ assert len(open(os.environ["PAA_MODEL_KEY_FILE"], "rb").read()) == 32, "Invalid 
 url = urlparse(os.environ["PAA_WEB_ORIGIN"])
 assert url.scheme == "https" and url.hostname and not url.username and not url.password and url.path in ("", "/") and not url.query and not url.fragment, "Invalid production Web origin"
 '
+# Verify all three real legacy converters before touching the running release.
+compose run --rm --no-deps -T --entrypoint python worker -m app.integrations.parsing.office_preflight
 previous=''
 if docker volume inspect paa-company_pgdata >/dev/null 2>&1; then
   # Compose may create all declared volumes during the API preflight. A volume's

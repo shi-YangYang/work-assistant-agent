@@ -92,7 +92,7 @@ async def test_images_correct_orientation_alpha_detail_and_bound_coverage(tmp_pa
         elif name == 'phone.heic':
             assert result['mime'] == 'image/heic' and decoded.size == (160, 80)
     oversized = tmp_path / 'oversized.png'
-    Image.new('1', (5000, 4001)).save(oversized)
+    Image.new('1', (6000, 5001)).save(oversized)
     with pytest.raises(HTTPException) as failed: await image_process(oversized)
     assert failed.value.status_code == 415
     bad = tmp_path / 'bad.heic'; bad.write_bytes(b'not heic')
@@ -109,16 +109,23 @@ async def test_xlsx_preserves_addresses_saved_values_hidden_ranges_and_limits(tm
     assert '2026-09-16' in text and '错误值：#DIV/0!' in text
     assert 'A6:C6' in text and '合并说明' in text
     assert all(secret not in text for secret in ('隐藏行秘密', '隐藏列秘密', '隐藏表秘密'))
-    assert any('项目进度」!A2:F2' in chunk['location'] for chunk in result['chunks'])
+    for address in ('A2', 'B2', 'C2', 'D2', 'E2', 'F2'):
+        chunk = next(chunk for chunk in result['chunks'] if chunk['location'] == f'工作表「项目进度」!{address}')
+        assert chunk['text'].startswith(address + '：')
+        assert chunk['source'] == {'unit': 'cell', 'sheet': '项目进度', 'cell': address}
     assert any('隐藏' in warning for warning in result['info']['warnings'])
-    # Forged dimensions cannot hide cells; physical far-away cells are bounded.
+    # Forged dimensions cannot hide cells. Sparse physical cells at Excel's
+    # boundary are readable without traversing the intervening empty rectangle.
     from openpyxl import Workbook
-    workbook = Workbook(); workbook.active['A1'] = '可读'; workbook.active['XFD1048576'] = '超界'
+    workbook = Workbook(); workbook.active['A1'] = '可读'; workbook.active['XFD1048576'] = '边界内容'
     workbook.save(path)
     result = await parse_process(path, '.xlsx')
-    assert result['status'] == 'partial' and '可读' in str(result['chunks'])
-    assert '超界' not in str(result['chunks'])
-    assert '未读取' in str(result['info']['warnings'])
+    assert result['status'] == 'ready' and result['info']['sourceComplete']
+    assert [(chunk['location'], chunk['text']) for chunk in result['chunks']] == [
+        ('工作表「Sheet」!A1', 'A1：可读'),
+        ('工作表「Sheet」!XFD1048576', 'XFD1048576：边界内容'),
+    ]
+    assert not result['info']['warnings']
     path.write_bytes(b'PK\x03\x04broken')
     assert (await parse_process(path, '.xlsx'))['status'] == 'failed'
 
@@ -179,7 +186,10 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     assert audio_source['receivedAudioFiles'] == ['voice.mp3'] and audio_source['transcript'] == source['transcript']
     assert [item['id'] for item in source['documents']] == [doc['id']]
     assert '今天完成现场检查，附件是进度资料' in prompt and source['transcript'] in prompt
-    assert '仅含文档，不含图片和语音' in prompt
+    document_directory = json.loads(prompt.split('本次文档目录：', 1)[1].split('\n', 1)[0])
+    assert [(item['id'], item['kind']) for item in document_directory] == [(doc['id'], 'document')]
+    assert document_directory[0]['messageId'] == sent.json()['messageId']
+    assert document_directory[0]['extraction']['status'] == 'partial'
     # Simulate a lost completion commit, then correct and retry through the API.
     # The retry must refresh the input snapshot and must not repeat ASR.
     async with sessions.begin() as db:

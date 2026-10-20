@@ -60,7 +60,8 @@ async def test_upload_parsing_without_key_per_file_failure_and_model_retry_reuse
     await run(settings, sessions, users, sent, model)
     data = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert data['job']['state'] == 'awaiting_input', data
-    assert '后半部分标记' in data['reply'] and data['citations'][0]['ordinal'] >= 3
+    assert '后半部分标记' in data['reply'] and len(data['citations']) == 1
+    assert data['citations'][0]['attachmentId'] == good['id']
     assert not data['drafts'] and not (await c['employee'].get('/api/v1/work-items')).json()['items']
     assert next(a for a in data['attachments'] if a['id'] == good['id'])['extraction']['revision'] == revision
     assert model.seen[0]['items'][0]['location'].startswith('行 91')
@@ -112,7 +113,7 @@ async def test_filename_and_upload_boundaries(setup):
     for name, data, mime in [('old.doc', b'old', 'application/msword'), ('fake.pdf', b'not pdf', 'application/pdf'), ('fake.txt', b'text', 'image/png'), ('sheet.xlsx', b'PK', 'application/octet-stream'), ('unknown.exe', b'exe', 'application/octet-stream')]:
         response = await c['employee'].post('/api/v1/uploads', files={'file': (name, data, mime)})
         assert response.status_code == 415, response.text
-    assert (await c['employee'].post('/api/v1/uploads', files={'file': ('large.txt', b'x' * (20 * 1024 * 1024 + 1), 'text/plain')})).status_code == 413
+    assert (await c['employee'].post('/api/v1/uploads', files={'file': ('large.txt', b'x' * (100 * 1024 * 1024 + 1), 'text/plain')})).status_code == 413
     conv = await conversation(c['employee'])
     docs = [await upload(c['employee'], f'large{i}.txt', b'x' * (6 * 1024 * 1024)) for i in range(4)]
     result = await c['employee'].post('/api/v1/messages', json={'conversationId': conv['id'], 'attachmentIds': [d['id'] for d in docs]}, headers=keyed())
@@ -364,7 +365,8 @@ async def test_unchanged_document_checkpoint_reuses_verified_reads_on_retry(setu
     data = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert data['job']['state'] == 'awaiting_input', data
     assert len(model.seen) == 1  # Completed graph was reused, no second tool/model loop.
-    assert data['citations'][0]['ordinal'] == 3 and '材料范围' in data['reply']
+    assert len(data['citations']) == 1 and data['citations'][0]['attachmentId'] == item['id']
+    assert model.seen[0]['items'][0]['ordinal'] == 3 and '材料范围' not in data['reply']
 
 
 async def test_scope_distinguishes_original_code_input_from_inherited_document_source(setup, monkeypatch):
@@ -390,9 +392,13 @@ async def test_scope_distinguishes_original_code_input_from_inherited_document_s
     await run(settings, sessions, users, sent, object())
     first = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert first['job']['state'] == 'succeeded', first
-    assert '文字工具读取 0/3 个分段' in first['reply']
-    assert '原文件已提供给代码执行，具体读取范围未单独记录' in first['reply']
-    assert '实际读取 0/3' not in first['reply'] and '完整读取' not in first['reply']
+    assert first['reply'] == '计算结果已保存为文件。' and first['citations'] == []
+    async with sessions() as db:
+        saved = await db.get(Job, sent['jobId'])
+        scope = '\n'.join(saved.result['materialCoverage'])
+        assert not saved.result.get('documentTextProvided')  # Preloading is not model delivery.
+        assert '文字已准备（3/3 段），未记录是否提供给主模型' in scope
+        assert '原文件已提供给代码执行，具体读取范围未单独记录' in scope
     assert executions[0]['inputRefs'] == references
     delivery = executions[0]['delivery']
     references = [{'deliverable_id': delivery['id'], 'revision': 1, 'file_id': delivery['files'][0]['id']}]
@@ -400,12 +406,15 @@ async def test_scope_distinguishes_original_code_input_from_inherited_document_s
     await run(settings, sessions, users, following, object())
     second = (await clients['employee'].get('/api/v1/messages/' + following['messageId'])).json()
     assert second['job']['state'] == 'succeeded', second
-    assert '列为代码执行的关联来源，不能据此认定本轮已读取原文件' in second['reply']
-    assert '原文件已提供给代码执行' not in second['reply']
+    assert second['reply'] == '计算结果已保存为文件。' and second['citations'] == []
+    async with sessions() as db:
+        scope = '\n'.join((await db.get(Job, following['jobId'])).result['materialCoverage'])
+        assert '仅关联代码执行，不能据此认定已读取原文件' in scope
+        assert '原文件已提供给代码执行' not in scope
 
 
 @pytest.mark.parametrize('separator', ['', '\n'])
-async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup, monkeypatch, separator):
+async def test_model_scope_prose_is_not_rewritten_or_appended(setup, monkeypatch, separator):
     from _support.agent.fakes import controlled_model, set_delivery
     settings, sessions, users, clients = setup
     conv = await conversation(clients['employee'])
@@ -417,13 +426,14 @@ async def test_verified_scope_note_is_not_duplicated_when_model_echoes_it(setup,
         return answer
     monkeypatch.setattr(worker, 'invoke_harness', read)
     sent = await message(clients['employee'], conv, '核对销售额', [attachment['id']])
-    # The numeric answer takes the real review path before scope-note deduplication.
+    # Deterministic server cleanup must not rewrite freely generated prose.
     await run(settings, sessions, users, sent, controlled_model())
     result = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert result['job']['state'] == 'awaiting_input', result
-    assert result['reply'].count('材料范围：') == 1
-    assert result['reply'].startswith('销售额合计为300。')
-    assert '文字工具读取 3/3 个分段' in result['reply']
+    assert result['reply'] == '销售额合计为300。\n\n材料范围：' + separator + 'sales.csv：实际读取 3/3 个文字分段'
+    async with sessions() as db:
+        scope = '\n'.join((await db.get(Job, sent['jobId'])).result['materialCoverage'])
+        assert '文字已准备（3/3 段），未记录是否提供给主模型' in scope
 
 
 async def test_content_sized_pages_keep_small_json_whole_and_large_file_citations(setup):

@@ -11,7 +11,3 @@ export function submitOnEnter(event: KeyboardEvent<HTMLTextAreaElement>, send: (
   event.preventDefault()
   if (!event.repeat) send()
 }
-
-export function exampleText(current: string, example: string) {
-  return current.trim() ? current : example
-}
