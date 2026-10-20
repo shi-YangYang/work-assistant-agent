@@ -63,7 +63,7 @@ async def test_image_heavy_99mb_pptx_text_pages_and_reuse(setup, tmp_path, monke
     images = [part for block in blocks if isinstance(block.get('content'), list) for part in block['content'] if part.get('type') == 'image_url']
     assert len(images) == 2 and len(supplied) == 2
     assert all(part['image_url']['url'].startswith('data:image/') for part in images)
-    monkeypatch.setattr('app.integrations.parsing.document_rendering.parse_office', AsyncMock(side_effect=AssertionError('Do not rerender saved pages')))
+    monkeypatch.setattr('app.modules.attachments.document_assets.parse_office', AsyncMock(side_effect=AssertionError('Do not rerender saved pages')))
     assert (await request_pages(context, item['id'], [1, 6]))['pageRefs'] == pages['pageRefs']
     with (settings.media_dir / item['id']).open('rb') as stream:
         assert hashlib.file_digest(stream, 'sha256').hexdigest() == original

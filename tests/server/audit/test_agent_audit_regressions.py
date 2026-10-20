@@ -133,14 +133,14 @@ async def test_retry_refreshes_stale_reply_and_tool_reads(setup, monkeypatch, ch
         return '最新状态：' + json.loads(evidence)['status']
     from app.tasks.processing import handlers
     from sqlalchemy.exc import OperationalError
-    original_citations = handlers.verified_citations
+    original_citations = handlers.delivered_citations
     persistence_attempts = []
     async def fail_initial_save(*args, **kwargs):
         persistence_attempts.append(True)
         if len(persistence_attempts) <= 2:
             raise OperationalError(None, None, RuntimeError('controlled final-save interruption'))
         return await original_citations(*args, **kwargs)
-    monkeypatch.setattr(handlers, 'verified_citations', fail_initial_save)
+    monkeypatch.setattr(handlers, 'delivered_citations', fail_initial_save)
     monkeypatch.setattr(handlers, 'invoke_harness', graph)
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=Review())
     first = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()

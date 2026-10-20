@@ -3,6 +3,7 @@ import httpx
 from curl_cffi import CurlECode, CurlError, CurlHttpVersion, CurlOpt
 from curl_cffi.curl import CURL_WRITEFUNC_ERROR
 from curl_cffi.requests import AsyncSession
+from .web_policy import MAX_BYTES, WebResearchError, WebTemporaryError, public_addresses, public_url, response_body_type
 
 PROFILE = 'chrome150'
 REQUEST_SECONDS = 8
@@ -41,8 +42,6 @@ class PublicTransport(httpx.AsyncBaseTransport):
         self.xml = xml
 
     async def handle_async_request(self, request):
-        # Import here to keep validation and parser limits in one public module.
-        from .web_research import MAX_BYTES, WebResearchError, WebTemporaryError, public_addresses, public_url, response_body_type
         if request.method != 'GET':
             raise WebResearchError('网页读取仅支持 GET 请求', code='blocked_url')
         url = public_url(str(request.url))

@@ -237,7 +237,10 @@ async def worker(args):
     targets = [('app.integrations.parsing.process', 'parse_process'),
                ('app.integrations.parsing.office_conversion', 'parse_office')]
     if (source / 'apps/server/app/integrations/parsing/document_rendering.py').exists():
-        targets.append(('app.integrations.parsing.document_rendering', 'render_pages'))
+        rendering = 'app.integrations.parsing.document_rendering'
+        if not hasattr(importlib.import_module(rendering), 'render_pages'):
+            rendering = 'app.modules.attachments.document_assets'
+        targets.append((rendering, 'render_pages'))
     for module_name, name in targets:
         target = importlib.import_module(module_name)
         original = getattr(target, name)

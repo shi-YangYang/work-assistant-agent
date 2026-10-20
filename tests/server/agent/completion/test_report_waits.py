@@ -182,9 +182,11 @@ def test_authorized_result_notice_is_card_owned_without_a_model_wait_header(stat
 @pytest.mark.parametrize('trace', ['v1_high', 'v2_low', 'v2_high', 'structured_wait'])
 @pytest.mark.parametrize('terminal', ['succeeded', 'failed', 'cancelled', 'other_remaining'])
 async def test_original_high_trace_public_api_follows_real_report_without_extra_model_call(setup, monkeypatch, terminal, trace):
+    from datetime import datetime
     from sqlalchemy import func, select
     from app.agent.completion.delivery import delivery_for
     from app.modules.reports.models import Report
+    from app.modules.work.models import WorkRevision, WorkUpdate
     from app.tasks.models import Job
     from app.tasks.processing.handlers import process_job
     from app.tasks.runtime.queue import claim
@@ -192,7 +194,13 @@ async def test_original_high_trace_public_api_follows_real_report_without_extra_
     from _support.work.report_reliability import ReportModel
 
     settings, sessions, users, clients = setup
-    await create(clients['employee'], title='资料核对-R01', summary='已核对5份客户资料，尚余2份', status='in_progress')
+    work = await create(clients['employee'], title='资料核对-R01', summary='已核对5份客户资料，尚余2份', status='in_progress')
+    # The historical trace requests this fixed week; its source must be in it,
+    # independent of the CI runner's current date. Keep job/lease clocks real.
+    async with sessions.begin() as db:
+        for model in (WorkRevision, WorkUpdate):
+            for row in (await db.scalars(select(model).where(model.work_id == work['id']))).all():
+                row.created_at = datetime.fromisoformat('2026-10-14T02:00:00+08:00')
     answer = '周报草稿已发起生成，不会提交。'
     wait = {'v1_high': WAIT, 'v2_low': LOW_WAIT, 'v2_high': HIGH_WAIT,
             'structured_wait': '本周周报草稿仍在生成中，尚未返回内容，需等生成完成后才能呈现并交你审阅'}[trace]

@@ -107,7 +107,7 @@ async def test_short_preload_budget_is_shared_and_pure_text_never_renders(setup,
         rows[1].location = '行 1–30 · 该范围内字符 3001–3329'
         stored_locations = [row.location for row in rows]
     render = AsyncMock(side_effect=AssertionError('Pure text must not render'))
-    monkeypatch.setattr('app.integrations.parsing.document_rendering.render_pages', render)
+    monkeypatch.setattr('app.modules.attachments.document_assets.render_pages', render)
     blocks = [{'type': 'text', 'text': 'Question'}]
     await preload_documents(context, prepared_files, blocks)
     assert 'L8N4V6' in blocks[0]['text'] and '7319.25' in blocks[0]['text']
@@ -192,7 +192,7 @@ async def test_pixels_reach_main_model_citations_are_private_and_repeat_uses_cac
     response = await client.get(citations[0]['previewUrl'])
     assert response.status_code == 200 and response.content.startswith(b'\x89PNG')
     assert (await setup[3]['peer'].get(citations[0]['previewUrl'])).status_code == 404
-    monkeypatch.setattr('app.integrations.parsing.document_rendering.parse_office', AsyncMock(side_effect=AssertionError('Cached page must not reconvert')))
+    monkeypatch.setattr('app.modules.attachments.document_assets.parse_office', AsyncMock(side_effect=AssertionError('Cached page must not reconvert')))
     again = await request_pages(context, files[0]['id'], [1], sheet=sheet)
     assert again['pageRefs'] == result['pageRefs']
     replay, supplied = await assemble_pages(context, [{'role': 'tool', 'content': json.dumps(again)}])
@@ -239,12 +239,12 @@ async def test_rejected_images_degrade_once_to_text_without_false_visual_coverag
 async def test_cancel_after_render_before_registration_has_no_late_coverage(setup, samples, monkeypatch, delete_original):
     require_renderer()
     context, files, _, conv, sent = await prepared(setup, samples, ['scan.pdf'])
-    from app.integrations.parsing import document_rendering
-    original = document_rendering.render_pages
+    from app.modules.attachments import document_assets
+    original = document_assets.render_pages
     entered, release = asyncio.Event(), asyncio.Event()
     async def paused(*args, **kwargs):
         result = await original(*args, **kwargs); entered.set(); await release.wait(); return result
-    monkeypatch.setattr(document_rendering, 'render_pages', paused)
+    monkeypatch.setattr(document_assets, 'render_pages', paused)
     pending = asyncio.create_task(request_pages(context, files[0]['id'], [1]))
     await asyncio.wait_for(entered.wait(), 20)
     client = setup[3]['employee']; job = (await client.get('/api/v1/jobs/' + sent['jobId'])).json()
@@ -291,7 +291,7 @@ async def test_same_content_pages_reuse_processing_but_keep_distinct_private_ids
     require_renderer()
     context, files, _, _, sent = await prepared(setup, samples, ['inspection.docx', 'inspection.docx'])
     first = await request_pages(context, files[0]['id'], [1])
-    monkeypatch.setattr('app.integrations.parsing.document_rendering.parse_office', AsyncMock(side_effect=AssertionError('Identical owned page should be copied')))
+    monkeypatch.setattr('app.modules.attachments.document_assets.parse_office', AsyncMock(side_effect=AssertionError('Identical owned page should be copied')))
     second = await request_pages(context, files[1]['id'], [1])
     assert second['pageRefs'] and first['pageRefs'] != second['pageRefs']
     async with context.sessions() as db:
@@ -311,11 +311,11 @@ async def test_bad_page_and_disk_failure_do_not_discard_other_pages_or_block_lat
     batch = await request_pages(context, files[0]['id'], [1, 999])
     assert batch['status'] == 'partial' and len(batch['pageRefs']) == 1
     assert batch['errors'][0]['page'] == 999
-    from app.integrations.parsing import document_rendering
-    native = document_rendering.parse_office
+    from app.modules.attachments import document_assets
+    native = document_assets.parse_office
     async def full_disk(*args, **kwargs):
         raise OSError(28, 'owned injected disk full')
-    monkeypatch.setattr(document_rendering, 'parse_office', full_disk)
+    monkeypatch.setattr(document_assets, 'parse_office', full_disk)
     failed = await request_pages(context, files[0]['id'], [2])
     assert failed['status'] == 'partial' and not failed['pageRefs']
     async with context.sessions() as db:
@@ -325,7 +325,7 @@ async def test_bad_page_and_disk_failure_do_not_discard_other_pages_or_block_lat
         assert (await db.get(Attachment, files[0]['id'])).extraction_info.get('visualError')
     text = json.loads(await read_document_result(context, files[0]['id']))
     assert 'ALPHA' in str(text['items'])
-    monkeypatch.setattr(document_rendering, 'parse_office', native)
+    monkeypatch.setattr(document_assets, 'parse_office', native)
     recovered = await request_pages(context, files[0]['id'], [2])
     assert recovered['status'] == 'ready' and recovered['pageRefs']
     async with context.sessions() as db:
@@ -616,7 +616,7 @@ async def test_preload_retains_conversion_uncertainty_and_structural_table_recei
         assert prepared_document_reference(prepared_files[0], message_id=item.message_id) == reference
         assert prepared_files[0]['extraction']['hasVisuals'] is False
     render = AsyncMock(side_effect=AssertionError('Do not add automatic conversion or page rendering'))
-    monkeypatch.setattr('app.integrations.parsing.document_rendering.render_pages', render)
+    monkeypatch.setattr('app.modules.attachments.document_assets.render_pages', render)
     blocks = [{'type': 'text', 'text': 'Read'}]
     await preload_documents(context, prepared_files, blocks)
     receipts = [json.loads(piece) for piece in blocks[0]['text'].split('已提供文档正文：')[1:]]
@@ -652,7 +652,7 @@ async def test_worker_initial_model_input_uses_same_document_contract_as_tools(s
     file = await upload(client, 'reference.rtf' if converted else 'reference.txt', raw)
     sent = await message(client, conv, 'Read the reference in this file.', [file['id']])
     render = AsyncMock(side_effect=AssertionError('Metadata projection must not request page rendering'))
-    monkeypatch.setattr('app.integrations.parsing.document_rendering.render_pages', render)
+    monkeypatch.setattr('app.modules.attachments.document_assets.render_pages', render)
 
     class InputModel(ReviewedFixtureModel):
         captured: list = Field(default_factory=list, exclude=True)

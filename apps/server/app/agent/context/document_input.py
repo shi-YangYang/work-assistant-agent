@@ -5,9 +5,9 @@ from sqlalchemy import select
 from app.modules.attachments.models import DocumentChunk
 from app.modules.attachments.documents import agent_attachment
 from app.tasks.lease import lease
+from .document_refs import PAGE_MARKER, referenced_pages
 
 PRELOAD_CHARACTERS = 12000
-PAGE_MARKER = 'NORIA_DOCUMENT_PAGES:'
 
 
 def page_token(reference):
@@ -27,7 +27,7 @@ async def request_pages(context, identifier, pages, *, resolution='normal', shee
 
 
 async def _request_pages(context, identifier, pages, *, resolution='normal', sheet=''):
-    from app.integrations.parsing.document_rendering import render_pages
+    from app.modules.attachments.document_assets import render_pages
     async with context.sessions() as db:
         job, actor = await lease(db, context)
         item = await agent_attachment(db, identifier, actor, job)
@@ -72,7 +72,7 @@ async def _request_pages(context, identifier, pages, *, resolution='normal', she
 
 async def preload_documents(context, documents, blocks):
     """One shared budget; only complete short sources qualify, never trim silently."""
-    from app.agent.tools.resources.documents import document_tool_result
+    from app.agent.context.document_receipts import document_tool_result
     from app.modules.attachments.documents import document_reference
     from app.agent.context.context_usage import input_budget, estimate_request
     budget = min(PRELOAD_CHARACTERS, max(0, (input_budget(context, 4000) if input_budget(context, 4000) is not None else 64000) - estimate_request([{'role': 'user', 'content': blocks}])) // 2)
@@ -132,27 +132,6 @@ async def preload_documents(context, documents, blocks):
                 blocks[0]['text'] += '\n' + candidate['name'] + '：图片部分没读到。'
 
 
-def referenced_pages(messages):
-    tokens = []
-    for message in messages:
-        content = message.get('content')
-        if message.get('role') == 'tool' and isinstance(content, str):
-            try:
-                value = json.loads(content)
-                if isinstance(value, dict):
-                    tokens.extend(value.get('pageRefs', []))
-            except ValueError:
-                pass
-        if message.get('role') == 'user' and isinstance(content, list):
-            for block in content:
-                if block.get('type') == 'text' and block.get('text', '').startswith(PAGE_MARKER):
-                    try:
-                        tokens.extend(json.loads(block['text'][len(PAGE_MARKER):]))
-                    except ValueError:
-                        pass
-    return [token for token in tokens if isinstance(token, str)]
-
-
 def project_page_markers(messages, requests):
     projected = []
     for message in messages:
@@ -208,7 +187,8 @@ async def assemble_pages(context, messages, *, tools=(), output_reserve=4000):
                 continue
             item = await agent_attachment(db, ref['attachmentId'], actor, job)
             refs.append((token, ref, item))
-    from app.integrations.parsing.document_rendering import page_path, render_pages
+    from app.integrations.parsing.document_rendering import page_path
+    from app.modules.attachments.document_assets import render_pages
     from app.integrations.media import image_process, MAX_MESSAGE_IMAGE_BLOCKS, MAX_MESSAGE_IMAGE_PIXELS, MAX_MESSAGE_IMAGE_BYTES
     image_blocks = sum(1 for message in messages if isinstance(message.get('content'), list) for b in message['content'] if b.get('type') == 'image_url')
     image_bytes = sum(len(b.get('image_url', {}).get('url', '')) * 3 // 4 for message in messages if isinstance(message.get('content'), list) for b in message['content'] if b.get('type') == 'image_url')

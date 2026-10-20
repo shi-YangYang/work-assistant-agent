@@ -32,6 +32,10 @@ async def ensure_range(context, identifier, start=0):
     from app.integrations.parsing.formats import OFFICE_TARGETS
     from app.integrations.parsing.office_conversion import office_version
     expected = await office_version() if Path(item.name).suffix.lower() in OFFICE_TARGETS else PARSER_VERSION
+    if item.extraction_status == 'failed' and item.parser_version == expected:
+        # Reading a known failure must not silently repeat an expensive parse.
+        # Explicit retries and a changed parser version can prepare it again.
+        return {'error': initial.get('error') or '文件读取失败，请重新解析'}
     legacy = initial.get('schema') != 1 or item.parser_version != expected
     if not legacy:
         ranges = initial.get('extractedRanges', [initial.get('extractedRange', [0, 0])])

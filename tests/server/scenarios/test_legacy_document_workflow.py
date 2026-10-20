@@ -13,10 +13,11 @@ from pydantic import Field
 from sqlalchemy import select
 
 from _support.agent.execution_permissions import mode_runtime
-from _support.agent.fakes import ReviewedFixtureModel, completion
+from _support.agent.fakes import completion
 from _support.http.company import keyed
 from _support.http.management import conversation, message, remove
 from _support.materials.documents import run, upload
+from _support.materials.document_fakes import DocumentFixtureModel
 from _support.materials.legacy_samples import TEXT, legacy_samples
 from _support.work.work_records import create
 from app.agent.tools.business.work_records import read_work_material
@@ -37,7 +38,7 @@ def real_office():
     return legacy_samples()
 
 
-class ReadAllModel(ReviewedFixtureModel):
+class ReadAllModel(DocumentFixtureModel):
     """Read directory and content pages through real tools, then persist a result."""
     pending: list = Field(default_factory=list, exclude=True)
     seen: list = Field(default_factory=list, exclude=True)
@@ -86,7 +87,9 @@ class ReadAllModel(ReviewedFixtureModel):
             text.append('文件：' + attachment['name'])
             if attachment['extraction']['status'] == 'failed':
                 text.append('未能读取：' + attachment['extraction']['error'])
-            text.extend(row['location'] + '：' + row['text'] + row['citation'] for row in data['items'])
+            text.extend(row['location'] + '：' + row['text'] for row in data.get('items', []))
+            for row in data.get('tableRows', {}).get('rows', []):
+                text.extend(f'工作表「{row["sheet"]}」!{cell}：{value}' for cell, _, value in row['cells'])
         return '\n'.join(text) or '没有可读取材料。'
 
 
@@ -185,6 +188,11 @@ async def test_duplicate_legacy_identity_bad_file_retry_and_other_account_recove
     assert [f['extraction']['status'] for f in data['attachments']] == ['ready', 'ready', 'ready', 'failed']
     assert files[-1]['id'] not in {c['attachmentId'] for c in data['citations']}
     before = [f['extraction']['revision'] for f in data['attachments'][:3]]
+    followup = await message(client, {'id': sent['conversationId']}, '再次读取可用材料，说明损坏文件的状态')
+    await run(settings, sessions, users, followup, reader())
+    followup_data = await refreshed(client, followup)
+    assert_answered(followup_data)
+    assert len(calls) == 3 and '未能读取' in followup_data['reply']
     retry = await client.post('/api/v1/uploads/' + files[-1]['id'] + '/retry', json={})
     assert retry.status_code == 202, retry.text
     await run(settings, sessions, users, {'jobId': retry.json()['id']})
@@ -207,19 +215,19 @@ async def test_batches_exceed_message_limit_read_early_files_and_save_real_resul
     settings, sessions, users, clients = setup
     client = clients['employee']
     files = [await upload(client, '首批旧文件.doc', real_office['sample.doc'])]
-    files.extend([await upload(client, f'批次-{index}.txt', f'BATCH_VALUE_{index:02d}'.encode()) for index in range(11)])
+    files.extend([await upload(client, f'批次-{index}.txt', f'BATCH_VALUE_{index:02d}'.encode()) for index in range(20)])
     conv = await conversation(client)
-    rejected = await client.post('/api/v1/messages', json={'conversationId': conv['id'], 'text': '不可绕过上限', 'attachmentIds': [f['id'] for f in files[:10]]}, headers=keyed())
+    rejected = await client.post('/api/v1/messages', json={'conversationId': conv['id'], 'text': '不可绕过上限', 'attachmentIds': [f['id'] for f in files]}, headers=keyed())
     assert rejected.status_code == 422, rejected.text
-    for index, group in enumerate((files[:6], files[6:])):
+    for index, group in enumerate((files[:20], files[20:])):
         sent = await message(client, conv, '读取材料并保存跨批次汇总' if index else '读取第一批材料', [f['id'] for f in group])
         model = reader(create_result=bool(index))
         await run(settings, sessions, users, sent, model)
         data = await refreshed(client, sent)
         assert_answered(data, saved=bool(index))
-    assert len(model.directory) == 12 and model.calls.count('find_documents') == 2
-    assert len(model.seen) == 12
-    expected = [TEXT, *(f'BATCH_VALUE_{index:02d}' for index in range(11))]
+    assert len(model.directory) == 21 and model.calls.count('find_documents') == 3
+    assert len(model.seen) == 21
+    expected = [TEXT, *(f'BATCH_VALUE_{index:02d}' for index in range(20))]
     assert all(value in data['reply'] for value in expected)
     assert {item['attachmentId'] for item in data['citations']} == {item['id'] for item in files}
     saved = (await client.get('/api/v1/deliverables/' + model.saved['id'])).json()

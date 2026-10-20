@@ -116,7 +116,8 @@ async def origin(monkeypatch, tmp_path):
         return f'{"https" if tls else "http"}://{"[::1]" if literal else "public-web.test"}:{port}'
 
     monkeypatch.setattr(web, 'public_url', controlled_url)
-    monkeypatch.setattr(web, 'public_addresses', resolve)
+    monkeypatch.setattr(web_curl, 'public_url', controlled_url)
+    monkeypatch.setattr(web_curl, 'public_addresses', resolve)
     monkeypatch.setattr(web_curl, 'AsyncSession', session)
     yield type('Origin', (), {'start': staticmethod(start), 'routes': routes, 'calls': calls, 'options': options,
                              'names': names, 'opened': opened, 'closed': closed, 'stall_paths': stall_paths,
@@ -348,7 +349,7 @@ async def test_native_failure_categories_do_not_depend_on_raw_error_text(monkeyp
     async def failed_get(self, url, **kwargs):
         calls.append(url)
         raise CurlError('raw diagnostic with credentials must not reach the model', code=code)
-    monkeypatch.setattr(web, 'public_addresses', resolve)
+    monkeypatch.setattr(web_curl, 'public_addresses', resolve)
     monkeypatch.setattr(web_curl.AsyncSession, 'get', failed_get)
     with pytest.raises(web.WebTemporaryError) as caught:
         await web.web_fetch('https://example.org/')
@@ -357,7 +358,7 @@ async def test_native_failure_categories_do_not_depend_on_raw_error_text(monkeyp
 
 
 async def test_non_get_cannot_reach_dns_or_network(monkeypatch):
-    monkeypatch.setattr(web, 'public_addresses', lambda *args: pytest.fail('no DNS for writes'))
+    monkeypatch.setattr(web_curl, 'public_addresses', lambda *args: pytest.fail('no DNS for writes'))
     async with web.PublicTransport() as transport:
         with pytest.raises(web.WebResearchError) as caught:
             await transport.handle_async_request(httpx.Request('POST', 'https://example.org/'))

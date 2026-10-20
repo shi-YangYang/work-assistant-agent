@@ -35,7 +35,7 @@ def estimate_request(messages, tools=(), system=None, *, document_images=True):
     # Include envelopes, tool schemas and tool arguments, not just visible prose.
     reserve = 0
     if document_images:
-        from app.agent.context.document_input import referenced_pages
+        from app.agent.context.document_refs import referenced_pages
         reserve = min(36, len(set(referenced_pages(normalized)))) * 4096
     return _size(normalized) + _size(list(tools)) + (_size(system) if system else 0) + 16 + reserve
 
