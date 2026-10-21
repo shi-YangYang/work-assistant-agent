@@ -21,11 +21,22 @@
   color: var(--muted);
   font-size: 12px;
 }
-.business-action-card h4 {
-  margin: 18px 0 8px;
+.business-action-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 12px;
+}
+.business-action-title h4 {
+  min-width: 0;
+  margin: 0;
   font-size: 14px;
   font-weight: 550;
   overflow-wrap: anywhere;
+}
+.business-action-title > [data-status='in_progress'] {
+  background: var(--surface);
+  border-color: var(--control);
 }
 .business-action-card p {
   margin: 8px 0;
@@ -41,11 +52,17 @@
 .business-action-preview {
   max-height: 360px;
   overflow-y: auto;
-  padding: 12px;
-  margin-top: 12px;
+  padding: 0;
+  margin-top: 8px;
   border: 0;
   border-radius: 10px;
   background: transparent;
+}
+.business-action-preview > :first-child {
+  margin-top: 0;
+}
+.business-action-preview > :last-child {
+  margin-bottom: 0;
 }
 .business-action-preview section + section {
   margin-top: 16px;

@@ -66,7 +66,7 @@ export function WorkActionDetails({ action }: { action: BusinessAction }) {
 }
 
 export const actionStateLabel = (action: BusinessAction) => {
-  if (action.state === 'succeeded') return '已完成'
+  if (action.state === 'succeeded') return action.action === 'update_work' ? '已更新' : '已完成'
   if (action.state === 'pending') return '等待确认'
   if (action.state === 'cancelled') return '已取消'
   if (action.state === 'running')
@@ -144,10 +144,14 @@ export function BusinessActionCard({
         <strong>{current.label}</strong>
         <span>{busy ? '正在处理' : actionStateLabel(current)}</span>
       </div>
-      {(current.title || current.preview?.title) && (
-        <h4>{current.title ?? current.preview?.title}</h4>
+      {(current.title || current.preview?.title || current.details?.status) && (
+        <div className={styles['business-action-title']}>
+          {(current.title || current.preview?.title) && (
+            <h4>{current.title ?? current.preview?.title}</h4>
+          )}
+          {current.details?.status && <Status value={current.details.status} />}
+        </div>
       )}
-      {current.details?.status && <Status value={current.details.status} />}
       {current.details && !current.preview?.changes && <WorkActionDetails action={current} />}
       {current.preview?.changes && (
         <ActionChanges

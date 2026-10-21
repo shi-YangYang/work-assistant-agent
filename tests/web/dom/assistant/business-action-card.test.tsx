@@ -55,7 +55,7 @@ it('renders actual change previews and action labels, replaces pending controls 
     }),
   )
   expect(continued).toHaveBeenCalledExactlyOnceWith(continuation)
-  expect(screen.getByText('已完成')).toBeTruthy()
+  expect(screen.getByText('已更新')).toBeTruthy()
 })
 it('restores the same confirmation after network failure and never reports success', async () => {
   vi.mocked(resolveBusinessAction).mockRejectedValue(new Error('网络中断'))
