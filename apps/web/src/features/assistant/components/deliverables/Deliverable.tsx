@@ -64,7 +64,9 @@ function ImageTaskEntry({ items }: { items: DeliverableSummary[] }) {
           <FileText size={24} />
         </span>
         <span className={cardStyles.content}>
-          <span className={`${cardStyles.title} ${styles.entryTitle}`}>{title}</span>
+          <span className={cardStyles.title} title={title}>
+            {title}
+          </span>
           <span className={cardStyles.meta}>查看详情</span>
         </span>
         <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
@@ -118,7 +120,9 @@ export function DeliverableEntry({
             <FileText size={24} />
           </span>
           <span className={cardStyles.content}>
-            <span className={`${cardStyles.title} ${styles.entryTitle}`}>{item.title}</span>
+            <span className={cardStyles.title} title={item.title}>
+              {item.title}
+            </span>
             <span className={cardStyles.meta}>查看详情</span>
           </span>
           <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />

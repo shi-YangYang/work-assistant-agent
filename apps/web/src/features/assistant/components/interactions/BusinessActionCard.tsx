@@ -153,7 +153,10 @@ export function BusinessActionCard({
         <Icon size={24} />
       </span>
       <div className={cardStyles.content}>
-        <h4 className={cardStyles.title}>
+        <h4
+          className={cardStyles.title}
+          title={current.title ?? current.preview?.title ?? current.label}
+        >
           {current.title ?? current.preview?.title ?? current.label}
         </h4>
         <div className={`${cardStyles.meta} ${styles['business-action-state']}`}>

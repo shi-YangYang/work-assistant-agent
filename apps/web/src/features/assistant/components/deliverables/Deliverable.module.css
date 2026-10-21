@@ -3,12 +3,6 @@
   text-align: left;
   white-space: normal;
 }
-.entryTitle {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
 .entryArrow {
   color: var(--muted);
 }

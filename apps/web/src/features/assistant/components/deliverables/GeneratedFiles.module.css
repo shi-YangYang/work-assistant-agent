@@ -9,6 +9,9 @@
 .file {
   overflow: hidden;
 }
+.file-error {
+  padding: 0 16px 16px;
+}
 .images {
   display: flex;
   flex-wrap: nowrap;
