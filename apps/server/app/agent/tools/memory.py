@@ -1,5 +1,6 @@
 import json
 from fastapi import HTTPException
+from app.agent.tool_results import http_failure
 from langchain.tools import ToolRuntime, tool
 from app.modules.memories import service
 from app.tasks.context import RunContext
@@ -20,8 +21,7 @@ async def apply(runtime, **changes):
             async with context.sessions() as db:
                 _, actor = await lease(db, context)
                 detail = await service.conflict_context(db, actor, context.memory_snapshot, changes.get('old', ''))
-        return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed',
-                           'code': error.detail.get('code', 'memory_invalid'), 'message': error.detail['message'], **detail}, ensure_ascii=False)
+        return json.dumps({**http_failure(error), **detail}, ensure_ascii=False)
 
 
 @tool

@@ -174,7 +174,7 @@ async def test_harness_questions_stop_before_parallel_write_or_next_model_call(s
             names = [item['function']['name'] for item in kwargs['tools']]
             assert names.count('request_user_input') == 1
             if self.calls == 1:
-                assert names == ['load_tools', 'request_user_input']
+                assert names == ['load_tools', 'request_user_input', 'web_search']
                 assert POLICIES['task_context'] not in messages[0].text
                 if load_context:
                     return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[{

@@ -23,14 +23,14 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext],
         _, actor = await lease(db, runtime.context)
         message = await referenced_record(db, Message, message_id, actor)
         if message is None:
-            return '消息不存在或无权查看。请使用上下文中的 messageId，不要猜测 ID。'
+            return clip({'state': 'failed', 'category': 'permission_denied', 'message': '消息不存在或无权查看。请使用上下文中的 messageId，不要猜测 ID。'})
         current_job, _ = await lease(db, runtime.context)
         if current_job.kind == 'message':
             current = await owned(db, Message, current_job.target_id, actor)
             if message.conversation_id != current.conversation_id:
                 source = await db.scalar(select(WorkRevision.id).join(WorkItem, WorkItem.id == WorkRevision.work_id).where(WorkRevision.owner_id == actor.id, WorkItem.deleted.is_(False), WorkRevision.source_ids.contains([message.id])).limit(1))
                 if source is None:
-                    return '这条消息不属于当前会话或已确认工作来源。'
+                    return clip({'state': 'failed', 'category': 'permission_denied', 'message': '这条消息不属于当前会话或已确认工作来源。'})
         await business_require(db, actor, message.access)
         current_job.access = business_merge_access(current_job.access or business_scope(actor), message.access)
         drafts = (await db.scalars(select(ProgressDraft).where(ProgressDraft.message_id == message.id, ProgressDraft.owner_id == actor.id, ProgressDraft.company_id == actor.company_id).order_by(ProgressDraft.created_at.desc()).limit(20))).all()

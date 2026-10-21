@@ -25,6 +25,7 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[2]
 DATABASE = 'postgresql://spec075:spec075-local-only@127.0.0.1:55437/paa_company_test'
 CASE_FILE = Path(__file__).with_name('agent-execution-feedback-cases.json')
+FIXTURE_DIR = None
 
 
 def arguments():
@@ -33,6 +34,10 @@ def arguments():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--label', choices=('before', 'after'), required=True)
     parser.add_argument('--source-user', default='admin')
+    parser.add_argument('--case-file', type=Path, default=CASE_FILE, help='Optional manifest; defaults to unchanged Spec075 cases')
+    parser.add_argument('--fixture-dir', type=Path, help='Immutable shared binary fixtures for both versions')
+    parser.add_argument('--local-sandbox', action='store_true', help='Use configured local sandbox only for evaluation worker')
+    parser.add_argument('--answer-waiting', action='store_true', help='Submit fixed manifest answer through HTTP, at most one continuation per sample')
     parser.add_argument('--evidence', type=Path)
     parser.add_argument('--ids', default='E14-Q')
     parser.add_argument('--efforts', default='low,high')
@@ -133,6 +138,76 @@ def captured_request_policy(messages, tools, tool_choice):
                                for item in messages if item.get('role') in ('system', 'developer')],
             'tools': copy.deepcopy(tools or []), 'toolChoice': tool_choice,
             'boundary': 'Actual chat-call inputs before provider transport; excludes user/assistant/tool messages and response reasoning.'}
+
+
+def captured_user_context(messages):
+    """Copy only anonymous fixture user text; never media or assistant reasoning."""
+    result = []
+    for index, item in enumerate(messages):
+        if item.get('role') != 'user':
+            continue
+        content = item.get('content')
+        if isinstance(content, str):
+            result.append({'messageIndex': index, 'text': content})
+        elif isinstance(content, list):
+            texts = [block['text'] for block in content if isinstance(block, dict)
+                     and block.get('type') in ('text', 'input_text') and isinstance(block.get('text'), str)]
+            result.append({'messageIndex': index, 'textBlocks': texts,
+                           'omittedNonTextBlocks': len(content) - len(texts)})
+    return result
+
+
+def request_sizes(messages, tools):
+    """Passive input-size partition; no user data, reasoning or prompt rewriting."""
+    def size(value):
+        return len(json.dumps(value, ensure_ascii=False, default=str))
+    roles = {}
+    for item in messages:
+        role = item.get('role', 'unknown')
+        roles[role] = roles.get(role, 0) + size(item)
+    tool_messages = []
+    for item in messages:
+        if item.get('role') != 'tool':
+            continue
+        content = item.get('content', '')
+        fact_chars = 0
+        try:
+            parsed = json.loads(content) if isinstance(content, str) else content
+            def facts(value):
+                if isinstance(value, dict):
+                    return sum(size(child) if key in {'text', 'body', 'snippet', 'excerpt', 'quote', 'markdown'} else facts(child) for key, child in value.items())
+                return sum(facts(child) for child in value) if isinstance(value, list) else 0
+            fact_chars = facts(parsed)
+        except (ValueError, TypeError):
+            pass
+        tool_messages.append({'name': item.get('name'), 'callId': item.get('tool_call_id'), 'chars': size(content), 'bodyFieldChars': fact_chars})
+    return {'messagesByRoleChars': roles, 'toolSchemaChars': size(tools or []),
+            'toolResults': tool_messages,
+            'boundary': 'Serialized input characters by wire role; tool content includes evidence and governance, not an estimated tokenizer count.'}
+
+
+async def inspect_deliverables(client, dto, output, case, effort, sample):
+    """Download actual generated files and inspect values without executing code."""
+    files = []
+    for deliverable in dto.get('deliverables', []):
+        for entry in deliverable.get('files', []):
+            response = await client.get(entry['url'])
+            item = {'name': entry['name'], 'status': response.status_code, 'size': len(response.content)}
+            files.append(item)
+            if response.status_code != 200:
+                continue
+            name = Path(entry['name']).name
+            folder = output / 'downloads' / f'{case}-{effort}-{sample}'
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / (str(entry.get('id', uuid4())) + '-' + name)
+            path.write_bytes(response.content)
+            item.update(path=str(path.resolve()), sha256=hashlib.sha256(response.content).hexdigest())
+            if path.suffix.lower() == '.xlsx':
+                from openpyxl import load_workbook
+                workbook = load_workbook(io.BytesIO(response.content), data_only=True, read_only=True)
+                item['sheets'] = {sheet.title: [list(row) for row in sheet.iter_rows(values_only=True)][:100] for sheet in workbook}
+                workbook.close()
+    return files
 
 
 def complete_public_observation(row):
@@ -245,6 +320,18 @@ async def install(config, settings, sessions, company):
 
 
 def sample_file(name, text):
+    cache = None
+    if FIXTURE_DIR is not None:
+        cache = FIXTURE_DIR / 'historical' / (hashlib.sha256((name + '\0' + text).encode()).hexdigest() + Path(name).suffix)
+        manifest_path = FIXTURE_DIR / 'historical-manifest.json'
+        frozen = json.loads(manifest_path.read_text()) if manifest_path.exists() else None
+        if cache.exists():
+            raw = cache.read_bytes()
+            if frozen is not None and frozen.get(str(cache.relative_to(FIXTURE_DIR))) != hashlib.sha256(raw).hexdigest():
+                raise RuntimeError('Frozen historical binary changed')
+            return raw
+        if frozen is not None:
+            raise RuntimeError('Historical fixture is missing from frozen manifest')
     stream = io.BytesIO()
     suffix = Path(name).suffix.lower()
     if suffix == '.docx':
@@ -276,7 +363,13 @@ def sample_file(name, text):
         document.write(stream)
     else:
         stream.write(text.encode())
-    return stream.getvalue()
+    raw = stream.getvalue()
+    if cache is not None:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        # Exclusive creation prevents an accidental later run replacing paired bytes.
+        with cache.open('xb') as handle:
+            handle.write(raw)
+    return raw
 
 
 async def snapshot(sessions, actor):
@@ -319,6 +412,25 @@ async def seed(case, settings, sessions, actor, client, clients, evidence):
             checked(await client.post('/api/v1/work-items', json={'title': '资料整理', 'summary': '另一项工作，请勿修改。'}, headers=keyed()), 201)
     if seed_kind in ('two', 'four', 'eleven', 'same-title'):
         await seed_artifacts(11 if seed_kind == 'eleven' else 4 if seed_kind == 'four' else 2, state, settings, sessions, actor)
+    if case.get('preserveOriginalMaterial'):
+        original = checked(await client.post('/api/v1/uploads', files={'file': ('原工作说明.txt', '这是原工作附件，追加材料时保留。'.encode(), 'text/plain')}), 201)
+        work = checked(await client.patch('/api/v1/work-items/' + state['workId'], json={'expectedRevision': state['workRevision'], 'materials': [{'attachmentId': original['id']}]}, headers=keyed()))
+        state['workRevision'] = work['work']['revision']
+    if seed_kind == 'decision-files':
+        if FIXTURE_DIR is None:
+            raise RuntimeError('Decision file cases require --fixture-dir')
+        manifest = json.loads((FIXTURE_DIR / 'manifest.json').read_text())
+        state['files'] = []
+        for name in case['files']:
+            if Path(name).name != name or name not in manifest['sha256']:
+                raise RuntimeError('File is outside frozen fixture manifest')
+            raw = (FIXTURE_DIR / name).read_bytes()
+            checksum = hashlib.sha256(raw).hexdigest()
+            if checksum != manifest['sha256'][name]:
+                raise RuntimeError('Frozen fixture changed')
+            uploaded = checked(await client.post('/api/v1/uploads', files={'file': (name, raw, 'application/octet-stream')}), 201)
+            state['attachmentIds'].append(uploaded['id'])
+            state['files'].append({'name': name, 'sha256': checksum, 'size': len(raw)})
     if seed_kind in ('text-file', 'bad-file'):
         content = sample_file('损坏前的项目说明.docx', '项目说明') if seed_kind == 'bad-file' else '项目预算：12800元。交付日期：2026-11-06。'.encode()
         name = '项目说明.docx' if seed_kind == 'bad-file' else '项目说明.txt'
@@ -436,10 +548,26 @@ async def seed_production(case, evidence, state, settings, sessions, actor):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(raw)
             revision = source_revisions.get(item['id'], 1)
-            db.add(Attachment(**owned, id=item['id'], message_id=item.get('message_id'), name=name, kind=item['kind'], mime=item['mime'], size=len(raw), sha256=checksum, extraction_status='ready' if revision else 'pending', extraction_revision=revision, created_at=date(item['created_at'])))
+            prepared = None
+            parser_version = ''
+            info = {}
+            if FIXTURE_DIR is not None and revision and item['kind'] == 'document':
+                from app.integrations.parsing.process import parse_process
+                from app.integrations.parsing.document_parser import PARSER_VERSION
+                prepared = await parse_process(path, Path(name).suffix.lower())
+                if prepared['status'] not in ('ready', 'partial', 'empty'):
+                    raise RuntimeError('Historical binary did not actually parse: ' + name)
+                parser_version = PARSER_VERSION
+                info = dict(prepared['info'])
+                if info.get('schema') == 1:
+                    info['extractedRanges'] = [info['extractedRange']]
+                    info['sourceEnd'] = info.get('sourceEnd', info['extractedRange'][1]) if info.get('sourceComplete') else None
+            db.add(Attachment(**owned, id=item['id'], message_id=item.get('message_id'), name=name, kind=item['kind'], mime=item['mime'], size=len(raw), sha256=checksum, extraction_status=prepared['status'] if prepared else 'ready' if revision else 'pending', extraction_revision=revision, parser_version=parser_version, extraction_info=info, created_at=date(item['created_at'])))
             if revision:
                 await db.flush()
-                db.add(DocumentChunk(**owned, attachment_id=item['id'], revision=revision, ordinal=0, location='隔离测试文档', text='隔离测试材料：' + Path(name).stem))
+                chunks = prepared['chunks'] if prepared is not None else [{'location': '隔离测试文档', 'text': '隔离测试材料：' + Path(name).stem}]
+                for ordinal, chunk in enumerate(chunks):
+                    db.add(DocumentChunk(**owned, attachment_id=item['id'], revision=revision, ordinal=chunk.get('ordinal', ordinal), location=chunk['location'], text=chunk['text']))
         await db.flush()
         work = data['work']
         db.add(WorkItem(**owned, id=work['id'], created_at=date(work['created_at']), title=work['title'], content=work['content'], revision=work['revision'], origin='manual'))
@@ -473,6 +601,8 @@ async def seed_production(case, evidence, state, settings, sessions, actor):
         snapshot = next_job['result'].get('taskSnapshot', {})
         db.add(ConversationTaskState(**owned, conversation_id=state['conversationId'], revision=max(1, snapshot.get('version', 2)-1), payload={'latestMessageId': history[-1]['id'], 'directives': snapshot.get('directives', []), 'task': snapshot.get('previousTask', {})}))
     state['differences'] = data['fixtureDisclosure']['changes'] + ['Source bytes replaced by valid short synthetic documents; historical conversation text remains anonymized original. IDs are per-run remapped with stable relationships; authenticated digest/SHA values recomputed. No browser or production network queue timing is simulated.']
+    if FIXTURE_DIR is not None:
+        state['differences'].append('Historical extracted documents use real parser output and the matching parser fingerprint at their preserved historical revision; no placeholder chunks are substituted as current evidence.')
     state['historyCount'] = len(history)
     state['historyChars'] = sum(len(item['text']) + len(item['reply']) for item in history)
     state['fixtureSha256'] = hashlib.sha256(json.dumps(evidence, sort_keys=True).encode()).hexdigest()
@@ -495,7 +625,9 @@ async def run(args):
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from pwdlib import PasswordHash
     import psycopg
-    manifest = json.loads(CASE_FILE.read_text())
+    global FIXTURE_DIR
+    FIXTURE_DIR = args.fixture_dir.resolve() if args.fixture_dir else None
+    manifest = json.loads(args.case_file.read_text())
     cases = {item['id']: item for item in manifest['cases']}
     wanted = args.ids.split(',')
     efforts = args.efforts.split(',')
@@ -514,7 +646,7 @@ async def run(args):
     if not set(efforts) <= set(config['model'].get('reasoning', {}).get('efforts', [])):
         raise RuntimeError('Configured model does not expose requested efforts')
     digest = source_digest(source)
-    schema = 'spec075_' + args.label + '_' + uuid4().hex[:10]
+    schema = ('spec076_' if manifest.get('suite') == 'Spec076' else 'spec075_') + args.label + '_' + uuid4().hex[:10]
     with psycopg.connect(DATABASE, autocommit=True) as db:
         db.execute('CREATE SCHEMA ' + schema)
     test_url = DATABASE + '?options=-csearch_path%3D' + schema
@@ -529,7 +661,7 @@ async def run(args):
     spec = importlib.util.spec_from_file_location('spec075_fixture', source / 'tests/server/conftest.py')
     fixture_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fixture_module)
-    environment = {'source': str(source), 'digest': digest, 'label': args.label, 'manifestSha256': hashlib.sha256(CASE_FILE.read_bytes()).hexdigest(), 'canonicalManifestSha256': hashlib.sha256(json.dumps(manifest, sort_keys=True, ensure_ascii=False).encode()).hexdigest(), 'started': time.time(), 'declaredConcurrentLiveProcesses': args.concurrent_live_processes, 'model': config['model'], 'selectedParameters': config['choice'].get('parameters', {}), 'providerHost': __import__('urllib.parse', fromlist=['urlparse']).urlparse(config['base']).hostname, 'schema': schema, 'loadedIntent': __import__('app.agent.actions.intent', fromlist=['authorize_intent']).__file__, 'timingScope': 'real in-process HTTP admission and worker; first public Redis event, excludes browser/network paint and periodic queue polling', 'planned': [{'case': identifier, 'effort': effort, 'sample': sample} for sample in samples for effort in efforts for identifier in wanted]}
+    environment = {'source': str(source), 'digest': digest, 'label': args.label, 'manifestSha256': hashlib.sha256(args.case_file.read_bytes()).hexdigest(), 'canonicalManifestSha256': hashlib.sha256(json.dumps(manifest, sort_keys=True, ensure_ascii=False).encode()).hexdigest(), 'started': time.time(), 'declaredConcurrentLiveProcesses': args.concurrent_live_processes, 'model': config['model'], 'selectedParameters': config['choice'].get('parameters', {}), 'providerHost': __import__('urllib.parse', fromlist=['urlparse']).urlparse(config['base']).hostname, 'schema': schema, 'loadedIntent': __import__('app.agent.actions.intent', fromlist=['authorize_intent']).__file__, 'timingScope': 'real in-process HTTP admission and worker; first public Redis event, excludes browser/network paint and periodic queue polling', 'planned': [{'case': identifier, 'effort': effort, 'sample': sample} for sample in samples for effort in efforts for identifier in wanted]}
     environment['failureDiagnostics'] = {'version': 1, 'trigger': 'tool_arguments_json',
         'capture': 'failed tool name/arguments and existing on_delta tool fragments only',
         'changesModelInput': False, 'changesParsingOrRetry': False,
@@ -538,6 +670,14 @@ async def run(args):
         'captures': 'persisted public questions, direct caller identity and provider public content only',
         'changesModelInput': False, 'extraTimedQueries': 0, 'oldSamplesUnchanged': True}
     environment['captureRequestPolicy'] = args.capture_request_policy
+    capture_user_context = bool(args.capture_request_policy and manifest.get('suite') == 'Spec076' and FIXTURE_DIR is not None)
+    environment['userContextObservation'] = {'version': 2, 'enabled': capture_user_context,
+        'boundary': 'Actual anonymous fixture user text before provider transport; excludes media payloads, assistant messages and hidden reasoning.',
+        'changesModelInput': False, 'oldSamplesUnchanged': True,
+        'priorVersion': 'Candidate v1 samples did not capture user context text.'}
+    environment['caseFile'] = str(args.case_file.resolve())
+    environment['fixtureDir'] = str(FIXTURE_DIR) if FIXTURE_DIR else None
+    environment['localSandbox'] = args.local_sandbox
     write(args.output / ('environment-' + schema + '.json'), environment)
     timings = Timings()
     logger = logging.getLogger('paa.latency')
@@ -582,9 +722,21 @@ async def run(args):
         at = time.perf_counter()
         input_text = json.dumps(messages, ensure_ascii=False, default=str)
         observation = {'start_ms': (at-row['_clock'])*1000, 'model': wire['model'], 'parameters': wire.get('parameters', {}), 'kind': call_kind.get(), 'inputChars': len(input_text), 'inputSha256': hashlib.sha256(input_text.encode()).hexdigest()}
+        observation['inputSizes'] = request_sizes(messages, kwargs.get('tools'))
         if args.capture_request_policy:
             observation['requestPolicy'] = captured_request_policy(messages, kwargs.get('tools'), kwargs.get('tool_choice'))
+            if manifest.get('suite') == 'Spec076':
+                observation['toolOutputs'] = [copy.deepcopy(item) for item in messages if item.get('role') == 'tool']
+            if capture_user_context:
+                observation['userContextTexts'] = captured_user_context(messages)
         row['requests'].append(observation)
+        observation['providerAttempts'] = 1
+        original_retry = kwargs.get('on_retry')
+        if original_retry is not None:
+            async def observed_retry(error):
+                observation['providerAttempts'] += 1
+                return await original_retry(error)
+            kwargs['on_retry'] = observed_retry
         original_delta = kwargs.get('on_delta')
         fragments = [] if original_delta is not None else None
         if original_delta is not None:
@@ -653,10 +805,28 @@ async def run(args):
                         try:
                             fixture = fixture_module.setup.__wrapped__(Path(temporary), password)
                             settings, sessions, users, clients = await anext(fixture)
+                            if args.local_sandbox:
+                                from dataclasses import replace
+                                from urllib.parse import urlparse
+                                local = Settings()
+                                if urlparse(local.sandbox_url).hostname not in ('127.0.0.1', 'localhost'):
+                                    raise RuntimeError('Evaluation sandbox must be configured on localhost')
+                                settings = replace(settings, sandbox_url=local.sandbox_url, sandbox_token=local.sandbox_token)
                             actor, client = users['employee'], clients['employee']
                             await install(config, settings, sessions, actor.company_id)
                             seeded = await seed(case, settings, sessions, actor, client, clients, evidence)
                             row['seed'] = seeded
+                            # Fixture work attachments may enqueue normal extraction work.
+                            # Finish only owned setup jobs before timing the user request.
+                            row['setupJobs'] = []
+                            while background := await claim(sessions, actor.id):
+                                if background.kind == 'message':
+                                    raise RuntimeError('Unexpected live message in fixture setup')
+                                async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+                                    await process_job(background, sessions, settings, saver)
+                                async with sessions() as db:
+                                    current_background = await db.get(Job, background.id)
+                                    row['setupJobs'].append({'kind': background.kind, 'state': current_background.state, 'error': current_background.error})
                             row['initial'] = await snapshot(sessions, actor)
                             if case['seed'] == 'private':
                                 row['peerWorkInitial'] = checked(await clients['peer'].get('/api/v1/work-items/' + seeded['privateWorkId']))
@@ -702,12 +872,51 @@ async def run(args):
                             else:
                                 row['first_answer_source'] = 'public Redis event'
                             complete_public_observation(row)
+                            row['downloadedFiles'] = await inspect_deliverables(client, dto, args.output, identifier, effort, sample)
+                            if args.answer_waiting and case.get('answer'):
+                                pending = [item for item in row['interactions'] if item.get('state') == 'waiting']
+                                if len(pending) == 1 and all(question.get('allowCustom') for question in pending[0]['questions']):
+                                    continuation = {'case': identifier, 'effort': effort, 'sample': sample, 'label': args.label, 'turn': 2, 'prompt': case['answer'], 'seed': seeded, 'requests': [], 'stream': [], 'first_answer_ms': None, 'publicObservationVersion': 2, '_clock': time.perf_counter(), 'initial': row['final']}
+                                    row['continuation'] = continuation
+                                    active = continuation
+                                    panel = pending[0]
+                                    answer_body = {'expectedRevision': panel['revision'], 'answers': [{'questionId': question['id'], 'text': case['answer']} for question in panel['questions']]}
+                                    continuation['submittedAnswer'] = answer_body
+                                    receipt2 = checked(await client.post('/api/v1/interactions/' + panel['id'] + '/answer', json=answer_body, headers=keyed()))['continuation']
+                                    next_job = await claim(sessions, actor.id)
+                                    if not next_job or next_job.id != receipt2['jobId']:
+                                        raise RuntimeError('Continuation worker did not claim exact admitted job')
+                                    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+                                        await process_job(next_job, sessions, settings, saver)
+                                    next_dto = checked(await client.get('/api/v1/messages/' + receipt2['messageId']))
+                                    continuation.update(total_ms=(time.perf_counter()-continuation['_clock'])*1000, answer=next_dto['reply'], message=next_dto)
+                                    continuation['interactions'] = checked(await client.get('/api/v1/conversations/' + seeded['conversationId'] + '/interactions'))['items']
+                                    continuation['final'] = await snapshot(sessions, actor)
+                                    async with sessions() as db:
+                                        continuation['jobResult'] = (await db.get(Job, next_job.id)).result
+                                        usages = (await db.scalars(select(ModelUsage).where(ModelUsage.job_id == next_job.id).order_by(ModelUsage.created_at))).all()
+                                        continuation['usage'] = [{'kind': item.kind, 'state': item.status, 'ms': item.elapsed_ms, 'input': item.actual_input_tokens, 'output': item.actual_output_tokens, 'error': item.error_code} for item in usages]
+                                    continuation['events'] = [event for event in timings.events if event.get('job') == next_job.id]
+                                    continuation['refreshSameReply'] = checked(await client.get('/api/v1/messages/' + receipt2['messageId']))['reply'] == next_dto['reply']
+                                    if continuation['first_answer_ms'] is None and next_dto['reply']:
+                                        continuation['first_answer_ms'] = continuation['total_ms']
+                                        continuation['first_answer_source'] = 'final API snapshot only'
+                                    else:
+                                        continuation['first_answer_source'] = 'public Redis event'
+                                    complete_public_observation(continuation)
+                                    continuation.pop('_clock', None)
+                                    active = row
+                                elif pending:
+                                    row['continuationNotRun'] = 'Pending panel cannot accept the fixed explicit custom answer; operator must answer through actual UI.'
                         except Exception as error:
-                            row['error'] = {'type': type(error).__name__, 'detail': str(error)[:600]}
-                            row['total_ms'] = (time.perf_counter()-row['_clock'])*1000 if '_clock' in row else None
+                            failed = row['continuation'] if active is row.get('continuation') and isinstance(row.get('continuation'), dict) else row
+                            failed['error'] = {'type': type(error).__name__, 'detail': str(error)[:600]}
+                            failed['total_ms'] = (time.perf_counter()-failed['_clock'])*1000 if '_clock' in failed else None
                         finally:
                             active = None
                             row.pop('_clock', None)
+                            if isinstance(row.get('continuation'), dict):
+                                row['continuation'].pop('_clock', None)
                             append(output, row)
                             print(json.dumps({'case': identifier, 'effort': effort, 'sample': sample, 'label': args.label, 'state': row.get('message', {}).get('job', {}).get('state'), 'total_ms': row.get('total_ms'), 'calls': len(row['requests']), 'error': row.get('error')}, ensure_ascii=False), flush=True)
                             if fixture:

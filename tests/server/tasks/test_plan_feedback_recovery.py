@@ -190,9 +190,11 @@ async def test_compat_suggestion_returns_field_issues_and_corrected_fields_clear
     await read_work(context, work['id'])
     rt = SimpleNamespace(context=context)
     failed = json.loads(await propose_progress.coroutine('兼容工作', '多余覆盖', 'in_progress', '', '核对', rt, work_id=work['id']))
-    assert failed['fieldIssues'] == [{'field': 'summary', 'code': 'not_requested', 'message': 'summary 未要求修改，保留原值'}]
+    assert failed['fieldIssues'] == [{'field': 'summary', 'code': 'not_requested'}]
     async with context.sessions() as db:
-        assert (await db.get(Job, context.job_id)).result['toolOutcomes'][0]['category'] == 'invalid_arguments'
+        outcome = (await db.get(Job, context.job_id)).result['toolOutcomes'][0]
+        assert outcome['category'] == 'invalid_arguments'
+        assert outcome['fieldIssues'][0]['message'] == 'summary 未要求修改，保留原值'
     corrected = json.loads(await propose_progress.coroutine('兼容工作', '原内容', 'in_progress', '', '核对', rt, work_id=work['id']))
     assert corrected['state'] == 'succeeded'
     context.suggestion_options.clear()

@@ -63,7 +63,9 @@ async def claim(context, prompt, title, operation, size=None, *, intent=None, va
         if row:
             await authorized(db, context, row)
             if row.fingerprint != fingerprint:
-                return row, {'state': 'conflict', 'message': '该图片操作已使用，请复用原结果；如需另一张图片，请在新消息明确重新生成。'}
+                return row, {'state': 'conflict', 'code': 'image_operation_used',
+                             'recovery': {'owner': 'none', 'nextAction': 'stop'},
+                             'message': '该图片操作已使用，请复用原结果；如需另一张图片，请在新消息明确重新生成。'}
             recoverable = bool(row.task_id or row.provider_result)
             if row.state in ('succeeded', 'failed', 'cancelled') or row.state == 'unknown' and not recoverable:
                 return row, row.result

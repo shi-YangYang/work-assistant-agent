@@ -109,3 +109,66 @@ async def test_generic_material_meaning_stays_open_and_valid_candidate_label_is_
         assert target['options'][0]['label'] == work['title']
         assert materials['prompt'] == '请说明之前内容的范围。'
         assert materials['type'] == 'text' and not materials['options']
+
+
+class ContradictoryGapJudge(Judge):
+    """Same typed conflict as the observed verdict, with fresh authorized IDs."""
+    def __init__(self, target, **overrides):
+        super().__init__(False, failure_kind='not_requested')
+        self.target, self.overrides = target, overrides
+
+    async def ainvoke(self, messages):
+        from langchain_core.messages import AIMessage
+        response = await super().ainvoke(messages)
+        value = json.loads(response.content)
+        value.update(notRequested=True, denialScope='authorization', recoveryOwner='user',
+            reason='previousTask cancelled，原操作未恢复',
+            taskContext={'goal': '整理材料', 'relation': 'new', 'state': 'blocked', 'remaining': ['明确材料和保存位置']},
+            missingInputs=[
+                {'field': 'materials', 'question': '要保存哪些材料？', 'unavailableFromSources': '材料范围尚未选定', 'candidateIds': []},
+                {'field': 'target', 'question': '这些材料放在哪项工作？', 'unavailableFromSources': '用户尚未指定位置', 'candidateIds': [self.target]},
+            ])
+        value.update(self.overrides)
+        return AIMessage(content=json.dumps(value))
+
+
+async def test_contradictory_refusal_keeps_write_denied_and_asks_validated_gaps_once(setup):
+    from app.tasks.feedback.public import model_result
+    _, sessions, _, clients = setup
+    work = await create(clients['employee'], '材料归档')
+    context, sent = await mode_runtime(setup, 'full', '把刚才整理的材料保存到工作里')
+    await read_work(context, work['id'])
+    context.intent_model = ContradictoryGapJudge(work['id'])
+    proposal = {'step': 1, 'action': 'create_work', 'changes': {'title': '候选归档'}}
+    first = await execute(context, **proposal)
+    second = await execute(context, **proposal)
+    assert first == second and first['state'] == 'waiting'
+    assert first['category'] == 'not_requested' and first['recovery']['nextAction'] == 'ask'
+    assert len(context.intent_model.inputs) == 1
+    public = model_result(first)
+    assert 'previousTask' not in json.dumps(public) and 'diagnostic' not in public
+    async with sessions() as db:
+        panels = (await db.scalars(select(AssistantInteraction).where(AssistantInteraction.message_id == sent['messageId']))).all()
+        assert len(panels) == 1 and len(panels[0].questions) == 2
+        assert panels[0].questions[1]['options'][0]['objectId'] == work['id']
+        assert not await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == sent['messageId']))
+
+
+@pytest.mark.parametrize('override', [
+    {'recoveryOwner': 'none'}, {'quote': '伪造的用户授权'},
+    {'failureKind': 'permission_denied'},
+    {'taskContext': {'state': 'blocked', 'relation': 'continue'}},
+    {'taskContext': {'state': 'completed', 'relation': 'new'}},
+    {'missingInputs': [{'field': 'decision', 'question': '是否授权保存？', 'unavailableFromSources': '没有授权', 'candidateIds': []}]},
+])
+async def test_contradictory_contract_without_current_safe_choice_does_not_ask(setup, override):
+    _, sessions, _, clients = setup
+    work = await create(clients['employee'], '材料归档')
+    context, sent = await mode_runtime(setup, 'full', '先讨论这些材料')
+    await read_work(context, work['id'])
+    context.intent_model = ContradictoryGapJudge(work['id'], **override)
+    result = await execute(context, step=1, action='create_work', changes={'title': '未经允许的工作'})
+    assert result['state'] != 'waiting'
+    async with sessions() as db:
+        assert not await db.scalar(select(AssistantInteraction.id).where(AssistantInteraction.message_id == sent['messageId']))
+        assert not await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == sent['messageId']))

@@ -1,5 +1,6 @@
 import json
 from fastapi import HTTPException
+from app.agent.tool_results import http_failure
 from langchain.tools import ToolRuntime, tool
 from app.integrations.models.transport import ProviderError
 from app.modules.image_generation.batch import generate_batch
@@ -27,7 +28,7 @@ async def generate_image(runtime: ToolRuntime[RunContext], prompt: str = '', tit
     except ProviderError as error:
         result = {'state': 'failed', 'code': error.code, 'message': str(error)}
     except HTTPException as error:
-        result = {'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']}
+        result = http_failure(error)
     if result.get('state') == 'retryable':
         # Retry the durable operation, never a fresh provider creation. The
         # harness bounds attempts and exposes its existing retry status.

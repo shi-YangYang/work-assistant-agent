@@ -98,6 +98,8 @@ async def test_failed_code_is_a_receipt_and_repaired_code_uses_new_execution(set
     monkeypatch.setattr(receipts, 'submit', failed)
     first = await run(context)
     assert first['state'] == 'failed' and 'ValueError' in first['stderr']
+    from app.agent.tool_results import recoverable_result
+    assert first['executionId'] and first['exitCode'] == 1 and recoverable_result(first)
     assert await run(context) == first and receipts.count == 1
     fixed = json.loads(await run_python.coroutine(code='print(1+2)', title='计算结果', runtime=SimpleNamespace(context=context)))
     assert fixed['state'] == 'succeeded' and receipts.count == 2
@@ -167,7 +169,7 @@ async def test_enabled_sandbox_is_visible_to_model_without_weakening_tool_bounda
     sent = await send(clients['employee'])
     model = await run_target(settings, sessions, users, sent, scenario='execution_tools')
     assert model.seen_tools[0] == 'load_tools'
-    assert set(model.seen_tools) == GROUPS['files'] | {'load_tools'}
+    assert set(model.seen_tools) == GROUPS['files'] | {'load_tools', 'request_user_input'}
     message = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert message['job']['taskOutcome']['state'] == 'completed'
     assert message['reply'] == '可用能力已加载。' and not message['actions']

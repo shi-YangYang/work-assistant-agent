@@ -1,4 +1,5 @@
 from app.core.digests import digest
+from fastapi import HTTPException
 from app.core.errors import problem
 from app.db.base import now, uid
 from app.modules.deliverables.models import Deliverable, DeliverableRevision, DeliverableLink
@@ -18,7 +19,9 @@ async def save(db, actor, message, job, content, *, identifier='', expected_revi
     prior = await db.scalar(select(DeliverableRevision).where(DeliverableRevision.message_id == message.id, DeliverableRevision.step == step))
     if prior:
         if prior.digest != fingerprint:
-            problem(409, '该步骤已保存成果；请读取已保存版本，不重复创建')
+            raise HTTPException(status_code=409, detail={
+                'code': 'saved_deliverable_step', 'message': '该步骤已保存成果，本次新内容未写入；进一步修改需新的用户请求。',
+                'recovery': {'owner': 'none', 'nextAction': 'stop'}})
         item, record = await get_deliverable(db, actor, prior.deliverable_id, prior.revision, conversation_id=message.conversation_id)
         remember_source(job, actor, item, record)
         return item, record

@@ -1,0 +1,25 @@
+# Acceptance — 成功操作后的必要查询
+
+## Result
+
+FAIL。独立验收 Agent 对冻结 v4 的只读审查与一次定向边界探针发现两项共享问题；没有重复运行已通过的模块套件。
+
+## Issues
+
+1. `decision_flow.begin/available` 在 `ready` 关闭探索后，只接收失败回执驱动的恢复。成功写入产生新事实／版本时，用户原请求中的后续查询仍被隐藏和拦截。复现为读取工作 revision 1 → 更新成功并变为 revision 2 → 查询剩余进行中工作；即使 `after` 指向真实成功回执，仍返回 `exploration_closed`。
+2. `modules/image_generation/service.py` 的操作已用冲突只能通过新消息提出新请求，却返回裸 `conflict`，共享恢复层将其视为可修复并开放探索。现有幂等仍阻止重复生成，问题在无效恢复及额外往返。
+
+## Required Rework
+
+- 真实成功操作改变事实后，允许原任务必要的后续读取；不能无条件重开全部探索，不能接受伪造回执或任意“再确认”。覆盖同类执行／查询顺序，不只处理单个工作案例。
+- 业务产生的终止冲突明确返回机器停止契约；合法版本冲突仍可刷新。不按中文错误文字猜类别。
+
+## Real Model Evidence
+
+v4 R01 low/high 两个首轮均成功调用 `load_tools`，实际 `_flow.route=execute`，没有首轮提问。新增字段可被模型调用，不代表及时澄清已达标。
+
+第二轮发生宿主合盖休眠 203 秒，超过 worker 90 秒租约，唤醒后两条请求同时取消。未产出最终回复／问题／业务变更；记录约 50.7 秒的进程单调时钟耗时不能作为完成耗时。保留这两次尝试及首轮观察，不用它们判断最终准确性或速度。证据：`artifacts/agent-decision-flow/probe-v4-analysis.{md,json}`、`probe-v4-pmset-observed.txt`。
+
+## Coverage Limits
+
+已确认上一轮 HTTP 403、显式停止和嵌套错误的处理修正方向成立，未发现放宽写入授权。完整 low/high 矩阵及最终 Web 流程尚未完成，不标记总体通过。

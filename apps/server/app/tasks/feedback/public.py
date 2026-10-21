@@ -41,12 +41,12 @@ def message(value):
     recovery = value.get('recovery') or {}
     if user_gap(value):
         return '；'.join(item['question'] for item in recovery['missingInputs'])
-    category = value.get('category', '')
+    category = value.get('category') or ('not_requested' if value.get('state') == 'not_requested' else '')
     fallback = value.get('message') or '这项操作尚未完成。'
     internal = bool(value.get('diagnostic')) or diagnostic(fallback)
     if internal:
         fallback = '这项操作暂未完成，已保存的内容会保留。'
-    elif value.get('message') and category not in ('missing_info', 'invalid_arguments'):
+    elif value.get('message') and category not in ('missing_info', 'invalid_arguments', 'not_requested'):
         return fallback
     return {
         'permission_denied': '你目前没有权限完成这项操作。',
@@ -86,7 +86,7 @@ def job_error(job, text=None):
 def outcome(value, job):
     """Old structured diagnostics get the same projection as new tool results."""
     failures = [item for item in job.result.get('toolOutcomes', [])
-                if item.get('category') in ('missing_info', 'invalid_arguments', 'conflict', 'permission_denied', 'transient_failure')]
+                if item.get('category') in ('missing_info', 'invalid_arguments', 'conflict', 'permission_denied', 'transient_failure', 'not_requested')]
     replacements = {item.get('message'): message(item) for item in failures if item.get('message')}
     def safe(text):
         return replacements.get(text, job_error(job, text))
@@ -106,7 +106,7 @@ def feedback(values, outcomes=()):
 
 def model_result(value):
     """Keep repair instructions machine-readable; never relay the judge's prose."""
-    if not isinstance(value, dict) or not value.get('recovery'):
+    if not isinstance(value, dict) or not (value.get('recovery') or value.get('diagnostic') or value.get('state') == 'not_requested'):
         return value
     fields = [{key: item[key] for key in ('field', 'code') if key in item}
               for item in value.get('fieldIssues', [])]
@@ -122,7 +122,7 @@ def prose(text, job, user_text, *, complete=True):
     user-supplied technical terms keep their original streaming behavior.
     """
     failures = [item for item in job.result.get('toolOutcomes', [])
-                if item.get('category') in ('invalid_arguments', 'missing_info', 'conflict', 'permission_denied')]
+                if item.get('category') in ('invalid_arguments', 'missing_info', 'conflict', 'permission_denied', 'not_requested')]
     if not failures or technical_question(user_text):
         return text
     parts = re.findall(r'[^。！？\n]*(?:[。！？\n]|$)', text)

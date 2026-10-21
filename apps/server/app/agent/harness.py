@@ -155,8 +155,10 @@ async def invoke_harness(context, checkpointer, content, model=None, *, repair_m
     context.delivery = delivery.model_dump() if delivery else None
     if delivery is None and answer is None:
         raise ValueError('模型未返回有效收尾，请重试；已保存操作不会重复执行')
-    async with context.sessions() as db:
-        await lease(db, context)
+    async with context.sessions.begin() as db:
+        job, _ = await lease(db, context)
+        from app.agent.runtime.decision_flow import finish as finish_decision
+        finish_decision(context, job)
     # These messages come from this job's guarded graph, never model-supplied
     # citations or prior conversation prose. Re-authorization occurs at review.
     from app.agent.context.references.work_context import reference_evidence

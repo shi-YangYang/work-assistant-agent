@@ -11,7 +11,7 @@ from app.tasks.lease import lease
 
 async def ask_missing(context, result):
     recovery = result.get('recovery') or {}
-    if (result.get('category') != 'missing_info' or recovery.get('owner') != 'user'
+    if (result.get('category') not in ('missing_info', 'not_requested') or recovery.get('owner') != 'user'
             or recovery.get('nextAction') != 'ask'):
         return None
     # authorize_intent has already checked evidence and recovery ownership.
@@ -51,3 +51,31 @@ async def ask_missing(context, result):
                 'prompt': '请说明要操作的目标。' if safe_target else item.question,
                 'type': 'single' if options else 'text', 'options': options[:12], 'allowCustom': True})
     return await ask(context, questions, append_pending=True)
+
+
+async def rejected_operation(context, proposal, reason):
+    """Preserve denial while routing a validated user gap without another model."""
+    category = context.authorization_outcomes.get(digest(proposal), 'invalid_arguments')
+    from app.tasks.feedback.public import message as public_message
+    result = {'state': 'clarification' if category == 'missing_info' else 'failed', 'category': category,
+            'taskItemId': context.task_item_keys.get(digest(proposal), ''),
+            'fieldIssues': context.authorization_details.get(digest(proposal), []),
+            'recovery': context.authorization_recovery.get(digest(proposal), {
+                'owner': 'none' if category == 'not_requested' else 'system' if category == 'permission_denied' else 'assistant',
+                'missingInputs': [], 'nextAction': 'stop' if category in ('not_requested', 'permission_denied') else 'repair',
+                'code': 'operation_mismatch'}),
+            'diagnostic': reason, 'message': reason}
+    question = await ask_missing(context, result)
+    if question:
+        if question['state'] == 'waiting':
+            return {**result, **question, 'message': '等待用户回答',
+                    'publicMessage': '请补充下面的信息，我会继续原任务。'}
+        # An answered/expired panel is not authorization for this old
+        # proposal. Only the ordinary answer-created message may resume it.
+        return {**result, 'state': 'failed', 'category': 'invalid_arguments',
+                'recovery': {'owner': 'assistant', 'missingInputs': [], 'nextAction': 'stop',
+                             'code': 'interaction_already_processed'},
+                'publicMessage': '这项操作尚未执行，请查看后续答复。'}
+    if category == 'not_requested':
+        result['state'] = 'not_requested'
+    return {**result, 'publicMessage': public_message(result)}

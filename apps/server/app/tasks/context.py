@@ -4,6 +4,15 @@ from dataclasses import dataclass, field
 from typing import Any
 from app.integrations.web_page_cache import WebPageCache
 from app.core.personas import LEGACY_PERSONA, PersonaId
+from app.core.digests import digest
+
+
+def input_scope_key(context):
+    """Stable across lease retries, distinct for changed task inputs/configuration."""
+    return digest({'company': context.company_id, 'owner': context.owner_id, 'job': context.job_id,
+                   'scope': context.node_scope, 'input': context.source_revision,
+                   'documents': context.document_snapshot, 'work': context.work_reference_snapshot,
+                   'config': context.model_binding, 'configAttempt': context.config_attempt})
 
 
 class BudgetExceeded(Exception):

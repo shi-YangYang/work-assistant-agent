@@ -64,7 +64,10 @@ async def test_private_file_dimensions_duplicate_and_new_message(setup, provider
     for args in ({}, {'operation': 2, 'resolution': '2K'}, {'operation': 3, 'width': 2048, 'height': 2048}):
         assert await service.generate(context, prompt='画一只鸟', **args) == first
     assert provider.submit.await_count == 1
-    assert (await service.generate(context, prompt='画一只猫'))['state'] == 'conflict'
+    conflict = await service.generate(context, prompt='画一只猫')
+    assert conflict['state'] == 'conflict' and conflict['code'] == 'image_operation_used'
+    from app.agent.tool_results import failed_result, recoverable_result
+    assert failed_result(conflict) and not recoverable_result(conflict)
     message = (await setup[3]['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert message['deliverables'][0]['files'][0] == file
     await finish(context)

@@ -11,7 +11,9 @@ def args():
     parser.add_argument('--before', type=Path, nargs='+', required=True)
     parser.add_argument('--after', type=Path, nargs='+', required=True)
     parser.add_argument('--invalid', type=Path, nargs='*', default=[])
+    parser.add_argument('--superseded', type=Path, nargs='*', default=[], help='Preserved earlier candidates, excluded from final comparisons')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--case-file', type=Path, default=Path(__file__).with_name('agent-execution-feedback-cases.json'))
     return parser.parse_args()
 
 
@@ -184,7 +186,99 @@ def checks(row):
     return issues
 
 
+def decision_report(options, manifest):
+    """Report fixed slots and all public replies; semantic acceptance stays explicit."""
+    rows = load(options.before) + load(options.after)
+    superseded = load(options.superseded)
+    grouped = defaultdict(list)
+    occupied = set()
+    for row in rows:
+        key = (row['case'], row['effort'], row['label'], row['sample'])
+        if key in occupied:
+            raise ValueError('Duplicate sample slot; preserve separate candidate attempts: ' + str(key))
+        occupied.add(key)
+        grouped[key[:3]].append(row)
+    planned = {(case['id'], effort, label, sample) for case in manifest['cases'] for effort in manifest['efforts'] for label in ('before', 'after') for sample in range(case['samples'])}
+    missing = sorted(planned - occupied)
+    lines = ['# Spec076 真实模型前后对照', '',
+             '用户输入、二进制材料和基线/候选分别冻结。所有新增回复来自真实模型及实际程序回执；不生成答案、不用模型自评代替事实核对。工具结果和系统策略记录保留，隐藏思考内容不记录。', '',
+             f'预注册首轮 {len(planned)} 个，实际 {len(rows)} 个，未完成 {len(missing)} 个。实际答复续接 {sum(bool(row.get("continuation")) for row in rows)} 轮，单独记录。', '',
+             f'另保留中间候选首轮 {len(superseded)} 个、续接 {sum(bool(row.get("continuation")) for row in superseded)} 轮；不混入最终候选统计。含中间候选的实际首轮尝试共 {len(rows) + len(superseded)} 个。', '',
+             '计时从本地 HTTP/ASGI 接收开始，到持久回复可查询为止；不含浏览器绘制或人工等待。首个正文可能只是前言，不能单独证明首次有效答复。提问使用事务提交后可查询时间；有明确提问的场景优先比较该时间。', '',
+             '## 首轮样本', '', '| 用例 | 档位 | 样本 | 版本 | 提问可用 | 首公开内容 | 总耗时 | 全部模型调用 | 工具顺序 |', '|---|---|---:|---|---:|---:|---:|---:|---|']
+    def call_count(row):
+        return sum(request.get('providerAttempts', 1) for request in row.get('requests', []))
+    def tool_names(row):
+        return [call.get('name', '') for request in row.get('requests', []) for call in request.get('toolCalls', [])]
+    for row in sorted(rows, key=lambda item: (item['case'], item['effort'], item['sample'], item['label'])):
+        lines.append(f"| {row['case']} | {row['effort']} | {row['sample']} | {row['label']} | {number(row.get('questionAvailableMs'))} | {number(row.get('first_answer_ms'))} | {number(row.get('total_ms'))} | {call_count(row)} | {' → '.join(tool_names(row)) or '无'} |")
+    lines += ['', '## 三组性能对照', '', '| 用例 | 档位 | 指标 | 基线中位数 | 候选中位数 | 变化 | 结论 |', '|---|---|---|---:|---:|---:|---|']
+    comparisons = []
+    for case in manifest['performanceCases']:
+        for effort in manifest['efforts']:
+            left, right = grouped[(case, effort, 'before')], grouped[(case, effort, 'after')]
+            for metric in ('total_ms', 'questionAvailableMs' if case == 'R01' else 'first_answer_ms'):
+                before = [row[metric] for row in left if row.get(metric) is not None]
+                after = [row[metric] for row in right if row.get(metric) is not None]
+                if not before or not after:
+                    continue
+                base, changed = statistics.median(before), statistics.median(after)
+                regressed = changed > base + max(3000, base * .1)
+                complete = len(before) == len(after) == 3
+                item = {'case': case, 'effort': effort, 'metric': metric, 'before': before, 'after': after, 'beforeMedian': base, 'afterMedian': changed, 'investigate': regressed, 'completeThreePairs': complete}
+                comparisons.append(item)
+                verdict = '样本不足' if not complete else '超过调查阈值' if regressed else '在调查阈值内（不代表统计显著）'
+                lines.append(f'| {case} | {effort} | {metric} | {number(base)} | {number(changed)} | {number(changed-base)} | {verdict} |')
+    lines += ['', '## 真实回复与依据', '']
+    for row in sorted(rows, key=lambda item: (item['case'], item['effort'], item['sample'], item['label'])):
+        calls = row.get('requests', [])
+        metadata = {'effects': effects(row), 'toolOrder': tool_names(row), 'modelStages': stages(row), 'usageLedger': row.get('usage', []), 'providerAttempts': call_count(row),
+                    'firstEffectiveObservation': public_observation(row), 'questions': row.get('interactions'),
+                    'jobState': row.get('message', {}).get('job'), 'error': row.get('error'),
+                    'inputSizesByCall': [request.get('inputSizes') for request in calls],
+                    'downloadedFiles': row.get('downloadedFiles'), 'sourceVersions': row['_sourceVersions']}
+        lines += [f"### {row['case']} / {row['effort']} / 样本 {row['sample']} / {row['label']}", '', '用户：' + row['prompt'], '',
+                  '真实可见回复：', '', row.get('answer') or '（无完整公开回复，失败或等待如实保留。）', '',
+                  '外部验收点：' + row.get('expect', ''), '', '```json', json.dumps(metadata, ensure_ascii=False, indent=2), '```', '', '证据：`' + row['_source'] + '`', '']
+        continuation = row.get('continuation')
+        if continuation:
+            lines += ['实际 HTTP 答复：' + continuation['prompt'], '', '续接真实回复：', '', continuation.get('answer') or '（无完整公开回复）', '',
+                      f"续接耗时：{number(continuation.get('total_ms'))}；模型调用：{call_count(continuation)}；工具：{' → '.join(tool_names(continuation)) or '无'}。", '',
+                      '```json', json.dumps({'effects': effects(continuation), 'questions': continuation.get('interactions'), 'jobState': continuation.get('message', {}).get('job'), 'error': continuation.get('error')}, ensure_ascii=False, indent=2), '```', '']
+    if superseded:
+        lines += ['## 中间候选原始尝试（不计入最终对照）', '',
+                  '保留因源码返工而被替代的实际样本；其中业务成功也不等于最终版本验收通过。被替代不代表该样本失败；结果没有被覆盖或重跑到绿。', '']
+        for row in superseded:
+            lines += [f"### {row['case']} / {row['effort']} / 样本 {row['sample']} / {Path(row['_source'].rsplit(':', 1)[0]).parent.name}", '',
+                      '用户：' + row['prompt'], '', '真实可见回复：', '', row.get('answer') or '（无完整公开回复）', '',
+                      f"耗时：{number(row.get('total_ms'))}；模型调用：{call_count(row)}；工具：{' → '.join(tool_names(row)) or '无'}。", '',
+                      '```json', json.dumps({'effects': effects(row), 'questions': row.get('interactions'),
+                          'modelStages': stages(row), 'jobState': row.get('message', {}).get('job'),
+                          'error': row.get('error'), 'sourceVersions': row['_sourceVersions']}, ensure_ascii=False, indent=2), '```', '',
+                      '原始证据：`' + row['_source'] + '`', '']
+            continuation = row.get('continuation')
+            if continuation:
+                lines += ['实际 HTTP 答复：' + continuation['prompt'], '', '续接真实回复：', '', continuation.get('answer') or '（无完整公开回复）', '',
+                          f"续接耗时：{number(continuation.get('total_ms'))}；模型调用：{call_count(continuation)}；工具：{' → '.join(tool_names(continuation)) or '无'}。", '',
+                          '```json', json.dumps({'effects': effects(continuation), 'questions': continuation.get('interactions'),
+                              'error': continuation.get('error')}, ensure_ascii=False, indent=2), '```', '']
+    lines += ['## 限制', '', '- 所有用例执行权限 full；其他权限、恢复和注入边界由确定性测试另行验证。',
+              '- 文档来自冻结的合成素材，不等于员工原始文件；R01/R02历史来自已脱敏记录，二进制为有效替代文件。',
+              '- R01/R02续接使用预先固定的测试用户答复，经真实HTTP提问框接口提交；不代表员工实际意图或选择，未伪造模型回复。',
+              '- 工具正文/封套体积按JSON字段分类是观察口径，不能据字符长度声称token或语义完全等价。',
+              '- 不自动裁定“充分性”；应结合所需事实、实际工具证据、后续调用和真实副作用人工核对。',
+              '- 三组样本只展示中位数和所有原始样本，不声称统计显著或可靠P95。', '', '未完成槽：', '```json', json.dumps(missing, ensure_ascii=False, indent=2), '```', '']
+    options.output.parent.mkdir(parents=True, exist_ok=True)
+    options.output.write_text('\n'.join(lines))
+    options.output.with_suffix('.json').write_text(json.dumps({'planned': len(planned), 'actual': len(rows), 'missing': missing, 'comparisons': comparisons,
+        'sources': [row['_source'] for row in rows], 'supersededCount': len(superseded), 'allFirstTurnAttempts': len(rows) + len(superseded),
+        'supersededSources': [row['_source'] for row in superseded]}, ensure_ascii=False, indent=2) + '\n')
+
+
 def main(options):
+    selected_manifest = json.loads(options.case_file.read_text())
+    if selected_manifest.get('suite') == 'Spec076':
+        return decision_report(options, selected_manifest)
     rows = load(options.before) + load(options.after)
     invalid = load(options.invalid)
     grouped = defaultdict(list)
@@ -195,7 +289,7 @@ def main(options):
     repeated = {key: value for key, value in duplicates.items() if len(value) > 1}
     if repeated:
         raise ValueError('同一采样槽含多份记录；候选失败必须单独报告，不能混入最终版统计：' + str(list(repeated)))
-    manifest = json.loads(Path(__file__).with_name('agent-execution-feedback-cases.json').read_text())
+    manifest = selected_manifest
     missing = [{'case': item['id'], 'effort': effort, 'label': label, 'sample': sample} for item in manifest['cases'] for effort in manifest['efforts'] for label in ('before', 'after') for sample in range(item['samples']) if (item['id'], effort, label, sample) not in duplicates]
     sections = ['# Spec075 真实模型前后对照', '',
                 '所有运行均调用真实模型并经过真实 API/worker 链路，用户可见回复也可能由程序生成问题或业务回执。新版观察器单独记录这类来源和模型公开文本；未记录来源的旧样本不反向推断。历史业务数据经过脱敏，原始文件替换为有效隔离素材。本文中的检查是固定事实核对与人工复核线索，不是模型裁判，也不替代验收。', '',

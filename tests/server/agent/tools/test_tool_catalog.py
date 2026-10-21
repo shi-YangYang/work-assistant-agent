@@ -35,27 +35,31 @@ async def test_ordinary_prose_exposes_catalog_and_question_once_and_keeps_clock_
     model = fake(scenario='prose', answer='完整回答。')
     result, stored = await run(setup, model, '介绍一下你的作用')
     assert result['reply'] == '完整回答。' and model.calls == 1
-    assert model.requests == [{'tools': ['load_tools', 'request_user_input'], 'tool_choice': 'auto'}]
+    assert model.requests == [{'tools': ['load_tools', 'request_user_input', 'web_search'], 'tool_choice': 'auto'}]
     assert not stored.get('toolCatalog') and not stored.get('deliveryRepairs')
     assert result['job']['taskOutcome']['state'] == 'completed'
     assert '当前请求时间' in model.systems[0] and 'Asia/Shanghai' in model.systems[0]
     assert '当前执行权限' in model.systems[0] and '员工：' in model.systems[0]
-    # Persona examples are intentional; keep capability rules out of the cold prompt.
+    # Search is immediately usable; its privacy and source rules accompany it once.
     from app.agent.prompts.main import POLICIES
-    assert all(policy not in model.systems[0] for policy in POLICIES.values())
-    assert 'request_user_input' in model.systems[0] and '实际用户回答前' in model.systems[0]
+    assert model.systems[0].count(POLICIES['research']) == 1
+    assert all(policy not in model.systems[0] for group, policy in POLICIES.items() if group != 'research')
+    assert '缺用户选择直接 request_user_input' in model.systems[0]
     from langchain_core.utils.function_calling import convert_to_openai_tool
     from app.agent.tools.control.questions import request_user_input
     assert model.schemas[0][1] == convert_to_openai_tool(request_user_input)
-    assert len(json.dumps(model.schemas[0][0], ensure_ascii=False)) < 1300
+    assert len(json.dumps(model.schemas[0][0], ensure_ascii=False)) < 1800
+    parameters = model.schemas[0][0]['function']['parameters']
+    assert '_flow' in parameters['required']
+    assert parameters['properties']['_flow'] == {'type': 'object', 'required': ['route', 'need']}
 
 
 async def test_load_read_then_prose_exposes_only_requested_full_schemas(setup):
     model = fake(answer='当前没有工作。')
     result, stored = await run(setup, model, '查我的工作')
     assert result['reply'] == '当前没有工作。' and model.calls == 3
-    assert model.requests[0]['tools'] == ['load_tools', 'request_user_input']
-    assert set(model.requests[1]['tools']) == {'load_tools', 'request_user_input'} | (GROUPS['work'] - {'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})
+    assert model.requests[0]['tools'] == ['load_tools', 'request_user_input', 'web_search']
+    assert set(model.requests[1]['tools']) == {'load_tools', 'request_user_input', 'web_search'} | (GROUPS['work'] - {'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})
     assert '工具定义' in model.schemas[0][0]['function']['description']
     assert 'bodyEdits' in model.schemas[1][1]['function'].get('description', '') or any('bodyEdits' in str(tool) for tool in model.schemas[1])
     assert '工作：' not in model.systems[0] and '工作：' in model.systems[1]
@@ -63,6 +67,72 @@ async def test_load_read_then_prose_exposes_only_requested_full_schemas(setup):
     assert stored['toolCatalog']['groups'] == ['work']
     assert len([node for node in result['job']['nodes'] if node['kind'] == 'tool']) == 1
     assert not stored.get('deliveryRepairs')
+
+    # Reads keep the v8 fact-need contract after catalog loading. Legacy calls
+    # lacking it still finish without a repair round.
+    assert '_flow' in model.schemas[0][0]['function']['parameters']['required']
+    from app.agent.runtime.decision_flow import exploratory
+    for schema in model.schemas[1]:
+        function = schema['function']
+        required = function['parameters'].get('required', [])
+        assert ('_flow' in required) == exploratory(function['name'])
+        if exploratory(function['name']):
+            assert function['parameters']['properties']['_flow']['required'] == ['route', 'need']
+    assert all(call['route'] == 'unknown' for call in stored['decisionFlow']['calls'].values())
+
+
+async def test_first_search_remembers_research_and_offers_fetch_without_catalog_round(setup, monkeypatch):
+    from app.agent.prompts.main import POLICIES
+    from app.agent.tools.resources import web
+
+    class SearchModel(CatalogModel):
+        async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+            self.calls += 1
+            names = [tool['function']['name'] for tool in kwargs['tools']]
+            self.requests.append(names)
+            assert messages[0].text.count(POLICIES['research']) == 1
+            if self.calls == 1:
+                assert names == ['load_tools', 'request_user_input', 'web_search']
+                answer = AIMessage(content='', tool_calls=[{'id': 'direct-search', 'name': 'web_search',
+                    'args': {'query': 'Python documentation', '_flow': {'route': 'fact', 'need': '官方文档入口'}}}])
+            else:
+                assert self.calls == 2 and 'web_fetch' in names
+                assert [message.name for message in messages if isinstance(message, ToolMessage)] == ['web_search']
+                answer = AIMessage(content='<!--noria:{}-->\n已找到公开文档入口。')
+            return ChatResult(generations=[ChatGeneration(message=answer)])
+
+    search = AsyncMock(return_value={'items': [{'url': 'https://docs.python.org/', 'title': 'Python documentation',
+        'snippet': 'Official Python documentation', 'evidenceType': 'search_snippet'}]})
+    monkeypatch.setattr(web.web_research, 'web_search', search)
+    model = SearchModel(model='controlled-search', api_key='no-network')
+    result, stored = await run(setup, model, '查找 Python 官方文档入口')
+    assert result['reply'] == '已找到公开文档入口。' and model.calls == 2
+    assert result['job']['taskOutcome']['state'] == 'completed'
+    search.assert_awaited_once_with('Python documentation', domains=None)
+    assert stored['toolCatalog']['groups'] == ['research']
+    assert [node['label'] for node in stored['nodeExecution']['nodes'] if node['kind'] == 'tool'] == ['搜索资料']
+    context, _ = await runtime(setup, '新的独立请求')
+    assert loaded_groups(context, SimpleNamespace(result=stored)) == []
+    assert 'web_fetch' not in visible_tools(context, [])
+
+
+async def test_decision_closed_model_does_not_reoffer_default_search(setup):
+    from app.agent.harness import build_graph
+    from app.agent.prompts.main import POLICIES
+    from app.agent.runtime import decision_flow
+
+    context, _ = await runtime(setup, '已整理完毕，交付答复')
+    async with context.sessions.begin() as db:
+        job = await db.get(Job, context.job_id)
+        value = decision_flow.current(context, job)
+        value['phase'] = 'executing'
+        decision_flow.save(job, value)
+    model = fake(scenario='prose', answer='已整理完毕。')
+    await build_graph(context.settings, None, context, model).ainvoke(
+        {'messages': [HumanMessage(content='已整理完毕，交付答复')]}, context=context)
+    assert model.calls == 1
+    assert not {'web_search', 'web_fetch'} & set(model.requests[0]['tools'])
+    assert POLICIES['research'] not in model.systems[0]
 
 
 @pytest.mark.parametrize('receipt_only', [False, True])
@@ -259,3 +329,16 @@ async def test_files_group_locates_prior_uploads_without_loading_documents_or_gr
         assert not await db.scalar(select(func.count()).select_from(DocumentChunk).where(
             DocumentChunk.attachment_id.in_([item['id'], foreign_item['id']])))
         assert loaded_groups(context, await db.get(Job, context.job_id)) == ['files']
+
+
+async def test_closed_discovery_returns_only_currently_available_tools(setup):
+    from app.agent.runtime import decision_flow
+    context, _ = await runtime(setup, '已整理好，保存结果')
+    async with context.sessions.begin() as db:
+        job = await db.get(Job, context.job_id)
+        value = decision_flow.current(context, job)
+        value['phase'] = 'executing'
+        decision_flow.save(job, value)
+    result = json.loads(await load_tools.coroutine(['research', 'documents'], SimpleNamespace(context=context)))
+    assert 'save_deliverable' in result['tools']
+    assert not {'web_search', 'web_fetch', 'read_document', 'find_documents'} & set(result['tools'])

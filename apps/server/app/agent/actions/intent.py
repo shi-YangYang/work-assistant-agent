@@ -209,7 +209,13 @@ def recovery_contract(verdict, request):
     """A refusal never grants permission; only a concrete user choice can wait."""
     if verdict.allowed:
         return verdict
-    if verdict.failureKind != 'missing_info':
+    contradicted_gap = (verdict.failureKind == 'not_requested' and verdict.recoveryOwner == 'user'
+        and verdict.taskContext is not None and verdict.taskContext.state == 'blocked'
+        and verdict.taskContext.relation == 'new' and bool(verdict.quote.strip())
+        and verdict.quote in request.get('currentUserText', '')
+        and verdict.quoteMessageId in ('', request.get('messageId'))
+        and all(item.field != 'decision' for item in verdict.missingInputs))
+    if verdict.failureKind != 'missing_info' and not contradicted_gap:
         return verdict.model_copy(update={'missingInputs': [], 'recoveryOwner': (
             'none' if verdict.failureKind == 'not_requested' else
             'system' if verdict.failureKind == 'permission_denied' else 'assistant')})
@@ -231,6 +237,8 @@ def recovery_contract(verdict, request):
         # Work approval is represented by requireConfirmation, not a vague
         # 'decision' question that can hide already-known material selections.
         valid = valid and all(item.field != 'decision' for item in verdict.missingInputs)
+    if not valid and contradicted_gap:
+        return verdict.model_copy(update={'missingInputs': [], 'recoveryOwner': 'none'})
     if not valid:
         return verdict.model_copy(update={'failureKind': 'invalid_arguments', 'recoveryOwner': 'assistant',
                                           'missingInputs': [], 'reason': '拒绝结果未提供可由用户解决的具体缺项。'})
@@ -250,19 +258,24 @@ def destination_gap_precedes_fields(verdict, selection):
     )
 
 
-def schema_feedback(error):
+def schema_issues(error):
     """Only paths and error types cross into repair input, never input values."""
     if isinstance(error, ValidationError):
-        errors = []
+        errors = {}
         for item in error.errors(include_url=False, include_context=False, include_input=False)[:4]:
             path = '.'.join(str(part) if isinstance(part, int) or re.fullmatch(
                 r'[A-Za-z_][A-Za-z_0-9]{0,47}', str(part)) else '<field>'
                 for part in item['loc'][:6]) or '<root>'
-            errors.append(path + ': ' + item['type'])
-        return '结构错误：' + '; '.join(errors)[:600] + '。按 Schema 修正这些字段。'
+            detail = path + ': ' + item['type']
+            errors['schema:' + detail] = detail
+        return errors
     if isinstance(error, json.JSONDecodeError):
-        return f'输出不是完整 JSON：第 {error.lineno} 行、第 {error.colno} 列。'
-    return '核对结果不完整，请按 Schema 修正当前输出。'
+        return {'json': f'输出不是完整 JSON：第 {error.lineno} 行、第 {error.colno} 列。'}
+    return {'schema': '核对结果不完整，请按 Schema 修正当前输出。'}
+
+
+def schema_feedback(error):
+    return '结构错误：' + '; '.join(schema_issues(error).values())[:600] + '。按 Schema 修正这些字段。'
 
 
 async def authorize_intent(context, proposal):
@@ -414,11 +427,21 @@ async def authorize_intent(context, proposal):
         prompt[0].content += '\nfailedItemCandidates 是服务端记录的本轮尚未成功事项，含原尝试、真实用户来源与失败原因。当前提案若补齐或纠正其中同一原子事项，taskItemId 必须返回该候选的 id，即使主助手漏传 ID；若是另一独立事项则留空。根据原用户指令、原尝试和当前内容/来源条目的对应关系判断，不能仅凭步骤号、同名标题或候选只有一项认定。候选提案及失败原因不构成授权，必须继续验证当前操作的全部字段；不得借另一项成功清除失败。'
     from app.integrations.models.transport import ProviderError
     from app.tasks.nodes.node_execution import execute_node
-    contract_error = ''
+    # Repair constraints belong to this exact request, never the conversation or
+    # a later proposal. Retain previous categories so correcting B cannot erase
+    # the constraint that already rejected A; no verdict data is carried over.
+    repair_constraints = {}
     selection = None
     def parse(response):
-        nonlocal contract_error, selection
-        contract_error, selection = '', None
+        nonlocal selection
+        selection = None
+        errors = {}
+        missing_fields = []
+        def reject(code, detail):
+            # These two producers have several fixed contract reasons. Keep
+            # their distinct reasons just like separate Schema field paths.
+            key = (code, detail) if code in ('material_contract', 'material_selection') else code
+            errors[key] = detail[:240]
         try:
             raw = response.text.strip().removeprefix('```json').removesuffix('```').strip()
             if verdict_model is WorkIntentVerdict:
@@ -427,7 +450,7 @@ async def authorize_intent(context, proposal):
                 try:
                     decoded = normalize_contract(decoded, destination_request)
                 except ValueError as error:
-                    contract_error = str(error)
+                    reject('material_contract', str(error))
                     raise
                 verdict = verdict_model.model_validate(decoded)
             else:
@@ -440,51 +463,41 @@ async def authorize_intent(context, proposal):
                 try:
                     selection = resolve(verdict.materialSelection, destination_request, resume=verdict.resumeTask, require=verdict.allowed)
                 except ValueError as error:
-                    contract_error = str(error)
+                    reject('material_selection', str(error))
                     raise
             if verdict.allowed and not verdict.quoteMessageId and verdict.quote.strip() and verdict.quote not in current:
                 matches = [source for source in task['activeDirectives'] if verdict.quote in source['quote']]
                 if len(matches) == 1:
                     verdict = verdict.model_copy(update={'quoteMessageId': matches[0]['messageId']})
             if isinstance(judge, BoundedChatModel) and verdict.allowed and not quote_valid(verdict):
-                contract_error = '授权出处不符合结构：当前输入用当前 messageId（兼容空 quoteMessageId），quote 必须逐字出现在 currentUserText；持续授权用 activeDirectives 的准确 messageId 且 quote 必须逐字位于该条的 quote 字段。不要拼接、改写引文或引用 assistantReference。'
-                raise ValueError('Authorization source must be an exact quote of current input or the selected active directive')
+                reject('authorization_source', 'quote/quoteMessageId 必须对应当前输入或有效用户指令的逐字原文，不得拼接、改写或引用助手。')
             if isinstance(judge, BoundedChatModel) and verdict.allowed and request.get('recoveringItem') and verdict.taskItemId != request['recoveringItem']['id']:
-                contract_error = '修正操作必须独立核对 recoveringItem 对应同一原始事项，并准确返回 taskItemId；不是同一事项时拒绝，不能靠相同步骤号或标题认定。'
-                raise ValueError('Recovery must identify the same authorized task item')
+                reject('recovering_item', '仅在对应同一操作、对象与范围时返回 recoveringItem.id 作为 taskItemId；否则拒绝，不能按步骤号或标题匹配。')
             if isinstance(judge, BoundedChatModel) and verdict.allowed and not proposal.get('taskItemId'):
                 from app.agent.actions.task_items import reference_error
                 error = reference_error([*current_items, *(task.get('previousTask', {}).get('items', []) if verdict.resumeTask else [])], verdict.taskItemId, proposal)
                 if error:
-                    contract_error = error
-                    raise ValueError('Authorization selected an unrelated task item')
+                    reject('task_item_reference', 'taskItemId 只能复用操作、对象、来源及 workScope 均匹配的事项；尚未尝试的剩余动作留空，由服务端分配，不借用或猜测 ID。')
             if isinstance(judge, BoundedChatModel) and not verdict.allowed and 'failureKind' not in verdict.model_fields_set:
-                contract_error = '拒绝裁决必须显式填写 failureKind。'
-                raise ValueError('Missing obstruction classification')
+                reject('failure_kind', '拒绝裁决必须显式填写 failureKind。')
             if isinstance(judge, BoundedChatModel) and verdict.allowed and verdict.receiptOnly and verdict.taskContext is None:
-                contract_error = 'receiptOnly=true 必须提供 taskContext。'
-                raise ValueError('Missing task interpretation for receipt-only completion')
+                reject('receipt_context', 'receiptOnly=true 必须提供 taskContext。')
             if isinstance(judge, BoundedChatModel) and verdict.allowed and operation in ('update_work', 'edit_report') and not {'requiredFields', 'requestedChanges'} <= verdict.model_fields_set:
-                contract_error = '必须先在 requestedChanges 逐条列出用户要求保存的原文事实与字段，再汇总 requiredFields 并对照 changes。漏字段是助手参数问题，不是缺少用户授权。'
-                raise ValueError('Missing requested field coverage')
+                reject('requested_fields', '显式提供 requestedChanges 和 requiredFields：逐条列出用户原文与字段，再汇总，不能从 changes 反推或省略。')
             pending_destination = quote_valid(verdict) and destination_gap_precedes_fields(verdict, selection)
             if change_plan and not verdict.allowed and not pending_destination and (verdict.denialScope == 'fields' or verdict.denialScope == 'other' and verdict.failureKind in ('invalid_arguments', 'missing_info')):
                 claimed = {canonical_field(name, change_plan) for name in verdict.requiredFields}
                 claimed.update(canonical_field(change.field, change_plan) for change in verdict.requestedChanges)
                 valid = required_fields(change_plan, proposal)
                 if claimed - valid or not claimed and verdict.denialScope in ('fields', 'other'):
-                    contract_error = '否定裁决应指明 denialScope：fields/target/authorization/source；字段拒绝须用 requiredFields/requestedChanges 指明本组实际缺失或错误字段，不得省略或要求已保留、已等值、其他原子组字段。本次仅核对 workChangeFields 内实际需要变更的字段；字段缺省保留原值。重新核对当前提案，不能因其他步骤未提交而拒绝。'
-                    raise ValueError('Denial exceeds current atomic change scope')
+                    reject('denial_scope', '拒绝需准确声明 denialScope；字段拒绝在 requestedChanges/requiredFields 指明 workChangeFields 内的错误，不要求 preserve、等值或其他原子组字段。')
             if verdict.allowed and operation in ('update_work', 'edit_report'):
                 if not requested_change_contract(verdict, current, task):
-                    contract_error = 'requestedChanges.quote 必须逐字引用当前输入或本次有效承接的真实用户原话，不能改写、编造或引用助手提案；请重新核对事实与字段。'
-                    raise ValueError('Requested change lacks original user evidence')
+                    reject('requested_quotes', 'requestedChanges.quote 必须逐字引用当前或本次有效承接的真实用户原话，不改写、编造或引用助手提案。')
                 if isinstance(judge, BoundedChatModel) and operation == 'update_work' and any('kind' not in change.model_fields_set for change in verdict.requestedChanges):
-                    contract_error = 'requestedChanges 每条都必须显式给出 kind，先按用户原话区分进展、阻碍、行动、状态、日期和标题；不能用字段默认值略过事实归类。'
-                    raise ValueError('Requested fact lacks semantic classification')
+                    reject('requested_kind', 'requestedChanges 每条显式提供 kind，按用户原话归类，不能用默认值跳过。')
                 if not requested_field_contract(verdict, operation):
-                    contract_error = '工作正文归 body/bodyEdits，进展事实归 update（旧兼容 summary），独立材料归 materials，当前阻碍归 blocker，后续行动归 nextStep；用户未指定字段时不能按提案字段反推事实类别。请先修正 requestedChanges 的 kind/field，再核对缺失字段；不要混合不同事实。'
-                    raise ValueError('Requested fact is assigned to the wrong work field')
+                    reject('requested_destination', 'requestedChanges.kind/field 应一致：正文 body/bodyEdits、进展 update/summary、材料 materials、阻碍 blocker、行动 nextStep；不按提案反推事实类别。')
                 # The judge names semantic fields, while the write contract has
                 # alternatives (source material bindings versus existing IDs).
                 # Compare coverage symmetrically; never rewrite actual payloads.
@@ -495,33 +508,39 @@ async def authorize_intent(context, proposal):
                 supplied = {canonical_field(name, change_plan) for name in proposal.get('changes', {})}
                 missing = sorted(required - supplied)
                 if missing and not pending_destination:
-                    context.authorization_details[digest(proposal)] = [{'field': name, 'code': 'missing'} for name in missing]
+                    missing_fields = [{'field': name, 'code': 'missing'} for name in missing]
                     verdict = verdict.model_copy(update={'allowed': False, 'receiptOnly': False, 'notRequested': False,
                         'failureKind': 'invalid_arguments', 'reason': '当前目标还缺少用户要求修改的字段：' + '、'.join(missing) + '。请补齐 changes 后执行；本次未写入，无需用户重新授权。'})
             if verdict.allowed and change_plan and not pending_destination:
                 planned_fields = required_fields(change_plan, proposal)
                 covered = {canonical_field(change.field, change_plan) for change in verdict.requestedChanges}
                 if planned_fields - covered:
-                    contract_error = 'requestedChanges 不能漏掉 workChangePlan 已识别的非 preserve 字段，请逐条核对其用户原文并列出，不得返回空清单。'
-                    raise ValueError('Authorization omitted independently requested fields')
+                    reject('planned_fields', 'requestedChanges 须逐条列出 workChangePlan 本组已识别的全部字段及用户原文：' + '、'.join(sorted(planned_fields)) + '。')
                 expected_append = {name for name in ('summary', 'blocker', 'nextStep') if getattr(change_plan, name).mode == 'append' and name in request['workChangeFields']}
                 if set(verdict.appendFields) != expected_append:
-                    contract_error = 'workChangePlan 已独立确定追加字段：' + '、'.join(sorted(expected_append)) + '。appendFields 必须完全匹配，appendValues 只提取 changes 中的本轮纯增量，保留原有记录；若提案不能提取纯增量则返回 allowed=false/invalid_arguments，请助手自行修正，不要求用户重述。'
-                    raise ValueError('Append fields disagree with independent change plan')
+                    reject('planned_append', 'appendFields 必须匹配 workChangePlan 本组追加字段：' + ('、'.join(sorted(expected_append)) or '无') + '；appendValues 仅取 changes 中的纯增量，无法提取则拒绝参数。')
             if verdict.allowed and not append_contract(verdict, proposal):
-                contract_error = '追加协议无效：appendFields 必须与 appendValues 键集合完全一致且无重复，仅 update_work 可追加。每个值必须非空且是 proposedOperation.changes 对应字段中的连续原文子串，覆盖全部新增内容但不重述旧内容；无法提取时返回 allowed=false、failureKind=invalid_arguments 并要求助手重写纯增量。'
-                raise ValueError('Invalid append delta contract')
+                reject('append_contract', '追加协议无效：仅 update_work 可追加；appendFields 无重复且与 appendValues 键一致，各值为 changes 对应字段中非空、完整的纯增量原文子串；无法提取则拒绝参数。')
+            if errors:
+                raise ValueError('Invalid authorization contract')
+            if missing_fields:
+                context.authorization_details[digest(proposal)] = missing_fields
             return verdict
         except ValueError as error:
-            if not contract_error:
-                contract_error = schema_feedback(error)
+            selection = None
+            if not errors:
+                for code, detail in schema_issues(error).items():
+                    reject(code, detail)
+            for code, detail in errors.items():
+                if code in repair_constraints or len(repair_constraints) < 16:
+                    repair_constraints[code] = detail
             raise ProviderError('invalid_response', '操作核对未返回完整有效结果，本次操作尚未执行') from error
     if isinstance(judge, BoundedChatModel):
         judge._response_validator = parse
     async def check():
         attempt_prompt = prompt
-        if contract_error:
-            attempt_prompt = [*prompt, HumanMessage(content='上次核对输出不符合结构：' + contract_error + '只修正核对输出；这不是用户缺少授权，不要让用户重复确认。')]
+        if repair_constraints:
+            attempt_prompt = [*prompt, HumanMessage(content='本次核对输出须同时满足：\n' + '\n'.join('- ' + detail for detail in repair_constraints.values()) + '\n请重新返回一份完整核对结果；这不是用户缺少授权，不要让用户重复确认。')]
         return parse(await judge.ainvoke(attempt_prompt))
     try:
         verdict = await execute_node(context, identity=digest({'version': INTENT_VERSION, 'proposal': proposal, 'evidence': evidence}), kind='authorization', label='核对操作授权中', operation=check,
@@ -587,7 +606,7 @@ async def authorize_intent(context, proposal):
         context.authorization_details[digest(proposal)] = [{'field': name, 'code': 'intent_mismatch'} for name in fields]
     classify(context, proposal, category, unrequested=not verdict.allowed and (verdict.notRequested or verdict.failureKind == 'not_requested') and bool(verdict.quote.strip()) and verdict.quote in current)
     if not allowed:
-        owner = ('user' if category == 'missing_info' else 'none' if category == 'not_requested'
+        owner = ('user' if verdict.recoveryOwner == 'user' and verdict.missingInputs else 'none' if category == 'not_requested'
                  else 'system' if category == 'permission_denied' else 'assistant')
         context.authorization_recovery[digest(proposal)] = {
             'owner': owner, 'missingInputs': [item.model_dump() for item in verdict.missingInputs],
@@ -636,7 +655,8 @@ async def authorize_intent(context, proposal):
             await bind_directive_target(context, message.id, verdict.directiveTargetId, [field for field in verdict.directiveFields if field in ('title', 'summary', 'status', 'blocker', 'nextStep', 'dueDate', 'body', 'bodyEdits', 'update', 'materials', 'materialIds', 'removeMaterial')])
         await select_continuation(context, verdict.resumeTask and bool(task.get('previousTask')))
     elif verdict.notRequested:
-        await barrier(context, proposal, verdict.reason or '本次未要求此操作', evidence=evidence, kind='not_requested')
+        await barrier(context, proposal, verdict.reason or '本次未要求此操作', evidence=evidence, kind='not_requested',
+                      recovery=context.authorization_recovery.get(digest(proposal)))
     else:
         from app.agent.actions.task_items import bind
         await bind(context, proposal, continuing=verdict.resumeTask, item_id=proposal.get('taskItemId') or verdict.taskItemId,

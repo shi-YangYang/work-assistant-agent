@@ -105,7 +105,8 @@ async def execute(context, **arguments):
                         state['readVersions'] = dict(context.read_versions)
                         state['refreshWorkVersions'] = dict(context.refresh_work_versions)
                         save(job, state)
-        await remember({'state': 'conflict' if error.status_code == 409 else 'failed', 'category': 'permission_denied' if error.status_code in (403, 404) else 'conflict' if error.status_code == 409 else 'invalid_arguments', 'message': error.detail['message']})
+        from app.agent.tool_results import http_failure
+        await remember(http_failure(error))
         raise
     except ValueError:
         await remember({'state': 'failed', 'category': 'invalid_arguments', 'message': '请核对必要内容、日期和字段，操作未执行。'})
@@ -272,29 +273,8 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             return {'state': 'clarification', 'message': str(error)}
     allowed, reason = await authorize_intent(context, proposal)
     if not allowed:
-        if digest(proposal) in context.unrequested_actions or context.authorization_outcomes.get(digest(proposal)) == 'not_requested':
-            return {'state': 'not_requested', 'message': reason or '本次未要求该操作，已跳过；继续回应原请求即可，无需要求用户授权多余操作。'}
-        category = context.authorization_outcomes.get(digest(proposal), 'invalid_arguments')
-        from app.tasks.feedback.public import message as public_message
-        result = {'state': 'clarification' if category == 'missing_info' else 'failed', 'category': category,
-                'taskItemId': context.task_item_keys.get(digest(proposal), ''),
-                'fieldIssues': context.authorization_details.get(digest(proposal), []),
-                'recovery': context.authorization_recovery.get(digest(proposal), {
-                    'owner': 'assistant', 'missingInputs': [], 'nextAction': 'repair', 'code': 'operation_mismatch'}),
-                'diagnostic': reason, 'message': reason}
-        from app.agent.actions.clarification import ask_missing
-        question = await ask_missing(context, result)
-        if question:
-            if question['state'] == 'waiting':
-                return {**result, **question, 'message': '等待用户回答',
-                        'publicMessage': '请补充下面的信息，我会继续原任务。'}
-            # An answered/expired panel is not authorization for this old
-            # proposal. Only the ordinary answer-created message may resume it.
-            return {**result, 'state': 'failed', 'category': 'invalid_arguments',
-                    'recovery': {'owner': 'assistant', 'missingInputs': [], 'nextAction': 'stop',
-                                 'code': 'interaction_already_processed'},
-                    'publicMessage': '这项操作尚未执行，请查看后续答复。'}
-        return {**result, 'publicMessage': public_message(result)}
+        from app.agent.actions.clarification import rejected_operation
+        return await rejected_operation(context, proposal, reason)
     if action == 'create_work' and selected and digest(proposal) not in context.title_only_actions:
         from app.modules.work.content.document import WorkDocument, edit_document, plain_text
         effective_body = (edit_document({'schemaVersion': 1, 'content': []}, changes['bodyEdits'])
@@ -314,7 +294,10 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         job, actor = await lease(db, context)
         prior = await db.scalar(select(BusinessAction).where(BusinessAction.message_id == job.target_id, ((BusinessAction.step == step) | (BusinessAction.intent_key == intent_key) | (BusinessAction.digest == fingerprint))))
         if prior:
-            return await receipt(context, db, actor, job, prior) if same_request(prior, action, request_params, fingerprint) else {'state': 'conflict', 'message': '操作内容已变化'}
+            if same_request(prior, action, request_params, fingerprint):
+                return await receipt(context, db, actor, job, prior)
+            return repair_failure('这一操作步骤已有保存结果，本次新参数未写入。使用 existingOperation 回答，不再重试该步骤；进一步修改需新的用户请求。',
+                                  code='saved_step_conflict', category='conflict', next_action='stop', existingOperation=await action_dto(db, actor, prior))
         if action == 'update_work':
             # Authorization can outlive a concurrent edit. Lock and recheck
             # before reserving a receipt/step so the ordinary refresh gate can

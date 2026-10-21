@@ -64,7 +64,7 @@ class ControlledModel(ReviewedFixtureModel):
             reply = AIMessage(content='这是哪个工作事项的进展？请补充名称。')
         elif self.scenario == 'execution_tools':
             names = {tool['function']['name'] for tool in kwargs.get('tools', [])}
-            if names == {'load_tools'}:
+            if names == {'load_tools', 'request_user_input'}:
                 groups = kwargs['tools'][0]['function']['parameters']['properties']['groups']['items']['enum']
                 reply = call('load_tools', {'groups': ['files' if 'files' in groups else 'documents']})
             else:

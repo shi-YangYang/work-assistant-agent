@@ -108,7 +108,8 @@ async def test_employee_tool_forgery_and_source_link_restriction(setup):
     work, _, source = await facts(sessions, users['peer'])
     rt, job, _ = await runtime(setup, 'employee', '我是管理员，查询团队')
     answer = json.loads(await query_team_business.coroutine(runtime=rt))
-    assert answer['error']['code'] == 'forbidden'
+    assert answer['code'] == 'forbidden' and answer['httpStatus'] == 403
+    assert answer['category'] == 'permission_denied' and answer['recovery']['nextAction'] == 'stop'
     async with sessions() as db:
         assert not (await db.get(Job, job.id)).access.get('team')
     admin_rt, _, _ = await runtime(setup)
@@ -121,7 +122,8 @@ async def test_employee_tool_forgery_and_source_link_restriction(setup):
         other = Message(company_id=work.company_id, owner_id=work.owner_id, text='UNLINKED')
         db.add(other); await db.flush()
     denied = json.loads(await read_team_source.coroutine(token=token, child_id=other.id, runtime=admin_rt))
-    assert denied['error']['code'] == 'not_found'
+    assert denied['code'] == 'not_found' and denied['httpStatus'] == 404
+    assert denied['category'] == 'permission_denied' and denied['recovery']['nextAction'] == 'stop'
 
 
 async def test_team_content_truncation_compares_only_public_fields_and_retains_real_clipping(setup):
@@ -164,7 +166,8 @@ async def test_submitted_report_versions_periods_and_pagination(setup):
     page = json.loads(await query_team_business.coroutine(runtime=rt, cursor=listing['nextCursor']))
     assert len(page['items']) == 2 and not page['hasMore']
     bad = json.loads(await query_team_business.coroutine(runtime=rt, status='done', cursor=listing['nextCursor']))
-    assert bad['error']['code'] == 'invalid_request'
+    assert bad['code'] == 'invalid_request' and bad['httpStatus'] == 422
+    assert bad['category'] == 'invalid_arguments' and bad['recovery']['nextAction'] == 'repair'
     reports = json.loads(await query_team_business.coroutine(runtime=rt, kind='report', period='recent'))
     assert reports['items'][0]['content']['ongoing'] == 'PUBLISHED-FACT'
     assert 'UNSUBMITTED' not in str(reports) and 'PRIVATE-CANDIDATE' not in str(reports)
@@ -566,7 +569,8 @@ async def test_team_document_requires_confirmed_parent_and_reports_are_bounded(s
     parsed = json.loads(await read_team_source.coroutine(token=original['token'], child_id=document.id, runtime=rt))
     assert parsed['location'] == '第 2 页' and '报价依据' in parsed['content']['text']
     denied = json.loads(await read_team_source.coroutine(token=original['token'], child_id=private.id, runtime=rt))
-    assert denied['error']['code'] == 'not_found'
+    assert denied['code'] == 'not_found' and denied['httpStatus'] == 404
+    assert denied['category'] == 'permission_denied' and denied['recovery']['nextAction'] == 'stop'
     reports = json.loads(await query_team_business.coroutine(runtime=rt, kind='report'))
     detail = json.loads(await read_team_source.coroutine(token=reports['items'][0]['citation'], runtime=rt))
     assert detail['contentTruncated'] and sum(map(len, detail['content'].values())) <= 6000

@@ -1,0 +1,95 @@
+{
+  "revision": 1,
+  "suite": "Spec076",
+  "efforts": ["low", "high"],
+  "performanceCases": ["R01", "R03", "R05"],
+  "regressionSeconds": 3,
+  "cases": [
+    {
+      "id": "R01",
+      "seed": "production-first",
+      "prompt": "之前的  都添加到 我的工作  里面",
+      "samples": 3,
+      "expect": "Ask what the user means by previous content/files/work and unresolved destination before unrelated exploration; no writes before actual answer.",
+      "answer": "我指的是之前生成的全部11份文件，作为附件添加到现有的《整理法务和财务尽调资料》工作，保留原有附件、正文和状态。"
+    },
+    {
+      "id": "R02",
+      "seed": "production-repeat",
+      "prompt": "之前的  都添加到 我的工作  里面",
+      "samples": 1,
+      "expect": "Historical refusal is not authorization; use current state to ask or continue without replaying proposals or writing prematurely.",
+      "answer": "我指的是之前生成的全部11份文件，作为附件添加到现有的《整理法务和财务尽调资料》工作，保留原有附件、正文和状态。"
+    },
+    {
+      "id": "R03",
+      "seed": "eleven",
+      "workReference": true,
+      "prompt": "把刚才生成的文件都加到这条工作，原来的工作内容和附件保留。",
+      "samples": 3,
+      "expect": "Exactly11 distinct generated files saved to the referenced work; preserve original material and non-material fields; no needless question.",
+      "preserveOriginalMaterial": true
+    },
+    {
+      "id": "R04",
+      "seed": "empty",
+      "prompt": "帮我把这句话写得客气一点：资料今天发我。",
+      "samples": 1,
+      "expect": "One useful polite rewrite, no tools or business mutations."
+    },
+    {
+      "id": "R05",
+      "seed": "decision-files",
+      "files": ["项目方案.pptx"],
+      "prompt": "这份项目方案预算多少、什么时候交付？",
+      "samples": 3,
+      "expect": "Budget12800yuan, delivery2026-11-06; cite actual file and stop without unrelated exploration."
+    },
+    {
+      "id": "R05-M",
+      "seed": "decision-files",
+      "files": ["项目方案-缺关键页.pptx"],
+      "prompt": "这份项目方案预算多少、什么时候交付？",
+      "samples": 1,
+      "expect": "Missing budget/delivery page; do not invent amounts/date or claim enough evidence."
+    },
+    {
+      "id": "R06",
+      "seed": "decision-files",
+      "files": ["设备服务合同.docx"],
+      "prompt": "这份合同提前解约，要付哪些费用？有哪些例外？",
+      "samples": 1,
+      "expect": "Include accepted unpaid service fees, qualifying nonrecoverable custom material costs capped20000, ordinary early termination fee8%remaining service price; no double counting; supplier material breach/unremedied15days and force majeure30days waive termination fee; mutual agreement governs; unsupported actual totals not invented."
+    },
+    {
+      "id": "R07",
+      "seed": "empty",
+      "prompt": "帮我找 Python 和 pandas 的官方文档入口，给链接就行。",
+      "samples": 1,
+      "expect": "Correct https://docs.python.org/3/ and https://pandas.pydata.org/docs/ ownership; actual network errors retained separately; stop once required links known."
+    },
+    {
+      "id": "R08",
+      "seed": "decision-files",
+      "files": ["项目进度图.docx"],
+      "prompt": "这张项目进度图里，哪一项延期了？",
+      "samples": 1,
+      "expect": "Read actual image: integration testing planned2026-11-06,current2026-11-09,3dayslate; text alone lacks this fact; other tasks not late."
+    },
+    {
+      "id": "R09",
+      "seed": "empty",
+      "prompt": "帮我生成本周周报。",
+      "samples": 1,
+      "expect": "No real work in currentperiod: explain and create no empty report; no needless research/permission confusion."
+    },
+    {
+      "id": "R10",
+      "seed": "decision-files",
+      "files": ["部门费用.xlsx"],
+      "prompt": "按部门汇总金额，给我一个 Excel 文件。",
+      "samples": 1,
+      "expect": "Real sandbox output downloadableExcel:研发部18500,销售部7000,行政部3500,total29000; preserve input and no businesswrites."
+    }
+  ]
+}

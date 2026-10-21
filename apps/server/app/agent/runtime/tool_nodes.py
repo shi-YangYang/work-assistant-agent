@@ -4,6 +4,7 @@ from langchain_core.messages import ToolMessage
 from app.tasks.nodes.node_execution import execute_node
 from app.tasks.retry import Policy
 from app.agent.runtime.progress.tools import tool_presentation
+from app.agent.runtime.tool_progress.evidence import failed_result, result_state
 
 
 # Replay safety is an execution policy, independent of display-label registration.
@@ -51,7 +52,7 @@ def outcome(message):
                 if message.status == 'error' or message.name == 'execute_business_action'
                 else ('succeeded', ''))
     if isinstance(value, dict):
-        state = value.get('state') or value.get('status')
+        state = result_state(value)
         if message.name == 'generate_image' and state == 'partial':
             return 'failed', f"已生成 {value.get('imageCount', 0)}/{value.get('requestedCount', 0)} 张，部分图片未完成"
         if value.get('category') in ('invalid_arguments', 'conflict', 'transient_failure'):
@@ -60,13 +61,13 @@ def outcome(message):
             return 'failed', '当前权限无法执行'
         if state == 'not_requested':
             return 'cancelled', '本次未要求该操作'
-        if 'error' in value or state in ('failed', 'conflict', 'unavailable', 'cancelled', 'unknown', 'retryable'):
-            return 'failed', '操作尚未完成，请查看业务说明'
         if state in ('clarification', 'waiting', 'not_found'):
             from app.tasks.feedback.public import user_gap
             if value.get('interactionId') or user_gap(value):
                 return 'awaiting_input', '需要补充信息'
             return 'failed', '未找到匹配内容' if state == 'not_found' else '操作尚未完成'
+        if failed_result(value):
+            return 'failed', '操作尚未完成，请查看业务说明'
         if state == 'pending':
             return 'awaiting_confirmation', ''
     return ('failed', '工具未完成，请查看业务说明') if message.status == 'error' else ('succeeded', '')

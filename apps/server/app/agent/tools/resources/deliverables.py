@@ -1,5 +1,6 @@
 import json
 from fastapi import HTTPException
+from app.agent.tool_results import http_failure
 from langchain.tools import ToolRuntime, tool
 from pydantic import ValidationError
 from app.modules.deliverables.queries import conversation_deliverables, get_deliverable, available_revision, remember_source
@@ -24,20 +25,18 @@ def model_page(result, offset=0):
 
 @tool
 async def save_deliverable(title: str, body: str, runtime: ToolRuntime[RunContext], items: list[dict] | None = None, deliverable_id: str = '', expected_revision: int = 0, step: int = 1) -> str:
-    """Save a PRIVATE plan, draft, checklist or table for continued editing.
-    Does not create work or a formal report. Simple answers need no saved result.
-    body is Markdown prose; items are ordered {id?, title, body?} plan entries.
-    New item IDs MUST be empty/omitted; editing/reordering MUST preserve IDs from
-    read_deliverable. To modify first read latest version, retain unchanged entries,
-    and pass deliverable_id/expected_revision. step is stable (1-8) within this
-    user message, also on retry. Return the actual result to the user, not tool IDs.
+    """Save a private editable plan/draft/checklist/table; simple answers need no
+    save. body=Markdown; items=ordered {id?,title,body?}. Omit new item IDs; preserve
+    existing IDs on edit/reorder. Modify after reading latest, retain unchanged
+    entries and pass deliverable_id/expected_revision. step=stable 1-8 per user
+    message, including retry. Does not create work or formal reports.
     """
     context = runtime.context
     try:
         async with context.sessions.begin() as db:
             job, actor = await lease(db, context)
             if job.kind != 'message':
-                return json.dumps({'state': 'failed', 'message': '只有会话可以生成个人成果'}, ensure_ascii=False)
+                return json.dumps({'state': 'failed', 'category': 'permission_denied', 'message': '只有会话可以生成个人成果'}, ensure_ascii=False)
             message = await owned(db, Message, job.target_id, actor)
             read_revision = context.deliverable_reads.get(deliverable_id, job.result.get('deliverableReads', {}).get(deliverable_id))
             item, record = await save(db, actor, message, job, {'title': title, 'body': body, 'items': items or []}, identifier=deliverable_id, expected_revision=expected_revision, read_revision=read_revision, step=step)
@@ -45,9 +44,9 @@ async def save_deliverable(title: str, body: str, runtime: ToolRuntime[RunContex
             job.result = {**job.result, 'deliverableReads': {**job.result.get('deliverableReads', {}), item.id: record.revision}}
             return json.dumps({'state': 'succeeded', **model_page(await detail(db, actor, item, record))}, ensure_ascii=False)
     except HTTPException as error:
-        return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']}, ensure_ascii=False)
+        return json.dumps(http_failure(error), ensure_ascii=False)
     except ValidationError:
-        return json.dumps({'state': 'clarification', 'message': '成果字段或长度不符合要求，请调整后重试'}, ensure_ascii=False)
+        return json.dumps({'state': 'failed', 'category': 'invalid_arguments', 'message': '成果字段或长度不符合要求，请调整后重试'}, ensure_ascii=False)
 
 
 @tool
@@ -85,7 +84,7 @@ async def read_deliverable(runtime: ToolRuntime[RunContext], deliverable_id: str
             result = model_page(result, offset)
             return json.dumps(result, ensure_ascii=False)
     except HTTPException as error:
-        return json.dumps({'state': 'failed', 'message': error.detail['message']}, ensure_ascii=False)
+        return json.dumps(http_failure(error), ensure_ascii=False)
 
 
 DELIVERABLE_TOOLS = [save_deliverable, read_deliverable]
