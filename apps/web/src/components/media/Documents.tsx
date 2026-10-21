@@ -25,7 +25,7 @@ const statuses: Record<string, string> = {
 
 function extractionStatus(extraction: Attachment['extraction']) {
   if (extraction?.hasVisuals && extraction.characters === 0 && extraction.status !== 'failed')
-    return '可查看页面'
+    return ''
 
   if (extraction?.status === 'processing') {
     switch (extraction.stage) {
@@ -72,7 +72,7 @@ const warningHints: [RegExp, string][] = [
 function documentHint(extraction: Attachment['extraction']) {
   if (extraction?.visualError) return '图片部分没读到。'
   if (extraction?.hasVisuals && extraction.characters === 0 && extraction.status !== 'failed')
-    return '将通过页面图片读取内容。'
+    return ''
 
   if (extraction?.status === 'failed') {
     const error = extraction.error ?? ''

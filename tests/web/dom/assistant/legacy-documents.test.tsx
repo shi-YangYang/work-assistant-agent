@@ -283,7 +283,7 @@ it('opens table source coverage without inventing an extracted text fragment', (
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-it('distinguishes scan pages, deferred source ranges, and a failed visual range', () => {
+it('hides page-reading descriptions while preserving deferred and failed range warnings', () => {
   const attachment = uploaded('扫描.pdf')
   const extraction = {
     status: 'partial' as const,
@@ -295,8 +295,8 @@ it('distinguishes scan pages, deferred source ranges, and a failed visual range'
   const view = render(
     <DocumentCard attachment={{ ...attachment, extraction }} own refresh={() => {}} />,
   )
-  expect(screen.getByText(/可查看页面/)).toBeTruthy()
-  expect(screen.getByText('将通过页面图片读取内容。')).toBeTruthy()
+  expect(screen.queryByText(/可查看页面/)).toBeNull()
+  expect(screen.queryByText('将通过页面图片读取内容。')).toBeNull()
   view.rerender(
     <DocumentCard
       attachment={{ ...attachment, extraction: { ...extraction, visualError: '部分页面没读到' } }}
