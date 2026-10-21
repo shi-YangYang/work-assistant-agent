@@ -1,53 +1,44 @@
 .business-action-card {
-  padding: 16px;
   margin-top: 12px;
-  border: 0;
-  border-radius: 16px;
-  background: var(--subtle);
-  min-width: 0;
 }
-.business-action-heading {
+.business-action-card:has(> .business-action-link:hover) {
+  background: var(--hover);
+}
+.business-action-link:hover {
+  text-decoration: none;
+}
+.business-action-arrow {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.business-action-state {
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
 }
-.business-action-heading > strong {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--muted);
+.business-action-state > [data-status] {
+  padding: 1px 6px;
+  line-height: 16px;
 }
-.business-action-heading > span {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12px;
+.business-action-body {
+  margin-left: 58px;
+  font-size: 13px;
 }
-.business-action-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-top: 12px;
-}
-.business-action-title h4 {
-  min-width: 0;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 550;
-  overflow-wrap: anywhere;
-}
-.business-action-title > [data-status='in_progress'] {
-  background: var(--surface);
-  border-color: var(--control);
-}
-.business-action-card p {
+.business-action-body p {
   margin: 8px 0;
   overflow-wrap: anywhere;
 }
 .business-action-card .slot-card-actions {
   flex-wrap: wrap;
-  margin-top: 12px;
+  justify-content: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 0;
+  border: 0;
 }
-[data-status='succeeded'] .business-action-heading > svg {
-  color: var(--positive);
+.business-action-card .slot-card-actions:empty {
+  display: none;
 }
 .business-action-preview {
   max-height: 360px;
@@ -57,6 +48,9 @@
   border: 0;
   border-radius: 10px;
   background: transparent;
+}
+.business-action-preview:empty {
+  display: none;
 }
 .business-action-preview > :first-child {
   margin-top: 0;
@@ -72,37 +66,26 @@
   color: var(--muted);
 }
 
-.business-action-card[data-status='pending'] .business-action-heading > svg,
-.business-action-card[data-status='pending'] .business-action-heading > span {
+.business-action-card[data-status='pending'] .business-action-icon,
+.business-action-card[data-status='pending'] .business-action-outcome {
   color: var(--warning);
-}
-.business-action-heading {
-  flex-wrap: wrap;
-}
-.business-action-heading > span {
-  padding: 3px 8px;
-  border-radius: 99px;
-  background: var(--subtle);
-}
-.business-action-card[data-status='pending'] .business-action-heading > span {
-  background: var(--warning-bg);
-}
-.business-action-card[data-status='succeeded'] .business-action-heading > span {
-  color: var(--positive);
-  background: var(--positive-bg);
-}
-.business-action-card .slot-card-actions {
-  justify-content: flex-end;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
 }
 .business-action-card .slot-card-actions a {
   margin-left: 0;
-  margin-right: auto;
+  font-size: 13px;
+  padding: 0;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
 }
-@media (max-width: 760px) {
-  .business-action-card {
-    padding: 14px;
+@media (pointer: coarse) {
+  .business-action-card .slot-card-actions a {
+    min-height: 44px;
+  }
+}
+@media (max-width: 480px) {
+  .business-action-body {
+    margin-left: 0;
   }
 }
 

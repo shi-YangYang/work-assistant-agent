@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { DeliverablePanel } from './DeliverablePanel'
 import { GeneratedFiles, GeneratedImages } from './GeneratedFiles'
 import styles from './Deliverable.module.css'
+import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 
 export function MessageDeliverables({
   items,
@@ -54,13 +55,17 @@ function ImageTaskEntry({ items }: { items: DeliverableSummary[] }) {
     : `生成图片（${items.reduce((count, item) => count + (item.files?.length ?? 0), 0)}张）`
   return (
     <>
-      <button className={styles.entry} aria-label={`查看${title}`} onClick={() => setOpen(true)}>
-        <span className={styles.entryIcon} aria-hidden="true">
+      <button
+        className={`${cardStyles.card} ${cardStyles.row} ${styles.entry}`}
+        aria-label={`查看${title}`}
+        onClick={() => setOpen(true)}
+      >
+        <span className={cardStyles.icon} aria-hidden="true">
           <FileText size={24} />
         </span>
-        <span className={styles.entryContent}>
-          <span className={styles.entryTitle}>{title}</span>
-          <span className={styles.entryHint}>查看详情</span>
+        <span className={cardStyles.content}>
+          <span className={`${cardStyles.title} ${styles.entryTitle}`}>{title}</span>
+          <span className={cardStyles.meta}>查看详情</span>
         </span>
         <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
       </button>
@@ -105,16 +110,16 @@ export function DeliverableEntry({
       )}
       {showEntry && (
         <button
-          className={styles.entry}
+          className={`${cardStyles.card} ${cardStyles.row} ${styles.entry}`}
           aria-label={`查看${item.title}`}
           onClick={() => setOpen(true)}
         >
-          <span className={styles.entryIcon} aria-hidden="true">
+          <span className={cardStyles.icon} aria-hidden="true">
             <FileText size={24} />
           </span>
-          <span className={styles.entryContent}>
-            <span className={styles.entryTitle}>{item.title}</span>
-            <span className={styles.entryHint}>查看详情</span>
+          <span className={cardStyles.content}>
+            <span className={`${cardStyles.title} ${styles.entryTitle}`}>{item.title}</span>
+            <span className={cardStyles.meta}>查看详情</span>
           </span>
           <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
         </button>

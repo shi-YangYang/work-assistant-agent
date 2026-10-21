@@ -7,6 +7,10 @@
 .attachments:empty {
   display: none;
 }
+.document-group {
+  margin-top: 8px;
+  margin-left: auto;
+}
 .attachments img {
   width: 140px;
   max-height: 150px;

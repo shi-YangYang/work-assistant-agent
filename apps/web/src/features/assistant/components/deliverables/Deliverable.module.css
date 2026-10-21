@@ -1,49 +1,13 @@
 .entry {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-  width: 440px;
-  max-width: 100%;
   margin-top: 12px;
-  padding: 16px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--control);
-  border-radius: 16px;
   text-align: left;
   white-space: normal;
-}
-.entryIcon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 44px;
-  height: 44px;
-  background: var(--subtle);
-  border-radius: 10px;
-}
-.entryContent {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
 }
 .entryTitle {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  overflow-wrap: anywhere;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.5;
-}
-.entryHint {
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
 }
 .entryArrow {
   color: var(--muted);

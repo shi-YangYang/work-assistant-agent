@@ -2,6 +2,7 @@ import utilitiesStyles from '../../styles/utilities.module.css'
 import layoutStyles from '../../styles/layout.module.css'
 import controlsStyles from '../../styles/controls.module.css'
 import documentsStyles from './documents.module.css'
+import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 import type { Attachment, DocumentCitation, ExtractionPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
@@ -110,64 +111,71 @@ export function DocumentCard({
   const extraction = attachment.extraction
   const hint = documentHint(extraction)
   return (
-    <div className={documentsStyles['document-card']} data-compact={compact}>
-      <div className={documentsStyles['document-heading']}>
-        <FileText size={21} />
-        <strong>{attachment.name}</strong>
-      </div>
-      <div className={documentsStyles['document-meta']}>
-        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-          {[
-            attachment.name.split('.').pop()?.toUpperCase(),
-            fileSize(attachment.size),
-            extractionStatus(extraction),
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
-        <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
-          {attachment.mime === 'application/pdf' && (
-            <button
-              type="button"
-              className={`${controlsStyles['text-button']}`}
-              onClick={() => setPdf(true)}
-            >
-              查看原页
-            </button>
-          )}
-          <a href={attachment.url} download={attachment.name}>
-            <Download size={14} />
-            下载原文件
-          </a>
-          {['pending', 'processing'].includes(extraction?.status ?? '') && (
-            <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
-              刷新状态
-            </button>
-          )}
-          {own && extraction?.status === 'failed' && (
-            <BusyButton
-              type="button"
-              busy={busy}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  await retryDocument(attachment, {})
-                  refresh()
-                  setError('')
-                } catch (e) {
-                  setError(e as Error)
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              重新解析
-            </BusyButton>
-          )}
+    <div
+      className={`${cardStyles.card} ${cardStyles.row} ${documentsStyles['document-card']}`}
+      data-compact={compact}
+    >
+      <span className={cardStyles.icon} aria-hidden="true">
+        <FileText size={24} />
+      </span>
+      <div className={cardStyles.content}>
+        <strong className={cardStyles.title}>{attachment.name}</strong>
+        <div className={documentsStyles['document-meta']}>
+          <p className={cardStyles.meta}>
+            {[
+              attachment.name.split('.').pop()?.toUpperCase(),
+              fileSize(attachment.size),
+              extractionStatus(extraction),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+          <div
+            className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}
+          >
+            {attachment.mime === 'application/pdf' && (
+              <button
+                type="button"
+                className={`${controlsStyles['text-button']}`}
+                onClick={() => setPdf(true)}
+              >
+                查看原页
+              </button>
+            )}
+            <a href={attachment.url} download={attachment.name}>
+              <Download size={14} />
+              下载原文件
+            </a>
+            {['pending', 'processing'].includes(extraction?.status ?? '') && (
+              <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
+                刷新状态
+              </button>
+            )}
+            {own && extraction?.status === 'failed' && (
+              <BusyButton
+                type="button"
+                busy={busy}
+                onClick={async () => {
+                  setBusy(true)
+                  try {
+                    await retryDocument(attachment, {})
+                    refresh()
+                    setError('')
+                  } catch (e) {
+                    setError(e as Error)
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+              >
+                重新解析
+              </BusyButton>
+            )}
+          </div>
         </div>
+        {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
+        <ErrorNotice>{error}</ErrorNotice>
       </div>
-      {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
-      <ErrorNotice>{error}</ErrorNotice>
       {pdf && (
         <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
       )}

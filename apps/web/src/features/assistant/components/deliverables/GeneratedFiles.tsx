@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { useGeneratedFile, useGeneratedImage } from '../../hooks/deliverables/useGeneratedFile'
 import { fileSize } from '../../utils/files'
 import styles from './GeneratedFiles.module.css'
+import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 import { ImageGenerationPlaceholder, ImageGenerationCaption } from './ImageGenerationPlaceholder'
 
 export function GeneratedFiles({
@@ -27,8 +28,12 @@ export function GeneratedFiles({
 }) {
   const visible = includeImages ? files : files.filter((file) => file.mimeType !== 'image/png')
   if (!visible.length) return null
+  const grouped = visible.length > 1 && visible.every((file) => file.mimeType !== 'image/png')
   return (
-    <ul className={styles.files} aria-label={`生成文件 · 版本 ${revision}`}>
+    <ul
+      className={grouped ? `${styles.files} ${cardStyles.card} ${cardStyles.group}` : styles.files}
+      aria-label={`生成文件 · 版本 ${revision}`}
+    >
       {visible.map((file) => (
         <GeneratedFile
           key={`${deliverableId}:${revision}:${file.id}`}
@@ -142,14 +147,16 @@ function GeneratedFile({
   const Icon =
     format === 'PPTX' ? Presentation : ['XLSX', 'CSV'].includes(format) ? Sheet : FileText
   return (
-    <li className={styles.file}>
-      <div className={styles.row}>
-        <span className={styles.icon} aria-hidden="true">
-          <Icon size={20} />
+    <li className={`${cardStyles.card} ${styles.file}`}>
+      <div className={cardStyles.row}>
+        <span className={cardStyles.icon} aria-hidden="true">
+          <Icon size={24} />
         </span>
-        <div className={styles.description}>
-          <strong title={file.name}>{file.name}</strong>
-          <span>
+        <div className={cardStyles.content}>
+          <strong className={cardStyles.title} title={file.name}>
+            {file.name}
+          </strong>
+          <span className={cardStyles.meta}>
             {format} · {fileSize(file.size)}
             {file.width && file.height ? ` · ${file.width} × ${file.height}` : ''} · 版本 {revision}
           </span>

@@ -4,6 +4,7 @@ import utilitiesStyles from '../../../../styles/utilities.module.css'
 import noticeStyles from '../../../../styles/patterns/Notice.module.css'
 import styles from './MessageCard.module.css'
 import attachmentsStyles from '../../styles/attachments.module.css'
+import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 import type { DeliverableReference, Draft, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Status } from '@web/components/feedback/Status'
@@ -163,7 +164,15 @@ export function MessageCard({
             const items = message.attachments.filter((a) => a.kind === kind)
             return (
               items.length > 0 && (
-                <div className={attachmentsStyles['attachments']} data-kind={kind} key={kind}>
+                <div
+                  className={
+                    kind === 'document' && items.length > 1
+                      ? `${cardStyles.card} ${cardStyles.group} ${attachmentsStyles['document-group']}`
+                      : attachmentsStyles['attachments']
+                  }
+                  data-kind={kind}
+                  key={kind}
+                >
                   {items.map((a) =>
                     a.kind === 'image' ? (
                       <button

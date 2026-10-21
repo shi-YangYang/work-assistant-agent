@@ -51,11 +51,23 @@ it('renders actual change previews and action labels, replaces pending controls 
       state: 'succeeded',
       revision: 3,
       canConfirm: false,
+      materialIds: ['first-material', 'second-material'],
+      objectType: 'work',
+      objectId: 'saved-work',
+      objectRevision: 4,
+      details: { status: 'in_progress' },
       continuation,
     }),
   )
   expect(continued).toHaveBeenCalledExactlyOnceWith(continuation)
-  expect(screen.getByText('已更新')).toBeTruthy()
+  expect(screen.getByRole('region', { name: '修改工作 · 已更新' })).toBeTruthy()
+  expect(screen.getAllByText('已保存 2 个材料')).toHaveLength(1)
+  expect(screen.queryByText('修改工作')).toBeNull()
+  expect(screen.queryByText(/本次操作结果/)).toBeNull()
+  const entry = screen.getByRole('link', { name: '查看当前工作' })
+  expect(entry.getAttribute('href')).toBe('/work/saved-work')
+  expect(entry.contains(screen.getByRole('heading', { name: '网站上线' }))).toBe(true)
+  expect(screen.queryByText('查看当前工作')).toBeNull()
 })
 it('restores the same confirmation after network failure and never reports success', async () => {
   vi.mocked(resolveBusinessAction).mockRejectedValue(new Error('网络中断'))
