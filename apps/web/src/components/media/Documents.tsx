@@ -17,7 +17,7 @@ const statuses: Record<string, string> = {
   unsent: '上传完成，尚未发送',
   pending: '等待解析',
   processing: '正在解析',
-  ready: '文字可读',
+  ready: '',
   partial: '部分可读',
   failed: '解析失败',
   empty: '未找到文字',
@@ -115,52 +115,59 @@ export function DocumentCard({
         <FileText size={21} />
         <strong>{attachment.name}</strong>
       </div>
-      <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-        {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)} ·{' '}
-        {extractionStatus(extraction)}
-      </p>
+      <div className={documentsStyles['document-meta']}>
+        <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
+          {[
+            attachment.name.split('.').pop()?.toUpperCase(),
+            fileSize(attachment.size),
+            extractionStatus(extraction),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+        <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
+          {attachment.mime === 'application/pdf' && (
+            <button
+              type="button"
+              className={`${controlsStyles['text-button']}`}
+              onClick={() => setPdf(true)}
+            >
+              查看原页
+            </button>
+          )}
+          <a href={attachment.url} download={attachment.name}>
+            <Download size={14} />
+            下载原文件
+          </a>
+          {['pending', 'processing'].includes(extraction?.status ?? '') && (
+            <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
+              刷新状态
+            </button>
+          )}
+          {own && extraction?.status === 'failed' && (
+            <BusyButton
+              type="button"
+              busy={busy}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await retryDocument(attachment, {})
+                  refresh()
+                  setError('')
+                } catch (e) {
+                  setError(e as Error)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              重新解析
+            </BusyButton>
+          )}
+        </div>
+      </div>
       {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
       <ErrorNotice>{error}</ErrorNotice>
-      <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
-        {attachment.mime === 'application/pdf' && (
-          <button
-            type="button"
-            className={`${controlsStyles['text-button']}`}
-            onClick={() => setPdf(true)}
-          >
-            查看原页
-          </button>
-        )}
-        <a href={attachment.url} download={attachment.name}>
-          <Download size={14} />
-          下载原文件
-        </a>
-        {['pending', 'processing'].includes(extraction?.status ?? '') && (
-          <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
-            刷新状态
-          </button>
-        )}
-        {own && extraction?.status === 'failed' && (
-          <BusyButton
-            type="button"
-            busy={busy}
-            onClick={async () => {
-              setBusy(true)
-              try {
-                await retryDocument(attachment, {})
-                refresh()
-                setError('')
-              } catch (e) {
-                setError(e as Error)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            重新解析
-          </BusyButton>
-        )}
-      </div>
       {pdf && (
         <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
       )}
@@ -195,8 +202,12 @@ function DocumentPreview({
         {data && !error && (
           <>
             <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-              {data.attachment.extraction?.scope ?? '提取文字'} ·{' '}
-              {extractionStatus(data.attachment.extraction)}
+              {[
+                data.attachment.extraction?.scope ?? '提取文字',
+                extractionStatus(data.attachment.extraction),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </p>
             {data.attachment.extraction?.warnings?.map((warning) => (
               <p className={documentsStyles['document-warning']} key={warning}>

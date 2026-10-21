@@ -149,14 +149,14 @@ it('uses processing stages without letting stale stages override terminal or his
   expect(screen.getByText(/上传完成，尚未发送/)).toBeTruthy()
   const states: [
     Omit<NonNullable<Attachment['extraction']>, 'revision' | 'parserVersion'>,
-    string,
+    string | null,
   ][] = [
     [{ status: 'pending' }, '等待解析'],
     [{ status: 'processing' }, '正在解析'],
     [{ status: 'processing', stage: 'queued' }, '等待转换'],
     [{ status: 'processing', stage: 'converting' }, '正在转换'],
     [{ status: 'processing', stage: 'parsing' }, '正在读取'],
-    [{ status: 'ready', stage: 'converting' }, '文字可读'],
+    [{ status: 'ready', stage: 'converting' }, null],
     [{ status: 'partial', stage: 'queued' }, '部分可读'],
     [{ status: 'failed', stage: 'parsing', error: '文件已加密，请解密后重新上传。' }, '解析失败'],
   ]
@@ -171,7 +171,8 @@ it('uses processing stages without letting stale stages override terminal or his
         refresh={refresh}
       />,
     )
-    expect(screen.getByText(new RegExp(label))).toBeTruthy()
+    if (label) expect(screen.getByText(new RegExp(label))).toBeTruthy()
+    else expect(screen.queryByText(/文字可读|正在转换/)).toBeNull()
     expect(screen.queryByRole('button', { name: '查看提取内容' })).toBeNull()
     expect(screen.getByRole('link', { name: '下载原文件' }).getAttribute('href')).toBe(
       attachment.url,
