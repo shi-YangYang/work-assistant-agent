@@ -5,6 +5,7 @@ from app.core.digests import digest
 from app.core.errors import problem
 from app.modules.members.models import Company
 from app.modules.messages.models import Message
+from app.modules.interactions.schemas import MAX_QUESTIONS
 from app.modules.operations.models import BusinessAction
 from app.modules.team.sources import bounded_content as business_bounded_content, canonical_token as business_canonical_token
 from app.modules.work.models import WorkItem
@@ -64,7 +65,7 @@ class IntentVerdict(BaseModel):
     requiredFields: list[ChangeField] = Field(default_factory=list, max_length=10)
     failureKind: Literal['missing_info', 'permission_denied', 'conflict', 'invalid_arguments', 'not_requested'] = 'invalid_arguments'
     recoveryOwner: Literal['assistant', 'user', 'system', 'none'] = 'assistant'
-    missingInputs: list[MissingInput] = Field(default_factory=list, max_length=3)
+    missingInputs: list[MissingInput] = Field(default_factory=list, max_length=MAX_QUESTIONS)
 
 
 class WorkIntentVerdict(IntentVerdict):

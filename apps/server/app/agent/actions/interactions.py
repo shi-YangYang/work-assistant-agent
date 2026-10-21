@@ -4,7 +4,7 @@ from app.core.errors import problem
 from app.db.base import now
 from app.modules.interactions.models import AssistantInteraction
 from app.modules.interactions.lifecycle import settle_natural_reply
-from app.modules.interactions.schemas import Question
+from app.modules.interactions.schemas import MAX_QUESTIONS, MAX_QUESTION_OPTIONS, Question
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.security.ownership import owned
@@ -14,8 +14,10 @@ from sqlalchemy import select
 
 async def ask(context, raw_questions, *, continue_task=False, append_pending=False):
     questions = [Question.model_validate(value) for value in raw_questions]
-    if not 1 <= len(questions) <= 3 or len({q.id for q in questions}) != len(questions):
-        problem(422, '一次请集中提出 1～3 个不同问题')
+    if not 1 <= len(questions) <= MAX_QUESTIONS or len({q.id for q in questions}) != len(questions):
+        problem(422, f'一次请集中提出 1～{MAX_QUESTIONS} 个不同问题')
+    if any(len(q.options) > MAX_QUESTION_OPTIONS for q in questions):
+        problem(422, f'每个问题最多提供 {MAX_QUESTION_OPTIONS} 个选项')
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         source = await owned(db, Message, job.target_id, actor, lock=append_pending)
@@ -64,10 +66,10 @@ async def ask(context, raw_questions, *, continue_task=False, append_pending=Fal
                 AssistantInteraction.task_id == snapshot['taskId'], AssistantInteraction.state == 'waiting'))
             if waiting:
                 # Keep earlier questions from this same batch. Additional
-                # collections remain durable if the existing three-question
+                # collections remain durable if the existing question
                 # panel is full; a later turn can resolve their destinations.
                 known = {question['id'] for question in waiting.questions}
-                values = [*waiting.questions, *(question for question in values if question['id'] not in known)][:3]
+                values = [*waiting.questions, *(question for question in values if question['id'] not in known)][:MAX_QUESTIONS]
                 if values == waiting.questions:
                     return {'state': 'waiting', 'interactionId': waiting.id, 'message': '等待用户回答'}
         # A model may reuse short IDs such as `details` across task stages.

@@ -3,6 +3,10 @@ from app.core.schemas import Input
 from pydantic import Field, model_validator
 
 
+MAX_QUESTIONS = 5
+MAX_QUESTION_OPTIONS = 5
+
+
 class QuestionOption(Input):
     id: str = Field(min_length=1, max_length=100)
     label: str = Field(min_length=1, max_length=120)
@@ -15,6 +19,7 @@ class Question(Input):
     id: str = Field(min_length=1, max_length=80)
     prompt: str = Field(min_length=1, max_length=400)
     type: Literal['single', 'multiple', 'text'] = 'text'
+    # Historical records may have more options; new questions are bounded by ask.
     options: list[QuestionOption] = Field(default_factory=list, max_length=12)
     allowCustom: bool = True
 
@@ -35,4 +40,4 @@ class Answer(Input):
 
 class AnswerRequest(Input):
     expectedRevision: int = Field(ge=1)
-    answers: list[Answer] = Field(min_length=1, max_length=3)
+    answers: list[Answer] = Field(min_length=1, max_length=MAX_QUESTIONS)

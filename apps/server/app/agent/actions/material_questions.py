@@ -2,6 +2,7 @@
 from sqlalchemy import select
 
 from app.agent.actions.interactions import ask
+from app.modules.interactions.schemas import MAX_QUESTIONS, MAX_QUESTION_OPTIONS
 from app.modules.work.models import WorkItem
 from app.security.access import valid
 from app.tasks.feedback.material_requirements import collections
@@ -31,10 +32,10 @@ async def ask_destination(context, *, recovery=None):
         options = [{'id': 'work-' + work.id, 'label': work.title[:120],
                     'objectType': 'work', 'objectId': work.id}
                    for work in works if reads[work.id] == work.revision
-                   and await valid(db, actor, work.access, retained=True)][:11]
+                   and await valid(db, actor, work.access, retained=True)][:MAX_QUESTION_OPTIONS - 1]
         options.append({'id': 'new', 'label': '新建一条工作'})
         questions = [{'id': 'material-destination-' + item['id'][:32],
             'prompt': (f'这 {len(item["sources"])} 份文件要保存到哪里？' if len(selected) == 1
                        else f'“{item["quote"][:80]}”中的 {len(item["sources"])} 份文件要保存到哪里？'),
-            'type': 'single', 'options': options, 'allowCustom': True} for item in selected[:3]]
+            'type': 'single', 'options': options, 'allowCustom': True} for item in selected[:MAX_QUESTIONS]]
     return await ask(context, questions, append_pending=True)

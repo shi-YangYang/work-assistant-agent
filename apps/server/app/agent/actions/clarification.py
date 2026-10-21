@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.agent.actions.interactions import ask
 from app.core.digests import digest
+from app.modules.interactions.schemas import MAX_QUESTIONS, MAX_QUESTION_OPTIONS
 from app.modules.work.models import WorkItem
 from app.security.access import valid
 from app.tasks.lease import lease
@@ -22,7 +23,7 @@ async def ask_missing(context, result):
         missing = [MissingInput.model_validate(value) for value in recovery.get('missingInputs', [])]
     except (ValidationError, TypeError):
         return None
-    if not 1 <= len(missing) <= 3 or len({item.field for item in missing}) != len(missing):
+    if not 1 <= len(missing) <= MAX_QUESTIONS or len({item.field for item in missing}) != len(missing):
         return None
     if recovery.get('materialSelectionId') and {item.field for item in missing} == {'target'}:
         from app.agent.actions.material_questions import ask_destination
@@ -49,7 +50,7 @@ async def ask_missing(context, result):
             questions.append({'id': 'clarify-' + item.field + '-' + digest({
                 'item': result.get('taskItemId', ''), 'field': item.field})[:24],
                 'prompt': '请说明要操作的目标。' if safe_target else item.question,
-                'type': 'single' if options else 'text', 'options': options[:12], 'allowCustom': True})
+                'type': 'single' if options else 'text', 'options': options[:MAX_QUESTION_OPTIONS], 'allowCustom': True})
     return await ask(context, questions, append_pending=True)
 
 

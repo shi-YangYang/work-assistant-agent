@@ -367,12 +367,11 @@ it('preserves pending text, attachment preview and recording controls in the bro
 function fillAnswers() {
   fireEvent.click(screen.getByLabelText('网站上线'))
   fireEvent.click(screen.getByLabelText('实施计划'))
-  fireEvent.click(screen.getByLabelText('风险说明'))
   fireEvent.change(screen.getByRole('textbox', { name: '何时完成？ · 自由回答' }), {
     target: { value: '下周五' },
   })
 }
-it('supports single/multiple/free answers, validates missing fields, preserves drafts through collapse and remount', () => {
+it('auto-advances single choices, replaces legacy multiple choices and preserves drafts through collapse and remount', () => {
   const vault = createVault(),
     answer = vi.fn(),
     cancel = vi.fn()
@@ -382,10 +381,24 @@ it('supports single/multiple/free answers, validates missing fields, preserves d
     </TestWorkspace>
   )
   const mounted = render(view())
-  fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
+  expect(screen.queryByText('包含哪些内容？')).toBeNull()
+  expect(screen.getByRole('button', { name: '上一个' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: '下一个' }))
   expect(answer).not.toHaveBeenCalled()
-  expect(screen.getByText(/请回答每个问题/)).toBeTruthy()
+  expect(screen.getByText(/请回答当前问题/)).toBeTruthy()
   fillAnswers()
+  expect(answer).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '上一个' }))
+  expect(screen.queryByRole('checkbox')).toBeNull()
+  expect((screen.getByLabelText('实施计划') as HTMLInputElement).checked).toBe(true)
+  expect((screen.getByLabelText('风险说明') as HTMLInputElement).checked).toBe(false)
+  fireEvent.click(screen.getByLabelText('风险说明'))
+  expect(screen.getByText('第 3 / 3 题')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '上一个' }))
+  expect((screen.getByLabelText('实施计划') as HTMLInputElement).checked).toBe(false)
+  expect((screen.getByLabelText('风险说明') as HTMLInputElement).checked).toBe(true)
+  fireEvent.click(screen.getByLabelText('风险说明'))
+  expect(screen.getByText('第 3 / 3 题')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: '需要你补充 · 3 个问题' }))
   expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
   mounted.unmount()
@@ -397,7 +410,7 @@ it('supports single/multiple/free answers, validates missing fields, preserves d
   fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
   expect(answer).toHaveBeenCalledWith([
     { questionId: 'object', optionIds: ['a'], text: '' },
-    { questionId: 'scope', optionIds: ['plan', 'risk'], text: '' },
+    { questionId: 'scope', optionIds: ['risk'], text: '' },
     { questionId: 'date', optionIds: [], text: '下周五' },
   ])
   fireEvent.click(screen.getByRole('button', { name: '取消本次任务' }))
@@ -417,6 +430,7 @@ it('custom single-choice text clears its selected option rather than submitting 
     </TestWorkspace>,
   )
   fireEvent.click(screen.getByLabelText('网站上线'))
+  expect(answer).not.toHaveBeenCalled()
   fireEvent.change(screen.getByRole('textbox'), { target: { value: '先讨论新的项目' } })
   fireEvent.click(screen.getByRole('button', { name: '提交回答' }))
   expect(answer).toHaveBeenCalledWith([
@@ -549,8 +563,10 @@ it('does not apply an old response after account changes', async () => {
   )
   expect(continued).not.toHaveBeenCalled()
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: '提交回答' }).hasAttribute('disabled')).toBe(false),
+    expect(screen.getByRole('button', { name: '下一个' }).hasAttribute('disabled')).toBe(false),
   )
+  expect(screen.queryByRole('button', { name: '提交回答' })).toBeNull()
+  expect((screen.getByLabelText('网站上线') as HTMLInputElement).checked).toBe(false)
 })
 
 it('redacts a revoked source even when its server projection has the same revision as a saved answer', async () => {
