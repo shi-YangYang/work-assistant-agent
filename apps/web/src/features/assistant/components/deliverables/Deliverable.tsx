@@ -54,10 +54,15 @@ function ImageTaskEntry({ items }: { items: DeliverableSummary[] }) {
     : `生成图片（${items.reduce((count, item) => count + (item.files?.length ?? 0), 0)}张）`
   return (
     <>
-      <button className={styles.entry} onClick={() => setOpen(true)}>
-        <FileText size={16} aria-hidden="true" />
-        <span>查看{title}</span>
-        <ArrowUpRight size={14} aria-hidden="true" />
+      <button className={styles.entry} aria-label={`查看${title}`} onClick={() => setOpen(true)}>
+        <span className={styles.entryIcon} aria-hidden="true">
+          <FileText size={24} />
+        </span>
+        <span className={styles.entryContent}>
+          <span className={styles.entryTitle}>{title}</span>
+          <span className={styles.entryHint}>查看详情</span>
+        </span>
+        <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
       </button>
       {open && (
         <Modal title={title} variant="drawer" onClose={() => setOpen(false)}>
@@ -91,17 +96,27 @@ export function DeliverableEntry({
   }, [open, onContinue])
   return (
     <>
-      <GeneratedFiles
-        deliverableId={item.id}
-        revision={item.revision}
-        files={item.files}
-        includeImages={includeImages}
-      />
+      {includeImages && (
+        <GeneratedFiles
+          deliverableId={item.id}
+          revision={item.revision}
+          files={item.files?.filter((file) => file.mimeType === 'image/png')}
+        />
+      )}
       {showEntry && (
-        <button className={styles.entry} onClick={() => setOpen(true)}>
-          <FileText size={16} aria-hidden="true" />
-          <span>查看{item.title}</span>
-          <ArrowUpRight size={14} aria-hidden="true" />
+        <button
+          className={styles.entry}
+          aria-label={`查看${item.title}`}
+          onClick={() => setOpen(true)}
+        >
+          <span className={styles.entryIcon} aria-hidden="true">
+            <FileText size={24} />
+          </span>
+          <span className={styles.entryContent}>
+            <span className={styles.entryTitle}>{item.title}</span>
+            <span className={styles.entryHint}>查看详情</span>
+          </span>
+          <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
         </button>
       )}
       {showEntry && open && (

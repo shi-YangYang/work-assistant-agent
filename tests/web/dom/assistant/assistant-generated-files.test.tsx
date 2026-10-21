@@ -353,14 +353,19 @@ it('keeps the requested version for file downloads and subsequent chat edits', a
   })
   const onContinue = vi.fn()
   render(
-    <DeliverableEntry
-      item={{ ...summary, files: [file('分析-2.pptx')] }}
+    <MessageDeliverables
+      items={[{ ...summary, files: [file('分析-2.pptx')] }]}
+      complete
       onContinue={onContinue}
     />,
   )
+  expect(screen.queryByRole('list', { name: '生成文件 · 版本 2' })).toBeNull()
+  expect(screen.queryByRole('button', { name: '下载分析-2.pptx' })).toBeNull()
+  expect(fetch).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('button', { name: '查看销售分析' }))
   const dialog = await screen.findByRole('dialog')
   await within(dialog).findByText('分析结果')
+  expect(within(dialog).getByRole('button', { name: '下载分析-2.pptx' })).toBeTruthy()
   fireEvent.click(within(dialog).getByText('版本 2'))
   fireEvent.click(within(dialog).getByRole('button', { name: '上一版本' }))
   fireEvent.click(await within(dialog).findByRole('button', { name: '下载分析-1.pptx' }))
