@@ -25,6 +25,9 @@ class ScopedJudge:
             'requireConfirmation': self.preview, 'resumeTask': self.resume, 'appendFields': list(self.append),
             'appendValues': self.append_values if self.append_values is not None else {name: payload['proposedOperation']['changes'][name] for name in self.append},
             'failureKind': self.kind, 'taskContext': self.interpretation,
+            'recoveryOwner': 'user' if self.kind == 'missing_info' else 'assistant',
+            'missingInputs': [{'field': 'target', 'question': '请说明要更新哪项工作？',
+                               'unavailableFromSources': '现有来源没有明确目标', 'candidateIds': []}] if self.kind == 'missing_info' and not self.allowed else [],
             'directiveTargetId': self.directive_target, 'directiveFields': list(self.directive_fields)}))
 
 

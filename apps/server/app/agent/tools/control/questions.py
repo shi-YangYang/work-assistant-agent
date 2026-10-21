@@ -7,17 +7,13 @@ from app.modules.interactions.schemas import Question
 
 @tool
 async def request_user_input(questions: list[Question], runtime: ToolRuntime[RunContext], continue_task: bool = False) -> str:
-    """Ask 1-3 necessary questions, then stop while waiting for the actual user.
+    """Show 1-3 clarification questions and wait for the actual user's answer.
 
-    Also use when the user explicitly requests the temporary question form to
-    choose preferences; prose A/B options do not display that component.
-    Use for unresolved targets, required dates or preferences, not authorization
-    approval (business actions provide their own approval cards). Support single,
-    multiple or text type. Always allowCustom when the user may supply an answer
-    absent from your options. Object options MUST use already read objectType and
-    objectId; labels are resolved by server. Text preferences use option IDs only.
-    Never ask about optional work fields or themes delegated to you to invent.
-    The user's answer resumes this same task and saved steps must not repeat.
+    Use single, multiple or text type; allowCustom for answers outside options.
+    Object options require already read objectType and objectId; the server
+    resolves labels. Preference options use IDs and labels without object fields.
+    Business approval uses its own cards. Answers resume this task without
+    repeating completed steps.
     Set continue_task=true when this input answers the previous task's question
     and you still need other information; false for a genuinely unrelated task.
     """

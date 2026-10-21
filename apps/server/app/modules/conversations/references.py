@@ -9,6 +9,7 @@ from app.modules.attachments.documents import detach_material_coverage
 
 
 REPORT_RECEIPT_PROJECTION = 1
+FEEDBACK_PROJECTION = 2
 
 
 def action_reference(card):
@@ -36,7 +37,19 @@ async def message_reference(db, actor, message, *, job=None, job_loaded=False):
     # Only keep independently checked non-execution prose beside receipts.
     # Legacy replies may claim obsolete pending/success states, so omit those.
     reply = stored.get('conversationReply', '') if cards else message.reply
+    if job:
+        from app.tasks.feedback.public import prose, technical_question
+        failures = [item for item in stored.get('toolOutcomes', [])
+                    if item.get('category') in ('invalid_arguments', 'missing_info')]
+        # A failed scope/argument attempt is not a new user instruction. Its
+        # free-form refusal (including invented follow-up requirements) must not
+        # become the next turn's plan. Keep the request, real receipts and source
+        # indexes; validated non-execution prose can still be referenced.
+        if failures and not technical_question(request_text(message, job)):
+            reply = stored.get('conversationReply', '')
+        reply = prose(reply, job, request_text(message, job))
     return material_scope_reference({
+        'feedbackProjection': FEEDBACK_PROJECTION,
         **({'workReference': {'workId': message.work_reference['workId']}} if message.work_reference else {}),
         'id': message.id, 'userText': request_text(message, job),
         'materialTranscript': transcript_groups(message.transcript, stored)[1],

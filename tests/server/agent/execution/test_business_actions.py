@@ -326,7 +326,7 @@ async def test_same_name_targets_and_previous_results_reach_independent_judge(se
     context.intent_model = Judge(False, failure_kind='missing_info')
     await read_work(context, first['id'])
     result = await execute(context, step=1, action='update_work', target_id=first['id'], expected_revision=1, changes={'status': 'done'})
-    assert result['state'] == 'clarification' and result['category'] == 'missing_info'
+    assert result['state'] == 'waiting' and result['category'] == 'missing_info'
     assert (await c['employee'].get('/api/v1/work-items/' + first['id'])).json()['revision'] == 1
     supplied = context.intent_model.inputs[0]
     assert len(supplied['proposedOperation']['targetCandidates']) == 2

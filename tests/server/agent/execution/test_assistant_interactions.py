@@ -156,19 +156,32 @@ async def test_normal_message_consumes_answer_only_after_semantic_continuation(s
         assert bool(row.continuation) == (relation == 'continue')
 
 
-async def test_harness_questions_stop_before_parallel_write_or_second_model_call(setup):
+@pytest.mark.parametrize('load_context', [False, True])
+async def test_harness_questions_stop_before_parallel_write_or_next_model_call(setup, load_context):
     from langchain_openai import ChatOpenAI
     from langchain_core.messages import AIMessage
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from app.tasks.processing.handlers import process_job
     from app.modules.work.models import WorkItem
+    from app.agent.prompts.main import POLICIES
     from pydantic import Field
     class AskingModel(ChatOpenAI):
         calls: int = 0
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
             self.calls += 1
-            assert self.calls == 1, 'Waiting must not consume more model calls'
+            assert self.calls <= 1 + int(load_context), 'Waiting must not consume more model calls'
+            names = [item['function']['name'] for item in kwargs['tools']]
+            assert names.count('request_user_input') == 1
+            if self.calls == 1:
+                assert names == ['load_tools', 'request_user_input']
+                assert POLICIES['task_context'] not in messages[0].text
+                if load_context:
+                    return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[{
+                        'id': 'load', 'name': 'load_tools', 'args': {'groups': ['work', 'task_context']}}]))])
+            else:
+                assert 'set_task_context' in names and 'execute_business_action' in names
+                assert messages[0].text.count(POLICIES['task_context']) == 1
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[{'id': 'question', 'name': 'request_user_input', 'args': {'questions': [{'id': 'target', 'prompt': '选择目标', 'type': 'text'}]}}, {'id': 'write', 'name': 'execute_business_action', 'args': {'step': 1, 'action': 'create_work', 'changes': {'title': '不应写入'}}}]))])
     settings, sessions, users, clients = setup
     context, sent = await mode_runtime(setup, 'full', '缺少目标，先问我再创建')
@@ -183,6 +196,7 @@ async def test_harness_questions_stop_before_parallel_write_or_second_model_call
     async with sessions() as db:
         job = await db.get(Job, context.job_id)
         assert job.lease_until is None
+        assert job.result.get('toolCatalog', {}).get('groups', []) == (['work', 'task_context'] if load_context else [])
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 0
 
 

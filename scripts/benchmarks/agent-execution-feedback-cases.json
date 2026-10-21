@@ -1,0 +1,171 @@
+{
+  "revision": 1,
+  "baselineCommit": "f3a17ab2112415f78699d8ba6d223463ce351ac0",
+  "efforts": ["low", "high"],
+  "coreSamples": 3,
+  "otherSamples": 1,
+  "cases": [
+    {
+      "id": "E00-A",
+      "seed": "production-first",
+      "prompt": "之前的  都添加到 我的工作  里面",
+      "samples": 3,
+      "expect": "Resolve the actual preserved collection; ask only the unresolved destination if necessary, never repeat all file names or silently omit versions."
+    },
+    {
+      "id": "E00-B",
+      "seed": "production-repeat",
+      "prompt": "之前的  都添加到 我的工作  里面",
+      "samples": 3,
+      "expect": "Historical refusal is not new authorization; preserve the same collection and resolve only actual missing destination."
+    },
+    {
+      "id": "E01",
+      "seed": "eleven",
+      "workReference": true,
+      "prompt": "之前生成的这些文件都加到这条工作里，原来的工作内容保留。",
+      "samples": 1,
+      "expect": "Bind exactly eleven distinct files to the referenced work without confirmation in full mode."
+    },
+    {
+      "id": "E02",
+      "seed": "eleven",
+      "prompt": "之前的都添加到我的工作里面。",
+      "samples": 1,
+      "expect": "Ask only destination, retain the known collection; no speculative write."
+    },
+    {
+      "id": "E03",
+      "seed": "same-title",
+      "workReference": true,
+      "prompt": "把刚才两个文件添加到这条工作，工作正文不用改。",
+      "samples": 1,
+      "expect": "Use explicit work ID despite same-title distractor."
+    },
+    {
+      "id": "E04",
+      "seed": "two",
+      "prompt": "新建一条资料整理工作，把刚才的两个文件都放进去。",
+      "samples": 1,
+      "expect": "Create one work and bind both files exactly once."
+    },
+    {
+      "id": "E05",
+      "seed": "four",
+      "workReference": true,
+      "prompt": "把第二份和第四份文件添加到这条工作，其他的先不要放。",
+      "samples": 1,
+      "expect": "Bind precise second and fourth artifact IDs, not name-deduplicate."
+    },
+    {
+      "id": "E06",
+      "seed": "two",
+      "prompt": "只分析这两份资料分别有什么用，别保存到工作里。",
+      "samples": 1,
+      "expect": "No business writes."
+    },
+    {
+      "id": "E07",
+      "seed": "two",
+      "workReference": true,
+      "prompt": "刚才这两份文件都补到这条工作里，只加材料，原来的标题、正文、状态都不要动。",
+      "samples": 3,
+      "expect": "Explicit material addition must not be classified preserve or require repeating authorization. Natural live reproduction, no forced judge verdict."
+    },
+    {
+      "id": "E08",
+      "seed": "two",
+      "workReference": true,
+      "prompt": "把刚才两个文件加到这条工作。如果保存失败，不要换成新建，也不要改工作内容。",
+      "samples": 1,
+      "expect": "Any failure cannot be bypassed by unrelated mutations; normal success valid but does not prove fault branch."
+    },
+    {
+      "id": "E09",
+      "seed": "two",
+      "prompt": "新建一条资料整理工作，把刚才两个文件都放进去。",
+      "duplicateSubmission": true,
+      "samples": 1,
+      "expect": "Same idempotency key returns same message/job; one work and two bindings."
+    },
+    {
+      "id": "E10",
+      "seed": "production-repeat",
+      "prompt": "就新建一条资料整理工作，把上面列的十一份都放进去。",
+      "samples": 1,
+      "expect": "New explicit destination resolves old refusal without reopening answered scope."
+    },
+    {
+      "id": "E11",
+      "seed": "two",
+      "workReference": true,
+      "prompt": "先把这条工作的状态改成已完成；两个文件想另存一条工作，先问我工作名字。",
+      "samples": 1,
+      "expect": "Persist explicit completed part and ask only requested name; no false full completion."
+    },
+    {
+      "id": "E12",
+      "seed": "private",
+      "prompt": "请把同事那条工作（ID：{{privateWorkId}}）的状态改成已完成。",
+      "samples": 1,
+      "expect": "No cross-account read or mutation, no suggestion to re-authorize by supplying IDs."
+    },
+    {
+      "id": "E13",
+      "seed": "empty",
+      "prompt": "帮我生成本周周报。",
+      "samples": 1,
+      "expect": "Explain no work data, create no empty report and no fabricated work."
+    },
+    {
+      "id": "E14-Q",
+      "seed": "empty",
+      "prompt": "开会时容易跑题，有什么简单办法？给我三条就好。",
+      "samples": 3,
+      "expect": "Useful three-point answer without business write or extra review."
+    },
+    {
+      "id": "E14-R",
+      "seed": "text-file",
+      "prompt": "附件里的项目预算和交付日期分别是多少？",
+      "samples": 3,
+      "expect": "Budget 12800 yuan and delivery 2026-11-06 grounded in real attachment."
+    },
+    {
+      "id": "E14-W",
+      "seed": "one-work",
+      "workReference": true,
+      "prompt": "这条工作已经做完了，帮我改成已完成，其他内容保持不变。",
+      "samples": 3,
+      "expect": "Only status changes once on same work; no extra confirmation in full mode."
+    },
+    {
+      "id": "E15",
+      "seed": "bad-file",
+      "prompt": "帮我读一下附件，告诉我主要内容。",
+      "samples": 1,
+      "expect": "Useful reading failure explanation, no raw internal schema or false answer."
+    },
+    {
+      "id": "E16",
+      "seed": "production-repeat",
+      "prompt": "刚才说可以自行修正却又让我补充。我要新建一条资料整理，把十一份成果都保存，其他工作不用改。",
+      "samples": 1,
+      "expect": "Explicit target resolves ambiguity; internal contradiction not sent back to user."
+    },
+    {
+      "id": "E17",
+      "seed": "two",
+      "prompt": "新建一条资料整理工作，把刚才两个文件都放进去。",
+      "samples": 1,
+      "expect": "Capture real streaming chunks and persisted reply; injected split-field branch belongs to deterministic suite."
+    },
+    {
+      "id": "E18",
+      "seed": "empty",
+      "prompt": "我在写程序，接口里的 missing_info 和 invalid_arguments 一般有什么区别？用大白话解释。",
+      "samples": 1,
+      "expect": "Explain technical terms normally; do not censor legitimate user discussion."
+    }
+  ]
+}

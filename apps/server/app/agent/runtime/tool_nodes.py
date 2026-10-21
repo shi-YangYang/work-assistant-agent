@@ -47,7 +47,9 @@ def outcome(message):
     except (ValueError, TypeError):
         # Legacy free-form refusal strings carry no success proof. They are
         # normal business responses; never identify errors by prose keywords.
-        return ('failed', '工具未完成，请查看答复') if message.status == 'error' else ('awaiting_input', '请查看答复并补充信息')
+        return (('failed', '操作尚未完成，请查看答复')
+                if message.status == 'error' or message.name == 'execute_business_action'
+                else ('succeeded', ''))
     if isinstance(value, dict):
         state = value.get('state') or value.get('status')
         if message.name == 'generate_image' and state == 'partial':
@@ -59,9 +61,12 @@ def outcome(message):
         if state == 'not_requested':
             return 'cancelled', '本次未要求该操作'
         if 'error' in value or state in ('failed', 'conflict', 'unavailable', 'cancelled', 'unknown', 'retryable'):
-            return 'failed', '操作未执行，请查看业务说明'
+            return 'failed', '操作尚未完成，请查看业务说明'
         if state in ('clarification', 'waiting', 'not_found'):
-            return 'awaiting_input', '需要补充信息' if state != 'not_found' else '未找到匹配内容'
+            from app.tasks.feedback.public import user_gap
+            if value.get('interactionId') or user_gap(value):
+                return 'awaiting_input', '需要补充信息'
+            return 'failed', '未找到匹配内容' if state == 'not_found' else '操作尚未完成'
         if state == 'pending':
             return 'awaiting_confirmation', ''
     return ('failed', '工具未完成，请查看业务说明') if message.status == 'error' else ('succeeded', '')

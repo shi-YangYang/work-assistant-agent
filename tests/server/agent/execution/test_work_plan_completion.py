@@ -154,12 +154,15 @@ async def test_input_scope_reset_discards_old_requirements_but_worker_resume_kee
     async with context.sessions.begin() as db:
         live = await db.get(Job, context.job_id)
         remember(live, scope=context.node_scope, target='work', revision=1, title='任务', fields=['body'], previous_receipts=[])
+        remember(live, scope=context.node_scope, target='candidate', revision=1, title='尚未选定', fields=['materials'], previous_receipts=[], selected=False)
     await initialize(copy.copy(context), 'original-input')
     async with context.sessions() as db:
         assert (await db.get(Job, context.job_id)).result['workChangeRequirements']['targets']['work']['fields']
+        assert (await db.get(Job, context.job_id)).result['workChangeCandidates']['targets']['candidate']['fields']
     await initialize(context, 'changed-input')
     async with context.sessions() as db:
         assert 'workChangeRequirements' not in (await db.get(Job, context.job_id)).result
+        assert 'workChangeCandidates' not in (await db.get(Job, context.job_id)).result
 
 
 @pytest.mark.asyncio

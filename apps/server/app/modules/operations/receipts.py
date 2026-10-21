@@ -58,6 +58,25 @@ async def refresh_generation(db, actor, row):
         row.result = {**row.result, 'message': GENERATION_FAILURE_MESSAGE}
 
 
+async def pending_material_sources(db, actor, row, changes):
+    """Resolve the sources this approved write would bind, without saving them."""
+    update = changes.get('update') or {}
+    # Match apply_action: progress fields replace the corresponding top-level
+    # material fields, then explicitly shared attachments are appended.
+    sources = list(update.get('materials', changes.get('materials', [])))
+    identifiers = update.get('materialIds', changes.get('materialIds', []))
+    if identifiers:
+        from app.modules.work.materials.service import require_materials
+        work = await owned(db, WorkItem, row.params['targetId'], actor)
+        materials, _ = await require_materials(db, actor, work, identifiers)
+        sources.extend(material.source for material in materials)
+    if row.params.get('sharedAttachmentIds'):
+        from app.modules.operations.mutations.publication import selected_attachments
+        attachments = await selected_attachments(db, actor, row.params['sharedAttachmentIds'], row.conversation_id)
+        sources.extend({'attachmentId': attachment['id']} for attachment in attachments)
+    return sources
+
+
 async def action_dto(db, actor, row, *, refresh_child=True):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
@@ -75,9 +94,14 @@ async def action_dto(db, actor, row, *, refresh_child=True):
             value = await preview(db, actor, row)
             if digest(value) != row.result.get('previewDigest'):
                 problem(409, '内容或删除范围已变化，请重新提出操作')
-            return {**base, 'preview': {k: v for k, v in value.items() if k != 'impact'}, 'impact': {k: v for k, v in value.get('impact', {}).items() if k in ('messages', 'attachments')}, 'canConfirm': True}
+            material_receipt = {}
+            if row.action in ('create_work', 'update_work'):
+                material_receipt = {'objectId': row.params.get('targetId', ''),
+                                    'materialSources': await pending_material_sources(db, actor, row, value['changes'])}
+            return {**base, **material_receipt, 'preview': {k: v for k, v in value.items() if k != 'impact'}, 'impact': {k: v for k, v in value.get('impact', {}).items() if k in ('messages', 'attachments')}, 'canConfirm': True}
         if row.state in ('failed', 'conflict', 'cancelled'):
-            return {**base, 'message': row.result.get('message', '')}
+            from app.tasks.feedback.public import message as public_message
+            return {**base, 'message': public_message(row.result) if row.result.get('message') else ''}
         kind, identifier = row.result.get('objectType'), row.result.get('objectId')
         if row.action.startswith('delete_') and row.state == 'succeeded':
             return {**base, 'message': '记录已删除'}
@@ -90,6 +114,12 @@ async def action_dto(db, actor, row, *, refresh_child=True):
         else:
             title, details = f'{item.period} {"日报" if item.kind == "daily" else "周报"}', {}
         result = {**base, 'objectType': kind, 'objectId': identifier, 'objectRevision': row.result.get('revision'), 'title': title, 'details': details, 'changedFields': row.result.get('changedFields', []), 'message': row.result.get('message', ''), 'updateId': row.result.get('updateId'), 'updateRevision': row.result.get('updateRevision'), 'materialIds': row.result.get('materialIds', [])}
+        if kind == 'work' and row.state == 'succeeded' and row.result.get('materialIds'):
+            from app.modules.work.models import WorkMaterial
+            materials = (await db.scalars(select(WorkMaterial).where(
+                WorkMaterial.id.in_(row.result['materialIds']), WorkMaterial.work_id == item.id,
+                WorkMaterial.company_id == actor.company_id, WorkMaterial.owner_id == actor.id))).all()
+            result['materialSources'] = [material.source for material in materials]
         if row.result.get('jobId'):
             job = await owned(db, Job, row.result['jobId'], actor)
             result['job'] = job_dto(job)
@@ -159,11 +189,12 @@ def receipt_reply(review, cards, drafts=(), deliverables=''):
     if review.verified and review.needs_action:
         parts.append('本次请求仍有操作未完成；已保存的结果会保留。')
     elif review.verified and cards and (review.task or {}).get('state') in ('needs_input', 'blocked') and (review.task or {}).get('remaining'):
-        parts.append('本次请求仍有操作未完成：' + '；'.join(review.task['remaining']) + '。')
+        from app.tasks.feedback.public import error as public_error
+        parts.append('本次请求仍有操作未完成：' + '；'.join(public_error(text) for text in review.task['remaining']) + '。')
     if review.verified and review.needs_response:
-        parts.append('所需答复尚未完成核对，暂时无法提供完整结果。')
+        parts.append('这次还没能给出完整答复，已保存的内容会保留。')
     if not review.verified:
-        parts.append('答复说明暂未完成核对；已保存的操作结果以上方记录为准。' if cards else '答复暂未完成核对，请重试答复核对；业务操作结果会保留。')
+        parts.append('这次还没能给出完整答复；已保存的内容见上方记录。' if cards else '这次还没能给出完整答复，请重试；已保存的内容会保留。')
     elif review.execution_claims and not cards and not drafts and not deliverables:
         parts.append('本次没有保存新的业务操作结果，未执行创建、修改、提交或删除。')
     elif not parts:

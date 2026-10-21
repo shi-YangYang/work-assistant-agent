@@ -12,13 +12,13 @@ from app.tasks.lease import lease
 from sqlalchemy import select
 
 
-async def ask(context, raw_questions, *, continue_task=False):
+async def ask(context, raw_questions, *, continue_task=False, append_pending=False):
     questions = [Question.model_validate(value) for value in raw_questions]
     if not 1 <= len(questions) <= 3 or len({q.id for q in questions}) != len(questions):
         problem(422, '一次请集中提出 1～3 个不同问题')
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
-        source = await owned(db, Message, job.target_id, actor)
+        source = await owned(db, Message, job.target_id, actor, lock=append_pending)
         from app.agent.context.task_context import load
         snapshot = await load(context, db, actor, job, source)
         if continue_task and snapshot.get('previousTask'):
@@ -57,12 +57,30 @@ async def ask(context, raw_questions, *, continue_task=False):
                     option['objectRevision'] = item.revision
                     option['label'] = item.title if kind == 'work' else f'{item.period} {"日报" if item.kind == "daily" else "周报"}'
                     option['description'] = item.content.get('summary', '')[:160] if kind == 'work' and item.owner_id == actor.id else ''
+        waiting = None
+        if append_pending:
+            waiting = await db.scalar(select(AssistantInteraction).where(
+                AssistantInteraction.message_id == source.id,
+                AssistantInteraction.task_id == snapshot['taskId'], AssistantInteraction.state == 'waiting'))
+            if waiting:
+                # Keep earlier questions from this same batch. Additional
+                # collections remain durable if the existing three-question
+                # panel is full; a later turn can resolve their destinations.
+                known = {question['id'] for question in waiting.questions}
+                values = [*waiting.questions, *(question for question in values if question['id'] not in known)][:3]
+                if values == waiting.questions:
+                    return {'state': 'waiting', 'interactionId': waiting.id, 'message': '等待用户回答'}
         # A model may reuse short IDs such as `details` across task stages.
         # Deduplicate the actual missing information, not those arbitrary IDs.
         key = digest([{**q, 'prompt': q['prompt'].strip(), 'options': [{k: v for k, v in option.items() if k != 'objectRevision'} for option in q['options']]} for q in values])
         prior = await db.scalar(select(AssistantInteraction).where(AssistantInteraction.task_id == snapshot['taskId'], AssistantInteraction.key == key))
         if prior:
             return {'state': 'waiting' if prior.state == 'waiting' else prior.state, 'interactionId': prior.id, 'message': '等待用户回答' if prior.state == 'waiting' else '这个问题已经处理，使用已有答案，不要再次提问'}
+        if waiting:
+            waiting.questions, waiting.key = values, key
+            waiting.revision += 1
+            waiting.updated_at = now()
+            return {'state': 'waiting', 'interactionId': waiting.id, 'message': '等待用户回答'}
         from app.modules.interactions.lifecycle import expire
         await expire(db, conversation_id=source.conversation_id)
         row = AssistantInteraction(company_id=actor.company_id, owner_id=actor.id, conversation_id=source.conversation_id,
@@ -72,6 +90,12 @@ async def ask(context, raw_questions, *, continue_task=False):
         await db.flush()
         job.result = {**job.result, 'waitingInteractionId': row.id}
         return {'state': 'waiting', 'interactionId': row.id, 'message': '问题已展示，请等待用户回答；不要执行依赖答案的操作'}
+
+
+def question_text(question):
+    if all(item['id'].startswith('material-destination-') for item in question.questions):
+        return question.questions[0]['prompt'] if len(question.questions) == 1 else '请选择这些文件各自的保存位置。'
+    return '请补充下面的信息，我会继续原任务。'
 
 
 async def pending(db, actor, job, message):
@@ -85,7 +109,7 @@ async def waiting_text(context, *, include_actions=True):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         question, action = await pending(db, actor, job, message)
-        return '请补充下面的信息，我会继续原任务。' if question else '请确认下方操作，确认后继续原任务。' if action and include_actions else None
+        return question_text(question) if question else '请确认下方操作，确认后继续原任务。' if action and include_actions else None
 
 
 async def finish_waiting(context, answer=None):
@@ -99,11 +123,14 @@ async def finish_waiting(context, answer=None):
             return False
         from app.modules.operations.receipts import message_actions, receipt_summary
         cards = await message_actions(db, actor, message)
-        message.reply = '请补充下面的信息，我会继续原任务。' if question else receipt_summary(cards)
+        message.reply = question_text(question) if question else receipt_summary(cards)
         message.access = job.access
         job.state, job.phase, job.error = 'awaiting_input', 'awaiting_answer' if question else 'awaiting_confirmation', ''
         job.lease_until, job.updated_at = None, now()
-        interpretation = {**job.result.get('intentTaskInterpretation', {}), 'state': 'needs_input' if question else 'needs_confirmation', 'remaining': [q['prompt'] for q in question.questions] if question else [], 'relation': job.result.get('taskSnapshot', {}).get('relation', 'new')}
+        prior = job.result.get('intentTaskInterpretation', {})
+        remaining = list(dict.fromkeys([*prior.get('remaining', []), *[q['prompt'] for q in question.questions]])) if question else []
+        interpretation = {**prior, 'state': 'needs_input' if question else 'needs_confirmation', 'remaining': remaining,
+                          'relation': job.result.get('taskSnapshot', {}).get('relation', 'new')}
         from app.tasks.feedback.outcomes import derive
         job.result = {**job.result, 'taskInterpretation': interpretation}
         outcome = derive(job, cards, interpretation=interpretation)

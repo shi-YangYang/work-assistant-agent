@@ -4,7 +4,9 @@
 
 ## 当前规格
 
-Spec 001～074 已汇总为历史摘要，暂无未归档规格。
+| Spec | 内容 | 状态 |
+| --- | --- | --- |
+| [075](spec-075-agent-execution-feedback/spec.md) | Agent 执行范围、受阻恢复与用户反馈治理 | 实施中 |
 
 ## 文档分工
 
@@ -15,4 +17,4 @@ Spec 001～074 已汇总为历史摘要，暂无未归档规格。
 
 ## 生命周期
 
-新 Spec 从 **075** 继续，使用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+下一个 Spec 使用 **076**，采用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

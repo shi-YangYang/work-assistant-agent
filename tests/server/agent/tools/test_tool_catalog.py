@@ -31,11 +31,11 @@ def fake(**kwargs):
     return CatalogModel(model='controlled-catalog', api_key='no-network', **kwargs)
 
 
-async def test_ordinary_prose_has_only_catalog_once_and_keeps_clock_role_mode(setup):
+async def test_ordinary_prose_exposes_catalog_and_question_once_and_keeps_clock_role_mode(setup):
     model = fake(scenario='prose', answer='完整回答。')
     result, stored = await run(setup, model, '介绍一下你的作用')
     assert result['reply'] == '完整回答。' and model.calls == 1
-    assert model.requests == [{'tools': ['load_tools'], 'tool_choice': 'auto'}]
+    assert model.requests == [{'tools': ['load_tools', 'request_user_input'], 'tool_choice': 'auto'}]
     assert not stored.get('toolCatalog') and not stored.get('deliveryRepairs')
     assert result['job']['taskOutcome']['state'] == 'completed'
     assert '当前请求时间' in model.systems[0] and 'Asia/Shanghai' in model.systems[0]
@@ -43,15 +43,19 @@ async def test_ordinary_prose_has_only_catalog_once_and_keeps_clock_role_mode(se
     # Persona examples are intentional; keep capability rules out of the cold prompt.
     from app.agent.prompts.main import POLICIES
     assert all(policy not in model.systems[0] for policy in POLICIES.values())
-    assert len(json.dumps(model.schemas[0], ensure_ascii=False)) < 1300
+    assert 'request_user_input' in model.systems[0] and '实际用户回答前' in model.systems[0]
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    from app.agent.tools.control.questions import request_user_input
+    assert model.schemas[0][1] == convert_to_openai_tool(request_user_input)
+    assert len(json.dumps(model.schemas[0][0], ensure_ascii=False)) < 1300
 
 
 async def test_load_read_then_prose_exposes_only_requested_full_schemas(setup):
     model = fake(answer='当前没有工作。')
     result, stored = await run(setup, model, '查我的工作')
     assert result['reply'] == '当前没有工作。' and model.calls == 3
-    assert model.requests[0]['tools'] == ['load_tools']
-    assert set(model.requests[1]['tools']) == {'load_tools'} | (GROUPS['work'] - {'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})
+    assert model.requests[0]['tools'] == ['load_tools', 'request_user_input']
+    assert set(model.requests[1]['tools']) == {'load_tools', 'request_user_input'} | (GROUPS['work'] - {'find_team_members', 'query_team_business', 'read_team_source', 'propose_followup'})
     assert '工具定义' in model.schemas[0][0]['function']['description']
     assert 'bodyEdits' in model.schemas[1][1]['function'].get('description', '') or any('bodyEdits' in str(tool) for tool in model.schemas[1])
     assert '工作：' not in model.systems[0] and '工作：' in model.systems[1]

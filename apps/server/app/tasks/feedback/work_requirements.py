@@ -5,8 +5,11 @@ LABELS = {'title': '标题', 'summary': '工作说明', 'status': '状态', 'blo
           'materials': '材料', 'removeMaterial': '移除材料'}
 
 
-def remember(job, *, scope, target, revision, title, fields, previous_receipts, definitions=None):
-    state = job.result.get('workChangeRequirements', {})
+def remember(job, *, scope, target, revision, title, fields, previous_receipts, definitions=None, selected=True):
+    # A plan extracted against a proposed target is not yet a user-selected
+    # destination. Keep it for patch repair, outside task completion coverage.
+    key = 'workChangeRequirements' if selected else 'workChangeCandidates'
+    state = job.result.get(key, {})
     if state.get('version') != 1 or state.get('scope') != scope:
         state = {'version': 1, 'scope': scope, 'messageId': job.target_id, 'targets': {}}
     targets = dict(state['targets'])
@@ -32,14 +35,15 @@ def remember(job, *, scope, target, revision, title, fields, previous_receipts, 
         name: old_fields[name] if name in old_fields and previous.get('definitions', {}).get(name) == definitions.get(name)
         else {'revision': revision, 'excludedReceipts': previous_receipts}
         for name in fields}}
-    job.result = {**job.result, 'workChangeRequirements': {**state, 'targets': targets}, 'toolOutcomes': outcomes}
+    job.result = {**job.result, key: {**state, 'targets': targets}, 'toolOutcomes': outcomes}
 
 
 def remaining(job, cards, *, include_pending=False):
+    from app.tasks.feedback.material_requirements import remaining as remaining_materials
+    result = remaining_materials(job, cards, include_pending=include_pending)
     state = job.result.get('workChangeRequirements', {})
     if state.get('version') != 1 or state.get('messageId') != job.target_id:
-        return []
-    result = []
+        return result
     for target, requirement in state['targets'].items():
         outstanding = uncovered(job, target, requirement, cards, include_pending=include_pending)
         if outstanding:
@@ -75,7 +79,7 @@ def uncovered(job, target, requirement, cards, *, include_pending=False):
 
 def rejected_plan(job, arguments, result):
     """Only the independent plan's unwritten extra-field rejection is recoverable."""
-    state = job.result.get('workChangeRequirements', {})
+    state = job.result.get('workChangeCandidates', job.result.get('workChangeRequirements', {}))
     requirement = state.get('targets', {}).get(arguments.get('target_id'))
     forbidden = {issue['field'] for issue in result.get('fieldIssues', []) if issue.get('code') == 'not_requested'}
     if (result.get('state') != 'failed' or result.get('category') != 'invalid_arguments'
@@ -115,7 +119,9 @@ def compatible_definitions(rejection, definitions):
 
 
 def descriptions(values):
-    return [f"《{item['title']}》尚未保存：" + '、'.join(LABELS[name] for name in item['fields']) for item in values]
+    return [f"请选择这 {len(item['missingMaterials'])} 份文件的保存位置。" if item.get('missingTarget')
+            else f"《{item['title']}》尚有 {len(item['missingMaterials'])} 份材料未保存。" if 'missingMaterials' in item
+            else f"《{item['title']}》尚未保存：" + '、'.join(LABELS[name] for name in item['fields']) for item in values]
 
 
 def task_with_remaining(job, cards, task):
@@ -132,8 +138,9 @@ async def settled_receipt(db, actor, row):
     from app.modules.operations.policy.rules import LABELS as ACTION_LABELS
     from app.security.access import valid
     card = {'id': row.id, 'messageId': row.message_id, 'action': row.action,
+            'taskItemId': row.task_item_key or row.result.get('originalTaskItemId'),
             'state': row.state, 'label': ACTION_LABELS[row.action]}
-    if row.action != 'update_work' or row.state != 'succeeded':
+    if row.action not in ('create_work', 'update_work') or row.state != 'succeeded':
         return card
     work = await db.get(WorkItem, row.result.get('objectId'))
     if (row.owner_id != actor.id or row.company_id != actor.company_id
@@ -141,5 +148,13 @@ async def settled_receipt(db, actor, row):
             or not work or work.deleted or work.owner_id != actor.id or work.company_id != actor.company_id
             or not await valid(db, actor, work.access, retained=True)):
         return {**card, 'state': 'unavailable'}
+    sources = []
+    if row.result.get('materialIds'):
+        from app.modules.work.models import WorkMaterial
+        from sqlalchemy import select
+        materials = (await db.scalars(select(WorkMaterial).where(
+            WorkMaterial.id.in_(row.result['materialIds']), WorkMaterial.work_id == work.id,
+            WorkMaterial.owner_id == actor.id, WorkMaterial.company_id == actor.company_id))).all()
+        sources = [material.source for material in materials]
     return {**card, 'objectId': work.id, 'objectRevision': row.result.get('revision'),
-            'changedFields': row.result.get('changedFields', [])}
+            'changedFields': row.result.get('changedFields', []), 'materialSources': sources}

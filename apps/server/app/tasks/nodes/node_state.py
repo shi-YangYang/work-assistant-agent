@@ -21,6 +21,7 @@ def iso(value):
 
 
 def node_dtos(job):
+    from app.tasks.feedback.public import node_error
     state = job.result.get('nodeExecution', {})
     rows = state.get('nodes', [])
     # Only the active input/configuration scope is rendered. Old bounded summary
@@ -44,7 +45,7 @@ def node_dtos(job):
             'maxAttempts': row.get('maxAttempts', 4), 'retries': max(0, row['attempts'] - 1),
             'totalRetries': row.get('totalRetries', 0), 'round': row.get('round', 0),
             'nextRetryAt': iso(row.get('nextAt')) if status == 'retry_wait' else None,
-            'errorCode': row.get('errorCode', ''), 'error': row.get('error', ''),
+            'errorCode': row.get('errorCode', ''), 'error': node_error(row),
             'canRetry': row.get('resumable', False) and status == 'failed' and job.state in ('failed', 'awaiting_retry'),
         })
     return result

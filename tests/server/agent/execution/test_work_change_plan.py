@@ -42,7 +42,7 @@ async def test_independent_plan_blocks_missing_and_wrong_status_then_appends_onc
             assert payload['workChangePlan']['status']['value'] == 'blocked'
             output = json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '', 'requiredFields': ['summary', 'blocker', 'status', 'nextStep'],
                 'requestedChanges': [{'quote': quote, 'field': field, 'kind': kind} for field, quote, kind in [('summary', '名单已确认', 'progress'), ('blocker', '讲师时间还没定', 'obstacle'), ('status', '请记成有阻碍', 'status'), ('nextStep', '下一步是找讲师确认时间', 'next_action')]],
-                'appendFields': ['summary'], 'appendValues': {'summary': '名单已确认。'}})
+                'appendFields': ['summary'], 'appendValues': {'summary': '名单已确认。'}, 'materialSelection': {'mode': 'none'}})
         return {'choices': [{'message': {'role': 'assistant', 'content': output}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1)

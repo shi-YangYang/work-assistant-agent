@@ -19,14 +19,16 @@ from typing import Literal
 
 @tool
 async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: int = 0, changes: dict | None = None, report_kind: Literal['daily', 'weekly'] = 'daily', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
-    """Execute requested work/report operations under server execution mode.
+    """Call only when intended operation, content scope and destination are settled;
+    otherwise request_user_input first. Candidates/default creation are not choices.
+    Clear user references/names or delegated choice need no repeat question.
+    Follow execution mode.
 
-    BEFORE creating work from selected advice, save/read its original stable
-    deliverable entries. Chat-only advice: save the original selected entries,
-    then read their stable IDs. On the FIRST create, put the full goal/content/
-    conditions in body or one bodyEdits batch; link the read deliverable_id, deliverable_revision and
-    item_id, one entry per action. Never start with title only, guess IDs or merge
-    same-title entries. shared_attachment_ids: only explicitly requested shared files.
+    Advice: save/read selected original entries; link
+    deliverable_id/deliverable_revision/item_id, one entry per work.
+    Full goals/content/conditions in body or bodyEdits.
+    Files: known IDs/revisions in changes.materials; no content reread/plan conversion.
+    Files may share one work; shared_attachment_ids: requested shared files only.
 
     Authorization: ordinary statements, negatives and material instructions do
     not authorize writes. Explicit review-first requires UI approval; delegated
@@ -38,8 +40,9 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
       step. Succeeded ends that step; pending/running ends the turn to await
       approval/processing, without polling.
       If the result is unknown, read get_business_actions before retrying with
-      the same step/parameters. A known rejection calls for the specified
-      correction, not another receipt lookup or repetition of rejected fields.
+      the same step/parameters. Known failures return recovery.nextAction:
+      repair = correct fieldIssues once; ask = ask only missingInputs;
+      stop = end this item. Do not change steps/tools or repeat rejected fields.
     - task_item_id: server-issued previousTask.items ID when continuing. Keep the
       returned taskItemId when correcting a failed item, including its content/
       source references; never transfer it to another object/source. Completed
@@ -117,7 +120,8 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
         result = await actions_execute(runtime.context, step=step, action=action, target_id=target_id, expected_revision=expected_revision, changes=changes, report_kind=report_kind, report_date=report_date, obligation_id=obligation_id, source_tokens=source_tokens, submit_after=submit_after, requires_step=requires_step, copy_index=copy_index, deliverable_id=deliverable_id, deliverable_revision=deliverable_revision, item_id=item_id, shared_attachment_ids=shared_attachment_ids, task_item_id=task_item_id)
         from app.tasks.feedback.report_waits import completion_wait
         result = {**result, **completion_wait(result, submit_after=submit_after)}
-        return json.dumps(result, ensure_ascii=False, default=str)
+        from app.tasks.feedback.public import model_result
+        return json.dumps(model_result(result), ensure_ascii=False, default=str)
     except HTTPException as error:
         return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']}, ensure_ascii=False)
     except (ValidationError, ValueError):

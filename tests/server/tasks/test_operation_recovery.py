@@ -96,7 +96,8 @@ async def test_clarification_and_conflicts_survive_response_failure(setup):
     assert result['state'] == 'clarification' and result['category'] == 'missing_info'
     assert not detail['actions']
     assert (await c['employee'].get('/api/v1/work-items/' + work['id'])).json()['revision'] == 1
-    assert detail['job']['operationFeedback'][0]['message'] == result['message']
+    assert detail['job']['operationFeedback'][0]['message'] == result['publicMessage']
+    assert '补充' in result['publicMessage']
     context.intent_model = Judge()
     still_ambiguous = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'title': '确定标题'})
     assert still_ambiguous['state'] == 'clarification' and still_ambiguous['category'] == 'missing_info'

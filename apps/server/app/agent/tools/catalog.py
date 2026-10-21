@@ -9,6 +9,8 @@ from app.core.digests import digest
 from app.tasks.context import BudgetExceeded, RunContext
 from app.tasks.lease import lease
 
+ALWAYS_VISIBLE_TOOLS = frozenset({'request_user_input'})
+
 GROUPS = {
     'images': frozenset({'generate_image', 'read_images'}),
     'work': frozenset({'find_work_items', 'get_work_item', 'list_work_updates', 'list_work_materials', 'read_work_material', 'propose_progress', 'execute_business_action', 'get_business_actions', *TEAM_TOOL_NAMES}),
@@ -27,7 +29,7 @@ DESCRIPTIONS = {
     'documents': '读取私人附件/历史消息，保存与修改私人方案、文稿、清单及稳定条目',
     'files': '定位上传原件、表格检查、文件/图表/文档生成、Python计算及执行记录',
     'memory': '保存或忘记用户直接自述的稳定个人背景',
-    'task_context': '临时提问框（用户明确要求时使用）、集中澄清、持续指令与承接任务',
+    'task_context': '持续指令与承接任务',
 }
 RECEIPT_GROUPS = {
     'create_work': 'work', 'update_work': 'work', 'delete_work': 'work',
@@ -101,6 +103,8 @@ def remember_groups(context, job, groups):
 def remember_call_capability(context, job, call):
     """Discover a registered direct call; schema and authorization still apply."""
     name = call['name']
+    if name in ALWAYS_VISIBLE_TOOLS:
+        return
     loaded = loaded_groups(context, job)
     available = available_groups(context)
     if any(name in available[group] for group in loaded):
@@ -130,7 +134,7 @@ def catalog_schema(context, *, exclude=()):
 
 def visible_tools(context, groups):
     available = available_groups(context)
-    names = {'load_tools'}
+    names = {'load_tools'} | (ALWAYS_VISIBLE_TOOLS & allowed_tools(context))
     for group in groups:
         names.update(available.get(group, ()))
     return names

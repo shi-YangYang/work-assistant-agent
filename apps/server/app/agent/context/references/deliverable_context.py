@@ -16,7 +16,14 @@ async def deliverable_context(db, actor, message, *, job=None):
         if record:
             if job is not None:
                 remember_source(job, actor, row, record)
-            result['items'].append(summary(row, record))
+            entry = summary(row, record)
+            # Carry the exact binding shape once, next to each file; callers
+            # must not mistake a deliverable file ID for a WorkMaterial ID.
+            for file in entry['files']:
+                file['materialSource'] = {'deliverableId': row.id, 'revision': record.revision, 'fileId': file['id']}
+            result['items'].append(entry)
+    result['fileCount'] = sum(len(item['files']) for item in result['items'])
+    result['collectionComplete'] = not result['moreAvailable']
     if message.deliverable_reference:
         item, record = await check_reference(db, actor, message.deliverable_reference, message.conversation_id)
         if job is not None:

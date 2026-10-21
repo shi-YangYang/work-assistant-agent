@@ -115,6 +115,9 @@ async def assess(context, answer, *, model=None):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         cards = await message_actions(db, actor, message)
+        from app.tasks.feedback.public import prose
+        from app.modules.messages.input.input_text import request_text
+        answer = prose(answer, job, request_text(message, job))
         value = context.delivery
         if value is None:
             from app.agent.completion.completion import verified_receipt
@@ -161,6 +164,9 @@ async def delivery_for(context, raw, *, pending_task=None):
     async with context.sessions() as db:
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
+        from app.tasks.feedback.public import prose
+        from app.modules.messages.input.input_text import request_text
+        answer = prose(answer, job, request_text(message, job))
         cards = await message_actions(db, actor, message)
         waiting = (unfinished or {}).get('waitingOperationIds', [])
         if waiting:

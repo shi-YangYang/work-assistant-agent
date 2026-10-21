@@ -4,7 +4,7 @@ from collections import defaultdict
 from app.core.digests import digest
 from app.db.base import now
 from app.modules.conversations.models import Conversation, ConversationContext
-from app.modules.conversations.references import REPORT_RECEIPT_PROJECTION, has_legacy_report_reference
+from app.modules.conversations.references import REPORT_RECEIPT_PROJECTION, FEEDBACK_PROJECTION, has_legacy_report_reference
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.modules.reports.models import Report
@@ -159,6 +159,7 @@ async def references(db, actor, job, current, *, include_current=False):
             if covered and summary_sources[identifier].get('result') == stamp['result']:
                 continue
             if (cached.get(identifier) and old.get('sources', {}).get(identifier) == stamp
+                    and cached[identifier].get('feedbackProjection') == FEEDBACK_PROJECTION
                     and not has_legacy_report_reference(cached[identifier])):
                 selected.append(cached[identifier])
             else:
@@ -180,7 +181,8 @@ async def references(db, actor, job, current, *, include_current=False):
     from app.modules.conversations.references import material_scope_reference
     result = [*([summary_reference(payload)] if payload.get('summary') else []),
               *(material_scope_reference(row) for row in selected)]
-    return [{**row, 'explicitReplyTarget': row['id'] == current.reply_to} for row in result]
+    return [{**{key: value for key, value in row.items() if key != 'feedbackProjection'},
+             'explicitReplyTarget': row['id'] == current.reply_to} for row in result]
 
 
 async def capture_sources(db, actor, current, selected=None):

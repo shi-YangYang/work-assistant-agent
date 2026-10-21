@@ -1,0 +1,58 @@
+{
+  "allowed": false,
+  "quote": "之前的  都添加到 我的工作  里面",
+  "reason": "用户本条只要求把'之前的'材料添加到'我的工作'（个人工作列表/工作对象）中，但'我的工作'指向不唯一：已读取的 ownWorkRead 中只有一条工作『整理法务和财务尽调资料』，且 previousTask（0391b17f）为该请求的旧任务且状态为 cancelled，属于已中断、未被当前明确恢复，不能自动执行。当前请求也未说明要把哪些'之前的'材料、按什么范围、绑定到哪个工作，属于目标与材料范围均未确定，无法授权本更新操作。",
+  "denialScope": "target",
+  "failureKind": "missing_info",
+  "recoveryOwner": "user",
+  "missingInputs": [
+    {
+      "field": "target",
+      "question": "要把这些材料添加到哪一个已存在的工作里？（如『整理法务和财务尽调资料』，或请先在'我的工作'中新建一个工作）",
+      "unavailableFromSources": "ownWorkRead 仅返回一条工作『整理法务和财务尽调资料』，previousTask（0391b17f）状态为 cancelled，均不足以唯一确定用户所说'我的工作'指向的对象；不存在已选定的目标证据。",
+      "candidateIds": ["ed781c34-7183-4b99-87bd-fcf2fabaaef7"]
+    },
+    {
+      "field": "materials",
+      "question": "要把哪些'之前的'材料添加进去？（请明确是全部工作区文件，还是指定其中若干份）",
+      "unavailableFromSources": "当前消息用'都添加'指代不明确的历史材料集合，无法确定应绑定的具体文件，也没有材料选择原话可直接引用以解析 scope。",
+      "candidateIds": []
+    }
+  ],
+  "notRequested": false,
+  "requireConfirmation": false,
+  "receiptOnly": false,
+  "resumeTask": false,
+  "newTaskItem": false,
+  "taskItemId": "",
+  "continuingInstruction": false,
+  "taskContext": {
+    "goal": "把此前的材料添加到'我的工作'中",
+    "relation": "new",
+    "state": "needs_input",
+    "remaining": ["确认要添加的目标工作", "确认要添加的材料范围"],
+    "directiveChange": "keep",
+    "directiveQuote": "",
+    "directiveScope": ""
+  },
+  "directiveTargetId": "",
+  "directiveFields": [],
+  "appendFields": [],
+  "appendValues": {},
+  "requiredFields": [],
+  "requestedChanges": [],
+  "materialSelection": {
+    "mode": "none",
+    "quote": "之前的  都添加到 我的工作  里面",
+    "messageId": "4d08cbb2-caec-4136-9ef0-1e6919e1ec59",
+    "references": [],
+    "previousId": "",
+    "destination": "unselected",
+    "targetId": "",
+    "destinationEvidence": {
+      "source": "none",
+      "messageId": "",
+      "quote": ""
+    }
+  }
+}

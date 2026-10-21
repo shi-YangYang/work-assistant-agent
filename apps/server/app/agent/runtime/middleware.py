@@ -32,12 +32,18 @@ class ToolBoundary(AgentMiddleware):
                 from app.security.versions import validate_cached_versions
                 await validate_cached_versions(db, actor, context.read_versions,
                                                refresh_work_versions=context.refresh_work_versions)
+            material_destination_gap = any(entry.get('recovery', {}).get('materialSelectionId')
+                                           and entry.get('category') == 'missing_info'
+                                           for entry in job.result.get('toolOutcomes', []))
         if context.refresh_work_versions and not finish_only:
             reads = [tool for tool in request.tools if (tool.name if hasattr(tool, 'name') else tool.get('name', tool.get('function', {}).get('name'))) == 'get_work_item']
             system = SystemMessage(content=(request.system_message.text if request.system_message else '') + '\n工作写入遇到版本冲突，旧正文不能继续用于保存或收尾。现在仅调用 get_work_item，work_id 从以下服务端确认的目标选择，body_start=0：' + json.dumps(sorted(context.refresh_work_versions), ensure_ascii=False) + '。读取最新内容后再按用户原请求修改，保留人工新增内容。')
             return await handler(request.override(tools=reads, system_message=system,
                                                   tool_choice={'type': 'function', 'function': {'name': 'get_work_item'}}))
         from app.agent.actions.interactions import waiting_text
+        if material_destination_gap:
+            from app.agent.actions.material_questions import ask_destination
+            await ask_destination(context)
         waiting = await waiting_text(context, include_actions=any(isinstance(message, ToolMessage) and message.name == 'execute_business_action' for message in request.messages))
         if waiting:
             return ModelResponse(result=[AIMessage(id=f'interaction-wait:{context.job_id}', content=waiting)])

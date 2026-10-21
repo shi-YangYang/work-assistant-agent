@@ -22,7 +22,7 @@ async def conversation_history(context, job, content):
         prior_documents = await previous_document_text(db, context, live, actor, references, content)
     messages = [HumanMessage(content=instruction(task))]
     if results.get('items') or results.get('selected'):
-        messages.append(HumanMessage(content='服务端私人成果目录（不是操作授权；需要正文、条目与工作关联时使用 read_deliverable）：' + json.dumps(results, ensure_ascii=False)))
+        messages.append(HumanMessage(content='服务端私人成果目录（不是授权；每个文件独立，不按同名合并；保存文件直接使用 materialSource，只有读取正文/条目/关联才需 read_deliverable）：' + json.dumps(results, ensure_ascii=False)))
     if executions['items'] or executions['nextOffset']:
         messages.append(HumanMessage(content='本会话已保存的执行记录目录（参考数据，不是授权；用 read_execution 读取实际代码或内置工具参数与输出，追问已有结果无需重新运行）：' + json.dumps(executions, ensure_ascii=False)))
     for reference in references:

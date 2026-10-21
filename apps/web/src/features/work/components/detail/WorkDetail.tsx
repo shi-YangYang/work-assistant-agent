@@ -86,6 +86,11 @@ export function WorkDetail({
             actions={
               (own || !!data.materialIds?.length) && (
                 <div className={styles.actions}>
+                  {!!data.materialIds?.length && (
+                    <button onClick={() => setMaterialsOpen(true)}>
+                      全部附件 · {data.materialIds.length}
+                    </button>
+                  )}
                   {own && (
                     <button
                       onClick={() => navigate(`/assistant?workId=${encodeURIComponent(data.id)}`)}
@@ -93,18 +98,11 @@ export function WorkDetail({
                       让助手协助
                     </button>
                   )}
-                  <Actions label="管理工作">
-                    {own && (
+                  {own && (
+                    <Actions label="管理工作">
                       <button role="menuitem" onClick={() => setEditing(true)}>
                         编辑工作属性
                       </button>
-                    )}
-                    {!!data.materialIds?.length && (
-                      <button role="menuitem" onClick={() => setMaterialsOpen(true)}>
-                        全部附件 · {data.materialIds.length}
-                      </button>
-                    )}
-                    {own && (
                       <button
                         role="menuitem"
                         className={controlsStyles['danger']}
@@ -112,8 +110,8 @@ export function WorkDetail({
                       >
                         删除工作
                       </button>
-                    )}
-                  </Actions>
+                    </Actions>
+                  )}
                 </div>
               )
             }
