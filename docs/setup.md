@@ -298,7 +298,11 @@ GitHub 通过 SSH／rsync 增量上传源码，每次建立独立版本目录并
 
 发布顺序：构建镜像／拉取 PostgreSQL 和 Redis → 检查配置和密钥 → 停止 Web／API 接收新请求，最多等待 480 秒排空任务 → 停写备份 → 迁移／Redis 健康检查 → 启动 API／worker／Web → 检查 HTTPS、数据库与 worker。排空超时保持维护状态，由运维检查，不把混合版本部署当作无损滚动升级。回滚同样先停入口并排空任务，沿用已有备份恢复流程。备份位于部署目录 `backups/`、`key-backups/`，需另外异机保存。
 
-首次构建下载依赖，后续复用 Docker 缓存；构建会占用服务器资源。工作流超时 60 分钟，服务器发布超时 50 分钟。镜像按本地 image ID 固定，勿清理 `current/`、`previous/` 引用的镜像。
+首次构建下载依赖，后续复用 Docker 缓存；构建会占用服务器资源。API Python 环境、worker 的 Office／声纹环境分别构建，业务源码最后加入；修改业务源码不会重新安装这些大依赖。pip、npm 和 APT 使用 BuildKit 下载缓存，安装层重建时仍可复用下载包，缓存不会写入最终镜像。服务器清理构建缓存后，下次构建需要重新下载。
+
+生产声纹依赖由 `deploy/company/requirements-voiceprints.lock` 完整固定，适用于 Linux x86_64 CPU／Python 3.12；本项目声纹代码在依赖安装后单独安装。更新声纹依赖时，须同步该锁文件与 `packages/voiceprint-engine/pyproject.toml` 的直接依赖，并在 CPU worker 中检查依赖兼容和权重加载；不使用桌面 GPU 环境生成此锁文件。
+
+工作流超时 60 分钟，服务器发布超时 50 分钟。镜像按本地 image ID 固定，勿清理 `current/`、`previous/` 引用的镜像。
 
 Web 缓存由 `deploy/company/Caddyfile.app` 管理：HTML（含前端路由）和固定文件名资源使用 `no-cache`，保留 ETag 校验；`/assets/` 下带构建哈希的资源使用 `public, max-age=31536000, immutable`。缺失静态文件返回不缓存的 404，不回退成首页。API、私有文件及流式响应沿用后端的缓存规则。部署不会强制刷新已打开的页面；此前缓存的旧页面可能仍需手动刷新一次。
 
