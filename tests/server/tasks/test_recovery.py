@@ -138,7 +138,7 @@ class ReferenceRecoveryModel(ReviewedFixtureModel):
         if isinstance(messages[-1], ToolMessage) and messages[-1].name != 'load_tools':
             self.tool_results.append(str(messages[-1].content))
         if self.calls == 1:
-            assert [tool['function']['name'] for tool in kwargs['tools']] == ['load_tools']
+            assert [tool['function']['name'] for tool in kwargs['tools']] == ['load_tools', 'request_user_input', 'web_search']
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content='', tool_calls=[{
                 'id': 'reference-capabilities', 'name': 'load_tools', 'args': {'groups': ['work', 'documents']},
             }]))])

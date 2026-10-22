@@ -33,7 +33,7 @@ async def _request_pages(context, identifier, pages, *, resolution='normal', she
         item = await agent_attachment(db, identifier, actor, job)
         revision = item.extraction_revision
     if not pages or len(pages) > 4 or any(type(page) is not int or not 1 <= page <= 100000 for page in pages) or resolution not in ('normal', 'detail'):
-        return {'status': 'failed', 'message': '每次读取 1～4 个有效页码', 'pageRefs': []}
+        return {'status': 'failed', 'category': 'invalid_arguments', 'message': '每次读取 1～4 个有效页码', 'pageRefs': []}
     refs, errors = [], []
     for page in dict.fromkeys(pages):
         async with context.sessions() as db:

@@ -12,6 +12,7 @@ import { useState } from 'react'
 import { useGeneratedFile, useGeneratedImage } from '../../hooks/deliverables/useGeneratedFile'
 import { fileSize } from '../../utils/files'
 import styles from './GeneratedFiles.module.css'
+import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 import { ImageGenerationPlaceholder, ImageGenerationCaption } from './ImageGenerationPlaceholder'
 
 export function GeneratedFiles({
@@ -27,8 +28,12 @@ export function GeneratedFiles({
 }) {
   const visible = includeImages ? files : files.filter((file) => file.mimeType !== 'image/png')
   if (!visible.length) return null
+  const grouped = visible.length > 1 && visible.every((file) => file.mimeType !== 'image/png')
   return (
-    <ul className={styles.files} aria-label={`生成文件 · 版本 ${revision}`}>
+    <ul
+      className={grouped ? `${styles.files} ${cardStyles.card} ${cardStyles.group}` : styles.files}
+      aria-label={`生成文件 · 版本 ${revision}`}
+    >
       {visible.map((file) => (
         <GeneratedFile
           key={`${deliverableId}:${revision}:${file.id}`}
@@ -142,34 +147,53 @@ function GeneratedFile({
   const Icon =
     format === 'PPTX' ? Presentation : ['XLSX', 'CSV'].includes(format) ? Sheet : FileText
   return (
-    <li className={styles.file}>
-      <div className={styles.row}>
-        <span className={styles.icon} aria-hidden="true">
-          <Icon size={20} />
+    <li
+      className={`${cardStyles.card} ${cardStyles.fileCard} ${cardStyles.hoverActions} ${styles.file}`}
+    >
+      <button
+        className={cardStyles.fileMain}
+        type="button"
+        onClick={() => void download()}
+        disabled={busy}
+        aria-label={`下载文件${file.name}`}
+      >
+        <span className={cardStyles.icon} aria-hidden="true">
+          <Icon size={24} />
         </span>
-        <div className={styles.description}>
-          <strong title={file.name}>{file.name}</strong>
-          <span>
-            {format} · {fileSize(file.size)}
-            {file.width && file.height ? ` · ${file.width} × ${file.height}` : ''} · 版本 {revision}
+        <span className={cardStyles.content}>
+          <strong className={cardStyles.title} title={file.name}>
+            {file.name}
+          </strong>
+          <span className={`${cardStyles.meta} ${cardStyles.fileSubtitle}`} aria-hidden="true">
+            <span className={cardStyles.fileInfo}>
+              {format} · {fileSize(file.size)}
+              {file.width && file.height ? ` · ${file.width} × ${file.height}` : ''} · 版本{' '}
+              {revision}
+            </span>
+            <span className={cardStyles.fileHint}>{busy ? '正在下载' : '下载文件'}</span>
           </span>
+        </span>
+      </button>
+      <button
+        className={`${cardStyles.fileDownload} ${cardStyles.hoverAction}`}
+        type="button"
+        onClick={() => void download()}
+        disabled={busy}
+        aria-busy={busy}
+        aria-label={`${busy ? '正在下载' : '下载'}${file.name}`}
+        title={busy ? '正在下载' : '下载文件'}
+      >
+        {busy ? (
+          <LoaderCircle size={20} className={styles.spinning} aria-hidden="true" />
+        ) : (
+          <Download size={20} aria-hidden="true" />
+        )}
+      </button>
+      {error && (
+        <div className={styles['file-error']}>
+          <ErrorNotice retry={() => void download()}>{error}</ErrorNotice>
         </div>
-        <button
-          className={styles.download}
-          type="button"
-          onClick={() => void download()}
-          disabled={busy}
-          aria-label={`${busy ? '正在下载' : '下载'}${file.name}`}
-        >
-          {busy ? (
-            <LoaderCircle size={17} className={styles.spinning} aria-hidden="true" />
-          ) : (
-            <Download size={17} aria-hidden="true" />
-          )}
-          <span>{busy ? '下载中' : '下载'}</span>
-        </button>
-      </div>
-      <ErrorNotice retry={() => void download()}>{error}</ErrorNotice>
+      )}
     </li>
   )
 }

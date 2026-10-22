@@ -118,7 +118,7 @@ async def test_short_preload_budget_is_shared_and_pure_text_never_renders(setup,
     preload = next(value for value in preloads if value['attachment']['id'] == aid)
     result = json.loads(await read_document_result(context, aid))
     assert preload['positionBasis'] == result['positionBasis']
-    assert 'location' in result['positionBasis'] and '不是原文段落号' in result['positionBasis']
+    assert result['positionBasis'] == {'source': 'location', 'cursor': 'ordinal_zero_based_fragment'}
     assert [row['ordinal'] for row in result['items']] == [0, 1, 2]
     assert [row['location'] for row in preload['items']] == [row['location'] for row in result['items']] == expected
     assert ''.join(row['text'] for row in result['items']) == ''.join(row['text'] for row in preload['items'])
@@ -594,7 +594,7 @@ async def test_tool_read_scope_counts_unique_current_revision_returns_not_search
     assert empty['readScope']['returnedChunks'] == 0
     assert empty['readScope']['returnedChunksThisTask'] == 1
     assert empty['readScope']['unreturnedExtractedChunksThisTask'] == empty['readScope']['extractedChunks'] - 1
-    assert empty['readScope']['limitations']
+    assert empty['readScope']['limitationsCodes']
     context.document_reads['old-revision'] = (identifier, 0, 777)
     following = json.loads(await read_document_result(context, identifier, start=1, limit=1))
     assert following['readScope']['returnedChunksThisTask'] == 2
@@ -626,7 +626,7 @@ async def test_preload_retains_conversion_uncertainty_and_structural_table_recei
     assert converted['readScope']['allExtractedTextReturned']
     assert 'allExtractableTextReturned' not in converted['readScope']
     assert 'scope' not in converted  # readScope is the one reading receipt.
-    assert any('未核验' in text for text in converted['readScope']['limitations'])
+    assert 'conversion_fidelity_unverified' in converted['readScope']['limitationsCodes']
     spreadsheet = next(value for value in receipts if value['attachment']['id'] == files[1]['id'])
     stats = spreadsheet['tableStructure']['sheets'][0]
     assert stats['lastContentRow'] == 22050
@@ -664,7 +664,7 @@ async def test_worker_initial_model_input_uses_same_document_contract_as_tools(s
     model = InputModel(model='controlled-input-contract', api_key='test', base_url='http://127.0.0.1:1')
     await run(settings, sessions, users, sent, model)
     detail = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
-    assert detail['job']['phase'] == 'complete' and detail['job']['taskOutcome']['state'] == 'completed', detail
+    assert detail['job']['phase'] == 'complete' and detail['job']['taskOutcome']['state'] == 'completed', detail['job']
     assert 'READ-42' in detail['reply'] and not detail['job']['error']
     assert len(model.captured) == 1
     blocks = next(m.content for m in model.captured[0] if isinstance(m, HumanMessage) and isinstance(m.content, list))
@@ -690,7 +690,7 @@ async def test_worker_initial_model_input_uses_same_document_contract_as_tools(s
         assert entry['readPages']['attachment_id'] == file['id']
         assert preloaded['attachment']['extraction']['hasVisuals'] is None
         assert preloaded['readScope']['textBasis'] == 'converted_text'
-        assert any('未核验' in value for value in preloaded['readScope']['limitations'])
+        assert 'conversion_fidelity_unverified' in preloaded['readScope']['limitationsCodes']
     else:
         assert entry['extraction']['hasVisuals'] is False
         assert 'readPages' not in entry

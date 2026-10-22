@@ -33,7 +33,7 @@ class Delivery(BaseModel):
         return self
 
 
-PUBLIC_REPLY_POLICY = '''用户正文只回答用户原请求。服务端校验、工具收尾字段、内部回执编号和修复指令是控制信息，不是用户的新问题，也不是要展示的内容。内部纠错时直接交付修正后的完整结果；不要复述字段名、参数误标、核对过程或未交付草稿，不为内部修复另写道歉或处理报告。仅元数据有误时保留正确正文。真实失败或限制仍应说明对用户任务的影响、已完成部分与必要下一步，不能为了隐藏内部流程而隐瞒失败。用户明确询问产品机制时可以解释可公开的行为。\n'''
+PUBLIC_REPLY_POLICY = '''用户正文只回答用户原请求。服务端校验、材料读取范围、工具收尾字段、内部回执编号和修复指令是控制信息，不是用户的新问题，也不是要展示的内容；材料来源保留引用标记。内部纠错时直接交付修正后的完整结果；不要复述字段名、参数误标、核对过程或未交付草稿，不为内部修复另写道歉或处理报告。仅元数据有误时保留正确正文。真实失败或限制仍应说明对用户任务的影响、已完成部分与必要下一步，不能为了隐藏内部流程而隐瞒失败。用户明确询问产品机制时可以解释可公开的行为。\n'''
 
 
 def from_messages(messages):
@@ -115,6 +115,9 @@ async def assess(context, answer, *, model=None):
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
         cards = await message_actions(db, actor, message)
+        from app.tasks.feedback.public import prose
+        from app.modules.messages.input.input_text import request_text
+        answer = prose(answer, job, request_text(message, job))
         value = context.delivery
         if value is None:
             from app.agent.completion.completion import verified_receipt
@@ -161,6 +164,9 @@ async def delivery_for(context, raw, *, pending_task=None):
     async with context.sessions() as db:
         job, actor = await lease(db, context)
         message = await owned(db, Message, job.target_id, actor)
+        from app.tasks.feedback.public import prose
+        from app.modules.messages.input.input_text import request_text
+        answer = prose(answer, job, request_text(message, job))
         cards = await message_actions(db, actor, message)
         waiting = (unfinished or {}).get('waitingOperationIds', [])
         if waiting:

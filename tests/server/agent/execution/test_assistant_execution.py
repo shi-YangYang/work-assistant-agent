@@ -189,7 +189,8 @@ async def test_named_team_query_resolves_once_without_widening_scope(setup):
     assert result['total'] == 1 and result['items'][0]['title'] == '甲的工作'
     assert result['employee']['id'] == users['employee'].id
     assert result['items'][0]['token']
-    assert 'error' in json.loads(await query_team_business.coroutine(rt, employee_name=users['employee'].name, employee_ids=[users['peer'].id]))
+    invalid = json.loads(await query_team_business.coroutine(rt, employee_name=users['employee'].name, employee_ids=[users['peer'].id]))
+    assert invalid == {'state': 'failed', 'category': 'invalid_arguments', 'message': '姓名与员工 ID 不能同时指定，请选择一种查询方式。'}
     missing = json.loads(await query_team_business.coroutine(rt, employee_name='没有这个人'))
     assert missing['state'] == 'not_found' and 'items' not in missing
     async with sessions.begin() as db:
@@ -200,4 +201,5 @@ async def test_named_team_query_resolves_once_without_widening_scope(setup):
     assert 'items' not in ambiguous
     employee_context, _ = await runtime(setup)
     denied = json.loads(await query_team_business.coroutine(SimpleNamespace(context=employee_context), employee_name=users['employee'].name))
-    assert 'error' in denied
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied'
+    assert 'items' not in denied

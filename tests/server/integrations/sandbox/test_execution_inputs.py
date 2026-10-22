@@ -120,7 +120,7 @@ async def test_missing_file_is_unavailable_and_version_change_after_read_blocks_
     async with context.sessions.begin() as db:
         (await db.get(Attachment, identifier)).extraction_revision = 2
     denied = await run(context, input_refs=saved['inputRefs'])
-    assert denied['state'] == 'failed' and '版本' in denied['message'] and builtin_receipts.count == 1
+    assert denied['state'] == 'conflict' and denied['httpStatus'] == 409 and '版本' in denied['message'] and builtin_receipts.count == 1
     async with context.sessions.begin() as db:
         (await db.get(Attachment, identifier)).extraction_revision = 1
     (context.settings.media_dir / identifier).unlink()
@@ -159,7 +159,7 @@ async def test_deliverable_input_is_reusable_only_while_exact_revision_remains_a
         else:
             revision.files = []
     unavailable = await read(context, original['executionId'])
-    assert unavailable['state'] == 'unavailable' and 'inputRefs' not in unavailable
+    assert unavailable['state'] == 'failed' and unavailable['category'] == 'permission_denied' and 'inputRefs' not in unavailable
     assert 'stdout' not in unavailable and 'request' not in unavailable
     assert reference['file_id'] not in json.dumps(unavailable) and builtin_receipts.count == 3
 
@@ -187,7 +187,7 @@ async def test_work_material_uses_existing_work_authorization_and_removed_materi
     async with context.sessions.begin() as db:
         (await db.get(WorkMaterial, material_id)).removed = True
     denied = await read(context, original['executionId'])
-    assert denied['state'] == 'unavailable' and identifier not in json.dumps(denied)
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied' and identifier not in json.dumps(denied)
     assert builtin_receipts.count == 2
 
 

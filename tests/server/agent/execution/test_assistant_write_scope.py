@@ -99,7 +99,8 @@ async def test_selected_material_survives_private_conversation_deletion(setup):
     document = json.loads(await read_team_source.coroutine(token=token, child_id=files[0]['id'], runtime=SimpleNamespace(context=admin)))
     assert document['content']['text'] == '公开.txt'
     rejected = json.loads(await read_team_source.coroutine(token=token, child_id=files[1]['id'], runtime=SimpleNamespace(context=admin)))
-    assert rejected['error']['code'] == 'not_found'
+    assert rejected['code'] == 'not_found' and rejected['httpStatus'] == 404
+    assert rejected['category'] == 'permission_denied' and rejected['recovery']['nextAction'] == 'stop'
     conversation = (await c['employee'].get('/api/v1/conversations/' + sent['conversationId'])).json()
     deleted = await c['employee'].request('DELETE', '/api/v1/conversations/' + sent['conversationId'], json={'expectedRevision': conversation['revision']})
     assert deleted.status_code == 200

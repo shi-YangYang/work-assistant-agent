@@ -19,7 +19,24 @@ class Judge:
         if payload.get('task') == 'report_fact_review':
             return AIMessage(content='{"valid":true}')
         self.inputs.append(payload)
-        return AIMessage(content=json.dumps({'allowed': self.allowed, 'quote': payload['currentUserText'], 'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。', 'failureKind': self.failure_kind}))
+        missing = not self.allowed and self.failure_kind == 'missing_info'
+        verdict = {'allowed': self.allowed, 'quote': payload['currentUserText'],
+            'reason': '' if self.allowed else '这只是引用或讨论，请明确操作。', 'failureKind': self.failure_kind,
+            'recoveryOwner': 'user' if missing else 'assistant',
+            'missingInputs': [{'field': 'content', 'question': '请补充这项工作的具体内容。',
+                               'unavailableFromSources': '当前来源没有准确内容', 'candidateIds': []}] if missing else []}
+        proposal = payload.get('proposedOperation', {})
+        if proposal.get('operation', proposal.get('action')) in ('create_work', 'update_work'):
+            from app.agent.actions.material_selection import proposed_sources
+            sources = proposed_sources(proposal)
+            # This fixture authorizes exactly the supplied test operation; it
+            # does not stand in for the real model's source-selection tests.
+            verdict['materialSelection'] = {
+                'mode': 'selected' if sources else 'none', 'quote': payload['currentUserText'],
+                'references': sources, 'destination': 'existing' if proposal.get('targetId') else 'new',
+                'targetId': proposal.get('targetId', ''), 'destinationEvidence': {
+                    'source': 'user', 'messageId': payload['messageId'], 'quote': payload['currentUserText']}}
+        return AIMessage(content=json.dumps(verdict))
 
 
 async def runtime(setup, text='帮我创建工作：报价方案', who='employee', allowed=True):

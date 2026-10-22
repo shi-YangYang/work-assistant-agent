@@ -53,8 +53,12 @@ async def apply_action(db, actor, row, settings, *, confirmed=False, job=None):
     work = result['work']
     from app.modules.deliverables.service import link_work
     await link_work(db, actor, p.get('deliverableReference'), row, await db.get(WorkItem, work['id']))
+    # The receipt covers explicitly referenced existing materials too, but
+    # never credits unrelated files merely retained by the work transaction.
+    material_ids = list(dict.fromkeys([*result.get('materialIds', []),
+        *(identifier for identifier in changes.get('materialIds', []) if identifier in work.get('materialIds', []))]))
     return {'objectType': 'work', 'objectId': work['id'], 'revision': work['revision'], 'changedFields': sorted(p['changes']),
-            'updateId': result.get('update', {}).get('id'), 'updateRevision': result.get('update', {}).get('revision'), 'materialIds': result.get('materialIds', [])}
+            'updateId': result.get('update', {}).get('id'), 'updateRevision': result.get('update', {}).get('revision'), 'materialIds': material_ids}
 
 
 async def action_preview(db, actor, work, changes):

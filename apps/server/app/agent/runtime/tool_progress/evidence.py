@@ -2,6 +2,7 @@
 import json
 from dataclasses import asdict
 from app.core.digests import digest
+from app.agent.tool_results import failed_result, recoverable_result, result_state
 
 WRITES = frozenset({'generate_image', 'execute_business_action', 'propose_progress', 'propose_followup', 'save_memory', 'forget_memory', 'save_deliverable', 'request_user_input'})
 CURSORS = {'read_images': 'start', 'read_document': 'start', 'find_documents': 'start', 'read_deliverable': 'offset',
@@ -106,10 +107,6 @@ def exploratory_result(journal, call, result, identifier, deps):
     address = web_address(call)
     return bool(address and not any(row.get('address', row.get('deniedAddress')) == address
                 or row['request'] == request for row in previous))
-
-
-def failed_result(result):
-    return result.get('category') in ('invalid_arguments', 'permission_denied', 'missing_info', 'conflict', 'transient_failure') or result.get('state') in ('failed', 'conflict', 'unavailable', 'clarification', 'not_requested', 'unknown', 'retryable') or 'error' in result
 
 
 def result_key(call, result):

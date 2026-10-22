@@ -342,7 +342,7 @@ async def test_invalid_terminal_response_retries_before_caching_success(setup, f
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
         assert await invoke_harness(context, saver, '改成面对客户，更礼貌一点，时间地点不能改变。') == answer
         assert await invoke_harness(context, saver, '改成面对客户，更礼貌一点，时间地点不能改变。') == answer
-    assert calls == [{'tools': ['load_tools'], 'choice': 'auto'}] * 2
+    assert calls == [{'tools': ['load_tools', 'request_user_input', 'web_search'], 'choice': 'auto'}] * 2
     assert context.delivery['task']['state'] == 'completed'
     assert (await clients['employee'].get('/api/v1/work-items')).json()['items'] == []
     async with sessions() as db:

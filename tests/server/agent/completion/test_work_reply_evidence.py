@@ -25,7 +25,7 @@ async def test_reply_review_and_repair_get_saved_material_mapping_and_independen
     client = clients['employee']
     work = await create(client)
     attachment = await upload(client, '客户需求.txt', b'controlled requirements', 'text/plain')
-    context, _ = await mode_runtime(setup, 'full', '追加正文“先完成移动端方案”，记录进展“已经收到客户需求”，保存客户需求文件。')
+    context, _ = await mode_runtime(setup, 'full', '给《客户官网》追加正文“先完成移动端方案”，记录进展“已经收到客户需求”，保存客户需求文件。')
     context.intent_model = WorkJudge()
     await read_work(context, work['id'])
     changes = [

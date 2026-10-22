@@ -97,6 +97,7 @@ def record(job, action, arguments, result):
         'taskItemId': arguments.get('task_item_id') or '', 'references': references,
         'state': result.get('state'), 'step': arguments.get('step'), 'effect': effect, 'hasReference': has_reference,
         'target': arguments.get('target_id') or '', 'label': LABELS.get(action, '进展建议'), 'message': str(result.get('message') or '')[:500]}
+    item.update({name: result[name] for name in ('publicMessage', 'diagnostic', 'recovery', 'fieldIssues') if name in result})
     if action == 'update_work':
         from app.tasks.feedback.work_requirements import rejected_plan
         rejection = rejected_plan(job, arguments, result)
@@ -154,7 +155,8 @@ def reconcile(job, cards):
 def save(job, values):
     job.result = {**job.result, 'toolOutcomes': values}
     job.result = {**job.result, 'operationFeedback': [
-        {'key': entry['key'], **{name: entry[name] for name in ('step', 'action', 'label', 'message')},
+        {'key': entry['key'], **{name: entry[name] for name in ('step', 'action', 'label', 'message', 'category')},
+         **{name: entry[name] for name in ('publicMessage', 'recovery') if name in entry},
          'state': entry.get('state') if entry.get('state') in ('failed', 'conflict', 'clarification', 'waiting') else 'failed'}
         for entry in values if entry['category'] in BLOCKING and isinstance(entry.get('step'), int)]}
 
@@ -194,19 +196,20 @@ def derive(job, cards=(), drafts=(), *, interpretation=None):
         elif draft.status == 'confirmed':
             completed.append('进展建议已确认')
     failures = [item for item in job.result.get('toolOutcomes', []) if item['category'] in BLOCKING]
-    remaining.extend(item['message'] or item['label'] + '未完成' for item in failures)
+    from app.tasks.feedback.public import message as public_message, user_gap
+    remaining.extend(public_message(item) for item in failures)
     if job.result.get('incompleteTask') and not remaining:
         remaining.append('还有请求的事项尚未完成')
-    reason = next((item['message'] for item in failures if item['message']), '')
+    reason = public_message(failures[0]) if failures else ''
     response_incomplete = job.result.get('completionIssue') == 'response'
     # Only the server interaction path owns this phase/ID. A model's textual
     # needs_input cannot turn a permission failure into a request for consent.
     answerable_question = (job.state == 'awaiting_input' and getattr(job, 'phase', '') == 'awaiting_answer'
                            and bool(job.result.get('waitingInteractionId')))
-    answerable_failure = answerable_question or any(item['category'] == 'missing_info' for item in failures)
-    cannot_resolve_by_reply = not answerable_failure and (response_incomplete or value.get('state') == 'blocked' or any(item['category'] != 'missing_info' for item in failures))
+    answerable_failure = answerable_question or any(user_gap(item) for item in failures)
+    cannot_resolve_by_reply = not answerable_failure and (response_incomplete or value.get('state') == 'blocked' or bool(failures))
     if cannot_resolve_by_reply and not reason:
-        reason = '必要答复尚未完成核对，已保存的操作结果会保留。' if response_incomplete else next(iter(remaining), '当前权限或条件无法完成此任务。')
+        reason = '这次还没能给出完整答复，已保存的内容会保留。' if response_incomplete else next(iter(remaining), '当前权限或条件无法完成此任务。')
     if job.state in ('queued', 'running'):
         state, next_action = 'processing', 'none'
     elif job.state == 'cancelled':
@@ -241,8 +244,9 @@ def dto(job):
         # Preserve completion authenticated by refresh/cancellation. Deriving
         # without cards is only a queue-state override, not evidence that no
         # business effect happened before an interruption.
-        return {**derive(job), 'completed': value.get('completed', [])}
-    return value
+        value = {**derive(job), 'completed': value.get('completed', [])}
+    from app.tasks.feedback.public import outcome
+    return outcome(value, job)
 
 
 def refresh(job, cards=(), drafts=()):

@@ -1,6 +1,7 @@
 """Commit-window recovery: dedicated DB, fixed judges, no provider requests."""
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
@@ -10,7 +11,7 @@ from app.agent.runtime.tool_nodes import tool_node
 from app.agent.tools.business.actions import query_reports
 from app.db.base import now
 from app.integrations.models.transport import ProviderError
-from app.modules.members.models import Member
+from app.modules.members.models import Company, Member
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.modules.reports.models import Report
@@ -60,7 +61,10 @@ async def interrupted_node(setup, monkeypatch, action):
     elif action == 'create_work':
         args['changes'] = {'title': '报价方案'}
     elif action == 'generate_report':
-        args['report_date'] = now().date().isoformat()
+        async with context.sessions() as db:
+            company = await db.get(Company, context.company_id)
+        # Report periods follow the company timezone, including before 00:00 UTC.
+        args['report_date'] = datetime.fromisoformat(work['updatedAt']).astimezone(ZoneInfo(company.rules['timezone'])).date().isoformat()
     call = {'name': 'execute_business_action', 'id': 'write', 'args': args}
     request = SimpleNamespace(tool_call=call, state={'messages': [AIMessage(id='batch', content='', tool_calls=[call])]})
     execute_once = operations._execute
@@ -80,7 +84,7 @@ async def interrupted_node(setup, monkeypatch, action):
     with pytest.raises(ProcessStopped) as stopped:
         await tool_node(context, request, write)
     assert len(calls) == 4
-    assert stopped.value.result['state'] in ('succeeded', 'pending', 'running')
+    assert stopped.value.result['state'] in ('succeeded', 'pending', 'running'), stopped.value.result
     assert len(context.intent_model.inputs) == 1
     async with context.sessions.begin() as db:
         job = await db.get(Job, context.job_id)

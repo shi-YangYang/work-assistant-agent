@@ -1,5 +1,6 @@
 import json
 from fastapi import HTTPException
+from app.agent.tool_results import http_failure
 from langchain.tools import ToolRuntime, tool
 from app.tasks.context import RunContext
 from app.modules.executions.service import execute
@@ -38,7 +39,7 @@ async def read_execution(runtime: ToolRuntime[RunContext], execution_id: str = '
             result = await read_executions(db, actor, job, message, identifier=execution_id, offset=offset, context=context)
         return json.dumps(result, ensure_ascii=False)
     except HTTPException as error:
-        return json.dumps({'state': 'unavailable', 'message': error.detail['message']}, ensure_ascii=False)
+        return json.dumps(http_failure(error), ensure_ascii=False)
 
 
 @tool
@@ -85,6 +86,6 @@ async def run_python(code: str, title: str, runtime: ToolRuntime[RunContext], in
         result = await execute(runtime.context, code=code, title=title, references=input_refs or [], identifier=deliverable_id, revision=expected_revision, step=step)
         return json.dumps(result, ensure_ascii=False)
     except HTTPException as error:
-        return json.dumps({'state': 'failed', 'message': error.detail['message']}, ensure_ascii=False)
+        return json.dumps(http_failure(error), ensure_ascii=False)
     except ValueError as error:
         return json.dumps({'state': 'failed', 'message': str(error)}, ensure_ascii=False)

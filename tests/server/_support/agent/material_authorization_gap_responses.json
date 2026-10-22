@@ -1,0 +1,222 @@
+[
+  {
+    "allowed": true,
+    "quote": "之前的  都添加到 我的工作  里面",
+    "reason": "用户要求将此前生成的全部成果文件添加到已有的本人工作“整理法务和财务尽调资料”中；目标由服务端读取的唯一本人工作确定，材料范围为私有成果目录中的全部可用文件，与提案 materials 一致。",
+    "requestedChanges": [
+      {
+        "quote": "之前的  都添加到 我的工作  里面",
+        "field": "materials",
+        "kind": "material"
+      }
+    ],
+    "requiredFields": ["materials"],
+    "quoteMessageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+    "notRequested": false,
+    "receiptOnly": true,
+    "requireConfirmation": false,
+    "failureKind": "invalid_arguments",
+    "recoveryOwner": "none",
+    "missingInputs": [],
+    "materialSelection": {
+      "mode": "all",
+      "quote": "之前的  都添加到 我的工作  里面",
+      "messageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+      "destination": "existing",
+      "targetId": "4ed4a9d4-c055-4b15-a524-0b34a6c6354e",
+      "destinationEvidence": {
+        "source": "work_reference",
+        "messageId": "",
+        "quote": "整理法务和财务尽调资料"
+      }
+    },
+    "workChangeFields": ["materials"],
+    "appendFields": [],
+    "appendValues": {},
+    "taskContext": {
+      "goal": "将此前生成的全部成果文件添加到本人已有工作“整理法务和财务尽调资料”中",
+      "relation": "new",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    }
+  },
+  {
+    "allowed": true,
+    "quote": "之前的  都添加到 我的工作  里面",
+    "reason": "用户明确要求把此前生成的材料都添加到“我的工作”，工作引用已定位到当前工作“整理法务和财务尽调资料”，本原子动作为材料绑定，材料范围为 privateDeliverables 中的全部可用文件，符合授权。",
+    "receiptOnly": false,
+    "titleOnly": false,
+    "requireConfirmation": false,
+    "notRequested": false,
+    "denialScope": "other",
+    "quoteMessageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+    "resumeTask": false,
+    "taskItemId": "",
+    "newTaskItem": false,
+    "continuingInstruction": false,
+    "taskContext": {
+      "goal": "将此前生成的全部材料添加到本人工作“整理法务和财务尽调资料”",
+      "relation": "new",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    },
+    "directiveTargetId": "",
+    "directiveFields": [],
+    "appendFields": [],
+    "appendValues": {},
+    "requiredFields": ["materials"],
+    "failureKind": "invalid_arguments",
+    "recoveryOwner": "none",
+    "missingInputs": [],
+    "requestedChanges": [
+      {
+        "quote": "之前的  都添加到 我的工作  里面",
+        "field": "materials",
+        "kind": "material"
+      }
+    ],
+    "materialSelection": {
+      "mode": "all",
+      "quote": "之前的  都添加到 我的工作  里面",
+      "messageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+      "references": [],
+      "previousId": "",
+      "destination": "existing",
+      "targetId": "4ed4a9d4-c055-4b15-a524-0b34a6c6354e",
+      "destinationEvidence": {
+        "source": "work_reference",
+        "messageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+        "quote": "之前的  都添加到 我的工作  里面"
+      }
+    }
+  },
+  {
+    "allowed": false,
+    "quote": "之前的  都添加到 我的工作  里面",
+    "quoteMessageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+    "reason": "用户要求把“之前的”材料全部添加到“我的工作”，但本条消息未指明保存到哪一条已有工作，也没有理由认定唯一目标“整理法务和财务尽调资料”；同时所述资料范围（“之前的”）在本轮未明确选定，材料选择缺少可靠证据支撑，无法确认绑定全部 11 份成果即为用户所指范围。请助手先与用户确认目标工作与材料范围。",
+    "receiptOnly": false,
+    "titleOnly": false,
+    "requireConfirmation": false,
+    "notRequested": false,
+    "denialScope": "target",
+    "resumeTask": false,
+    "taskItemId": "",
+    "newTaskItem": false,
+    "continuingInstruction": false,
+    "taskContext": {
+      "goal": "把之前的材料添加到“我的工作”中",
+      "relation": "new",
+      "state": "needs_input",
+      "remaining": ["确认保存到哪一条已有工作（或新建）", "确认“之前的”所指的材料范围"],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    },
+    "directiveTargetId": "",
+    "directiveFields": [],
+    "appendFields": [],
+    "appendValues": {},
+    "requiredFields": [],
+    "failureKind": "missing_info",
+    "recoveryOwner": "user",
+    "missingInputs": [
+      {
+        "field": "target",
+        "question": "要把这些材料添加到哪条工作里？",
+        "unavailableFromSources": "本消息只说“我的工作”，未指定具体工作；服务端虽查到一条本人工作“整理法务和财务尽调资料”，但没有用户选择证据，无法据此认定为目标。",
+        "candidateIds": ["4ed4a9d4-c055-4b15-a524-0b34a6c6354e"]
+      },
+      {
+        "field": "materials",
+        "question": "“之前的”具体指哪些材料？请确认要加入的范围。",
+        "unavailableFromSources": "本消息使用“之前的”指代，未逐项选定范围；历史材料选择记录未保留，无法确认是否为全部 11 份成果。",
+        "candidateIds": [
+          "b6de8bba-85a3-4fd8-b8b0-5b31f71e99aa",
+          "42d5332a-9838-44ca-b501-ce41876cd155",
+          "44f0df26-b123-4178-8cb8-75c43ed5d84a",
+          "f7f14977-8399-4909-b737-c2bc4eb00441",
+          "74601415-34ce-432c-a4e7-dedc8ebe3e87",
+          "2b223f1c-b953-429a-a81a-bd5cf6ae82d9",
+          "16e971a6-ab6b-40b7-8485-8c681765c545",
+          "a76d3f88-26df-4cbb-b689-c35121b25eee",
+          "a9532233-7426-4ee2-a4e5-5d088c03aa4d",
+          "bc7a6af2-2f52-4962-a31a-fa9c8ef9e268",
+          "2f364480-60b9-4116-b271-954f0c46080e"
+        ]
+      }
+    ],
+    "materialSelection": {
+      "mode": "none",
+      "quote": "",
+      "messageId": "",
+      "references": [],
+      "destination": "unselected",
+      "targetId": "",
+      "previousId": "",
+      "destinationEvidence": {
+        "source": "none",
+        "messageId": "",
+        "quote": ""
+      }
+    },
+    "requestedChanges": [],
+    "quoteRange": {
+      "start": 0,
+      "end": 0
+    }
+  },
+  {
+    "allowed": true,
+    "quote": "之前的  都添加到 我的工作  里面",
+    "reason": "用户要求把此前生成的资料全部添加到「我的工作」，助手已读取到唯一本人工作「整理法务和财务尽调资料」，提案按材料原子组把 privateDeliverables 中的 11 份文件绑定到该工作，操作、目标与范围均与用户请求一致。",
+    "requestedChanges": [],
+    "receiptOnly": true,
+    "titleOnly": false,
+    "requireConfirmation": false,
+    "notRequested": false,
+    "denialScope": "other",
+    "quoteMessageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+    "resumeTask": true,
+    "taskItemId": "",
+    "newTaskItem": false,
+    "continuingInstruction": false,
+    "taskContext": {
+      "goal": "把此前生成的各类资料文件添加到本人工作「整理法务和财务尽调资料」中",
+      "relation": "continue",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    },
+    "directiveTargetId": "",
+    "directiveFields": [],
+    "appendFields": [],
+    "appendValues": {},
+    "requiredFields": ["materials"],
+    "failureKind": "invalid_arguments",
+    "recoveryOwner": "assistant",
+    "missingInputs": [],
+    "materialSelection": {
+      "mode": "all",
+      "quote": "之前的  都添加到 我的工作  里面",
+      "messageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+      "references": [],
+      "previousId": "",
+      "destination": "existing",
+      "targetId": "4ed4a9d4-c055-4b15-a524-0b34a6c6354e",
+      "destinationEvidence": {
+        "source": "user",
+        "messageId": "05a5b5f9-7ce7-4b2b-a421-1803fc7c4a39",
+        "quote": "都添加到 我的工作  里面"
+      }
+    }
+  }
+]

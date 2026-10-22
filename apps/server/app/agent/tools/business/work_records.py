@@ -24,7 +24,8 @@ async def agent_work(db, actor, job, identifier):
 
 
 def unavailable_work():
-    return json.dumps({'state': 'unavailable', 'message': '工作不存在、已删除或无权查看，未读取进展或材料。'}, ensure_ascii=False)
+    return json.dumps({'state': 'unavailable', 'category': 'permission_denied',
+                       'message': '工作不存在、已删除或无权查看，未读取进展或材料。'}, ensure_ascii=False)
 
 
 @tool
@@ -73,10 +74,10 @@ async def read_work_material(work_id: str, material_id: str, runtime: ToolRuntim
             return unavailable_work()
         material = await db.scalar(select(WorkMaterial).where(WorkMaterial.id == material_id, WorkMaterial.work_id == work.id, WorkMaterial.removed.is_(False)))
         if not material:
-            return json.dumps({'state': 'unavailable', 'message': '材料已移除或不属于该工作'})
+            return json.dumps({'state': 'unavailable', 'category': 'invalid_arguments', 'message': '材料已移除或不属于该工作，请查询该工作现有材料目录。'})
         attachment = await db.get(Attachment, material.attachment_id)
         if not attachment or attachment.deleted:
-            return json.dumps({'state': 'unavailable', 'message': '材料已不可用'})
+            return json.dumps({'state': 'unavailable', 'category': 'permission_denied', 'message': '材料已不可用'})
         inherit(actor, job, work)
         context.read_versions[work.id] = work.revision
         cached = attachment.extraction_info.get('transcript') if attachment.kind == 'audio' else None

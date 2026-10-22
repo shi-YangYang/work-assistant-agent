@@ -129,10 +129,12 @@ async def test_new_page_text_resets_progress_but_empty_or_identical_body_does_no
 
 
 async def model_tools(context):
-    request = SimpleNamespace(runtime=SimpleNamespace(context=context), tools=[{'name': name} for name in allowed_tools(context)],
+    request = SimpleNamespace(runtime=SimpleNamespace(context=context), tools=[{'name': name, 'parameters': {'type': 'object', 'properties': {}}} for name in allowed_tools(context)],
                               messages=[HumanMessage(content='Search and summarize')], system_message=SystemMessage(content='Base'))
     request.override = lambda **kwargs: SimpleNamespace(**kwargs)
-    return await ToolBoundary().awrap_model_call(request, AsyncMock(side_effect=lambda value: value))
+    handler = AsyncMock(return_value=SimpleNamespace(result=[AIMessage(content='当前资料已整理。')]))
+    await ToolBoundary().awrap_model_call(request, handler)
+    return handler.call_args.args[0]
 
 
 @pytest.mark.asyncio
@@ -158,7 +160,7 @@ async def test_model_and_invocation_boundaries_allow_only_cached_reads_after_clo
     page = {'text': 'Cached body'}
     await context.web_pages.get(url, AsyncMock(return_value=page))
     offered = await model_tools(context)
-    assert 'web_fetch' in [tool.get('name') for tool in offered.tools]
+    assert 'web_fetch' in [tool.get('name', tool.get('function', {}).get('name')) for tool in offered.tools]
     call = {'name': 'web_fetch', 'args': {'url': url, 'find': 'new phrase'}, 'id': 'cached'}
     assert await begin(context, call) is None
     readonly = await web_cache(context)

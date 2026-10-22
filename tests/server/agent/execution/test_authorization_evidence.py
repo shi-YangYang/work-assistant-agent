@@ -50,6 +50,9 @@ async def test_new_evidence_replaces_only_current_proposal_classification(setup,
                 'quote': '并不存在的用户授权' if kind == 'invalid_source' else payload['currentUserText'],
                 'reason': kind, 'notRequested': kind == 'not_requested',
                 'failureKind': kind if kind in ('missing_info', 'not_requested') else 'invalid_arguments',
+                'recoveryOwner': 'user' if kind == 'missing_info' else 'assistant',
+                'missingInputs': [{'field': 'target', 'question': '保存到哪项工作？',
+                                   'unavailableFromSources': '用户尚未指定保存位置', 'candidateIds': []}] if kind == 'missing_info' else [],
                 'taskItemId': 'unknown-item' if kind == 'invalid_item' else '',
             }))
 
@@ -60,16 +63,16 @@ async def test_new_evidence_replaces_only_current_proposal_classification(setup,
     context.unrequested_actions.add(other_key)
     args = {'step': 1, 'action': 'create_work', 'changes': {'title': '新工作'}}
     first = await execute(context, **args)
-    assert first['state'] == ('not_requested' if first_kind == 'not_requested' else 'clarification')
+    assert first['state'] == ('not_requested' if first_kind == 'not_requested' else 'waiting')
     await find_work_items.coroutine('', SimpleNamespace(context=context))
     latest = await execute(context, **args)
     assert len(judge.inputs) == 2
     key = digest(judge.inputs[-1]['proposedOperation'])
     category = 'invalid_arguments' if latest_kind.startswith('invalid_') else latest_kind
     expected_state = {'success': 'succeeded', 'not_requested': 'not_requested',
-                      'missing_info': 'clarification', 'invalid_arguments': 'failed'}[category]
+                      'missing_info': 'waiting', 'invalid_arguments': 'failed'}[category]
     assert latest['state'] == expected_state, latest
-    if expected_state in ('clarification', 'failed'):
+    if expected_state in ('waiting', 'failed'):
         assert latest['category'] == category
     assert context.authorization_outcomes[key] == category
     assert (key in context.unrequested_actions) == (category == 'not_requested')
@@ -125,15 +128,15 @@ async def test_saved_plan_rechecks_refusal_and_creates_exactly_two_linked_works(
     judge = ScopedJudge(allowed=False, kind='missing_info')
     context.intent_model = judge
     first_args = {'step': 1, 'action': 'create_work', 'changes': {'title': '明确范围与技术方案', 'summary': '明确范围和技术方案'}}
-    assert (await execute(context, **first_args))['state'] == 'clarification'
-    assert (await execute(context, **first_args))['state'] == 'clarification'
+    assert (await execute(context, **first_args))['state'] == 'waiting'
+    assert (await execute(context, **first_args))['state'] == 'waiting'
     assert len(judge.inputs) == 1
 
     saved = await save_plan(context, title='实施计划', body='按顺序实施', items=[{'title': '明确范围与技术方案'}, {'title': '开发与联调'}, {'title': '验收'}])
     await read_plan(context, saved['id'])
     # Correcting one prerequisite still does not supply the required item.
     unresolved = await execute(context, **first_args)
-    assert unresolved['state'] == 'clarification' and unresolved['taskItemId']
+    assert unresolved['state'] == 'waiting' and unresolved['taskItemId']
     assert len(judge.inputs) == 2
     async with sessions() as db:
         assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 0
@@ -175,11 +178,11 @@ async def test_actual_read_invalidates_cached_node_but_never_grants_permission(s
     judge = ScopedJudge(allowed=False, kind='missing_info')
     context.intent_model = judge
     args = {'step': 1, 'action': 'create_work', 'changes': {'title': '新的工作'}}
-    assert (await execute(context, **args))['state'] == 'clarification'
+    assert (await execute(context, **args))['state'] == 'waiting'
     await find_work_items.coroutine('', SimpleNamespace(context=context))
     judge.allowed = allowed
     result = await execute(context, **args)
-    assert result['state'] == ('succeeded' if allowed else 'clarification')
+    assert result['state'] == ('succeeded' if allowed else 'waiting')
     assert len(judge.inputs) == 2
     async with sessions() as db:
         count = await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id))

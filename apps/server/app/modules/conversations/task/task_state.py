@@ -44,11 +44,12 @@ async def begin_input(db, actor, message):
                     sources = [*sources, TaskSource(messageId=previous.id, revision=previous.transcript_revision, digest=digest(original), quote=original[:2000]).model_dump()]
                 sources = [sources[0], *sources[-15:]] if len(sources) > 16 else sources
                 from app.tasks.feedback.items import collect
+                from app.tasks.feedback.material_requirements import snapshot as material_snapshot
                 scope = row.payload.get('task', {})
                 # Interruption is already represented by state. Preserve known
                 # requirements, without inventing a new request for user input.
                 remaining = scope.get('remaining', []) if scope.get('messageId') == previous_id else prior_job.result.get('taskOutcome', {}).get('remaining', [])
-                row.payload = {**row.payload, 'task': {'id': snapshot.get('taskId', previous_id), 'messageId': previous_id, 'goal': original[:400], 'state': 'cancelled' if prior_job.state == 'cancelled' else 'blocked', 'remaining': remaining, 'sources': sources, 'items': collect(prior_job)}}
+                row.payload = {**row.payload, 'task': {'id': snapshot.get('taskId', previous_id), 'messageId': previous_id, 'goal': original[:400], 'state': 'cancelled' if prior_job.state == 'cancelled' else 'blocked', 'remaining': remaining, 'sources': sources, 'items': collect(prior_job), 'materialCollections': material_snapshot(prior_job)}}
         row.revision += 1
         row.payload = {**row.payload, 'latestMessageId': message.id}
         row.updated_at = now()
@@ -190,11 +191,12 @@ async def finish(db, actor, job, message, interpretation, outcome, *, delivery_v
         sources = [*sources, TaskSource(messageId=message.id, revision=message.transcript_revision, digest=digest(text), quote=text[:2000]).model_dump()]
     sources = [sources[0], *sources[-15:]] if len(sources) > 16 else sources
     from app.tasks.feedback.items import collect
+    from app.tasks.feedback.material_requirements import snapshot as material_snapshot
     row.payload = {**row.payload, 'directives': directives, 'task': {
         'id': task_id, 'messageId': message.id, 'goal': value.goal or text[:400],
         'state': outcome['state'], 'remaining': outcome['remaining'],
         'question': value.remaining, 'completed': outcome['completed'],
-        'sources': sources, 'items': collect(job)}}
+        'sources': sources, 'items': collect(job), 'materialCollections': material_snapshot(job)}}
     row.revision += 1
     row.updated_at = now()
     # A lost final status commit may resume THIS input without adopting a newer
@@ -221,8 +223,9 @@ async def cancel(db, actor, job, message):
             sources = [*sources, TaskSource(messageId=message.id, revision=message.transcript_revision, digest=digest(original), quote=original[:2000]).model_dump()]
         sources = [sources[0], *sources[-15:]] if len(sources) > 16 else sources
         from app.tasks.feedback.items import collect
+        from app.tasks.feedback.material_requirements import snapshot as material_snapshot
         row.payload = {**row.payload, 'task': {'id': task_id, 'messageId': message.id,
-            'goal': original[:400], 'state': 'cancelled', 'remaining': [], 'sources': sources, 'items': collect(job)}}
+            'goal': original[:400], 'state': 'cancelled', 'remaining': [], 'sources': sources, 'items': collect(job), 'materialCollections': material_snapshot(job)}}
         row.revision += 1
         row.updated_at = now()
 
@@ -267,6 +270,6 @@ async def prepare_retry(db, actor, job, message):
     if snapshot.get('inputRevision') != message.transcript_revision:
         # An explicit retry of corrected current input may take a new snapshot;
         # previously committed business receipts still retain their identities.
-        job.result = {key: value for key, value in job.result.items() if key not in ('taskSnapshot', 'taskBarriers', 'toolOutcomes', 'taskInterpretation', 'intentTaskInterpretation', 'explicitTaskContext', 'explicitBusinessRequest')}
+        job.result = {key: value for key, value in job.result.items() if key not in ('taskSnapshot', 'taskBarriers', 'toolOutcomes', 'taskInterpretation', 'intentTaskInterpretation', 'explicitTaskContext', 'explicitBusinessRequest', 'materialCollections')}
     else:
         await assert_current(db, actor, job, message)

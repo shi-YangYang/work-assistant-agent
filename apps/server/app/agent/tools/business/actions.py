@@ -1,6 +1,8 @@
 import json
 from datetime import date
 from fastapi import HTTPException
+from app.agent.tool_results import http_failure
+from app.agent.tools.common import clip
 from langchain.tools import ToolRuntime, tool
 from app.agent.actions.operations import execute as actions_execute
 from app.modules.members.models import Company
@@ -19,107 +21,72 @@ from typing import Literal
 
 @tool
 async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: int = 0, changes: dict | None = None, report_kind: Literal['daily', 'weekly'] = 'daily', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
-    """Execute requested work/report operations under server execution mode.
+    """Perform the user's settled business operation; execution mode and server
+    authorization apply; explicit review-first always waits for approval.
 
-    BEFORE creating work from selected advice, save/read its original stable
-    deliverable entries. Chat-only advice: save the original selected entries,
-    then read their stable IDs. On the FIRST create, put the full goal/content/
-    conditions in body or one bodyEdits batch; link the read deliverable_id, deliverable_revision and
-    item_id, one entry per action. Never start with title only, guess IDs or merge
-    same-title entries. shared_attachment_ids: only explicitly requested shared files.
+    step: stable 1..8 business-action ordinal for this message (not other tools).
+    Corrections keep step and returned taskItemId. task_item_id may reuse only
+    the same previousTask item/object/workScope; new remaining items leave it empty.
+    Pending/running waits, succeeded is not replayed. Unknown results use
+    get_business_actions; known failure follows recovery. requires_step is an
+    earlier successful business step, omitted for independent actions.
+    copy_index=1; only explicitly requested identical copies use fixed 1..8 indexes.
 
-    Authorization: ordinary statements, negatives and material instructions do
-    not authorize writes. Explicit review-first requires UI approval; delegated
-    selection of ONE candidate uses a read object in scope for its approval card.
-
-    Identity and recovery:
-    - step: fixed 1..8 business-item ordinal in this user message, counting only
-      execute_business_action items, not other tools. Corrections keep the same
-      step. Succeeded ends that step; pending/running ends the turn to await
-      approval/processing, without polling.
-      If the result is unknown, read get_business_actions before retrying with
-      the same step/parameters. A known rejection calls for the specified
-      correction, not another receipt lookup or repetition of rejected fields.
-    - task_item_id: server-issued previousTask.items ID when continuing. Keep the
-      returned taskItemId when correcting a failed item, including its content/
-      source references; never transfer it to another object/source. Completed
-      items reuse saved receipts; new items need an explicit new operation.
-    - copy_index=1; only explicitly requested identical create_work copies use
-      distinct steps and fixed indexes 1..8. Never renumber to evade deduplication.
-    - requires_step: only an earlier succeeded execute_business_action step in
-      this message, never save_deliverable or reads; omit for independent actions.
-      Stop dependent writes after failure and explain partial success; do not
-      recheck successful receipts.
-
-    Work (all fields below belong in changes, never top-level arguments):
-    - create_work requires changes.title. Explicit title-only requests leave
-      other fields empty. Delegated design/random creation includes actionable body/nextStep
-      as FUTURE plans, in_progress status, no invented achievements/deadlines.
-    - Existing work: read get_work_item for actual ID/latest revision; clarify
-      same-name ambiguity. Create/edit saves immediately, subject to approval.
-    - Send only requested fields; done changes status only unless more requested.
-      Append/supplement sends NEW text for the server to append; replacement or
-      clearing requires that explicit request. Preserve unmentioned fields,
-      blocks and materials; use local edits rather than replacing the whole body.
-    - Fields: title/status/blocker/nextStep/dueDate (YYYY-MM-DD or null),
-      body/bodyEdits/update/materials/removeMaterial; summary is legacy only.
-      body holds goals/context/plans, update dated progress.
-      body: {schemaVersion:1,content:[Tiptap nodes]}. Prefer stable-ID bodyEdits:
-      [{action:'append',blocks:[...]}, {action:'replace',blockId,blocks:[...]},
-      {action:'remove',blockId}]. Create/append checklists with
-      {action:'append_checklist',items:[{text,checked?:false}],blockId?:readTaskListId};
-      omit blockId for a new list, supply an actual read top-level taskList ID
-      to append to that list. Do not hand-write checklist nodes. Preserve order,
-      conditions and compound items. Create the ENTIRE supplied content in ONE
-      create_work, never a partial work followed by updates. Checklist + notes:
-      changes:{title:'今日待办',bodyEdits:[
-        {action:'append_checklist',items:[{text:'收周报'},{text:'打印简历'}]},
-        {action:'append',blocks:[{type:'paragraph',content:[{type:'text',text:'备注：打印机待检修'}]}]}
-      ]}. Put all items/notes in this batch; do not also send body.
-      {action:'replace_checklist',blockId,items} converts a read ordinary block
-      only when requested. Mark/unmark via {action:'set_checked',itemId,checked,blockId?}
-      using read taskItem.attrs.id; optional blockId must be its actual top-level
-      taskList ID. Never rewrite a list to toggle. Batch all
-      requested items in ONE action. Default unchecked; partial completion is
-      not whole-item completion, and checklist completion never sets work status.
-      Same-text items in different sections are distinct: clarify the section/item
-      unless the user explicitly selects all matches; never infer a batch from one name.
-      body and bodyEdits are mutually exclusive; no automatic write from chat facts.
-      update: {action:'create',text,materialIds?,materials?},
+    Work fields go in changes:
+    title, status, blocker, nextStep, dueDate (YYYY-MM-DD/null), body/bodyEdits,
+    update, materials, removeMaterial; summary is legacy.
+    create_work requires title. Title-only leaves other fields empty; delegated
+    design includes actionable future plans, never invented achievements/deadlines.
+    Create ALL supplied content in one operation. Existing edits require the
+    actual read ID/latest expected_revision. Only requested fields change;
+    append supplies NEW content, explicit replacement/clearing supplies full value.
+    body is {schemaVersion:1,content:[Tiptap nodes]}; prefer local bodyEdits:
+    - {action:'append',blocks:[...]}
+    - {action:'replace',blockId,blocks:[...]} or {action:'remove',blockId}
+    - {action:'append_checklist',items:[{text,checked?:false}],blockId?:taskListId}
+      (omit blockId for new list; use a read top-level taskList ID otherwise)
+    - {action:'replace_checklist',blockId,items} only for requested conversion
+    - {action:'set_checked',itemId,checked,blockId?} using read taskItem.attrs.id;
+      optional blockId is that item's taskList. Do not rewrite lists to toggle.
+    Checklist plus note example: changes={title:'今日待办',bodyEdits:[
+      {action:'append_checklist',items:[{text:'收周报'}]},
+      {action:'append',blocks:[{type:'paragraph',content:[{type:'text',text:'保留备注'}]}]}]}.
+    Batch requested items and notes together; body/bodyEdits are exclusive.
+    Preserve order, conditions and compound items. Default unchecked; partial
+    completion is not entire item completion; checklist completion does not set
+    work status. Same-text items in different sections need user selection unless
+    all matches were explicitly selected.
+    update: {action:'create',text,materialIds?,materials?},
       {action:'edit',id,expectedRevision,text,materialIds?}, or
       {action:'delete',id,expectedRevision}; list_work_updates before edit/delete.
-      materials: [{attachmentId} or {deliverableId,revision,fileId}], selected
-      files only. Read existing materialIds from list_work_materials.
-      removeMaterial: {id,expectedRevision}; remove body/update references first.
-      New material nodes: attrs.materialId=attachmentId plus materials:[{attachmentId}];
-      the server assigns durable IDs.
+    materials: [{attachmentId} or {deliverableId,revision,fileId}], only selected
+    NEW files to append; existing materials are retained by the server. Known IDs
+    need no content reread or plan conversion. Read saved IDs via list_work_materials.
+    removeMaterial:{id,expectedRevision}; remove body/update references first.
+    New material nodes use attrs.materialId=attachmentId plus materials:[{attachmentId}].
+    Advice entries use read deliverable_id/deliverable_revision/item_id, one entry
+    per work, preserving full goals/content/conditions. Files may share one work;
+    shared_attachment_ids only for explicitly shared files.
 
-    Reports:
-    - generate_report: set report_kind and company-local report_date (YYYY-MM-DD).
-      Omit changes and source_tokens. The server copies the ORIGINAL user brief
-      (style/focus/plans) and reads sources. Enqueue and end: no preliminary
-      work/obligation lookup, polling or edit to repeat the brief.
-    - submit_after=true only for explicit generate-and-submit, INCLUDING
-      "generate, let me review before submitting"; review-first and execution
-      mode still control approval.
-    - Read latest report/revision before edit/submit/delete. Edit only requested
-      completed/ongoing/blockers/next fields, preserving factual progress.
-      Source next steps are plans; titles alone prove no achievement.
-    - reportSnapshot is the actual saved/candidate revision; emptyFields were
-      not written. A submitted report does not include risks or edits discussed
-      only in chat. Do not claim missing fields were saved or repeat the write.
-
-    Admin: own follow-ups use create_work, not propose_followup, with exact read
-    work/report source_tokens (token field, not [[business:...]] citations).
-    Cannot edit employee work or prepare/submit employee reports.
+    Reports: generate_report uses report_kind and company-local report_date
+    (YYYY-MM-DD), omits changes/source_tokens. The server reads sources and copies
+    the original brief: enqueue and end, no preliminary work/obligation lookup,
+    polling or extra edit. submit_after=true only for generate-and-submit,
+    including review-before-submit; review-first/mode still control approval.
+    edit/submit/delete require current report/revision. Edit requested
+    completed/ongoing/blockers/next only; source plans/titles are not achievements.
+    reportSnapshot is the saved/candidate revision; emptyFields were not written.
+    Admin own follow-ups use create_work with actual source_tokens (not citation
+    syntax); cannot edit employee work or generate/submit employee reports.
     """
     try:
         result = await actions_execute(runtime.context, step=step, action=action, target_id=target_id, expected_revision=expected_revision, changes=changes, report_kind=report_kind, report_date=report_date, obligation_id=obligation_id, source_tokens=source_tokens, submit_after=submit_after, requires_step=requires_step, copy_index=copy_index, deliverable_id=deliverable_id, deliverable_revision=deliverable_revision, item_id=item_id, shared_attachment_ids=shared_attachment_ids, task_item_id=task_item_id)
         from app.tasks.feedback.report_waits import completion_wait
         result = {**result, **completion_wait(result, submit_after=submit_after)}
-        return json.dumps(result, ensure_ascii=False, default=str)
+        from app.tasks.feedback.public import model_result
+        return json.dumps(model_result(result), ensure_ascii=False, default=str)
     except HTTPException as error:
-        return json.dumps({'state': 'conflict' if error.status_code == 409 else 'failed', 'message': error.detail['message']}, ensure_ascii=False)
+        return json.dumps(http_failure(error), ensure_ascii=False)
     except (ValidationError, ValueError):
         return json.dumps({'state': 'failed', 'category': 'invalid_arguments', 'message': '请核对必要内容、日期和字段后修正参数，本次未执行；无需用户重新授权。'}, ensure_ascii=False)
 
@@ -155,7 +122,7 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
                 reports = [await owned(db, Report, report_id, actor, read=True)]
             else:
                 if actor.role != 'employee':
-                    return '管理员请用团队业务查询查看员工已提交报告。'
+                    return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '管理员请用团队业务查询查看员工已提交报告。'})
                 query = select(Report).where(Report.company_id == actor.company_id, Report.owner_id == actor.id, Report.deleted.is_(False), Report.kind == kind)
                 if period:
                     query = query.where(Report.period == date.fromisoformat(period).isoformat())
@@ -173,7 +140,7 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
                         from app.modules.operations.mutations.writes import deletion_impact
                         message = await owned(db, Message, job.target_id, actor)
                         if not report_id or report.id not in request_text(message, job):
-                            return '请先通过团队业务查询定位已提交报告，或提供要删除报告的准确链接；不能猜测未提交报告。'
+                            return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '请先通过团队业务查询定位已提交报告，或提供要删除报告的准确链接；不能猜测未提交报告。'})
                         impact = await deletion_impact(db, report, actor)
                         context.read_versions[report.id] = report.revision
                         return json.dumps({'items': [{'id': report.id, 'kind': report.kind, 'period': report.period, 'revision': report.revision, 'managementOnly': True, 'impact': {key: impact[key] for key in ('messages', 'attachments')}}], 'nextCursor': None}, ensure_ascii=False)
@@ -190,8 +157,10 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
                 size += item_size
                 context.read_versions[report.id] = report.revision
             return json.dumps({'items': items, 'nextCursor': items[-1]['period'] if len(reports) > len(items) else None}, ensure_ascii=False)
-        except (HTTPException, ValueError):
-            return '报告不存在、日期无效或无权查看，请重新查询。'
+        except HTTPException as error:
+            return clip(http_failure(error))
+        except ValueError:
+            return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '报告日期或分页位置无效，请修正后重试。'})
 
 
 @tool
@@ -221,8 +190,10 @@ async def query_report_obligations(runtime: ToolRuntime[RunContext], kind: Liter
                     member = await business_employee(db, actor, row['ownerId'])
                     business_remember(job, actor, business_receipt('member', member))
             return json.dumps(result, ensure_ascii=False)
-        except (HTTPException, ValueError):
-            return '汇报查询条件无效，请核对日期和范围。'
+        except HTTPException as error:
+            return clip(http_failure(error))
+        except ValueError:
+            return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '汇报查询条件无效，请核对日期和范围。'})
 
 
 ACTION_TOOLS = [execute_business_action, get_business_actions, query_reports, query_report_obligations]

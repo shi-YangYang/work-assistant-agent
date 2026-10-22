@@ -84,7 +84,11 @@ async def begin(context, call):
             await validate_sources(db, actor, job, await db.get(Message, job.target_id), source_snapshot(context, job),
                                    refresh_work_versions=context.refresh_work_versions)
         persist(job, context, value)
-    return feedback(call, decision) if decision != 'execute' else None
+        result = feedback(call, decision) if decision != 'execute' else None
+        if result is not None and call.get('decisionId'):
+            from app.agent.runtime.decision_flow import end as decision_end
+            result = decision_end(context, job, call, result)
+    return result
 
 
 def with_feedback(message, result, fields):
@@ -109,7 +113,11 @@ async def end(context, call, message):
         if replay and web:
             # Node outputs precede this feedback. Replay the original additions,
             # never derive an old call's evidence count from later discoveries.
-            return with_feedback(message, result, prior.get('webFeedback', {}))
+            projected = with_feedback(message, result, prior.get('webFeedback', {}))
+            if call.get('decisionId'):
+                from app.agent.runtime.decision_flow import end as decision_end
+                projected = decision_end(context, job, call, projected)
+            return projected
         no_progress = False
         new_evidence_count = None
         if call['name'] == 'web_search' and not failed_result(result) and message.status != 'error' and not replay:
@@ -179,7 +187,11 @@ async def end(context, call, message):
             completed['webFeedback'] = fields
             research.journal(value).setdefault('records', {})[identifier] = dict(completed)
         persist(job, context, value)
-    return with_feedback(message, result, fields)
+        projected = with_feedback(message, result, fields)
+        if call.get('decisionId'):
+            from app.agent.runtime.decision_flow import end as decision_end
+            projected = decision_end(context, job, call, projected)
+    return projected
 
 
 def research_stopped(context, job, messages=()):

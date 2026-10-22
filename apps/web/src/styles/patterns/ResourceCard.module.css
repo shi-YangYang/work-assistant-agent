@@ -1,0 +1,158 @@
+.card {
+  box-sizing: border-box;
+  width: 440px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 16px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--control);
+  border-radius: 16px;
+}
+.card.group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  list-style: none;
+}
+.group > .card {
+  width: 100%;
+  max-width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.group > .card + .card {
+  border-top: 1px solid var(--line);
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  min-width: 0;
+}
+.icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  height: 44px;
+  background: var(--subtle);
+  border-radius: 10px;
+}
+.icon svg {
+  flex-shrink: 0;
+}
+.content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.title {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.card.fileCard {
+  position: relative;
+  padding: 0;
+}
+.group > .fileCard:first-child {
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+}
+.group > .fileCard:last-child {
+  border-bottom-left-radius: 15px;
+  border-bottom-right-radius: 15px;
+}
+.fileMain {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  min-height: 76px;
+  padding: 16px 64px 16px 16px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  text-align: left;
+  white-space: normal;
+}
+.fileMain:hover {
+  background: transparent;
+  text-decoration: none;
+}
+.fileSubtitle {
+  display: grid;
+  min-width: 0;
+}
+.fileSubtitle > span {
+  grid-area: 1 / 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileInfo {
+  visibility: hidden;
+}
+.fileDownload {
+  position: absolute;
+  top: 16px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+}
+.fileDownload:hover {
+  background: var(--hover);
+  text-decoration: none;
+}
+.fileMain:focus-visible,
+.fileDownload:focus-visible {
+  outline-offset: -2px;
+}
+.fileCard:focus-within {
+  background: var(--subtle);
+}
+
+@media (min-width: 761px) and (hover: hover) and (pointer: fine) {
+  .fileCard:hover {
+    background: var(--subtle);
+  }
+  .hoverActions:not(:hover):not(:focus-within) .fileInfo {
+    visibility: visible;
+  }
+  .hoverActions:not(:hover):not(:focus-within) .fileHint {
+    visibility: hidden;
+  }
+  .hoverActions:not(:hover):not(:focus-within) .hoverAction:not([aria-busy='true']) {
+    opacity: 0;
+    pointer-events: none;
+  }
+}

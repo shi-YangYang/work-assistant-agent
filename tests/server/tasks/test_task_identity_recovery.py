@@ -46,7 +46,7 @@ async def test_missing_information_same_item_and_slot_require_new_evidence(setup
     assert second['taskItemId'] != first['taskItemId'] and len(judge.inputs) == 2
     context.intent_model = RecoveryJudge(first['taskItemId'])
     guessed = await execute(context, step=3, action='create_work', changes={'title': '甲再次整理版'})
-    assert guessed['state'] == 'clarification' and guessed['taskItemId'] == first['taskItemId']
+    assert guessed['state'] == 'waiting' and guessed['taskItemId'] == first['taskItemId']
     plan = await save_plan(context, title='实施计划', body='', items=[{'title': '甲', 'body': '新取得的准确方案'}])
     await read_plan(context, plan['id'])
     context.intent_model = RecoveryJudge(first['taskItemId'])

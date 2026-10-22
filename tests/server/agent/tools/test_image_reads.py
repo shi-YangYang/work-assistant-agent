@@ -73,6 +73,9 @@ async def test_old_batches_are_read_together_once_and_stream_sources_stay_typed(
     assert [item['id'] for item in result['images']] == identifiers
     assert all(item['complete'] for item in result['images'])
     assert vision.await_count == 1
+    instruction = vision.await_args.args[0][0].content
+    assert '不复述尺寸、读取区域或完整性检查' in instruction
+    assert '未覆盖的范围明确说明' not in instruction
     content = vision.await_args.args[0][-1].content
     assert content[0]['text'] == '比较这三张图的颜色'
     urls = [part['image_url']['url'] for part in content if part['type'] == 'image_url']
@@ -92,6 +95,49 @@ async def test_old_batches_are_read_together_once_and_stream_sources_stay_typed(
         assert snapshot['source']['documents'] == {}
     finally:
         await publisher.close()
+
+
+async def test_image_scope_stays_internal_for_upload_and_followup_without_extra_model_calls(setup, monkeypatch):
+    from _support.agent.response_delivery import model as reply_model
+    from _support.http.management import message
+    from _support.materials.documents import run, upload
+    from app.tasks.processing import handlers
+
+    settings, sessions, users, clients = setup
+    client = clients['employee']
+    raw = io.BytesIO()
+    Image.new('RGB', (32, 32), 'red').save(raw, 'PNG')
+    attachment = await upload(client, 'table.png', raw.getvalue(), 'image/png')
+    conv = await conversation(client)
+    convert, invoke = handlers.image_process, handlers.invoke_harness
+    prompts = []
+
+    async def with_warning(*args):
+        converted = await convert(*args)
+        return {**converted, 'complete': False, 'warnings': ['底部区域未读取']}
+
+    async def capture(context, saver, blocks, model):
+        prompts.append(blocks[0]['text'])
+        return await invoke(context, saver, blocks, model)
+
+    monkeypatch.setattr(handlers, 'image_process', with_warning)
+    monkeypatch.setattr(handlers, 'invoke_harness', capture)
+    # Fixed model prose checks server delivery, not real-model answer quality.
+    answer = '表中有三项合同；最后一项的金额看不清，暂时无法确定合计。'
+    for historical in (False, True):
+        sent = await message(client, conv, '核对图中的合同金额' if not historical else '刚才的合同金额呢？',
+                             [] if historical else [attachment['id']])
+        model = reply_model(answer=answer)
+        await run(settings, sessions, users, sent, model)
+        result = (await client.get('/api/v1/messages/' + sent['messageId'])).json()
+        assert result['job']['state'] == 'awaiting_input', result
+        assert result['reply'] == answer
+        assert model.calls == 1
+        assert (await client.get('/api/v1/messages/' + sent['messageId'])).json()['reply'] == answer
+        manifest = json.loads(prompts[-1].split('图片内部参考信息（按附件及区域顺序排列；坐标为方向校正后的原图像素）：', 1)[1].split('\n', 1)[0])
+        assert manifest[0]['historical'] is historical
+        assert manifest[0]['complete'] is False and manifest[0]['warnings'] == ['底部区域未读取']
+        assert '必须如实说明未读取范围' not in prompts[-1]
 
 
 async def test_catalog_pages_across_more_than_twenty_images_without_model_calls(setup, monkeypatch):

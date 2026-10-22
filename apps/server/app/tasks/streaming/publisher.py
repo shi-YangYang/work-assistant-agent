@@ -116,6 +116,9 @@ class ReplyPublisher:
             if job.feedback.get('replyStreamCall') != self.call_id:
                 return
             message = await db.get(Message, job.target_id)
+            from app.tasks.feedback.public import prose
+            from app.modules.messages.input.input_text import request_text
+            text = prose(text, job, request_text(message, job), complete=state != 'streaming')
             source = source_snapshot(self.context, job)
             team = await validate_sources(db, actor, job, message, source)
             if team or job.access.get('team') or message.access.get('team'):

@@ -30,7 +30,9 @@ def test_one_success_does_not_clear_other_atomic_failure():
 
 def test_real_missing_input_and_async_work_keep_their_distinct_states():
     job = task()
-    record(job, 'delete_work', {'target_id': '', 'step': 1}, {'state': 'clarification', 'category': 'missing_info'})
+    record(job, 'delete_work', {'target_id': '', 'step': 1}, {'state': 'waiting', 'category': 'missing_info',
+           'recovery': {'owner': 'user', 'nextAction': 'ask', 'missingInputs': [
+               {'field': 'target', 'question': '删除哪项工作？', 'unavailableFromSources': '存在两个同名工作，需要用户选择'}]}})
     assert derive(job)['state'] == 'needs_input'
     fresh = task()
     assert derive(fresh, [{'state': 'running', 'label': '生成报告'}])['state'] == 'processing'

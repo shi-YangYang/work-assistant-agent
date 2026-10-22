@@ -136,7 +136,9 @@ async def test_permission_refusal_preserves_independent_answerable_question():
     issue = {'kind': 'capability', 'quote': '我不能修改同事记录。', 'reason': '不能修改其他成员工作', 'resolvable_remaining': ['选择本人要修改的工作']}
     reviewed = check_issues(answer, json.dumps({'issues': [issue]}), [], task=task)
     denied = {'category': 'permission_denied', 'message': '不能代改同事', 'label': '更新工作'}
-    missing = {'category': 'missing_info', 'message': '选择本人要修改的工作', 'label': '更新工作'}
+    missing = {'category': 'missing_info', 'message': '选择本人要修改的工作', 'label': '更新工作',
+               'recovery': {'owner': 'user', 'nextAction': 'ask', 'missingInputs': [
+                   {'field': 'target', 'question': '选择本人要修改的工作', 'unavailableFromSources': '两个同名工作需要用户选择'}]}}
     outcome = derive(SimpleNamespace(state='awaiting_input', error='',
         result={'taskInterpretation': reviewed.task, 'toolOutcomes': [denied, missing]}))
     assert outcome['state'] == 'needs_input' and outcome['nextAction'] == 'reply'

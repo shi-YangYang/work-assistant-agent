@@ -1,0 +1,23 @@
+# Acceptance — 共享契约第二轮
+
+## Result
+
+FAIL。独立验收 Agent `/root/accept076_v2` 只读检查 v2 冻结实现，未修改代码、未调用模型、未重复已通过测试。
+
+## Issues
+
+1. 真实失败状态与恢复分流不完整：`save_deliverable` 的裸 `state=conflict` 已被记为失败，但未允许读取最新版；`propose_progress`／`propose_followup` 的 `state=invalid_reference` 被误记成功，无法恢复读取最新工作。相关状态也出现在任务上下文工具。此前测试构造的额外 `category=conflict` 字段掩盖了实际输出契约差异。
+2. `read_images.images[].complete` 表示整张像素送达辅助视觉模型，不证明其针对性答案包含全文。只问第一行金额的回执仍被 `supported(scope=full)` 接受；`read_work_material` 的图像回执保持 partial，两入口含义不一致。
+
+两类均通过纯 helper 探针复现。统一修共享状态／恢复策略和视觉证据分类，不添加场景旁路，也不增加模型调用。
+
+## Verified Boundaries
+
+- 无效 ready 不拒绝原本合法的执行，不重新打开已关闭探索。
+- 来源局部失效，以及定位、读取、多页读取、重试的恢复主路径成立。
+- 目录、页图引用、处理中状态不冒充完整正文或操作完成。
+- 未发现员工、数量或用例特判，以及权限、来源、幂等绕过。等待、requires_step、严格 finish_task 保留。
+
+## Coverage and Limits
+
+静态审查涉及注册工具的控制、工作／报告、团队查询、文档、视觉／音频、网页、私人成果、记忆和沙盒结果家族。真实模型矩阵、Web 流程及总体体积／速度收益仍待验收，不以本轮静态结果代替。

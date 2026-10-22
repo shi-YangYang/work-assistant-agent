@@ -1,5 +1,6 @@
 import json
 from fastapi import HTTPException
+from app.agent.tool_results import http_failure
 from langchain.tools import ToolRuntime, tool
 from app.agent.tools.common import clip, referenced_record
 from app.modules.messages.models import Message
@@ -26,7 +27,7 @@ async def find_team_members(query: str, runtime: ToolRuntime[RunContext], cursor
         try:
             return json.dumps(await business_find_members(db, actor, job, query, cursor), ensure_ascii=False)
         except HTTPException as error:
-            return json.dumps({'error': error.detail}, ensure_ascii=False)
+            return json.dumps(http_failure(error), ensure_ascii=False)
 
 
 @tool
@@ -47,7 +48,7 @@ async def query_team_business(runtime: ToolRuntime[RunContext], kind: Literal['w
         try:
             if employee_name.strip():
                 if employee_ids:
-                    return json.dumps({'error': '姓名与员工 ID 不能同时指定，请选择一种查询方式。'}, ensure_ascii=False)
+                    return json.dumps({'state': 'failed', 'category': 'invalid_arguments', 'message': '姓名与员工 ID 不能同时指定，请选择一种查询方式。'}, ensure_ascii=False)
                 members = await business_find_members(db, actor, job, employee_name.strip())
                 if members['total'] != 1:
                     return json.dumps({'state': 'clarification' if members['total'] else 'not_found', 'members': members, 'message': '请明确具体员工。' if members['total'] else '未找到该员工。'}, ensure_ascii=False)
@@ -57,7 +58,7 @@ async def query_team_business(runtime: ToolRuntime[RunContext], kind: Literal['w
                 result['employee'] = members['items'][0]
             return json.dumps(result, ensure_ascii=False)
         except HTTPException as error:
-            return json.dumps({'error': error.detail}, ensure_ascii=False)
+            return json.dumps(http_failure(error), ensure_ascii=False)
 
 
 @tool
@@ -73,7 +74,7 @@ async def read_team_source(token: str, runtime: ToolRuntime[RunContext], child_i
         try:
             return json.dumps(await business_read_source(db, actor, job, token, child_id, start), ensure_ascii=False)
         except HTTPException as error:
-            return json.dumps({'error': error.detail}, ensure_ascii=False)
+            return json.dumps(http_failure(error), ensure_ascii=False)
 
 
 @tool
@@ -94,36 +95,36 @@ async def propose_followup(title: str, summary: str, status: Literal['in_progres
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if actor.role != 'admin' or job.kind != 'message':
-            return '当前账号或任务不能创建督办建议。'
+            return clip({'state': 'failed', 'category': 'permission_denied', 'message': '当前账号或任务不能创建督办建议。'})
         message = await owned(db, Message, job.target_id, actor)
         if not context.own_work_searched:
-            return '请先查询本人已有工作，确认这是新增还是更新。'
+            return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '请先查询本人已有工作，确认这是新增还是更新。'})
         if not 1 <= len(source_tokens) <= 20:
-            return '请选择 1～20 个实际读取的工作或已提交报告来源。'
+            return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '请选择 1～20 个实际读取的工作或已提交报告来源。'})
         links = []
         for raw_token in dict.fromkeys(source_tokens):
             token = business_canonical_token(raw_token)
             evidence = job.access.get('reads', {}).get(token)
             if not evidence or evidence.get('type') not in ('work', 'report'):
-                return '关联来源未被读取或不是工作／已提交报告，请先查询。'
+                return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '关联来源未被读取或不是工作／已提交报告，请先查询。'})
             try:
                 await business_resolve(db, actor, evidence, latest=True)
-            except HTTPException:
-                return '关联来源已变化或无权查看，请重新查询后提出建议。'
+            except HTTPException as error:
+                return clip(http_failure(error))
             links.append({'token': token, 'evidence': evidence})
         work = await referenced_record(db, WorkItem, work_id, actor) if work_id and work_id != 'null' else None
         if work_id and work_id != 'null' and not work:
-            return '只能更新本人工作，请使用本人查询返回的 ID。'
+            return clip({'state': 'failed', 'category': 'permission_denied', 'message': '只能更新本人工作，请使用本人查询返回的 ID。'})
         if work:
             await business_require(db, actor, work.access, retained=True)
         if work and context.read_versions.get(work.id) != work.revision:
-            return '本人事项尚未读取或已更新，请先重新读取。'
+            return clip({'state': 'failed', 'category': 'conflict', 'message': '本人事项尚未读取或已更新，请先重新读取。'})
         key = suggestion_key(context, job, 'propose_followup', content, work_id if work_id != 'null' else None, source_tokens)
         existing = await db.scalar(select(ProgressDraft).where(ProgressDraft.tool_key == key))
         if existing:
             return clip(suggestion_receipt(context, job, 'propose_followup', existing, content, work_id if work_id != 'null' else None, source_tokens))
         if len(message.suggestions) >= 20:
-            return '本轮建议已达到 20 项，请等待确认。'
+            return clip({'state': 'failed', 'category': 'missing_info', 'message': '本轮建议已达到 20 项，请等待确认。'})
         draft = ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, content=content, work_id=work.id if work else None, base_revision=work.revision if work else None, tool_key=key, business_links=links, access=job.access)
         business_inherit(actor, draft, message, *([work] if work else []))
         db.add(draft)

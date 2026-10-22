@@ -1,0 +1,244 @@
+[
+  {
+    "allowed": true,
+    "quote": "之前生成的这些文件都加到这条工作里，原来的工作内容保留。",
+    "reason": "用户要把之前生成的11份文件材料绑定到当前工作，明确要求保留原工作内容；materials 绑定、body 保留均为原样，目标由 workReference 直接指定。",
+    "requestedChanges": [
+      {
+        "quote": "之前生成的这些文件都加到这条工作里",
+        "field": "materials",
+        "kind": "material"
+      }
+    ],
+    "requiredFields": ["materials"],
+    "notRequested": false,
+    "receiptOnly": true,
+    "taskContext": {
+      "goal": "将之前生成的文件添加到“资料整理”工作中",
+      "relation": "new",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    },
+    "materialSelection": {
+      "quote": "之前生成的这些文件都加到这条工作里",
+      "messageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+      "selection": "all",
+      "references": [],
+      "previousId": "",
+      "destination": "work_reference",
+      "targetId": "721839fa-affc-4792-935d-bc78b068c09f",
+      "destinationEvidence": {
+        "source": "work_reference",
+        "targetId": "721839fa-affc-4792-935d-bc78b068c09f",
+        "quote": "这条工作",
+        "messageId": "6dc17500-643d-4828-ae7f-6761c588195d"
+      }
+    }
+  },
+  {
+    "allowed": true,
+    "quote": "之前生成的这些文件都加到这条工作里，原来的工作内容保留。",
+    "reason": "用户明确要求把此前生成的文件加入当前工作，且保留原有内容；仅新增材料绑定，不改动正文、状态等字段。",
+    "requestedChanges": [
+      {
+        "quote": "之前生成的这些文件都加到这条工作里",
+        "field": "materials",
+        "kind": "material"
+      },
+      {
+        "quote": "原来的工作内容保留。",
+        "field": "body",
+        "kind": "content"
+      }
+    ],
+    "requiredFields": ["materials"],
+    "appendFields": [],
+    "appendValues": {},
+    "receiptOnly": true,
+    "titleOnly": false,
+    "requireConfirmation": false,
+    "notRequested": false,
+    "denialScope": "other",
+    "quoteMessageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+    "resumeTask": false,
+    "taskItemId": "",
+    "newTaskItem": false,
+    "continuingInstruction": false,
+    "taskContext": {
+      "goal": "把之前生成的文件加入“资料整理”工作并保留原工作内容",
+      "relation": "new",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    },
+    "directiveTargetId": "",
+    "directiveFields": [],
+    "failureKind": "invalid_arguments",
+    "recoveryOwner": "assistant",
+    "missingInputs": [],
+    "materialSelection": {
+      "mode": "all",
+      "quote": "之前生成的这些文件都加到这条工作里",
+      "messageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+      "destination": "existing",
+      "destinationEvidence": {
+        "source": "work_reference",
+        "messageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+        "quote": "这条工作"
+      },
+      "references": [
+        {
+          "deliverableId": "84b97b13-5c2d-42b1-9201-73a03d2a8a85",
+          "revision": 1,
+          "fileId": "c8ed0fc0-fb05-46c5-b340-4bf26aea6585"
+        },
+        {
+          "deliverableId": "4f50a782-ed80-48cd-8465-9409ca3cf912",
+          "revision": 1,
+          "fileId": "d793962a-3546-4927-9f0e-c5f51800823a"
+        },
+        {
+          "deliverableId": "7cb2215b-e86a-4923-8c1e-3a8fedfd481e",
+          "revision": 1,
+          "fileId": "924abed5-0abd-4336-a6a9-a45356204d6f"
+        },
+        {
+          "deliverableId": "09dc0b86-3bf8-4fff-9b32-f07c5035c428",
+          "revision": 1,
+          "fileId": "05af9059-72b7-40ea-888e-35b83a3d3800"
+        },
+        {
+          "deliverableId": "9f6b1735-6c7d-47be-a2c9-c90139178188",
+          "revision": 1,
+          "fileId": "8c056b6e-b32c-43bc-9a3a-fb3a88d52e66"
+        },
+        {
+          "deliverableId": "525075c7-ab35-43a3-9c39-517583541d82",
+          "revision": 1,
+          "fileId": "dac2bf5f-8364-4f72-ba70-35da053516bf"
+        },
+        {
+          "deliverableId": "365142cc-20b3-42bc-b599-4101aa77df17",
+          "revision": 1,
+          "fileId": "74d3f4aa-2555-4fa4-ba63-1259d1c17f8c"
+        },
+        {
+          "deliverableId": "aaa7fcd5-2442-456f-87c9-429ab3022ccf",
+          "revision": 1,
+          "fileId": "4cf9416f-30d1-4c2b-a12e-ae88ec376877"
+        },
+        {
+          "deliverableId": "54d9befb-89c0-469c-a2b9-dce276f30649",
+          "revision": 1,
+          "fileId": "279f903b-755d-46d2-8265-1f6ec0a1a978"
+        },
+        {
+          "deliverableId": "828afe2e-3fac-4c17-8190-8359a64c9931",
+          "revision": 1,
+          "fileId": "7c880e09-6a09-4ea9-b478-795e4f18a9c1"
+        },
+        {
+          "deliverableId": "939fd008-de15-4387-bb27-4cd3e7e3cace",
+          "revision": 1,
+          "fileId": "1b6f96d7-8a34-4e57-b90b-9307d8f9d323"
+        }
+      ],
+      "previousId": ""
+    }
+  },
+  {
+    "allowed": true,
+    "requestedChanges": [
+      {
+        "quote": "之前生成的这些文件都加到这条工作里",
+        "field": "materials",
+        "kind": "material"
+      },
+      {
+        "quote": "原来的工作内容保留。",
+        "field": "body",
+        "kind": "content"
+      }
+    ],
+    "requiredFields": ["materials", "materialIds"],
+    "quote": "之前生成的这些文件都加到这条工作里，原来的工作内容保留。",
+    "reason": "用户要求把此前生成的全部文件加入已读取的本人工作“资料整理”，并保留原工作内容；提案通过 materials 绑定这 11 份成果文件，未改动正文，符合授权。",
+    "receiptOnly": true,
+    "appendFields": [],
+    "appendValues": {},
+    "missingInputs": [],
+    "failureKind": "invalid_arguments",
+    "recoveryOwner": "assistant",
+    "denialScope": "other",
+    "materialSelection": {
+      "mode": "all",
+      "quote": "之前生成的这些文件都加到这条工作里",
+      "messageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+      "destination": "existing",
+      "destinationEvidence": {
+        "source": "work_reference",
+        "quote": "",
+        "messageId": ""
+      }
+    },
+    "taskContext": {
+      "goal": "把之前生成的全部文件加入工作“资料整理”，保留原内容",
+      "relation": "new",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    }
+  },
+  {
+    "allowed": true,
+    "quote": "之前生成的这些文件都加到这条工作里，原来的工作内容保留。",
+    "reason": "用户明确要求把之前生成的文件加入指定工作，且保留原工作内容；提案对象与材料来源一致。",
+    "requestedChanges": [],
+    "requiredFields": [],
+    "appendFields": [],
+    "appendValues": {},
+    "receiptOnly": true,
+    "titleOnly": false,
+    "requireConfirmation": false,
+    "notRequested": false,
+    "denialScope": "other",
+    "quoteMessageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+    "resumeTask": false,
+    "taskItemId": "",
+    "newTaskItem": false,
+    "continuingInstruction": false,
+    "taskContext": {
+      "goal": "把之前生成的文件加入“资料整理”工作，保留原工作内容",
+      "relation": "new",
+      "state": "completed",
+      "remaining": [],
+      "directiveChange": "keep",
+      "directiveQuote": "",
+      "directiveScope": ""
+    },
+    "directiveTargetId": "",
+    "directiveFields": [],
+    "materialSelection": {
+      "mode": "all",
+      "references": [],
+      "previousId": "",
+      "quote": "之前生成的这些文件都加到这条工作里",
+      "quoteMessageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+      "destination": "existing",
+      "destinationEvidence": {
+        "source": "work_reference",
+        "quote": "这条工作",
+        "quoteMessageId": "6dc17500-643d-4828-ae7f-6761c588195d",
+        "targetId": "721839fa-affc-4792-935d-bc78b068c09f"
+      }
+    },
+    "missingInputs": []
+  }
+]

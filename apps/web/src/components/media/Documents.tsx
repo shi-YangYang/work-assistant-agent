@@ -2,6 +2,7 @@ import utilitiesStyles from '../../styles/utilities.module.css'
 import layoutStyles from '../../styles/layout.module.css'
 import controlsStyles from '../../styles/controls.module.css'
 import documentsStyles from './documents.module.css'
+import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 import type { Attachment, DocumentCitation, ExtractionPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
@@ -17,7 +18,7 @@ const statuses: Record<string, string> = {
   unsent: '上传完成，尚未发送',
   pending: '等待解析',
   processing: '正在解析',
-  ready: '文字可读',
+  ready: '',
   partial: '部分可读',
   failed: '解析失败',
   empty: '未找到文字',
@@ -25,7 +26,7 @@ const statuses: Record<string, string> = {
 
 function extractionStatus(extraction: Attachment['extraction']) {
   if (extraction?.hasVisuals && extraction.characters === 0 && extraction.status !== 'failed')
-    return '可查看页面'
+    return ''
 
   if (extraction?.status === 'processing') {
     switch (extraction.stage) {
@@ -72,7 +73,7 @@ const warningHints: [RegExp, string][] = [
 function documentHint(extraction: Attachment['extraction']) {
   if (extraction?.visualError) return '图片部分没读到。'
   if (extraction?.hasVisuals && extraction.characters === 0 && extraction.status !== 'failed')
-    return '将通过页面图片读取内容。'
+    return ''
 
   if (extraction?.status === 'failed') {
     const error = extraction.error ?? ''
@@ -109,58 +110,91 @@ export function DocumentCard({
   const [error, setError] = useState<Error | string>('')
   const extraction = attachment.extraction
   const hint = documentHint(extraction)
+  const isPdf = attachment.mime === 'application/pdf'
+  const status = extractionStatus(extraction)
+  const primaryContent = (
+    <>
+      <span className={cardStyles.icon} aria-hidden="true">
+        <FileText size={24} />
+      </span>
+      <span className={cardStyles.content}>
+        <strong className={cardStyles.title} title={attachment.name}>
+          {attachment.name}
+        </strong>
+        <span className={`${cardStyles.meta} ${cardStyles.fileSubtitle}`} aria-hidden="true">
+          <span className={cardStyles.fileInfo}>
+            {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)}
+          </span>
+          <span className={cardStyles.fileHint}>{isPdf ? '打开文件' : '下载文件'}</span>
+        </span>
+      </span>
+    </>
+  )
   return (
-    <div className={documentsStyles['document-card']} data-compact={compact}>
-      <div className={documentsStyles['document-heading']}>
-        <FileText size={21} />
-        <strong>{attachment.name}</strong>
-      </div>
-      <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-        {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)} ·{' '}
-        {extractionStatus(extraction)}
-      </p>
-      {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
-      <ErrorNotice>{error}</ErrorNotice>
-      <div className={`${layoutStyles['card-actions']} ${documentsStyles['slot-card-actions']}`}>
-        {attachment.mime === 'application/pdf' && (
-          <button
-            type="button"
-            className={`${controlsStyles['text-button']}`}
-            onClick={() => setPdf(true)}
-          >
-            查看原页
-          </button>
-        )}
-        <a href={attachment.url} download={attachment.name}>
-          <Download size={14} />
-          下载原文件
+    <div
+      className={`${cardStyles.card} ${cardStyles.fileCard} ${cardStyles.hoverActions} ${documentsStyles['document-card']}`}
+      data-compact={compact}
+    >
+      {isPdf ? (
+        <button
+          type="button"
+          className={cardStyles.fileMain}
+          aria-label={`打开${attachment.name}`}
+          onClick={() => setPdf(true)}
+        >
+          {primaryContent}
+        </button>
+      ) : (
+        <a
+          className={cardStyles.fileMain}
+          href={attachment.url}
+          download={attachment.name}
+          aria-label={`下载${attachment.name}`}
+        >
+          {primaryContent}
         </a>
-        {['pending', 'processing'].includes(extraction?.status ?? '') && (
-          <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
-            刷新状态
-          </button>
-        )}
-        {own && extraction?.status === 'failed' && (
-          <BusyButton
-            type="button"
-            busy={busy}
-            onClick={async () => {
-              setBusy(true)
-              try {
-                await retryDocument(attachment, {})
-                refresh()
-                setError('')
-              } catch (e) {
-                setError(e as Error)
-              } finally {
-                setBusy(false)
-              }
-            }}
-          >
-            重新解析
-          </BusyButton>
-        )}
-      </div>
+      )}
+      <a
+        className={`${cardStyles.fileDownload} ${cardStyles.hoverAction}`}
+        href={attachment.url}
+        download={attachment.name}
+        aria-label="下载原文件"
+        title="下载原文件"
+      >
+        <Download size={20} aria-hidden="true" />
+      </a>
+      {(status || hint || error) && (
+        <div className={documentsStyles['document-details']}>
+          {status && <p className={cardStyles.meta}>{status}</p>}
+          {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
+          <ErrorNotice>{error}</ErrorNotice>
+          {['pending', 'processing'].includes(extraction?.status ?? '') && (
+            <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
+              刷新状态
+            </button>
+          )}
+          {own && extraction?.status === 'failed' && (
+            <BusyButton
+              type="button"
+              busy={busy}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await retryDocument(attachment, {})
+                  refresh()
+                  setError('')
+                } catch (e) {
+                  setError(e as Error)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              重新解析
+            </BusyButton>
+          )}
+        </div>
+      )}
       {pdf && (
         <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
       )}
@@ -195,8 +229,12 @@ function DocumentPreview({
         {data && !error && (
           <>
             <p className={`${utilitiesStyles['muted']} ${utilitiesStyles['small-text']}`}>
-              {data.attachment.extraction?.scope ?? '提取文字'} ·{' '}
-              {extractionStatus(data.attachment.extraction)}
+              {[
+                data.attachment.extraction?.scope ?? '提取文字',
+                extractionStatus(data.attachment.extraction),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </p>
             {data.attachment.extraction?.warnings?.map((warning) => (
               <p className={documentsStyles['document-warning']} key={warning}>

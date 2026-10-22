@@ -54,7 +54,7 @@ async def initialize(context, input_key):
             context.refresh_work_versions.clear()
             # A reply and its evidence belong to the same data/configuration
             # scope as the graph. Business receipts remain for safe replay.
-            stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete', 'workChangeRequirements'}
+            stale = {'pendingReply', 'replyReview', 'replyReviewError', 'completionRepairAttempted', 'deliveryRepairs', 'responseRepairComplete', 'workChangeRequirements', 'workChangeCandidates'}
             if previous_scope:
                 stale.update(('operationFeedback', 'operationFeedbackKeys', 'webSources', 'webRedirects', 'webReadFailures'))
             job.result = {key: value for key, value in job.result.items() if key not in stale}

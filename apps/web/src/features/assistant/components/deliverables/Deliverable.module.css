@@ -1,28 +1,16 @@
 .entry {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 100%;
-  margin-top: 8px;
-  margin-right: 8px;
-  padding: 8px 12px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 13px;
+  margin-top: 12px;
   text-align: left;
+  white-space: normal;
 }
-.entry span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.entryArrow {
+  color: var(--muted);
 }
 .entry svg {
   flex-shrink: 0;
 }
 .entry:hover {
-  background: var(--surface-hover, #f5f5f5);
+  background: var(--hover);
 }
 .reader {
   min-width: 0;

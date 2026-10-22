@@ -146,7 +146,7 @@ class ExhaustingModel(DeliveryModel):
         self.calls += 1
         self.offered.append([tool['function']['name'] for tool in kwargs.get('tools', [])])
         if self.calls == 1:
-            assert self.offered[-1] == ['load_tools']
+            assert self.offered[-1] == ['load_tools', 'request_user_input', 'web_search']
             answer = AIMessage(content='', tool_calls=[{'id': 'load-work', 'name': 'load_tools', 'args': {'groups': ['work']}}])
         elif self.with_receipt and self.calls == 2:
             assert 'execute_business_action' in self.offered[-1]

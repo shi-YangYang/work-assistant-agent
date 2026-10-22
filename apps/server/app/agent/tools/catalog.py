@@ -5,9 +5,10 @@ from typing import Annotated
 from langchain.tools import ToolRuntime, tool
 from pydantic import Field
 from app.agent.prompts.policies import ALLOWED_TOOLS, TEAM_TOOL_NAMES, EXECUTION_TOOLS
-from app.core.digests import digest
-from app.tasks.context import BudgetExceeded, RunContext
+from app.tasks.context import BudgetExceeded, RunContext, input_scope_key as scope_key
 from app.tasks.lease import lease
+
+ALWAYS_VISIBLE_TOOLS = frozenset({'request_user_input'})
 
 GROUPS = {
     'images': frozenset({'generate_image', 'read_images'}),
@@ -27,7 +28,7 @@ DESCRIPTIONS = {
     'documents': '读取私人附件/历史消息，保存与修改私人方案、文稿、清单及稳定条目',
     'files': '定位上传原件、表格检查、文件/图表/文档生成、Python计算及执行记录',
     'memory': '保存或忘记用户直接自述的稳定个人背景',
-    'task_context': '临时提问框（用户明确要求时使用）、集中澄清、持续指令与承接任务',
+    'task_context': '持续指令与承接任务',
 }
 RECEIPT_GROUPS = {
     'create_work': 'work', 'update_work': 'work', 'delete_work': 'work',
@@ -52,15 +53,6 @@ def available_groups(context):
     if 'files' not in groups:
         groups['documents'] |= {'read_execution'}
     return groups
-
-
-def scope_key(context):
-    # Retry fences change without changing the input. New data/config/input scopes
-    # must not inherit discovery; identities also prevent copied state leaking.
-    return digest({'company': context.company_id, 'owner': context.owner_id, 'job': context.job_id,
-                   'scope': context.node_scope, 'input': context.source_revision,
-                   'documents': context.document_snapshot, 'work': context.work_reference_snapshot,
-                   'config': context.model_binding, 'configAttempt': context.config_attempt})
 
 
 def previous_receipt_groups(context):
@@ -101,6 +93,8 @@ def remember_groups(context, job, groups):
 def remember_call_capability(context, job, call):
     """Discover a registered direct call; schema and authorization still apply."""
     name = call['name']
+    if name in ALWAYS_VISIBLE_TOOLS:
+        return
     loaded = loaded_groups(context, job)
     available = available_groups(context)
     if any(name in available[group] for group in loaded):
@@ -130,7 +124,7 @@ def catalog_schema(context, *, exclude=()):
 
 def visible_tools(context, groups):
     available = available_groups(context)
-    names = {'load_tools'}
+    names = {'load_tools'} | ((ALWAYS_VISIBLE_TOOLS | {'web_search'}) & allowed_tools(context))
     for group in groups:
         names.update(available.get(group, ()))
     return names
@@ -150,9 +144,11 @@ async def load_tools(groups: Annotated[list[str], Field(min_length=1, max_length
         if research_stopped(context, job):
             available.pop('research', None)
         if any(group not in available for group in groups):
-            return json.dumps({'state': 'unavailable', 'available': list(available)}, ensure_ascii=False)
+            return json.dumps({'state': 'unavailable', 'category': 'invalid_arguments', 'available': list(available)}, ensure_ascii=False)
         loaded = remember_groups(context, job, groups)
-        return json.dumps({'state': 'loaded', 'groups': loaded, 'tools': sorted(visible_tools(context, loaded) - {'load_tools'})}, ensure_ascii=False)
+        from app.agent.runtime import decision_flow
+        names = decision_flow.available(decision_flow.current(context, job), visible_tools(context, loaded))
+        return json.dumps({'state': 'loaded', 'groups': loaded, 'tools': sorted(names - {'load_tools'})}, ensure_ascii=False)
 
 
 if set().union(*GROUPS.values()) != (ALLOWED_TOOLS | TEAM_TOOL_NAMES) - {'finish_task'}:

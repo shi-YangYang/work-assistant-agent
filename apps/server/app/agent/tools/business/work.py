@@ -92,7 +92,7 @@ async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext], body_sta
         live, actor = await lease(db, runtime.context)
         item = await referenced_record(db, WorkItem, work_id, actor)
         if item is None:
-            return '工作记录不存在或无权查看。请使用 find_work_items 返回的工作 ID，不要猜测 ID。'
+            return clip({'state': 'failed', 'category': 'invalid_arguments', 'message': '工作记录不存在或无权查看。请使用 find_work_items 返回的工作 ID，不要猜测 ID。'})
         await business_require(db, actor, item.access, retained=True)
         result = json.dumps(await business_work_for_model(db, actor, live, item, body_start=max(0, body_start), detail=True), ensure_ascii=False, default=str)
         runtime.context.read_versions[item.id] = item.revision
@@ -127,23 +127,23 @@ async def propose_progress(title: str, summary: str, status: Literal['in_progres
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         if job.kind != 'message':
-            return '报告任务不能修改进展建议。'
+            return clip({'state': 'failed', 'category': 'permission_denied', 'message': '报告任务不能修改进展建议。'})
         message = await owned(db, Message, job.target_id, actor, lock=True)
         if not message.text and await db.scalar(select(Attachment.id).where(Attachment.message_id == message.id, Attachment.kind == 'document', Attachment.deleted.is_(False)).limit(1)):
-            return '员工仅发送文件，尚未说明处理意图。请先概览已读范围并询问，暂不提出工作进展。'
+            return clip({'state': 'failed', 'category': 'missing_info', 'message': '员工仅发送文件，尚未说明处理意图。请先概览已读范围并询问，暂不提出工作进展。'})
         work = await referenced_record(db, WorkItem, work_id, actor) if work_id is not None else None
         if work_id is not None and work is None:
-            return '工作记录不存在或无权查看。新工作请省略 work_id；关联已有工作请先查询并使用真实工作 ID。'
+            return clip({'state': 'failed', 'category': 'permission_denied', 'message': '工作记录不存在或无权查看。新工作请省略 work_id；关联已有工作请先查询并使用真实工作 ID。'})
         if work:
             await business_require(db, actor, work.access, retained=True)
         if work and context.read_versions.get(work.id) != work.revision:
-            return '工作记录尚未读取或已被员工更新，请重新读取并核对后提出建议。'
+            return clip({'state': 'failed', 'category': 'conflict', 'message': '工作记录尚未读取或已被员工更新，请重新读取并核对后提出建议。'})
         key = suggestion_key(context, job, 'propose_progress', content, work_id)
         prior = await db.scalar(select(ProgressDraft).where(ProgressDraft.tool_key == key))
         if prior:
             return clip(suggestion_receipt(context, job, 'propose_progress', prior, content, work_id))
         if len(message.suggestions) >= 20:
-            return '本轮建议已达到 20 项，请结束并等待员工确认。'
+            return clip({'state': 'failed', 'category': 'missing_info', 'message': '本轮建议已达到 20 项，请结束并等待员工确认。'})
         draft = ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=message.id, content=content, work_id=work.id if work else None, base_revision=work.revision if work else None, tool_key=key)
         business_inherit(actor, draft, job, message, *([work] if work else []))
         db.add(draft)

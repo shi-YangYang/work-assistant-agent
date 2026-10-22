@@ -181,8 +181,7 @@ it('shows modification history instead of progress and opens material tools on d
     false,
   )
 
-  fireEvent.click(screen.getByRole('button', { name: '管理工作' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: '全部附件 · 1' }))
+  fireEvent.click(screen.getByRole('button', { name: '全部附件 · 1' }))
   const materials = screen.getByRole('dialog', { name: '全部附件' })
   expect(await within(materials).findByRole('button', { name: '需求.txt' })).toBeTruthy()
   fireEvent.click(within(materials).getByRole('button', { name: '关闭' }))
@@ -215,9 +214,12 @@ it('keeps older modifications available without expanding every field change', (
 })
 it('keeps history available without exposing edit controls in a historical work', async () => {
   vi.mocked(api).mockImplementation(async (path) =>
-    String(path).includes('/updates')
-      ? { items: [], nextCursor: null }
-      : { ...work, historical: true },
+    String(path).includes('/materials')
+      ? {
+          items: [{ id: 'material', attachment: { name: '历史材料.txt', size: 20 } }],
+          nextCursor: null,
+        }
+      : { ...work, historical: true, materialIds: ['material'] },
   )
   renderWork(<WorkDetail recordId="work" />)
   await screen.findByRole('heading', { name: work.title })
@@ -228,6 +230,14 @@ it('keeps history available without exposing edit controls in a historical work'
   expect(screen.queryByRole('menuitem', { name: '删除工作' })).toBeNull()
   expect(screen.queryByRole('button', { name: '编辑内容' })).toBeNull()
   expect(screen.queryByRole('button', { name: '记录新进展' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '全部附件 · 1' }))
+  const materials = screen.getByRole('dialog', { name: '全部附件' })
+  expect(await within(materials).findByRole('button', { name: '历史材料.txt' })).toBeTruthy()
+  expect(within(materials).queryByRole('button', { name: '移除材料' })).toBeNull()
+  expect(api).toHaveBeenCalledWith(
+    '/work-items/work/materials?start=0&limit=20&revision=1',
+    expect.anything(),
+  )
 })
 it('creates from a title and does not ask for progress or create fake updates', async () => {
   const saved = vi.fn()

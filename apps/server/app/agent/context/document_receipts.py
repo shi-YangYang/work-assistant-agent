@@ -34,9 +34,9 @@ async def document_tool_result(db, context, item, result, job):
                 aliases[other_token] = item.id
     if others:
         result['sameContentAttachments'] = [{'id': other.id, 'name': other.name} for other in others]
-        result['reuseScope'] = '以上同内容附件复用本次返回的分段；未返回部分仍未读取，附件份数不等于业务记录数。'
+        result['reuseScope'] = 'returned_chunks_only'
     if rows:
-        result['positionBasis'] = '原文位置用 location；ordinal 是从 0 开始的提取分片游标，不是原文段落号。'
+        result['positionBasis'] = {'source': 'location', 'cursor': 'ordinal_zero_based_fragment'}
     info = item.extraction_info or {}
     returned = {row['ordinal'] for row in rows}
     total = info.get('chunks', 0)
@@ -46,13 +46,13 @@ async def document_tool_result(db, context, item, result, job):
                  if entry[0] == item.id and entry[1] == item.extraction_revision}
     limits = []
     if len(cumulative) < total:
-        limits.append('未返回的文字不能用本次匹配或抽样结果概括。')
+        limits.append('unreturned_text')
     if not info.get('sourceComplete'):
-        limits.append('原文件仍有未提取范围。')
+        limits.append('unextracted_source')
     if info.get('convertedFormat'):
-        limits.append('仅核对转换后文字；原件图形、版式和嵌入内容是否丢失未核验。')
+        limits.append('conversion_fidelity_unverified')
     elif info.get('hasVisuals'):
-        limits.append('此文字回执不含图片，页图读取另计。')
+        limits.append('visuals_not_read')
     result['readScope'] = {
         'returnedChunks': len(returned), 'extractedChunks': total,
         'allExtractedTextReturned': bool(total) and len(returned) == total,
@@ -61,7 +61,7 @@ async def document_tool_result(db, context, item, result, job):
         'providedChunksBeforeThisCall': len(delivered),
         'textBasis': 'converted_text' if info.get('convertedFormat') else 'extracted_text',
         'pageImagesIncluded': False,
-        'limitations': limits,
+        'limitationsCodes': limits,
     }
     if structure := table_structure_reference(info):
         result['tableStructure'] = structure
