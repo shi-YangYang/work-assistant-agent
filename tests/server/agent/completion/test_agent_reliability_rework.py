@@ -243,7 +243,7 @@ async def test_failed_create_recovers_with_explicit_item_after_adding_source(set
     # Invoke the actual tool signature: its omitted options include copy_index=1.
     failed = json.loads(await execute_business_action.coroutine(runtime=runtime, step=2,
         action='create_work', changes={'title': '联调方案', 'body': body('对照接口完成联调')}))
-    assert failed['state'] == 'clarification' and failed['taskItemId']
+    assert failed['state'] == 'waiting' and failed['taskItemId']
     context.intent_model = Judge()
     first = json.loads(await execute_business_action.coroutine(runtime=runtime, step=1,
         action='create_work', changes={'title': '需求确认', 'body': body('确认需求与范围')}))

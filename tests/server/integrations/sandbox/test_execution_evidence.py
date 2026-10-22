@@ -52,7 +52,9 @@ async def test_receipts_never_cross_conversation_owner_or_company(setup, receipt
     await finish(context)
     other = await followup(setup, who=who)
     assert (await read(other))['items'] == []
-    assert (await read(other, first['executionId']))['state'] == 'unavailable'
+    denied = await read(other, first['executionId'])
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied'
+    assert 'stdout' not in denied and 'inputRefs' not in denied
     assert receipts.count == 1
 
 
@@ -74,7 +76,9 @@ async def test_deleted_or_revoked_sources_hide_receipts(setup, receipts, revoked
             row.sources = [{'kind': 'attachment', 'id': str(uuid4()), 'sha256': 'missing', 'revision': 1}]
     context = await followup(setup, sent['conversationId'])
     assert (await read(context))['items'] == []
-    assert (await read(context, first['executionId']))['state'] == 'unavailable'
+    denied = await read(context, first['executionId'])
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied'
+    assert 'stdout' not in denied and 'inputRefs' not in denied
 
 
 async def test_execution_text_and_directory_are_bounded_and_old_receipts_stay_honest(setup, receipts):
@@ -103,5 +107,7 @@ async def test_execution_text_and_directory_are_bounded_and_old_receipts_stay_ho
     assert first_page['code'] + second['code'] + third['code'] == 'x' * 3001
     assert first_page['stdout'] + second['stdout'] + third['stdout'] == 'y' * 6001
     assert third['nextOffset'] is None and receipts.count == 1
-    assert (await read(context, first['executionId'], -1))['state'] == 'unavailable'
-    assert (await read(context, first['executionId'], 6001))['state'] == 'unavailable'
+    invalid = await read(context, first['executionId'], -1)
+    assert invalid['state'] == 'failed' and invalid['category'] == 'invalid_arguments'
+    invalid = await read(context, first['executionId'], 6001)
+    assert invalid['state'] == 'failed' and invalid['category'] == 'invalid_arguments'

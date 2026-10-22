@@ -32,12 +32,14 @@ async def test_member_directory_invalid_cursor_and_employee_forgery(setup):
     rows = []
     for cursor in (-1, 501):
         result = json.loads(await find_team_members.coroutine('', SimpleNamespace(context=admin), cursor))
-        assert result == {'error': {'message': '员工分页位置无效', 'code': 'invalid_request'}}, result
+        assert result == {'state': 'failed', 'category': 'invalid_arguments', 'httpStatus': 422,
+                          'message': '员工分页位置无效', 'code': 'invalid_request',
+                          'recovery': {'owner': 'assistant', 'nextAction': 'repair'}}, result
         rows.append({'cursor': cursor, 'result': result})
     await finish(admin)
     employee, _ = await runtime(setup, '列出公司成员')
     denied = json.loads(await find_team_members.coroutine('', SimpleNamespace(context=employee)))
-    assert 'error' in denied and 'items' not in denied
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied' and 'items' not in denied
     assert '不能查询团队业务' in json.dumps(denied, ensure_ascii=False)
     evidence('member-tool-invalid-cursor', {'invalid': rows, 'employee': denied})
 
@@ -70,8 +72,8 @@ async def test_obligation_tool_pages_all_own_rows_and_rejects_invalid_period(set
         assert int(result['nextCursor']) > offset
         offset = int(result['nextCursor'])
     assert len(actual) == len(set(actual)) == 43 and set(actual) == set(expected)
-    invalid = await query_report_obligations.coroutine(SimpleNamespace(context=context), period='not-a-date')
-    assert invalid == '汇报查询条件无效，请核对日期和范围。'
+    invalid = json.loads(await query_report_obligations.coroutine(SimpleNamespace(context=context), period='not-a-date'))
+    assert invalid == {'state': 'failed', 'category': 'invalid_arguments', 'message': '汇报查询条件无效，请核对日期和范围。'}
     evidence('obligation-tool-pages', {'pages': pages, 'ownCount': len(actual), 'foreignExcluded': 2, 'invalid': invalid})
 
 

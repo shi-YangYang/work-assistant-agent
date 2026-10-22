@@ -169,7 +169,7 @@ async def test_enabled_sandbox_is_visible_to_model_without_weakening_tool_bounda
     sent = await send(clients['employee'])
     model = await run_target(settings, sessions, users, sent, scenario='execution_tools')
     assert model.seen_tools[0] == 'load_tools'
-    assert set(model.seen_tools) == GROUPS['files'] | {'load_tools', 'request_user_input'}
+    assert set(model.seen_tools) == GROUPS['files'] | {'load_tools', 'request_user_input', 'web_search'}
     message = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert message['job']['taskOutcome']['state'] == 'completed'
     assert message['reply'] == '可用能力已加载。' and not message['actions']

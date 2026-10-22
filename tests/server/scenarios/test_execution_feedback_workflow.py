@@ -211,7 +211,7 @@ async def test_authorization_aliases_cover_one_actual_write_not_two_required_fie
     from app.modules.attachments.models import Attachment
     from app.modules.messages.models import Message
     work = await create(setup[3]['employee'], '资料整理')
-    text = '将这些材料保存到这项工作' if field == 'materials' else '补充正文：交付前核对来源'
+    text = '将这些材料保存到《资料整理》工作' if field == 'materials' else '补充正文：交付前核对来源'
     context, _ = await mode_runtime(setup, 'full', text)
     if change is None:
         attachment = await upload(setup[3]['employee'], 'facts.txt', b'checked material', 'text/plain')

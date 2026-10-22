@@ -257,7 +257,7 @@ async def test_unrelated_prose_preserves_previous_pending_task(setup):
     from sqlalchemy import select
     async with setup[1]() as db:
         state=await db.scalar(select(ConversationTaskState).where(ConversationTaskState.conversation_id==result['conversationId']))
-        assert state.payload['task']['remaining']==['缺少指定文件']
+        assert state.payload['task']['remaining']==[first.answer]
         assert state.payload['task']['messageId']==result['id']
     assert other['job']['taskOutcome']['state']=='completed'
 

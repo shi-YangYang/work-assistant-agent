@@ -11,11 +11,14 @@ class ProseModel(DeliveryModel):
         self.calls+=1
         self.requests.append({'tools':[tool['function']['name'] for tool in kwargs.get('tools',[])],'tool_choice':kwargs.get('tool_choice')})
         if self.task_value and self.calls==1:
-            assert self.requests[-1]['tools']==['load_tools']
+            assert self.requests[-1]['tools']==['load_tools', 'request_user_input', 'web_search']
             result=AIMessage(content='',tool_calls=[{'name':'load_tools','id':'load-context','args':{'groups':['task_context']}}])
         elif self.task_value and self.calls==2:
             assert 'set_task_context' in self.requests[-1]['tools']
             result=AIMessage(content='',tool_calls=[{'name':'set_task_context','id':'task-context','args':{'task':self.task_value,'business_requested':self.requested_write}}])
+        elif self.task_value and self.calls==3 and self.task_value.get('state')=='needs_input':
+            result=AIMessage(content='',tool_calls=[{'name':'request_user_input','id':'ask-input','args':{
+                'questions':[{'id':'missing-input','prompt':self.answer,'type':'text'}]}}])
         else:
             result=AIMessage(content=self.answer)
         return ChatResult(generations=[ChatGeneration(message=result)])

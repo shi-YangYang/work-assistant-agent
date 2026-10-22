@@ -73,7 +73,7 @@ async def test_ordinary_tasks_still_finish_in_one_call_with_sandbox_available(se
     fake = EvidenceModel(model='controlled', api_key='unused', answer=answer)
     result, stored = await run((settings, *setup[1:]), fake, user_text)
     assert result['reply'] == answer and result['job']['taskOutcome']['state'] == 'completed'
-    assert fake.calls == 1 and fake.reviews == 0 and fake.requests == [['load_tools', 'request_user_input']]
+    assert fake.calls == 1 and fake.reviews == 0 and fake.requests == [['load_tools', 'request_user_input', 'web_search']]
     assert not any(node['kind'] in ('tool', 'review') for node in result['job']['nodes'])
     assert not stored.get('replyReview') and not stored.get('deliveryRepairs')
     assert not result['actions'] and not result['drafts'] and not result['deliverables']
@@ -107,7 +107,7 @@ async def test_experiment_receipt_and_unavailable_paths_use_existing_graph_witho
     fake = EvidenceModel(model='controlled', api_key='unused', experiment=True,
                          verification_requested=verify, verification_quote=quote)
     result, stored = await run((settings, *setup[1:]), fake, (quote + '，' if quote else '') + '请做一个最小实验，观察集合排序。')
-    assert fake.requests[0] == ['load_tools', 'request_user_input']
+    assert fake.requests[0] == ['load_tools', 'request_user_input', 'web_search']
     assert any('run_python' in names for names in fake.requests) is enabled
     assert fake.calls == (3 if enabled else 1) and fake.reviews == 0
     assert len(submissions) == int(enabled) and len(fake.evidence) == int(enabled)
@@ -119,7 +119,11 @@ async def test_experiment_receipt_and_unavailable_paths_use_existing_graph_witho
         receipts = list((await db.scalars(select(SandboxExecution).where(SandboxExecution.job_id == result['job']['id']))).all())
         assert len(receipts) == int(enabled)
         if enabled:
-            assert receipts[0].result == fake.evidence[0]
+            evidence = dict(fake.evidence[0])
+            flow = evidence.pop('_flow')
+            assert flow['coverage'] == 'unknown' and flow['receipt']
+            assert flow['outcome'] == ('ok' if succeeds else 'failed')
+            assert receipts[0].result == evidence
             assert receipts[0].code == submissions[0]['code']
             assert receipts[0].state == ('succeeded' if succeeds else 'failed')
     if succeeds:

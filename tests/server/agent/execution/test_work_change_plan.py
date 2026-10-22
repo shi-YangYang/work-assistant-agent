@@ -257,7 +257,7 @@ async def test_body_and_material_classification_honors_modes_without_extra_progr
     from _support.agent.execution_permissions import mode_runtime
     client = setup[3]['employee']
     work = await create(client, '客户方案')
-    context, _ = await mode_runtime(setup, mode, '正文补充客户背景，保存选中的附件，进展与状态不变')
+    context, _ = await mode_runtime(setup, mode, '给《客户方案》正文补充客户背景，保存选中的附件，进展与状态不变')
     attachment = await upload(client, 'brief.txt', b'customer background', 'text/plain')
     context.work_change_model = PlanJudge({'body': ('set', '正文补充客户背景', None), 'materials': ('set', '保存选中的附件', None)})
     context.intent_model = ReceiptJudge(requested_changes=[{'quote': '正文补充客户背景', 'field': 'bodyEdits', 'kind': 'content'},
@@ -289,7 +289,7 @@ async def test_body_material_and_progress_steps_keep_separate_receipts_and_repla
     from _support.agent.execution_permissions import mode_runtime
     client = setup[3]['employee']
     work = await create(client, '分步保存')
-    context, _ = await mode_runtime(setup, 'full', '保存正文方案，附上选中的文件，再记一条进展：客户已确认。')
+    context, _ = await mode_runtime(setup, 'full', '给《分步保存》保存正文方案，附上选中的文件，再记一条进展：客户已确认。')
     attachment = await upload(client, 'brief.txt', b'customer brief', 'text/plain')
     quotes = [('body', '保存正文方案', 'content'), ('materials', '附上选中的文件', 'material'), ('update', '客户已确认', 'progress')]
     context.work_change_model = PlanJudge({field: ('set', quote, None) for field, quote, _ in quotes})

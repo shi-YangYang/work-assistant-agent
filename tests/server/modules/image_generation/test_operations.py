@@ -390,7 +390,7 @@ async def test_agent_lazy_generation_duplicate_calls_persists_before_final_text(
             tools = [item['function']['name'] for item in kwargs.get('tools', [])]
             previous = [message for message in messages if isinstance(message, ToolMessage)]
             if not any(message.name == 'load_tools' for message in previous):
-                assert tools == ['load_tools']
+                assert tools == ['load_tools', 'request_user_input', 'web_search']
                 answer = AIMessage(content='', tool_calls=[{'id': 'load-images', 'name': 'load_tools', 'args': {'groups': ['images']}}])
             else:
                 assert 'generate_image' in tools and 'run_python' not in tools

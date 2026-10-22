@@ -93,14 +93,14 @@ async def test_clarification_and_conflicts_survive_response_failure(setup):
     await read_work(context, work['id'])
     result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'title': '猜的标题'})
     detail = (await c['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
-    assert result['state'] == 'clarification' and result['category'] == 'missing_info'
+    assert result['state'] == 'waiting' and result['category'] == 'missing_info'
     assert not detail['actions']
     assert (await c['employee'].get('/api/v1/work-items/' + work['id'])).json()['revision'] == 1
     assert detail['job']['operationFeedback'][0]['message'] == result['publicMessage']
     assert '补充' in result['publicMessage']
     context.intent_model = Judge()
     still_ambiguous = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'title': '确定标题'})
-    assert still_ambiguous['state'] == 'clarification' and still_ambiguous['category'] == 'missing_info'
+    assert still_ambiguous['state'] == 'waiting' and still_ambiguous['category'] == 'missing_info'
     assert context.intent_model.inputs == []
     from _support.agent.conversation_task_state import ScopedJudge, close_task
     await close_task(context, state='needs_input')

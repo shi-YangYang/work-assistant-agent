@@ -227,7 +227,7 @@ async def test_real_wire_replay_through_http_worker_preserves_authorization(setu
                 self.checks += 1
                 reference = payload['conversationTask']['workReference']
                 assert reference['id'] == work['id'] and not reference.get('unavailable')
-                self.repairs.extend(m.content for m in input if isinstance(m.content, str) and m.content.startswith('上次核对输出'))
+                self.repairs.extend(m.content for m in input if isinstance(m.content, str) and m.content.startswith('本次核对输出须同时满足：'))
                 return AIMessage(content=wire)
             return await super().ainvoke(input, config, stop=stop, **kwargs)
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
@@ -265,7 +265,7 @@ async def test_real_wire_replay_through_http_worker_preserves_authorization(setu
         if variant == 3:
             assert live.state in ('failed', 'awaiting_retry')
             assert '操作核对未返回完整有效结果' in live.error
-            assert any('不能漏掉 workChangePlan' in text for text in model.repairs)
+            assert any('requestedChanges' in text and 'workChangePlan' in text and 'materials' in text for text in model.repairs)
             assert model.checks == 4 and model.calls == 2 and model.plans == 1
             visible = json.dumps(public, ensure_ascii=False)
             assert '操作核对未返回完整有效结果' not in visible and '内部核对未完成' not in visible
@@ -356,7 +356,7 @@ def gap_model(sent, work, values, text, wire_for, *, source_message=None):
                 return AIMessage(content=json.dumps(fields))
             if payload.get('proposedOperation'):
                 self.checks += 1
-                self.repairs.extend(m.content for m in input if isinstance(m.content, str) and m.content.startswith('上次核对输出'))
+                self.repairs.extend(m.content for m in input if isinstance(m.content, str) and m.content.startswith('本次核对输出须同时满足：'))
                 result = AIMessage(content=json.dumps(wire_for(payload, self.checks), ensure_ascii=False))
                 # Real BoundedChatModel validates before returning; check()
                 # parses again. Both passes must be side-effect free.
@@ -421,9 +421,10 @@ async def test_actual_gap_wires_ask_once_then_answer_saves_all_without_main_rewr
         assert len(model.repairs) == 3
         assert '没有可用的工作引用' in model.repairs[0]
         assert 'workChangeFields: extra_forbidden' in model.repairs[1]
-        assert '没有可用的工作引用' not in model.repairs[1]
+        assert '没有可用的工作引用' in model.repairs[1]
         assert 'quoteRange: extra_forbidden' in model.repairs[2]
-        assert 'workChangeFields' not in model.repairs[2] and 'taskContext' not in model.repairs[2]
+        assert 'workChangeFields: extra_forbidden' in model.repairs[2]
+        assert '没有可用的工作引用' in model.repairs[2]
     async with sessions() as db:
         live = await db.get(Job, job.id)
         assert not live.result.get('workChangeRequirements')

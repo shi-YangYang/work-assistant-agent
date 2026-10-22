@@ -141,7 +141,7 @@ async def test_same_obstruction_does_not_retry_on_rephrased_parameters(setup):
     context.intent_model = judge
     for title in ('猜测的事项', '换一种标题继续猜'):
         result = await execute(context, step=1, action='create_work', changes={'title': title})
-        assert result['state'] == 'clarification'
+        assert result['state'] == 'waiting'
     assert len(judge.inputs) == 1
 
 
@@ -161,7 +161,7 @@ async def test_argument_correction_releases_old_failure_and_suggestion_denials_a
     context, _ = await runtime(setup, '那个呢')
     context.intent_model = ScopedJudge(allowed=False)
     result = json.loads(await propose_progress.coroutine('建议', '进度', 'in_progress', '', '', SimpleNamespace(context=context)))
-    assert result['state'] == 'clarification'
+    assert result['state'] == 'waiting'
     async with sessions() as db:
         job = await db.get(Job, context.job_id)
         assert job.result['toolOutcomes'][0]['category'] == 'missing_info'

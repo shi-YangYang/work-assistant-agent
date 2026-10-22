@@ -232,7 +232,9 @@ async def test_preloaded_work_still_requires_new_authorization_and_own_sources(s
     for who in ('peer', 'outsider'):
         foreign = await create(setup[3][who])
         denied = await get_work_item.coroutine(foreign['id'], SimpleNamespace(context=current))
-        assert denied.startswith('工作记录不存在或无权查看。')
+        failure = json.loads(denied)
+        assert failure['state'] == 'failed' and failure['category'] == 'invalid_arguments'
+        assert failure['message'].startswith('工作记录不存在或无权查看。')
         assert foreign['id'] not in current.read_versions
     await read_work(current, prior['objectId'])
     current.intent_model = ReceiptJudge(allowed=False)

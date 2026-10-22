@@ -183,7 +183,9 @@ async def test_attachment_and_execution_never_cross_conversations_or_owners(setu
     result = await invoke(other, 'inspect_table', source={'input_ref': {'attachment_id': identifier}})
     assert result['state'] == 'failed' and builtin_receipts.count == 1
     assert (await read(other))['items'] == []
-    assert (await read(other, first['executionId']))['state'] == 'unavailable'
+    denied = await read(other, first['executionId'])
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied'
+    assert 'stdout' not in denied and 'inputRefs' not in denied
 
 
 async def test_revoked_attachment_blocks_reuse_and_hides_saved_receipt(setup, builtin_receipts):
@@ -195,7 +197,9 @@ async def test_revoked_attachment_blocks_reuse_and_hides_saved_receipt(setup, bu
     async with context.sessions.begin() as db:
         (await db.get(Attachment, identifier)).deleted = True
     assert (await invoke(context, 'inspect_table', source=source))['state'] == 'failed'
-    assert (await read(context, first['executionId']))['state'] == 'unavailable'
+    denied = await read(context, first['executionId'])
+    assert denied['state'] == 'failed' and denied['category'] == 'permission_denied'
+    assert 'stdout' not in denied and 'inputRefs' not in denied
     assert builtin_receipts.count == 1
 
 
@@ -261,7 +265,8 @@ async def test_success_is_private_reused_and_revision_conflicts_do_not_overwrite
     assert own.status_code == 200 and own.content == builtin_receipts.data
     assert own.headers['cache-control'] == 'private, no-store'
     conflict = await invoke(context, filename='结果.csv', format='csv', data={'columns': ['值'], 'rows': [[9]]})
-    assert conflict['state'] == 'failed' and await revision_count(context) == 1
+    assert conflict['state'] == 'conflict' and conflict['httpStatus'] == 409
+    assert await revision_count(context) == 1
     await finish(context)
     context = await followup(setup, sent['conversationId'])
     await read_plan(context, delivery['id'])
@@ -276,7 +281,8 @@ async def test_success_is_private_reused_and_revision_conflicts_do_not_overwrite
     assert (await setup[3]['employee'].get(old_file['url'])).content == builtin_receipts.data
     stale = await invoke(context, filename='陈旧.csv', format='csv', data=DATA,
                          deliverable_id=delivery['id'], expected_revision=1, step=2)
-    assert stale['state'] == 'failed' and await revision_count(context) == 2
+    assert stale['state'] == 'conflict' and stale['httpStatus'] == 409
+    assert await revision_count(context) == 2
 
 
 async def test_lost_lease_between_download_and_commit_prevents_builtin_publication(setup, builtin_receipts, monkeypatch):

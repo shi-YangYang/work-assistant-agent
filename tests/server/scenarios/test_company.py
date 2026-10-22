@@ -33,7 +33,7 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     message = (await employee.get('/api/v1/messages/' + result['messageId'])).json()
     assert message['job']['state'] == 'succeeded', message
     assert model.seen_tools[0] == 'load_tools'
-    assert set(model.seen_tools) == {'load_tools'} | (GROUPS['work'] - TEAM_TOOL_NAMES)
+    assert set(model.seen_tools) == {'load_tools', 'request_user_input', 'web_search'} | (GROUPS['work'] - TEAM_TOOL_NAMES)
     assert not (await employee.get('/api/v1/work-items')).json()['items']
     assert (await peer.get('/api/v1/messages/' + result['messageId'])).status_code == 404
     assert (await outsider.get('/api/v1/messages/' + result['messageId'])).status_code == 404
