@@ -1,13 +1,32 @@
 .business-action-card {
   margin-top: 12px;
 }
-.business-action-card:has(> .business-action-link:hover) {
+.business-action-card:has(> .business-action-link) {
+  position: relative;
+  padding-left: 74px;
+  padding-right: 46px;
+}
+.business-action-link > .business-action-icon {
+  position: absolute;
+  top: 50%;
+  left: 16px;
+  width: 44px;
+  transform: translateY(-50%);
+}
+.business-action-card:has(> .business-action-link) .business-action-body {
+  margin-left: 0;
+}
+.business-action-card:has(> .business-action-link):hover {
   background: var(--hover);
 }
 .business-action-link:hover {
   text-decoration: none;
 }
 .business-action-arrow {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
   flex-shrink: 0;
   color: var(--muted);
 }
