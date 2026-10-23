@@ -7,6 +7,7 @@ import { inputRules, type DingTalkAccount, type Member } from '@paa/api-contract
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { FormField } from '@web/components/forms/FormField'
 import { SectionTabs, TabSection } from '@web/components/navigation/section-tabs/SectionTabs'
 import { logout } from '@web/features/auth/api/requests'
@@ -107,7 +108,8 @@ export function DingTalkAccountPage({
         />
       )}
       <DingTalkResult />
-      <ErrorNotice retry={account.refresh}>{error || account.error}</ErrorNotice>
+      <ErrorNotice retry={account.refresh}>{account.error}</ErrorNotice>
+      <ActionNotice>{error}</ActionNotice>
       <div
         className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${admin ? layoutStyles['settings-tab-panels'] : ''}`}
       >

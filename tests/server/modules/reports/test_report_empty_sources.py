@@ -13,6 +13,8 @@ from app.modules.model_services.models import ModelUsage
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.mutations.report_completion import complete_action
 from app.modules.reports.models import Report
+from app.modules.reports.periods import period
+from datetime import date
 from app.modules.work.models import WorkItem
 from app.tasks.models import Job
 from app.tasks.processing.handlers import process_job
@@ -48,6 +50,9 @@ async def test_empty_generation_creates_nothing_and_same_request_can_succeed_aft
         error = result.json()['error']
         assert error['code'] == 'report_sources_empty'
         assert ('周报' if kind == 'weekly' else '日报') in error['message']
+        start, end = period(kind, date.fromisoformat(request['date']))
+        assert start.isoformat() in error['message'] and end.isoformat() in error['message']
+        assert '核对汇报周期' in error['message']
         assert '当前会话' in error['message'] and '正文' in error['message']
     assert not (await client.get('/api/v1/reports', params={'kind': kind})).json()['items']
     await assert_no_generated_report(sessions, actor)

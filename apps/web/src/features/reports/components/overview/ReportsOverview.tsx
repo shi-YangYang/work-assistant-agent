@@ -8,6 +8,8 @@ import styles from './ReportsOverview.module.css'
 import type { Report, Rules } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
+import { isCancelled } from '@web/api/client'
 import { Modal } from '@web/components/overlays/Modal'
 import { RecordEmpty } from '@web/components/content/RecordEmpty'
 import { generateReport, reportListPath, reportRulesPath } from '@web/features/reports/api/requests'
@@ -17,11 +19,22 @@ import { usePagedResource } from '@web/hooks/usePagedResource'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { dateLabel, todayIn } from '@web/utils/date'
+import { customRangeError } from '@web/utils/date-range'
 import { detailState } from '@web/utils/navigation'
 import { timezoneLabel } from '@web/utils/timezones'
 import { CalendarDays, ChevronRight, FileText, Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
+
+function reportingPeriod(date: string, kind: 'daily' | 'weekly') {
+  if (customRangeError(date, date)) return null
+  const start = new Date(`${date}T00:00:00Z`)
+  if (kind === 'weekly') start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7))
+  const end = new Date(start)
+  if (kind === 'weekly') end.setUTCDate(end.getUTCDate() + 6)
+  const range = { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
+  return customRangeError(range.start, range.end) ? null : range
+}
 
 export function ReportsPage() {
   const location = useLocation()
@@ -35,10 +48,21 @@ export function ReportsPage() {
   )
   const rules = useResource<Rules>(reportRulesPath())
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<Error | string>('')
+  const [failure, setFailure] = useState<{ period: string; error: Error | string } | null>(null)
   const [showRules, setShowRules] = useState(false)
   const { notify } = useWorkspace()
-  const selectedDate = params.get('date') || todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
+  const today = todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
+  const selectedDate = params.get('date') || today
+  const period = reportingPeriod(selectedDate, kind)
+  const selectionKey = `${kind}:${selectedDate}:${todo}`
+  useEffect(() => setFailure(null), [selectionKey])
+  const changeSelection = (next: Record<string, string>) => {
+    setFailure(null)
+    setParams(next)
+  }
+  const changeDate = (date: string) => {
+    changeSelection({ kind, date, view: 'all' })
+  }
   return (
     <div
       className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
@@ -62,14 +86,14 @@ export function ReportsPage() {
             <button
               aria-pressed={todo}
               data-active={todo}
-              onClick={() => setParams({ kind, view: 'todo' })}
+              onClick={() => changeSelection({ kind, view: 'todo' })}
             >
               汇报待办
             </button>
             <button
               aria-pressed={!todo}
               data-active={!todo}
-              onClick={() => setParams({ kind, view: 'all' })}
+              onClick={() => changeSelection({ kind, view: 'all' })}
             >
               全部报告
             </button>
@@ -83,7 +107,7 @@ export function ReportsPage() {
               data-active={kind === 'daily'}
               aria-pressed={kind === 'daily'}
               onClick={() =>
-                setParams({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
+                changeSelection({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
               }
             >
               日报
@@ -92,7 +116,7 @@ export function ReportsPage() {
               data-active={kind === 'weekly'}
               aria-pressed={kind === 'weekly'}
               onClick={() =>
-                setParams({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
+                changeSelection({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
               }
             >
               周报
@@ -103,33 +127,64 @@ export function ReportsPage() {
           <div
             className={`${recordLayoutStyles['records-toolbar']} ${recordLayoutStyles['report-generate']}`}
           >
-            <label className={recordLayoutStyles['record-date-field']}>
-              <span>报告日期</span>
-              <input
-                type="date"
-                aria-label="报告日期"
-                value={selectedDate}
-                onClick={(event) => {
-                  try {
-                    event.currentTarget.showPicker?.()
-                  } catch {
-                    /* Native picker unavailable. */
-                  }
-                }}
-                onChange={(e) => setParams({ kind, date: e.target.value, view: 'all' })}
-              />
-            </label>
+            <div className={styles['report-period']}>
+              <div className={styles['period-controls']}>
+                <label className={recordLayoutStyles['record-date-field']}>
+                  <span>{kind === 'weekly' ? '汇报周期' : '汇报日期'}</span>
+                  <input
+                    type="date"
+                    aria-label={kind === 'weekly' ? '选择周报所在周' : '汇报日期'}
+                    aria-describedby={kind === 'weekly' ? 'report-period-range' : undefined}
+                    min="0001-01-01"
+                    max="9999-12-30"
+                    value={selectedDate}
+                    onClick={(event) => {
+                      try {
+                        event.currentTarget.showPicker?.()
+                      } catch {
+                        /* Native picker unavailable. */
+                      }
+                    }}
+                    onChange={(e) => changeDate(e.target.value)}
+                  />
+                </label>
+                {kind === 'weekly' && (
+                  <div className={styles['period-shortcuts']} aria-label="快捷选择汇报周期">
+                    <button type="button" onClick={() => changeDate(today)}>
+                      本周
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const previous = new Date(`${today}T00:00:00Z`)
+                        previous.setUTCDate(previous.getUTCDate() - 7)
+                        changeDate(previous.toISOString().slice(0, 10))
+                      }}
+                    >
+                      上周
+                    </button>
+                  </div>
+                )}
+              </div>
+              {kind === 'weekly' && period && (
+                <span id="report-period-range" className={styles['period-range']} role="status">
+                  {period.start} — {period.end}（周一至周日）
+                </span>
+              )}
+            </div>
             <BusyButton
               busy={busy}
+              disabled={!period}
               className={controlsStyles['primary']}
               onClick={async () => {
                 setBusy(true)
+                setFailure(null)
                 try {
                   await generateReport({ kind, date: selectedDate }, crypto.randomUUID())
                   refresh()
                   notify('已准备报告，生成状态会自动更新')
                 } catch (e) {
-                  setFailure(e as Error)
+                  if (!isCancelled(e)) setFailure({ period: selectionKey, error: e as Error })
                 } finally {
                   setBusy(false)
                 }
@@ -141,8 +196,9 @@ export function ReportsPage() {
           </div>
         )}
         <ErrorNotice className={recordLayoutStyles['record-notice']} retry={refresh}>
-          {failure || error}
+          {error}
         </ErrorNotice>
+        <ActionNotice>{failure?.period === selectionKey ? failure.error : null}</ActionNotice>
         {todo ? (
           <ReportObligations />
         ) : (
@@ -218,7 +274,7 @@ export function ReportsPage() {
                 icon={<FileText size={27} />}
                 title={`还没有${kind === 'daily' ? '日报' : '周报'}`}
               >
-                选择上方日期生成草稿，整理后即可提交。
+                选择上方{kind === 'weekly' ? '汇报周期' : '汇报日期'}生成草稿，整理后即可提交。
               </RecordEmpty>
             ) : (
               !error && (

@@ -69,7 +69,8 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     shared_attachment_ids only for explicitly shared files.
 
     Reports: generate_report uses report_kind and company-local report_date
-    (YYYY-MM-DD), omits changes/source_tokens. The server reads sources and copies
+    (YYYY-MM-DD): daily uses that day; weekly uses the Monday-through-Sunday
+    week containing that date, never the submission date. Omits changes/source_tokens. The server reads sources and copies
     the original brief: enqueue and end, no preliminary work/obligation lookup,
     polling or extra edit. submit_after=true only for generate-and-submit,
     including review-before-submit; review-first/mode still control approval.

@@ -2,20 +2,34 @@ from datetime import date
 from app.core.errors import problem
 from app.core.versions import version
 from app.db.base import now
-from app.db.idempotency import idem_begin, idem_save
+from app.db.idempotency import Idempotency, idem_begin, idem_save
+from sqlalchemy import delete, select
 from app.modules.reports.models import Report, ReportObligation
 from app.modules.reports.queries import report_dto
 from app.modules.reports.service import ensure_report, submit_report as writes_submit_report
 from app.security.ownership import owned
 
 
+async def generation_begin(db, actor, action, key, payload):
+    if actor.role != 'employee':
+        problem(403, '管理员不生成个人报告')
+    prior, digest = await idem_begin(db, actor, action, key, payload)
+    if prior:
+        report = await db.scalar(select(Report).where(Report.id == prior.get('reportId'), Report.owner_id == actor.id, Report.company_id == actor.company_id, Report.deleted.is_(False)))
+        if report is None:
+            # Historical prepare receipts predate deletion-time cache cleanup.
+            await db.execute(delete(Idempotency).where(Idempotency.owner_id == actor.id, Idempotency.action == action, Idempotency.key == key))
+            prior = None
+    return prior, digest
+
+
 async def prepare_obligation_command(identifier, idempotency_key, actor, db):
-    prior, digest = await idem_begin(db, actor, 'prepare-obligation:' + identifier, idempotency_key, {})
+    prior, digest = await generation_begin(db, actor, 'prepare-obligation:' + identifier, idempotency_key, {})
+    obligation = await owned(db, ReportObligation, identifier, actor, lock=True)
+    if obligation.state == 'cancelled' and obligation.cancel_reason != 'report_deleted':
+        problem(409, '这项汇报安排已撤销')
     if prior:
         return prior
-    obligation = await owned(db, ReportObligation, identifier, actor, lock=True)
-    if obligation.state == 'cancelled':
-        problem(409, '这项汇报安排已撤销')
     report, job = await ensure_report(db, actor, obligation.kind, date.fromisoformat(obligation.period), report_timezone=obligation.timezone)
     obligation.report_id = report.id
     return idem_save(db, actor, 'prepare-obligation:' + identifier, idempotency_key, digest, {'reportId': report.id, 'jobId': job.id})

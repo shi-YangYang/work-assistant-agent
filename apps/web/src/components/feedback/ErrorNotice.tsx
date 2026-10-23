@@ -7,6 +7,7 @@ import { ErrorDiagnostics, SupportLink } from '@web/lib/support-link'
 import { ErrorNoticeContext, type NoticeContent } from '@web/lib/error-notices'
 import { useContext, useId, useLayoutEffect, useMemo } from 'react'
 import { Link } from 'react-router'
+import { NoticeToast } from './NoticeToast'
 
 export function ErrorNotice(props: NoticeContent) {
   const context = useContext(ErrorNoticeContext)
@@ -15,7 +16,8 @@ export function ErrorNotice(props: NoticeContent) {
   const id = useId()
   const diagnostics = useContext(ErrorDiagnostics)
   const supportLink = useContext(SupportLink)
-  const { children, retry, retryLabel, hint, className, actionsClassName, priority } = props
+  const { children, retry, retryLabel, hint, className, actionsClassName, priority, onDismiss } =
+    props
   useLayoutEffect(() => {
     if (!store || !scope) return
     if (!children || (children instanceof ApiError && children.category === 'cancelled')) {
@@ -31,6 +33,7 @@ export function ErrorNotice(props: NoticeContent) {
       className,
       actionsClassName,
       priority,
+      onDismiss,
       diagnostics,
       supportLink,
     })
@@ -45,11 +48,28 @@ export function ErrorNotice(props: NoticeContent) {
     className,
     actionsClassName,
     priority,
+    onDismiss,
     diagnostics,
     supportLink,
   ])
   useLayoutEffect(() => () => store?.remove(id), [store, id])
-  return context ? null : <ErrorNoticeView {...props} />
+  return context ? null : <ErrorNoticeDisplay {...props} />
+}
+
+export function ErrorNoticeDisplay(props: NoticeContent) {
+  if (
+    !props.children ||
+    (props.children instanceof ApiError && props.children.category === 'cancelled')
+  )
+    return null
+  const notice = <ErrorNoticeView {...props} />
+  return props.onDismiss ? (
+    <NoticeToast message={props.children} onDismiss={props.onDismiss}>
+      {notice}
+    </NoticeToast>
+  ) : (
+    notice
+  )
 }
 
 export function ErrorNoticeView({

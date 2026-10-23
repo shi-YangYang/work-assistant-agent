@@ -14,6 +14,7 @@ import { AutoTextarea } from '@web/components/forms/AutoTextarea'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ConflictRecovery } from '@web/components/forms/ConflictRecovery'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { JobNotice } from '@web/features/jobs/components/JobNotice'
 import { DeleteRecord } from '@web/features/records/components/DeleteRecord'
@@ -120,7 +121,13 @@ export function ReportDetail({
         data-actions={own && !editing}
         data-scroll-container
       >
-        <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
+        <ErrorNotice retry={refresh}>{error}</ErrorNotice>
+        <ErrorNotice>
+          {failure instanceof ApiError && failure.status === 409 ? failure : null}
+        </ErrorNotice>
+        <ActionNotice>
+          {failure instanceof ApiError && failure.status === 409 ? null : failure}
+        </ActionNotice>
         {data && (
           <>
             <ReportHeader

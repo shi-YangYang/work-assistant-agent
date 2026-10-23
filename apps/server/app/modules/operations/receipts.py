@@ -35,7 +35,7 @@ async def refresh_generation(db, actor, row):
             from app.modules.reports.service import no_report_sources_message
             # Old empty jobs are not generated reports, including submit-after requests.
             row.state, row.params = 'failed', {}
-            row.result = {**row.result, 'message': no_report_sources_message(report.kind)}
+            row.result = {**row.result, 'message': no_report_sources_message(report.kind, report.period, report.period_end)}
             row.revision += 1
             return
         if row.result.get('submitAfter'):

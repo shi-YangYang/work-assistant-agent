@@ -137,7 +137,7 @@ async def remove_report(db, item, actor, *, executing_job=None):
     await db.flush()
     await business_invalidate_deleted(db, item.company_id)
     await db.execute(delete(ReportRevision).where(ReportRevision.report_id == item.id))
-    await db.execute(delete(Idempotency).where(Idempotency.owner_id == item.owner_id, ((Idempotency.action == f'submit:{item.id}') | ((Idempotency.action == 'generate-report') & (Idempotency.response['reportId'].astext == item.id)))))
+    await db.execute(delete(Idempotency).where(Idempotency.owner_id == item.owner_id, ((Idempotency.action == f'submit:{item.id}') | (((Idempotency.action == 'generate-report') | Idempotency.action.startswith('prepare-obligation:')) & (Idempotency.response['reportId'].astext == item.id)))))
 
 
 async def remove_work(db, item, *, executing_job=None):

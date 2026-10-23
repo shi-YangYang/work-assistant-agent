@@ -9,6 +9,7 @@ import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ConflictRecovery } from '@web/components/forms/ConflictRecovery'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { PanelSection } from '@web/components/content/PanelSection'
 import { SectionTabs, TabSection } from '@web/components/navigation/section-tabs/SectionTabs'
 import { TimeField } from '@web/components/forms/TimeField'
@@ -60,7 +61,13 @@ export function RulesPage() {
           disabled={busy}
         />
       )}
-      <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
+      <ErrorNotice retry={refresh}>{error}</ErrorNotice>
+      <ErrorNotice>
+        {failure instanceof ApiError && failure.status === 409 ? failure : null}
+      </ErrorNotice>
+      <ActionNotice>
+        {failure instanceof ApiError && failure.status === 409 ? null : failure}
+      </ActionNotice>
       {value && !canEdit && (
         <div
           className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${styles['rule-summary']}`}

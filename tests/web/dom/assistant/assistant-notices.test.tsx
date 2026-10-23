@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Keep cold Vite compilation outside the interaction assertions' timeout.
+import '../../../../apps/web/src/pages/AssistantPage'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'

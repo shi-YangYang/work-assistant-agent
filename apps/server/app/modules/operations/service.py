@@ -55,7 +55,7 @@ async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
         timezone = None
         if p['obligationId']:
             obligation = await owned(db, ReportObligation, p['obligationId'], actor, lock=True)
-            if obligation.state == 'cancelled':
+            if obligation.state == 'cancelled' and obligation.cancel_reason != 'report_deleted':
                 problem(409, '汇报安排已撤销')
             if obligation.period != day.isoformat() or obligation.kind != p['kind']:
                 problem(409, '报告周期与汇报待办不一致')

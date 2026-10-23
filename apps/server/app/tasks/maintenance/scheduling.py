@@ -64,7 +64,7 @@ async def schedule_company(sessions, company_id, instant, batch):
         for row in rows:
             member = await db.scalar(select(Member).where(Member.id == row.owner_id).with_for_update())
             if not member.active or member.role != 'employee':
-                row.state = 'cancelled'
+                row.state, row.cancel_reason = 'cancelled', 'eligibility_revoked'
                 await db.execute(delete(n).where(n.obligation_id == row.id))
                 continue
             if not row.generation_checked and row.generate_at <= instant:

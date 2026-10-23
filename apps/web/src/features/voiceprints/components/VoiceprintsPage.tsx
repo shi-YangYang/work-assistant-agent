@@ -7,6 +7,7 @@ import utilitiesStyles from '../../../styles/utilities.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import voiceprintsStyles from '../styles/voiceprints.module.css'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { ConfirmDialog } from '@web/components/overlays/ConfirmDialog'
 import { manageVoiceprint, voiceprintsPath } from '@web/features/voiceprints/api/requests'
 import type { Enrollment, VoiceprintList } from '@web/features/voiceprints/api/types'
@@ -97,7 +98,8 @@ export function VoiceprintsPage() {
           </button>
         }
       />
-      <ErrorNotice retry={resource.refresh}>{resource.error || error}</ErrorNotice>
+      <ErrorNotice retry={resource.refresh}>{resource.error}</ErrorNotice>
+      <ActionNotice>{error}</ActionNotice>
       <section ref={library} tabIndex={-1} className={voiceprintsStyles['voiceprint-library']}>
         <ListToolbar
           actions={

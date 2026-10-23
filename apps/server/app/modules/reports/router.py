@@ -1,8 +1,8 @@
-from .commands import adopt_candidate_command, submit_command
+from .commands import adopt_candidate_command, generation_begin, submit_command
 from .queries import get_report_query, report_sources_query, reports_query
 from fastapi import APIRouter, Header, Query
 from app.core.schemas import Revision
-from app.db.idempotency import idem_begin, idem_save
+from app.db.idempotency import idem_save
 from app.http.dependencies import READ_AUTH, AUTH, DB, SETTINGS
 from app.modules.operations.mutations.writes import deletion_impact as writes_deletion_impact, remove_record as writes_remove_record
 from app.modules.reports.models import Report
@@ -33,7 +33,7 @@ async def report_sources(identifier: str, revision: int | None = Query(None, ge=
 
 @router.post('/api/v1/reports/generate', status_code=202)
 async def generate_report(body: GenerateReport, idempotency_key: Annotated[str | None, Header()] = None, actor=AUTH, db=DB):
-    prior, digest = await idem_begin(db, actor, 'generate-report', idempotency_key, body.model_dump(mode='json'))
+    prior, digest = await generation_begin(db, actor, 'generate-report', idempotency_key, body.model_dump(mode='json'))
     if prior:
         return prior
     report, job = await ensure_report(db, actor, body.kind, body.date)

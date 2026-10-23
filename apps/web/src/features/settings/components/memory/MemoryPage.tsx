@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ApiError, isCancelled } from '@web/api/client'
 import { PageHeader } from '@web/components/layout/page-header/PageHeader'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { useQueryResource } from '@web/hooks/useQueryResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { memoryResource, saveMemorySettings } from '../../api/memory'
@@ -35,7 +36,8 @@ function AccountMemory() {
   return (
     <div className={layoutStyles['settings-page']}>
       <PageHeader title="记忆" />
-      <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
+      <ErrorNotice retry={refresh}>{error}</ErrorNotice>
+      <ActionNotice>{failure}</ActionNotice>
       {!data && loading && <p role="status">正在读取记忆…</p>}
       {data && (
         <div className={styles.content}>

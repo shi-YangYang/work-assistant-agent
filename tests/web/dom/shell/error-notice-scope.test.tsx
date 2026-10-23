@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+// Keep cold Vite compilation outside the first route's error-handling assertion.
+import '../../../../apps/web/src/pages/WorkPage'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { StrictMode, useState } from 'react'
 import { createMemoryRouter, MemoryRouter, RouterProvider, useNavigate } from 'react-router'

@@ -6,6 +6,7 @@ import type { ObligationPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { Empty } from '@web/components/feedback/Empty'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { RecordEmpty } from '@web/components/content/RecordEmpty'
 import { prepareReport, reportObligationsPath } from '@web/features/reports/api/requests'
 import { obligationLabel, reportDeadline } from '@web/features/reports/utils/obligations'
@@ -33,6 +34,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
     return () => window.removeEventListener('focus', refresh)
   }, [refresh])
   const update = (values: Record<string, string>) => {
+    setFailure('')
     const next = new URLSearchParams(params)
     next.delete('cursor')
     Object.entries(values).forEach(([key, value]) =>
@@ -119,8 +121,9 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
         </div>
       )}
       <ErrorNotice className={styles['obligation-notice']} retry={list.refresh}>
-        {failure || list.error}
+        {list.error}
       </ErrorNotice>
+      <ActionNotice>{failure}</ActionNotice>
       <div className={team ? '' : recordLayoutStyles['records-results']}>
         {!list.data && !list.error && (
           <p className={recordLayoutStyles['records-loading']} role="status">
