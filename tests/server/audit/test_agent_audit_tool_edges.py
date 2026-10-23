@@ -51,7 +51,7 @@ async def test_obligation_tool_pages_all_own_rows_and_rejects_invalid_period(set
         for actor, count in ((users['employee'], 43), (users['peer'], 2)):
             for index in range(count):
                 day = (date(2026, 1, 1) + timedelta(days=index)).isoformat()
-                row = ReportObligation(company_id=actor.company_id, owner_id=actor.id, kind='daily',
+                row = ReportObligation(company_id=actor.company_id, owner_id=actor.id, kind='weekly',
                     period=day, period_end=day, timezone='Asia/Shanghai', rule_revision=1,
                     generate_at=now(), deadline_at=now() + timedelta(days=1), reminders=False, before_minutes=0)
                 db.add(row)

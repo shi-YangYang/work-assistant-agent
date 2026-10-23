@@ -18,7 +18,7 @@ export function AssistantSuggestions({
       ]
     : [
         { title: '梳理工作', detail: '把待办变成下一步', text: '帮我创建工作：' },
-        { title: '整理汇报', detail: '让进展清晰可见', text: '生成今天的日报' },
+        { title: '整理汇报', detail: '让进展清晰可见', text: '生成本周周报' },
         { title: '汇报待办', detail: '查看还需提交的报告', text: '查看我还没交的报告' },
       ]
   return (

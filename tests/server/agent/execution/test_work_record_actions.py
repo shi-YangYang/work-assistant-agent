@@ -206,7 +206,7 @@ async def test_property_only_writes_are_today_facts_without_repeating_yesterday_
         revision = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id'], WorkRevision.revision == 3))
         revision.created_at = stamp
         await db.flush()
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period=stamp.date().isoformat(), period_end=stamp.date().isoformat(), timezone='UTC')
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=stamp.date().isoformat(), period_end=stamp.date().isoformat(), timezone='UTC')
         sources = await report_inputs(db, report)
         assert [source.id for source in sources] == [revision.id]
         fact = report_source_content(sources[0])

@@ -126,9 +126,9 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
         source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
         other = await create(c['peer'], title='不应进入核对器的他人工作')
         other_source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == other['id']))
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-20', period_end='2026-09-20', timezone='Asia/Shanghai', content={'completed': '', 'ongoing': '试用初稿待准备', 'blockers': '', 'next': '拟出初稿并发出内部确认'}, source_ids=[source.id, other_source.id])
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period='2026-09-20', period_end='2026-09-20', timezone='Asia/Shanghai', content={'completed': '', 'ongoing': '试用初稿待准备', 'blockers': '', 'next': '拟出初稿并发出内部确认'}, source_ids=[source.id, other_source.id])
         db.add(report); await db.flush()
-    context, _ = await runtime(setup, '把日报改成老板看得懂的简短版本，不要夸大成果')
+    context, _ = await runtime(setup, '把周报改成老板看得懂的简短版本，不要夸大成果')
     data = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id))
     assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': {key: source.content[key] for key in ('title', 'summary', 'status', 'dueDate', 'blocker', 'nextStep')}}]
     assert 'body' not in data['items'][0]['sourceFacts']['items'][0]['content']
@@ -144,7 +144,7 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
             assert '不应进入核对器' not in json.dumps(payload, ensure_ascii=False)
             if payload.get('task') == 'report_fact_review':
                 assert payload['confirmed'][0]['content']['nextStep'].startswith('拟出初稿')
-                assert payload['userRequest'] == '把日报改成老板看得懂的简短版本，不要夸大成果'
+                assert payload['userRequest'] == '把周报改成老板看得懂的简短版本，不要夸大成果'
                 valid = '已拟出初稿' not in payload['report']['ongoing']
                 return AIMessage(content=json.dumps({'valid': valid, 'reason': '' if valid else '计划不能改为已经完成的阶段'}))
             proposed = payload['proposedOperation']
@@ -206,7 +206,7 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
     saved = await service_create(c['admin'], service)
     routing = route(saved)
     await c['admin'].put('/api/v1/settings/model-routing', json=routing)
-    context, _ = await runtime(setup, '生成今天日报，交之前让我看一眼')
+    context, _ = await runtime(setup, '生成本周周报，交之前让我看一眼')
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         context.model_binding = await bind_job(db, job, settings)
@@ -216,7 +216,7 @@ async def test_intent_request_uses_short_verification_without_changing_user_conf
         body = json.loads(request.content); calls.append(body)
         assert 'max_tokens' not in body and body['enable_thinking'] is False and 'reasoning_effort' not in body
         assert not body.get('tools')
-        result = {'allowed': True, 'quote': '生成今天日报，交之前让我看一眼', 'reason': ''}
+        result = {'allowed': True, 'quote': '生成本周周报，交之前让我看一眼', 'reason': ''}
         return httpx.Response(200, json={'choices': [{'message': {'role': 'assistant', 'content': json.dumps(result)}, 'finish_reason': 'stop'}], 'usage': {'prompt_tokens': 120, 'completion_tokens': 40, 'total_tokens': 160}})
     monkeypatch.setattr('app.integrations.models.transport.client', lambda _: httpx.AsyncClient(transport=httpx.MockTransport(respond)))
     assert (await authorize_intent(context, {'action': 'generate_report', 'submitAfter': True}))[0]

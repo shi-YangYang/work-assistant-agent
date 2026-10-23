@@ -3,7 +3,7 @@ import io
 import json
 import pytest
 from PIL import Image
-from datetime import timedelta
+from datetime import date, timedelta
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langchain_core.messages import HumanMessage
 from app.agent.context.checkpoints import GuardedSaver
@@ -131,8 +131,8 @@ async def test_report_delete_purges_actual_sources_and_preserves_shared_snapshot
     async with sessions.begin() as db:
         source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
         rows = []
-        for kind in ('daily', 'weekly'):
-            report = Report(company_id=actor.company_id, owner_id=actor.id, kind=kind, period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', content={'completed':'已确认摘要','ongoing':'','blockers':'','next':''}, source_ids=[source.id], published_revision=1)
+        for day in ('2026-09-07', '2026-09-14'):
+            report = Report(company_id=actor.company_id, owner_id=actor.id, kind='weekly', period=day, period_end=(date.fromisoformat(day) + timedelta(days=6)).isoformat(), timezone='Asia/Shanghai', content={'completed':'已确认摘要','ongoing':'','blockers':'','next':''}, source_ids=[source.id], published_revision=1)
             db.add(report); await db.flush()
             db.add(ReportRevision(company_id=actor.company_id, owner_id=actor.id, report_id=report.id, revision=1, content=report.content, source_ids=report.source_ids))
             rows.append(report)
@@ -153,7 +153,7 @@ async def test_report_delete_purges_actual_sources_and_preserves_shared_snapshot
     sources = (await clients['admin'].get('/api/v1/reports/' + rows[1].id + '/sources')).json()['items']
     assert sources[0]['deletedSourceIds'] == [sent['messageId']]
     assert (await clients['employee'].get('/api/v1/work-items/' + work['id'])).status_code == 200
-    assert (await clients['employee'].post('/api/v1/reports/generate', json={'kind':'daily','date':'2026-09-13'}, headers=keyed())).status_code == 409
+    assert (await clients['employee'].post('/api/v1/reports/generate', json={'kind':'weekly','date':'2026-09-13'}, headers=keyed())).status_code == 422
     async with sessions() as db:
         original = await db.get(Message, sent['messageId'])
         assert original.deleted and not any([original.text,original.reply,original.transcript,original.transcript_history,original.suggestions])
@@ -172,7 +172,7 @@ async def test_candidate_sources_invalidate_open_delete_confirmation(setup):
         first_revision = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
         second_revision = WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work['id'], revision=2, content=first_revision.content, source_ids=[second['messageId']])
         db.add(second_revision); await db.flush()
-        report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', content={'completed':'来源 A','ongoing':'','blockers':'','next':''}, source_ids=[first_revision.id], published_revision=1)
+        report = Report(company_id=actor.company_id, owner_id=actor.id, kind='weekly', period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', content={'completed':'来源 A','ongoing':'','blockers':'','next':''}, source_ids=[first_revision.id], published_revision=1)
         db.add(report); await db.flush()
         db.add(ReportRevision(company_id=actor.company_id, owner_id=actor.id, report_id=report.id, revision=1, content=report.content, source_ids=report.source_ids))
         job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=1, state='running', fence=1, lease_until=now() + timedelta(seconds=90), result={'sourceIds': [first_revision.id, second_revision.id]})
@@ -252,7 +252,7 @@ async def test_admin_personal_reports_and_member_admin_mutations_are_rejected(se
     _, _, users, clients = setup
     admin = clients['admin']
     assert (await admin.get('/api/v1/reports')).status_code == 403
-    assert (await admin.post('/api/v1/reports/generate',json={'kind':'daily','date':'2026-09-13'},headers=keyed())).status_code == 403
+    assert (await admin.post('/api/v1/reports/generate',json={'kind':'weekly','date':'2026-09-13'},headers=keyed())).status_code == 403
     assert (await admin.post('/api/v1/members',json={'username':'new_' + uuid4().hex,'name':'不能建管理员','role':'admin','password':'controlled-password'})).status_code == 403
     assert (await admin.post('/api/v1/members/' + users['admin'].id + '/reset-password',json={'password':'controlled-password'})).status_code == 404
 

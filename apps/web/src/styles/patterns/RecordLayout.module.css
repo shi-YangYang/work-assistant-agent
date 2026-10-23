@@ -242,6 +242,9 @@
 .records-surface .record-row {
   padding: 16px 0;
 }
+.records-surface .report-row {
+  padding-inline: 16px;
+}
 .records-surface .work-row {
   align-items: center;
   gap: 18px;
@@ -309,6 +312,9 @@
   .records-toolbar,
   .records-surface .record-row {
     padding-inline: 0;
+  }
+  .records-surface .report-row {
+    padding-inline: 12px;
   }
   .records-surface .work-row {
     gap: 8px 12px;

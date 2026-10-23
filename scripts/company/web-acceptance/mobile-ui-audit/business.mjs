@@ -98,10 +98,9 @@ const common = (role) => [
 const administrators = [
   item('M11', 'team-work', '/team'),
   item('M11', 'team-updated', '/team?scope=updated'),
-  item('M11', 'team-daily', '/team?view=reports'),
-  item('M11', 'team-weekly', '/team?view=reports&kind=weekly'),
+  item('M11', 'team-weekly', '/team?view=reports'),
   item('M11', 'team-work-detail', `/team?record=${ids.employee.work}`, null, { modal: true }),
-  item('M11', 'team-report-detail', `/team?view=reports&record=${ids.employee.daily}`, null, {
+  item('M11', 'team-report-detail', `/team?view=reports&record=${ids.employee.weekly}`, null, {
     modal: true,
   }),
   item('M12', 'members', '/members'),
@@ -132,7 +131,6 @@ const administrators = [
     : []),
   item('M15', 'account-password', '/settings/account', tab('修改密码')),
   item('M15', 'account-dingtalk', '/settings/account', tab('钉钉账号关联')),
-  item('M16', 'rules-daily', '/settings/rules', tab('日报'), { long: true }),
   item('M16', 'rules-weekly', '/settings/rules', tab('周报'), { long: true }),
   item('M18', 'models', '/settings/models', null, { long: true }),
   item('M18', 'models-routing', '/settings/models', tab('用途分配'), { long: true }),
@@ -145,19 +143,18 @@ const administrators = [
   item('M17', 'login-credentials', '/settings/login', null, { long: true }),
   item('M17', 'login-authorization', '/settings/login', tab('授权与入口'), { long: true }),
   item('M17', 'login-setup', '/settings/login', tab('钉钉后台配置'), { long: true }),
-  item('M10', 'admin-report-detail', `/reports/${ids.employee.daily}`, null, { long: true }),
+  item('M10', 'admin-report-detail', `/reports/${ids.employee.weekly}`, null, { long: true }),
   item('M24', 'team-legacy-details', '/team/details'),
   item('M24', 'team-legacy-reports', '/team/reports'),
   item('M24', 'team-legacy-member', `/team/${state.users.employee.id}`),
 ]
 const employees = [
   item('M10', 'reports-todo', '/reports'),
-  item('M10', 'reports-daily', '/reports', button('全部报告')),
-  item('M10', 'reports-weekly', '/reports', sequence(button('全部报告'), button('周报'))),
-  item('M10', 'report-published', `/reports/${ids.employee.daily}`, null, { long: true }),
-  item('M10', 'report-draft', `/reports/${ids.employee.weekly}`, null, { long: true }),
-  item('M10', 'report-edit', `/reports/${ids.employee.weekly}`, button('编辑草稿'), { long: true }),
-  item('M10', 'report-submit', `/reports/${ids.employee.weekly}`, button('提交报告'), {
+  item('M10', 'reports-weekly', '/reports', button('全部报告')),
+  item('M10', 'report-published', `/reports/${ids.employee.weekly}`, null, { long: true }),
+  item('M10', 'report-draft', `/reports/${ids.employee.draft}`, null, { long: true }),
+  item('M10', 'report-edit', `/reports/${ids.employee.draft}`, button('编辑草稿'), { long: true }),
+  item('M10', 'report-submit', `/reports/${ids.employee.draft}`, button('提交报告'), {
     modal: true,
   }),
   item('M10', 'report-delete', `/reports/${ids.employee.weekly}`, more('管理报告', '删除报告'), {
@@ -354,7 +351,6 @@ async function narrow() {
           'reports-todo',
           'report-draft',
           'team-work',
-          'team-daily',
           'team-weekly',
           'members',
           'models',
@@ -489,14 +485,9 @@ async function journeys() {
       async () => {
         await a.goto(state.origin + '/team')
         await ready(a)
-        await button('日报周报')(a)
         await button('周报')(a)
         await button('选择汇报周期')(a)
         await step(a, 'admin', 'J09', 'weekly-calendar')
-        await button('关闭日期选择')(a)
-        await button('日报')(a)
-        await button('选择汇报周期')(a)
-        await step(a, 'admin', 'J09', 'daily-calendar')
         await button('关闭日期选择')(a)
         await a.getByLabel('搜索团队内容').fill('完全没有匹配的验收关键词')
         await a.getByLabel('搜索团队内容').press('Enter')
@@ -640,8 +631,6 @@ async function journeys() {
         await button('保存密码并重新登录')(a)
         await step(a, 'admin', 'J11', 'password-validation')
         await a.goto(state.origin + '/settings/rules')
-        await tab('日报')(a)
-        await step(a, 'admin', 'J11', 'rules-daily')
         await tab('周报')(a)
         await step(a, 'admin', 'J11', 'rules-weekly')
         await button('保存汇报规则')(a)
@@ -805,7 +794,6 @@ async function extras() {
         for (const [name, path, label] of [
           ['account-password', '/settings/account', '修改密码'],
           ['account-dingtalk', '/settings/account', '钉钉账号关联'],
-          ['rules-daily', '/settings/rules', '日报'],
           ['rules-weekly', '/settings/rules', '周报'],
         ]) {
           for (const [width, height, theme] of [
@@ -832,7 +820,7 @@ async function extras() {
     await flow(
       'M10-narrow-selector-recovery',
       async () => {
-        for (const name of ['reports-daily', 'reports-weekly', 'reports-schedule'])
+        for (const name of ['reports-weekly', 'reports-schedule'])
           await visit(
             p,
             'employee',

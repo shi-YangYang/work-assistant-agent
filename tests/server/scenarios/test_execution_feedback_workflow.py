@@ -277,7 +277,7 @@ async def test_native_multi_sentence_repair_never_leaks_through_stream_or_remain
     assert 'changes' not in json.dumps(remaining, ensure_ascii=False)
     assert error('Schema 校验失败，请修正 changes') == '这项操作暂未完成，已保存的内容会保留。'
     assert '系统判定' not in prose('系统判定没有明确要求保存这批文件，所以拦下了。', job, '全部保存')
-    context, _ = await mode_runtime(setup, 'full', '生成今天的日报')
+    context, _ = await mode_runtime(setup, 'full', '生成本周的周报')
     failed = await execute(context, step=1, action='generate_report', changes={'completed': '不要由模型填入'})
     rendered = model_result(failed)
     assert rendered['recovery']['code'] == 'report_parameters'

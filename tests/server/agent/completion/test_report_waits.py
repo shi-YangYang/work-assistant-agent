@@ -48,7 +48,7 @@ def test_exact_wait_delegates_to_real_card_without_mutating_it(state):
 
 
 @pytest.mark.parametrize('remaining', [
-    '上周周报草稿生成仍在服务器处理中', '2026-10-05 周报生成中', '本周日报生成中',
+    '上周周报草稿生成仍在服务器处理中', '2026-10-05 周报生成中', '今天日报生成中',
     '周报生成中', '本周周报尚未提交', '本周周报缺少客户资料',
     WAIT + '，还需创建客户回访工作', '选择需要生成周报的工作',
 ])

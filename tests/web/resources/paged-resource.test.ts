@@ -74,7 +74,7 @@ describe('loaded page refresh', () => {
   it.each([
     ['/messages?conversationId=own', 'createdAt'],
     ['/team/members/member/messages', 'createdAt'],
-    ['/reports?kind=daily', 'period'],
+    ['/reports?kind=weekly', 'period'],
   ] as const)(
     'revalidates old rows and cursor deletions in %s while keeping expanded history',
     async (path, order) => {
@@ -215,7 +215,7 @@ it('keeps one follow-up read after a write during a non-shared report refresh', 
       }),
     )
     .mockResolvedValue({ items: [row(2)], nextCursor: null })
-  const resource = new PagedResource<Row>('/reports?kind=daily', 'period', read)
+  const resource = new PagedResource<Row>('/reports?kind=weekly', 'period', read)
   const initial = resource.refresh()
   // Existing report mutation callbacks still call refresh without opting into sharing.
   void resource.refresh()

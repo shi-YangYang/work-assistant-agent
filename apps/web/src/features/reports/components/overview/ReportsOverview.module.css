@@ -45,6 +45,96 @@
   overflow-wrap: anywhere;
 }
 
+dialog.schedule-dialog {
+  width: 440px;
+}
+
+.schedule-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.schedule-heading,
+.schedule-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.schedule-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--subtle);
+  color: var(--secondary);
+}
+
+.schedule-title {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.schedule-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.schedule-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--subtle);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.schedule-description {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 14px;
+}
+
+.schedule-details,
+.schedule-meta {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.schedule-details > div,
+.schedule-meta > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 16px;
+}
+
+.schedule-details dt,
+.schedule-meta dt {
+  color: var(--muted);
+}
+
+.schedule-details dd,
+.schedule-meta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.schedule-meta {
+  gap: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
 @media (max-width: 760px) {
   .report-header[data-layout-context='page'] {
     margin-bottom: 8px;

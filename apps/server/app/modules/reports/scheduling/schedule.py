@@ -19,13 +19,13 @@ def next_period(kind, instant, zone):
 
 async def save_schedule(db, company, instant=None):
     instant = instant or now()
-    for kind in ('daily', 'weekly'):
+    for kind in ('weekly',):
         effective = next_period(kind, instant, company.rules['timezone'])
         db.add(ReportSchedule(company_id=company.id, kind=kind, revision=company.revision, timezone=company.rules['timezone'], rule=company.rules[kind], effective_period=effective, next_period=effective))
 
 
 async def effective_periods(db, company):
-    rows = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company.id).order_by(ReportSchedule.revision.desc()))).all()
+    rows = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company.id, ReportSchedule.kind == 'weekly').order_by(ReportSchedule.revision.desc()))).all()
     result = {}
     for row in rows:
         result.setdefault(row.kind, row.effective_period)
@@ -82,7 +82,7 @@ async def link_report(db, report, *, submitted=False, cancelled=False, restore=F
 
 
 async def notify(db, obligation, stage, instant):
-    if not obligation.reminders or obligation.state != 'pending':
+    if obligation.kind != 'weekly' or not obligation.reminders or obligation.state != 'pending':
         return
     ranks = {'ready': 0, 'due': 1, 'overdue': 2}
     existing = await db.scalar(select(ReportNotification).where(ReportNotification.obligation_id == obligation.id).with_for_update())
@@ -100,9 +100,11 @@ async def draft_ready(db, report):
 
 
 async def materialize(db, schedule, start, budget):
+    if schedule.kind != 'weekly':
+        return 0, True
     start, end = period(schedule.kind, start)
     rule = schedule.rule
-    trigger = start if schedule.kind == 'daily' else start + timedelta(days=rule['days'][0])
+    trigger = start + timedelta(days=rule['days'][0])
     if trigger.weekday() not in rule['days']:
         return 0, True
     zone = ZoneInfo(schedule.timezone)
@@ -125,9 +127,9 @@ def obligation_dto(row, instant, *, name=None, own=False, job=None):
     return {'id': row.id, 'ownerId': row.owner_id, 'name': name, 'kind': row.kind, 'period': row.period, 'periodEnd': row.period_end, 'timezone': row.timezone, 'deadlineAt': row.deadline_at.isoformat(), 'state': 'overdue' if row.state == 'pending' and row.deadline_at <= instant else row.state, 'submittedAt': row.submitted_at.isoformat() if row.submitted_at else None, 'reportId': row.report_id if row.state != 'cancelled' and (own or row.state == 'submitted') else None, **({'job': job} if own else {})}
 
 
-async def obligation_page(db, actor, *, kind='daily', status='', selected_period=None, cursor=0, team=False, instant=None):
+async def obligation_page(db, actor, *, kind='weekly', status='', selected_period=None, cursor=0, team=False, instant=None):
     instant = instant or now()
-    if kind not in ('daily', 'weekly') or status not in ('', 'pending', 'overdue', 'submitted', 'cancelled'):
+    if kind not in ('weekly',) or status not in ('', 'pending', 'overdue', 'submitted', 'cancelled'):
         problem(422, '汇报筛选无效')
     base = select(ReportObligation, Member.name).join(Member, Member.id == ReportObligation.owner_id).where(ReportObligation.company_id == actor.company_id, ReportObligation.kind == kind)
     if not team:

@@ -9,6 +9,7 @@
 | [075](spec-075-agent-execution-feedback/spec.md) | Agent 执行范围、受阻恢复与用户反馈治理 | 实施中 |
 | [076](spec-076-agent-decision-flow/spec.md)      | Agent 及时澄清、探索收束与上下文精简   | 系统修复完成；模型表现限制见验收 |
 | [077](spec-077-report-period-regeneration/spec.md) | 汇报周期展示与删除后主动重新生成 | 独立验收 PASS，未部署 |
+| [078](spec-078-remove-daily-reports/spec.md) | 移除日报功能，仅保留周报 | 独立验收 PASS；未执行真实用户库迁移或部署 |
 
 ## 文档分工
 
@@ -19,4 +20,4 @@
 
 ## 生命周期
 
-下一个 Spec 使用 **078**，采用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+下一个 Spec 使用 **079**，采用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

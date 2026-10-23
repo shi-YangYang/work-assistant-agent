@@ -25,7 +25,7 @@ const schedule = {
   reminders: true,
   beforeMinutes: 30,
 }
-const rules = { revision: 1, timezone: 'Asia/Shanghai', daily: schedule, weekly: schedule } as Rules
+const rules = { revision: 1, timezone: 'Asia/Shanghai', weekly: schedule } as Rules
 const configuration: DingTalkConfiguration = {
   corpId: 'ding123',
   clientId: 'app123',
@@ -139,7 +139,7 @@ it('reveals invalid rules in a hidden tab and preserves edits across tabs before
       '/settings/report-rules',
       {
         timezone: 'Asia/Tokyo',
-        daily: schedule,
+
         weekly: { ...schedule, days: [4] },
         expectedRevision: 1,
       },

@@ -103,7 +103,7 @@ async def test_continuation_removes_one_loader_round_with_real_reads_and_writes(
             'quote': '下一步改为联系客户', 'field': 'nextStep', 'kind': 'next_action'}])
     else:
         await create(clients['employee'], status='done', summary='完成报价')
-        previous, _ = await turn(setup, conv, '生成今天日报')
+        previous, _ = await turn(setup, conv, '生成本周周报')
         card = await execute(previous, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
         assert card['state'] == 'running'
         await finish(previous)
@@ -112,7 +112,7 @@ async def test_continuation_removes_one_loader_round_with_real_reads_and_writes(
         from app.agent.tools.business.reports import draft_report
         await draft_report.coroutine(completed='完成报价', ongoing='', blockers='', next='', runtime=SimpleNamespace(context=child))
         await finish(child)
-        context, sent = await turn(setup, conv, '提交刚才生成的日报')
+        context, sent = await turn(setup, conv, '提交刚才生成的周报')
     if not seeded:
         monkeypatch.setattr(catalog, 'previous_receipt_groups', lambda _: set())
     model = ContinuationModel(model='controlled', api_key='no-network', kind=kind, target=target)
@@ -252,7 +252,7 @@ async def test_preloaded_work_still_requires_new_authorization_and_own_sources(s
 async def test_report_acceptance_is_not_completion_and_failed_child_is_not_seed(setup, child_state, expected):
     conv = await conversation(setup[3]['employee'])
     await create(setup[3]['employee'], status='done', summary='完成报价')
-    previous, _ = await turn(setup, conv, '生成今天日报')
+    previous, _ = await turn(setup, conv, '生成本周周报')
     card = await execute(previous, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert card['state'] == 'running'
     await finish(previous)

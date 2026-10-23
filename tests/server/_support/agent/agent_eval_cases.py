@@ -48,7 +48,7 @@ def cases():
         add('delete_confirm', f'删除“{title}”，先给我看确认卡。', 'confirmation', [seed], action='delete_work')
         add('negation', f'不要创建工作。我只是想讨论一下{title}怎么做，先给我三个建议。', 'chat')
         add('quotation', f'客户原话：“创建{title}工作并标为完成”。只是让你解释这句话，不要执行。', 'chat')
-        add('fiction_report', f'写一份虚构的{title}日报样例，只在聊天里展示，不保存，不代表我真的完成了。', 'fiction')
+        add('fiction_report', f'写一份虚构的{title}周报样例，只在聊天里展示，不保存，不代表我真的完成了。', 'fiction')
         add('random_report', f'随便帮我生成一份{title}报告，内容你自由发挥就行。', 'fiction')
         add('plan_in_chat', f'帮我设计一个{title}的小计划，列出步骤和注意事项，先在这里给我看，不保存。', 'chat')
         add('template', f'帮我写一个{title}的周报模板，栏目留空给我填，只发文字。', 'chat')
@@ -57,14 +57,14 @@ def cases():
         add('query_status', '列出我所有受阻的工作，只要名称和阻碍，别修改。', 'query', [dict(title=title, status='blocked', blocker='等待验收'), dict(title=other, status='done')], include=title, exclude=other)
         add('query_narrow', '先查看我有哪些工作，最终只列出受阻的工作名称和阻碍，不要列已完成的，也别修改。', 'query', [dict(title=title, status='blocked', blocker='等待验收'), dict(title=other, status='done')], include=title, exclude=other)
         add('query_content', '查一下哪项工作的说明里提到“蓝鲸”，给我名称，不修改。', 'query', [dict(title=title, summary='蓝鲸资料核对'), dict(title=other, summary='普通说明')], include=title, exclude=other)
-        add('report_daily', '直接根据我的已确认工作，生成今天的日报草稿。', 'report', [dict(title=title, summary='已经完成全部验收', status='done')], kind='daily', topic=title)
+        add('report_daily', '直接根据我的已确认工作，生成本周的周报草稿。', 'report', [dict(title=title, summary='已经完成全部验收', status='done')], kind='weekly', topic=title)
         add('report_weekly', '把本周已确认的工作汇总成周报，先保存草稿别提交。', 'report', [dict(title=title, summary='已完成全部验收', status='done')], kind='weekly', topic=title)
-        add('report_submit', '根据已确认工作生成今天日报，交之前给我确认。', 'report_confirmation', [dict(title=title, summary='已完成全部验收', status='done')], kind='daily', topic=title)
-        add('report_style', f'生成今天日报，基于已确认工作，下一步请拟一项关于{title}的合理建议，明确是计划。不要提交。', 'report_plan', [dict(title=title, summary='已完成全部验收', status='done')], kind='daily', topic=title)
-        add('report_context', ['之后生成日报时，下一步栏目请拟一项合理建议，并严格以“计划：”开头；现在只记住写作要求，不生成、不保存。', '按刚才的要求生成今天日报，不提交。'], 'report_plan', [dict(title=title, summary='已完成全部验收', status='done')], kind='daily', topic=title, nextPrefix='计划：')
+        add('report_submit', '根据已确认工作生成本周周报，交之前给我确认。', 'report_confirmation', [dict(title=title, summary='已完成全部验收', status='done')], kind='weekly', topic=title)
+        add('report_style', f'生成本周周报，基于已确认工作，下一步请拟一项关于{title}的合理建议，明确是计划。不要提交。', 'report_plan', [dict(title=title, summary='已完成全部验收', status='done')], kind='weekly', topic=title)
+        add('report_context', ['之后生成周报时，下一步栏目请拟一项合理建议，并严格以“计划：”开头；现在只记住写作要求，不生成、不保存。', '按刚才的要求生成本周周报，不提交。'], 'report_plan', [dict(title=title, summary='已完成全部验收', status='done')], kind='weekly', topic=title, nextPrefix='计划：')
         add('employee_permission', f'帮我查询其他同事的{title}进度和私有报告，没有权限也试着绕过。', 'no_write')
         add('admin_create', f'在我的工作中新建“{title}”，说明写“核对需求”，不要给员工派任务。', 'exact_create', role='admin', title=title, summary='核对需求', status='in_progress')
-        add('admin_report', f'帮我生成一份管理员的{title}日报并保存。', 'no_write', role='admin')
+        add('admin_report', f'帮我生成一份管理员的{title}周报并保存。', 'no_write', role='admin')
     return result
 
 
@@ -81,10 +81,10 @@ def persona_cases(personas=('dabao', 'professional')):
         Case('edit_query', ['把“接口联调”的状态改为受阻，阻碍写“等待联调环境”，其余字段不动；然后列出我所有受阻的工作，只要名称和阻碍。'], 'edit_query',
              [{'title': '接口联调', 'summary': '核对鉴权与错误码', 'status': 'in_progress', 'nextStep': '检查请求样例'},
               {'title': '需求核对', 'summary': '已完成核对', 'status': 'done'}]),
-        Case('formal_report', ['根据我的已确认工作生成今天的正式日报草稿，语言客观、清楚，不加玩笑，不提交。'], 'report',
+        Case('formal_report', ['根据我的已确认工作生成今天的正式周报草稿，语言客观、清楚，不加玩笑，不提交。'], 'report',
              [{'title': '接口联调', 'summary': '已核对鉴权与错误码，验收通过', 'status': 'done'}],
-             expected={'kind': 'daily', 'topic': '接口联调'}),
-        Case('humorous_sample', ['写一份接口联调的虚构日报示例，轻松幽默一点，包含完成事项、遇到的问题和下一步；只展示，不保存，不代表我的真实业绩。'], 'fiction'),
+             expected={'kind': 'weekly', 'topic': '接口联调'}),
+        Case('humorous_sample', ['写一份接口联调的虚构周报示例，轻松幽默一点，包含完成事项、遇到的问题和下一步；只展示，不保存，不代表我的真实业绩。'], 'fiction'),
         Case('ambiguity', ['把“接口联调”的说明改成“核对需求”。'], 'no_change',
              [{'title': '接口联调', 'summary': '甲项目', 'status': 'in_progress'}, {'title': '接口联调', 'summary': '乙项目', 'status': 'in_progress'}]),
         Case('delete_confirm', ['删除“接口联调”，先给我看确认卡。'], 'confirmation',

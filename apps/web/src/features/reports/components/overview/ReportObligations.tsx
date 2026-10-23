@@ -20,7 +20,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
   const [params, setParams] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
+  const kind = 'weekly' as const
   const query = new URLSearchParams({ kind })
   for (const key of ['status', 'period', 'cursor']) {
     if (params.get(key)) query.set(key, params.get(key)!)
@@ -58,16 +58,6 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
       <div
         className={`${layoutStyles['toolbar']} ${styles['obligation-filters']} ${team ? '' : recordLayoutStyles['records-toolbar']}`}
       >
-        {team && (
-          <select
-            aria-label="报告类型"
-            value={kind}
-            onChange={(event) => update({ kind: event.target.value })}
-          >
-            <option value="daily">日报</option>
-            <option value="weekly">周报</option>
-          </select>
-        )}
         <select
           aria-label="汇报状态"
           value={params.get('status') || ''}
@@ -145,9 +135,9 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
                 >
                   <h3>
                     {team && `${item.name} · `}
-                    {!team && (kind === 'weekly' ? '周报 · ' : '日报 · ')}
+                    {!team && '周报 · '}
                     <span className={recordLayoutStyles['record-period']}>{item.period}</span>
-                    {kind === 'weekly' && (
+                    {
                       <>
                         {' '}
                         —{' '}
@@ -155,7 +145,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
                           {item.periodEnd}
                         </span>
                       </>
-                    )}
+                    }
                   </h3>
                   <p>
                     截止 {reportDeadline(item)}{' '}
@@ -237,7 +227,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
             >
               {params.get('status') || params.get('period')
                 ? '试试其他状态或汇报周期。'
-                : `当前没有需要提交的${kind === 'daily' ? '日报' : '周报'}。`}
+                : `当前没有需要提交的周报。`}
             </RecordEmpty>
           ))
         )}

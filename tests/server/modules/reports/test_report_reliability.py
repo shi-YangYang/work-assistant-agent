@@ -44,7 +44,7 @@ async def test_valid_report_without_tools_save_receipt_candidate_and_submit(setu
     await process_job(live, sessions, settings, None, model=response)
     assert response.calls == 1
     assert (await c['admin'].get('/api/v1/reports/' + report.id)).status_code == 404
-    second = await c['employee'].post('/api/v1/reports/generate', json={'kind':'daily','date':report.period}, headers=keyed())
+    second = await c['employee'].post('/api/v1/reports/generate', json={'kind':'weekly','date':report.period}, headers=keyed())
     async def edit_and_submit():
         latest = (await c['employee'].get('/api/v1/reports/' + report.id)).json()
         edit = await c['employee'].patch('/api/v1/reports/' + report.id, json={'expectedRevision':latest['revision'],'content':{**CONTENT,'completed':'员工手动修改'}})
@@ -242,11 +242,11 @@ async def arrange(setup, instant, *, days_back=0):
     settings,sessions,users,_=setup
     async with sessions.begin() as db:
         company=await db.get(Company,users['employee'].company_id)
-        company.rules={'timezone':'UTC','daily':{'enabled':True,'days':list(range(7)),'generateTime':'17:00','deadline':'18:00','reminders':True,'beforeMinutes':30},'weekly':{'enabled':False,'days':[4],'generateTime':'','deadline':''}}
-        company.rules_effective_at=instant-timedelta(days=days_back+1)
+        company.rules={'timezone':'UTC','weekly':{'enabled':True,'days':[0],'generateTime':'17:00','deadline':'18:00','reminders':True,'beforeMinutes':30}}
+        company.rules_effective_at=instant-timedelta(days=days_back+7)
         await save_schedule(db,company,company.rules_effective_at)
         for actor in [users['employee'],users['peer']]:
-            await eligibility_changed(db,actor,instant-timedelta(days=days_back+2))
+            await eligibility_changed(db,actor,instant-timedelta(days=days_back+8))
 
 
 async def test_todos_no_work_reminders_read_submission_permissions_and_delete(setup,monkeypatch):
@@ -324,22 +324,22 @@ async def test_bounded_outage_backfill_current_priority_future_rules_and_activat
         original=next(row for row in rows if row.owner_id==users['employee'].id and row.period=='2027-02-08')
     async with sessions.begin() as db:
         company=await db.get(Company,users['employee'].company_id)
-        company.rules={**company.rules,'daily':{**company.rules['daily'],'deadline':'20:00'}};company.revision+=1
+        company.rules={**company.rules,'weekly':{**company.rules['weekly'],'deadline':'20:00'}};company.revision+=1
         await save_schedule(db,company,instant)
         member=await db.get(Member,users['peer'].id);member.active=False
         await eligibility_changed(db,member,instant)
-    await schedule_company(sessions,users['employee'].company_id,instant+timedelta(days=1),4)
+    await schedule_company(sessions,users['employee'].company_id,instant+timedelta(days=7),4)
     async with sessions.begin() as db:
         unchanged=await db.get(ReportObligation,original.id)
         assert unchanged.deadline_at.hour==18
-        nextday=await db.scalar(select(ReportObligation).where(ReportObligation.owner_id==users['employee'].id,ReportObligation.period=='2027-02-09'))
+        nextday=await db.scalar(select(ReportObligation).where(ReportObligation.owner_id==users['employee'].id,ReportObligation.period=='2027-02-15'))
         assert nextday.deadline_at.hour==20
         member=await db.get(Member,users['peer'].id);member.active=True
-        await eligibility_changed(db,member,instant+timedelta(days=2))
-    await schedule_company(sessions,users['employee'].company_id,instant+timedelta(days=3),8)
+        await eligibility_changed(db,member,instant+timedelta(days=8))
+    await schedule_company(sessions,users['employee'].company_id,instant+timedelta(days=14),8)
     async with sessions() as db:
         periods=set((await db.scalars(select(ReportObligation.period).where(ReportObligation.owner_id==users['peer'].id,ReportObligation.state=='pending'))).all())
-        assert '2027-02-11' in periods and not {'2027-02-09','2027-02-10'} & periods
+        assert '2027-02-22' in periods and not {'2027-02-15','2027-02-16'} & periods
 
 async def test_unsent_reservation_requeues_but_old_fence_cannot_publish(setup):
     from app.tasks.lease import lease
@@ -438,12 +438,12 @@ async def test_newest_rule_revision_wins_even_if_timezone_moves_effective_date_b
     await arrange(setup,instant)
     async with sessions.begin() as db:
         company=await db.get(Company,users['employee'].company_id)
-        old=await db.scalar(select(ReportSchedule).where(ReportSchedule.company_id==company.id,ReportSchedule.kind=='daily'))
-        old.effective_period=old.next_period='2027-04-03'
-        db.add(ReportSchedule(company_id=company.id,kind='daily',revision=2,timezone='UTC',rule={**company.rules['daily'],'deadline':'20:00'},effective_period='2027-04-02',next_period='2027-04-02'))
+        old=await db.scalar(select(ReportSchedule).where(ReportSchedule.company_id==company.id,ReportSchedule.kind=='weekly'))
+        old.effective_period=old.next_period='2027-03-29'
+        db.add(ReportSchedule(company_id=company.id,kind='weekly',revision=2,timezone='UTC',rule={**company.rules['weekly'],'deadline':'20:00'},effective_period='2027-03-22',next_period='2027-03-22'))
     await schedule_company(sessions,users['employee'].company_id,instant,50)
     async with sessions() as db:
-        row=await db.scalar(select(ReportObligation).where(ReportObligation.owner_id==users['employee'].id,ReportObligation.period=='2027-04-04'))
+        row=await db.scalar(select(ReportObligation).where(ReportObligation.owner_id==users['employee'].id,ReportObligation.period=='2027-03-29'))
         assert row.rule_revision==2 and row.deadline_at.hour==20
 
 

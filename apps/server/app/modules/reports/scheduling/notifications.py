@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 def notification_query(actor):
     return select(ReportNotification, ReportObligation).join(ReportObligation, ReportObligation.id == ReportNotification.obligation_id).where(
         ReportNotification.company_id == actor.company_id, ReportNotification.owner_id == actor.id,
-        ReportObligation.state == 'pending')
+        ReportObligation.kind == 'weekly', ReportObligation.state == 'pending')
 
 
 async def unread_count(db, actor):

@@ -15,7 +15,7 @@ async def generation_begin(db, actor, action, key, payload):
         problem(403, '管理员不生成个人报告')
     prior, digest = await idem_begin(db, actor, action, key, payload)
     if prior:
-        report = await db.scalar(select(Report).where(Report.id == prior.get('reportId'), Report.owner_id == actor.id, Report.company_id == actor.company_id, Report.deleted.is_(False)))
+        report = await db.scalar(select(Report).where(Report.id == prior.get('reportId'), Report.owner_id == actor.id, Report.company_id == actor.company_id, Report.deleted.is_(False), Report.kind == 'weekly'))
         if report is None:
             # Historical prepare receipts predate deletion-time cache cleanup.
             await db.execute(delete(Idempotency).where(Idempotency.owner_id == actor.id, Idempotency.action == action, Idempotency.key == key))
@@ -52,6 +52,7 @@ async def adopt_candidate_command(identifier, body, actor, db):
 async def submit_command(identifier, body, idempotency_key, actor, db):
     if actor.role != 'employee':
         problem(403, '管理员不提交个人报告')
+    await owned(db, Report, identifier, actor)
     action = f'submit:{identifier}'
     prior, digest = await idem_begin(db, actor, action, idempotency_key, body.model_dump())
     if prior:

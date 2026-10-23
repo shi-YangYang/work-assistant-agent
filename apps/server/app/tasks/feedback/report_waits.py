@@ -44,7 +44,7 @@ def owned_reports(job, cards):
     for card in cards:
         item = items.get(card.get('taskItemId'), {})
         operation = item.get('attemptedOperation', {})
-        title = re.fullmatch(r'(\d{4}-\d{2}-\d{2}) (日报|周报)', card.get('title', ''))
+        title = re.fullmatch(r'(\d{4}-\d{2}-\d{2}) (周报)', card.get('title', ''))
         child = card.get('job') or {}
         if (card.get('action') != 'generate_report' or card.get('state') not in ('running', 'succeeded')
                 or card.get('messageId') != getattr(job, 'target_id', None)
@@ -52,7 +52,7 @@ def owned_reports(job, cards):
                 or operation.get('submitAfter') is not False or not title or not card.get('objectId')
                 or child.get('kind') != 'report' or child.get('targetId') != card['objectId']):
             continue
-        kind = 'daily' if title[2] == '日报' else 'weekly'
+        kind = 'weekly'
         try:
             period = date.fromisoformat(operation.get('date', ''))
         except (ValueError, TypeError):
@@ -89,9 +89,9 @@ def report_aliases(job, cards, day):
         title = card['title']
         names = [title, title.replace(' ', ''), f'《{title}》']
         if day:
-            current = day if kind == '日报' else day - timedelta(days=day.weekday())
+            current = day - timedelta(days=day.weekday())
             if period == current:
-                names.extend(('今天日报', '今日日报') if kind == '日报' else ('本周周报', '这周周报'))
+                names.extend(('本周周报', '这周周报'))
         source = item.get('userSource') or {}
         # An unqualified "周报" can only refer to an exact period already stated
         # by this request and authorized in this item. Multiple receipts remain

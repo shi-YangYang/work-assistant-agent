@@ -23,7 +23,6 @@ async def business_snapshot(client):
     result = {}
     for name, path, params in (
         ('work', '/api/v1/work-items', {}),
-        ('dailyReports', '/api/v1/reports', {'kind': 'daily'}),
         ('weeklyReports', '/api/v1/reports', {'kind': 'weekly'}),
     ):
         response = await agent_http.read_pages(client, path, **params)

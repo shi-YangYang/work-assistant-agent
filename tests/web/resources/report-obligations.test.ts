@@ -10,7 +10,7 @@ const obligation: ReportObligation = {
   id: 'obligation',
   ownerId: 'employee',
   name: null,
-  kind: 'daily',
+  kind: 'weekly',
   period: '2027-01-04',
   periodEnd: '2027-01-04',
   timezone: 'Asia/Shanghai',
@@ -21,7 +21,7 @@ const obligation: ReportObligation = {
 }
 describe('report inbox navigation', () => {
   it('opens the period without creating a report or invoking a model', () => {
-    expect(obligationTarget(obligation)).toBe('/reports?view=todo&kind=daily&period=2027-01-04')
+    expect(obligationTarget(obligation)).toBe('/reports?view=todo&kind=weekly&period=2027-01-04')
     expect(obligationTarget({ ...obligation, reportId: 'saved' })).toBe('/reports/saved')
   })
   it('renders the deadline in company time and separates read status from submission', () => {

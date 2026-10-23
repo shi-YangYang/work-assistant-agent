@@ -80,7 +80,11 @@ async def pending_material_sources(db, actor, row, changes):
 async def action_dto(db, actor, row, *, refresh_child=True):
     if row.company_id != actor.company_id or row.owner_id != actor.id:
         problem(404, '操作不存在')
+    from app.modules.reports.retirement import retired_action, MESSAGE
+    retired = await retired_action(db, actor, row)
     base = {'confirmLabel': '确认' + LABELS[row.action], 'executionMode': row.execution_mode, 'continuation': row.continuation or None, 'id': row.id, 'messageId': row.message_id, 'taskItemId': row.task_item_key or row.result.get('originalTaskItemId'), 'action': row.action, 'label': LABELS[row.action], 'state': row.state, 'revision': row.revision, 'createdAt': row.created_at.isoformat()}
+    if retired:
+        return {**base, 'state': 'unavailable', 'continuation': None, 'message': MESSAGE}
     if row.action.startswith('delete_') and row.state == 'succeeded' and row.access.get('role') == actor.role:
         return {**base, 'message': '记录已删除'}
     if row.access.get('role') != actor.role or not await business_valid(db, actor, row.access):
@@ -112,7 +116,7 @@ async def action_dto(db, actor, row, *, refresh_child=True):
             details = revision.content if revision else {}
             title = details.get('title', item.title)
         else:
-            title, details = f'{item.period} {"日报" if item.kind == "daily" else "周报"}', {}
+            title, details = f'{item.period} 周报', {}
         result = {**base, 'objectType': kind, 'objectId': identifier, 'objectRevision': row.result.get('revision'), 'title': title, 'details': details, 'changedFields': row.result.get('changedFields', []), 'message': row.result.get('message', ''), 'updateId': row.result.get('updateId'), 'updateRevision': row.result.get('updateRevision'), 'materialIds': row.result.get('materialIds', [])}
         if kind == 'work' and row.state == 'succeeded' and row.result.get('materialIds'):
             from app.modules.work.models import WorkMaterial

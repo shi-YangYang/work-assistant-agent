@@ -15,14 +15,14 @@ router = APIRouter()
 
 
 @router.get('/api/v1/report-obligations')
-async def report_obligations(kind: str = 'daily', status: str = '', period: date | None = None, cursor: int = Query(0, ge=0), actor=AUTH, db=DB):
+async def report_obligations(kind: str = 'weekly', status: str = '', period: date | None = None, cursor: int = Query(0, ge=0), actor=AUTH, db=DB):
     if actor.role != 'employee':
         problem(403, '管理员没有个人汇报待办')
     return await reporting_obligation_page(db, actor, kind=kind, status=status, selected_period=period, cursor=cursor)
 
 
 @router.get('/api/v1/team/report-obligations')
-async def team_report_obligations(kind: str = 'daily', status: str = '', period: date | None = None, cursor: int = Query(0, ge=0), actor=ADMIN, db=DB):
+async def team_report_obligations(kind: str = 'weekly', status: str = '', period: date | None = None, cursor: int = Query(0, ge=0), actor=ADMIN, db=DB):
     if period is None:
         from zoneinfo import ZoneInfo
         company = await db.get(Company, actor.company_id)

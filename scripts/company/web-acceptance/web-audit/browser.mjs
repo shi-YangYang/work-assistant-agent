@@ -55,7 +55,6 @@ async function records(page) {
   const result = {}
   for (const [name, path] of [
     ['work', '/api/v1/work-items'],
-    ['daily', '/api/v1/reports?kind=daily'],
     ['weekly', '/api/v1/reports?kind=weekly'],
   ]) {
     const items = [],

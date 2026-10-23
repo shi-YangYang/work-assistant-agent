@@ -25,6 +25,9 @@ async def target(db, model, identifier, actor, expected):
         problem(404, '记录不存在或无权管理')
     await db.scalar(select(Member).where(Member.id == owner).with_for_update())
     item = await db.scalar(query.with_for_update().execution_options(populate_existing=True))
+    if model is Report:
+        from app.modules.reports.periods import require_weekly
+        require_weekly(item.kind)
     if not item.deleted:
         version(item, expected)
     return item

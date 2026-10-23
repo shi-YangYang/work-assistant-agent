@@ -17,7 +17,7 @@ router = APIRouter()
 
 
 @router.get('/api/v1/reports')
-async def reports(kind: str = 'daily', cursor: str | None = None, actor=READ_AUTH, db=DB):
+async def reports(kind: str = 'weekly', cursor: str | None = None, actor=READ_AUTH, db=DB):
     return await reports_query(kind, cursor, actor, db)
 
 

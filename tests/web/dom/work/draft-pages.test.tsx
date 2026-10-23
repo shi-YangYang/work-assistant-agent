@@ -22,7 +22,7 @@ afterEach(cleanup)
 const report: Report = {
   id: 'report',
   ownerId: 'owner',
-  kind: 'daily',
+  kind: 'weekly',
   period: '2026-09-22',
   periodEnd: '2026-09-22',
   timezone: 'Asia/Shanghai',
@@ -37,7 +37,6 @@ const report: Report = {
   sourceIds: [],
 }
 it.each([
-  ['daily', '2026-10-12', '2026-10-12', '日报', '2026/10/12'],
   ['weekly', '2026-10-12', '2026-10-18', '周报', '2026/10/12 — 10/18'],
   ['weekly', '2026-12-28', '2027-01-03', '周报', '2026/12/28 — 2027/01/03'],
 ] as const)('keeps %s report metadata compact for %s', (kind, period, periodEnd, title, range) => {
@@ -150,7 +149,7 @@ it('locks all rule fields and time buttons until failure, retaining the edited r
   const rules = {
     revision: 1,
     timezone: 'Asia/Shanghai',
-    daily: schedule,
+
     weekly: schedule,
   } as Rules
   vi.mocked(api).mockResolvedValue(rules)

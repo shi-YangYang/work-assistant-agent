@@ -63,7 +63,7 @@ export function ReportNotifications({ active = true }: { active?: boolean }) {
                 }}
               >
                 <strong>
-                  {item.obligation.kind === 'daily' ? '日报' : '周报'} ·{' '}
+                  {'周报'} ·{' '}
                   {{ ready: '草稿已就绪', due: '即将截止', overdue: '待补交' }[item.stage]}
                 </strong>
                 <span>

@@ -202,7 +202,7 @@ async def test_legacy_queue_selects_running_then_keeps_waiting_messages(setup):
 async def test_cancel_preserves_committed_actions_independent_report_and_context(setup):
     from app.agent.actions.operations import execute
     from app.modules.conversations.context.context_store import publish_summary
-    context, sent = await runtime(setup, '帮我创建工作报价方案，再生成日报')
+    context, sent = await runtime(setup, '帮我创建工作报价方案，再生成周报')
     work = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
     report = await execute(context, step=2, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert work['state'] == 'succeeded' and report['state'] == 'running'

@@ -29,7 +29,7 @@ def today():
     return now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()
 
 
-async def generate(client, kind='daily', *, headers=None):
+async def generate(client, kind='weekly', *, headers=None):
     response = await client.post('/api/v1/reports/generate', json={'kind': kind, 'date': today()}, headers=headers or keyed())
     assert response.status_code == 202, response.text
     return response.json()
@@ -55,7 +55,7 @@ async def obligation_for(sessions, identifier):
         return obligation
 
 
-@pytest.mark.parametrize('kind', ['daily', 'weekly'])
+@pytest.mark.parametrize('kind', ['weekly'])
 async def test_api_delete_rebuild_worker_submit_and_old_identity_isolation(setup, kind):
     settings, sessions, users, clients = setup
     client = clients['employee']
@@ -121,18 +121,18 @@ async def test_multiple_tombstones_concurrent_generation_and_scheduled_active_pr
     second = await generate(client)
     await remove(client, second['reportId'])
     async with sessions.begin() as db:
-        report, job = await ensure_report(db, actor, 'daily', date.fromisoformat(today()), scheduled=True)
+        report, job = await ensure_report(db, actor, 'weekly', date.fromisoformat(today()), scheduled=True)
         assert report.deleted and job is None
     shared = keyed()
     results = await asyncio.gather(*(generate(client, headers=shared if index < 2 else keyed()) for index in range(4)))
     assert all(value == results[0] for value in results)
     async with sessions.begin() as db:
-        report, job = await ensure_report(db, actor, 'daily', date.fromisoformat(today()), scheduled=True)
+        report, job = await ensure_report(db, actor, 'weekly', date.fromisoformat(today()), scheduled=True)
         assert report.id == results[0]['reportId'] and job.id == results[0]['jobId']
         rows = list((await db.scalars(select(Report).where(Report.owner_id == actor.id))).all())
         assert len(rows) == 3 and sum(not row.deleted for row in rows) == 1
         with pytest.raises(__import__('fastapi').HTTPException) as error:
-            await ensure_report(db, actor, 'daily', date.fromisoformat(today()), instructions='新的要求')
+            await ensure_report(db, actor, 'weekly', date.fromisoformat(today()), instructions='新的要求')
         assert error.value.status_code == 409
 
 
@@ -162,8 +162,8 @@ async def test_explicit_regeneration_restores_only_deleted_obligation(setup, ent
         assert result.status_code == 200, result.text
         second = result.json()
     elif entry == 'assistant':
-        context, _ = await mode_runtime(setup, 'full', '重新生成今天的日报')
-        result = await execute(context, step=1, action='generate_report', report_kind='daily', report_date=today(), obligation_id=obligation.id)
+        context, _ = await mode_runtime(setup, 'full', '重新生成本周的周报')
+        result = await execute(context, step=1, action='generate_report', report_kind='weekly', report_date=obligation.period, obligation_id=obligation.id)
         assert result['state'] == 'running', result
         second = {'reportId': result['objectId'], 'jobId': result['job']['id']}
         await finish(context)
@@ -237,11 +237,12 @@ async def test_materialize_prefers_active_report_and_retains_deleted_cancellatio
     second = await generate(client)
     await remove(client, second['reportId'])
     start = date.fromisoformat(today())
+    start -= timedelta(days=start.weekday())
     async with sessions.begin() as db:
         db.add(ReportEligibility(company_id=actor.company_id, owner_id=actor.id, starts_at=datetime.combine(start - timedelta(days=1), time.min, ZoneInfo('Asia/Shanghai'))))
         await db.flush()
-        schedule = ReportSchedule(company_id=actor.company_id, kind='daily', revision=1, timezone='Asia/Shanghai',
-            rule={'days': list(range(7)), 'generateTime': '17:00', 'deadline': '18:00'}, effective_period=today(), next_period=today())
+        schedule = ReportSchedule(company_id=actor.company_id, kind='weekly', revision=1, timezone='Asia/Shanghai',
+            rule={'days': [0], 'generateTime': '17:00', 'deadline': '18:00'}, effective_period=today(), next_period=today())
         await materialize(db, schedule, start, 50)
         obligation = await db.scalar(select(ReportObligation).where(ReportObligation.owner_id == actor.id))
         assert obligation.state == 'cancelled' and obligation.cancel_reason == 'report_deleted'
@@ -257,8 +258,8 @@ async def test_old_assistant_receipt_does_not_follow_replacement_or_submit_it(se
     settings, sessions, users, clients = setup
     client = clients['employee']
     await create(client, '方案', summary='初稿完成')
-    context, sent = await mode_runtime(setup, 'full', '生成并提交今天的日报')
-    old = await execute(context, step=1, action='generate_report', report_kind='daily', report_date=today(), submit_after=True)
+    context, sent = await mode_runtime(setup, 'full', '生成并提交本周的周报')
+    old = await execute(context, step=1, action='generate_report', report_kind='weekly', report_date=today(), submit_after=True)
     assert old['state'] == 'running'
     await finish(context)
     await remove(client, old['objectId'])

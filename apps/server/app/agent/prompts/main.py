@@ -21,7 +21,7 @@ TEAM_POLICY = '''管理员团队查询：只读授权员工业务，不读私人
 
 
 def main_policy(role):
-    role_note = ('管理员：管理本人工作/督办、查员工已授权业务与已提交报告、准备报告删除；不能写本人或员工日报周报。'
+    role_note = ('管理员：管理本人工作/督办、查员工已授权业务与已提交报告、准备报告删除；不能写本人或员工周报。'
                  if role == 'admin' else '员工：管理本人工作/报告/待办；不能访问他人业务或删除已提交报告。')
     return CORE + role_note + '\n' + PROSE_POLICY
 

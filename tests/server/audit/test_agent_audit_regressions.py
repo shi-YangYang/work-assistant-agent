@@ -202,14 +202,14 @@ async def test_report_list_is_bounded_and_full_content_is_retrievable(setup):
             # Existing manually written reports do not depend on generation sources.
             day = (now().date() - timedelta(days=offset)).isoformat()
             actor = users['employee']
-            report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period=day, period_end=day, timezone='Asia/Shanghai', content={})
+            report = Report(company_id=actor.company_id, owner_id=actor.id, kind='weekly', period=day, period_end=day, timezone='Asia/Shanghai', content={})
             db.add(report)
             await db.flush()
         content = {'completed': '甲' * 8000, 'ongoing': '乙' * 7999 + '末'}
         saved = await clients['employee'].patch('/api/v1/reports/' + report.id, json={'expectedRevision': 1, 'content': content})
         assert saved.status_code == 200, saved.text
         reports.append(report)
-    context, _ = await runtime(setup, '读最近两份日报')
+    context, _ = await runtime(setup, '读最近两份周报')
     call = SimpleNamespace(context=context)
     raw = await query_reports.coroutine(call)
     assert len(raw) < 6500
@@ -249,7 +249,7 @@ async def test_report_gets_read_document_requirements_and_rechecks_them(setup, c
     conv = await conversation(clients['employee'])
     marker = '每项先结论后依据，末尾加上质检清单。'
     attached = await upload(clients['employee'], '报告要求.txt', marker.encode(), 'text/plain')
-    sent = await message(clients['employee'], conv, '按附件要求生成今天日报，不提交。', [attached['id']])
+    sent = await message(clients['employee'], conv, '按附件要求生成本周周报，不提交。', [attached['id']])
     context = await running_context(settings, sessions, users['employee'], sent)
     context.intent_model = Judge()
     await prepare_document(context, attached['id'])

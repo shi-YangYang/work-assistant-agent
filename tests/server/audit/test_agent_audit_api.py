@@ -56,7 +56,7 @@ async def test_record_request_boundaries_preserve_real_work_and_report(setup):
     sent = await send(client, '受控私有任务')
     async with sessions.begin() as db:
         report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id,
-                        kind='daily', period='2026-10-09', period_end='2026-10-09', timezone='UTC',
+                        kind='weekly', period='2026-10-09', period_end='2026-10-09', timezone='UTC',
                         content={'completed': '受控私有报告', 'ongoing': '', 'blockers': '', 'next': ''})
         db.add(report)
         await db.flush()
@@ -115,7 +115,7 @@ async def test_settings_team_and_creation_validation_boundaries(setup):
         (client, 'PATCH', '/api/v1/assistant/memory/settings', {'expectedRevision': 0, 'enabled': False, 'ownerId': users['peer'].id}, 422),
         (client, 'POST', '/api/v1/work-items', {'title': ''}, 422),
         (client, 'POST', '/api/v1/reports/generate', {'kind': 'invalid', 'date': '2026-10-09'}, 422),
-        (admin, 'POST', '/api/v1/reports/generate', {'kind': 'daily', 'date': '2026-10-09'}, 403),
+        (admin, 'POST', '/api/v1/reports/generate', {'kind': 'weekly', 'date': '2026-10-09'}, 403),
         (admin, 'GET', '/api/v1/team/workspace/invalid', None, 404),
         (admin, 'GET', '/api/v1/team/details?metric=invalid', None, 422),
         (admin, 'GET', '/api/v1/team/report-obligations?cursor=-1', None, 422),

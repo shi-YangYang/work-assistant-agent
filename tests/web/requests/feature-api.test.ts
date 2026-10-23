@@ -31,10 +31,12 @@ it('preserves complete search/status filters and employee/team obligation scopes
   expect(request.mock.calls[0][0]).toBe(
     '/api/v1/work-items?q=%E4%B8%AD%E6%96%87+%26+notes&status=blocked',
   )
-  const query = new URLSearchParams({ kind: 'daily', date: '2026-09-20' })
-  expect(reportObligationsPath(false, query)).toBe('/report-obligations?kind=daily&date=2026-09-20')
+  const query = new URLSearchParams({ kind: 'weekly', date: '2026-09-20' })
+  expect(reportObligationsPath(false, query)).toBe(
+    '/report-obligations?kind=weekly&date=2026-09-20',
+  )
   expect(reportObligationsPath(true, query)).toBe(
-    '/team/report-obligations?kind=daily&date=2026-09-20',
+    '/team/report-obligations?kind=weekly&date=2026-09-20',
   )
 })
 it('creates a conversation only with the explicit message submission and retains its idempotency key', async () => {

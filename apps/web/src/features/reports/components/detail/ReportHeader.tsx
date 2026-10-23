@@ -15,16 +15,13 @@ export function ReportHeader({
 }) {
   const start = report.period.replaceAll('-', '/')
   const end = report.periodEnd.replaceAll('-', '/')
-  const period =
-    report.kind === 'weekly'
-      ? `${start} — ${start.slice(0, 4) === end.slice(0, 4) ? end.slice(5) : end}`
-      : start
+  const period = `${start} — ${start.slice(0, 4) === end.slice(0, 4) ? end.slice(5) : end}`
   const timezone = timezoneLabel(report.timezone)
   return (
     <PageHeader
       className={styles.header}
       context={compact ? 'embedded' : 'detail'}
-      title={report.kind === 'weekly' ? '周报' : '日报'}
+      title="周报"
       meta={
         <span className={styles.status}>
           {report.publishedRevision

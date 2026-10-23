@@ -90,8 +90,8 @@ async def test_prepare_obligation_creates_one_bound_report_and_replays_its_recei
                              headers={'Idempotency-Key': str(uuid4())})
     assert work.status_code == 201
     async with sessions.begin() as db:
-        obligation = ReportObligation(company_id=actor.company_id, owner_id=actor.id, kind='daily',
-            period=instant.date().isoformat(), period_end=instant.date().isoformat(), timezone='UTC', rule_revision=1,
+        obligation = ReportObligation(company_id=actor.company_id, owner_id=actor.id, kind='weekly',
+            period=(instant.date()-timedelta(days=instant.weekday())).isoformat(), period_end=(instant.date()+timedelta(days=6-instant.weekday())).isoformat(), timezone='UTC', rule_revision=1,
             generate_at=instant, deadline_at=instant + timedelta(hours=1), reminders=True, before_minutes=30)
         db.add(obligation)
         await db.flush()
@@ -110,7 +110,7 @@ async def test_prepare_obligation_creates_one_bound_report_and_replays_its_recei
         job = await db.get(Job, first.json()['jobId'])
         bound = await db.get(ReportObligation, identifier)
         assert bound.report_id == report.id and bound.state == 'pending'
-        assert report.owner_id == actor.id and report.period == instant.date().isoformat() and report.timezone == 'UTC'
+        assert report.owner_id == actor.id and report.period == (instant.date()-timedelta(days=instant.weekday())).isoformat() and report.timezone == 'UTC'
         assert report.published_revision == 0 and not any(report.content.values())
         assert job.kind == 'report' and job.target_id == report.id and job.state == 'queued'
         assert job.result['sourceIds'] == [revision_id]

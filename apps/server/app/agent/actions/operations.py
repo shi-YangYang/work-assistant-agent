@@ -132,13 +132,15 @@ def repair_failure(diagnostic, *, code, fields=(), category='invalid_arguments',
     return {**result, 'publicMessage': public_message(result)}
 
 
-async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='daily', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1, deliverable_id='', deliverable_revision=0, item_id='', shared_attachment_ids=None, task_item_id=''):
+async def _execute(context, *, step, action, target_id='', expected_revision=0, changes=None, report_kind='weekly', report_date='', obligation_id='', source_tokens=None, submit_after=False, requires_step=None, copy_index=1, deliverable_id='', deliverable_revision=0, item_id='', shared_attachment_ids=None, task_item_id=''):
     from app.tasks.lease import lease
     from app.agent.context.references.conversation_context import request_text
     if action not in ACTIONS or not 1 <= step <= 8 or requires_step is not None and not 1 <= requires_step < step:
         return {'state': 'failed', 'message': '操作或步骤无效'}
     if not isinstance(copy_index, int) or not 1 <= copy_index <= 8 or action != 'create_work' and copy_index != 1:
         return {'state': 'failed', 'message': '创建副本编号无效'}
+    if action.endswith('_report') and report_kind != 'weekly':
+        return repair_failure('正式日报已取消，仅支持周报；不能将日报请求改为周报执行。', code='report_kind_retired', next_action='stop')
     changes = changes or {}
     if action == 'generate_report' and (changes or source_tokens):
         return repair_failure('生成报告请传 report_kind 和 report_date，changes 与 source_tokens 留空；原始要求和来源由服务端读取，本次未执行。',

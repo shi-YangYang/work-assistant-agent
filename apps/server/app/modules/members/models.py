@@ -9,7 +9,7 @@ class Company(Record, Base):
     __tablename__ = 'company'
     name: Mapped[str] = mapped_column(String(120))
     environment_models: Mapped[bool] = mapped_column(Boolean, default=False)
-    rules: Mapped[dict] = mapped_column(JSONB, default=lambda: {'timezone': 'Asia/Shanghai', 'daily': {'enabled': False, 'days': [0, 1, 2, 3, 4, 5, 6], 'generateTime': '', 'deadline': ''}, 'weekly': {'enabled': False, 'days': [4], 'generateTime': '', 'deadline': ''}})
+    rules: Mapped[dict] = mapped_column(JSONB, default=lambda: {'timezone': 'Asia/Shanghai', 'weekly': {'enabled': False, 'days': [4], 'generateTime': '', 'deadline': ''}})
     revision: Mapped[int] = mapped_column(Integer, default=1)
     rules_effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

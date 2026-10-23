@@ -90,7 +90,7 @@ async def test_search_all_updates_and_reports_exclude_plans(setup):
     assert len((await client.get('/api/v1/work-items?q=客户确认需求')).json()['items']) == 1
     assert len((await client.get('/api/v1/work-items?q=未来计划')).json()['items']) == 1
     async with sessions() as db:
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC')
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC')
         rows = await report_inputs(db, report)
         facts = [report_source_content(row)['summary'] for row in rows]
         assert facts == ['客户确认需求', '完成可访问性检查']
@@ -147,7 +147,7 @@ async def test_reports_keep_mixed_legacy_and_new_progress_once(setup):
     second = await client.post(path + '/progress', json={'expectedRevision': 2, 'title': work['title'], 'summary': '旧入口完成校对'})
     assert second.status_code == 200, second.text
     async with sessions() as db:
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC')
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC')
         facts = [report_source_content(row)['summary'] for row in await report_inputs(db, report)]
         assert facts == ['新版确认需求', '旧入口完成校对']
 
@@ -180,7 +180,7 @@ async def test_reports_correct_only_selected_imported_entry_and_preserve_saved_f
                 migration.upgrade()
         await db.run_sync(cycle)
     async with sessions.begin() as db:
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period=stamp.date().isoformat(), period_end=stamp.date().isoformat(), timezone='UTC', source_ids=[])
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=stamp.date().isoformat(), period_end=stamp.date().isoformat(), timezone='UTC', source_ids=[])
         originals = await report_inputs(db, report)
         assert [report_source_content(row)['summary'] for row in originals] == ['首次旧进展', '另一次旧进展']
         report.source_ids = [row.id for row in originals]

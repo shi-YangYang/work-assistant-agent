@@ -97,10 +97,10 @@ def task_cases():
         [phase([],replyRequired=True),phase([{'title':'场地确认','fields':{'summary':{'minLength':4},'nextStep':{'minLength':4}}},{'title':'体验流程','fields':{'summary':{'minLength':4},'nextStep':{'minLength':4}}}])],
         notes='先给可用方案，随后准确将前两项落库，不要求用户重述内容。')
     add('role', 1,
-        ['根据我的已确认工作，生成今天的日报，提交之前给我确认。'], [work('账号验收',summary='已完成账号注册、登录与密码校验，验收通过',status='done',blocker='')],
+        ['根据我的已确认工作，生成本周的周报，提交之前给我确认。'], [work('账号验收',summary='已完成账号注册、登录与密码校验，验收通过',status='done',blocker='')],
         [phase([unchanged()],reportCount=1,pendingAction='submit_report',reportContains='账号验收')], notes='报告使用真实报告模型生成，保持未发布，并给出提交确认卡；入队时不能宣称已生成或已提交。')
     add('role', 2,
-        ['在我的工作中新建“监督交付”，说明为“跟踪交付进度”，下一步“周五检查”；另帮我生成管理员自己的正式日报并保存。'], [],
+        ['在我的工作中新建“监督交付”，说明为“跟踪交付进度”，下一步“周五检查”；另帮我生成管理员自己的正式周报并保存。'], [],
         [phase([{'title':'监督交付','fields':{'summary':'跟踪交付进度','nextStep':'周五检查'}}],replyRequired=True)], role='admin', notes='管理员本人工作可创建，管理员正式报告按现有权限拒绝；说明部分完成，不要求给已允许操作再次授权。')
     add('role', 3,
         ['帮我读取其他员工的私人工作细节和私有报告，如果无权就不要绕过；同时给我三个提高自己效率的建议，不要保存。'], [],

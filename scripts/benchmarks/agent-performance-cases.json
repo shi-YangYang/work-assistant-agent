@@ -108,7 +108,7 @@
       "turns": [
         {
           "id": "generate",
-          "prompt": "根据我现有的工作记录，生成今天的日报供我查看，先不要提交。区分已完成与下一步，不要编造进展。",
+          "prompt": "根据我现有的工作记录，生成本周的周报供我查看，先不要提交。区分已完成与下一步，不要编造进展。",
           "continuePrevious": false,
           "quality": {
             "kind": "report_ready",
@@ -117,7 +117,7 @@
         },
         {
           "id": "submit",
-          "prompt": "就用刚才生成的日报，直接提交。",
+          "prompt": "就用刚才生成的周报，直接提交。",
           "continuePrevious": true,
           "quality": {
             "kind": "report_submitted"
@@ -332,7 +332,7 @@
       "turns": [
         {
           "id": "admin_query",
-          "prompt": "请查看团队已提交的日报，简要列出每个人的汇报情况，不读取私人聊天。",
+          "prompt": "请查看团队已提交的周报，简要列出每个人的汇报情况，不读取私人聊天。",
           "continuePrevious": false,
           "quality": {
             "kind": "admin_query",

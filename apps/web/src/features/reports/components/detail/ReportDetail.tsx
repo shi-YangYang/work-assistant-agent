@@ -163,7 +163,7 @@ export function ReportDetail({
               <DeleteRecord
                 kind="reports"
                 id={data.id}
-                title={`${data.period}${data.kind === 'daily' ? '日报' : '周报'}`}
+                title={`${data.period}${'周报'}`}
                 revision={data.managementRevision ?? data.revision}
                 onClose={() => setDeleting(false)}
                 onDeleted={() => {

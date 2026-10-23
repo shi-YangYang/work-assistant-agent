@@ -24,7 +24,7 @@ async def test_report_deletion_removes_only_matching_submit_and_generation_idemp
     _, sessions, users, clients = setup
     owner = users['employee']
     async with sessions.begin() as db:
-        reports = [Report(company_id=owner.company_id, owner_id=owner.id, kind='daily',
+        reports = [Report(company_id=owner.company_id, owner_id=owner.id, kind='weekly',
                           period=day, period_end=day, timezone='Asia/Shanghai')
                    for day in ('2026-01-01', '2026-01-02')]
         db.add_all(reports)

@@ -13,8 +13,8 @@ from sqlalchemy import select
 
 
 def no_report_sources_message(kind, start, end):
-    label = '周报' if kind == 'weekly' else '日报'
-    scope = str(start) if kind == 'daily' else f'{start} 至 {end}'
+    label = '周报'
+    scope = f'{start} 至 {end}'
     return f'{scope} 暂无可用于生成{label}的工作记录。请先核对汇报周期，再确认该周期内是否有有效工作进展；只有工作正文或计划还不能生成报告。也可以让我根据当前会话整理一份{label}正文。'
 
 

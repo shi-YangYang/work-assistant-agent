@@ -13,7 +13,7 @@ router = APIRouter()
 @router.get('/api/v1/settings/report-rules')
 async def get_rules(actor=AUTH, db=DB):
     company = await db.get(Company, actor.company_id)
-    return {**company.rules, 'revision': company.revision, 'effectivePeriods': await reporting_effective_periods(db, company)}
+    return {**{key: value for key, value in company.rules.items() if key != 'daily'}, 'revision': company.revision, 'effectivePeriods': await reporting_effective_periods(db, company)}
 
 
 @router.put('/api/v1/settings/report-rules')
@@ -23,4 +23,4 @@ async def save_rules(body: Rules, actor=ADMIN, db=DB):
     company.rules, company.rules_effective_at = body.model_dump(exclude={'expectedRevision'}), now()
     company.revision += 1
     await reporting_save_schedule(db, company)
-    return {**company.rules, 'revision': company.revision, 'effectivePeriods': await reporting_effective_periods(db, company)}
+    return {**{key: value for key, value in company.rules.items() if key != 'daily'}, 'revision': company.revision, 'effectivePeriods': await reporting_effective_periods(db, company)}

@@ -244,7 +244,7 @@ async def test_saved_work_material_cleanup_respects_reports_and_account_deletion
         source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
         report = None
         if retainer.endswith('_report'):
-            report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-30', period_end='2026-09-30', timezone='UTC', content={'ongoing': '已保存资料'}, source_ids=[source.id] if retainer == 'current_report' else [], candidate={'content': {'ongoing': '候选报告'}, 'sourceIds': [source.id]} if retainer == 'candidate_report' else None)
+            report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period='2026-09-30', period_end='2026-09-30', timezone='UTC', content={'ongoing': '已保存资料'}, source_ids=[source.id] if retainer == 'current_report' else [], candidate={'content': {'ongoing': '候选报告'}, 'sourceIds': [source.id]} if retainer == 'candidate_report' else None)
             db.add(report)
             await db.flush()
             if retainer == 'historical_report':
@@ -290,7 +290,7 @@ async def test_submitted_report_keeps_progress_snapshot_and_file_after_correctio
     historical = (await client.get(path + '/materials?revision=2')).json()['items'][0]
     file_id = historical['attachment']['id']
     async with sessions.begin() as db:
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC', content={'completed': '', 'ongoing': '客户确认初稿', 'blockers': '', 'next': ''})
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC', content={'completed': '', 'ongoing': '客户确认初稿', 'blockers': '', 'next': ''})
         sources = await report_inputs(db, report)
         assert len(sources) == 1
         report.source_ids = [sources[0].id]

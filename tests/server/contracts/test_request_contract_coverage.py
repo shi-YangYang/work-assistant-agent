@@ -87,7 +87,7 @@ async def test_adopt_report_candidate_updates_real_content_sources_and_rejects_s
     original = {'completed': '原稿', 'ongoing': '', 'blockers': '', 'next': ''}
     candidate = {**original, 'completed': '候选版本的真实内容'}
     async with sessions.begin() as db:
-        report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period='2026-09-29', period_end='2026-09-29', timezone='Asia/Shanghai', content=original, candidate={'content': candidate, 'sourceIds': [revision.id]})
+        report = Report(company_id=actor.company_id, owner_id=actor.id, kind='weekly', period='2026-09-29', period_end='2026-09-29', timezone='Asia/Shanghai', content=original, candidate={'content': candidate, 'sourceIds': [revision.id]})
         db.add(report)
         await db.flush()
     endpoint = f'/api/v1/reports/{report.id}/candidate'

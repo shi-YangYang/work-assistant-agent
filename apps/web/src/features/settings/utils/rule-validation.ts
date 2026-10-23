@@ -15,9 +15,9 @@ export function revealRuleErrors(form: HTMLFormElement) {
   first.focus({ preventScroll: true })
 }
 
-export function reportRuleErrors(value: Pick<Rules, 'daily' | 'weekly'>): Record<string, string> {
+export function reportRuleErrors(value: Pick<Rules, 'weekly'>): Record<string, string> {
   const errors: Record<string, string> = {}
-  for (const kind of ['daily', 'weekly'] as const) {
+  for (const kind of ['weekly'] as const) {
     const schedule = value[kind]
     if (schedule.enabled && !schedule.days.length) errors[`${kind}.days`] = '请至少选择一个汇报日。'
     if (kind === 'weekly' && schedule.enabled && schedule.days.length !== 1)

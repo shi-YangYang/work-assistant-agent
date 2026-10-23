@@ -49,7 +49,7 @@ export function prepareReport(item: ReportObligation, body: Record<string, never
   return write<{ reportId: string }>(`/report-obligations/${item.id}/prepare`, body, 'POST', key)
 }
 
-export function reportListPath(todo: boolean, kind: 'weekly' | 'daily') {
+export function reportListPath(todo: boolean, kind: 'weekly') {
   return todo ? null : `/reports?kind=${kind}`
 }
 

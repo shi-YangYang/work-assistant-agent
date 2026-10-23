@@ -43,8 +43,8 @@ async def test_reports_merge_schedule_and_manual_submission_without_exposing_dra
         draft = await report(db, users['peer'], '2026-09-12', published=False)
         await report(db, users['outsider'], '2026-09-12')
         await report(db, users['admin'], '2026-09-12')
-        db.add(ReportObligation(company_id=employee.company_id, owner_id=employee.id, kind='daily', period='2026-09-11', period_end='2026-09-12', timezone='Asia/Shanghai', rule_revision=1, generate_at=DAY, deadline_at=DAY, reminders=False, before_minutes=0, state='cancelled'))
-        db.add(ReportObligation(company_id=draft.company_id, owner_id=draft.owner_id, kind='daily', period=draft.period, period_end=draft.period_end, timezone='Asia/Shanghai', rule_revision=1, generate_at=DAY, deadline_at=DAY + timedelta(hours=2), reminders=False, before_minutes=0, state='pending', report_id=draft.id))
+        db.add(ReportObligation(company_id=employee.company_id, owner_id=employee.id, kind='weekly', period='2026-09-11', period_end='2026-09-12', timezone='Asia/Shanghai', rule_revision=1, generate_at=DAY, deadline_at=DAY, reminders=False, before_minutes=0, state='cancelled'))
+        db.add(ReportObligation(company_id=draft.company_id, owner_id=draft.owner_id, kind='weekly', period=draft.period, period_end=draft.period_end, timezone='Asia/Shanghai', rule_revision=1, generate_at=DAY, deadline_at=DAY + timedelta(hours=2), reminders=False, before_minutes=0, state='pending', report_id=draft.id))
     client = clients['admin']
     data = (await client.get('/api/v1/team/workspace/reports', params=RANGE)).json()
     assert data['counts'] == {'all': 2, 'cancelled': 1, 'expected': 1, 'submitted': 1, 'pending': 1, 'overdue': 1}
@@ -60,7 +60,7 @@ async def test_reports_merge_schedule_and_manual_submission_without_exposing_dra
         filtered = (await client.get('/api/v1/team/workspace/reports', params={**RANGE, 'status': status})).json()
         assert filtered['total'] == total and filtered['counts'] == data['counts']
     async with sessions.begin() as db:
-        db.add(ReportObligation(company_id=submitted.company_id, owner_id=submitted.owner_id, kind='daily', period=submitted.period, period_end=submitted.period_end, timezone='Asia/Shanghai', rule_revision=1, generate_at=DAY, deadline_at=DAY, reminders=False, before_minutes=0, state='submitted', report_id=submitted.id, submitted_at=DAY))
+        db.add(ReportObligation(company_id=submitted.company_id, owner_id=submitted.owner_id, kind='weekly', period=submitted.period, period_end=submitted.period_end, timezone='Asia/Shanghai', rule_revision=1, generate_at=DAY, deadline_at=DAY, reminders=False, before_minutes=0, state='submitted', report_id=submitted.id, submitted_at=DAY))
     merged = (await client.get('/api/v1/team/workspace/reports', params=RANGE)).json()
     assert merged['total'] == 2 and merged['counts']['expected'] == 2
 
@@ -70,9 +70,9 @@ async def test_workspace_search_and_pagination_cover_all_rows(setup):
     async with sessions.begin() as db:
         for index in range(23):
             await work(db, users['employee'], content(f'方案 {index}'), DAY + timedelta(minutes=index))
-            await report(db, users['employee'], (DAY + timedelta(days=index)).date().isoformat())
+            await report(db, users['employee'], (DAY + timedelta(weeks=index)).date().isoformat())
     for view in ('work', 'reports'):
-        filters = {'period': 'custom', 'start': '2026-09-01', 'end': '2026-10-31'}
+        filters = {'period': 'custom', 'start': '2026-09-01', 'end': '2027-03-01'}
         first = (await clients['admin'].get('/api/v1/team/workspace/' + view, params=filters)).json()
         second = (await clients['admin'].get('/api/v1/team/workspace/' + view, params={**filters, 'offset': first['nextCursor']})).json()
         assert first['total'] == second['total'] == 23
@@ -126,7 +126,7 @@ async def test_workspace_query_count_does_not_grow_with_page_size(setup):
     async with sessions.begin() as db:
         for index in range(65):
             await work(db, users['employee'], content(f'事项 {index}'), DAY + timedelta(minutes=index))
-            await report(db, users['employee'], (DAY + timedelta(days=index)).date().isoformat())
+            await report(db, users['employee'], (DAY + timedelta(weeks=index)).date().isoformat())
     async with sessions() as db:
         engine = db.bind.sync_engine
     for view, params, maximum in [(work_view, {}, 5), (work_view, {'scope': 'updated'}, 6), (report_view, {}, 4)]:
@@ -137,7 +137,7 @@ async def test_workspace_query_count_does_not_grow_with_page_size(setup):
         event.listen(engine, 'before_cursor_execute', capture)
         try:
             async with sessions() as db:
-                data = await view(db, users['admin'], period='custom', start=DAY.date(), end=(DAY + timedelta(days=70)).date(), **params)
+                data = await view(db, users['admin'], period='custom', start=DAY.date(), end=(DAY + timedelta(weeks=70)).date(), **params)
             assert data['total'] == 65 and len(data['items']) == 20
             assert len(statements) <= maximum, '\n'.join(statements)
             assert 'LIMIT' in statements[-1] and 'OFFSET' in statements[-1]

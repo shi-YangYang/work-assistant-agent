@@ -23,7 +23,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-it('shows the actual reporting week before generation and keeps the current-week shortcut and daily requests aligned', async () => {
+it('shows the actual reporting week before generation and keeps the current-week shortcut and rejects legacy daily navigation', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
   vi.mocked(generateReport).mockRejectedValueOnce(new Error('所选周期暂无工作记录'))
@@ -57,18 +57,16 @@ it('shows the actual reporting week before generation and keeps the current-week
   fireEvent.change(screen.getByLabelText('选择周报所在周'), { target: { value: '2027-01-01' } })
   expect(screen.getByRole('status').textContent).toBe('2026-12-28 — 2027-01-03（周一至周日）')
 
-  fireEvent.click(screen.getByRole('button', { name: '日报' }))
-  expect(screen.queryByRole('status')).toBeNull()
-  expect(screen.getByLabelText('汇报日期')).toHaveProperty('value', '2027-01-01')
-  fireEvent.click(screen.getByRole('button', { name: '生成日报' }))
+  expect(screen.queryByRole('button', { name: '日报' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: '生成周报' }))
   await waitFor(() => expect(generateReport).toHaveBeenCalledTimes(3))
   expect(generateReport).toHaveBeenLastCalledWith(
-    { kind: 'daily', date: '2027-01-01' },
+    { kind: 'weekly', date: '2027-01-01' },
     expect.any(String),
   )
 })
 
-it('clears period errors on report type changes and ignores a late failure from a different period', async () => {
+it('clears period errors on reporting week changes and ignores a late failure from a different period', async () => {
   let rejectGeneration: (reason: Error) => void = () => {}
   vi.mocked(generateReport).mockImplementationOnce(
     () =>
@@ -82,17 +80,17 @@ it('clears period errors on report type changes and ignores a late failure from 
     </MemoryRouter>,
   )
   fireEvent.click(screen.getByRole('button', { name: '生成周报' }))
-  fireEvent.click(screen.getByRole('button', { name: '日报' }))
+  fireEvent.change(screen.getByLabelText('选择周报所在周'), { target: { value: '2026-10-12' } })
   rejectGeneration(new Error('旧周报周期没有来源'))
   await waitFor(() =>
-    expect(screen.getByRole('button', { name: '生成日报' })).toHaveProperty('disabled', false),
+    expect(screen.getByRole('button', { name: '生成周报' })).toHaveProperty('disabled', false),
   )
   expect(screen.queryByRole('alert')).toBeNull()
 
-  vi.mocked(generateReport).mockRejectedValueOnce(new Error('日报周期没有来源'))
-  fireEvent.click(screen.getByRole('button', { name: '生成日报' }))
+  vi.mocked(generateReport).mockRejectedValueOnce(new Error('周报周期没有来源'))
+  fireEvent.click(screen.getByRole('button', { name: '生成周报' }))
   await screen.findByRole('alert')
-  fireEvent.click(screen.getByRole('button', { name: '周报' }))
+  fireEvent.change(screen.getByLabelText('选择周报所在周'), { target: { value: '2026-10-19' } })
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
@@ -100,11 +98,11 @@ it('keeps generation errors outside the page and clears them on dismissal, timeo
   vi.useFakeTimers()
   vi.mocked(generateReport).mockRejectedValue(new Error('当前周期暂无工作记录'))
   const { container } = render(
-    <MemoryRouter initialEntries={['/reports?kind=daily&view=all&date=2026-10-23']}>
+    <MemoryRouter initialEntries={['/reports?kind=weekly&view=all&date=2026-10-23']}>
       <ReportsPage />
     </MemoryRouter>,
   )
-  const generate = screen.getByRole('button', { name: '生成日报' })
+  const generate = screen.getByRole('button', { name: '生成周报' })
   await act(async () => fireEvent.click(generate))
   expect(screen.getByRole('alert')).toBeTruthy()
   expect(container.querySelector('[role="alert"]')).toBeNull()
@@ -121,4 +119,15 @@ it('keeps generation errors outside the page and clears them on dismissal, timeo
   vi.mocked(generateReport).mockResolvedValueOnce({ reportId: 'report', jobId: 'job' })
   await act(async () => fireEvent.click(generate))
   expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('redirects legacy daily list selection with a retirement notice', () => {
+  render(
+    <MemoryRouter initialEntries={['/reports?kind=daily&view=all']}>
+      <ReportsPage />
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('正式日报已取消，现显示周报。')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '生成周报' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: '日报' })).toBeNull()
 })

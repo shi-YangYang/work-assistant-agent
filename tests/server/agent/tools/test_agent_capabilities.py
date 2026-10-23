@@ -27,7 +27,7 @@ pytestmark = pytest.mark.asyncio
 async def test_chat_report_keeps_original_brief_for_generation_and_fact_review(setup):
     settings, sessions, users, clients = setup
     await create(clients['employee'], '报价方案', summary='已完成初稿', status='in_progress')
-    request = '生成今天日报，简洁一点，下一步帮我拟一条可执行建议，标为计划，不要提交。'
+    request = '生成本周周报，简洁一点，下一步帮我拟一条可执行建议，标为计划，不要提交。'
     context, _ = await runtime(setup, request)
     result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert result['state'] == 'running'
@@ -47,15 +47,15 @@ async def test_chat_report_keeps_original_brief_for_generation_and_fact_review(s
 
 async def test_running_report_does_not_silently_discard_a_different_brief(setup):
     _, sessions, users, clients = setup
-    await create(clients['employee'], '日报来源', summary='完成核对')
+    await create(clients['employee'], '周报来源', summary='完成核对')
     async with sessions.begin() as db:
-        _, first = await ensure_report(db, users['employee'], 'daily', now().astimezone(ZoneInfo('Asia/Shanghai')).date(), instructions='请写得简洁')
+        _, first = await ensure_report(db, users['employee'], 'weekly', now().astimezone(ZoneInfo('Asia/Shanghai')).date(), instructions='请写得简洁')
     async with sessions.begin() as db:
-        _, same = await ensure_report(db, users['employee'], 'daily', now().astimezone(ZoneInfo('Asia/Shanghai')).date(), instructions='请写得简洁')
+        _, same = await ensure_report(db, users['employee'], 'weekly', now().astimezone(ZoneInfo('Asia/Shanghai')).date(), instructions='请写得简洁')
         assert same.id == first.id
     async with sessions.begin() as db:
         with pytest.raises(HTTPException) as conflict:
-            await ensure_report(db, users['employee'], 'daily', now().astimezone(ZoneInfo('Asia/Shanghai')).date(), instructions='重点写下一步')
+            await ensure_report(db, users['employee'], 'weekly', now().astimezone(ZoneInfo('Asia/Shanghai')).date(), instructions='重点写下一步')
         assert conflict.value.status_code == 409
     async with sessions() as db:
         jobs = list((await db.scalars(select(Job).where(Job.owner_id == users['employee'].id))).all())
@@ -65,7 +65,7 @@ async def test_running_report_does_not_silently_discard_a_different_brief(setup)
 async def test_chat_cannot_race_its_own_queued_report_with_an_empty_draft_edit(setup):
     _, sessions, _, clients = setup
     await create(clients['employee'], '报价方案', summary='已完成核对', status='done')
-    context, _ = await runtime(setup, '生成今天日报，帮我拟一条下一步计划')
+    context, _ = await runtime(setup, '生成本周周报，帮我拟一条下一步计划')
     generation = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     reports = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=generation['objectId']))
     result = await execute(context, step=2, action='edit_report', target_id=generation['objectId'], expected_revision=reports['items'][0]['revision'], changes={'next': '待核对清单'})
@@ -136,7 +136,7 @@ async def test_agent_report_repairs_specific_fact_feedback_only_once(setup, repa
     report, job, _ = await prepared(setup)
     async with sessions.begin() as db:
         live = await db.get(Job, job.id)
-        live.result = {**live.result, 'instructions': '生成日报，下一步可拟一项合理建议'}
+        live.result = {**live.result, 'instructions': '生成周报，下一步可拟一项合理建议'}
 
     class CorrectableModel(ReportModel):
         async def ainvoke(self, messages):

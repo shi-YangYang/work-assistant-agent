@@ -85,7 +85,7 @@ def record(job, action, arguments, result):
     if action in ('create_work', 'propose_progress', 'propose_followup') and not arguments.get('target_id') and not has_reference:
         identity['effect'] = effect
     if action == 'generate_report':
-        kind, day = arguments.get('report_kind', 'daily'), arguments.get('report_date', '')
+        kind, day = arguments.get('report_kind', 'weekly'), arguments.get('report_date', '')
         try:
             parsed = date.fromisoformat(day)
             day = (parsed - timedelta(days=parsed.weekday()) if kind == 'weekly' else parsed).isoformat()

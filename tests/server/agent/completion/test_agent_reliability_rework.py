@@ -179,8 +179,8 @@ def test_correcting_extra_and_missing_fields_resolves_only_that_request():
 
 
 @pytest.mark.parametrize('action,first,second', [
+    ('generate_report', {'report_kind': 'weekly', 'report_date': '2026-10-09'}, {'report_kind': 'weekly', 'report_date': '2026-10-19'}),
     ('generate_report', {'report_kind': 'daily', 'report_date': '2026-10-09'}, {'report_kind': 'weekly', 'report_date': '2026-10-10'}),
-    ('generate_report', {'report_kind': 'daily', 'report_date': '2026-10-09'}, {'report_kind': 'daily', 'report_date': '2026-10-10'}),
     ('generate_report', {'obligation_id': 'a'}, {'obligation_id': 'b'}),
     ('edit_report', {'target_id': 'report', 'changes': {'completed': '访谈'}}, {'target_id': 'report', 'changes': {'next': '整理'}}),
     ('propose_progress', {'changes': {'title': '甲', 'summary': '未保存'}}, {'changes': {'title': '乙', 'summary': '已保存'}}),
@@ -208,7 +208,7 @@ def test_weekly_report_recovery_uses_canonical_period():
 
 def test_default_copy_is_not_identity_and_explicit_item_recovers_changed_create():
     task = job()
-    defaults = {'step': 1, 'target_id': '', 'expected_revision': 0, 'report_kind': 'daily', 'report_date': '',
+    defaults = {'step': 1, 'target_id': '', 'expected_revision': 0, 'report_kind': 'weekly', 'report_date': '',
                 'obligation_id': '', 'source_tokens': None, 'submit_after': False, 'requires_step': None, 'copy_index': 1,
                 'deliverable_id': '', 'deliverable_revision': 0, 'item_id': '', 'shared_attachment_ids': None}
     first = {**defaults, 'task_item_id': 'server-a', 'changes': {'title': '修正前'}}

@@ -193,7 +193,7 @@ async def evaluate(case, configs, *, manual_report=False, fixture_reason=''):
             if manual_report:
                 # An empty period creates an editable report without a model job.
                 # Prepare it before works exist; report cancellation is unsupported.
-                manual_report_dto = checked(await client.post('/api/v1/reports/generate', json={'kind': 'daily', 'date': case['reportDate']}, headers=keyed()), 202)
+                manual_report_dto = checked(await client.post('/api/v1/reports/generate', json={'kind': 'weekly', 'date': case['reportDate']}, headers=keyed()), 202)
                 empty_report = checked(await client.get('/api/v1/reports/' + manual_report_dto['reportId']))
                 if empty_report['job']['state'] != 'succeeded' or empty_report['job']['phase'] != 'empty':
                     raise AssertionError('manual report setup unexpectedly enqueued model generation')
@@ -205,7 +205,7 @@ async def evaluate(case, configs, *, manual_report=False, fixture_reason=''):
             note(result, 'mode stored in real conversation', conversation['executionMode'] == case['mode'])
             async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
                 if case.get('reportDate'):
-                    report = manual_report_dto or checked(await client.post('/api/v1/reports/generate', json={'kind': 'daily', 'date': case['reportDate']}, headers=keyed()), 202)
+                    report = manual_report_dto or checked(await client.post('/api/v1/reports/generate', json={'kind': 'weekly', 'date': case['reportDate']}, headers=keyed()), 202)
                     if manual_report:
                         queued = checked(await client.get('/api/v1/reports/' + report['reportId']))
                         content = {'completed': '', 'ongoing': '已登记工作：' + '、'.join(seed['title'] for seed in case['seeds']),

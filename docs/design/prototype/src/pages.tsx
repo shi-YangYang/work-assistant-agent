@@ -445,7 +445,7 @@ export function Assistant({
                 icon: 'FileText',
                 title: '整理汇报',
                 detail: '让进展清晰可见',
-                text: '帮我根据今天的工作整理日报',
+                text: '帮我根据本周的工作整理周报',
               },
               {
                 icon: 'ScanText',
@@ -959,7 +959,6 @@ function ReportDetail({ onClose }: { onClose: () => void }) {
 }
 export function ReportsPage({ notify }: { notify: (v: string) => void }) {
   const [tab, setTab] = useState('汇报待办')
-  const [kind, setKind] = useState('周报')
   const [empty, setEmpty] = useState(false)
   const [detail, setDetail] = useState(false)
   return (
@@ -983,7 +982,6 @@ export function ReportsPage({ notify }: { notify: (v: string) => void }) {
               </button>
             ))}
           </div>
-          <Segments items={['日报', '周报']} value={kind} onChange={setKind} label="报告类型" />
         </div>
         {empty ? (
           <Empty title="暂时没有待办，专注眼前的工作。" text="新的汇报安排会出现在这里。" />
@@ -996,7 +994,7 @@ export function ReportsPage({ notify }: { notify: (v: string) => void }) {
                 </span>
                 <div>
                   <span className="eyebrow">{tab === '汇报待办' ? '即将到期' : '最新汇报'}</span>
-                  <h3>本{kind === '周报' ? '周' : '日'}工作汇报</h3>
+                  <h3>本周工作汇报</h3>
                   <p>
                     9月21日 — 9月27日<span>·</span>周五 18:00 前提交
                   </p>
@@ -1010,7 +1008,7 @@ export function ReportsPage({ notify }: { notify: (v: string) => void }) {
                     <Icon name="FileText" size={23} />
                   </span>
                   <div>
-                    <h3>上{kind === '周报' ? '周' : '日'}工作汇报</h3>
+                    <h3>上周工作汇报</h3>
                     <p>9月14日 — 9月20日</p>
                   </div>
                   <Badge status="已提交" />
@@ -1317,7 +1315,7 @@ export function ModelsPage({ notify }: { notify: (v: string) => void }) {
           </header>
           {[
             { icon: 'Sparkles', title: '工作助手', text: '理解消息、查询信息、推进业务操作' },
-            { icon: 'FileText', title: '报告生成', text: '将日常工作整理为清晰的日报、周报' },
+            { icon: 'FileText', title: '报告生成', text: '将日常工作整理为清晰的周报' },
             { icon: 'AudioLines', title: '语音转写', text: '把语音内容转成可检索的文字' },
           ].map((item, index) => (
             <div className="routing-row" key={item.title}>

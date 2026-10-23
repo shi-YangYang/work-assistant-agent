@@ -127,3 +127,26 @@ it('previews original and replacement body blocks, removed content, and appended
   )
   expect(screen.getByRole('button', { name: '确认修改' })).toBeTruthy()
 })
+
+it('keeps old daily report cards unavailable without relabeling or executing them', () => {
+  render(
+    <MemoryRouter>
+      <BusinessActionCard
+        action={{
+          ...action,
+          action: 'generate_report',
+          title: '2026-10-24 日报',
+          objectType: 'report',
+          objectId: 'daily',
+          state: 'succeeded',
+        }}
+        refresh={vi.fn()}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.getByText('日报操作已失效')).toBeTruthy()
+  expect(screen.queryByRole('link')).toBeNull()
+  expect(screen.queryByRole('button')).toBeNull()
+  expect(screen.queryByText(/周报/)).toBeNull()
+  expect(resolveBusinessAction).not.toHaveBeenCalled()
+})

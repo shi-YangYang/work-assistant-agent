@@ -33,7 +33,7 @@ async def datasets(db, actor, lower, upper, owners, status):
     if status:
         work = work.where(latest.c.content['status'].astext == status)
     work = work.subquery()
-    reports = select(Report.id, Report.owner_id, Report.period, Report.kind, ReportRevision.revision, ReportRevision.created_at.label('at')).join(ReportRevision, ReportRevision.report_id == Report.id).where(Report.company_id == actor.company_id, Report.owner_id.in_(owners), Report.deleted.is_(False), ReportRevision.company_id == actor.company_id, ReportRevision.created_at >= lower, ReportRevision.created_at < upper, ReportRevision.revision <= Report.published_revision).distinct(Report.id).order_by(Report.id, ReportRevision.created_at.desc(), ReportRevision.id.desc()).subquery()
+    reports = select(Report.id, Report.owner_id, Report.period, Report.kind, ReportRevision.revision, ReportRevision.created_at.label('at')).join(ReportRevision, ReportRevision.report_id == Report.id).where(Report.company_id == actor.company_id, Report.owner_id.in_(owners), Report.deleted.is_(False), Report.kind == 'weekly', ReportRevision.company_id == actor.company_id, ReportRevision.created_at >= lower, ReportRevision.created_at < upper, ReportRevision.revision <= Report.published_revision).distinct(Report.id).order_by(Report.id, ReportRevision.created_at.desc(), ReportRevision.id.desc()).subquery()
     return {'messages': messages, 'work': work, 'reports': reports}
 
 
@@ -84,7 +84,7 @@ async def team_data(db, actor, *, period='this_week', start=None, end=None, q=''
             dto = work_dto(row)
             item.update(title=dto['title'], href=f"/work/{row['id']}?revision={row['revision']}", work=dto)
         else:
-            item.update(title=row['period'] + (' 日报' if row['kind'] == 'daily' else ' 周报'), href=f"/reports/{row['id']}?revision={row['revision']}")
+            item.update(title=row['period'] + (' 周报'), href=f"/reports/{row['id']}?revision={row['revision']}")
         details.append(item)
     total = message_count if metric == 'messages' else metrics[metric]
     return summary, {'items': details, 'nextCursor': cursor_encode(page[limit - 1]['at'], page[limit - 1]['id']) if len(page) > limit else None, 'total': total}

@@ -57,7 +57,7 @@ async def ask(context, raw_questions, *, continue_task=False, append_pending=Fal
                             problem(403, '无权使用该候选对象')
                         await resolve(db, actor, evidence, latest=True)
                     option['objectRevision'] = item.revision
-                    option['label'] = item.title if kind == 'work' else f'{item.period} {"日报" if item.kind == "daily" else "周报"}'
+                    option['label'] = item.title if kind == 'work' else f'{item.period} 周报'
                     option['description'] = item.content.get('summary', '')[:160] if kind == 'work' and item.owner_id == actor.id else ''
         waiting = None
         if append_pending:

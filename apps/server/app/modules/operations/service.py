@@ -19,6 +19,9 @@ from app.security.ownership import owned
 
 
 async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
+    from app.modules.reports.retirement import retired_action, MESSAGE
+    if await retired_action(db, actor, row):
+        problem(410, MESSAGE, 'report_kind_retired')
     p = row.params
     if row.action in ('create_work', 'update_work') and (set(p['changes']) & {'body', 'bodyEdits', 'materials', 'materialIds', 'update', 'removeMaterial'} or p.get('sharedAttachmentIds')):
         from app.modules.work.agent.agent_commands import apply_action
@@ -46,7 +49,7 @@ async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
         await link_work(db, actor, p.get('deliverableReference'), row, item)
         row.result = {'objectType': 'work', 'objectId': item.id, 'revision': item.revision, 'changedFields': sorted(p['changes'])}
     elif row.action == 'generate_report':
-        if p['kind'] not in ('daily', 'weekly'):
+        if p['kind'] not in ('weekly',):
             problem(422, '报告类型无效')
         try:
             day = date.fromisoformat(p['date'])
@@ -108,6 +111,9 @@ async def perform(db, actor, row, job=None, *, confirmed=False, settings=None):
 async def confirm(db, actor, identifier, expected, *, cancel=False, settings=None):
     await business_company_lock(db, actor.company_id)
     row = await owned(db, BusinessAction, identifier, actor, lock=True)
+    from app.modules.reports.retirement import retired_action
+    if await retired_action(db, actor, row):
+        return await action_dto(db, actor, row)
     if row.state in ('succeeded', 'running', 'cancelled'):
         return await action_dto(db, actor, row)
     version(row, expected)

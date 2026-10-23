@@ -231,7 +231,7 @@ export async function runBrowserJourney(options) {
         row.dependentReports = []
         if (turn.quality.kind.startsWith('report_')) {
           while (performance.now() < deadline) {
-            const reports = await api('/reports?kind=daily')
+            const reports = await api('/reports?kind=weekly')
             row.dependentReports = await Promise.all(
               (reports.items ?? []).map((item) => api('/reports/' + item.id)),
             )

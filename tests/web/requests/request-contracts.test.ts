@@ -123,7 +123,7 @@ const checkBody = {
 const ruleBody: Parameters<typeof settings.saveReportRules>[0] = {
   timezone: 'Asia/Shanghai',
   expectedRevision: 7,
-  daily: { enabled: true, days: [1, 2, 3, 4, 5], generateTime: '18:00', deadline: '19:00' },
+
   weekly: { enabled: false, days: [5], generateTime: '18:00', deadline: '19:00' },
 }
 const sendBody = { conversationId: 'chat', text: '消息', attachmentIds: ['file'], replyTo: null }
@@ -361,7 +361,7 @@ const contracts: Contract[] = [
       'batch-key',
     ),
   ),
-  path('/reports?kind=daily', () => reports.reportListPath(false, 'daily')),
+  path('/reports?kind=weekly', () => reports.reportListPath(false, 'weekly')),
   path('/reports?kind=weekly', () => reports.reportListPath(false, 'weekly')),
   path('/reports/report?revision=2', () => reports.reportDetailPath('report', '?revision=2')),
   get('/reports/report', () => reports.readReport('report')),
@@ -602,7 +602,7 @@ it('keeps disabled or nonexistent resource paths silent', () => {
   expect(interactions.conversationInteractionsPath(undefined)).toBeNull()
   expect(auth.desktopAuthorizationPath(false, 'invalid')).toBeNull()
   expect(records.deletionImpactPath('work-items', 'work')).toBeNull()
-  expect(reports.reportListPath(true, 'daily')).toBeNull()
+  expect(reports.reportListPath(true, 'weekly')).toBeNull()
   expect(reports.notificationsPath({ member: { role: 'admin' } } as Identity, '')).toBeNull()
   expect(request).not.toHaveBeenCalled()
 })
