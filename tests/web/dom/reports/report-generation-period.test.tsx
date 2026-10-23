@@ -23,7 +23,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-it('shows the actual reporting week before generation and keeps shortcuts and daily requests aligned', async () => {
+it('shows the actual reporting week before generation and keeps the current-week shortcut and daily requests aligned', async () => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-10-23T12:00:00Z'))
   vi.mocked(generateReport).mockRejectedValueOnce(new Error('所选周期暂无工作记录'))
@@ -51,7 +51,8 @@ it('shows the actual reporting week before generation and keeps shortcuts and da
     { kind: 'weekly', date: '2026-10-23' },
     expect.any(String),
   )
-  fireEvent.click(screen.getByRole('button', { name: '上周' }))
+  expect(screen.queryByRole('button', { name: '上周' })).toBeNull()
+  fireEvent.change(screen.getByLabelText('选择周报所在周'), { target: { value: '2026-10-16' } })
   expect(screen.getByRole('status').textContent).toBe('2026-10-12 — 2026-10-18（周一至周日）')
   fireEvent.change(screen.getByLabelText('选择周报所在周'), { target: { value: '2027-01-01' } })
   expect(screen.getByRole('status').textContent).toBe('2026-12-28 — 2027-01-03（周一至周日）')

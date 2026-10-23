@@ -70,7 +70,7 @@ export function ReportsPage() {
     >
       <PageHeader
         title="我的报告"
-        description="把日常的推进，整理成清晰的工作记录。"
+        className={styles['report-header']}
         actions={
           <button onClick={() => setShowRules(true)}>
             <CalendarDays size={16} />
@@ -124,52 +124,35 @@ export function ReportsPage() {
           </div>
         </div>
         {!todo && (
-          <div
-            className={`${recordLayoutStyles['records-toolbar']} ${recordLayoutStyles['report-generate']}`}
-          >
-            <div className={styles['report-period']}>
-              <div className={styles['period-controls']}>
-                <label className={recordLayoutStyles['record-date-field']}>
-                  <span>{kind === 'weekly' ? '汇报周期' : '汇报日期'}</span>
-                  <input
-                    type="date"
-                    aria-label={kind === 'weekly' ? '选择周报所在周' : '汇报日期'}
-                    aria-describedby={kind === 'weekly' ? 'report-period-range' : undefined}
-                    min="0001-01-01"
-                    max="9999-12-30"
-                    value={selectedDate}
-                    onClick={(event) => {
-                      try {
-                        event.currentTarget.showPicker?.()
-                      } catch {
-                        /* Native picker unavailable. */
-                      }
-                    }}
-                    onChange={(e) => changeDate(e.target.value)}
-                  />
-                </label>
-                {kind === 'weekly' && (
-                  <div className={styles['period-shortcuts']} aria-label="快捷选择汇报周期">
-                    <button type="button" onClick={() => changeDate(today)}>
-                      本周
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const previous = new Date(`${today}T00:00:00Z`)
-                        previous.setUTCDate(previous.getUTCDate() - 7)
-                        changeDate(previous.toISOString().slice(0, 10))
-                      }}
-                    >
-                      上周
-                    </button>
-                  </div>
-                )}
-              </div>
-              {kind === 'weekly' && period && (
-                <span id="report-period-range" className={styles['period-range']} role="status">
-                  {period.start} — {period.end}（周一至周日）
-                </span>
+          <div className={`${recordLayoutStyles['records-toolbar']} ${styles['report-generate']}`}>
+            <div className={styles['period-controls']}>
+              <label
+                className={`${recordLayoutStyles['record-date-field']} ${styles['period-date']}`}
+              >
+                <span>{kind === 'weekly' ? '汇报周期' : '汇报日期'}</span>
+                <input
+                  type="date"
+                  aria-label={kind === 'weekly' ? '选择周报所在周' : '汇报日期'}
+                  aria-describedby={kind === 'weekly' ? 'report-period-range' : undefined}
+                  min="0001-01-01"
+                  max="9999-12-30"
+                  value={selectedDate}
+                  onClick={(event) => {
+                    try {
+                      event.currentTarget.showPicker?.()
+                    } catch {
+                      /* Native picker unavailable. */
+                    }
+                  }}
+                  onChange={(e) => changeDate(e.target.value)}
+                />
+              </label>
+              {kind === 'weekly' && (
+                <div className={styles['period-shortcuts']} aria-label="快捷选择汇报周期">
+                  <button type="button" onClick={() => changeDate(today)}>
+                    本周
+                  </button>
+                </div>
               )}
             </div>
             <BusyButton
@@ -193,6 +176,11 @@ export function ReportsPage() {
               <Sparkles size={16} />
               生成{kind === 'daily' ? '日报' : '周报'}
             </BusyButton>
+            {kind === 'weekly' && period && (
+              <span id="report-period-range" className={styles['period-range']} role="status">
+                {period.start} — {period.end}（周一至周日）
+              </span>
+            )}
           </div>
         )}
         <ErrorNotice className={recordLayoutStyles['record-notice']} retry={refresh}>
