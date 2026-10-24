@@ -65,10 +65,11 @@ it('returns through historical versions to the latest work without losing the re
   })
   renderWork(<WorkDetail recordId="work" />)
   await screen.findByRole('heading', { name: work.title })
-  fireEvent.click(screen.getAllByRole('link', { name: '查看此版本' })[1])
+  fireEvent.click(screen.getAllByRole('link', { name: '查看此版本' })[0])
   await screen.findByText('历史版本 · 第 2 版')
   fireEvent.click(screen.getByRole('link', { name: '查看此版本' }))
   await screen.findByText('历史版本 · 第 1 版')
+  expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
   fireEvent.click(screen.getByRole('link', { name: '返回上一步' }))
   await screen.findByText('历史版本 · 第 2 版')
   fireEvent.click(screen.getByRole('link', { name: '返回最新版本' }))
@@ -153,7 +154,7 @@ it('keeps existing material references when editing text without rendering them 
   )
 })
 
-it('shows modification history instead of progress and opens material tools on demand', async () => {
+it('omits history for a newly created work and opens material tools on demand', async () => {
   vi.mocked(api).mockImplementation(async (path) => {
     if (path === '/work-items/work')
       return {
@@ -174,7 +175,8 @@ it('shows modification history instead of progress and opens material tools on d
   await screen.findByRole('heading', { name: work.title })
   expect(screen.getByText('目标与计划')).toBeTruthy()
   expect(screen.queryByRole('button', { name: '记录新进展' })).toBeNull()
-  expect(screen.getByRole('region', { name: '修改记录' })).toBeTruthy()
+  expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
+  expect(screen.queryByRole('link', { name: '查看此版本' })).toBeNull()
   expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('/updates'))).toBe(false)
   expect(screen.queryByText('修改记录与来源')).toBeNull()
   expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('/materials'))).toBe(
@@ -198,10 +200,11 @@ it('keeps older modifications available without expanding every field change', (
     <WorkHistory
       work={{
         ...work,
-        history: Array.from({ length: 5 }, (_, index) => ({
-          id: `r${5 - index}`,
-          revision: 5 - index,
-          content: { ...work, title: `工作版本 ${5 - index}` },
+        revision: 6,
+        history: Array.from({ length: 6 }, (_, index) => ({
+          id: `r${6 - index}`,
+          revision: 6 - index,
+          content: { ...work, title: `工作版本 ${6 - index}` },
           sourceIds: [],
           createdAt: work.updatedAt,
         })),
@@ -212,7 +215,7 @@ it('keeps older modifications available without expanding every field change', (
   fireEvent.click(screen.getByRole('button', { name: '查看更早的 2 条修改' }))
   expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(5)
 })
-it('keeps history available without exposing edit controls in a historical work', async () => {
+it('keeps historical work read-only without empty history', async () => {
   vi.mocked(api).mockImplementation(async (path) =>
     String(path).includes('/materials')
       ? {
@@ -224,7 +227,7 @@ it('keeps history available without exposing edit controls in a historical work'
   renderWork(<WorkDetail recordId="work" />)
   await screen.findByRole('heading', { name: work.title })
   expect(screen.queryByRole('button', { name: '管理工作' })).toBeNull()
-  expect(screen.getByRole('region', { name: '修改记录' })).toBeTruthy()
+  expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
   expect(screen.getByRole('link', { name: '返回最新版本' }).getAttribute('href')).toBe('/work/work')
   expect(screen.queryByRole('menuitem', { name: '编辑工作属性' })).toBeNull()
   expect(screen.queryByRole('menuitem', { name: '删除工作' })).toBeNull()

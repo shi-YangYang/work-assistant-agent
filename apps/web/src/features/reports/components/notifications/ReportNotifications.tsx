@@ -4,6 +4,7 @@ import styles from './ReportNotifications.module.css'
 import type { NotificationPage } from '@paa/api-contracts'
 import { Empty } from '@web/components/feedback/Empty'
 import { ErrorNoticeView as ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { markNotificationRead, notificationsPath } from '@web/features/reports/api/requests'
 import { obligationTarget, reportDeadline } from '@web/features/reports/utils/obligations'
 import { useResource } from '@web/hooks/useResource'
@@ -17,6 +18,7 @@ export function ReportNotifications({ active = true }: { active?: boolean }) {
   const page = Math.max(1, Math.min(50001, Number(params.get('reminderPage')) || 1))
   const cursor = String((page - 1) * 20)
   const setCursor = (value: string) => {
+    setFailure('')
     const next = new URLSearchParams(params)
     next.set('reminderPage', String(Number(value) / 20 + 1))
     setParams(next)
@@ -36,7 +38,8 @@ export function ReportNotifications({ active = true }: { active?: boolean }) {
   return (
     <div>
       {!list.data && !list.error && <p>正在读取提醒…</p>}
-      <ErrorNotice retry={list.refresh}>{failure || list.error}</ErrorNotice>
+      <ErrorNotice retry={list.refresh}>{list.error}</ErrorNotice>
+      <ActionNotice>{active ? failure : null}</ActionNotice>
       {list.data?.items.length ? (
         <div className={styles['notification-list']}>
           {list.data.items.map((item) => (
@@ -49,6 +52,7 @@ export function ReportNotifications({ active = true }: { active?: boolean }) {
                     !window.confirm('离开工作助手会停止录音，并保留已录制内容。继续？')
                   )
                     return
+                  setFailure('')
                   try {
                     await markNotificationRead(item, {})
                     sync()
@@ -59,7 +63,7 @@ export function ReportNotifications({ active = true }: { active?: boolean }) {
                 }}
               >
                 <strong>
-                  {item.obligation.kind === 'daily' ? '日报' : '周报'} ·{' '}
+                  {'周报'} ·{' '}
                   {{ ready: '草稿已就绪', due: '即将截止', overdue: '待补交' }[item.stage]}
                 </strong>
                 <span>
@@ -72,6 +76,7 @@ export function ReportNotifications({ active = true }: { active?: boolean }) {
                 <button
                   className={`${controlsStyles['text-button']}`}
                   onClick={async () => {
+                    setFailure('')
                     try {
                       await markNotificationRead(item, {})
                       sync()

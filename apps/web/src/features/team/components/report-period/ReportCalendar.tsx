@@ -75,7 +75,7 @@ export function ReportCalendar({
           <ChevronRight size={16} />
         </button>
       </div>
-      <div role="grid" aria-label={kind === 'daily' ? '选择日期' : '选择一周'}>
+      <div role="grid" aria-label="选择一周">
         <div role="row" className={styles.week}>
           {['一', '二', '三', '四', '五', '六', '日'].map((day) => (
             <span role="columnheader" key={day}>
@@ -84,11 +84,7 @@ export function ReportCalendar({
           ))}
         </div>
         {Array.from({ length: 6 }, (_, row) => (
-          <div
-            role="row"
-            className={`${styles.week} ${kind === 'weekly' ? styles.weekChoice : ''}`}
-            key={row}
-          >
+          <div role="row" className={`${styles.week} ${styles.weekChoice}`} key={row}>
             {Array.from({ length: 7 }, (_, column) => {
               const date = shiftDate(start, row * 7 + column)
               const period = reportPeriod(date, kind)
@@ -100,9 +96,7 @@ export function ReportCalendar({
                   key={column}
                   data-date={date}
                   disabled={disabled}
-                  aria-label={
-                    date ? `${date}${kind === 'weekly' ? '，选择该周' : ''}` : '不可选日期'
-                  }
+                  aria-label={date ? `${date}${'，选择该周'}` : '不可选日期'}
                   aria-selected={!disabled && date >= selected.start && date <= selected.end}
                   aria-current={date === today ? 'date' : undefined}
                   data-outside={date.slice(0, 7) !== month}

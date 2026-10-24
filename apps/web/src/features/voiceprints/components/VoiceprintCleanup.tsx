@@ -1,6 +1,7 @@
 import type { VoiceprintCleanupSummary } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { cleanupVoiceprints, voiceprintCleanupPath } from '@web/features/voiceprints/api/requests'
 import { useResource } from '@web/hooks/useResource'
@@ -93,7 +94,8 @@ function CleanupPreview({
       ) : (
         !preview.error && <p role="status">正在读取清理范围…</p>
       )}
-      <ErrorNotice retry={preview.refresh}>{error || preview.error}</ErrorNotice>
+      <ErrorNotice retry={preview.refresh}>{preview.error}</ErrorNotice>
+      <ActionNotice>{error}</ActionNotice>
       <div className={layoutStyles['form-actions']}>
         <button disabled={busy} onClick={onClose}>
           取消

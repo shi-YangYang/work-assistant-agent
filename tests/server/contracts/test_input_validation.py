@@ -51,11 +51,11 @@ def test_visible_names_are_normalized_and_never_blank(model, field, extra):
 def test_nested_errors_keep_positions_and_do_not_echo_secrets():
     detail = validation_detail([
         {'loc': ('body', 'models', 0, 'language'), 'type': 'string_pattern_mismatch', 'input': 'secret-input'},
-        {'loc': ('body', 'daily'), 'type': 'value_error', 'ctx': {'error': ValueError('截止时间不得早于生成时间')}, 'input': {'secret': 'never-echo'}},
+        {'loc': ('body', 'weekly'), 'type': 'value_error', 'ctx': {'error': ValueError('截止时间不得早于生成时间')}, 'input': {'secret': 'never-echo'}},
         {'loc': ('body', 'apiKey'), 'type': 'value_error', 'ctx': {'error': ValueError('错误 https://private.example/token')}},
     ])
     assert detail['fieldErrors']['models.0.language'] == '识别语言格式不正确'
-    assert detail['fieldErrors']['daily'] == '截止时间不得早于生成时间'
+    assert detail['fieldErrors']['weekly'] == '截止时间不得早于生成时间'
     assert not any(value in str(detail) for value in ('secret-input', 'never-echo', 'private.example'))
 
 
@@ -64,9 +64,11 @@ def test_extreme_dates_report_validation_errors_instead_of_overflow():
     with pytest.raises(HTTPException) as invalid_range:
         period_range(company, 'custom', date.max, date.max)
     assert invalid_range.value.status_code == 422
-    for kind in ('daily', 'weekly'):
+    for kind in ('weekly',):
         with pytest.raises(HTTPException) as invalid_report:
             period(kind, date.max)
         assert invalid_report.value.status_code == 422
-    assert period('daily', date(2026, 9, 22)) == (date(2026, 9, 22), date(2026, 9, 22))
+    with pytest.raises(HTTPException) as removed:
+        period('daily', date(2026, 9, 22))
+    assert removed.value.status_code == 410
     assert period('weekly', date(2026, 9, 22)) == (date(2026, 9, 21), date(2026, 9, 27))

@@ -14,7 +14,7 @@ async def test_report_lists_batch_queries_preserve_history_and_private_boundarie
     rows = []
     async with sessions.begin() as db:
         for index in range(55):
-            rows.append(await report(db, users['employee'], (DAY + timedelta(days=index)).date().isoformat()))
+            rows.append(await report(db, users['employee'], (DAY + timedelta(weeks=index)).date().isoformat()))
         await report(db, users['peer'], '2026-09-12')
         await report(db, users['outsider'], '2026-09-12')
         latest = rows[-1]

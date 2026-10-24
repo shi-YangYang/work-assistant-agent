@@ -11,7 +11,11 @@ RANGE = {'period': 'custom', 'start': '2026-09-12', 'end': '2026-09-12'}
 
 async def report(db, actor, period, *, published=True):
     public = {'completed': '已提交内容', 'ongoing': '', 'blockers': '', 'next': ''}
-    row = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period=period, period_end=period, timezone='Asia/Shanghai', content={'completed': '不能泄露的后续草稿'}, revision=2, published_revision=1 if published else 0)
+    from datetime import date, timedelta
+    start = date.fromisoformat(period)
+    start -= timedelta(days=start.weekday())
+    period = start.isoformat()
+    row = Report(company_id=actor.company_id, owner_id=actor.id, kind='weekly', period=period, period_end=(start + timedelta(days=6)).isoformat(), timezone='Asia/Shanghai', content={'completed': '不能泄露的后续草稿'}, revision=2, published_revision=1 if published else 0)
     db.add(row)
     await db.flush()
     if published:

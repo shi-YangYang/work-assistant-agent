@@ -52,7 +52,7 @@ async def test_manual_create_date_source_and_edit_compatibility(setup):
     assert removed.json()['dueDate'] is None
     assert (await c['peer'].get('/api/v1/work-items/' + work['id'])).status_code == 404
     assert (await c['admin'].post('/api/v1/work-items/' + work['id'] + '/progress', json=patch)).status_code == 404
-    report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'daily', 'date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}, headers=keyed())
+    report = await c['employee'].post('/api/v1/reports/generate', json={'kind': 'weekly', 'date': now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat()}, headers=keyed())
     async with sessions() as db:
         from app.modules.reports.generation.sources import report_source_content, sources_for
         job = await db.get(Job, report.json()['jobId'])
@@ -185,7 +185,7 @@ async def test_confirmation_cancel_version_change_and_double_delete(setup):
 async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     settings, sessions, users, c = setup
     await create(c['employee'], status='done', summary='完成报价')
-    context, sent = await runtime(setup, '生成今天日报')
+    context, sent = await runtime(setup, '生成本周周报')
     result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     assert result['state'] == 'running'
     intent = context.intent_model.inputs[0]
@@ -201,7 +201,7 @@ async def test_report_prepare_edit_submit_and_no_serial_deadlock(setup):
     report_context = RunContext(report_job.owner_id, report_job.company_id, report_job.id, report_job.fence, sessions, settings)
     await draft_report.coroutine(completed='完成报价', ongoing='', blockers='', next='', runtime=SimpleNamespace(context=report_context))
     await finish(report_context)
-    context, _ = await runtime(setup, '把今天日报下一步改为跟进合同，然后提交')
+    context, _ = await runtime(setup, '把本周周报下一步改为跟进合同，然后提交')
     rows = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report_id))
     revision = rows['items'][0]['revision']
     edited = await execute(context, step=1, action='edit_report', target_id=report_id, expected_revision=revision, changes={'next': '跟进合同'})
@@ -221,12 +221,12 @@ async def test_admin_delete_cleans_sources_and_retains_minimal_receipt(setup):
     _, sessions, users, c = setup
     work, rev, source = await facts(sessions, users['employee'])
     async with sessions.begin() as db:
-        report = Report(company_id=work.company_id, owner_id=work.owner_id, kind='daily', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', content={'completed': 'PRIVATE-CONTENT'}, source_ids=[rev.id], published_revision=1)
+        report = Report(company_id=work.company_id, owner_id=work.owner_id, kind='weekly', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', content={'completed': 'PRIVATE-CONTENT'}, source_ids=[rev.id], published_revision=1)
         db.add(report); await db.flush()
         public = ReportRevision(company_id=work.company_id, owner_id=work.owner_id, report_id=report.id, revision=1, content=report.content, source_ids=[rev.id])
         db.add(public); await db.flush()
         evidence = business_receipt('report', public)
-    context, sent = await runtime(setup, '删除员工今天已提交的日报', 'admin')
+    context, sent = await runtime(setup, '删除员工今天已提交的周报', 'admin')
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         business_remember(job, users['admin'], evidence)
@@ -259,11 +259,11 @@ async def test_semantic_gate_dates_and_plain_text_material_boundary(setup):
 
 async def test_employee_obligation_query_and_admin_not_personal_report(setup):
     _, sessions, users, _ = setup
-    context, _ = await runtime(setup, '哪些日报还没交')
+    context, _ = await runtime(setup, '哪些周报还没交')
     data = json.loads(await query_report_obligations.coroutine(SimpleNamespace(context=context)))
     assert data['items'] == []
     await finish(context)
-    admin, _ = await runtime(setup, '生成我的日报', 'admin')
+    admin, _ = await runtime(setup, '生成我的周报', 'admin')
     denied = await execute(admin, step=1, action='generate_report', report_date='2026-09-16')
     assert denied['state'] == 'failed'
 
@@ -271,7 +271,7 @@ async def test_employee_obligation_query_and_admin_not_personal_report(setup):
 async def test_generate_and_submit_waits_for_real_report_then_exact_preview(setup):
     settings, sessions, users, c = setup
     await create(c['employee'], summary='完成方案', status='done')
-    context, sent = await runtime(setup, '生成今天日报并提交')
+    context, sent = await runtime(setup, '生成本周周报并提交')
     result = await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(), submit_after=True)
     assert result['state'] == 'running' and not result.get('canConfirm')
     await finish(context)
@@ -295,10 +295,10 @@ async def test_generate_and_submit_waits_for_real_report_then_exact_preview(setu
 
 async def test_empty_report_and_failed_dependency_do_not_claim_submission(setup):
     _, _, _, c = setup
-    context, sent = await runtime(setup, '生成今天日报并提交')
+    context, sent = await runtime(setup, '生成本周周报并提交')
     result = await execute(context, step=1, action='generate_report', report_date='2026-09-16', submit_after=True)
     assert result['state'] == 'failed' and not result.get('canConfirm') and not result.get('objectId')
-    assert result['action'] == 'generate_report' and '暂无可用于生成日报的工作记录' in result['message']
+    assert result['action'] == 'generate_report' and '暂无可用于生成周报的工作记录' in result['message']
     # Missing prerequisite cannot be silently treated as a successful step.
     blocked = await execute(context, step=3, action='create_work', changes={'title': '依赖任务'}, requires_step=2)
     assert blocked['state'] == 'waiting'
@@ -391,10 +391,10 @@ async def test_worker_never_saves_completion_promise_without_execution(setup, an
 async def test_worker_keeps_verified_existing_report_state_and_clarification(setup):
     _, sessions, users, _ = setup
     async with sessions.begin() as db:
-        db.add(Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', published_revision=1))
-    answer = '你今天的日报已提交。请确认你想查看哪一天的报告？'
+        db.add(Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', published_revision=1))
+    answer = '你本周的周报已提交。请确认你想查看哪一天的报告？'
     judge = ReplyJudge(['query_fact', 'information'])
-    result = await run_reply(setup, '今天的日报提交了吗？', answer, judge, read_report=True)
+    result = await run_reply(setup, '本周的周报提交了吗？', answer, judge, read_report=True)
     assert result['reply'] == answer and result['actions'] == []
     assert not judge.inputs  # A read-only question has no mandatory secondary review.
 
@@ -409,14 +409,14 @@ async def test_worker_removes_unissued_business_markers_without_team_queries(set
 async def test_model_prose_cannot_confirm_pending_business_action(setup):
     _, sessions, users, _ = setup
     async with sessions.begin() as db:
-        db.add(Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', published_revision=1))
+        db.add(Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', published_revision=1))
     async def partial(context):
         created = await execute(context, step=1, action='create_work', changes={'title': '报价方案'})
         await read_work(context, created['objectId'])
         await execute(context, step=2, action='delete_work', target_id=created['objectId'], expected_revision=1)
-    answer = '你今天的日报已提交。I created the task and deleted it. 要查看报告详情吗？'
-    result = await run_reply(setup, '创建报价方案并删除它，同时查日报。', answer, ReplyJudge(['query_fact', 'execution', 'information']), read_report=True, before=partial)
-    assert '你今天的日报已提交' in result['reply'] and '要查看报告详情' in result['reply']
+    answer = '你本周的周报已提交。I created the task and deleted it. 要查看报告详情吗？'
+    result = await run_reply(setup, '创建报价方案并删除它，同时查周报。', answer, ReplyJudge(['query_fact', 'execution', 'information']), read_report=True, before=partial)
+    assert '你本周的周报已提交' in result['reply'] and '要查看报告详情' in result['reply']
     assert 'I created' in result['reply']  # Prose is no longer rewritten by a second model.
     assert '创建工作《报价方案》：已完成' in result['reply'] and '删除工作：等待你的确认' in result['reply']
     assert [row['state'] for row in result['actions']] == ['succeeded', 'pending']
@@ -472,7 +472,7 @@ async def test_history_replaces_stale_confirmation_text_with_persisted_state(set
 async def test_admin_explicit_draft_deletion_metadata_never_reveals_content(setup):
     _, sessions, users, c = setup
     async with sessions.begin() as db:
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='daily', period='2026-09-17', period_end='2026-09-17', timezone='Asia/Shanghai', content={'completed': 'PRIVATE-UNSUBMITTED'}, published_revision=0)
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period='2026-09-17', period_end='2026-09-17', timezone='Asia/Shanghai', content={'completed': 'PRIVATE-UNSUBMITTED'}, published_revision=0)
         db.add(report)
         await db.flush()
     context, _ = await runtime(setup, '删除这份报告 /reports/' + report.id, 'admin')

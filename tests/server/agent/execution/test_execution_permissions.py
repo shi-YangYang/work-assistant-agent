@@ -172,7 +172,7 @@ async def test_report_generation_handoff_follows_confirmation_policy(setup, mode
     from app.db.base import now
     _, sessions, users, clients = setup
     await create(clients['employee'], '已确认来源', status='done', summary='已完成来源整理')
-    context, sent = await mode_runtime(setup, mode, '生成并提交今天日报')
+    context, sent = await mode_runtime(setup, mode, '生成并提交本周周报')
     class ReviewJudge(Judge):
         async def ainvoke(self, messages):
             result = await super().ainvoke(messages)
@@ -235,12 +235,12 @@ async def test_full_admin_deletion_keeps_its_lease_but_fences_other_readers(setu
     _, sessions, users, clients = setup
     work, rev, source = await facts(sessions, users['employee'])
     async with sessions.begin() as db:
-        report = Report(company_id=work.company_id, owner_id=work.owner_id, kind='daily', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', content={'completed': '完成整理'}, source_ids=[rev.id], published_revision=1)
+        report = Report(company_id=work.company_id, owner_id=work.owner_id, kind='weekly', period='2026-09-16', period_end='2026-09-16', timezone='Asia/Shanghai', content={'completed': '完成整理'}, source_ids=[rev.id], published_revision=1)
         db.add(report); await db.flush()
         public = ReportRevision(company_id=work.company_id, owner_id=work.owner_id, report_id=report.id, revision=1, content=report.content, source_ids=[rev.id])
         db.add(public); await db.flush()
         evidence = receipt('report', public)
-    context, _ = await mode_runtime(setup, 'full', '删除员工这份日报及原始材料', 'admin')
+    context, _ = await mode_runtime(setup, 'full', '删除员工这份周报及原始材料', 'admin')
     async with sessions.begin() as db:
         job = await db.get(Job, context.job_id)
         remember(job, users['admin'], evidence)

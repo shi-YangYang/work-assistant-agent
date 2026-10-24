@@ -46,19 +46,13 @@ const tab = (name) => (page) =>
 const button = (name) => (page) => page.getByRole('button', { name, exact: true }).click()
 const dialog = (name) => (page) => expect(page.getByRole('dialog', { name })).toBeVisible()
 const workPath = (role) => `/work/${ids[role].work}`
-const reportPath = (kind = 'daily') => `/reports/${ids.employee[kind]}`
+const reportPath = (kind = 'weekly') => `/reports/${ids.employee[kind]}`
 const showReports = (kind) => async (page) => {
   await tab('全部报告')(page)
   await expect(page.getByRole('button', { name: '全部报告', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
-  const selectedKind = page.getByRole('button', {
-    name: kind === 'weekly' ? '周报' : '日报',
-    exact: true,
-  })
-  if (kind === 'weekly') await selectedKind.click()
-  await expect(selectedKind).toHaveAttribute('aria-pressed', 'true')
   const list = page.locator('[aria-label="报告列表"]')
   await expect(list.locator(`a[href="${reportPath(kind)}"]`)).toBeVisible()
   await expect(list.getByText('正在读取报告…', { exact: true })).toHaveCount(0)
@@ -90,10 +84,9 @@ const admin = [
 ]
 const employee = [
   routeCase('reports-todo', '/reports', textReady('我的报告')),
-  routeCase('reports-all', '/reports', textReady('我的报告'), showReports('daily')),
-  routeCase('reports-weekly', '/reports', textReady('我的报告'), showReports('weekly')),
+  routeCase('reports-all', '/reports', textReady('我的报告'), showReports('weekly')),
   routeCase('report-detail', reportPath(), workReady),
-  routeCase('report-draft', reportPath('weekly'), workReady),
+  routeCase('report-draft', reportPath('draft'), workReady),
 ]
 
 async function settle(page) {
@@ -305,7 +298,7 @@ function supplementary(role) {
       ),
       routeCase(
         'team-report-drawer',
-        `/team?view=reports&record=${ids.employee.daily}`,
+        `/team?view=reports&record=${ids.employee.weekly}`,
         dialog('报告详情'),
         undefined,
         { dark: true },
@@ -327,8 +320,8 @@ function supplementary(role) {
     )
   } else {
     cases.push(
-      routeCase('report-editor', reportPath('weekly'), workReady, button('编辑草稿')),
-      routeCase('report-submit', reportPath('weekly'), workReady, button('提交报告')),
+      routeCase('report-editor', reportPath('draft'), workReady, button('编辑草稿')),
+      routeCase('report-submit', reportPath('draft'), workReady, button('提交报告')),
       routeCase('reports-schedule', '/reports', textReady('我的报告'), button('汇报安排')),
       routeCase('notifications', '/reports', textReady('我的报告'), async (page) => {
         if (await page.getByRole('button', { name: '展开导航', exact: true }).isVisible())

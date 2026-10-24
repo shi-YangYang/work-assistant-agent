@@ -9,6 +9,7 @@ export type NoticeContent = {
   className?: string
   actionsClassName?: string
   priority?: number
+  onDismiss?: () => void
 }
 
 export type NoticeEntry = NoticeContent & {

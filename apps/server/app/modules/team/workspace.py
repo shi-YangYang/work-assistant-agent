@@ -81,8 +81,8 @@ async def work_view(db, actor, *, scope='current', period='this_week', start=Non
     return {**result, 'items': entries, 'range': date_range, 'members': [member_dto(p) for p in people]}
 
 
-async def report_view(db, actor, *, kind='daily', period='this_week', start=None, end=None, q='', status='', members='active', member='', offset=0):
-    if kind not in ('daily', 'weekly') or status not in ('', 'expected', 'pending', 'overdue', 'submitted', 'cancelled'):
+async def report_view(db, actor, *, kind='weekly', period='this_week', start=None, end=None, q='', status='', members='active', member='', offset=0):
+    if kind not in ('weekly',) or status not in ('', 'expected', 'pending', 'overdue', 'submitted', 'cancelled'):
         problem(422, '汇报筛选无效')
     people, owners = await employees(db, actor, members, member)
     company = await db.get(Company, actor.company_id)
@@ -90,7 +90,7 @@ async def report_view(db, actor, *, kind='daily', period='this_week', start=None
     first, last = date_range['start'], date_range['end']
     # Join only the published revision, never the mutable draft. Period overlap
     # determines inclusion even when the employee submitted a report later.
-    published = select(Report.id, Report.owner_id, Report.period, Report.period_end, Report.timezone, ReportRevision.revision, ReportRevision.content, ReportRevision.created_at).join(ReportRevision, and_(ReportRevision.report_id == Report.id, ReportRevision.company_id == actor.company_id, ReportRevision.revision == Report.published_revision)).where(Report.company_id == actor.company_id, Report.owner_id.in_(owners), Report.kind == kind, Report.deleted.is_(False), Report.published_revision > 0, Report.period <= last, Report.period_end >= first).subquery()
+    published = select(Report.id, Report.owner_id, Report.period, Report.period_end, Report.timezone, ReportRevision.revision, ReportRevision.content, ReportRevision.created_at).join(ReportRevision, and_(ReportRevision.report_id == Report.id, ReportRevision.company_id == actor.company_id, ReportRevision.revision == Report.published_revision)).where(Report.company_id == actor.company_id, Report.owner_id.in_(owners), Report.kind == kind, Report.deleted.is_(False), Report.kind == 'weekly', Report.published_revision > 0, Report.period <= last, Report.period_end >= first).subquery()
     obligations = select(ReportObligation).where(ReportObligation.company_id == actor.company_id, ReportObligation.owner_id.in_(owners), ReportObligation.kind == kind, ReportObligation.period <= last, ReportObligation.period_end >= first).subquery()
     p, o = published.c, obligations.c
     owner = func.coalesce(o.owner_id, p.owner_id)

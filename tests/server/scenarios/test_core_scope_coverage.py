@@ -37,7 +37,7 @@ async def test_foreign_and_invalid_core_requests_preserve_real_objects_and_job_s
     async with sessions.begin() as db:
         attachment = await db.get(Attachment, document['id'])
         attachment.message_id, attachment.extraction_status = sent['messageId'], 'ready'
-        report = Report(company_id=actor.company_id, owner_id=actor.id, kind='daily', period='2026-09-29',
+        report = Report(company_id=actor.company_id, owner_id=actor.id, kind='weekly', period='2026-09-29',
             period_end='2026-09-29', timezone='UTC', content={'completed': private, 'ongoing': '', 'blockers': '', 'next': ''})
         draft = ProgressDraft(company_id=actor.company_id, owner_id=actor.id, message_id=sent['messageId'],
             content={'title': private, 'summary': private}, tool_key=uuid4().hex)

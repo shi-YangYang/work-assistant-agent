@@ -19,13 +19,13 @@ def next_period(kind, instant, zone):
 
 async def save_schedule(db, company, instant=None):
     instant = instant or now()
-    for kind in ('daily', 'weekly'):
+    for kind in ('weekly',):
         effective = next_period(kind, instant, company.rules['timezone'])
         db.add(ReportSchedule(company_id=company.id, kind=kind, revision=company.revision, timezone=company.rules['timezone'], rule=company.rules[kind], effective_period=effective, next_period=effective))
 
 
 async def effective_periods(db, company):
-    rows = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company.id).order_by(ReportSchedule.revision.desc()))).all()
+    rows = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company.id, ReportSchedule.kind == 'weekly').order_by(ReportSchedule.revision.desc()))).all()
     result = {}
     for row in rows:
         result.setdefault(row.kind, row.effective_period)
@@ -49,20 +49,32 @@ async def eligibility_changed(db, member, instant=None):
             job.state, job.error, job.lease_until = 'cancelled', '账号权限已变化，本次处理已停止', None
             job.fence, job.updated_at = job.fence + 1, instant
             update_feedback(job)
-        rows = (await db.scalars(select(ReportObligation).where(ReportObligation.owner_id == member.id, ReportObligation.state == 'pending').with_for_update())).all()
+        rows = (await db.scalars(select(ReportObligation).where(ReportObligation.owner_id == member.id, ReportObligation.state.in_(('pending', 'cancelled'))).with_for_update())).all()
         for row in rows:
-            row.state = 'cancelled'
+            row.state, row.cancel_reason = 'cancelled', 'eligibility_revoked'
         await db.execute(delete(ReportNotification).where(ReportNotification.owner_id == member.id))
 
 
-async def link_report(db, report, *, submitted=False, cancelled=False):
+async def link_report(db, report, *, submitted=False, cancelled=False, restore=False):
     obligation = await db.scalar(select(ReportObligation).where(ReportObligation.owner_id == report.owner_id, ReportObligation.kind == report.kind, ReportObligation.period == report.period).with_for_update())
-    if not obligation:
+    if not obligation or (report.deleted and not cancelled):
         return
-    obligation.report_id = report.id
     if cancelled:
-        obligation.state = 'cancelled'
-    elif submitted and obligation.state != 'cancelled':
+        # A stale deletion must never detach the replacement report.
+        if obligation.report_id not in (None, report.id):
+            return
+        if obligation.state == 'cancelled' and obligation.cancel_reason != 'report_deleted':
+            return
+        obligation.state, obligation.cancel_reason = 'cancelled', 'report_deleted'
+        obligation.submitted_at = None
+    elif obligation.state == 'cancelled':
+        if not restore or obligation.cancel_reason != 'report_deleted':
+            return
+        obligation.state, obligation.cancel_reason = 'pending', None
+        obligation.submitted_at, obligation.generation_checked = None, True
+        await db.execute(delete(ReportNotification).where(ReportNotification.obligation_id == obligation.id))
+    obligation.report_id = report.id
+    if submitted and obligation.state != 'cancelled':
         obligation.state = 'submitted'
         obligation.submitted_at = obligation.submitted_at or now()
     if obligation.state != 'pending':
@@ -70,7 +82,7 @@ async def link_report(db, report, *, submitted=False, cancelled=False):
 
 
 async def notify(db, obligation, stage, instant):
-    if not obligation.reminders or obligation.state != 'pending':
+    if obligation.kind != 'weekly' or not obligation.reminders or obligation.state != 'pending':
         return
     ranks = {'ready': 0, 'due': 1, 'overdue': 2}
     existing = await db.scalar(select(ReportNotification).where(ReportNotification.obligation_id == obligation.id).with_for_update())
@@ -83,15 +95,16 @@ async def notify(db, obligation, stage, instant):
 
 async def draft_ready(db, report):
     obligation = await db.scalar(select(ReportObligation).where(ReportObligation.owner_id == report.owner_id, ReportObligation.kind == report.kind, ReportObligation.period == report.period).with_for_update())
-    if obligation:
-        obligation.report_id = report.id
+    if obligation and not report.deleted and obligation.report_id == report.id:
         await notify(db, obligation, 'ready', now())
 
 
 async def materialize(db, schedule, start, budget):
+    if schedule.kind != 'weekly':
+        return 0, True
     start, end = period(schedule.kind, start)
     rule = schedule.rule
-    trigger = start if schedule.kind == 'daily' else start + timedelta(days=rule['days'][0])
+    trigger = start + timedelta(days=rule['days'][0])
     if trigger.weekday() not in rule['days']:
         return 0, True
     zone = ZoneInfo(schedule.timezone)
@@ -100,11 +113,12 @@ async def materialize(db, schedule, start, budget):
     members = (await db.scalars(query.limit(budget + 1))).all()
     for member in members[:budget]:
         await db.scalar(select(Member).where(Member.id == member.id).with_for_update())
-        report = await db.scalar(select(Report).where(Report.owner_id == member.id, Report.kind == schedule.kind, Report.period == start.isoformat()))
+        report = await db.scalar(select(Report).where(Report.owner_id == member.id, Report.kind == schedule.kind, Report.period == start.isoformat()).order_by(Report.deleted.asc(), Report.created_at.desc(), Report.id.desc()).limit(1))
         active_interval = await db.scalar(select(ReportEligibility).where(ReportEligibility.owner_id == member.id, ReportEligibility.starts_at <= period_start, (ReportEligibility.ends_at.is_(None) | (ReportEligibility.ends_at > period_start))).order_by(ReportEligibility.starts_at.desc()).limit(1))
         revoked = active_interval is not None and active_interval.ends_at is not None
         submitted = await db.scalar(select(func.min(ReportRevision.created_at)).where(ReportRevision.report_id == report.id)) if report and report.published_revision else None
-        db.add(ReportObligation(company_id=schedule.company_id, owner_id=member.id, kind=schedule.kind, period=start.isoformat(), period_end=end.isoformat(), timezone=schedule.timezone, rule_revision=schedule.revision, generate_at=datetime.combine(trigger, time.fromisoformat(rule['generateTime']), zone), deadline_at=datetime.combine(trigger, time.fromisoformat(rule['deadline']), zone), reminders=rule.get('reminders', True), before_minutes=rule.get('beforeMinutes', 30), report_id=report.id if report else None, state='cancelled' if report and report.deleted else 'submitted' if submitted else 'cancelled' if revoked else 'pending', submitted_at=submitted))
+        reason = 'eligibility_revoked' if revoked and not submitted else 'report_deleted' if report and report.deleted else None
+        db.add(ReportObligation(company_id=schedule.company_id, owner_id=member.id, kind=schedule.kind, period=start.isoformat(), period_end=end.isoformat(), timezone=schedule.timezone, rule_revision=schedule.revision, generate_at=datetime.combine(trigger, time.fromisoformat(rule['generateTime']), zone), deadline_at=datetime.combine(trigger, time.fromisoformat(rule['deadline']), zone), reminders=rule.get('reminders', True), before_minutes=rule.get('beforeMinutes', 30), report_id=report.id if report else None, state='cancelled' if reason else 'submitted' if submitted else 'pending', cancel_reason=reason, submitted_at=submitted if not reason else None))
     await db.flush()
     return min(len(members), budget), len(members) <= budget
 
@@ -113,9 +127,9 @@ def obligation_dto(row, instant, *, name=None, own=False, job=None):
     return {'id': row.id, 'ownerId': row.owner_id, 'name': name, 'kind': row.kind, 'period': row.period, 'periodEnd': row.period_end, 'timezone': row.timezone, 'deadlineAt': row.deadline_at.isoformat(), 'state': 'overdue' if row.state == 'pending' and row.deadline_at <= instant else row.state, 'submittedAt': row.submitted_at.isoformat() if row.submitted_at else None, 'reportId': row.report_id if row.state != 'cancelled' and (own or row.state == 'submitted') else None, **({'job': job} if own else {})}
 
 
-async def obligation_page(db, actor, *, kind='daily', status='', selected_period=None, cursor=0, team=False, instant=None):
+async def obligation_page(db, actor, *, kind='weekly', status='', selected_period=None, cursor=0, team=False, instant=None):
     instant = instant or now()
-    if kind not in ('daily', 'weekly') or status not in ('', 'pending', 'overdue', 'submitted', 'cancelled'):
+    if kind not in ('weekly',) or status not in ('', 'pending', 'overdue', 'submitted', 'cancelled'):
         problem(422, '汇报筛选无效')
     base = select(ReportObligation, Member.name).join(Member, Member.id == ReportObligation.owner_id).where(ReportObligation.company_id == actor.company_id, ReportObligation.kind == kind)
     if not team:

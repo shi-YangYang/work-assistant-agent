@@ -1,0 +1,84 @@
+# Implementation Report
+
+## Summary
+
+正式报告收口为周报：Web 入口、公开契约、工具、共享读写／来源／回执、任务与调度均移除日报能力。显式 `daily` 请求拒绝，不转换为周报；旧日报卡片不可操作，也不改标周报。普通聊天写作保留。
+
+新增 `0034_remove_daily_reports` 清除历史日报正文、候选、修订及关联结构化结果。原始工作、工作修订、消息、完整聊天、附件、周报和共享汇报资格保留。实施及等待状态返工已完成；最终独立结论见 [验收报告](acceptance.md)。
+
+## Files Changed
+
+- `packages/api-contracts`、服务端 reports schemas／periods／commands／queries／service／router：仅支持 weekly，默认周报，日报拒绝。
+- `security/{ownership,access}.py`、team 查询／来源、operations 操作／回执及新增 `reports/retirement.py`：在所属与授权校验后拦截旧日报，覆盖按 ID、来源、候选、提交、删除、幂等复用和确认。
+- `tasks/runtime/queue.py`、调度与反馈等待、报告规则／待办／通知：关闭旧日报任务启动、重试、恢复和迟到保存；旧任务取消终结，当前与历史补偿只处理周报。
+- agent 工具参数、提示、动作与进度：明确取消正式日报，不将用户日报意图替换为周报；继续允许普通写作。
+- Web reports／team／settings／assistant／导航／模型用途：移除日报选择和配置，保留周选择；旧列表链接提示后显示周报，旧详情不跳到另一份报告。保留团队工作自己的日期筛选。
+- `0034_remove_daily_reports.py`：新增数据清理与数据库 weekly 约束；不修改历史迁移。
+- 相关后端与 Web 测试、当前验收脚本／基准案例、原型、`docs/setup.md` 同步周报。历史 Spec、迁移、实测日志及版本化证据没有重写。
+
+## Important Decisions
+
+- 迁移直接通过表与结构化关联清理，不调用管理员 `remove_report` 的源消息／附件删除路径。
+- 识别依据包括日报 ID、修订、待办、任务、成功回执 `objectId/reportSnapshot`、已清空 params 的 BusinessAction、`readVersions/reads` 的字典键，以及有效 JSON 序列化工具结果。清理相关结果／引用和相关 checkpoint，不按中文关键词清空聊天或全库缓存。
+- 原始聊天文字不变；工作中保留必要来源身份凭据而移除日报快照，既有工作可读，重新展开已删除日报来源不可用。
+- 通过任务 fence／租约及 weekly 数据库约束防止旧日报继续落盘；保留现有版本、权限、来源事实与幂等保护。
+- 升级需停止旧 API／worker 写入、取得可恢复备份、执行迁移，再启动新版本。正文删除不可逆，downgrade 明确要求备份恢复。
+
+## Tests
+
+按 S3 验证实际受影响子系统，没有运行全仓矩阵。下列每组数值为该次运行的唯一用例数，定向复验与首轮存在重叠，不能相加当作总覆盖数。
+
+首次实施后端收集去重得到 **713 个唯一用例**；按各用例最后一次执行结果为 **705 通过、8 跳过**。8 项为需要自有验收环境／可丢弃 Redis 的 opt-in 故障测试，未开放破坏性故障开关。收集本身没有再次执行测试，证据 `/tmp/spec078-collected.log`。下述返工新增等待场景单独记录，不与首次实施及复验重复累计。
+
+| 后端范围 | 首轮结果 | 修复与复验 | 日志 |
+| --- | --- | --- | --- |
+| 报告、团队、业务动作、执行权限、等待、工具能力、操作与回执恢复 | 264：257 通过、7 失败 | 修正日报 fixture 转周报后的周期碰撞、调度日期与跨意图比较；涉及模块 81 项复验，80 通过、1 查询时间范围断言失败；扩大 fixture 查询范围后在下一组通过 | `/tmp/spec078-backend.log`、`/tmp/spec078-backend-repair.log` |
+| 输入契约、管理场景、迁移及上组单个查询失败 | 22：21 通过、1 失败 | 管理删除后重建场景因已无工作来源，应返回 `report_sources_empty` 422，修正旧 409 预期；该项与当时 2 项迁移／拒绝检查共 3 项通过 | `/tmp/spec078-extra.log`、`/tmp/spec078-migration-final.log` |
+| 其余 30 个受共享 fixture 影响的模块 | 427：409 通过、8 跳过、10 失败 | 修正同周重复报告、跨意图 kind／周日期以及待办归一化周期；仅失败函数及其参数化分支 37 项复验，全通过 | `/tmp/spec078-remaining.log`、`/tmp/spec078-remaining-repair.log`；模块列表 `/tmp/spec078-remaining-tests.txt` |
+| 新增日报退役专项最终版本 | 3：全部通过 | 覆盖契约拒绝、混合历史迁移、迁移前旧入口；补入 readVersions 键、JSON 工具结果、聊天 access 和工作动作误匹配保护后复验本文件 | `/tmp/spec078-retirement-final.log` |
+
+共享 fixture 仍保留以下保护断言：报告删除后重建、来源为空时不创建报告、权限／跨公司隔离、来源版本、幂等回放、业务确认与失败恢复、候选／迟到写回、租约 fence、团队分页查询量、材料来源保留及管理员删除边界。多份日报 fixture 改为不同周，避免周归一化导致样本重复；无关工作动作的历史 `kind=daily` 不作为日报结构化结果清理。
+
+| Web 范围 | 结果与复验 | 日志 |
+| --- | --- | --- |
+| 首轮受影响 DOM、规则、请求与资源组 | 18 文件 204 项：197 通过、7 失败；修正旧按天切换／周日期／规则断言后，仅 4 个失败文件 18 项全通过 | `/tmp/spec078-web.log`、`/tmp/spec078-web-repair.log` |
+| 补充改动的共享 fixture | 3 文件 25 项：23 通过、2 失败；移除已无意义的单日日报标题样本，修正空内容提示组件定位（ErrorNotice → ActionNotice），保留阻止空提交断言 | `/tmp/spec078-web-additional.log` |
+| 上述失败文件、报告周期及旧卡片防护 | 5 文件 26 项全部通过 | `/tmp/spec078-web-final.log` |
+| 删除日报产生的死分支／多余插值后，相关报告、团队、设置与待办文件 | 5 文件 21 项全部通过 | `/tmp/spec078-web-cleanup.log` |
+
+- Web typecheck 通过：`/tmp/spec078-typecheck-final.log`。
+- 改动 Web TS／TSX 和脚本 MJS 的局部 ESLint 通过：`/tmp/spec078-lint-cleanup.log`。首次发现并修复周期参数未使用、报告周期切换时 effect 内置状态清理问题；后者改为受周期 key 保护的状态重置并以 DOM 测试验证。
+- 已用项目安装的 Prettier 整理改动 TS／TSX／MJS／JSON；日志 `/tmp/spec078-prettier*.log`。`git diff --check` 通过。
+- 改动的 85 个已跟踪 Python 文件 AST、7 个 MJS 文件语法及改动 JSON 解析通过；首次 shell 中 `python` 不存在，改用项目 `.venv-server/bin/python` 后完成。新增迁移与退役模块由专项测试实际导入执行。
+
+### 迁移验证与隔离环境
+
+既验证了全新空库迁移至 0034，也验证了**混合历史数据**，不是仅验证空库。专项构造迁移前的日报／周报、已删除日报、修订、候选、工作与原始消息、活动任务、成功操作、待办、调度、通知、幂等、结构化查询结果及相关／无关 checkpoint，执行迁移后检查删除与保留边界、旧任务 fence、迟到写回和重试失败，并确认旧 ID 不可用。降级行为检查为明确报错要求备份恢复。
+
+验证曾使用 Docker 容器 `paa-spec078-test`，镜像 `postgres:17`，端口 `127.0.0.1:55000 → 5432`，数据库 `paa_company_test`，用户 `paa`。独立验收通过后已删除此临时容器。以下为当时命令，重现需重新准备隔离库，仅临时测试凭据为 `spec078`：
+
+```sh
+DATABASE_TEST_URL=postgresql://paa:spec078@127.0.0.1:55000/paa_company_test \
+  .venv-server/bin/pytest -q tests/server/modules/reports/test_daily_report_retirement.py
+```
+
+原容器 ID 在 `/tmp/spec078-container-id`。日志与辅助编辑脚本保留在 `/tmp/spec078*`。未使用已删除的旧 Spec077 容器或 Spec076 环境，未改 `.env`，未操作共享真实用户库，未停止现有 Web／API／worker 或原有 PostgreSQL／Redis。
+
+### 旧日报确认等待返工
+
+- 只修改 `0034_remove_daily_reports.py` 与退役专项。关联 Job 的取消范围补上真实的 `awaiting_input`，递增 fence、释放租约；按结构化日报／动作／问题引用取消等待节点，清除可执行参数、问题和续接入口。完整节点保留 DTO 必需身份；旧精简节点只留失效标记，不能继续等待。
+- `taskInterpretation`、意图和显式任务解释沿用既有 `completed / remaining=[]`，通过 `TaskInterpretation` 解析；Job／会话任务／previousTask 投影使用 `cancelled`。清理只针对关联任务，原始消息与任务来源文字保留。同一消息若还有无关确认或问题，则保留该有效等待。
+- 新增确认、提问、同消息混合等待共 3 个用例。实际消息 GET 验证取消状态、节点不可重试、下一步为 none；旧动作确认返回 unavailable、不产生 continuation，旧 Job 重试返回 409，旧租约失效。其他会话及同一消息中的无关问题均实际回答成功并创建续接任务；工作和周报仍保留。
+- 首轮专项 6 项中原 3 项通过，新 3 项因测试把问题来源版本写死为 1 而失败；修正为消息实际版本后 3 项定向复验通过。补入独立验收使用的精简节点形态后，最终专项 **6 项全部通过**，日志 `/tmp/spec078-rework-final.log`。此前日志为 `/tmp/spec078-rework-retirement.log`、`/tmp/spec078-rework-waits.log`。未重复全套后端矩阵或无关前端检查。
+- 本次 Python 文件不在项目 Prettier 覆盖范围，未新增或安装格式化器；仅检查本次文件 diff／空白。返工后新的独立验收 Agent 给出 PASS，并保留首轮 FAIL 复现证据；随后已删除临时隔离容器。
+
+## Known Limitations
+
+- 未执行真实用户库／生产迁移、部署、完整浏览器手机与桌面视觉验收、付费真实模型调用、历史性能矩阵、全仓测试或发行构建。
+- 当前验收脚本和原型已同步并检查语法／格式，但没有运行会访问真实服务或模型的整套脚本。
+- 迁移历史数据覆盖为可控混合 fixture，不能替代生产备份；真实数据库删除恢复依赖备份。
+- 未 commit／push，没有触发或查询本次远端 CI。独立验收已通过，无已知待修复实施缺陷。
+
+## Remaining Questions
+
+无新增产品决策问题。

@@ -44,10 +44,9 @@ export function ReportPeriodPicker({
     if (customRangeError(period.start, period.end)) return
     apply({ period: 'custom', ...period })
   }
-  const reset = () =>
-    apply({ period: kind === 'daily' ? 'today' : 'this_week', start: '', end: '' })
-  const unit = kind === 'daily' ? '天' : '周'
-  const step = kind === 'daily' ? 1 : 7
+  const reset = () => apply({ period: 'this_week', start: '', end: '' })
+  const unit = '周'
+  const step = 7
   const canMove = (delta: number) => {
     const period = reportPeriod(shiftDate(selected.start, delta), kind)
     return single && !customRangeError(period.start, period.end)
@@ -74,11 +73,7 @@ export function ReportPeriodPicker({
         aria-label="选择汇报周期"
       >
         <span>
-          {today
-            ? `${single ? '' : '范围 · '}${periodLabel(selected, kind, today)}`
-            : kind === 'daily'
-              ? '今天'
-              : '本周'}
+          {today ? `${single ? '' : '范围 · '}${periodLabel(selected, kind, today)}` : '本周'}
         </span>
         <ChevronDown size={14} />
       </button>
@@ -95,7 +90,7 @@ export function ReportPeriodPicker({
       )}
       {!single && today && (
         <button type="button" className={styles.return} onClick={reset}>
-          {kind === 'daily' ? '回到今天' : '回到本周'}
+          {'回到本周'}
         </button>
       )}
       {popover.open &&
@@ -107,17 +102,17 @@ export function ReportPeriodPicker({
             className={styles.panel}
           >
             <header>
-              <strong>{kind === 'daily' ? '选择日报日期' : '选择周报周期'}</strong>
+              <strong>{'选择周报周期'}</strong>
               <button type="button" aria-label="关闭日期选择" onClick={() => popover.close()}>
                 <X size={16} />
               </button>
             </header>
             <div className={styles.shortcuts}>
               <button type="button" onClick={reset}>
-                {kind === 'daily' ? '今天' : '本周'}
+                {'本周'}
               </button>
               <button type="button" onClick={() => choose(shiftDate(today, -step))}>
-                {kind === 'daily' ? '昨天' : '上周'}
+                {'上周'}
               </button>
             </div>
             <ReportCalendar kind={kind} selected={selected} today={today} choose={choose} />
@@ -127,7 +122,7 @@ export function ReportPeriodPicker({
                 type="button"
                 onClick={() => apply({ period: 'this_month', start: '', end: '' })}
               >
-                查看本月{kind === 'daily' ? '日报' : '周报'}
+                查看本月周报
               </button>
               <RangeForm
                 start={selected.start}
@@ -137,7 +132,7 @@ export function ReportPeriodPicker({
               />
             </details>
             <p className={styles.timezone}>
-              按{timezoneLabel(timezone!)}计算{kind === 'weekly' ? '，每周一至周日' : ''}。
+              按{timezoneLabel(timezone!)}计算{'，每周一至周日'}。
             </p>
           </div>,
           document.body,

@@ -62,7 +62,7 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     async with sessions() as db:
         company = await db.get(Company, users['employee'].company_id)
         day = now().astimezone(ZoneInfo(company.rules['timezone'])).date().isoformat()
-    generated = await employee.post('/api/v1/reports/generate', json={'kind':'daily', 'date': day}, headers=keyed())
+    generated = await employee.post('/api/v1/reports/generate', json={'kind':'weekly', 'date': day}, headers=keyed())
     assert generated.status_code == 202, generated.text
     report_id = generated.json()['reportId']
     await run_target(settings, sessions, users, generated.json(), 'report')
@@ -77,7 +77,7 @@ async def test_real_harness_confirmation_followup_reports_and_visibility(setup):
     assert (await admin.get('/api/v1/reports/' + report_id)).json()['content']['completed'] == '已完成方案初稿'
     sources = (await admin.get(f'/api/v1/reports/{report_id}/sources')).json()
     assert sources['items'] and sources['items'][0]['workId'] == work_id
-    regenerated = await employee.post('/api/v1/reports/generate', json={'kind':'daily', 'date':day}, headers=keyed())
+    regenerated = await employee.post('/api/v1/reports/generate', json={'kind':'weekly', 'date':day}, headers=keyed())
     assert regenerated.json()['reportId'] == report_id
     assert regenerated.json()['jobId'] != generated.json()['jobId']
     await run_target(settings, sessions, users, regenerated.json(), 'report')
@@ -142,21 +142,21 @@ async def test_report_schedule_rules_period_dedup_and_empty_regeneration(setup):
     settings,sessions,users,c=setup
     rules=(await c['admin'].get('/api/v1/settings/report-rules')).json()
     new={k:v for k,v in rules.items() if k not in ('revision','effectivePeriods')}
-    new['expectedRevision']=rules['revision']; new['daily']={'enabled':True,'days':list(range(7)),'generateTime':'10:00','deadline':'18:00'}
+    new['expectedRevision']=rules['revision']; new['weekly']={'enabled':True,'days':[0],'generateTime':'10:00','deadline':'18:00'}
     new['timezone']='Asia/Shanghai'
     assert (await c['employee'].put('/api/v1/settings/report-rules',json=new)).status_code==403
     assert (await c['admin'].put('/api/v1/settings/report-rules',json=new)).status_code==200
     assert (await c['admin'].put('/api/v1/settings/report-rules',json=new)).status_code==409
     from datetime import datetime
     from zoneinfo import ZoneInfo
-    effective=(await c['admin'].get('/api/v1/settings/report-rules')).json()['effectivePeriods']['daily']
+    effective=(await c['admin'].get('/api/v1/settings/report-rules')).json()['effectivePeriods']['weekly']
     instant=datetime.fromisoformat(effective).replace(hour=11,tzinfo=ZoneInfo('Asia/Shanghai'))
     await schedule_once(sessions,instant);await schedule_once(sessions,instant)
     async with sessions() as db:
         reports=(await db.scalars(select(Report).where(Report.owner_id==users['employee'].id))).all()
         jobs=(await db.scalars(select(Job).where(Job.owner_id==users['employee'].id,Job.kind=='report'))).all()
         assert not reports and not jobs
-    response=await c['employee'].post('/api/v1/reports/generate',json={'kind':'daily','date':instant.date().isoformat()},headers=keyed())
+    response=await c['employee'].post('/api/v1/reports/generate',json={'kind':'weekly','date':instant.date().isoformat()},headers=keyed())
     assert response.status_code==422 and response.json()['error']['code']=='report_sources_empty'
 
 
@@ -167,7 +167,7 @@ async def test_team_excludes_admins_and_protects_other_admin_materials(setup):
         peer.role = 'admin'
         owner = users['admin']
         work = WorkItem(company_id=owner.company_id, owner_id=owner.id, title='管理员自己的事项', content={'title':'管理员自己的事项', 'summary':'不计入员工看板', 'status':'blocked', 'blocker':'等待', 'nextStep':''})
-        report = Report(company_id=owner.company_id, owner_id=owner.id, kind='daily', period='2026-09-12', period_end='2026-09-12', timezone='Asia/Shanghai', content={'completed':'管理员自己的报告', 'ongoing':'', 'blockers':'', 'next':''}, published_revision=1)
+        report = Report(company_id=owner.company_id, owner_id=owner.id, kind='weekly', period='2026-09-12', period_end='2026-09-12', timezone='Asia/Shanghai', content={'completed':'管理员自己的报告', 'ongoing':'', 'blockers':'', 'next':''}, published_revision=1)
         db.add_all([work, report]); await db.flush()
         db.add(ReportRevision(company_id=owner.company_id, owner_id=owner.id, report_id=report.id, revision=1, content=report.content, source_ids=[]))
     data = io.BytesIO(); Image.new('RGB', (2, 2), '#ffffff').save(data, format='PNG')

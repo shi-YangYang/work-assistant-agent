@@ -13,6 +13,8 @@ from app.modules.model_services.models import ModelUsage
 from app.modules.operations.models import BusinessAction
 from app.modules.operations.mutations.report_completion import complete_action
 from app.modules.reports.models import Report
+from app.modules.reports.periods import period
+from datetime import date
 from app.modules.work.models import WorkItem
 from app.tasks.models import Job
 from app.tasks.processing.handlers import process_job
@@ -36,7 +38,7 @@ async def assert_no_generated_report(sessions, actor):
         assert not await db.scalar(select(ModelUsage.id).where(ModelUsage.owner_id == actor.id))
 
 
-@pytest.mark.parametrize('kind', ['daily', 'weekly'])
+@pytest.mark.parametrize('kind', ['weekly'])
 async def test_empty_generation_creates_nothing_and_same_request_can_succeed_after_work_added(setup, kind):
     settings, sessions, users, clients = setup
     client, actor = clients['employee'], users['employee']
@@ -47,7 +49,10 @@ async def test_empty_generation_creates_nothing_and_same_request_can_succeed_aft
         assert result.status_code == 422, result.text
         error = result.json()['error']
         assert error['code'] == 'report_sources_empty'
-        assert ('周报' if kind == 'weekly' else '日报') in error['message']
+        assert ('周报' if kind == 'weekly' else '周报') in error['message']
+        start, end = period(kind, date.fromisoformat(request['date']))
+        assert start.isoformat() in error['message'] and end.isoformat() in error['message']
+        assert '核对汇报周期' in error['message']
         assert '当前会话' in error['message'] and '正文' in error['message']
     assert not (await client.get('/api/v1/reports', params={'kind': kind})).json()['items']
     await assert_no_generated_report(sessions, actor)
@@ -81,7 +86,7 @@ async def test_work_outside_period_is_not_used_and_existing_report_is_unchanged(
         (await db.get(WorkItem, work.id)).deleted = True
         (await db.get(Report, report.id)).candidate = {'content': {**CONTENT, 'next': '保留候选计划'}, 'sourceIds': []}
     before = (await client.get('/api/v1/reports/' + report.id)).json()
-    missing = await client.post('/api/v1/reports/generate', json={'kind': 'daily', 'date': report.period}, headers=keyed())
+    missing = await client.post('/api/v1/reports/generate', json={'kind': 'weekly', 'date': report.period}, headers=keyed())
     assert missing.status_code == 422 and missing.json()['error']['code'] == 'report_sources_empty'
     assert (await client.get('/api/v1/reports/' + report.id)).json() == before
     async with sessions() as db:
@@ -113,7 +118,7 @@ async def test_legacy_empty_worker_job_does_not_call_model_or_overwrite_saved_re
     assert model.calls == 0 and not model.reviews
     async with sessions() as db:
         current = await db.get(Job, job.id)
-        assert current.state == 'failed' and '暂无可用于生成日报的工作记录' in current.error
+        assert current.state == 'failed' and '暂无可用于生成周报的工作记录' in current.error
         assert (await db.get(Report, report.id)).content == CONTENT
 
 

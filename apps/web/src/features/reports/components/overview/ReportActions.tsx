@@ -35,7 +35,7 @@ export function ReportActions({ report, onDeleted }: { report: Report; onDeleted
         <DeleteRecord
           kind="reports"
           id={report.id}
-          title={`${report.period}${report.kind === 'daily' ? '日报' : '周报'}`}
+          title={`${report.period}${'周报'}`}
           revision={report.managementRevision ?? report.revision}
           onClose={() => setDeleting(false)}
           onDeleted={() => {

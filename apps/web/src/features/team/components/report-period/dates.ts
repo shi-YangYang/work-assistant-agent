@@ -1,6 +1,6 @@
 import { customRangeError } from '@web/utils/date-range'
 
-export type ReportKind = 'daily' | 'weekly'
+export type ReportKind = 'weekly'
 export type Period = { start: string; end: string }
 
 export function shiftDate(value: string, days: number) {
@@ -12,20 +12,20 @@ export function shiftDate(value: string, days: number) {
 }
 
 export function reportPeriod(date: string, kind: ReportKind): Period {
-  if (kind === 'daily') return { start: date, end: date }
+  if (kind !== 'weekly') return { start: '', end: '' }
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
   const start = shiftDate(date, -((weekday + 6) % 7))
   return { start, end: shiftDate(start, 6) }
 }
 
 export function selectedPeriod(params: URLSearchParams, kind: ReportKind, today: string) {
-  const period = params.get('period') || (kind === 'daily' ? 'today' : 'this_week')
+  const period = params.get('period') || 'this_week'
   if (period === 'custom') return { start: params.get('start') || '', end: params.get('end') || '' }
   if (period === 'this_month') {
     const start = `${today.slice(0, 7)}-01`
     return { start, end: shiftDate(shiftMonth(start, 1), -1) }
   }
-  return reportPeriod(today, period === 'this_week' || kind === 'weekly' ? 'weekly' : 'daily')
+  return reportPeriod(today, kind)
 }
 
 export function shiftMonth(value: string, months: number) {
@@ -44,17 +44,9 @@ export function isSinglePeriod(period: Period, kind: ReportKind) {
 export function periodLabel(period: Period, kind: ReportKind, today: string) {
   if (customRangeError(period.start, period.end)) return '选择日期'
   const current = reportPeriod(today, kind)
-  const previous = reportPeriod(shiftDate(today, kind === 'daily' ? -1 : -7), kind)
+  const previous = reportPeriod(shiftDate(today, -7), kind)
   const same = (other: Period) => period.start === other.start && period.end === other.end
-  const prefix = same(current)
-    ? kind === 'daily'
-      ? '今天'
-      : '本周'
-    : same(previous)
-      ? kind === 'daily'
-        ? '昨天'
-        : '上周'
-      : ''
+  const prefix = same(current) ? '本周' : same(previous) ? '上周' : ''
   const year =
     period.start.slice(0, 4) !== today.slice(0, 4) || period.end.slice(0, 4) !== today.slice(0, 4)
   const format = (value: string) =>

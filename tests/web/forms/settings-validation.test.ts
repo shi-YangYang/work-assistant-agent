@@ -18,8 +18,7 @@ const schedule: Schedule = {
   beforeMinutes: 30,
 }
 const rules = (daily: Partial<Schedule> = {}) => ({
-  daily: { ...schedule, ...daily },
-  weekly: schedule,
+  weekly: { ...schedule, ...daily },
 })
 
 it('reveals collapsed report sections before focusing the first invalid field on every attempt', () => {
@@ -53,17 +52,17 @@ it('reveals collapsed report sections before focusing the first invalid field on
 
 it('locates invalid report days and linked times, including a partially cleared disabled schedule', () => {
   expect(reportRuleErrors(rules())).toEqual({})
-  expect(reportRuleErrors(rules({ days: [] }))).toHaveProperty(['daily.days'])
-  expect(reportRuleErrors(rules({ deadline: '08:59' }))).toHaveProperty(['daily.deadline'])
+  expect(reportRuleErrors(rules({ days: [] }))).toHaveProperty(['weekly.days'])
+  expect(reportRuleErrors(rules({ deadline: '08:59' }))).toHaveProperty(['weekly.deadline'])
   expect(reportRuleErrors(rules({ enabled: false, generateTime: '' }))).toHaveProperty([
-    'daily.generateTime',
+    'weekly.generateTime',
   ])
   expect(reportRuleErrors(rules({ enabled: false, generateTime: '', deadline: '' }))).toEqual({})
-  expect(
-    reportRuleErrors({ daily: schedule, weekly: { ...schedule, days: [0, 1] } }),
-  ).toHaveProperty(['weekly.days'])
+  expect(reportRuleErrors({ weekly: { ...schedule, days: [0, 1] } })).toHaveProperty([
+    'weekly.days',
+  ])
   for (const beforeMinutes of [-1, 1441, 1.5])
-    expect(reportRuleErrors(rules({ beforeMinutes }))).toHaveProperty(['daily.beforeMinutes'])
+    expect(reportRuleErrors(rules({ beforeMinutes }))).toHaveProperty(['weekly.beforeMinutes'])
   for (const beforeMinutes of [0, 1440])
     expect(reportRuleErrors(rules({ beforeMinutes }))).toEqual({})
 })

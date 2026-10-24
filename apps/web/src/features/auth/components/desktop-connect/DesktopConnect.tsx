@@ -6,6 +6,7 @@ import styles from './DesktopConnect.module.css'
 import type { Identity } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import {
   desktopAuthorizationPath,
   logout,
@@ -78,9 +79,10 @@ export function DesktopConnect({
                 </p>
               </>
             )}
-            <ErrorNotice retry={resource.refresh}>
-              {!valid ? '授权链接无效，请回到桌面重新连接。' : error || resource.error}
+            <ErrorNotice retry={valid ? resource.refresh : undefined}>
+              {!valid ? '授权链接无效，请回到桌面重新连接。' : resource.error}
             </ErrorNotice>
+            <ActionNotice>{error}</ActionNotice>
             {resource.data && resource.data.state === 'pending' && (
               <div className={`${layoutStyles['form-actions']} ${styles['slot-form-actions']}`}>
                 <button disabled={busy} onClick={() => void approve(false)}>

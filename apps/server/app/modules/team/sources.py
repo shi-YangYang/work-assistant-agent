@@ -41,7 +41,7 @@ async def source_dto(db, actor, evidence, token=''):
         return {**base, 'title': record.content['title'], 'at': record.created_at.isoformat(), 'dueDate': record.content.get('dueDate'), 'currentRevision': current.revision, 'content': bounded_content(record.content, 4000)}
     if kind == 'report':
         report = await db.get(Report, evidence['id'])
-        return {**base, 'title': ('日报 ' if report.kind == 'daily' else '周报 ') + report.period, 'at': record.created_at.isoformat(), 'currentRevision': report.published_revision, 'period': report.period, 'periodEnd': report.period_end, 'content': bounded_content(record.content, 8000)}
+        return {**base, 'title': ('周报 ') + report.period, 'at': record.created_at.isoformat(), 'currentRevision': report.published_revision, 'period': report.period, 'periodEnd': report.period_end, 'content': bounded_content(record.content, 8000)}
     if kind == 'message':
         # Deliberately no conversation, reply, pending drafts or assistant metadata.
         text_value = record.transcript if record.transcript_revision == evidence['version'] else next((h['text'] for h in record.transcript_history if h['revision'] == evidence['version']), '')

@@ -189,7 +189,7 @@ async def test_voice_instruction_requires_explicit_attached_audio_choice(setup):
 
 
 async def test_role_capabilities_do_not_advertise_admin_personal_reports(setup):
-    assert '没有管理员个人日报周报' in action_policy('admin')
+    assert '没有管理员个人周报' in action_policy('admin')
     assert '不能删除已提交报告' in action_policy('employee')
-    context, _ = await runtime(setup, '给我生成日报', who='admin')
+    context, _ = await runtime(setup, '给我生成周报', who='admin')
     assert (await execute(context, step=1, action='generate_report', report_date='2026-09-20'))['state'] == 'failed'

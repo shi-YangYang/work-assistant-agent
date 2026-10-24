@@ -91,7 +91,7 @@ export function TeamResults({
                     <h3>
                       {row.period}
                       {row.kind === 'weekly' ? ` — ${row.periodEnd}` : ''}
-                      <small>{row.kind === 'daily' ? '日报' : '周报'}</small>
+                      <small>{'周报'}</small>
                     </h3>
                     <span className={statusStyles['status']} data-status={row.state}>
                       {obligationLabel(row.state)}

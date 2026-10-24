@@ -12,6 +12,9 @@ from sqlalchemy.orm import aliased
 
 
 async def interrupted_state(db, job):
+    from app.modules.reports.retirement import report_job_available
+    if not await report_job_available(db, job):
+        return 'cancelled'
     if job.result.get('reportSaved'):
         return 'queued'
     if job.kind == 'message' and job.result.get('nodeExecution'):
@@ -56,6 +59,13 @@ async def claim(sessions, owner_id=None, *, company_id=None):
         await business_company_lock(db, company)
         job = await db.scalar(query.where(Job.company_id == company).with_for_update(of=(Job, Member), skip_locked=True).limit(1))
         if not job:
+            return None
+        from app.modules.reports.retirement import report_job_available, MESSAGE
+        if not await report_job_available(db, job):
+            job.state, job.phase, job.error, job.result = 'cancelled', 'report_unavailable', MESSAGE, {}
+            job.fence += 1
+            job.lease_until = None
+            update_feedback(job)
             return None
         if not job.access:
             job.access = business_scope(await db.get(Member, job.owner_id))

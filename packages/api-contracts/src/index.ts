@@ -499,7 +499,7 @@ export interface Report {
   historical?: boolean
   id: string
   ownerId: string
-  kind: 'daily' | 'weekly'
+  kind: 'weekly'
   period: string
   periodEnd: string
   timezone: string
@@ -527,9 +527,8 @@ export interface Schedule {
   beforeMinutes?: number
 }
 export interface Rules {
-  effectivePeriods?: Partial<Record<'daily' | 'weekly', string>>
+  effectivePeriods?: Partial<Record<'weekly', string>>
   timezone: string
-  daily: Schedule
   weekly: Schedule
   revision: number
 }
@@ -634,7 +633,7 @@ export interface ModelSelection {
 export interface ModelRouting {
   revision: number
   source: 'environment' | 'database'
-  /** Shared text model for chat and daily/weekly reports. */
+  /** Shared text model for chat and weekly reports. */
   assistant: ModelSelection | null
   /** Legacy field; the server returns 'follow' for the shared text model. */
   report: ModelSelection | 'follow' | null
@@ -740,7 +739,7 @@ export interface ReportObligation {
   id: string
   ownerId: string
   name: string | null
-  kind: 'daily' | 'weekly'
+  kind: 'weekly'
   period: string
   periodEnd: string
   timezone: string
@@ -842,7 +841,7 @@ export interface TeamWorkRow {
 export interface TeamReportRow {
   id: string
   member: Member
-  kind: 'daily' | 'weekly'
+  kind: 'weekly'
   period: string
   periodEnd: string
   state: 'pending' | 'overdue' | 'submitted' | 'cancelled'

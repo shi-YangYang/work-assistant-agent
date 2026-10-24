@@ -2,6 +2,7 @@ import layoutStyles from '../../../styles/layout.module.css'
 import controlsStyles from '../../../styles/controls.module.css'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { Modal } from '@web/components/overlays/Modal'
 import { deleteRecord, deletionImpactPath } from '@web/features/records/api/requests'
 import { useResource } from '@web/hooks/useResource'
@@ -43,9 +44,8 @@ export function DeleteRecord({
       ) : (
         <p>删除后不会自动重新生成该周期报告，原始消息和工作记录保留。</p>
       )}
-      <ErrorNotice retry={impact.error ? impact.refresh : undefined}>
-        {error || impact.error}
-      </ErrorNotice>
+      <ErrorNotice retry={impact.refresh}>{impact.error}</ErrorNotice>
+      <ActionNotice>{error}</ActionNotice>
       <div className={layoutStyles['form-actions']}>
         <button disabled={busy} onClick={onClose}>
           取消
@@ -56,6 +56,7 @@ export function DeleteRecord({
           disabled={kind === 'reports' && !impact.data}
           onClick={async () => {
             setBusy(true)
+            setError('')
             try {
               await deleteRecord(kind, id, { expectedRevision: impact.data?.revision ?? revision })
               setDraft(`${kind === 'reports' ? 'report' : 'work'}:${id}`, undefined)

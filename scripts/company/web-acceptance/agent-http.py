@@ -49,7 +49,6 @@ async def snapshot(client):
     result = {}
     for label, path, params in (
         ('work', '/api/v1/work-items', {}),
-        ('daily', '/api/v1/reports', {'kind': 'daily'}),
         ('weekly', '/api/v1/reports', {'kind': 'weekly'}),
     ):
         result[label] = await pages(client, path, **params)

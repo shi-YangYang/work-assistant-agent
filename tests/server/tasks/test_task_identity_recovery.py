@@ -257,7 +257,7 @@ async def test_bind_validates_local_explicit_reference_and_report_submission_ide
         async def begin(self):
             yield None
 
-    original = {'action': 'generate_report', 'kind': 'daily', 'date': '2026-10-10', 'submitAfter': False}
+    original = {'action': 'generate_report', 'kind': 'weekly', 'date': '2026-10-10', 'submitAfter': False}
     old = {'id': 'old', 'action': 'generate_report', 'state': 'running', 'receiptId': 'receipt',
            'proposal': digest(original), 'attemptedOperation': original}
     job = SimpleNamespace(result={'taskItems': [old], 'taskSnapshot': {'previousTask': {'items': [old]}}})
@@ -300,7 +300,7 @@ async def test_legacy_report_binding_recovers_submission_identity_from_owned_rec
     async with setup[1].begin() as db:
         for model in (WorkRevision, WorkUpdate):
             await db.execute(update(model).where(model.work_id == work['id']).values(created_at=source_time))
-    context, _ = await mode_runtime(setup, 'full', '生成日报，并按照要求处理提交')
+    context, _ = await mode_runtime(setup, 'full', '生成周报，并按照要求处理提交')
     result = await execute(context, step=1, action='generate_report', report_date=source_time.date().isoformat(), submit_after=submit_after)
     assert result['state'] == 'running'
     async with context.sessions.begin() as db:

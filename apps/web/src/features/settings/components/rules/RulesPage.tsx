@@ -9,6 +9,7 @@ import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ConflictRecovery } from '@web/components/forms/ConflictRecovery'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
 import { PanelSection } from '@web/components/content/PanelSection'
 import { SectionTabs, TabSection } from '@web/components/navigation/section-tabs/SectionTabs'
 import { TimeField } from '@web/components/forms/TimeField'
@@ -26,7 +27,6 @@ import { useLayoutEffect, useRef, useState } from 'react'
 
 const ruleTabs = [
   { id: 'timezone', label: '时间设置' },
-  { id: 'daily', label: '日报' },
   { id: 'weekly', label: '周报' },
 ] as const
 
@@ -44,7 +44,7 @@ export function RulesPage() {
     if (attempted && form.current) revealRuleErrors(form.current)
   }, [attempted])
   const canEdit = identity.member.role === 'admin'
-  const update = (kind: 'daily' | 'weekly', schedule: Schedule) => {
+  const update = (kind: 'weekly', schedule: Schedule) => {
     if (value) setDraft('rules', { ...value, [kind]: schedule })
   }
   return (
@@ -60,7 +60,13 @@ export function RulesPage() {
           disabled={busy}
         />
       )}
-      <ErrorNotice retry={refresh}>{failure || error}</ErrorNotice>
+      <ErrorNotice retry={refresh}>{error}</ErrorNotice>
+      <ErrorNotice>
+        {failure instanceof ApiError && failure.status === 409 ? failure : null}
+      </ErrorNotice>
+      <ActionNotice>
+        {failure instanceof ApiError && failure.status === 409 ? null : failure}
+      </ActionNotice>
       {value && !canEdit && (
         <div
           className={`${layoutStyles['sectioned-panel']} ${layoutStyles['settings-sections']} ${styles['rule-summary']}`}
@@ -68,11 +74,11 @@ export function RulesPage() {
           <div className={`${layoutStyles['panel-intro']} ${utilitiesStyles['muted']}`}>
             公司时区：{timezoneLabel(value.timezone)}
           </div>
-          {(['daily', 'weekly'] as const).map((kind) => (
+          {(['weekly'] as const).map((kind) => (
             <PanelSection
-              separated={kind === 'daily'}
+              separated
               key={kind}
-              title={kind === 'daily' ? '日报' : '周报'}
+              title="周报"
               status={value[kind].enabled ? '已启用' : '未启用'}
               defaultOpen={value[kind].enabled}
             >
@@ -125,14 +131,13 @@ export function RulesPage() {
             setFailure('')
             const firstError = Object.keys(reportRuleErrors(value))[0]
             if (firstError) {
-              setTab(firstError.startsWith('daily.') ? 'daily' : 'weekly')
+              setTab('weekly')
               return
             }
             await submit(
               () =>
                 saveReportRules({
                   timezone: value.timezone,
-                  daily: value.daily,
                   weekly: value.weekly,
                   expectedRevision: value.revision,
                 }),
@@ -165,18 +170,18 @@ export function RulesPage() {
               </select>
             </label>
           </TabSection>
-          {(['daily', 'weekly'] as const).map((kind) => (
+          {(['weekly'] as const).map((kind) => (
             <TabSection
               tab={{ scope: 'rules', id: kind, selected: tab }}
-              separated={kind === 'daily'}
+              separated
               key={kind}
-              title={kind === 'daily' ? '日报' : '周报'}
+              title="周报"
               status={
                 value[kind].enabled
                   ? `${value[kind].generateTime} 生成 · ${value[kind].deadline} 截止`
                   : '未启用'
               }
-              defaultOpen={kind === 'daily'}
+              defaultOpen
             >
               <div className={styles['schedule-panel']}>
                 <label className={`${layoutStyles['check']} ${styles['slot-check']}`}>
@@ -193,24 +198,14 @@ export function RulesPage() {
                     <label key={day}>
                       <input
                         disabled={busy}
-                        type={kind === 'weekly' ? 'radio' : 'checkbox'}
+                        type="radio"
                         name={kind}
                         checked={value[kind].days.includes(index)}
                         aria-invalid={fieldErrors[`${kind}.days`] ? true : undefined}
                         aria-describedby={
                           fieldErrors[`${kind}.days`] ? `${kind}-days-error` : undefined
                         }
-                        onChange={(e) =>
-                          update(kind, {
-                            ...value[kind],
-                            days:
-                              kind === 'weekly'
-                                ? [index]
-                                : e.target.checked
-                                  ? [...value[kind].days, index].sort()
-                                  : value[kind].days.filter((d) => d !== index),
-                          })
-                        }
+                        onChange={() => update(kind, { ...value[kind], days: [index] })}
                       />
                       <span>周{day}</span>
                     </label>
@@ -305,9 +300,9 @@ export function RulesPage() {
                 render={(latest) => (
                   <>
                     <p>公司时区：{timezoneLabel(latest.timezone)}</p>
-                    {(['daily', 'weekly'] as const).map((kind) => (
+                    {(['weekly'] as const).map((kind) => (
                       <p key={kind}>
-                        {kind === 'daily' ? '日报' : '周报'}：
+                        周报：
                         {latest[kind].enabled
                           ? `${latest[kind].generateTime} 生成，${latest[kind].deadline} 截止`
                           : '自动生成未启用'}

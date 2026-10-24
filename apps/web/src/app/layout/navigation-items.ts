@@ -28,7 +28,7 @@ export const pages = [
     detail: '查找工作事项，更新进展与下一步',
     icon: BriefcaseBusiness,
   },
-  { path: '/reports', title: '我的报告', detail: '查看、编辑和提交日报与周报', icon: FileText },
+  { path: '/reports', title: '我的报告', detail: '查看、编辑和提交周报', icon: FileText },
   {
     path: '/team',
     title: '团队看板',

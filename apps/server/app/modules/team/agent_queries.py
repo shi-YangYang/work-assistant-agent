@@ -96,7 +96,7 @@ async def query_business(db, actor, job, *, kind='work', employee_ids=None, quer
             stmt = stmt.where(revision.content['status'].astext == status)
     else:
         revision = ReportRevision
-        stmt = select(revision).join(Report, Report.id == revision.report_id).where(Report.deleted.is_(False), revision.company_id == actor.company_id, revision.owner_id.in_(members), revision.revision == Report.published_revision)
+        stmt = select(revision).join(Report, Report.id == revision.report_id).where(Report.deleted.is_(False), Report.kind == 'weekly', revision.company_id == actor.company_id, revision.owner_id.in_(members), revision.revision == Report.published_revision)
         if first:
             stmt = stmt.where(Report.period <= window['end'], Report.period_end >= window['start'])
     if query:

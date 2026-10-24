@@ -85,10 +85,10 @@ async def preview(db, actor, row):
         return {'title': changes['title'], 'changes': changes, 'materialNames': names, 'revision': 0}
     if row.action == 'generate_report':
         from datetime import date
-        if row.params['kind'] not in ('daily', 'weekly'):
+        if row.params['kind'] not in ('weekly',):
             problem(422, '报告类型无效')
         day = date.fromisoformat(row.params['date'])
-        return {'title': f"{day} {'日报' if row.params['kind'] == 'daily' else '周报'}", 'changes': {'范围': '生成草稿，不包含提交'}, 'revision': 0}
+        return {'title': f"{day} 周报", 'changes': {'范围': '生成草稿，不包含提交'}, 'revision': 0}
     target = await read_target(db, actor, row.action, row.params['targetId'])
     version(target, row.params['expectedRevision'])
     if row.action in ('update_work', 'edit_report'):
@@ -102,6 +102,6 @@ async def preview(db, actor, row):
     if row.action == 'submit_report':
         if not any(str(v).strip() for v in target.content.values()):
             problem(422, '请先填写报告内容')
-        return {'title': f'{target.period} {"日报" if target.kind == "daily" else "周报"}', 'content': target.content, 'revision': target.revision}
+        return {'title': f'{target.period} 周报', 'content': target.content, 'revision': target.revision}
     impact = await writes_deletion_impact(db, target, actor)
-    return {'title': target.title if isinstance(target, WorkItem) else f'{target.period} {"日报" if target.kind == "daily" else "周报"}', 'impact': impact, 'revision': target.revision}
+    return {'title': target.title if isinstance(target, WorkItem) else f'{target.period} 周报', 'impact': impact, 'revision': target.revision}

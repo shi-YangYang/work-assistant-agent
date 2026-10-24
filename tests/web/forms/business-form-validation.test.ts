@@ -3,6 +3,7 @@ import { isValidElement, type ReactElement, type ReactNode } from 'react'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../apps/web/src/api/client'
 import { BusyButton } from '../../../apps/web/src/components/actions/BusyButton'
+import { ActionNotice } from '../../../apps/web/src/components/feedback/ActionNotice'
 import { ErrorNotice } from '../../../apps/web/src/components/feedback/ErrorNotice'
 import { FormField } from '../../../apps/web/src/components/forms/FormField'
 import { Modal } from '../../../apps/web/src/components/overlays/Modal'
@@ -125,7 +126,7 @@ const progress: Progress = {
 const report = (): Report => ({
   id: 'report',
   ownerId: 'owner',
-  kind: 'daily',
+  kind: 'weekly',
   period: '2026-09-22',
   periodEnd: '2026-09-22',
   timezone: 'Asia/Shanghai',
@@ -243,7 +244,9 @@ it('opens the report editor for empty content instead of issuing a submission', 
   ;(button.props.onClick as () => void)()
   const updated = nodes(render(component))
   expect(updated.some((node) => node.type === 'form')).toBe(true)
-  expect(updated.find((node) => node.type === ErrorNotice)!.props.children).toBe('请先填写报告内容')
+  expect(updated.find((node) => node.type === ActionNotice)!.props.children).toBe(
+    '请先填写报告内容',
+  )
   expect(submitReport).not.toHaveBeenCalled()
 })
 

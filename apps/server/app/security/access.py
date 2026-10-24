@@ -46,6 +46,9 @@ async def resolve(db, actor, evidence, *, latest=False, retained=False):
     item = await db.scalar(select(model).where(model.id == identifier, model.company_id == actor.company_id, model.owner_id == member.id))
     if not item or item.deleted:
         problem(404, '来源已删除或无权查看')
+    if kind == 'report':
+        from app.modules.reports.periods import require_weekly
+        require_weekly(item.kind)
     if kind == 'work':
         revision = await db.scalar(select(WorkRevision).where(WorkRevision.id == evidence.get('versionId'), WorkRevision.work_id == item.id, WorkRevision.owner_id == member.id, WorkRevision.company_id == actor.company_id))
         if not revision or revision.access.get('team'):

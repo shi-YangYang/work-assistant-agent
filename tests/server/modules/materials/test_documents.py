@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 import asyncio
 import io
 import json
@@ -226,8 +227,8 @@ async def test_shared_source_retention_and_admin_purge_chunks_checkpoints(setup)
         revision = WorkRevision(company_id=owner.company_id, owner_id=owner.id, work_id=work.id, revision=1, content=work.content, source_ids=[sent['messageId']])
         db.add(revision); await db.flush()
         reports = []
-        for kind in ('daily', 'weekly'):
-            report = Report(company_id=owner.company_id, owner_id=owner.id, kind=kind, period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', content={'completed': '保留摘要', 'ongoing': '', 'blockers': '', 'next': ''}, source_ids=[revision.id], published_revision=1)
+        for day in ('2026-09-07', '2026-09-14'):
+            report = Report(company_id=owner.company_id, owner_id=owner.id, kind='weekly', period=day, period_end=(date.fromisoformat(day)+timedelta(days=6)).isoformat(), timezone='Asia/Shanghai', content={'completed': '保留摘要', 'ongoing': '', 'blockers': '', 'next': ''}, source_ids=[revision.id], published_revision=1)
             db.add(report); await db.flush(); reports.append(report)
             db.add(ReportRevision(company_id=owner.company_id, owner_id=owner.id, report_id=report.id, revision=1, content=report.content, source_ids=report.source_ids))
     other_conv = await conversation(c['employee'], '其他会话读取已确认来源')
@@ -278,8 +279,8 @@ async def test_source_deletion_purges_inflight_document_proposals(setup, deletio
         revision = WorkRevision(company_id=owner.company_id, owner_id=owner.id, work_id=work.id, revision=1, content=work.content, source_ids=[source['messageId']])
         db.add(revision); await db.flush()
         reports = []
-        for kind in ('daily', 'weekly'):
-            report = Report(company_id=owner.company_id, owner_id=owner.id, kind=kind, period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', content={'completed': '保留确认摘要', 'ongoing': '', 'blockers': '', 'next': ''}, source_ids=[revision.id], published_revision=1)
+        for day in ('2026-09-07', '2026-09-14'):
+            report = Report(company_id=owner.company_id, owner_id=owner.id, kind='weekly', period=day, period_end=(date.fromisoformat(day)+timedelta(days=6)).isoformat(), timezone='Asia/Shanghai', content={'completed': '保留确认摘要', 'ongoing': '', 'blockers': '', 'next': ''}, source_ids=[revision.id], published_revision=1)
             db.add(report); await db.flush(); reports.append(report)
             db.add(ReportRevision(company_id=owner.company_id, owner_id=owner.id, report_id=report.id, revision=1, content=report.content, source_ids=report.source_ids))
         unrelated_result = (await db.get(Job, unrelated['jobId'])).result

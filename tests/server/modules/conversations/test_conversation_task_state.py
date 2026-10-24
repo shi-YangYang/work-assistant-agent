@@ -350,7 +350,7 @@ async def test_unrelated_request_does_not_automatically_resume_cancelled_task(se
         assert (await db.get(Job, context.job_id)).result['taskSnapshot']['relation'] == 'new'
 
 
-@pytest.mark.parametrize('action, quote', [('delete_work', '删除旧工作'), ('submit_report', '提交日报')])
+@pytest.mark.parametrize('action, quote', [('delete_work', '删除旧工作'), ('submit_report', '提交周报')])
 async def test_vague_acknowledgement_cannot_use_cancelled_sensitive_request(setup, action, quote):
     _, sessions, _, _ = setup
     first, sent = await runtime(setup, '先创建甲，然后' + quote)
@@ -527,7 +527,7 @@ async def test_completed_receipt_cannot_become_waiting_for_future_input():
 
 @pytest.mark.parametrize('blocked_source', ['interpretation', 'tool'])
 async def test_partial_permission_denial_does_not_request_more_user_input(blocked_source):
-    reason = '当前角色不能生成正式日报'
+    reason = '当前角色不能生成正式周报'
     result = {'incompleteTask': False, 'taskInterpretation': {'state': 'blocked', 'remaining': [reason]}} if blocked_source == 'interpretation' else {
         'toolOutcomes': [{'category': 'permission_denied', 'message': reason, 'label': '生成报告'}]}
     outcome = derive(SimpleNamespace(state='succeeded', error='', result=result), [{'state': 'succeeded', 'label': '创建工作'}])

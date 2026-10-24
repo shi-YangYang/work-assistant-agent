@@ -25,6 +25,9 @@ async def target(db, model, identifier, actor, expected):
         problem(404, '记录不存在或无权管理')
     await db.scalar(select(Member).where(Member.id == owner).with_for_update())
     item = await db.scalar(query.with_for_update().execution_options(populate_existing=True))
+    if model is Report:
+        from app.modules.reports.periods import require_weekly
+        require_weekly(item.kind)
     if not item.deleted:
         version(item, expected)
     return item
@@ -137,7 +140,7 @@ async def remove_report(db, item, actor, *, executing_job=None):
     await db.flush()
     await business_invalidate_deleted(db, item.company_id)
     await db.execute(delete(ReportRevision).where(ReportRevision.report_id == item.id))
-    await db.execute(delete(Idempotency).where(Idempotency.owner_id == item.owner_id, ((Idempotency.action == f'submit:{item.id}') | ((Idempotency.action == 'generate-report') & (Idempotency.response['reportId'].astext == item.id)))))
+    await db.execute(delete(Idempotency).where(Idempotency.owner_id == item.owner_id, ((Idempotency.action == f'submit:{item.id}') | (((Idempotency.action == 'generate-report') | Idempotency.action.startswith('prepare-obligation:')) & (Idempotency.response['reportId'].astext == item.id)))))
 
 
 async def remove_work(db, item, *, executing_job=None):

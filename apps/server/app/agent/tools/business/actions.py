@@ -20,7 +20,7 @@ from typing import Literal
 
 
 @tool
-async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: int = 0, changes: dict | None = None, report_kind: Literal['daily', 'weekly'] = 'daily', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
+async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: int = 0, changes: dict | None = None, report_kind: Literal['weekly'] = 'weekly', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
     """Perform the user's settled business operation; execution mode and server
     authorization apply; explicit review-first always waits for approval.
 
@@ -69,7 +69,8 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     shared_attachment_ids only for explicitly shared files.
 
     Reports: generate_report uses report_kind and company-local report_date
-    (YYYY-MM-DD), omits changes/source_tokens. The server reads sources and copies
+    (YYYY-MM-DD): weekly uses the Monday-through-Sunday
+    week containing that date, never the submission date. Omits changes/source_tokens. The server reads sources and copies
     the original brief: enqueue and end, no preliminary work/obligation lookup,
     polling or extra edit. submit_after=true only for generate-and-submit,
     including review-before-submit; review-first/mode still control approval.
@@ -103,7 +104,7 @@ async def get_business_actions(runtime: ToolRuntime[RunContext]) -> str:
 
 
 @tool
-async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily', 'weekly'] = 'daily', report_id: str = '', period: str = '', cursor: str = '', content_start: int = 0) -> str:
+async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['weekly'] = 'weekly', report_id: str = '', period: str = '', cursor: str = '', content_start: int = 0) -> str:
     """Read own reports and register current revisions for edit/submit.
     period: exact YYYY-MM-DD start date; cursor: list pagination. Lists are bounded
     previews; for full text use report_id and nextContentOffset as content_start
@@ -164,13 +165,13 @@ async def query_reports(runtime: ToolRuntime[RunContext], kind: Literal['daily',
 
 
 @tool
-async def query_report_obligations(runtime: ToolRuntime[RunContext], kind: Literal['daily', 'weekly'] = 'daily', status: Literal['', 'pending', 'overdue', 'submitted', 'cancelled'] = '', period: str = '', cursor: int = 0) -> str:
+async def query_report_obligations(runtime: ToolRuntime[RunContext], kind: Literal['weekly'] = 'weekly', status: Literal['', 'pending', 'overdue', 'submitted', 'cancelled'] = '', period: str = '', cursor: int = 0) -> str:
     """Read own obligations (employee) or company submission status (admin).
     Does not mark notifications read or send reminders. Admin empty period means
     today in company timezone; weekly periods normalize to week start. Counts
     cover scheduled obligations, not all members: zeros mean no obligations, not
     everyone submitted. Empty items may mean no matches for the selected status.
-    Do not repeat equivalent queries or switch daily/weekly outside requested
+    Do not repeat equivalent queries or switch periods outside requested
     scope. To generate, pass the employee obligation ID, kind and period.
     """
     from app.modules.reports.scheduling.schedule import obligation_page

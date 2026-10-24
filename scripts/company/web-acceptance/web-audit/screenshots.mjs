@@ -42,10 +42,9 @@ const common = (role) => [
 const admin = [
   ['team-work', '/team'],
   ['team-updated', '/team?scope=updated'],
-  ['team-daily', '/team?view=reports'],
-  ['team-weekly', '/team?view=reports&kind=weekly'],
+  ['team-weekly', '/team?view=reports'],
   ['team-work-drawer', () => `/team?record=${ids.employee.work}`],
-  ['team-report-drawer', () => `/team?view=reports&record=${ids.employee.daily}`],
+  ['team-report-drawer', () => `/team?view=reports&record=${ids.employee.weekly}`],
   ['members', '/members'],
   ['member-create', '/members', click('添加成员')],
   ['announcements', '/announcement-management'],
@@ -54,7 +53,6 @@ const admin = [
   ['announcement-edit', () => `/announcement-management/${ids.announcement}/edit`],
   ['account-password', '/settings/account', click('修改密码')],
   ['account-dingtalk', '/settings/account', click('钉钉账号关联')],
-  ['rules-daily', '/settings/rules', click('日报')],
   ['rules-weekly', '/settings/rules', click('周报')],
   ['models', '/settings/models'],
   ['models-routing', '/settings/models', click('用途分配')],
@@ -63,24 +61,16 @@ const admin = [
   ['login-credentials', '/settings/login'],
   ['login-authorization', '/settings/login', click('授权与入口')],
   ['login-setup', '/settings/login', click('钉钉后台配置')],
-  ['report-detail', () => `/reports/${ids.employee.daily}`],
+  ['report-detail', () => `/reports/${ids.employee.weekly}`],
   ['team-legacy-details', '/team/details'],
   ['team-legacy-reports', '/team/reports'],
 ]
 const employee = [
   ['reports-todo', '/reports'],
-  ['reports-daily', '/reports', click('全部报告')],
-  [
-    'reports-weekly',
-    '/reports',
-    async (page) => {
-      await click('全部报告')(page)
-      await click('周报')(page)
-    },
-  ],
-  ['report-detail', () => `/reports/${ids.employee.daily}`],
-  ['report-draft', () => `/reports/${ids.employee.weekly}`],
-  ['report-edit', () => `/reports/${ids.employee.weekly}`, click('编辑草稿')],
+  ['reports-weekly', '/reports', click('全部报告')],
+  ['report-detail', () => `/reports/${ids.employee.weekly}`],
+  ['report-draft', () => `/reports/${ids.employee.draft}`],
+  ['report-edit', () => `/reports/${ids.employee.draft}`, click('编辑草稿')],
   ['reports-schedule', '/reports', click('汇报安排')],
 ]
 const filter = process.env.UI_AUDIT_FILTER?.split(',')

@@ -41,8 +41,8 @@ async def test_fixed_tool_cycles_end_with_default_budget_without_writes(setup, m
     """Force A / A-B / A-B-C loops without reducing production limits."""
     calls, logical, final_calls = [], [], []
     tools = [('find_work_items', {'query': '没有变化的目标'}),
-             ('query_report_obligations', {'kind': 'daily'}),
-             ('query_reports', {'kind': 'daily'})][:cycle]
+             ('query_report_obligations', {'kind': 'weekly'}),
+             ('query_reports', {'kind': 'weekly'})][:cycle]
     async def chat(settings, config, key, messages, **kwargs):
         calls.append(len(messages))
         if len(calls) == 1:

@@ -62,7 +62,7 @@ async def test_report_reply_refreshes_after_generation_and_confirmation(setup, s
     await create(clients['employee'], title='文档整理', status='done')
     async def enqueue(context):
         await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat(), submit_after=submit_after)
-    data = await run_reply(setup, '生成日报', '报告正在生成。', ReplyJudge(['execution']), before=enqueue)
+    data = await run_reply(setup, '生成周报', '报告正在生成。', ReplyJudge(['execution']), before=enqueue)
     assert '正在处理' in data['reply']
     card = data['actions'][0]
     async with sessions.begin() as db:
@@ -123,8 +123,8 @@ async def test_report_reply_uses_child_failure_instead_of_stale_running_state(st
 
 async def test_legacy_receipt_with_newly_available_title_still_refreshes():
     row = SimpleNamespace(reply='生成报告：正在处理。')
-    cards = [{'action': 'generate_report', 'label': '生成报告', 'state': 'succeeded', 'title': '2026-09-28 日报'}]
-    assert current_reply(row, None, cards, []) == '生成报告《2026-09-28 日报》：已完成。'
+    cards = [{'action': 'generate_report', 'label': '生成报告', 'state': 'succeeded', 'title': '2026-09-28 周报'}]
+    assert current_reply(row, None, cards, []) == '生成报告《2026-09-28 周报》：已完成。'
 
 
 async def test_required_question_is_preserved_without_repair_or_repeating_saved_action(setup, monkeypatch):

@@ -1,6 +1,6 @@
 from datetime import datetime
 from app.db.base import Base, Owned, Record, now
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -19,7 +19,7 @@ class Report(Owned, Base):
     published_revision: Mapped[int] = mapped_column(Integer, default=0)
     edited: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
-    __table_args__ = (UniqueConstraint('owner_id', 'kind', 'period'),)
+    __table_args__ = (Index('uq_report_active_period', 'owner_id', 'kind', 'period', unique=True, postgresql_where=deleted.is_(False)),)
 
 
 class ReportRevision(Owned, Base):
@@ -61,6 +61,7 @@ class ReportObligation(Owned, Base):
     reminders: Mapped[bool] = mapped_column(Boolean)
     before_minutes: Mapped[int] = mapped_column(Integer)
     state: Mapped[str] = mapped_column(String(16), default='pending')
+    cancel_reason: Mapped[str | None] = mapped_column(String(24), nullable=True)
     report_id: Mapped[str | None] = mapped_column(ForeignKey('company_report.id'), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     generation_checked: Mapped[bool] = mapped_column(Boolean, default=False)

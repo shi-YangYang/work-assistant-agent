@@ -93,11 +93,11 @@ async def test_query_fallback_joins_only_matching_cursor_chain():
 async def test_report_receives_referenced_style_and_rechecks_source_access(setup, revoke):
     settings, sessions, users, clients = setup
     await create(clients['employee'], '项目验收', summary='已经完成验收', status='done')
-    previous, sent = await runtime(setup, '日报每栏不超过30字，下一步列两个编号步骤。')
+    previous, sent = await runtime(setup, '周报每栏不超过30字，下一步列两个编号步骤。')
     async with sessions.begin() as db:
         (await db.get(Message, sent['messageId'])).reply = '按每栏不超过30字，下一步两个编号步骤整理。'
     await finish(previous)
-    context, _ = await runtime(setup, '按刚才的要求生成今天日报，不提交。')
+    context, _ = await runtime(setup, '按刚才的要求生成本周周报，不提交。')
     await execute(context, step=1, action='generate_report', report_date=now().astimezone(ZoneInfo('Asia/Shanghai')).date().isoformat())
     await finish(context)
     if revoke:
@@ -123,7 +123,7 @@ async def test_report_retry_resumes_correction_without_regenerating_initial_draf
     report, job, _ = await prepared(setup)
     async with sessions.begin() as db:
         live = await db.get(Job, job.id)
-        live.result = {**live.result, 'instructions': '生成日报并拟定下一步'}
+        live.result = {**live.result, 'instructions': '生成周报并拟定下一步'}
     tasks = []
     failed = False
     class InterruptedModel:
@@ -176,12 +176,12 @@ async def test_edit_report_checks_all_sources_beyond_query_preview_limit(setup):
     for index in range(3):
         await create(clients['employee'], '长工作' + str(index), summary='来源说明。' * 500)
     async with sessions.begin() as db:
-        report, job = await ensure_report(db, users['employee'], 'daily', now().astimezone(ZoneInfo('Asia/Shanghai')).date())
+        report, job = await ensure_report(db, users['employee'], 'weekly', now().astimezone(ZoneInfo('Asia/Shanghai')).date())
         report.source_ids = job.result['sourceIds']
         report.content = CONTENT
         job.state = 'succeeded'
         assert not (await report_fact_basis(db, users['employee'], report))['complete']
-    context, _ = await runtime(setup, '只把日报下一步改成继续核对，其它不动。')
+    context, _ = await runtime(setup, '只把周报下一步改成继续核对，其它不动。')
     await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id)
     reviewed = []
     class FullJudge(Judge):

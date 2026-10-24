@@ -8,6 +8,8 @@ import styles from './ReportsOverview.module.css'
 import type { Report, Rules } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
+import { ActionNotice } from '@web/components/feedback/ActionNotice'
+import { isCancelled } from '@web/api/client'
 import { Modal } from '@web/components/overlays/Modal'
 import { RecordEmpty } from '@web/components/content/RecordEmpty'
 import { generateReport, reportListPath, reportRulesPath } from '@web/features/reports/api/requests'
@@ -17,16 +19,27 @@ import { usePagedResource } from '@web/hooks/usePagedResource'
 import { useResource } from '@web/hooks/useResource'
 import { useWorkspace } from '@web/lib/workspace'
 import { dateLabel, todayIn } from '@web/utils/date'
+import { customRangeError } from '@web/utils/date-range'
 import { detailState } from '@web/utils/navigation'
 import { timezoneLabel } from '@web/utils/timezones'
 import { CalendarDays, ChevronRight, FileText, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router'
 
+function reportingPeriod(date: string) {
+  if (customRangeError(date, date)) return null
+  const start = new Date(`${date}T00:00:00Z`)
+  start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7))
+  const end = new Date(start)
+  end.setUTCDate(end.getUTCDate() + 6)
+  const range = { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) }
+  return customRangeError(range.start, range.end) ? null : range
+}
+
 export function ReportsPage() {
   const location = useLocation()
   const [params, setParams] = useSearchParams()
-  const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
+  const kind = 'weekly' as const
   const todo = params.get('view') !== 'all'
   const { data, error, refresh, loadMore, loading } = usePagedResource<Report>(
     reportListPath(todo, kind),
@@ -35,10 +48,25 @@ export function ReportsPage() {
   )
   const rules = useResource<Rules>(reportRulesPath())
   const [busy, setBusy] = useState(false)
-  const [failure, setFailure] = useState<Error | string>('')
+  const [failure, setFailure] = useState<{ period: string; error: Error | string } | null>(null)
   const [showRules, setShowRules] = useState(false)
   const { notify } = useWorkspace()
-  const selectedDate = params.get('date') || todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
+  const today = todayIn(rules.data?.timezone ?? 'Asia/Shanghai')
+  const selectedDate = params.get('date') || today
+  const period = reportingPeriod(selectedDate)
+  const selectionKey = `${kind}:${selectedDate}:${todo}`
+  const [failurePeriod, setFailurePeriod] = useState(selectionKey)
+  if (failurePeriod !== selectionKey) {
+    setFailurePeriod(selectionKey)
+    setFailure(null)
+  }
+  const changeSelection = (next: Record<string, string>) => {
+    setFailure(null)
+    setParams(next)
+  }
+  const changeDate = (date: string) => {
+    changeSelection({ kind, date, view: 'all' })
+  }
   return (
     <div
       className={`${layoutStyles['page']} ${recordLayoutStyles['records-page']}`}
@@ -46,7 +74,7 @@ export function ReportsPage() {
     >
       <PageHeader
         title="我的报告"
-        description="把日常的推进，整理成清晰的工作记录。"
+        className={styles['report-header']}
         actions={
           <button onClick={() => setShowRules(true)}>
             <CalendarDays size={16} />
@@ -54,6 +82,7 @@ export function ReportsPage() {
           </button>
         }
       />
+      {params.get('kind') === 'daily' && <p role="status">正式日报已取消，现显示周报。</p>}
       <div className={recordLayoutStyles['records-surface']}>
         <div className={recordLayoutStyles['records-navigation']}>
           <div
@@ -62,87 +91,83 @@ export function ReportsPage() {
             <button
               aria-pressed={todo}
               data-active={todo}
-              onClick={() => setParams({ kind, view: 'todo' })}
+              onClick={() => changeSelection({ kind, view: 'todo' })}
             >
               汇报待办
             </button>
             <button
               aria-pressed={!todo}
               data-active={!todo}
-              onClick={() => setParams({ kind, view: 'all' })}
+              onClick={() => changeSelection({ kind, view: 'all' })}
             >
               全部报告
             </button>
           </div>
-          <div
-            className={recordLayoutStyles['report-kind-switch']}
-            role="group"
-            aria-label="报告类型"
-          >
-            <button
-              data-active={kind === 'daily'}
-              aria-pressed={kind === 'daily'}
-              onClick={() =>
-                setParams({ kind: 'daily', date: selectedDate, view: todo ? 'todo' : 'all' })
-              }
-            >
-              日报
-            </button>
-            <button
-              data-active={kind === 'weekly'}
-              aria-pressed={kind === 'weekly'}
-              onClick={() =>
-                setParams({ kind: 'weekly', date: selectedDate, view: todo ? 'todo' : 'all' })
-              }
-            >
-              周报
-            </button>
-          </div>
         </div>
         {!todo && (
-          <div
-            className={`${recordLayoutStyles['records-toolbar']} ${recordLayoutStyles['report-generate']}`}
-          >
-            <label className={recordLayoutStyles['record-date-field']}>
-              <span>报告日期</span>
-              <input
-                type="date"
-                aria-label="报告日期"
-                value={selectedDate}
-                onClick={(event) => {
-                  try {
-                    event.currentTarget.showPicker?.()
-                  } catch {
-                    /* Native picker unavailable. */
-                  }
-                }}
-                onChange={(e) => setParams({ kind, date: e.target.value, view: 'all' })}
-              />
-            </label>
+          <div className={`${recordLayoutStyles['records-toolbar']} ${styles['report-generate']}`}>
+            <div className={styles['period-controls']}>
+              <label
+                className={`${recordLayoutStyles['record-date-field']} ${styles['period-date']}`}
+              >
+                <span>{'汇报周期'}</span>
+                <input
+                  type="date"
+                  aria-label="选择周报所在周"
+                  aria-describedby="report-period-range"
+                  min="0001-01-01"
+                  max="9999-12-30"
+                  value={selectedDate}
+                  onClick={(event) => {
+                    try {
+                      event.currentTarget.showPicker?.()
+                    } catch {
+                      /* Native picker unavailable. */
+                    }
+                  }}
+                  onChange={(e) => changeDate(e.target.value)}
+                />
+              </label>
+              {
+                <div className={styles['period-shortcuts']} aria-label="快捷选择汇报周期">
+                  <button type="button" onClick={() => changeDate(today)}>
+                    本周
+                  </button>
+                </div>
+              }
+            </div>
             <BusyButton
               busy={busy}
+              disabled={!period}
               className={controlsStyles['primary']}
               onClick={async () => {
                 setBusy(true)
+                setFailure(null)
                 try {
                   await generateReport({ kind, date: selectedDate }, crypto.randomUUID())
                   refresh()
                   notify('已准备报告，生成状态会自动更新')
                 } catch (e) {
-                  setFailure(e as Error)
+                  if (!isCancelled(e)) setFailure({ period: selectionKey, error: e as Error })
                 } finally {
                   setBusy(false)
                 }
               }}
             >
               <Sparkles size={16} />
-              生成{kind === 'daily' ? '日报' : '周报'}
+              生成周报
             </BusyButton>
+            {period && (
+              <span id="report-period-range" className={styles['period-range']} role="status">
+                {period.start} — {period.end}（周一至周日）
+              </span>
+            )}
           </div>
         )}
         <ErrorNotice className={recordLayoutStyles['record-notice']} retry={refresh}>
-          {failure || error}
+          {error}
         </ErrorNotice>
+        <ActionNotice>{failure?.period === selectionKey ? failure.error : null}</ActionNotice>
         {todo ? (
           <ReportObligations />
         ) : (
@@ -164,11 +189,11 @@ export function ReportsPage() {
                       </span>
                       <div className={recordLayoutStyles['record-main']}>
                         <h3>
-                          {report.kind === 'weekly' ? '周报' : '日报'} ·{' '}
+                          周报 ·{' '}
                           <span className={recordLayoutStyles['record-period']}>
                             {report.period}
                           </span>
-                          {report.kind === 'weekly' && (
+                          {
                             <>
                               {' '}
                               —{' '}
@@ -176,7 +201,7 @@ export function ReportsPage() {
                                 {report.periodEnd}
                               </span>
                             </>
-                          )}
+                          }
                         </h3>
                         <p>
                           <span
@@ -214,11 +239,8 @@ export function ReportsPage() {
                 )}
               </div>
             ) : data ? (
-              <RecordEmpty
-                icon={<FileText size={27} />}
-                title={`还没有${kind === 'daily' ? '日报' : '周报'}`}
-              >
-                选择上方日期生成草稿，整理后即可提交。
+              <RecordEmpty icon={<FileText size={27} />} title="还没有周报">
+                选择上方{'汇报周期'}生成草稿，整理后即可提交。
               </RecordEmpty>
             ) : (
               !error && (
@@ -231,32 +253,67 @@ export function ReportsPage() {
         )}
       </div>
       {showRules && (
-        <Modal title="我的汇报安排" onClose={() => setShowRules(false)}>
+        <Modal
+          title="我的汇报安排"
+          className={styles['schedule-dialog']}
+          bodyClassName={styles['schedule-body']}
+          onClose={() => setShowRules(false)}
+        >
           {rules.data ? (
             <>
-              <p>公司时区：{timezoneLabel(rules.data.timezone)}</p>
-              {(['daily', 'weekly'] as const).map((k) => (
-                <div className={layoutStyles['panel']} key={k}>
-                  <h3>{k === 'daily' ? '日报' : '周报'}</h3>
-                  <p>
-                    {rules.data![k].enabled
-                      ? `${rules.data![k].days.map((d) => ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][d]).join('、')} ${rules.data![k].generateTime} 生成，${rules.data![k].deadline} 前提交`
-                      : '尚未启用自动生成，可手动准备报告'}
-                  </p>
-                  {rules.data!.effectivePeriods?.[k] && (
-                    <p className={utilitiesStyles['muted']}>
-                      当前设置从 {rules.data!.effectivePeriods[k]} 起的周期生效
-                    </p>
-                  )}
-                  {rules.data![k].enabled && (
-                    <p className={utilitiesStyles['muted']}>
-                      {rules.data![k].reminders === false
-                        ? '站内提醒已关闭'
-                        : `草稿就绪、截止前 ${rules.data![k].beforeMinutes ?? 30} 分钟及逾期后提醒`}
-                    </p>
-                  )}
+              <div className={styles['schedule-heading']}>
+                <span className={styles['schedule-icon']} aria-hidden="true">
+                  <CalendarDays size={22} />
+                </span>
+                <div className={styles['schedule-title']}>
+                  <h3>周报</h3>
+                  <span className={styles['schedule-badge']}>
+                    {rules.data.weekly.enabled ? '自动生成' : '手动生成'}
+                  </span>
                 </div>
-              ))}
+              </div>
+              {rules.data.weekly.enabled ? (
+                <dl className={styles['schedule-details']}>
+                  <div>
+                    <dt>草稿生成</dt>
+                    <dd>
+                      {rules.data.weekly.days
+                        .map((d) => ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][d])
+                        .join('、')}
+                      {' · '}
+                      {rules.data.weekly.generateTime}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>提交截止</dt>
+                    <dd>{rules.data.weekly.deadline} 前</dd>
+                  </div>
+                  <div>
+                    <dt>站内提醒</dt>
+                    <dd>
+                      {rules.data.weekly.reminders === false
+                        ? '已关闭'
+                        : `草稿就绪、截止前 ${rules.data.weekly.beforeMinutes ?? 30} 分钟及逾期后`}
+                    </dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className={styles['schedule-description']}>
+                  自动生成尚未启用，可在报告页手动生成周报。
+                </p>
+              )}
+              <dl className={styles['schedule-meta']}>
+                <div>
+                  <dt>公司时区</dt>
+                  <dd>{timezoneLabel(rules.data.timezone)}</dd>
+                </div>
+                {rules.data.effectivePeriods?.weekly && (
+                  <div>
+                    <dt>生效周期</dt>
+                    <dd>{rules.data.effectivePeriods.weekly} 起的周期</dd>
+                  </div>
+                )}
+              </dl>
             </>
           ) : rules.error ? (
             <ErrorNotice retry={rules.refresh}>{rules.error}</ErrorNotice>

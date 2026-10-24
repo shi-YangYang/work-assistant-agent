@@ -75,13 +75,12 @@ export function WorkDetail({
             </>
           )}
           <PageHeader
+            className={styles.header}
             title={data.title}
+            meta={<Status value={data.status} />}
             context={compact ? 'embedded' : 'detail'}
             description={
-              <div className={styles.metadata}>
-                <Status value={data.status} />
-                {data.dueDate && <span>截止 {data.dueDate}</span>}
-              </div>
+              data.dueDate && <span className={styles.metadata}>截止 {data.dueDate}</span>
             }
             actions={
               (own || !!data.materialIds?.length) && (
@@ -130,14 +129,13 @@ export function WorkDetail({
               {data.nextStep && <p>下一步：{data.nextStep}</p>}
             </div>
           )}
-          <section className={styles.history} aria-label="修改记录">
-            <h3>修改记录</h3>
-            <WorkHistory key={`${data.id}:${data.revision}:${!!data.historical}`} work={data} />
-            <BusinessSources
-              sources={data.businessLinks ?? []}
-              endpoint={workSourcesPath(data.id)}
-            />
-          </section>
+          {data.history?.some((entry) => entry.revision < data.revision) && (
+            <section className={styles.history} aria-label="修改记录">
+              <h3>修改记录</h3>
+              <WorkHistory key={`${data.id}:${data.revision}:${!!data.historical}`} work={data} />
+            </section>
+          )}
+          <BusinessSources sources={data.businessLinks ?? []} endpoint={workSourcesPath(data.id)} />
           {deleting && data.ownerId === identity.member.id && !data.historical && (
             <DeleteRecord
               kind="work-items"

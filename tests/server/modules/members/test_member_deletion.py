@@ -25,7 +25,7 @@ async def test_delete_member_revokes_access_stops_work_and_preserves_history(set
         await db.flush()
         job = Job(company_id=employee.company_id, owner_id=employee.id, kind='message', target_id=original.id, state='running', fence=2, lease_until=now() + timedelta(minutes=1))
         eligibility = ReportEligibility(company_id=employee.company_id, owner_id=employee.id, starts_at=now() - timedelta(days=1))
-        obligation = ReportObligation(company_id=employee.company_id, owner_id=employee.id, kind='daily', period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', rule_revision=1, generate_at=now(), deadline_at=now(), reminders=True, before_minutes=0)
+        obligation = ReportObligation(company_id=employee.company_id, owner_id=employee.id, kind='weekly', period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', rule_revision=1, generate_at=now(), deadline_at=now(), reminders=True, before_minutes=0)
         enrollment = Voiceprint(company_id=employee.company_id, member_id=employee.id, consent_by=users['admin'].id, state='processing', revision=2)
         db.add_all([job, eligibility, obligation, enrollment])
         await db.flush()

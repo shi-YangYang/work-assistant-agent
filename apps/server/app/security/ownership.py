@@ -22,4 +22,7 @@ async def owned(db, model, identifier, actor, *, read=False, lock=False):
     item = await db.scalar(query)
     if item is None:
         problem(404, '记录不存在或无权查看')
+    if model.__name__ in ('Report', 'ReportObligation'):
+        from app.modules.reports.periods import require_weekly
+        require_weekly(item.kind)
     return item

@@ -37,7 +37,7 @@ async def test_cleanup_reuses_deletion_preserves_history_and_is_company_scoped(s
         db.add(message)
         await db.flush()
         job = Job(company_id=employee.company_id, owner_id=employee.id, kind='message', target_id=message.id, state='running', fence=2, lease_until=now() + timedelta(minutes=1))
-        obligation = ReportObligation(company_id=employee.company_id, owner_id=employee.id, kind='daily', period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', rule_revision=1, generate_at=now(), deadline_at=now(), reminders=True, before_minutes=0)
+        obligation = ReportObligation(company_id=employee.company_id, owner_id=employee.id, kind='weekly', period='2026-09-13', period_end='2026-09-13', timezone='Asia/Shanghai', rule_revision=1, generate_at=now(), deadline_at=now(), reminders=True, before_minutes=0)
         db.add_all([job, obligation, DingTalkIdentity(company_id=employee.company_id, member_id=employee.id, corp_id='corp', client_id='client', user_id=uuid4().hex, union_id=uuid4().hex)])
         inactive_admin = Member(company_id=employee.company_id, username='admin_' + uuid4().hex, name='历史管理员', role='admin', active=False)
         already_deleted = Member(company_id=employee.company_id, username='old_' + uuid4().hex, name='已删除', active=False, deleted=True)

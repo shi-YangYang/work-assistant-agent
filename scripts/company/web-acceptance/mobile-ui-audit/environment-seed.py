@@ -53,9 +53,9 @@ async def main():
                 db.add(message)
                 await db.flush()
                 result = {'work': work.id, 'conversation': conversation.id, 'message': message.id}
-                for kind, period in [('daily', date.today()), ('weekly', date.today() - timedelta(days=date.today().weekday())), ('workflow', date.today() - timedelta(days=date.today().weekday()+7))]:
+                for kind, period in [('weekly', date.today() - timedelta(days=date.today().weekday())), ('draft', date.today() - timedelta(days=date.today().weekday()+7)), ('workflow', date.today() - timedelta(days=date.today().weekday()+14))]:
                     content_report = {'completed': '核对需求与界面布局', 'ongoing': '记录跨设备结果', 'blockers': '暂无阻碍', 'next': '完成验收'}
-                    report = Report(**owned, kind='weekly' if kind == 'workflow' else kind, period=str(period), period_end=str(period + timedelta(days=6 if kind != 'daily' else 0)), timezone='Asia/Shanghai', content=content_report, source_ids=[], published_revision=1 if kind == 'daily' else 0)
+                    report = Report(**owned, kind='weekly', period=str(period), period_end=str(period + timedelta(days=6)), timezone='Asia/Shanghai', content=content_report, source_ids=[], published_revision=1 if kind == 'weekly' else 0)
                     db.add(report)
                     await db.flush()
                     db.add(ReportRevision(**owned, report_id=report.id, revision=1, content=content_report, source_ids=[]))

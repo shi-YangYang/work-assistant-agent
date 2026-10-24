@@ -19,7 +19,7 @@ const range: DateRange = {
   timezone: 'Asia/Shanghai',
 }
 function Example({
-  kind = 'daily',
+  kind = 'weekly',
   query = '',
   timezone = 'Asia/Shanghai',
   onChange = vi.fn(),
@@ -52,19 +52,21 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-it('browses company-local days without showing a second date caption and dismisses the mobile fallback', () => {
+it('browses company-local weeks without showing a second date caption and dismisses the mobile fallback', () => {
   const change = vi.fn()
   render(<Example timezone="America/Los_Angeles" onChange={change} />)
-  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe('今天 · 10月12日')
+  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe(
+    '本周 · 10月12日–18日',
+  )
   expect(screen.queryByText(/洛杉矶时间/)).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: '前一天' }))
+  fireEvent.click(screen.getByRole('button', { name: '前一周' }))
   expect(change).toHaveBeenLastCalledWith({
     period: 'custom',
-    start: '2026-10-11',
+    start: '2026-10-05',
     end: '2026-10-11',
   })
   open()
-  expect(screen.getByRole('button', { name: '昨天' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: '上周' })).toBeTruthy()
   expect(screen.getByText(/洛杉矶时间/)).toBeTruthy()
   fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
   expect(screen.queryByRole('dialog')).toBeNull()
@@ -131,10 +133,10 @@ it('keeps month and custom ranges in more filters, rejects incomplete drafts, an
   expect(change).toHaveBeenLastCalledWith({ period: 'this_week', start: '', end: '' })
 })
 
-it('preserves the known company timezone while a new query loads and closes when the report kind changes', () => {
+it('preserves the known company timezone while a new query loads and closes when the period filter changes', () => {
   const params = new URLSearchParams('period=today')
   const view = render(
-    <ReportPeriodPicker params={params} kind="daily" range={range} change={vi.fn()} />,
+    <ReportPeriodPicker params={params} kind="weekly" range={range} change={vi.fn()} />,
   )
   open()
   view.rerender(

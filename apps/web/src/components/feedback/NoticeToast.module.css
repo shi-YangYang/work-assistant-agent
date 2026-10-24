@@ -1,0 +1,41 @@
+.toast {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  width: min(560px, calc(100vw - 32px));
+  z-index: 100;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.toast > div {
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: inherit;
+  line-height: 1.6;
+}
+
+.toast[data-dismissible='true'] > div {
+  padding-right: 56px;
+}
+
+.toast > p {
+  margin: 0;
+  padding: 0 18px 16px;
+  background: var(--danger-bg);
+  border-radius: 0 0 12px 12px;
+}
+
+.dismiss {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+}

@@ -130,7 +130,7 @@ export function Routing({
               </label>
               {purpose === 'assistant' && (
                 <p className={`${utilitiesStyles['muted']} ${modelServicesStyles['slot-muted']}`}>
-                  聊天搭子和日报周报生成共用此模型。聊天可单独选择思考强度，报告使用模型的初始强度。
+                  聊天搭子和周报生成共用此模型。聊天可单独选择思考强度，报告使用模型的初始强度。
                 </p>
               )}
             </div>

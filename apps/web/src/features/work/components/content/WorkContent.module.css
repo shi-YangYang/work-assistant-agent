@@ -1,17 +1,6 @@
 .section {
-  padding: 18px 0;
+  padding: 0 0 18px;
   border-bottom: 1px solid var(--line);
-}
-.heading {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.heading h3 {
-  font-size: 14px;
-  margin: 0;
 }
 .hint {
   color: var(--muted);
@@ -208,7 +197,7 @@
 }
 @media (max-width: 600px) {
   .section {
-    padding: 16px 0;
+    padding-bottom: 16px;
   }
   .rich :global(.tiptap) ul[data-type='taskList'] > li > label {
     min-width: 44px;

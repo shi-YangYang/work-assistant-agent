@@ -41,5 +41,5 @@ async def prepared(setup, *, day=None):
         db.add(work); await db.flush()
         revision = WorkRevision(company_id=actor.company_id, owner_id=actor.id, work_id=work.id, revision=1, content=work.content, source_ids=[], created_at=instant)
         db.add(revision); await db.flush()
-        report, job = await ensure_report(db, actor, 'daily', instant.astimezone(__import__('zoneinfo').ZoneInfo('Asia/Shanghai')).date())
+        report, job = await ensure_report(db, actor, 'weekly', instant.astimezone(__import__('zoneinfo').ZoneInfo('Asia/Shanghai')).date())
     return report, job, work

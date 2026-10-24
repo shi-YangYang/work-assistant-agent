@@ -65,7 +65,7 @@ def choice(values, key, fallback=''):
 
 
 def report_subject(args):
-    kind = choice({'daily': '日报', 'weekly': '周报'}, args.get('kind', args.get('report_kind', 'daily')), '报告')
+    kind = choice({'weekly': '周报'}, args.get('kind', args.get('report_kind', 'weekly')), '已取消的报告类型')
     period = args.get('period', args.get('report_date', ''))
     return kind + (' · ' + period if isinstance(period, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', period) else '')
 

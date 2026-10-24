@@ -23,7 +23,6 @@ export function reportRulesPath() {
 
 export function saveReportRules(body: {
   timezone: string
-  daily: Schedule
   weekly: Schedule
   expectedRevision: number
 }) {

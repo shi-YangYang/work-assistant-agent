@@ -79,7 +79,7 @@ async def test_team_period_metrics_and_drilldowns_use_history_and_same_people(se
                 item.content=content('后来已完成','done'); item.title='后来已完成'; item.revision=2;item.updated_at=stamp+timedelta(days=3)
                 db.add(WorkRevision(company_id=item.company_id,owner_id=item.owner_id,work_id=item.id,revision=2,content=item.content,source_ids=[],created_at=item.updated_at))
         await work(db,users['employee'],content('完成但旧阻碍仍有文字','done','旧描述'),stamp)
-        report=Report(company_id=users['employee'].company_id,owner_id=users['employee'].id,kind='daily',period='2026-02-01',period_end='2026-02-01',timezone='Asia/Shanghai',content={},revision=3,published_revision=3)
+        report=Report(company_id=users['employee'].company_id,owner_id=users['employee'].id,kind='weekly',period='2026-02-01',period_end='2026-02-01',timezone='Asia/Shanghai',content={},revision=3,published_revision=3)
         db.add(report);await db.flush()
         for revision,days in ((1,0),(2,0),(3,3)):
             db.add(ReportRevision(company_id=report.company_id,owner_id=report.owner_id,report_id=report.id,revision=revision,content={'completed':str(revision)},source_ids=[],created_at=stamp+timedelta(days=days,minutes=revision)))

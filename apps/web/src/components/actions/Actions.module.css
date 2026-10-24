@@ -33,16 +33,23 @@
   right: 0;
   top: -7px;
 }
-.popover button {
+.popover :is(button, a[role='menuitem']) {
   display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
+  min-height: 38px;
   justify-content: flex-start;
   padding: 10px 12px;
   border: 0;
+  border-radius: 10px;
   background: transparent;
+  font-weight: 500;
+  line-height: 1.5;
+  text-decoration: none;
   white-space: normal;
 }
-.popover button:hover:where(:not(:disabled)) {
+.popover :is(button, a[role='menuitem']):hover:where(:not(:disabled)) {
   background: var(--subtle);
 }
 @media (max-width: 760px) {
@@ -59,7 +66,7 @@
   bottom: -7px;
 }
 @media (max-width: 760px) {
-  .popover button {
+  .popover :is(button, a[role='menuitem']) {
     min-height: 44px;
     min-width: 44px;
   }

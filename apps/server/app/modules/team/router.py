@@ -42,9 +42,11 @@ async def team_work(identifier: str, q: str = Query('', max_length=200), status:
 
 
 @router.get('/api/v1/team/members/{identifier}/reports')
-async def team_reports(identifier: str, kind: str = 'daily', cursor: str | None = None, actor=READ_ADMIN, db=DB):
+async def team_reports(identifier: str, kind: str = 'weekly', cursor: str | None = None, actor=READ_ADMIN, db=DB):
     await visible_member(db, actor, identifier, employee_only=True)
-    query = select(Report).where(Report.deleted.is_(False), Report.owner_id == identifier, Report.kind == kind, Report.published_revision > 0)
+    from app.modules.reports.periods import require_weekly
+    require_weekly(kind)
+    query = select(Report).where(Report.deleted.is_(False), Report.kind == 'weekly', Report.owner_id == identifier, Report.kind == kind, Report.published_revision > 0)
     if cursor:
         query = query.where(Report.period < cursor)
     rows = (await db.scalars(query.order_by(Report.period.desc()).limit(51))).all()

@@ -44,7 +44,7 @@ async def interrupted_node(setup, monkeypatch, action):
                                               operation=lambda: read_work(context, target_id))
     elif action in ('edit_report', 'submit_report', 'delete_report'):
         async with context.sessions.begin() as db:
-            report = Report(company_id=context.company_id, owner_id=context.owner_id, kind='daily',
+            report = Report(company_id=context.company_id, owner_id=context.owner_id, kind='weekly',
                             period=now().date().isoformat(), period_end=now().date().isoformat(),
                             timezone='Asia/Shanghai', content={'ongoing': '正在整理方案'})
             db.add(report)

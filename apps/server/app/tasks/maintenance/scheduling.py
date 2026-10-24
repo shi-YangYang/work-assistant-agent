@@ -14,18 +14,18 @@ async def schedule_company(sessions, company_id, instant, batch):
     async with sessions.begin() as db:
         await business_company_lock(db, company_id)
         company = await db.get(Company, company_id)
-        schedules = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company_id).order_by(ReportSchedule.kind, ReportSchedule.effective_period, ReportSchedule.revision).with_for_update())).all()
+        schedules = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company_id, ReportSchedule.kind == 'weekly').order_by(ReportSchedule.kind, ReportSchedule.effective_period, ReportSchedule.revision).with_for_update())).all()
         if not schedules:
             await save_schedule(db, company, company.rules_effective_at)
             await db.flush()
-            schedules = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company_id).order_by(ReportSchedule.kind, ReportSchedule.revision))).all()
+            schedules = (await db.scalars(select(ReportSchedule).where(ReportSchedule.company_id == company_id, ReportSchedule.kind == 'weekly').order_by(ReportSchedule.kind, ReportSchedule.revision))).all()
         members = (await db.scalars(select(Member).where(Member.company_id == company_id, Member.active.is_(True), Member.role == 'employee', ~exists(select(ReportEligibility.id).where(ReportEligibility.owner_id == Member.id))).limit(batch))).all()
         for member in members:
             await eligibility_changed(db, member, member.created_at)
         await db.flush()
         # Reserve a bounded pass for today's periods, regardless of history cursor.
         remaining = batch
-        for kind in ('daily', 'weekly'):
+        for kind in ('weekly',):
             applicable = []
             for schedule in schedules:
                 current = period(kind, instant.astimezone(ZoneInfo(schedule.timezone)).date())[0]
@@ -60,11 +60,11 @@ async def schedule_company(sessions, company_id, instant, batch):
         near = o.deadline_at - func.make_interval(0, 0, 0, 0, 0, o.before_minutes)
         notification_due = and_(o.reminders.is_(True), or_(and_(o.deadline_at <= instant, or_(n.id.is_(None), n.stage != 'overdue')), and_(near <= instant, o.deadline_at > instant, or_(n.id.is_(None), n.stage == 'ready'))))
         eligible = or_(and_(o.generation_checked.is_(False), o.generate_at <= instant), notification_due, Member.active.is_(False), Member.role != 'employee')
-        rows = (await db.scalars(select(o).join(Member, Member.id == o.owner_id).outerjoin(n, n.obligation_id == o.id).where(o.company_id == company_id, o.state == 'pending', eligible).order_by(o.period.desc(), o.id).limit(batch).with_for_update(of=o, skip_locked=True))).all()
+        rows = (await db.scalars(select(o).join(Member, Member.id == o.owner_id).outerjoin(n, n.obligation_id == o.id).where(o.company_id == company_id, o.kind == 'weekly', o.state == 'pending', eligible).order_by(o.period.desc(), o.id).limit(batch).with_for_update(of=o, skip_locked=True))).all()
         for row in rows:
             member = await db.scalar(select(Member).where(Member.id == row.owner_id).with_for_update())
             if not member.active or member.role != 'employee':
-                row.state = 'cancelled'
+                row.state, row.cancel_reason = 'cancelled', 'eligibility_revoked'
                 await db.execute(delete(n).where(n.obligation_id == row.id))
                 continue
             if not row.generation_checked and row.generate_at <= instant:

@@ -38,7 +38,7 @@ const work: TeamWorkRow = {
 const report: TeamReportRow = {
   id: 'report',
   member,
-  kind: 'daily',
+  kind: 'weekly',
   period: '2026-10-13',
   periodEnd: '2026-10-13',
   state: 'submitted',
@@ -96,14 +96,14 @@ it('skips the loading notice when the first tab request finishes quickly without
   await act(async () => mount())
   expect(screen.getByRole('heading', { name: work.work.title })).toBeTruthy()
 
-  switchTab('日报周报')
-  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe('今天')
+  switchTab('周报')
+  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe('本周')
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
   await act(async () => vi.advanceTimersByTime(100))
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
   await act(async () => reports.resolve(page(report)))
   expect(screen.getByText(report.summary)).toBeTruthy()
-  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=today')
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=this_week')
   await act(async () => vi.advanceTimersByTime(300))
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
 })
@@ -115,7 +115,7 @@ it('shows a loading notice for a slow first request and removes it immediately o
     path.startsWith('/team/workspace/reports?') ? reports.promise : page(work),
   )
   await act(async () => mount())
-  switchTab('日报周报')
+  switchTab('周报')
   await act(async () => vi.advanceTimersByTime(199))
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
   await act(async () => vi.advanceTimersByTime(1))
@@ -142,7 +142,7 @@ it('returns to either loaded tab without blanking rows, counts or employee optio
   mount()
   await screen.findByRole('heading', { name: work.work.title })
   expect(reportReads).toBe(0)
-  switchTab('日报周报')
+  switchTab('周报')
   await screen.findByText(report.summary)
 
   switchTab('工作进展')
@@ -161,10 +161,12 @@ it('returns to either loaded tab without blanking rows, counts or employee optio
   )
   expect(screen.getByRole('heading', { name: '已整理客户反馈' })).toBeTruthy()
 
-  switchTab('日报周报')
+  switchTab('周报')
   expect(screen.getByText(report.summary)).toBeTruthy()
   expect(screen.queryByText('正在读取团队记录…')).toBeNull()
-  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe('今天 · 10月13日')
+  expect(screen.getByRole('button', { name: '选择汇报周期' }).textContent).toBe(
+    '本周 · 10月12日–18日',
+  )
   await waitFor(() => expect(reportReads).toBe(2))
 })
 
@@ -178,7 +180,7 @@ it('does not apply a late response from an inactive tab or reuse rows under a di
   })
   mount()
   await screen.findByRole('heading', { name: work.work.title })
-  switchTab('日报周报')
+  switchTab('周报')
   await waitFor(() => expect(api).toHaveBeenCalledTimes(2))
   const signal = vi.mocked(api).mock.calls[1][1]?.signal
   switchTab('工作进展')
@@ -197,20 +199,21 @@ it('does not apply a late response from an inactive tab or reuse rows under a di
   expect(screen.getByText('暂无符合条件的工作')).toBeTruthy()
 })
 
-it('queries the selected day or full week and resets pagination without losing employee filters', async () => {
+it('queries the selected full week and resets pagination without losing employee filters', async () => {
   vi.mocked(api).mockImplementation(async () => page(report))
   mount('/team?view=reports&reportsOffset=20&member=employee&q=客户')
   await screen.findByText(report.summary)
-  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=today')
-  fireEvent.click(screen.getByRole('button', { name: '前一天' }))
+  expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=this_week')
+  fireEvent.click(screen.getByRole('button', { name: '前一周' }))
   await waitFor(() =>
-    expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('start=2026-10-12&end=2026-10-12'),
+    expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('start=2026-10-05&end=2026-10-11'),
   )
   const query = new URLSearchParams(vi.mocked(api).mock.calls.at(-1)![0].split('?')[1])
   expect(query.get('offset')).toBe('0')
   expect(query.get('member')).toBe('employee')
   expect(query.get('q')).toBe('客户')
-  fireEvent.click(within(screen.getByLabelText('报告类型')).getByRole('button', { name: '周报' }))
+  fireEvent.click(screen.getByRole('button', { name: '选择汇报周期' }))
+  fireEvent.click(screen.getByRole('button', { name: '本周' }))
   await waitFor(() => expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=this_week'))
   fireEvent.click(screen.getByRole('button', { name: '选择汇报周期' }))
   fireEvent.click(screen.getByRole('gridcell', { name: '2026-10-08，选择该周' }))
@@ -218,7 +221,8 @@ it('queries the selected day or full week and resets pagination without losing e
     expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('start=2026-10-05&end=2026-10-11'),
   )
   expect(screen.queryByRole('dialog')).toBeNull()
-  fireEvent.click(within(screen.getByLabelText('报告类型')).getByRole('button', { name: '日报' }))
-  await waitFor(() => expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=today'))
+  fireEvent.click(screen.getByRole('button', { name: '选择汇报周期' }))
+  fireEvent.click(screen.getByRole('button', { name: '本周' }))
+  await waitFor(() => expect(vi.mocked(api).mock.calls.at(-1)?.[0]).toContain('period=this_week'))
   expect(vi.mocked(api).mock.calls.at(-1)?.[0]).not.toMatch(/(?:start|end)=/)
 })

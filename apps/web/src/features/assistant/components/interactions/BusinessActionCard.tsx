@@ -113,6 +113,17 @@ export function BusinessActionCard({
     saved && saved.revision > action.revision && !['unavailable', 'conflict'].includes(action.state)
       ? saved
       : action
+  const legacyDaily =
+    current.action.endsWith('_report') &&
+    (/日报/.test(current.title ?? current.preview?.title ?? '') ||
+      current.preview?.changes?.kind === 'daily')
+  if (legacyDaily)
+    return (
+      <div className={styles['business-action-preview']}>
+        <strong>日报操作已失效</strong>
+        <p>正式日报已取消。</p>
+      </div>
+    )
   const Icon =
     current.state === 'succeeded'
       ? current.objectType === 'work'

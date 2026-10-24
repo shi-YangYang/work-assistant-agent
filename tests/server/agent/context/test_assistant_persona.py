@@ -265,7 +265,7 @@ async def test_persona_stays_out_of_authorization_and_report_generation(setup):
     from _support.agent.business_actions import Judge, create as create_work, finish
     settings, sessions, users, clients = setup
     await create_work(clients['employee'], title='正式工作', summary='方案已整理', status='done')
-    sent = (await clients['employee'].post('/api/v1/messages', json={'newConversation': True, 'personaId': 'dabao', 'text': '生成今天的正式日报'}, headers=keyed())).json()
+    sent = (await clients['employee'].post('/api/v1/messages', json={'newConversation': True, 'personaId': 'dabao', 'text': '生成今天的正式周报'}, headers=keyed())).json()
     job = await claim(sessions, users['employee'].id)
     class CaptureJudge(Judge):
         async def ainvoke(self, messages):
@@ -285,7 +285,7 @@ async def test_persona_stays_out_of_authorization_and_report_generation(setup):
             data = json.loads(messages[-1].content)
             if data.get('task') == 'report_fact_review':
                 return AIMessage(content='{"valid":true}')
-            assert data['userRequest'] == '生成今天的正式日报'
+            assert data['userRequest'] == '生成今天的正式周报'
             assert '幽默' not in data['userRequest'] and 'personaId' not in data
             return AIMessage(content=json.dumps({'completed': '方案已整理', 'ongoing': '', 'blockers': '', 'next': ''}))
     report_job = await claim(sessions, users['employee'].id)

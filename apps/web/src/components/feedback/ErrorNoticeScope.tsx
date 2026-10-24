@@ -4,7 +4,8 @@ import { ApiError } from '@web/api/client'
 import { useConnectionMessage } from '@web/hooks/useConnectionMessage'
 import { createNoticeStore, ErrorNoticeContext } from '@web/lib/error-notices'
 import { ErrorDiagnostics, SupportLink } from '@web/lib/support-link'
-import { ErrorNoticeView } from './ErrorNotice'
+import { ErrorNoticeDisplay } from './ErrorNotice'
+import { NoticeToast } from './NoticeToast'
 import styles from './ErrorNoticeScope.module.css'
 
 // Scopes share one store: a dialog takes precedence over the assistant and page outlets.
@@ -72,7 +73,11 @@ function NoticeOutlet({
   if (!primary && !connectionMessage) return null
   const message = (value: unknown) => (value instanceof Error ? value.message : value)
   const matching = primary
-    ? notices.filter((notice) => message(notice.children) === message(primary.children))
+    ? notices.filter(
+        (notice) =>
+          message(notice.children) === message(primary.children) &&
+          !!notice.onDismiss === !!primary.onDismiss,
+      )
     : []
   const retryable = matching.filter(
     (notice) =>
@@ -81,6 +86,9 @@ function NoticeOutlet({
   const retries = [...new Set(retryable.map((notice) => notice.retry!))]
   // Identical failures may belong to several independent reads; retry each read once.
   const retry = retries.length ? () => retries.forEach((run) => run()) : undefined
+  const dismiss = primary?.onDismiss
+    ? () => matching.forEach((notice) => notice.onDismiss?.())
+    : undefined
   const cooldown = retryable.reduce<Error | undefined>((latest, notice) => {
     const error = notice.children
     return error instanceof ApiError &&
@@ -88,19 +96,28 @@ function NoticeOutlet({
       ? error
       : latest
   }, undefined)
-  return (
+  const content = (
+    <ErrorDiagnostics.Provider value={primary?.diagnostics ?? diagnostics}>
+      <SupportLink.Provider value={primary?.supportLink ?? supportLink}>
+        <ErrorNoticeDisplay {...primary} retry={retry} onDismiss={dismiss}>
+          {cooldown ?? primary?.children ?? connectionMessage}
+        </ErrorNoticeDisplay>
+      </SupportLink.Provider>
+    </ErrorDiagnostics.Provider>
+  )
+  return dismiss ? (
+    content
+  ) : !className ? (
+    <NoticeToast message={cooldown ?? primary?.children ?? connectionMessage} label={label}>
+      {content}
+    </NoticeToast>
+  ) : (
     <section
       className={`${styles['error-outlet']} ${className}`}
       data-placed={className ? true : undefined}
       aria-label={label}
     >
-      <ErrorDiagnostics.Provider value={primary?.diagnostics ?? diagnostics}>
-        <SupportLink.Provider value={primary?.supportLink ?? supportLink}>
-          <ErrorNoticeView {...primary} retry={retry}>
-            {cooldown ?? primary?.children ?? connectionMessage}
-          </ErrorNoticeView>
-        </SupportLink.Provider>
-      </ErrorDiagnostics.Provider>
+      {content}
     </section>
   )
 }

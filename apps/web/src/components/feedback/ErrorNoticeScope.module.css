@@ -2,9 +2,6 @@
   flex-shrink: 0;
   min-width: 0;
 }
-.error-outlet:not([data-placed]) {
-  margin: 112px 32px 0;
-}
 .error-outlet > div {
   margin: 0;
 }
@@ -12,10 +9,4 @@
   margin: 6px 0 0;
   color: var(--muted);
   font-size: 12px;
-}
-@media (max-width: 760px) {
-  .error-outlet:not([data-placed]) {
-    margin-inline: 12px;
-    margin-top: calc(88px + env(safe-area-inset-top));
-  }
 }

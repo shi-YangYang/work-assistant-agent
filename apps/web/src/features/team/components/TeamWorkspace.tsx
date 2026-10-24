@@ -36,13 +36,13 @@ export function TeamWorkspace({
     detailReturn(location.pathname, location.state).path.split('?')[0] === '/members'
   const view = params.get('view') === 'reports' ? 'reports' : 'work'
   const scope = params.get('scope') === 'updated' ? 'updated' : 'current'
-  const kind = params.get('kind') === 'weekly' ? 'weekly' : 'daily'
+  const kind = 'weekly' as const
   const periodParams = new URLSearchParams(params)
   if (
     !periodParams.get('period') ||
     (view === 'reports' && kind === 'weekly' && periodParams.get('period') === 'today')
   ) {
-    periodParams.set('period', view === 'reports' && kind === 'daily' ? 'today' : 'this_week')
+    periodParams.set('period', 'this_week')
   }
   const status = params.get(`${view}Status`) || ''
   const offset = Math.max(0, Number(params.get(`${view}Offset`)) || 0)
@@ -111,35 +111,18 @@ export function TeamWorkspace({
           ['cancelled', '已撤销', 'cancelled'],
         ]
   const typeControl = (
-    <div
-      className={teamStyles['segmented-control']}
-      aria-label={view === 'work' ? '工作范围' : '报告类型'}
-    >
-      {(view === 'work'
-        ? [
-            ['current', '当前工作'],
-            ['updated', '期间更新'],
-          ]
-        : [
-            ['daily', '日报'],
-            ['weekly', '周报'],
-          ]
+    <div className={teamStyles['segmented-control']} aria-label="工作范围">
+      {(
+        [
+          ['current', '当前工作'],
+          ['updated', '期间更新'],
+        ] as const
       ).map(([value, label]) => (
         <button
           key={value}
-          data-active={(view === 'work' ? scope : kind) === value}
-          aria-pressed={(view === 'work' ? scope : kind) === value}
-          onClick={() => {
-            if (view === 'work') update({ scope: value })
-            else if (value !== kind) {
-              update({
-                kind: value,
-                period: value === 'daily' ? 'today' : 'this_week',
-                start: '',
-                end: '',
-              })
-            }
-          }}
+          data-active={scope === value}
+          aria-pressed={scope === value}
+          onClick={() => update({ scope: value })}
         >
           {label}
         </button>
@@ -164,6 +147,9 @@ export function TeamWorkspace({
           </button>
         }
       />
+      {view === 'reports' && params.get('kind') === 'daily' && (
+        <p role="status">正式日报已取消，现显示周报。</p>
+      )}
       <div className={`${layoutStyles['tabs']} ${teamStyles['slot-tabs']}`} aria-label="看板视图">
         <button
           data-active={view === 'work'}
@@ -179,7 +165,7 @@ export function TeamWorkspace({
           onClick={() => update({ view: 'reports' }, false)}
         >
           <ClipboardCheck size={17} />
-          日报周报
+          周报
         </button>
       </div>
       <div
@@ -213,7 +199,6 @@ export function TeamWorkspace({
             leadingControls={
               view === 'reports' && (
                 <div className={teamStyles['report-controls']}>
-                  {typeControl}
                   <ReportPeriodPicker
                     params={periodParams}
                     kind={kind}

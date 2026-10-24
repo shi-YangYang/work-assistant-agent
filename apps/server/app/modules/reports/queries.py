@@ -15,6 +15,9 @@ async def report_dtos(db, reports, actor):
         return []
     if any(report.company_id != actor.company_id or (report.owner_id != actor.id and actor.role != 'admin') for report in reports):
         problem(404, '报告不存在或无权查看')
+    from app.modules.reports.periods import require_weekly
+    for report in reports:
+        require_weekly(report.kind)
     identifiers = [report.id for report in reports]
     revisions = defaultdict(list)
     for revision in (await db.scalars(select(ReportRevision).where(ReportRevision.company_id == actor.company_id, ReportRevision.report_id.in_(identifiers)).order_by(ReportRevision.report_id, ReportRevision.revision.desc()))).all():
@@ -47,6 +50,8 @@ async def report_dto(db, report, actor):
 async def reports_query(kind, cursor, actor, db):
     if actor.role != 'employee':
         problem(403, '管理员通过团队查看员工报告')
+    from app.modules.reports.periods import require_weekly
+    require_weekly(kind)
     query = select(Report).where(Report.deleted.is_(False), Report.owner_id == actor.id, Report.kind == kind)
     if cursor:
         query = query.where(Report.period < cursor)

@@ -111,10 +111,10 @@ async def test_obligation_directory_opens_only_actual_report_links_without_inven
     _, sessions, users, _ = setup
     async with sessions.begin() as db:
         linked = await report(db, users['employee'], '2026-09-01', published=False)
-        cancelled = await report(db, users['employee'], '2026-09-02', published=False)
+        cancelled = await report(db, users['employee'], '2026-08-24', published=False)
         for item, status in [(linked, 'pending'), (cancelled, 'cancelled')]:
             db.add(ReportObligation(company_id=item.company_id, owner_id=item.owner_id,
-                kind='daily', period=item.period, period_end=item.period_end, timezone=item.timezone,
+                kind='weekly', period=item.period, period_end=item.period_end, timezone=item.timezone,
                 rule_revision=1, generate_at=now(), deadline_at=now(), reminders=False,
                 before_minutes=30, state=status, report_id=item.id))
         await report(db, users['peer'], '2026-09-01')
@@ -152,7 +152,7 @@ async def test_admin_delete_then_team_pages_source_documents_and_live_version_ch
     _, sessions, users, _ = setup
     _, work_revision, original = await facts(sessions, users['employee'])
     async with sessions.begin() as db:
-        reports = [await report(db, users['employee'], (date(2026, 9, 1) + timedelta(days=index)).isoformat()) for index in range(22)]
+        reports = [await report(db, users['employee'], (date(2026, 9, 1) + timedelta(weeks=index)).isoformat()) for index in range(22)]
         revision = await db.scalar(select(ReportRevision).where(ReportRevision.report_id == reports[1].id))
         revision.source_ids = [work_revision.id]
         await report(db, users['outsider'], '2026-09-01')

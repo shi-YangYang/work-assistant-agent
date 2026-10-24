@@ -17,7 +17,7 @@ class ReportEdit(Revision):
 
 
 class GenerateReport(Input):
-    kind: Literal['daily', 'weekly']
+    kind: Literal['weekly'] = 'weekly'
     date: date
 
 
@@ -47,7 +47,6 @@ class Schedule(Input):
 
 class Rules(Input):
     timezone: str = Field(max_length=80)
-    daily: Schedule
     weekly: Schedule
     expectedRevision: int = Field(ge=1)
 
