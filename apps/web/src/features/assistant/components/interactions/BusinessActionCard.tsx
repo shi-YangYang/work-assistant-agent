@@ -7,7 +7,6 @@ import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
 import type { BusinessAction, Progress, ReportContent } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
-import { Status } from '@web/components/feedback/Status'
 import { resolveBusinessAction } from '@web/features/assistant/api/requests'
 import { detailState } from '@web/utils/navigation'
 import { AlertCircle, ArrowUpRight, ClipboardList, Clock3, FileText } from 'lucide-react'
@@ -41,10 +40,7 @@ export function WorkActionDetails({
   return (
     <div className={styles['business-action-preview']}>
       {action.changedFields?.some((key) => key === 'body' || key === 'bodyEdits') && (
-        <section>
-          <strong>工作内容已保存</strong>
-          <p className={utilitiesStyles.preserve}>{action.details?.bodyText?.slice(0, 500)}</p>
-        </section>
+        <p className={utilitiesStyles.preserve}>{action.details?.bodyText?.slice(0, 500)}</p>
       )}
       {action.updateId && (
         <section>
@@ -137,6 +133,7 @@ export function BusinessActionCard({
   const openLabel = `查看当前${current.objectType === 'work' ? '工作' : '报告'}`
   const objectPath = `/${current.objectType === 'work' ? 'work' : 'reports'}/${current.objectId}`
   const linkedHeading = current.state === 'succeeded' && !!current.objectId && !current.canConfirm
+  const completedWork = current.state === 'succeeded' && current.objectType === 'work'
   const respond = async (choice: 'confirm' | 'cancel') => {
     if (submitting.current) return
     submitting.current = true
@@ -166,25 +163,31 @@ export function BusinessActionCard({
         <Icon size={24} />
       </span>
       <div className={cardStyles.content}>
-        <h4
-          className={cardStyles.title}
-          title={current.title ?? current.preview?.title ?? current.label}
-        >
-          {current.title ?? current.preview?.title ?? current.label}
-        </h4>
-        <div className={`${cardStyles.meta} ${styles['business-action-state']}`}>
-          {current.state !== 'succeeded' && (current.title || current.preview?.title) && (
-            <span>{current.label}</span>
+        <div className={styles['business-action-title']}>
+          <h4
+            className={cardStyles.title}
+            title={current.title ?? current.preview?.title ?? current.label}
+          >
+            {current.title ?? current.preview?.title ?? current.label}
+          </h4>
+          {completedWork && (
+            <span className={styles['business-action-tag']}>{actionStateLabel(current)}</span>
           )}
-          <span className={styles['business-action-outcome']}>
-            {busy
-              ? '正在处理'
-              : current.state === 'succeeded' && !current.unchanged && current.materialIds?.length
-                ? `已保存 ${current.materialIds.length} 个材料`
-                : actionStateLabel(current)}
-          </span>
-          {current.details?.status && <Status value={current.details.status} />}
         </div>
+        {(!completedWork || (!current.unchanged && !!current.materialIds?.length)) && (
+          <div className={`${cardStyles.meta} ${styles['business-action-state']}`}>
+            {current.state !== 'succeeded' && (current.title || current.preview?.title) && (
+              <span>{current.label}</span>
+            )}
+            <span className={styles['business-action-outcome']}>
+              {busy
+                ? '正在处理'
+                : current.state === 'succeeded' && !current.unchanged && current.materialIds?.length
+                  ? `已保存 ${current.materialIds.length} 个材料`
+                  : actionStateLabel(current)}
+            </span>
+          </div>
+        )}
       </div>
       {linkedHeading && (
         <ArrowUpRight className={styles['business-action-arrow']} size={16} aria-hidden="true" />
@@ -193,7 +196,7 @@ export function BusinessActionCard({
   )
   return (
     <section
-      className={`${cardStyles.card} ${styles['business-action-card']}`}
+      className={`${cardStyles.card} ${styles['business-action-card']} ${linkedHeading && current.objectType === 'work' ? styles['work-preview-card'] : ''}`}
       data-status={current.state}
       aria-label={`${current.label} · ${actionStateLabel(current)}`}
     >
