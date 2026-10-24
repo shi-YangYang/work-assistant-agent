@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { useGeneratedFile, useGeneratedImage } from '../../hooks/deliverables/useGeneratedFile'
 import { fileSize } from '../../utils/files'
 import styles from './GeneratedFiles.module.css'
-import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
+import { ResourceCard, ResourceCardGroup } from '@web/components/content/ResourceCard'
 import { ImageGenerationPlaceholder, ImageGenerationCaption } from './ImageGenerationPlaceholder'
 
 export function GeneratedFiles({
@@ -29,19 +29,21 @@ export function GeneratedFiles({
   const visible = includeImages ? files : files.filter((file) => file.mimeType !== 'image/png')
   if (!visible.length) return null
   const grouped = visible.length > 1 && visible.every((file) => file.mimeType !== 'image/png')
-  return (
-    <ul
-      className={grouped ? `${styles.files} ${cardStyles.card} ${cardStyles.group}` : styles.files}
-      aria-label={`生成文件 · 版本 ${revision}`}
-    >
-      {visible.map((file) => (
-        <GeneratedFile
-          key={`${deliverableId}:${revision}:${file.id}`}
-          deliverableId={deliverableId}
-          revision={revision}
-          file={file}
-        />
-      ))}
+  const entries = visible.map((file) => (
+    <GeneratedFile
+      key={`${deliverableId}:${revision}:${file.id}`}
+      deliverableId={deliverableId}
+      revision={revision}
+      file={file}
+    />
+  ))
+  return grouped ? (
+    <ResourceCardGroup as="ul" className={styles.files} aria-label={`生成文件 · 版本 ${revision}`}>
+      {entries}
+    </ResourceCardGroup>
+  ) : (
+    <ul className={styles.files} aria-label={`生成文件 · 版本 ${revision}`}>
+      {entries}
     </ul>
   )
 }
@@ -147,54 +149,41 @@ function GeneratedFile({
   const Icon =
     format === 'PPTX' ? Presentation : ['XLSX', 'CSV'].includes(format) ? Sheet : FileText
   return (
-    <li
-      className={`${cardStyles.card} ${cardStyles.fileCard} ${cardStyles.hoverActions} ${styles.file}`}
-    >
-      <button
-        className={cardStyles.fileMain}
-        type="button"
-        onClick={() => void download()}
-        disabled={busy}
-        aria-label={`下载文件${file.name}`}
-      >
-        <span className={cardStyles.icon} aria-hidden="true">
-          <Icon size={24} />
-        </span>
-        <span className={cardStyles.content}>
-          <strong className={cardStyles.title} title={file.name}>
-            {file.name}
-          </strong>
-          <span className={`${cardStyles.meta} ${cardStyles.fileSubtitle}`} aria-hidden="true">
-            <span className={cardStyles.fileInfo}>
-              {format} · {fileSize(file.size)}
-              {file.width && file.height ? ` · ${file.width} × ${file.height}` : ''} · 版本{' '}
-              {revision}
-            </span>
-            <span className={cardStyles.fileHint}>{busy ? '正在下载' : '下载文件'}</span>
-          </span>
-        </span>
-      </button>
-      <button
-        className={`${cardStyles.fileDownload} ${cardStyles.hoverAction}`}
-        type="button"
-        onClick={() => void download()}
-        disabled={busy}
-        aria-busy={busy}
-        aria-label={`${busy ? '正在下载' : '下载'}${file.name}`}
-        title={busy ? '正在下载' : '下载文件'}
-      >
-        {busy ? (
+    <ResourceCard
+      as="li"
+      title={file.name}
+      icon={<Icon size={24} />}
+      subtitle={
+        <>
+          {format} · {fileSize(file.size)}
+          {file.width && file.height ? ` · ${file.width} × ${file.height}` : ''} · 版本 {revision}
+        </>
+      }
+      hoverSubtitle={busy ? '正在下载' : '下载文件'}
+      primaryAction={{
+        kind: 'button',
+        onClick: () => void download(),
+        disabled: busy,
+        busy,
+        label: `下载文件${file.name}`,
+      }}
+      trailingAction={{
+        action: {
+          kind: 'button',
+          onClick: () => void download(),
+          disabled: busy,
+          busy,
+          label: `${busy ? '正在下载' : '下载'}${file.name}`,
+        },
+        icon: busy ? (
           <LoaderCircle size={20} className={styles.spinning} aria-hidden="true" />
         ) : (
           <Download size={20} aria-hidden="true" />
-        )}
-      </button>
-      {error && (
-        <div className={styles['file-error']}>
-          <ErrorNotice retry={() => void download()}>{error}</ErrorNotice>
-        </div>
-      )}
-    </li>
+        ),
+        reveal: 'hover',
+      }}
+      footer={error && <ErrorNotice retry={() => void download()}>{error}</ErrorNotice>}
+    />
   )
 }
 

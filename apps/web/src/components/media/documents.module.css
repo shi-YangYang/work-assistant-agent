@@ -10,7 +10,6 @@
   display: grid;
   justify-items: start;
   gap: 4px;
-  padding: 0 16px 16px 74px;
 }
 .document-warning {
   color: var(--muted);

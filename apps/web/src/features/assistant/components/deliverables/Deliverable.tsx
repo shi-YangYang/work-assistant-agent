@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { DeliverablePanel } from './DeliverablePanel'
 import { GeneratedFiles, GeneratedImages } from './GeneratedFiles'
 import styles from './Deliverable.module.css'
-import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
+import { ResourceCard } from '@web/components/content/ResourceCard'
 
 export function MessageDeliverables({
   items,
@@ -55,22 +55,14 @@ function ImageTaskEntry({ items }: { items: DeliverableSummary[] }) {
     : `生成图片（${items.reduce((count, item) => count + (item.files?.length ?? 0), 0)}张）`
   return (
     <>
-      <button
-        className={`${cardStyles.card} ${cardStyles.row} ${styles.entry}`}
-        aria-label={`查看${title}`}
-        onClick={() => setOpen(true)}
-      >
-        <span className={cardStyles.icon} aria-hidden="true">
-          <FileText size={24} />
-        </span>
-        <span className={cardStyles.content}>
-          <span className={cardStyles.title} title={title}>
-            {title}
-          </span>
-          <span className={cardStyles.meta}>查看详情</span>
-        </span>
-        <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
-      </button>
+      <ResourceCard
+        className={styles.entry}
+        title={title}
+        icon={<FileText size={24} />}
+        subtitle="查看详情"
+        primaryAction={{ kind: 'button', onClick: () => setOpen(true), label: `查看${title}` }}
+        trailing={<ArrowUpRight size={16} />}
+      />
       {open && (
         <Modal title={title} variant="drawer" onClose={() => setOpen(false)}>
           <GeneratedImages items={items} />
@@ -111,22 +103,18 @@ export function DeliverableEntry({
         />
       )}
       {showEntry && (
-        <button
-          className={`${cardStyles.card} ${cardStyles.row} ${styles.entry}`}
-          aria-label={`查看${item.title}`}
-          onClick={() => setOpen(true)}
-        >
-          <span className={cardStyles.icon} aria-hidden="true">
-            <FileText size={24} />
-          </span>
-          <span className={cardStyles.content}>
-            <span className={cardStyles.title} title={item.title}>
-              {item.title}
-            </span>
-            <span className={cardStyles.meta}>查看详情</span>
-          </span>
-          <ArrowUpRight className={styles.entryArrow} size={16} aria-hidden="true" />
-        </button>
+        <ResourceCard
+          className={styles.entry}
+          title={item.title}
+          icon={<FileText size={24} />}
+          subtitle="查看详情"
+          primaryAction={{
+            kind: 'button',
+            onClick: () => setOpen(true),
+            label: `查看${item.title}`,
+          }}
+          trailing={<ArrowUpRight size={16} />}
+        />
       )}
       {showEntry && open && (
         <DeliverablePanel

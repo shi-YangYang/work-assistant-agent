@@ -1,37 +1,29 @@
-.card {
+.card,
+.group {
   box-sizing: border-box;
   width: 440px;
   max-width: 100%;
   min-width: 0;
-  padding: 16px;
+  padding: 0;
   color: var(--text);
   background: var(--surface);
   border: 1px solid var(--control);
   border-radius: 16px;
 }
-.card.group {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  padding: 0;
-  list-style: none;
+.card[data-interactive='true']:hover,
+.card[data-interactive='true']:focus-within {
+  background: var(--hover);
 }
-.group > .card {
-  width: 100%;
-  max-width: 100%;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-.group > .card + .card {
-  border-top: 1px solid var(--line);
-}
-.row {
+.main {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
   gap: 14px;
+  height: calc(var(--resource-card-height) - 2px);
   min-width: 0;
+  padding: 16px;
+  border-radius: inherit;
 }
 .icon {
   display: grid;
@@ -41,17 +33,64 @@
   background: var(--subtle);
   border-radius: 10px;
 }
-.icon svg {
+.icon svg,
+.trailing svg {
   flex-shrink: 0;
 }
 .content {
   display: flex;
   flex: 1;
   flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+.heading,
+.primary {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex-shrink: 0;
   gap: 4px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  white-space: normal;
+}
+.primary:hover {
+  background: transparent;
+  text-decoration: none;
+}
+.primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  cursor: pointer;
+}
+.primary:disabled::after {
+  pointer-events: none;
+}
+.main:has(.primary:focus-visible) {
+  outline: 2px solid var(--text);
+  outline-offset: -2px;
+}
+.primary:focus-visible {
+  outline: none;
+}
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
 .title {
+  min-width: 0;
   margin: 0;
   color: var(--text);
   font-size: 15px;
@@ -61,63 +100,49 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tag {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  color: var(--muted);
+  background: var(--subtle);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 18px;
+  white-space: nowrap;
+}
 .meta {
-  margin: 0;
   color: var(--muted);
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
 }
-.card.fileCard {
-  position: relative;
-  padding: 0;
-}
-.group > .fileCard:first-child {
-  border-top-left-radius: 15px;
-  border-top-right-radius: 15px;
-}
-.group > .fileCard:last-child {
-  border-bottom-left-radius: 15px;
-  border-bottom-right-radius: 15px;
-}
-.fileMain {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 14px;
-  width: 100%;
-  min-width: 0;
-  min-height: 76px;
-  padding: 16px 64px 16px 16px;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: inherit;
-  text-align: left;
-  white-space: normal;
-}
-.fileMain:hover {
-  background: transparent;
-  text-decoration: none;
-}
-.fileSubtitle {
+.switchSubtitle {
   display: grid;
   min-width: 0;
 }
-.fileSubtitle > span {
+.switchSubtitle > span {
   grid-area: 1 / 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.fileInfo {
+.idleSubtitle {
   visibility: hidden;
 }
-.fileDownload {
-  position: absolute;
-  top: 16px;
-  right: 12px;
-  display: inline-flex;
+.trailing {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.accessory {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 44px;
+  margin-right: -4px;
+}
+.action {
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 44px;
@@ -129,30 +154,92 @@
   border: 0;
   border-radius: 10px;
 }
-.fileDownload:hover {
+.action:hover {
   background: var(--hover);
   text-decoration: none;
 }
-.fileMain:focus-visible,
-.fileDownload:focus-visible {
-  outline-offset: -2px;
+.body {
+  min-height: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
-.fileCard:focus-within {
-  background: var(--subtle);
+.body p {
+  margin: 8px 0;
 }
-
+.body > :first-child {
+  margin-top: 0;
+}
+.body > :last-child {
+  margin-bottom: 0;
+}
+.card[data-variant='compact'] .main,
+.card[data-variant='preview'] .main {
+  padding-block: 12px;
+}
+.card[data-variant='compact'] .content,
+.card[data-variant='preview'] .content {
+  gap: 4px;
+}
+.card[data-variant='preview'] .content {
+  height: 100%;
+}
+.card[data-variant='preview'] .body {
+  flex: 1;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 12px), transparent);
+}
+.card[data-variant='auto'] .main {
+  height: auto;
+  min-height: calc(var(--resource-card-height) - 2px);
+}
+.footer {
+  padding: 0 16px 16px 74px;
+  font-size: 13px;
+}
+.footer:empty {
+  display: none;
+}
+.card[data-tone='warning'] .icon,
+.card[data-tone='warning'] .meta {
+  color: var(--warning);
+}
+.group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  list-style: none;
+}
+.group > .card {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.group > .card:first-child {
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+}
+.group > .card:last-child {
+  border-bottom-left-radius: 15px;
+  border-bottom-right-radius: 15px;
+}
+.group > .card + .card {
+  border-top: 1px solid var(--line);
+}
 @media (min-width: 761px) and (hover: hover) and (pointer: fine) {
-  .fileCard:hover {
-    background: var(--subtle);
-  }
-  .hoverActions:not(:hover):not(:focus-within) .fileInfo {
+  .card:not(:hover):not(:focus-within) .idleSubtitle {
     visibility: visible;
   }
-  .hoverActions:not(:hover):not(:focus-within) .fileHint {
+  .card:not(:hover):not(:focus-within) .hoverSubtitle {
     visibility: hidden;
   }
-  .hoverActions:not(:hover):not(:focus-within) .hoverAction:not([aria-busy='true']) {
+  .card:not(:hover):not(:focus-within) .accessory[data-reveal='hover']:not([data-busy='true']) {
     opacity: 0;
     pointer-events: none;
+  }
+}
+@media (max-width: 480px) {
+  .footer {
+    padding-left: 16px;
   }
 }

@@ -1,16 +1,5 @@
 .entry {
   margin-top: 12px;
-  text-align: left;
-  white-space: normal;
-}
-.entryArrow {
-  color: var(--muted);
-}
-.entry svg {
-  flex-shrink: 0;
-}
-.entry:hover {
-  background: var(--hover);
 }
 .reader {
   min-width: 0;

@@ -25,8 +25,8 @@ const action: BusinessAction = {
   preview: {
     title: '网站上线',
     revision: 1,
-    before: { dueDate: '2026-09-28' },
-    changes: { dueDate: '2026-09-30' },
+    before: { dueDate: '2026-09-28', nextStep: '整理清单' },
+    changes: { dueDate: '2026-09-30', nextStep: '补齐负责人和截止时间' },
   },
 }
 it('renders actual change previews and action labels, replaces pending controls immediately, then resumes', async () => {
@@ -38,7 +38,11 @@ it('renders actual change previews and action labels, replaces pending controls 
       <BusinessActionCard action={action} refresh={vi.fn()} onContinuation={continued} />
     </MemoryRouter>,
   )
-  expect(screen.getByText('原内容：2026-09-28')).toBeTruthy()
+  expect(screen.queryByText(/^原内容：/)).toBeNull()
+  expect(screen.queryByText('下一步')).toBeNull()
+  expect(screen.queryByText('修改工作')).toBeNull()
+  expect(screen.queryByText('等待确认')).toBeNull()
+  expect(screen.getByText('补齐负责人和截止时间')).toBeTruthy()
   expect(screen.getByText('2026-09-30')).toBeTruthy()
   fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
   expect(screen.queryByRole('button', { name: '确认修改' })).toBeNull()
