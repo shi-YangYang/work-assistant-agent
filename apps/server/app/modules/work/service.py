@@ -41,7 +41,7 @@ async def save_work(db, actor, patch, *, identifier=None, expected=None, sources
     previous_summary = work.content.get('summary', '') if identifier else ''
     new_progress = legacy_progress and 'summary' in patch and patch['summary'].strip() and (not identifier or patch['summary'] != previous_summary)
     attributes_changed = identifier and any(content.get(field) != work.content.get(field) for field in ('title', 'status', 'dueDate', 'blocker', 'nextStep'))
-    if identifier and not force_revision and content == work.content and not links and (not sources or origin in ('assistant', 'suggestion')):
+    if identifier and not force_revision and content == work.content and not links and (not sources or origin in ('assistant', 'assistant_confirmed', 'suggestion')):
         return work
     if identifier:
         work.revision += 1

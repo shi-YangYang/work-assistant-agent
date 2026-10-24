@@ -150,3 +150,32 @@ it('keeps old daily report cards unavailable without relabeling or executing the
   expect(screen.queryByText(/周报/)).toBeNull()
   expect(resolveBusinessAction).not.toHaveBeenCalled()
 })
+
+it('shows an unchanged saved request without claiming another update or unrelated progress', () => {
+  render(
+    <MemoryRouter>
+      <BusinessActionCard
+        action={{
+          ...action,
+          state: 'succeeded',
+          canConfirm: false,
+          preview: undefined,
+          objectType: 'work',
+          objectId: 'work',
+          unchanged: true,
+          changedFields: [],
+          satisfiedFields: ['update'],
+          updateId: 'old-entry',
+          materialIds: ['retained'],
+          details: { _updateText: '另一条最新进展' },
+        }}
+        refresh={vi.fn()}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.getByRole('region', { name: '修改工作 · 内容未变化' })).toBeTruthy()
+  expect(screen.getByText('内容未变化，已保留原记录。')).toBeTruthy()
+  expect(screen.queryByText('进展已保存')).toBeNull()
+  expect(screen.queryByText('已保存 1 个材料')).toBeNull()
+  expect(screen.queryByText('另一条最新进展')).toBeNull()
+})

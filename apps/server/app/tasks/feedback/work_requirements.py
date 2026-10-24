@@ -60,6 +60,8 @@ def uncovered(job, target, requirement, cards, *, include_pending=False):
         if card['state'] == 'succeeded':
             identifier, revision = card.get('objectId'), card.get('objectRevision', 0)
             fields = set(card.get('changedFields', []))
+            if card.get('unchanged'):
+                fields.update(card.get('satisfiedFields', []))
         elif include_pending and card['state'] == 'pending' and card.get('canConfirm'):
             identifier = items.get(card.get('taskItemId'), {}).get('targetId')
             revision = card['preview']['revision']
@@ -157,4 +159,5 @@ async def settled_receipt(db, actor, row):
             WorkMaterial.owner_id == actor.id, WorkMaterial.company_id == actor.company_id))).all()
         sources = [material.source for material in materials]
     return {**card, 'objectId': work.id, 'objectRevision': row.result.get('revision'),
-            'changedFields': row.result.get('changedFields', []), 'materialSources': sources}
+            'changedFields': row.result.get('changedFields', []), 'unchanged': row.result.get('unchanged', False),
+            'satisfiedFields': row.result.get('satisfiedFields', []), 'materialSources': sources}

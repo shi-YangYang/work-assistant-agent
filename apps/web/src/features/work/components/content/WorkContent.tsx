@@ -1,5 +1,6 @@
 import type { Attachment, Work, WorkDocument } from '@paa/api-contracts'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
+import { Pencil } from 'lucide-react'
 import { ApiError } from '@web/api/client'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ConflictRecovery } from '@web/components/forms/ConflictRecovery'
@@ -25,10 +26,12 @@ export function WorkContent({
   work: incoming,
   own,
   saved,
+  renderHeader,
 }: {
   work: Work
   own: boolean
   saved: () => void
+  renderHeader?: (editAction: ReactNode) => ReactNode
 }) {
   const [editing, setEditing] = useState(false)
   const [confirmed, setConfirmed] = useState<Work | null>(null)
@@ -63,58 +66,62 @@ export function WorkContent({
       setChecking(false)
     }
   }
+  const editAction = writable && !editing && (
+    <button
+      type="button"
+      disabled={checking}
+      className={`${controls.secondary} ${styles.editButton}`}
+      onClick={() => setEditing(true)}
+    >
+      <Pencil size={15} aria-hidden="true" />
+      编辑内容
+    </button>
+  )
   return (
-    <section className={styles.section} aria-label="工作内容">
-      {editing && writable ? (
-        <ContentEditor
-          work={work}
-          close={() => setEditing(false)}
-          saved={() => {
-            setEditing(false)
-            saved()
-          }}
-        />
-      ) : work.body?.content.length || (!work.body && work.summary) ? (
-        <WorkRichText
-          body={work.body ?? documentFromText(work.summary)}
-          work={work}
-          own={own}
-          toggle={writable ? toggle : undefined}
-          disabled={checking}
-        />
-      ) : (
-        <p className={styles.hint}>写下目标、方案或清单，也可以添加图片和文件。</p>
-      )}
-      {writable && !editing && (
-        <div className={styles.actions}>
-          <button
+    <>
+      {renderHeader?.(editAction)}
+      <section className={styles.section} aria-label="工作内容">
+        {editing && writable ? (
+          <ContentEditor
+            work={work}
+            close={() => setEditing(false)}
+            saved={() => {
+              setEditing(false)
+              saved()
+            }}
+          />
+        ) : work.body?.content.length || (!work.body && work.summary) ? (
+          <WorkRichText
+            body={work.body ?? documentFromText(work.summary)}
+            work={work}
+            own={own}
+            toggle={writable ? toggle : undefined}
             disabled={checking}
+          />
+        ) : (
+          <p className={styles.hint}>写下目标、方案或清单，也可以添加图片和文件。</p>
+        )}
+        {!renderHeader && editAction && <div className={styles.actions}>{editAction}</div>}
+        {checking && (
+          <small className={styles.saving} role="status">
+            正在保存清单…
+          </small>
+        )}
+        <ErrorNotice>{checkError}</ErrorNotice>
+        {checkError instanceof ApiError && checkError.status === 409 && (
+          <button
+            type="button"
             className={controls['text-button']}
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              setCheckError('')
+              saved()
+            }}
           >
-            编辑内容
+            读取当前内容
           </button>
-        </div>
-      )}
-      {checking && (
-        <small className={styles.saving} role="status">
-          正在保存清单…
-        </small>
-      )}
-      <ErrorNotice>{checkError}</ErrorNotice>
-      {checkError instanceof ApiError && checkError.status === 409 && (
-        <button
-          type="button"
-          className={controls['text-button']}
-          onClick={() => {
-            setCheckError('')
-            saved()
-          }}
-        >
-          读取最新版本
-        </button>
-      )}
-    </section>
+        )}
+      </section>
+    </>
   )
 }
 function ContentEditor({

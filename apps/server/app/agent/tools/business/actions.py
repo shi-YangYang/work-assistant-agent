@@ -16,11 +16,11 @@ from app.tasks.context import RunContext
 from app.tasks.lease import lease
 from pydantic import ValidationError
 from sqlalchemy import select
-from typing import Literal
+from typing import Annotated, Literal
 
 
 @tool
-async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: int = 0, changes: dict | None = None, report_kind: Literal['weekly'] = 'weekly', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
+async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: Annotated[int, 'Internal concurrency token copied from the actual current read; never ask the user or guess/increment it.'] = 0, changes: dict | None = None, report_kind: Literal['weekly'] = 'weekly', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
     """Perform the user's settled business operation; execution mode and server
     authorization apply; explicit review-first always waits for approval.
 
@@ -38,7 +38,12 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
     create_work requires title. Title-only leaves other fields empty; delegated
     design includes actionable future plans, never invented achievements/deadlines.
     Create ALL supplied content in one operation. Existing edits require the
-    actual read ID/latest expected_revision. Only requested fields change;
+    actual read ID/current expected_revision. Work revision, expected_revision,
+    nested expectedRevision and workRevision are internal snapshot/concurrency
+    tokens: copy actual read values, never guess/increment or ask users for them.
+    Describe current content, progress and changes, not numbered work editions.
+    unchanged=true means no actual change and the existing record was retained.
+    Only requested fields change;
     append supplies NEW content, explicit replacement/clearing supplies full value.
     body is {schemaVersion:1,content:[Tiptap nodes]}; prefer local bodyEdits:
     - {action:'append',blocks:[...]}
@@ -70,7 +75,7 @@ async def execute_business_action(step: int, action: Literal['create_work', 'upd
 
     Reports: generate_report uses report_kind and company-local report_date
     (YYYY-MM-DD): weekly uses the Monday-through-Sunday
-    week containing that date, never the submission date. Omits changes/source_tokens. The server reads sources and copies
+    week containing that date, never the submission date. Omits changes/source_tokens. The server reads all in-period work bodies, checklist checked states, status and valid progress; no separate progress entry is required. It copies
     the original brief: enqueue and end, no preliminary work/obligation lookup,
     polling or extra edit. submit_after=true only for generate-and-submit,
     including review-before-submit; review-first/mode still control approval.

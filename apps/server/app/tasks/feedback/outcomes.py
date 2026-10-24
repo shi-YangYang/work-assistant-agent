@@ -23,8 +23,10 @@ def work_scope(changes):
         elif name in ('materialIds', 'materials'):
             scopes.add('materials')
         elif name == 'update':
+            value = value if isinstance(value, dict) else {}
             scopes.add(name + ':' + str(value.get('action', '')) + ':' + str(value.get('id', '')))
         elif name == 'removeMaterial':
+            value = value if isinstance(value, dict) else {}
             scopes.add(name + ':' + str(value.get('id', '')))
         else:
             scopes.add(name)
@@ -63,6 +65,8 @@ def record(job, action, arguments, result):
     has_reference = any(arguments.get(name) for name in reference_fields)
     scope = work_scope(arguments.get('changes') or {}) if action in ('update_work', 'edit_report', 'propose_progress', 'propose_followup') else []
     references = {name: arguments.get(name) for name in reference_fields if arguments.get(name)}
+    if arguments.get('shared_attachment_ids'):
+        references['shared_attachment_ids'] = sorted(arguments['shared_attachment_ids'])
     if arguments.get('source_tokens'):
         references['source_tokens'] = sorted(arguments['source_tokens'])
     if arguments.get('copy_index', 1) > 1:

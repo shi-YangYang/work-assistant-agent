@@ -109,8 +109,14 @@ async def execute(context, **arguments):
         await remember(http_failure(error))
         raise
     except ValueError:
-        await remember({'state': 'failed', 'category': 'invalid_arguments', 'message': '请核对必要内容、日期和字段，操作未执行。'})
-        raise
+        item_id = ''
+        if arguments.get('action') in ('create_work', 'update_work'):
+            from app.agent.actions.task_items import invalid_attempt
+            item_id = await invalid_attempt(context, arguments)
+        result = repair_failure('请核对必要内容、日期和字段后修正参数，本次未执行。',
+                                code='invalid_arguments', **({'taskItemId': item_id} if item_id else {}))
+        await remember(result)
+        return result
     else:
         missing = await remember(result)
         if result.get('objectRevision') and result.get('objectId'):
@@ -148,9 +154,6 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
     fields = WORK_FIELDS if action in ('create_work', 'update_work') else REPORT_FIELDS if action == 'edit_report' else frozenset()
     if changes.keys() - fields or submit_after and action != 'generate_report':
         return {'state': 'failed', 'message': '包含本次操作不支持的字段'}
-    if action in ('create_work', 'update_work'):
-        from app.modules.work.records.record_schemas import AgentWorkChanges
-        AgentWorkChanges.model_validate(changes)
     params = {'targetId': target_id, 'expectedRevision': expected_revision, 'changes': changes, 'kind': report_kind, 'date': report_date, 'obligationId': obligation_id, 'sourceTokens': sorted(source_tokens or []), 'submitAfter': submit_after, 'requiresStep': requires_step}
     if deliverable_id or deliverable_revision or item_id:
         if action not in ('create_work', 'update_work') or not deliverable_id or not item_id or deliverable_revision < 1:
@@ -162,6 +165,9 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         params['sharedAttachmentIds'] = sorted(shared_attachment_ids)
     if copy_index > 1:
         params['copyIndex'] = copy_index
+    if action in ('create_work', 'update_work'):
+        from app.modules.work.records.record_schemas import AgentWorkChanges
+        AgentWorkChanges.model_validate(changes)
     fingerprint = digest({'action': action, **params})
     request_params = params
     identity = {'action': action, 'target': target_id, 'changes': changes, 'kind': report_kind, 'date': report_date, 'submitAfter': submit_after}
@@ -260,20 +266,11 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             if not proposal['reportSourceFacts']['complete']:
                 return {'state': 'clarification', 'message': '报告来源不完整或访问权限已变化，本次未修改，请先核对来源。'}
     if action == 'edit_report':
-        # Permission to rewrite and factual correctness are different questions.
-        # Check the entire resulting report independently before any write.
-        from app.agent.reports import verify_report
-        try:
-            await verify_report(context, {
-                'confirmed': proposal['reportSourceFacts']['items'],
-                'workContextsForPlansOnly': proposal['reportSourceFacts']['workContextsForPlansOnly'],
-                'originalReport': proposal['targetContent'],
-                'mode': 'rewrite',
-                'userRequest': request_text(message, job),
-            }, {**proposal['targetContent'], **changes}, context.intent_model)
-        except ValueError as error:
-            return {'state': 'clarification', 'message': str(error)}
-    allowed, reason = await authorize_intent(context, proposal)
+        from app.modules.reports.generation.validation import validate_content
+        validate_content({**proposal['targetContent'], **changes}, require_nonempty=False)
+        params = {**params, 'reportSourceDigest': digest(proposal['reportSourceFacts'])}
+    binding = {}
+    allowed, reason = await authorize_intent(context, proposal, binding=binding)
     if not allowed:
         from app.agent.actions.clarification import rejected_operation
         return await rejected_operation(context, proposal, reason)
@@ -294,6 +291,11 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
         params = {**params, 'changes': changes}
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
+        from app.agent.actions.task_items import binding_error
+        stale_binding = binding_error(job, binding)
+        if stale_binding:
+            return repair_failure(stale_binding, code='task_item_changed', category='conflict',
+                                  **({'taskItemId': binding['itemId']} if binding.get('itemId') else {}))
         prior = await db.scalar(select(BusinessAction).where(BusinessAction.message_id == job.target_id, ((BusinessAction.step == step) | (BusinessAction.intent_key == intent_key) | (BusinessAction.digest == fingerprint))))
         if prior:
             if same_request(prior, action, request_params, fingerprint):
@@ -307,7 +309,7 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             version(await read_target(db, actor, action, target_id), expected_revision)
         message = await owned(db, Message, job.target_id, actor, lock=True)
         task_id = context.task_snapshot.get('taskId', message.id)
-        task_item_key = context.task_item_keys.get(digest(proposal), intent_key)
+        task_item_key = binding['itemId']
         saved = await db.scalar(select(BusinessAction).where(BusinessAction.task_id == task_id, BusinessAction.task_item_key == task_item_key, BusinessAction.owner_id == actor.id, BusinessAction.company_id == actor.company_id).with_for_update())
         if saved:
             previous = context.task_snapshot.get('previousTask', {})

@@ -144,6 +144,9 @@ export interface BusinessAction {
   objectRevision?: number
   updateId?: string
   updateRevision?: number
+  updateWorkRevision?: number
+  unchanged?: boolean
+  satisfiedFields?: string[]
   materialIds?: string[]
   title?: string
   details?: Partial<Progress & WorkRecordFields>
@@ -259,6 +262,7 @@ export interface WorkUpdateInput {
   nextStep?: string
 }
 export interface WorkWriteResult {
+  unchanged?: boolean
   work: Work
   materialIds: string[]
   update?: WorkUpdate

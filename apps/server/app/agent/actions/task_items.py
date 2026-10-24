@@ -13,9 +13,11 @@ def work_scope(proposal):
         elif field in ('materials', 'materialIds'):
             scopes.add('materials')
         elif field == 'update':
-            scopes.add('update:' + str(changes[field].get('action', '')) + ':' + str(changes[field].get('id') or ''))
+            value = changes[field] if isinstance(changes[field], dict) else {}
+            scopes.add('update:' + str(value.get('action', '')) + ':' + str(value.get('id') or ''))
         elif field == 'removeMaterial':
-            scopes.add('removeMaterial:' + str(changes[field].get('id') or ''))
+            value = changes[field] if isinstance(changes[field], dict) else {}
+            scopes.add('removeMaterial:' + str(value.get('id') or ''))
         else:
             scopes.add('properties')
     return sorted(scopes)
@@ -36,7 +38,7 @@ def reference_error(previous, item_id, proposal):
     # source that a later correction may supply.
     if proposal['action'] == 'create_work' and original.get('copyIndex', 1) != proposal.get('copyIndex', 1):
         return '事项引用对应不同副本，不能代替另一项操作。' + recovery
-    for field in ('deliverableReference', 'kind', 'date', 'obligationId', 'sourceTokens'):
+    for field in ('deliverableReference', 'kind', 'date', 'obligationId', 'sourceTokens', 'sharedAttachmentIds'):
         # A missing source may be supplied while correcting a failed create;
         # a source already bound to another entry may never be replaced.
         if original.get(field) and original[field] != proposal.get(field):
@@ -56,6 +58,11 @@ def reference_error(previous, item_id, proposal):
             return '事项回执对应不同的报告提交要求，不能代替另一项操作。' + recovery
     if proposal['action'] in ('edit_report', 'propose_progress', 'propose_followup') and original.get('changes') and set(original['changes']) != set(proposal.get('changes') or {}):
         return '事项引用对应不同的实际字段，不能代替另一项操作。' + recovery
+    for attempt in item.get('invalidAttempts', []):
+        prior = {key: value for key, value in item.items() if key != 'invalidAttempts'}
+        error = reference_error([{**prior, 'attemptedOperation': attempt}], item_id, proposal)
+        if error:
+            return error
     return ''
 
 
@@ -69,12 +76,22 @@ def recovery_candidates(job, proposal):
             and not reference_error([item], item['id'], proposal)][-16:]
 
 
-async def bind(context, proposal, *, continuing=False, item_id='', new_item=False, source=None):
+STALE_BINDING = '事项尝试已变化，本次授权未核对新增内容，本次未执行；请根据完整事项重新核对后重试。'
+
+
+def binding_error(job, binding):
+    """Check a call-local authorization proof while holding the job lease."""
+    item = next((item for item in job.result.get('taskItems', []) if item['id'] == binding.get('itemId')), None)
+    return '' if item and digest(item) == binding.get('snapshot') else STALE_BINDING
+
+
+async def bind(context, proposal, *, continuing=False, item_id='', new_item=False, source=None, snapshots=None, binding=None):
     from app.tasks.lease import lease
     async with context.sessions.begin() as db:
         job, actor = await lease(db, context)
         current = [dict(item) for item in job.result.get('taskItems', [])]
         previous = [dict(item) for item in job.result.get('taskSnapshot', {}).get('previousTask', {}).get('items', [])] if continuing else []
+        observed = {item['id']: digest(item) for item in [*previous, *current]}
         missing = [item for item in [*previous, *current]
                    if item['action'] == 'update_work' and ('workScope' not in item or item.get('receiptId') and not item.get('attemptedOperation', {}).get('changes'))
                    or item['action'] == 'generate_report' and item.get('receiptId') and 'submitAfter' not in item.get('attemptedOperation', {})]
@@ -101,7 +118,7 @@ async def bind(context, proposal, *, continuing=False, item_id='', new_item=Fals
                     elif receipt.state == 'succeeded' and receipt.result.get('objectId') == item.get('targetId'):
                         # Successful receipts erase params but retain changed
                         # field names. Do not guess missing subrecord targets.
-                        fields = receipt.result.get('changedFields', [])
+                        fields = receipt.result.get('satisfiedFields', []) if receipt.result.get('unchanged') else receipt.result.get('changedFields', [])
                         changes = dict.fromkeys(fields)
                         if not {'update', 'removeMaterial'} & set(fields):
                             item['workScope'] = work_scope({'changes': changes})
@@ -132,6 +149,12 @@ async def bind(context, proposal, *, continuing=False, item_id='', new_item=Fals
             elif matches:
                 return '继续处理时请提供准确 task_item_id，区分已经完成和仍待处理的事项。'
         if item:
+            # Compare the actual model input, not a mutable context-wide flag.
+            # A prior bind by this call may have updated attemptedOperation.
+            expected = (binding['snapshot'] if binding and binding.get('itemId') == item['id']
+                        else snapshots.get(item['id']) if snapshots is not None else None)
+            if snapshots is not None and observed[item['id']] != expected:
+                return STALE_BINDING
             error = reference_error([item], item['id'], proposal)
             if error:
                 return error
@@ -140,10 +163,69 @@ async def bind(context, proposal, *, continuing=False, item_id='', new_item=Fals
                     'label': str(proposal.get('target') or proposal.get('changes', {}).get('title') or proposal['action'])[:200], 'state': 'proposed'}
             if proposal['action'] == 'update_work':
                 item['workScope'] = work_scope(proposal)
+        if (snapshots is not None and proposal['action'] == 'create_work' and not item.get('receiptId')
+                and item.get('attemptedOperation') and not item.get('invalidAttempts')):
+            # A second invalid call may arrive after this bind but before the
+            # receipt. Keep the first failed proposal in that later chain too.
+            item = {**item, 'invalidAttempts': [item['attemptedOperation']]}
         item = {**item, 'proposal': digest(proposal), 'attemptedOperation': {
-            name: proposal[name] for name in ('action', 'targetId', 'changes', 'deliverableReference', 'copyIndex', 'kind', 'date', 'obligationId', 'sourceTokens', 'submitAfter') if name in proposal}}
+            name: proposal[name] for name in ('action', 'targetId', 'changes', 'deliverableReference', 'copyIndex', 'kind', 'date', 'obligationId', 'sourceTokens', 'submitAfter', 'sharedAttachmentIds') if name in proposal}}
         if source:
             item['userSource'] = source
         job.result = {**job.result, 'taskItems': [entry for entry in job.result.get('taskItems', []) if entry['id'] != item['id']] + [item]}
         context.task_item_keys[digest(proposal)] = item['id']
+        if binding is not None:
+            binding.update(itemId=item['id'], snapshot=digest(item))
         return ''
+
+
+async def invalid_attempt(context, arguments):
+    """Journal an invalid proposal; association and authorization happen later."""
+    from app.tasks.lease import lease
+    from app.modules.messages.models import Message
+    from app.security.ownership import owned
+    from app.agent.context.references.conversation_context import request_text
+    proposal = {'action': arguments['action'], 'targetId': arguments.get('target_id', ''),
+        'changes': arguments.get('changes') or {}, 'kind': arguments.get('report_kind', 'weekly'),
+        'date': arguments.get('report_date', ''), 'obligationId': arguments.get('obligation_id', ''),
+        'sourceTokens': sorted(arguments.get('source_tokens') or []), 'submitAfter': bool(arguments.get('submit_after'))}
+    if arguments.get('copy_index', 1) > 1:
+        proposal['copyIndex'] = arguments['copy_index']
+    if arguments.get('shared_attachment_ids'):
+        proposal['sharedAttachmentIds'] = sorted(arguments['shared_attachment_ids'])
+    if arguments.get('deliverable_id'):
+        proposal['deliverableReference'] = {'id': arguments['deliverable_id'],
+            'revision': arguments.get('deliverable_revision', 0), 'itemIds': [arguments.get('item_id', '')]}
+    async with context.sessions.begin() as db:
+        job, actor = await lease(db, context)
+        message = await owned(db, Message, job.target_id, actor)
+        source = {'messageId': message.id, 'userText': request_text(message, job)}
+        # A later validation failure may already have a verified binding from
+        # this call. Reuse that exact server-bound proposal, never create a
+        # second item or trust the tool's supplied task_item_id.
+        bound_ids = set(context.task_item_keys.values())
+        existing = next((item for item in job.result.get('taskItems', [])
+                         if item['id'] in bound_ids and not item.get('receiptId')
+                         and item.get('attemptedOperation') == proposal
+                         and item.get('userSource') == source), None)
+        if existing:
+            return existing['id']
+        # This is only a claimed continuation, not authorization. Retain every
+        # proposal so the existing judge can check the entire claim before a
+        # receipt may settle it. Never overwrite the first failed proposal.
+        current = job.result.get('taskItems', [])
+        item = next((item for item in current if item['id'] == arguments.get('task_item_id')), None)
+        if (proposal['action'] == 'create_work' and item and not item.get('receiptId')
+                and item.get('userSource') == source
+                and not reference_error(current, item['id'], proposal)):
+            attempts = item.get('invalidAttempts') or [item['attemptedOperation']]
+            if proposal in attempts:
+                return item['id']
+            # Overflow stays a separate unresolved item; do not truncate the
+            # evidence and later claim that an unseen attempt was recovered.
+            if len(attempts) < 8:
+                updated = {**item, 'invalidAttempts': [*attempts, proposal]}
+                job.result = {**job.result, 'taskItems': [updated if entry['id'] == item['id'] else entry for entry in current]}
+                return item['id']
+    await bind(context, proposal, source=source)
+    return context.task_item_keys[digest(proposal)]

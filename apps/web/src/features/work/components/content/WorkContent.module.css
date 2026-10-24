@@ -2,6 +2,16 @@
   padding: 0 0 18px;
   border-bottom: 1px solid var(--line);
 }
+.editButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
 .hint {
   color: var(--muted);
   font-size: 14px;

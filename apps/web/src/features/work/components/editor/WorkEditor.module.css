@@ -1,0 +1,107 @@
+dialog.editor {
+  width: 520px;
+  --dialog-padding: 20px;
+  --primary-radius: 10px;
+}
+
+.editor > div > header {
+  padding: 16px var(--dialog-padding) 12px;
+}
+
+.editor > div > header h2 {
+  font-size: 18px;
+}
+
+.editor .body {
+  --form-field-margin: 0;
+  --form-actions-margin: 18px calc(-1 * var(--dialog-padding)) calc(-1 * var(--dialog-padding));
+  --form-actions-padding: 12px var(--dialog-padding);
+}
+
+.fields {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+}
+
+.fields label {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--secondary);
+}
+
+.fields :is(input, select) {
+  min-height: 40px;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.status {
+  min-width: 0;
+  gap: 6px;
+}
+
+.extra {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.extra > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.extra > summary::-webkit-details-marker {
+  display: none;
+}
+
+.extra[open] > summary > svg {
+  transform: rotate(90deg);
+}
+
+.extra > summary small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.extraFields {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+@media (max-width: 760px) {
+  dialog.editor {
+    --dialog-padding: 16px;
+  }
+
+  .fields :is(input, select) {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .extra > summary {
+    min-height: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

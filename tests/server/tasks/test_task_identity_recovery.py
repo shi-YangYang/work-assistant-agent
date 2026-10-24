@@ -1,4 +1,5 @@
 """Same-task recovery must use checked identities, not rewritten arguments."""
+import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -30,6 +31,82 @@ class RecoveryJudge(Judge):
     async def ainvoke(self, messages):
         response = await super().ainvoke(messages)
         return AIMessage(content=json.dumps({**json.loads(response.content), 'taskItemId': self.item_id}))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('window', ['authorization', 'bound'])
+@pytest.mark.parametrize('independent', [True, False])
+async def test_concurrent_malformed_attempt_invalidates_authorization(setup, monkeypatch, window, independent):
+    from app.agent.actions import operations
+    from app.modules.operations.models import BusinessAction
+    from sqlalchemy import select
+
+    context, _ = await mode_runtime(setup, 'full', '创建两项同名工作，一项整理资料，一项安排会议，分别保存完整正文'
+                                   if independent else '创建一项同名工作，正文写整理资料')
+    first_changes = {'title': '同名工作', 'body': {'schemaVersion': 1, 'content': '整理资料'}}
+    first = await execute(context, step=1, action='create_work', changes=first_changes)
+    entered, resume = asyncio.Event(), asyncio.Event()
+
+    class PausedJudge(RecoveryJudge):
+        async def ainvoke(self, messages):
+            result = await super().ainvoke(messages)
+            if window == 'authorization':
+                entered.set()
+                await resume.wait()
+            return result
+
+    judge = PausedJudge(first['taskItemId'])
+    context.intent_model = judge
+    original_authorize = operations.authorize_intent
+
+    async def pause_after_binding(*args, **kwargs):
+        result = await original_authorize(*args, **kwargs)
+        if window == 'bound':
+            entered.set()
+            await resume.wait()
+        return result
+
+    monkeypatch.setattr(operations, 'authorize_intent', pause_after_binding)
+    valid = dict(step=1, action='create_work', task_item_id=first['taskItemId'],
+                 changes={'title': '同名工作', 'body': body('整理资料')})
+    writing = asyncio.create_task(execute(context, **valid))
+    await asyncio.wait_for(entered.wait(), 5)
+    second_changes = {'title': '同名工作', 'body': {'schemaVersion': 1, 'content': [
+        {'type': 'paragraph', 'content': '安排会议' if independent else '整理资料'}]}}
+    try:
+        second = await execute(context, step=2, action='create_work', task_item_id=first['taskItemId'], changes=second_changes)
+    finally:
+        resume.set()
+    saved = await writing
+    assert second['state'] == 'failed' and second['taskItemId'] == first['taskItemId']
+    assert saved['state'] in ('failed', 'conflict') and saved['category'] == 'conflict'
+    assert '事项尝试已变化' in saved['diagnostic'] and len(judge.inputs) == 1
+    assert 'invalidAttempts' not in judge.inputs[0]['recoveringItem']
+    async with context.sessions() as db:
+        job = await db.get(Job, context.job_id)
+        job.state = 'succeeded'
+        assert not await db.scalar(select(BusinessAction).where(BusinessAction.message_id == job.target_id))
+        assert all(not item.get('receiptId') for item in job.result['taskItems'])
+        assert [attempt['changes'] for attempt in job.result['taskItems'][0]['invalidAttempts']] == [first_changes, second_changes]
+        failures = [item for item in job.result['toolOutcomes'] if item['category'] == 'invalid_arguments']
+        assert len(failures) == 2
+        assert {item['diagnostic'] for item in failures} == {first['diagnostic'], second['diagnostic']}
+        assert derive(job, [])['state'] == 'blocked'
+        print(json.dumps({'window': window, 'independent': independent, 'authorizationSaw': judge.inputs[0]['recoveringItem'],
+                          'taskItems': job.result['taskItems'], 'toolOutcomes': job.result['toolOutcomes'],
+                          'rejected': saved}, ensure_ascii=False))
+    assert not (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
+    if not independent:
+        # Fresh ordinary authorization sees the whole chain; the stale result
+        # must not install a permanent refusal or poison this invocation.
+        context.intent_model = RecoveryJudge(first['taskItemId'])
+        recovered = await execute(context, **valid)
+        assert recovered['state'] == 'succeeded'
+        assert context.intent_model.inputs[0]['recoveringItem']['invalidAttempts'][-1]['changes'] == second_changes
+        async with context.sessions() as db:
+            job = await db.get(Job, context.job_id)
+            job.state = 'succeeded'
+            assert derive(job, [recovered])['state'] == 'completed'
 
 
 @pytest.mark.asyncio
@@ -314,3 +391,219 @@ async def test_legacy_report_binding_recovers_submission_identity_from_owned_rec
     async with context.sessions() as db:
         item = (await db.get(Job, context.job_id)).result['taskItems'][0]
         assert item['receiptId'] == result['id'] and item['attemptedOperation']['submitAfter'] is submit_after
+
+
+@pytest.mark.asyncio
+async def test_malformed_create_recovery_binds_server_item_before_authorization(setup):
+    context, _ = await mode_runtime(setup, 'full', '随机创建一个工作，另建一个同名副本')
+    context.intent_model = Judge()
+    bad = {'title': '资料整理', 'bodyEdits': [{'action': 'append', 'blocks': [
+        {'action': 'append_checklist', 'items': [{'text': '整理归档'}]}]}]}
+    failed = await execute(context, step=1, action='create_work', changes=bad)
+    assert failed['state'] == 'failed' and failed['taskItemId'] and not context.intent_model.inputs
+    second = await execute(context, step=2, action='create_work', changes={'title': '资料整理'}, copy_index=2)
+    assert second['state'] == 'succeeded' and second['taskItemId'] != failed['taskItemId']
+    assert 'failedItemCandidates' not in context.intent_model.inputs[0]
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        assert task.result['operationFeedback']
+    context.intent_model = RecoveryJudge(failed['taskItemId'])
+    fixed = await execute(context, step=1, action='create_work', changes={'title': '资料整理', 'body': body('整理资料并记录索引')})
+    assert fixed['state'] == 'succeeded' and fixed['taskItemId'] == failed['taskItemId']
+    assert len(context.intent_model.inputs) == 1
+    candidate = context.intent_model.inputs[0]['failedItemCandidates'][0]
+    assert candidate['attemptedOperation']['changes'] == bad
+    assert candidate['userSource']['userText'] == '随机创建一个工作，另建一个同名副本'
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        task.state = 'succeeded'
+        assert not task.result['operationFeedback'] and derive(task, [fixed, second])['state'] == 'completed'
+        bound = next(item for item in task.result['taskItems'] if item['id'] == failed['taskItemId'])
+        assert bound['receiptId'] == fixed['id'] and bound['state'] == 'succeeded'
+        from app.tasks.nodes.node_state import node_dtos, release_outputs
+        original = {'id': 'first-attempt', 'scope': 'current', 'kind': 'tool', 'label': '创建工作',
+                    'state': 'failed', 'attempts': 1, 'errorCode': 'invalid_arguments',
+                    'error': '参数不正确', 'output': {'name': 'execute_business_action', 'content': json.dumps(failed)}}
+        unrelated = {**original, 'id': 'unrelated', 'output': {'name': 'execute_business_action',
+                     'content': json.dumps({**failed, 'taskItemId': 'another-item'})}}
+        task.result = {**task.result, 'nodeExecution': {'scope': 'current', 'nodes': [original, unrelated]}}
+        recovered, other = node_dtos(task)
+        assert recovered['state'] == 'succeeded' and recovered['label'] == '创建工作（已恢复）' and not recovered['error']
+        assert other['state'] == 'failed' and original['state'] == 'failed'
+        # The durable identity survives raw-output cleanup, but a completed
+        # model interpretation or an unrelated receipt never proves recovery.
+        release_outputs(task)
+        assert node_dtos(task)[0]['state'] == 'succeeded'
+        assert task.result['nodeExecution']['nodes'][0]['errorCode'] == 'invalid_arguments'
+        actual_outcomes = task.result['toolOutcomes']
+        task.result = {**task.result, 'toolOutcomes': [{**item, 'receiptId': 'unrelated'} for item in actual_outcomes]}
+        assert node_dtos(task)[0]['state'] == 'failed'
+        task.result = {**task.result, 'toolOutcomes': [*actual_outcomes,
+                       {'taskItemId': failed['taskItemId'], 'category': 'invalid_arguments'}]}
+        assert node_dtos(task)[0]['state'] == 'failed'
+
+
+@pytest.mark.asyncio
+async def test_invalid_parameters_after_authorization_reuse_existing_binding(setup, monkeypatch):
+    context, _ = await mode_runtime(setup, 'full', '创建一项资料整理工作')
+    async def invalid_write(*args, **kwargs):
+        raise ValueError('invalid content after authorization')
+    monkeypatch.setattr('app.agent.actions.operations.perform', invalid_write)
+    result = await execute(context, step=1, action='create_work', changes={'title': '资料整理'})
+    assert result['state'] == 'failed' and result['taskItemId']
+    async with context.sessions() as db:
+        job = await db.get(Job, context.job_id)
+        assert len(job.result['taskItems']) == 1
+        assert job.result['taskItems'][0]['id'] == result['taskItemId']
+        assert not job.result['taskItems'][0].get('receiptId')
+
+
+def test_recovery_candidates_never_swap_shared_attachment_sources():
+    original = {'action': 'create_work', 'changes': {'title': '同名资料'}, 'sharedAttachmentIds': ['source-a']}
+    item = {'id': 'item', 'action': 'create_work', 'attemptedOperation': original}
+    assert reference_error([item], 'item', {**original, 'sharedAttachmentIds': ['source-b']})
+
+
+@pytest.mark.asyncio
+async def test_same_step_and_title_new_create_does_not_clear_malformed_attempt(setup):
+    context, _ = await mode_runtime(setup, 'full', '为两项独立方案分别建立工作')
+    bad = {'title': '同名方案', 'bodyEdits': [{'action': 'append', 'blocks': [
+        {'action': 'append_checklist', 'items': [{'text': '甲方案内容'}]}]}]}
+    failed = await execute(context, step=1, action='create_work', changes=bad)
+    context.intent_model = Judge()
+    other = await execute(context, step=1, action='create_work', changes={'title': '同名方案', 'body': body('乙方案内容')})
+    assert other['state'] == 'succeeded' and other['taskItemId'] != failed['taskItemId']
+    assert context.intent_model.inputs[0]['failedItemCandidates'][0]['id'] == failed['taskItemId']
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        task.state = 'succeeded'
+        assert task.result['operationFeedback'] and derive(task, [other])['state'] == 'partial'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('explicit_final_id', [True, False])
+async def test_multiple_malformed_create_attempts_share_checked_recovery(setup, explicit_final_id):
+    context, _ = await mode_runtime(setup, 'full', '创建一项资料整理工作，正文写整理资料并记录索引')
+    first_changes = {'title': '资料整理', 'bodyEdits': [{'action': 'append', 'blocks': [
+        {'action': 'append_checklist', 'items': [{'text': '整理归档'}]}]}]}
+    second_changes = {'title': '资料整理', 'body': {
+        'schemaVersion': 1, 'content': [{'type': 'paragraph', 'content': '整理资料并记录索引'}]}}
+    first = await execute(context, step=1, action='create_work', changes=first_changes)
+    second = await execute(context, step=1, action='create_work', task_item_id=first['taskItemId'], changes=second_changes)
+    assert first['state'] == second['state'] == 'failed'
+    assert first['taskItemId'] == second['taskItemId'] and not context.intent_model.inputs
+    context.intent_model = RecoveryJudge(first['taskItemId'])
+    saved = await execute(context, step=1, action='create_work',
+                          task_item_id=first['taskItemId'] if explicit_final_id else '',
+                          changes={'title': '资料整理', 'body': body('整理资料并记录索引')})
+    assert saved['state'] == 'succeeded' and saved['taskItemId'] == first['taskItemId']
+    assert len(context.intent_model.inputs) == 1
+    candidate = context.intent_model.inputs[0]['failedItemCandidates'][0]
+    assert candidate['attemptedOperation']['changes'] == first_changes
+    assert [attempt['changes'] for attempt in candidate['invalidAttempts']] == [first_changes, second_changes]
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        task.state = 'succeeded'
+        assert len(task.result['taskItems']) == 1
+        assert task.result['taskItems'][0]['receiptId'] == saved['id']
+        assert not task.result['operationFeedback'] and derive(task, [saved])['state'] == 'completed'
+        from app.tasks.nodes.node_state import node_dtos, release_outputs
+        task.result = {**task.result, 'nodeExecution': {'scope': 'current', 'nodes': [
+            {'id': str(index), 'scope': 'current', 'kind': 'tool', 'label': '创建工作',
+             'state': 'failed', 'attempts': 1, 'errorCode': 'invalid_arguments', 'error': '原始参数错误',
+             'output': {'name': 'execute_business_action', 'content': json.dumps(result)}}
+            for index, result in enumerate([first, second])]}}
+        release_outputs(task)
+        assert all(node['state'] == 'succeeded' for node in node_dtos(task))
+        assert all(node['state'] == 'failed' and node['error'] == '原始参数错误'
+                   for node in task.result['nodeExecution']['nodes'])
+    assert len((await setup[3]['employee'].get('/api/v1/work-items')).json()['items']) == 1
+
+
+@pytest.mark.asyncio
+async def test_malformed_continuation_keeps_different_content_for_authorization(setup):
+    context, _ = await mode_runtime(setup, 'full', '创建两项同名工作，一项整理资料，一项安排会议；分别保存完整正文')
+    changes = {'title': '同名工作', 'body': {'schemaVersion': 1, 'content': '整理资料'}}
+    first = await execute(context, step=1, action='create_work', changes=changes)
+    other_changes = {**changes, 'body': {'schemaVersion': 1, 'content': '安排会议'}}
+    second = await execute(context, step=1, action='create_work', task_item_id=first['taskItemId'], changes=other_changes)
+    assert second['taskItemId'] == first['taskItemId']
+    # A claimed chain is not proof of one request. The existing authorization
+    # must see both incompatible contents and may refuse the attempted merge.
+    context.intent_model = Judge(False)
+    denied = await execute(context, step=1, action='create_work', task_item_id=first['taskItemId'],
+                           changes={'title': '同名工作', 'body': body('安排会议')})
+    assert denied['state'] == 'failed'
+    claimed = context.intent_model.inputs[0]['recoveringItem']
+    assert [attempt['changes'] for attempt in claimed['invalidAttempts']] == [changes, other_changes]
+    assert not (await setup[3]['employee'].get('/api/v1/work-items')).json()['items']
+    context.intent_model = Judge()
+    separate = await execute(context, step=2, action='create_work', changes={'title': '同名工作', 'body': body('完整安排会议')})
+    assert separate['state'] == 'succeeded' and separate['taskItemId'] != first['taskItemId']
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        task.state = 'succeeded'
+        assert derive(task, [separate])['state'] == 'partial'
+        assert any(item['taskItemId'] == first['taskItemId'] for item in task.result['toolOutcomes'])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('first_args', 'next_args'), [
+    ({}, {'task_item_id': 'unknown'}),
+    ({}, {'copy_index': 2}),
+    ({'target_id': 'first-target'}, {'target_id': 'other-target'}),
+    ({'source_tokens': ['first-source']}, {'source_tokens': ['other-source']}),
+    ({'shared_attachment_ids': ['first-file']}, {'shared_attachment_ids': ['other-file']}),
+    ({'deliverable_id': 'plan', 'deliverable_revision': 1, 'item_id': 'first-entry'},
+     {'deliverable_id': 'plan', 'deliverable_revision': 1, 'item_id': 'other-entry'}),
+])
+async def test_malformed_continuation_does_not_merge_other_identity(setup, first_args, next_args):
+    context, _ = await mode_runtime(setup, 'full', '分别创建两项独立工作')
+    changes = {'title': '同名工作', 'body': {'schemaVersion': 1, 'content': '无效格式'}}
+    first = await execute(context, step=1, action='create_work', changes=changes, **first_args)
+    second = await execute(context, step=1, action='create_work', changes={**changes, 'title': '修正提案'},
+                           **{'task_item_id': first['taskItemId'], **next_args})
+    assert first['state'] == second['state'] == 'failed'
+    assert second['taskItemId'] != first['taskItemId']
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        assert len(task.result['taskItems']) == 2
+        assert all(not item.get('invalidAttempts') for item in task.result['taskItems'])
+    assert not context.intent_model.inputs
+
+
+@pytest.mark.asyncio
+async def test_malformed_continuation_bound_preserves_all_attempts_and_successful_items(setup):
+    context, _ = await mode_runtime(setup, 'full', '创建一项工作')
+    changes = {'title': '工作', 'body': {'schemaVersion': 1, 'content': '无效格式'}}
+    first = await execute(context, step=1, action='create_work', changes=changes)
+    for index in range(1, 9):
+        result = await execute(context, step=1, action='create_work', task_item_id=first['taskItemId'],
+                               changes={**changes, 'title': f'工作纠正 {index}'})
+        assert (result['taskItemId'] == first['taskItemId']) is (index < 8)
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        original = next(item for item in task.result['taskItems'] if item['id'] == first['taskItemId'])
+        assert len(original['invalidAttempts']) == 8
+        assert original['invalidAttempts'][0]['changes'] == changes
+        assert len(task.result['taskItems']) == 2 and len(task.result['toolOutcomes']) == 9
+    context.intent_model = Judge()
+    saved = await execute(context, step=2, action='create_work', changes={'title': '独立工作'})
+    rejected = await execute(context, step=3, action='create_work', task_item_id=saved['taskItemId'],
+                             changes={**changes, 'title': '另一份错误提案'})
+    assert rejected['taskItemId'] != saved['taskItemId']
+    async with context.sessions() as db:
+        task = await db.get(Job, context.job_id)
+        completed = next(item for item in task.result['taskItems'] if item['id'] == saved['taskItemId'])
+        assert completed['receiptId'] == saved['id'] and completed['state'] == 'succeeded'
+        assert not completed.get('invalidAttempts')
+
+
+def test_malformed_chain_checks_sources_from_every_attempt():
+    original = {'action': 'create_work', 'changes': {'title': '工作'}}
+    with_source = {**original, 'sourceTokens': ['first-source']}
+    item = {'id': 'item', 'action': 'create_work', 'attemptedOperation': original,
+            'invalidAttempts': [original, with_source]}
+    assert not reference_error([item], 'item', with_source)
+    assert reference_error([item], 'item', original)
+    assert reference_error([item], 'item', {**original, 'sourceTokens': ['another-source']})

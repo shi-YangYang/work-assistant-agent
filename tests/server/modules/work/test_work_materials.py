@@ -292,6 +292,7 @@ async def test_submitted_report_keeps_progress_snapshot_and_file_after_correctio
     async with sessions.begin() as db:
         report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC', content={'completed': '', 'ongoing': '客户确认初稿', 'blockers': '', 'next': ''})
         sources = await report_inputs(db, report)
+        sources = [row for row in sources if row.content.get('_updateId') == update['id']]
         assert len(sources) == 1
         report.source_ids = [sources[0].id]
         original_source = deepcopy(sources[0].content)

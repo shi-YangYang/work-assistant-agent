@@ -55,13 +55,14 @@ export function historyChanges(current: Revision, previous?: Revision) {
   // A missing/unauthorized version is not an empty record. Never infer changes
   // across a visibility gap or the history page's oldest boundary.
   const comparable = previous?.revision === current.revision - 1
+  const initial = current.revision === 1
   const changes: { key: string; label: string; before: string | undefined; after: string }[] =
     fields
       .filter(({ key }) => key !== 'summary' || !current.content.body)
       .filter(({ key }) =>
         comparable
           ? value(current.content, key) !== value(previous.content, key)
-          : !!value(current.content, key),
+          : initial && !!value(current.content, key),
       )
       .map(({ key, label }) => ({
         key,
@@ -95,13 +96,15 @@ export function historyChanges(current: Revision, previous?: Revision) {
   if (
     current.content.body &&
     !onlyChecks &&
-    (comparable ? JSON.stringify(body) !== JSON.stringify(previousBody) : body.length > 0)
+    (comparable
+      ? JSON.stringify(body) !== JSON.stringify(previousBody)
+      : initial && body.length > 0)
   ) {
     changes.push({
       key: 'body',
       label: '工作内容',
-      before: comparable ? previous.content.bodyText || '空正文' : undefined,
-      after: current.content.bodyText || (body.length ? '正文格式已更新' : '空正文'),
+      before: undefined,
+      after: !body.length ? '已清空正文' : initial ? '已添加正文' : '已修改正文',
     })
   }
   const references = sortedIds(documentMaterialIds(current.content.body))
@@ -110,10 +113,10 @@ export function historyChanges(current: Revision, previous?: Revision) {
   const previousMaterials = sortedIds(previous?.content.materialIds ?? [])
   const referencesChanged = comparable
     ? JSON.stringify(references) !== JSON.stringify(previousReferences)
-    : references.length > 0
+    : initial && references.length > 0
   const materialsChanged = comparable
     ? JSON.stringify(materials) !== JSON.stringify(previousMaterials)
-    : materials.length > 0
+    : initial && materials.length > 0
   if (referencesChanged || materialsChanged) {
     changes.push({
       key: 'materials',

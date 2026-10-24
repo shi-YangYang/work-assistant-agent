@@ -156,3 +156,8 @@
   line-height: 1.7;
   margin-top: 12px;
 }
+@media (max-width: 760px) {
+  .actions > button {
+    min-height: 44px;
+  }
+}

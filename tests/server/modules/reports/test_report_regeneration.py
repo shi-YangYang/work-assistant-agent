@@ -78,7 +78,7 @@ async def test_api_delete_rebuild_worker_submit_and_old_identity_isolation(setup
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
     saved = (await client.get('/api/v1/reports/' + second['reportId'])).json()
     assert saved['content'] == CONTENT and saved['publishedRevision'] == 0 and saved['candidate'] is None
-    assert model.calls == 1 and len(model.reviews) == 1
+    assert model.calls == 1 and len(model.reviews) == 0
     submit_headers = keyed()
     assert (await client.post('/api/v1/reports/' + second['reportId'] + '/submit', json={'expectedRevision': saved['revision']}, headers=submit_headers)).status_code == 200
     assert (await clients['admin'].get('/api/v1/reports/' + second['reportId'])).status_code == 200

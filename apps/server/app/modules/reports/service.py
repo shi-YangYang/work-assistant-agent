@@ -15,7 +15,7 @@ from sqlalchemy import select
 def no_report_sources_message(kind, start, end):
     label = '周报'
     scope = f'{start} 至 {end}'
-    return f'{scope} 暂无可用于生成{label}的工作记录。请先核对汇报周期，再确认该周期内是否有有效工作进展；只有工作正文或计划还不能生成报告。也可以让我根据当前会话整理一份{label}正文。'
+    return f'{scope} 暂无可用于生成{label}的工作记录。请先核对汇报周期，再确认该周期内是否创建或修改过工作（正文、清单、属性或进展均可）。也可以让我根据当前会话整理一份{label}正文。'
 
 
 async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezone=None, instructions='', instruction_source=None):
@@ -52,7 +52,7 @@ async def ensure_report(db, actor, kind, day, *, scheduled=False, report_timezon
         db.add(report)
         await db.flush()
     await link_report(db, report, restore=not scheduled)
-    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued', phase='saved', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2, **({'instructions': instructions} if instructions else {}), **({'instructionSource': instruction_source} if instruction_source else {})})
+    job = Job(company_id=actor.company_id, owner_id=actor.id, kind='report', target_id=report.id, base_revision=report.revision, state='queued', phase='saved', result={'sourceIds': [r.id for r in inputs], 'reportFlow': 2, 'sourceContractVersion': 1, **({'instructions': instructions} if instructions else {}), **({'instructionSource': instruction_source} if instruction_source else {})})
     db.add(job)
     await db.flush()
     return report, job

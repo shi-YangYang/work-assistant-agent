@@ -35,6 +35,12 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
     if work:
         await require(db, actor, work.access, retained=True)
         version(work, expected)
+    previous = None
+    if update_id:
+        previous = await db.scalar(select(WorkUpdate).where(WorkUpdate.id == update_id, WorkUpdate.work_id == work.id, WorkUpdate.owner_id == actor.id).with_for_update())
+        if not previous or previous.deleted:
+            problem(404, '进展不存在或已删除')
+        version(previous, expected_update)
     base = work_content(work.content, work.id) if work else {}
     previous_revision = work.revision if work else None
     scalar_fields = ('title', 'status', 'dueDate', 'blocker', 'nextStep')
@@ -61,35 +67,40 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
     all_ids = list(dict.fromkeys([*current_ids, *refs, *bound, *requested_ids]))
     patch['materialIds'] = all_ids
     update = None
+    update_changed = False
     if kind.startswith('update_'):
         from app.modules.work.records.record_schemas import UpdateInput
-        previous = await db.scalar(select(WorkUpdate).where(WorkUpdate.id == update_id, WorkUpdate.work_id == work.id)) if update_id else None
-        if update_id:
-            if not previous or previous.deleted:
-                problem(404, '进展不存在或已删除')
-            version(previous, expected_update)
         text = changes.get('text', previous.text if previous else '') if kind != 'update_delete' else previous.text
         existing_ids = previous.material_ids if previous and 'materialIds' not in changes else requested_ids
         ids = list(dict.fromkeys([*existing_ids, *bound])) if kind != 'update_delete' else previous.material_ids
         if kind != 'update_delete':
+            text = text.strip()
             UpdateInput(text=text, materialIds=ids)
             _, attachments = await require_materials(db, actor, work, ids)
             if sum(a.kind == 'audio' for a in attachments) > 3:
                 problem(422, '每条进展最多添加 3 段语音')
-        patch['summary'] = text[:4000]
+        update_changed = not previous or kind == 'update_delete' or text != previous.text.strip() or ids != previous.material_ids
+        # summary follows the newest entry, including when editing an older one.
+        # An unchanged edit must not temporarily replace that projection.
+        if update_changed:
+            latest = await db.scalar(select(WorkUpdate).where(WorkUpdate.work_id == work.id, WorkUpdate.deleted.is_(False)).order_by(WorkUpdate.created_at.desc(), WorkUpdate.id.desc()).limit(1))
+            if not previous or latest and latest.id == previous.id:
+                patch['summary'] = text[:4000]
     if identifier:
-        work = await save_work(db, actor, patch, identifier=work.id, expected=expected, sources=sources, origin=origin, access=access, links=links, publication=publication, legacy_progress=False, force_revision=kind.startswith('update_'))
+        work = await save_work(db, actor, patch, identifier=work.id, expected=expected, sources=sources, origin=origin, access=access, links=links, publication=publication, legacy_progress=False, force_revision=update_changed)
     else:
         # Initial creation and its material bindings form one work version.
         work.content = {**work.content, **patch}
         revision = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work.id, WorkRevision.revision == work.revision))
         revision.content = dict(work.content)
         revision.access, revision.business_links = work.access, work.business_links
-    if kind.startswith('update_'):
+    if kind.startswith('update_') and (update_changed or previous_revision != work.revision):
         update = await save_update(db, actor, work, text, ids, origin, identifier=update_id, expected=expected_update, deleted=kind == 'update_delete')
         await db.flush()
         latest = await db.scalar(select(WorkUpdate).where(WorkUpdate.work_id == work.id, WorkUpdate.deleted.is_(False)).order_by(WorkUpdate.created_at.desc(), WorkUpdate.id.desc()).limit(1))
         work.content = {**work.content, 'summary': latest.text[:4000] if latest else ''}
+    elif previous:
+        update = previous
     revision = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work.id, WorkRevision.revision == work.revision))
     metadata = {'_changeKind': 'properties' if kind == 'content' and identifier and not ({'body', 'bodyEdits', 'materials', 'materialIds'} & changes.keys()) else kind}
     if update:
@@ -97,7 +108,7 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
     if previous_revision != work.revision:
         revision.content = {**work.content, **metadata}
     await db.flush()
-    return {'work': work_dto(work), 'materialIds': bound, **({'update': update_dto(update)} if update else {})}
+    return {'work': work_dto(work), 'materialIds': bound, 'unchanged': previous_revision == work.revision, **({'update': update_dto(update)} if update else {})}
 
 
 async def record_command(db, actor, identifier, body, key, settings, *, kind='content', update_id=None):

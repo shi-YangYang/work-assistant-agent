@@ -117,7 +117,7 @@ async def action_dto(db, actor, row, *, refresh_child=True):
             title = details.get('title', item.title)
         else:
             title, details = f'{item.period} 周报', {}
-        result = {**base, 'objectType': kind, 'objectId': identifier, 'objectRevision': row.result.get('revision'), 'title': title, 'details': details, 'changedFields': row.result.get('changedFields', []), 'message': row.result.get('message', ''), 'updateId': row.result.get('updateId'), 'updateRevision': row.result.get('updateRevision'), 'materialIds': row.result.get('materialIds', [])}
+        result = {**base, 'objectType': kind, 'objectId': identifier, 'objectRevision': row.result.get('revision'), 'title': title, 'details': details, 'changedFields': row.result.get('changedFields', []), 'message': row.result.get('message', ''), 'updateId': row.result.get('updateId'), 'updateRevision': row.result.get('updateRevision'), 'updateWorkRevision': row.result.get('updateWorkRevision'), 'unchanged': row.result.get('unchanged', False), 'satisfiedFields': row.result.get('satisfiedFields', []), 'materialIds': row.result.get('materialIds', [])}
         if kind == 'work' and row.state == 'succeeded' and row.result.get('materialIds'):
             from app.modules.work.models import WorkMaterial
             materials = (await db.scalars(select(WorkMaterial).where(
@@ -164,6 +164,9 @@ def receipt_summary(cards, drafts=()):
         # its terminal child job still determines what the user sees now.
         if state == 'running' and (card.get('job') or {}).get('state') in ('failed', 'awaiting_retry', 'cancelled'):
             state = 'cancelled' if card['job']['state'] == 'cancelled' else 'failed'
+        if card.get('unchanged') and state == 'succeeded':
+            parts.append(f"《{card['title']}》内容未变化，已保留原记录" if card.get('title') else '内容未变化，已保留原记录')
+            continue
         target = f"《{card['title']}》" if card.get('title') else ''
         label = card['label']
         if card.get('action') == 'update_work':

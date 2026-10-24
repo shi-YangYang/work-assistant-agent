@@ -37,6 +37,7 @@ export function WorkActionDetails({
   action: BusinessAction
   showMaterialCount?: boolean
 }) {
+  if (action.unchanged) return <p>内容未变化，已保留原记录。</p>
   return (
     <div className={styles['business-action-preview']}>
       {action.changedFields?.some((key) => key === 'body' || key === 'bodyEdits') && (
@@ -75,7 +76,8 @@ export function WorkActionDetails({
 }
 
 export const actionStateLabel = (action: BusinessAction) => {
-  if (action.state === 'succeeded') return action.action === 'update_work' ? '已更新' : '已完成'
+  if (action.state === 'succeeded')
+    return action.unchanged ? '内容未变化' : action.action === 'update_work' ? '已更新' : '已完成'
   if (action.state === 'pending') return '等待确认'
   if (action.state === 'cancelled') return '已取消'
   if (action.state === 'running')
@@ -177,7 +179,7 @@ export function BusinessActionCard({
           <span className={styles['business-action-outcome']}>
             {busy
               ? '正在处理'
-              : current.state === 'succeeded' && current.materialIds?.length
+              : current.state === 'succeeded' && !current.unchanged && current.materialIds?.length
                 ? `已保存 ${current.materialIds.length} 个材料`
                 : actionStateLabel(current)}
           </span>

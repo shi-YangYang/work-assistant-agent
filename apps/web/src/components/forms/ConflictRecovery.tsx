@@ -36,7 +36,7 @@ export function ConflictRecovery<T>({
           }
         }}
       >
-        读取最新版本
+        读取当前内容
       </BusyButton>
       {error && <ErrorNotice>{error}</ErrorNotice>}
       {latest && (

@@ -60,8 +60,8 @@ def main():
     parser.add_argument('service', choices=('api', 'worker'))
     args = parser.parse_args()
     metadata, private = load_environment(args.metadata)
-    if metadata.get('suite') != 'spec063':
-        raise RuntimeError('Exact spec063 ownership required')
+    if metadata.get('suite') not in ('spec063', 'spec079'):
+        raise RuntimeError('Exact work benchmark ownership required')
     source = Path(args.source).resolve()
     if not (source / 'apps/server/app/main.py').is_file():
         raise RuntimeError('Application source missing')

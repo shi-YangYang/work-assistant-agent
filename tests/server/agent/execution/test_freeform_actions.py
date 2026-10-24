@@ -118,7 +118,7 @@ async def test_missing_operation_repairs_once_without_replaying_saved_or_rejecte
             assert '已创建工作' not in data['reply'] and '未执行' in data['reply']
 
 
-async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected_milestone(setup):
+async def test_report_rewrite_preserves_source_access_without_second_fact_judge(setup):
     from app.agent.tools.business.actions import query_reports
     _, sessions, users, c = setup
     work = await create(c['employee'], title='试用初稿', nextStep='拟出初稿并发出内部确认')
@@ -126,12 +126,11 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
         source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == work['id']))
         other = await create(c['peer'], title='不应进入核对器的他人工作')
         other_source = await db.scalar(select(WorkRevision).where(WorkRevision.work_id == other['id']))
-        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period='2026-09-20', period_end='2026-09-20', timezone='Asia/Shanghai', content={'completed': '', 'ongoing': '试用初稿待准备', 'blockers': '', 'next': '拟出初稿并发出内部确认'}, source_ids=[source.id, other_source.id])
+        report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=source.created_at.date().isoformat(), period_end=source.created_at.date().isoformat(), timezone='Asia/Shanghai', content={'completed': '', 'ongoing': '试用初稿待准备', 'blockers': '', 'next': '拟出初稿并发出内部确认'}, source_ids=[source.id, other_source.id])
         db.add(report); await db.flush()
     context, _ = await runtime(setup, '把周报改成老板看得懂的简短版本，不要夸大成果')
     data = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id))
-    assert data['items'][0]['sourceFacts']['items'] == [{'id': source.id, 'content': {key: source.content[key] for key in ('title', 'summary', 'status', 'dueDate', 'blocker', 'nextStep')}}]
-    assert 'body' not in data['items'][0]['sourceFacts']['items'][0]['content']
+    assert data['items'][0]['sourceFacts']['items'] == []
     assert not data['items'][0]['sourceFacts']['complete']
     rejected = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=1, changes={'ongoing': '保留计划'})
     assert rejected['state'] == 'clarification' and '来源不完整' in rejected['message']
@@ -142,22 +141,13 @@ async def test_report_rewrite_judge_gets_original_facts_and_cannot_save_rejected
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
             assert '不应进入核对器' not in json.dumps(payload, ensure_ascii=False)
-            if payload.get('task') == 'report_fact_review':
-                assert payload['confirmed'][0]['content']['nextStep'].startswith('拟出初稿')
-                assert payload['userRequest'] == '把周报改成老板看得懂的简短版本，不要夸大成果'
-                valid = '已拟出初稿' not in payload['report']['ongoing']
-                return AIMessage(content=json.dumps({'valid': valid, 'reason': '' if valid else '计划不能改为已经完成的阶段'}))
+            assert payload.get('task') != 'report_fact_review'
             proposed = payload['proposedOperation']
             assert proposed['targetContent']['completed'] == ''
             assert proposed['reportSourceFacts']['items'][0]['content']['nextStep'].startswith('拟出初稿')
             # Permission to edit does not authorize invented progress.
             return AIMessage(content=json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': ''}))
     context.intent_model = FactJudge()
-    denied = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=1, changes={'ongoing': '已拟出初稿，待确认'})
-    assert denied['state'] == 'clarification'
-    assert '计划不能改为已经完成的阶段' in denied['message']
-    unchanged = (await c['employee'].get('/api/v1/reports/' + report.id)).json()
-    assert unchanged['revision'] == 1 and unchanged['content']['ongoing'] == '试用初稿待准备'
     corrected = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=1, changes={'ongoing': '试用初稿待准备', 'next': '拟定初稿后发出确认'})
     assert corrected['state'] == 'succeeded'
 

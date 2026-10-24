@@ -47,7 +47,8 @@ export function BusinessSources({
                   {index + 1}. {source.employeeName} · {source.title}
                 </strong>
                 <small>
-                  第 {source.revision} 版 · {dateLabel(source.at!)}
+                  {source.objectType === 'work' ? '当时内容' : `第 ${source.revision} 版`} ·{' '}
+                  {dateLabel(source.at!)}
                   {source.location ? ` · ${source.location}` : ''}
                 </small>
               </span>
@@ -89,13 +90,17 @@ function SourceView({ path, onClose }: { path: string; onClose: () => void }) {
           <header>
             <h3>{data.title}</h3>
             <p className={utilitiesStyles['muted']}>
-              {data.employeeName} · 第 {data.revision} 版 · {dateLabel(data.at!)}
+              {data.employeeName} ·{' '}
+              {data.objectType === 'work' ? '当时内容' : `第 ${data.revision} 版`} ·{' '}
+              {dateLabel(data.at!)}
               {data.employeeActive === false ? ' · 已停用员工' : ''}
             </p>
           </header>
           {data.currentRevision && data.currentRevision !== data.revision && (
             <p className={noticeStyles['notice']}>
-              这是回答使用的历史版本，当前已更新至第 {data.currentRevision} 版。
+              {data.objectType === 'work'
+                ? '这是回答使用的当时内容，当前工作已有修改。'
+                : `这是回答使用的历史版本，当前已更新至第 ${data.currentRevision} 版。`}
             </p>
           )}
           {data.period && (

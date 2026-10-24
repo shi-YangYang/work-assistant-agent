@@ -217,3 +217,34 @@ async def test_property_only_writes_are_today_facts_without_repeating_yesterday_
         assert await sources_for(db, report, users['employee'], [revision.id]) == sources
         updates = (await db.scalars(select(WorkUpdate).where(WorkUpdate.work_id == work['id']))).all()
         assert len(updates) == 1 and updates[0].text == '昨天完成需求核对'
+
+
+async def test_unchanged_progress_receipt_keeps_original_snapshot_after_newer_progress(setup):
+    from app.agent.completion.evidence.work_receipts import work_record_evidence
+    from app.modules.operations.receipts import receipt_summary
+    _, sessions, users, clients = setup
+    client = clients['employee']
+    work = await create(client)
+    path = '/api/v1/work-items/' + work['id']
+    first = (await client.post(path + '/updates', json={'expectedRevision': 1, 'text': '客户确认首页初稿'}, headers=key())).json()['update']
+    await client.post(path + '/updates', json={'expectedRevision': 2, 'text': '客户确认上线'}, headers=key())
+    context, _ = await mode_runtime(setup, 'full', '把第一条进展更正为客户确认首页初稿，其他内容保持不变')
+    context.intent_model = WorkJudge()
+    await read_work(context, work['id'])
+    result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=3,
+                           changes={'update': {'action': 'edit', 'id': first['id'], 'expectedRevision': 1, 'text': first['text']}})
+    assert result['state'] == 'succeeded', result
+    assert result['unchanged'] and result['changedFields'] == []
+    assert result['satisfiedFields'] == ['update']
+    from types import SimpleNamespace
+    from app.tasks.feedback.work_requirements import uncovered
+    requirement = {'fields': {'update': {'revision': 3, 'excludedReceipts': []}}}
+    assert not uncovered(SimpleNamespace(target_id=result['messageId'], result={}), work['id'], requirement, [result])
+    assert result['objectRevision'] == 3 and result['updateWorkRevision'] == 2
+    assert '内容未变化，已保留原记录' in receipt_summary([result])
+    async with sessions() as db:
+        evidence = await work_record_evidence(db, users['employee'], [result])
+        assert evidence[0]['unchanged']
+        assert evidence[0]['progressUpdate']['text'] == first['text']
+    detail = (await client.get(path)).json()
+    assert detail['revision'] == 3 and detail['summary'] == '客户确认上线'

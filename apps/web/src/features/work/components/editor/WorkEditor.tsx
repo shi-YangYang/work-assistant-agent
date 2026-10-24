@@ -14,6 +14,8 @@ import { useWorkspace } from '@web/lib/workspace'
 import { useState } from 'react'
 import { identityScope } from '@web/lib/session-drafts'
 import { Status } from '@web/components/feedback/Status'
+import { ChevronRight } from 'lucide-react'
+import styles from './WorkEditor.module.css'
 
 type Fields = Pick<Work, 'title' | 'status' | 'dueDate' | 'blocker' | 'nextStep'>
 const fields = ({ title, status, dueDate, blocker, nextStep }: Work): Fields => ({
@@ -58,7 +60,12 @@ export function WorkEditor({
     setDraft(key, { ...stored, content: { ...value, ...patch }, key: crypto.randomUUID() })
   }
   return (
-    <Modal title="编辑工作属性" onClose={onClose}>
+    <Modal
+      title="编辑工作属性"
+      onClose={onClose}
+      className={styles.editor}
+      bodyClassName={styles.body}
+    >
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -90,7 +97,7 @@ export function WorkEditor({
           )
         }}
       >
-        <fieldset disabled={busy}>
+        <fieldset disabled={busy} className={styles.fields}>
           <FormField
             label="工作事项"
             value={value.title}
@@ -99,41 +106,49 @@ export function WorkEditor({
             error={fieldErrors.title}
             onChange={(event) => change({ title: event.target.value })}
           />
-          <label>
-            状态
-            <select
-              value={value.status}
-              onChange={(event) => change({ status: event.target.value as Work['status'] })}
-            >
-              <option value="in_progress">进行中</option>
-              <option value="blocked">有阻碍</option>
-              <option value="done">已完成</option>
-            </select>
-          </label>
-          <FormField
-            label="截止日期（选填）"
-            type="date"
-            max="9999-12-31"
-            value={value.dueDate ?? ''}
-            error={fieldErrors.dueDate}
-            onChange={(event) => change({ dueDate: event.target.value || null })}
-          />
-          <details open={!!(value.blocker || value.nextStep)}>
-            <summary>阻碍与下一步（选填）</summary>
+          <div className={styles.row}>
+            <label className={styles.status}>
+              状态
+              <select
+                value={value.status}
+                onChange={(event) => change({ status: event.target.value as Work['status'] })}
+              >
+                <option value="in_progress">进行中</option>
+                <option value="blocked">有阻碍</option>
+                <option value="done">已完成</option>
+              </select>
+            </label>
             <FormField
-              label="问题或阻碍"
-              value={value.blocker}
-              maxLength={2000}
-              error={fieldErrors.blocker}
-              onChange={(event) => change({ blocker: event.target.value })}
+              label="截止日期（选填）"
+              type="date"
+              max="9999-12-31"
+              value={value.dueDate ?? ''}
+              error={fieldErrors.dueDate}
+              onChange={(event) => change({ dueDate: event.target.value || null })}
             />
-            <FormField
-              label="下一步"
-              value={value.nextStep}
-              maxLength={2000}
-              error={fieldErrors.nextStep}
-              onChange={(event) => change({ nextStep: event.target.value })}
-            />
+          </div>
+          <details className={styles.extra} open={!!(value.blocker || value.nextStep)}>
+            <summary>
+              <ChevronRight size={15} aria-hidden="true" />
+              <span>阻碍与下一步</span>
+              <small>选填</small>
+            </summary>
+            <div className={styles.extraFields}>
+              <FormField
+                label="问题或阻碍"
+                value={value.blocker}
+                maxLength={2000}
+                error={fieldErrors.blocker}
+                onChange={(event) => change({ blocker: event.target.value })}
+              />
+              <FormField
+                label="下一步"
+                value={value.nextStep}
+                maxLength={2000}
+                error={fieldErrors.nextStep}
+                onChange={(event) => change({ nextStep: event.target.value })}
+              />
+            </div>
           </details>
         </fieldset>
         <ErrorNotice>{error}</ErrorNotice>
