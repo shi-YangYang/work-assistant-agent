@@ -36,7 +36,7 @@ const third = {
   content: { ...second.content, status: 'done' as const },
 }
 
-it('shows field changes and correct authorship without repeating unchanged summaries', () => {
+it('shows older changes without repeating the current version', () => {
   const work: Work = {
     ...third.content,
     id: 'w',
@@ -52,10 +52,11 @@ it('shows field changes and correct authorship without repeating unchanged summa
   )
   expect(screen.getAllByText('今天完成多次提交')).toHaveLength(1)
   expect(screen.getByText(/助手更新 · 已确认/)).toBeTruthy()
-  expect(screen.getByText(/手动更新/)).toBeTruthy()
+  expect(screen.getByText(/手动创建/)).toBeTruthy()
   expect(screen.getByText('2026-10-01')).toBeTruthy()
-  expect(screen.getByText('已完成')).toBeTruthy()
-  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(3)
+  expect(screen.queryByText('已完成')).toBeNull()
+  expect(screen.queryByText(/第 3 版/)).toBeNull()
+  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(2)
 })
 
 it('includes clearing fields and never infers a diff across missing private history', () => {
@@ -159,9 +160,9 @@ it.each([
           ...current.content,
           id: 'w',
           ownerId: 'owner',
-          revision: 2,
+          revision: 3,
           updatedAt: first.createdAt,
-          history: [current, previous],
+          history: [{ ...current, id: 'r3', revision: 3 }, current, previous],
         }}
       />
     </MemoryRouter>,

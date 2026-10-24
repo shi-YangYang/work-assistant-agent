@@ -9,8 +9,8 @@ import styles from './WorkDetail.module.css'
 export function WorkHistory({ work }: { work: Work }) {
   const location = useLocation()
   const [expanded, setExpanded] = useState(false)
-  const history = work.history ?? []
-  if (!history.length) return <p className={styles.empty}>暂无修改记录</p>
+  const history = (work.history ?? []).filter((entry) => entry.revision < work.revision)
+  if (!history.length) return null
   return (
     <div className={styles.timeline}>
       {(expanded ? history : history.slice(0, 3)).map((entry, index) => {
@@ -22,16 +22,12 @@ export function WorkHistory({ work }: { work: Work }) {
                 {historyOrigin(entry, work.origin)} · {dateLabel(entry.createdAt)} · 第{' '}
                 {entry.revision} 版
               </small>
-              {work.historical && work.revision === entry.revision ? (
-                <small>当前查看版本</small>
-              ) : (
-                <Link
-                  to={`/work/${work.id}?revision=${entry.revision}`}
-                  state={detailState(location)}
-                >
-                  查看此版本
-                </Link>
-              )}
+              <Link
+                to={`/work/${work.id}?revision=${entry.revision}`}
+                state={detailState(location)}
+              >
+                查看此版本
+              </Link>
             </div>
             {!!changes.length && (
               <details className={styles['history-change']}>

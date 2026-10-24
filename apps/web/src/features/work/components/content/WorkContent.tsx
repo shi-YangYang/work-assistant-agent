@@ -65,18 +65,6 @@ export function WorkContent({
   }
   return (
     <section className={styles.section} aria-label="工作内容">
-      <div className={styles.heading}>
-        <h3>工作内容</h3>
-        {writable && !editing && (
-          <button
-            disabled={checking}
-            className={controls['text-button']}
-            onClick={() => setEditing(true)}
-          >
-            编辑内容
-          </button>
-        )}
-      </div>
       {editing && writable ? (
         <ContentEditor
           work={work}
@@ -96,6 +84,17 @@ export function WorkContent({
         />
       ) : (
         <p className={styles.hint}>写下目标、方案或清单，也可以添加图片和文件。</p>
+      )}
+      {writable && !editing && (
+        <div className={styles.actions}>
+          <button
+            disabled={checking}
+            className={controls['text-button']}
+            onClick={() => setEditing(true)}
+          >
+            编辑内容
+          </button>
+        </div>
       )}
       {checking && (
         <small className={styles.saving} role="status">
