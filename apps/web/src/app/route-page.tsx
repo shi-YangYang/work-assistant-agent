@@ -103,7 +103,15 @@ export function routePage<Props extends object>(
   return function RoutePage(props: Props) {
     const [attempt, setAttempt] = useState(0)
     return (
-      <RouteFailure key={attempt} retry={() => setAttempt((value) => value + 1)}>
+      <RouteFailure
+        key={attempt}
+        retry={() => {
+          // Failed ESM imports can remain cached by the browser. An explicit
+          // reload starts a new module graph and preserves this URL/history.
+          if (!loaded) globalThis.location.reload()
+          else setAttempt((value) => value + 1)
+        }}
+      >
         <DeferredPage {...props} />
       </RouteFailure>
     )

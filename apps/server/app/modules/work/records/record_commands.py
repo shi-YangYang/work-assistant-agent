@@ -5,7 +5,7 @@ from app.core.errors import problem
 from app.core.versions import version
 from app.db.idempotency import idem_begin, idem_save
 from app.modules.work.models import WorkItem, WorkMaterial, WorkRevision, WorkUpdate
-from app.modules.work.content.document import WorkDocument, edit_document, material_ids, plain_text
+from app.modules.work.content.document import WorkDocument, edit_document, material_ids, plain_text, same_content
 from app.modules.work.materials.service import bind_materials, require_materials
 from app.modules.work.updates.service import save_update, update_dto
 from app.modules.work.service import save_work
@@ -56,7 +56,7 @@ async def mutate_record(db, actor, identifier, changes, *, expected=None, settin
         body, mapping = await normalize_material_refs(db, work, body, bound)
         refs = material_ids(body)
         await require_materials(db, actor, work, refs)
-        if body != WorkDocument.model_validate(base.get('body', {'schemaVersion': 1, 'content': []})).model_dump() or any(edit['action'] != 'set_checked' for edit in changes.get('bodyEdits', [])) or 'body' in changes:
+        if not same_content(body, base.get('body', {'schemaVersion': 1, 'content': []})):
             patch.update(body=body, bodyText=plain_text(body))
     else:
         refs, mapping = material_ids(base.get('body', {})), {}

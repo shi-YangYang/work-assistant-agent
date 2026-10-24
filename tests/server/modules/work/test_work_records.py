@@ -11,6 +11,44 @@ from _support.work.work_records import body, create, key
 pytestmark = pytest.mark.asyncio
 
 
+async def test_editor_normalization_does_not_create_history_but_real_edits_do(setup):
+    from copy import deepcopy
+    from app.modules.work.models import WorkRevision
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    original = {'schemaVersion': 1, 'content': [{'type': 'taskList', 'content': [
+        {'type': 'taskItem', 'attrs': {'checked': False}, 'content': [
+            {'type': 'paragraph', 'content': [{'type': 'text', 'text': '核对方案'}]}]},
+    ]}]}
+    work = await create(client, body=original)
+    path = '/api/v1/work-items/' + work['id']
+    before = (await client.get(path)).json()
+    normalized = deepcopy(work['body'])
+    paragraph = normalized['content'][0]['content'][0]['content'][0]
+    paragraph['attrs']['id'] = str(uuid4())
+    paragraph['content'][0].pop('attrs', None)
+    normalized['content'].append({'type': 'paragraph', 'attrs': {'id': str(uuid4())}})
+    payload = {'expectedRevision': 1, 'body': normalized}
+    headers = key()
+    result = await client.patch(path, json=payload, headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()['unchanged'] and result.json()['work']['body'] == work['body']
+    assert (await client.get(path)).json() == before
+    assert (await client.patch(path, json=payload, headers=headers)).json() == result.json()
+    assert (await client.patch(path, json={**payload, 'expectedRevision': 2}, headers=key())).status_code == 409
+    for role in ('peer', 'admin', 'outsider'):
+        assert (await clients[role].patch(path, json=payload, headers=key())).status_code == 404
+    async with sessions() as db:
+        assert len((await db.scalars(select(WorkRevision).where(WorkRevision.work_id == work['id']))).all()) == 1
+    # Formatting is authored content even when the extracted plain text matches.
+    paragraph['content'][0]['marks'] = [{'type': 'bold'}]
+    changed = await client.patch(path, json=payload, headers=key())
+    assert changed.status_code == 200 and changed.json()['work']['revision'] == 2
+    item_id = work['body']['content'][0]['content'][0]['attrs']['id']
+    checked = await client.patch(path, json={'expectedRevision': 2, 'bodyEdits': [{'action': 'set_checked', 'itemId': item_id, 'checked': True}]}, headers=key())
+    assert checked.status_code == 200 and checked.json()['work']['revision'] == 3
+
+
 async def test_body_progress_metadata_and_legacy_preservation(setup):
     _, sessions, users, clients = setup
     client = clients['employee']

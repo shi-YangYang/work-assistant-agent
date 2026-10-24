@@ -182,7 +182,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
                     {item.state === 'submitted' ? '查看报告' : '打开报告'}
                     <ChevronRight size={16} />
                   </Link>
-                ) : !team && item.state !== 'cancelled' ? (
+                ) : !team ? (
                   <BusyButton
                     busy={busy === item.id}
                     onClick={async () => {
@@ -198,7 +198,7 @@ export function ReportObligations({ team = false }: { team?: boolean }) {
                       }
                     }}
                   >
-                    准备报告
+                    生成周报
                   </BusyButton>
                 ) : null}
               </div>

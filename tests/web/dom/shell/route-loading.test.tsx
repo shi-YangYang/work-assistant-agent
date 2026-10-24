@@ -12,6 +12,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 async function advance(milliseconds: number) {
@@ -86,8 +87,10 @@ it('keeps the same loading element mounted from module loading until the page co
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('keeps failure recovery available and retries a rejected module import', async () => {
+it('reloads the document on explicit recovery of a rejected module import', async () => {
   vi.spyOn(console, 'error').mockImplementation(() => {})
+  const reload = vi.fn()
+  vi.stubGlobal('location', { reload })
   const request = deferred<typeof page>()
   const load = vi.fn().mockReturnValueOnce(request.promise).mockResolvedValue(page)
   const Page = routePage(load)
@@ -95,11 +98,10 @@ it('keeps failure recovery available and retries a rejected module import', asyn
   await act(async () => request.reject(new Error('network unavailable')))
   await advance(300)
   expect(screen.getByRole('alert').textContent).toContain('页面未能加载')
+  expect(reload).not.toHaveBeenCalled()
   await act(async () => fireEvent.click(screen.getByRole('button', { name: '重新加载页面' })))
-  expect(screen.getByRole('status')).toBeTruthy()
-  await advance(300)
-  expect(screen.getByText('页面内容')).toBeTruthy()
-  expect(load).toHaveBeenCalledTimes(2)
+  expect(reload).toHaveBeenCalledOnce()
+  expect(load).toHaveBeenCalledOnce()
 })
 
 it('cancels timers on navigation and does not publish an old page after switching away', async () => {

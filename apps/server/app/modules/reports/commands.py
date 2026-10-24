@@ -7,6 +7,7 @@ from sqlalchemy import delete, select
 from app.modules.reports.models import Report, ReportObligation
 from app.modules.reports.queries import report_dto
 from app.modules.reports.service import ensure_report, submit_report as writes_submit_report
+from app.tasks.models import Job
 from app.security.ownership import owned
 
 
@@ -26,13 +27,16 @@ async def generation_begin(db, actor, action, key, payload):
 async def prepare_obligation_command(identifier, idempotency_key, actor, db):
     prior, digest = await generation_begin(db, actor, 'prepare-obligation:' + identifier, idempotency_key, {})
     obligation = await owned(db, ReportObligation, identifier, actor, lock=True)
-    if obligation.state == 'cancelled' and obligation.cancel_reason != 'report_deleted':
-        problem(409, '这项汇报安排已撤销')
     if prior:
         return prior
-    report, job = await ensure_report(db, actor, obligation.kind, date.fromisoformat(obligation.period), report_timezone=obligation.timezone)
-    obligation.report_id = report.id
-    return idem_save(db, actor, 'prepare-obligation:' + identifier, idempotency_key, digest, {'reportId': report.id, 'jobId': job.id})
+    # The current employee's manual entry depends on an active report, not the
+    # historical obligation state. idem_begin holds the company/member locks.
+    report = await db.scalar(select(Report).where(Report.company_id == actor.company_id, Report.owner_id == actor.id, Report.kind == obligation.kind, Report.period == obligation.period, Report.deleted.is_(False)))
+    if report:
+        job = await db.scalar(select(Job).where(Job.target_id == report.id, Job.kind == 'report').order_by(Job.created_at.desc(), Job.id.desc()).limit(1))
+    else:
+        report, job = await ensure_report(db, actor, obligation.kind, date.fromisoformat(obligation.period), report_timezone=obligation.timezone)
+    return idem_save(db, actor, 'prepare-obligation:' + identifier, idempotency_key, digest, {'reportId': report.id, 'jobId': job.id if job else None})
 
 
 async def adopt_candidate_command(identifier, body, actor, db):

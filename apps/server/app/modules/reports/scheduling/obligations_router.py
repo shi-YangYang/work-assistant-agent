@@ -42,7 +42,7 @@ async def notifications(cursor: int = Query(0, ge=0), actor=AUTH, db=DB):
     base = notification_query(actor)
     unread = await unread_count(db, actor)
     rows = (await db.execute(base.order_by(ReportNotification.updated_at.desc(), ReportNotification.id).offset(cursor).limit(21))).all()
-    return {'items': [{'id': notice.id, 'stage': notice.stage, 'read': notice.read_at is not None, 'updatedAt': notice.updated_at.isoformat(), 'obligation': reporting_obligation_dto(obligation, now(), own=True)} for notice, obligation in rows[:20]], 'nextCursor': str(cursor + 20) if len(rows) > 20 else None, 'unread': unread}
+    return {'items': [{'id': notice.id, 'stage': notice.stage, 'read': notice.read_at is not None, 'updatedAt': notice.updated_at.isoformat(), 'obligation': reporting_obligation_dto(obligation, now(), own=True, report_id=obligation.report_id)} for notice, obligation in rows[:20]], 'nextCursor': str(cursor + 20) if len(rows) > 20 else None, 'unread': unread}
 
 
 @router.post('/api/v1/notifications/{identifier}/read')

@@ -123,8 +123,8 @@ async def materialize(db, schedule, start, budget):
     return min(len(members), budget), len(members) <= budget
 
 
-def obligation_dto(row, instant, *, name=None, own=False, job=None):
-    return {'id': row.id, 'ownerId': row.owner_id, 'name': name, 'kind': row.kind, 'period': row.period, 'periodEnd': row.period_end, 'timezone': row.timezone, 'deadlineAt': row.deadline_at.isoformat(), 'state': 'overdue' if row.state == 'pending' and row.deadline_at <= instant else row.state, 'submittedAt': row.submitted_at.isoformat() if row.submitted_at else None, 'reportId': row.report_id if row.state != 'cancelled' and (own or row.state == 'submitted') else None, **({'job': job} if own else {})}
+def obligation_dto(row, instant, *, name=None, own=False, job=None, report_id=None):
+    return {'id': row.id, 'ownerId': row.owner_id, 'name': name, 'kind': row.kind, 'period': row.period, 'periodEnd': row.period_end, 'timezone': row.timezone, 'deadlineAt': row.deadline_at.isoformat(), 'state': 'overdue' if row.state == 'pending' and row.deadline_at <= instant else row.state, 'submittedAt': row.submitted_at.isoformat() if row.submitted_at else None, 'reportId': report_id if own or row.state == 'submitted' else None, **({'job': job} if own else {})}
 
 
 async def obligation_page(db, actor, *, kind='weekly', status='', selected_period=None, cursor=0, team=False, instant=None):
@@ -145,10 +145,13 @@ async def obligation_page(db, actor, *, kind='weekly', status='', selected_perio
         base = base.where(ReportObligation.state == status)
         if status == 'pending':
             base = base.where(ReportObligation.deadline_at > instant)
+    # Resolve the current period's live report; deleted IDs and stale obligation
+    # links cannot hide the manual entry or direct the user to an old report.
+    base = base.outerjoin(Report, (Report.company_id == ReportObligation.company_id) & (Report.owner_id == ReportObligation.owner_id) & (Report.kind == ReportObligation.kind) & (Report.period == ReportObligation.period) & Report.deleted.is_(False)).add_columns(Report.id, Report.published_revision)
     rows = (await db.execute(base.order_by(ReportObligation.period.desc(), ReportObligation.owner_id).offset(cursor).limit(21))).all()
     from app.tasks.serializers import job_dto
     items = []
-    for row, name in rows[:20]:
-        job = await db.scalar(select(Job).where(Job.target_id == row.report_id, Job.kind == 'report').order_by(Job.created_at.desc(), Job.id.desc()).limit(1)) if not team and row.report_id else None
-        items.append(obligation_dto(row, instant, name=name if team else None, own=not team, job=job_dto(job) if job else None))
+    for row, name, report_id, published in rows[:20]:
+        job = await db.scalar(select(Job).where(Job.target_id == report_id, Job.kind == 'report').order_by(Job.created_at.desc(), Job.id.desc()).limit(1)) if not team and report_id else None
+        items.append(obligation_dto(row, instant, name=name if team else None, own=not team, job=job_dto(job) if job else None, report_id=report_id if not team or published else None))
     return {'period': period(kind, selected_period)[0].isoformat() if selected_period else None, 'items': items, 'nextCursor': str(cursor + 20) if len(rows) > 20 else None, 'counts': {'expected': counts.get('pending', 0) + counts.get('submitted', 0), 'submitted': counts.get('submitted', 0), 'pending': counts.get('pending', 0), 'overdue': overdue, 'cancelled': counts.get('cancelled', 0)}}
