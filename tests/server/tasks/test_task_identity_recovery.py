@@ -291,7 +291,7 @@ async def test_continuation_binds_actual_source_and_copy_before_reusing_receipt(
     assert (second['id'] == first['id']) is (relation == 'same_source_copy')
     assert (second['taskItemId'] == first['taskItemId']) is (relation == 'same_source_copy')
     replay = await execute(context, step=2, action='create_work', changes=changes, **next_arguments)
-    assert replay['id'] == second['id']
+    assert replay.get('id') == second['id'], replay
     async with context.sessions() as db:
         from sqlalchemy import select
         from app.modules.operations.models import BusinessAction
