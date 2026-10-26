@@ -508,7 +508,7 @@ async def authorize_intent(context, proposal, *, binding=None):
         if proof:
             observed = {item['id']: digest(item) for item in current_items}
             if any(observed.get(identifier) != value['snapshot'] for identifier, value in proof['items'].items()):
-                from app.agent.actions.task_items import STALE_BINDING
+                from app.agent.actions.task_bindings import STALE_BINDING
                 classify(context, proposal, 'conflict')
                 return False, STALE_BINDING
             binding['workRecovery'] = proof
@@ -668,7 +668,7 @@ async def authorize_intent(context, proposal, *, binding=None):
             item_id=proposal.get('taskItemId') or verdict.taskItemId, new_item=verdict.newTaskItem,
             source={'messageId': message.id, 'userText': current}, snapshots=snapshots, binding=binding)
         if binding_error:
-            from app.agent.actions.task_items import STALE_BINDING
+            from app.agent.actions.task_bindings import STALE_BINDING
             if binding_error == STALE_BINDING:
                 classify(context, proposal, 'conflict')
                 return False, binding_error
@@ -736,7 +736,7 @@ async def authorize_intent(context, proposal, *, binding=None):
         binding_error = await bind(context, proposal, continuing=verdict.resumeTask, item_id=proposal.get('taskItemId') or verdict.taskItemId, new_item=verdict.newTaskItem,
                                    source={'messageId': message.id, 'userText': current}, snapshots=snapshots, binding=binding)
         if binding_error:
-            from app.agent.actions.task_items import STALE_BINDING
+            from app.agent.actions.task_bindings import STALE_BINDING
             if binding_error == STALE_BINDING:
                 # A changed chain needs the ordinary fresh authorization; it
                 # is not a semantic refusal to cache against the user request.

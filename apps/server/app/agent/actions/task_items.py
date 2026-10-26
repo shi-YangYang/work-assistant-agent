@@ -1,6 +1,7 @@
 """Bind a semantically checked operation to a durable atomic task item."""
 from uuid import uuid4
 from app.core.digests import digest
+from app.agent.actions.task_bindings import STALE_BINDING, recovery_binding_error, recovery_plan_state
 
 
 def work_scope(proposal):
@@ -81,9 +82,6 @@ def recovery_candidates(job, proposal):
             for item in job.result.get('taskItems', [])
             if item['id'] in failures and not item.get('receiptId')
             and not reference_error([item], item['id'], proposal)][-16:]
-
-
-STALE_BINDING = '事项尝试已变化，本次授权未核对新增内容，本次未执行；请根据完整事项重新核对后重试。'
 
 
 def binding_error(job, binding):
@@ -271,12 +269,6 @@ async def invalid_attempt(context, arguments):
     return item_id
 
 
-def recovery_plan_state(job, target, key='workChangeCandidates'):
-    state = job.result.get(key, {})
-    return {name: state.get(name) for name in ('version', 'scope', 'messageId')} | {
-        'target': state.get('targets', {}).get(target)}
-
-
 def work_recovery(job, proposal, plan, source, context):
     """Prove a Schema correction from independent scope, never the claimed ID."""
     from app.agent.actions.work_change_plan import FIELDS, canonical_field
@@ -335,23 +327,6 @@ def work_recovery(job, proposal, plan, source, context):
                               'barriers': {key: digest(value) for key, value in barriers.items()}}
     return {'items': proven, 'target': proposal['targetId'], 'plan': digest(state),
             'required': sorted(required), 'selectedPlan': digest(recovery_plan_state(job, proposal['targetId'], 'workChangeRequirements'))} if proven else {}
-
-
-def recovery_binding_error(job, binding):
-    proof = binding.get('workRecovery')
-    if not proof:
-        return ''
-    if (digest(recovery_plan_state(job, proof['target'])) != proof['plan']
-            or digest(recovery_plan_state(job, proof['target'], 'workChangeRequirements')) != proof['selectedPlan']):
-        return STALE_BINDING
-    items = {item['id']: item for item in job.result.get('taskItems', [])}
-    for identifier, original in proof['items'].items():
-        outcomes = {entry['key']: digest(entry) for entry in job.result.get('toolOutcomes', []) if entry.get('taskItemId') == identifier}
-        barriers = {key: digest(value) for key, value in job.result.get('taskBarriers', {}).items() if value.get('taskItemId') == identifier}
-        if (digest(items.get(identifier)) != original['snapshot']
-                or outcomes != original['outcomes'] or barriers != original['barriers']):
-            return STALE_BINDING
-    return ''
 
 
 def settle_work_recovery(job, binding, result):

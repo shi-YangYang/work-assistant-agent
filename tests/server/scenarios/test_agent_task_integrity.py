@@ -109,47 +109,54 @@ async def test_report_receives_referenced_style_and_rechecks_source_access(setup
     async with sessions() as db:
         live = await db.get(Job, job.id)
         assert bool(live.result.get('reportSaved')) is not revoke
-    if revoke:
-        assert not model.inputs
-    else:
-        for request in (model.inputs[0], model.reviews[0]):
-            payload = json.loads(request[-1].content)
-            assert '30字' in json.dumps(payload['conversationForReferenceOnly'], ensure_ascii=False)
+    assert not model.reviews
+    assert len(model.inputs) == (0 if revoke else 1)
+    if not revoke:
+        payload = json.loads(model.inputs[0][-1].content)
+        assert '30字' in json.dumps(payload['conversationForReferenceOnly'], ensure_ascii=False)
 
 
-@pytest.mark.parametrize('fail_at', ['correcting', 'corrected_review'])
-async def test_report_retry_resumes_correction_without_regenerating_initial_draft(setup, fail_at):
+@pytest.mark.parametrize('fail_at', ['generating', 'saving'])
+async def test_report_retry_resumes_current_stage_without_duplicate_save(setup, monkeypatch, fail_at):
+    from app.agent import reports
     settings, sessions, users, clients = setup
     report, job, _ = await prepared(setup)
-    async with sessions.begin() as db:
-        live = await db.get(Job, job.id)
-        live.result = {**live.result, 'instructions': '生成周报并拟定下一步'}
-    tasks = []
     failed = False
-    class InterruptedModel:
+    class InterruptedModel(ReportModel):
         async def ainvoke(self, messages):
             nonlocal failed
-            payload = json.loads(messages[-1].content)
-            task = payload.get('task', 'generate')
-            tasks.append(task)
-            correcting = task == 'correct_report'
-            corrected_review = task == 'report_fact_review' and payload['report'] == CONTENT
-            if not failed and ((fail_at == 'correcting' and correcting) or (fail_at == 'corrected_review' and corrected_review)):
+            assert 'task' not in json.loads(messages[-1].content)
+            answer = await super().ainvoke(messages)
+            if fail_at == 'generating' and not failed:
                 failed = True
-                raise httpx.ReadTimeout('controlled interruption')
-            if task == 'report_fact_review':
-                return AIMessage(content=json.dumps({'valid': corrected_review, 'reason': '' if corrected_review else '初稿完成不能扩成全部完成'}))
-            return AIMessage(content=json.dumps(CONTENT if correcting else {**CONTENT, 'completed': '全部完成'}))
+                raise httpx.ReadTimeout('controlled generation interruption')
+            return answer
+    original_save = reports.save_candidate
+    async def interrupted_save(db, context, content):
+        nonlocal failed
+        if fail_at == 'saving' and not failed:
+            failed = True
+            raise httpx.ReadTimeout('controlled save interruption')
+        return await original_save(db, context, content)
+    monkeypatch.setattr(reports, 'save_candidate', interrupted_save)
     model = InterruptedModel()
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
+    async with sessions() as db:
+        interrupted = await db.get(Job, job.id)
+        assert interrupted.state == 'failed' and not interrupted.result.get('reportSaved')
+        assert interrupted.result['reportDraft']['stage'] == ('generate' if fail_at == 'generating' else 'ready')
+        saved = await db.get(Report, report.id)
+        assert saved.revision == report.revision and not any(saved.content.values())
     assert (await clients['employee'].post('/api/v1/jobs/' + job.id + '/retry', json={})).status_code == 200
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
     async with sessions() as db:
         live = await db.get(Job, job.id)
         assert live.state == 'succeeded' and 'reportDraft' not in live.result
-        assert (await db.get(Report, report.id)).content == CONTENT
-    assert tasks.count('generate') == 1
-    assert tasks.count('correct_report') == (2 if fail_at == 'correcting' else 1)
+        saved = await db.get(Report, report.id)
+        assert saved.content == CONTENT and saved.revision == report.revision + 1
+        assert live.result['savedRevision'] == saved.revision and live.result['reportSaved']
+    assert model.calls == (2 if fail_at == 'generating' else 1) and not model.reviews
+    assert (await clients['employee'].post('/api/v1/jobs/' + job.id + '/retry', json={})).status_code == 409
 
 
 async def test_distinct_same_title_creations_preserve_replay_and_legacy_receipts(setup):
@@ -183,17 +190,18 @@ async def test_edit_report_checks_all_sources_beyond_query_preview_limit(setup):
         assert not (await report_fact_basis(db, users['employee'], report))['complete']
     context, _ = await runtime(setup, '只把周报下一步改成继续核对，其它不动。')
     await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id)
-    reviewed = []
     class FullJudge(Judge):
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            if payload.get('task') == 'report_fact_review':
-                reviewed.append(payload)
+            assert payload.get('task') != 'report_fact_review'
+            facts = payload['proposedOperation']['reportSourceFacts']
+            assert facts['complete'] and len(facts['items']) == 3
+            assert all(item['content']['summary'] == '来源说明。' * 500 for item in facts['items'])
             return await super().ainvoke(messages)
     context.intent_model = FullJudge()
     result = await execute(context, step=1, action='edit_report', target_id=report.id, expected_revision=report.revision, changes={'next': '继续核对'})
     assert result['state'] == 'succeeded'
-    assert len(reviewed[0]['confirmed']) == 3
+    assert len(context.intent_model.inputs) == 1
     assert len(context.intent_model.inputs[-1]['proposedOperation']['reportSourceFacts']['items']) == 3
 
 

@@ -246,7 +246,7 @@ async def test_worker_current_reference_saves_all_without_source_label_roundtrip
     from langchain_openai import ChatOpenAI
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from app.agent.actions.work_change_plan import FIELDS
+    from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
     from app.modules.operations.models import BusinessAction
     from app.modules.work.models import WorkItem
     from app.tasks.processing import handlers
@@ -277,14 +277,13 @@ async def test_worker_current_reference_saves_all_without_source_label_roundtrip
                 fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
                 fields['materials'] = {'mode': 'set', 'value': None,
                     'quotes': [{'messageId': sent['messageId'], 'text': text}]}
-                return AIMessage(content=json.dumps(fields))
+                return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(fields))))
             if payload.get('proposedOperation'):
                 self.checks += 1
                 reference = payload['conversationTask']['workReference']
                 assert reference['id'] == work['id'] and not reference.get('unavailable')
                 return AIMessage(content=json.dumps({'allowed': True, 'quote': text, 'reason': '',
-                    'receiptOnly': True, 'requiredFields': ['materials'],
-                    'requestedChanges': [{'field': 'materials', 'kind': 'material', 'quote': text}],
+                    'receiptOnly': True, 'invalidFields': [],
                     'materialSelection': {'mode': 'all', 'quote': text, 'destination': 'existing',
                         'targetId': work['id'], 'destinationEvidence': destination_quote(payload)}}))
             return await super().ainvoke(input, config, stop=stop, **kwargs)
@@ -408,7 +407,7 @@ async def test_real_create_cannot_save_two_as_complete_then_corrects_once_withou
 
 async def test_target_gap_is_saved_before_asking_and_cannot_invent_new_destination(setup):
     from app.agent.actions.interactions import ask, finish_waiting
-    from app.agent.actions.work_change_plan import FIELDS
+    from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
     from app.tasks.context import RunContext
     from app.tasks.runtime.queue import claim
     from _support.agent.business_actions import create, read_work
@@ -445,7 +444,7 @@ async def test_target_gap_is_saved_before_asking_and_cannot_invent_new_destinati
             assert 'materialCollections' not in payload['conversationTask']['previousTask']
             return AIMessage(content=json.dumps({'allowed': True, 'quote': quote,
                 'quoteMessageId': sent['messageId'], 'resumeTask': True, 'reason': '',
-                'requiredFields': ['materials'], 'requestedChanges': [{'field': 'materials', 'kind': 'material', 'quote': quote}],
+                'invalidFields': [],
                 'materialSelection': {'mode': 'previous', 'previousId': selected_id,
                                       'destination': 'existing', 'targetId': work['id'],
                                       'destinationEvidence': {'source': 'interaction'}}}))
@@ -454,7 +453,7 @@ async def test_target_gap_is_saved_before_asking_and_cannot_invent_new_destinati
             output = {field: {'mode': 'preserve', 'quotes': [], 'value': None} for field in FIELDS}
             output['materials'] = {'mode': 'set', 'value': None,
                 'quotes': [{'messageId': sent['messageId'], 'text': quote}]}
-            return AIMessage(content=json.dumps(output))
+            return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(output))))
     context.intent_model, context.work_change_model = ContinuedJudge(), ContinuedPlan()
     await read_work(context, work['id'])
     saved = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1,
@@ -567,7 +566,7 @@ async def test_wrong_source_identity_can_be_repaired_without_reserving_a_write_s
 
 
 async def pending_material_write(setup, mode, channel, *, confirmation=True):
-    from app.agent.actions.work_change_plan import FIELDS
+    from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
     from app.modules.attachments.models import Attachment
     from app.modules.work.records.record_commands import mutate_record
     from _support.agent.business_actions import create, read_work
@@ -607,7 +606,7 @@ async def pending_material_write(setup, mode, channel, *, confirmation=True):
             quote = payload['currentUserText']
             return AIMessage(content=json.dumps({'allowed': True, 'quote': quote, 'reason': '',
                 'receiptOnly': True, 'requireConfirmation': confirmation,
-                'requestedChanges': [{'field': field, 'kind': 'explicit_field', 'quote': quote}] if field else [],
+                'invalidFields': [],
                 'materialSelection': {'mode': 'selected', 'quote': quote, 'references': values,
                                       'destination': 'existing', 'targetId': work['id'],
                                       'destinationEvidence': destination_quote(payload)}}))
@@ -617,7 +616,7 @@ async def pending_material_write(setup, mode, channel, *, confirmation=True):
             if field:
                 output[field] = {'mode': 'set', 'value': None,
                     'quotes': [{'messageId': sent['messageId'], 'text': text}]}
-            return AIMessage(content=json.dumps(output))
+            return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(output))))
     context.intent_model, context.work_change_model = PendingJudge(), PendingPlan()
     await read_work(context, work['id'])
     card = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=work['revision'],
@@ -703,7 +702,7 @@ async def test_worker_destination_panel_discards_candidate_fields_and_resumes_ex
     from langchain_core.outputs import ChatGeneration, ChatResult
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from pydantic import Field
-    from app.agent.actions.work_change_plan import FIELDS
+    from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
     from app.modules.operations.models import BusinessAction
     from app.modules.work.models import WorkItem
     from app.tasks.context import RunContext
@@ -759,7 +758,7 @@ async def test_worker_destination_panel_discards_candidate_fields_and_resumes_ex
                 for name in (['materials'] if self.resumed else ['body', 'materials']):
                     fields[name] = {'mode': 'set', 'value': None,
                         'quotes': [{'messageId': sent['messageId'], 'text': '之前的都添加到我的工作里面'}]}
-                return AIMessage(content=json.dumps(fields))
+                return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(fields))))
             if payload.get('proposedOperation'):
                 self.checks += 1
                 saved = payload.get('materialCollections') or payload['conversationTask'].get('previousTask', {}).get('materialCollections', [])
@@ -792,6 +791,10 @@ async def test_worker_destination_panel_discards_candidate_fields_and_resumes_ex
                         assert not previous['items'][0].get('receiptId')
                         verdict['taskItemId'] = previous['items'][0]['id']
                         selection['messageId'] = source_message
+                if payload.get('workChangePlan'):
+                    for name in ('requiredFields', 'requestedChanges'):
+                        verdict.pop(name)
+                    verdict['invalidFields'] = []
                 return AIMessage(content=json.dumps(verdict))
             return await super().ainvoke(input, config, stop=stop, **kwargs)
 
@@ -879,7 +882,7 @@ async def test_destination_question_merges_independent_gaps_and_preserves_succes
     from dataclasses import replace
     from app.agent.actions.interactions import ask, finish_waiting
     from app.agent.actions.material_questions import ask_destination
-    from app.agent.actions.work_change_plan import FIELDS
+    from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
     from app.modules.interactions.models import AssistantInteraction
     from _support.agent.business_actions import create, read_work
     context, sent = await mode_runtime(setup, 'full', '把资料整理的状态改为已完成，补充正文：客户资料，把第一份和第二份文件分别保存到不同工作，另一个报告日期等我补充')
@@ -892,9 +895,9 @@ async def test_destination_question_merges_independent_gaps_and_preserves_succes
                 fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
                 fields['status'] = {'mode': 'set', 'value': 'done', 'quotes': [{'messageId': sent['messageId'], 'text': '状态改为已完成'}]}
                 fields['body'] = {'mode': 'set', 'value': None, 'quotes': [{'messageId': sent['messageId'], 'text': '补充正文：客户资料'}]}
-                return AIMessage(content=json.dumps(fields))
+                return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(fields))))
             return AIMessage(content=json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '',
-                'requiredFields': ['status'], 'requestedChanges': [{'field': 'status', 'kind': 'status', 'quote': '状态改为已完成'}],
+                'invalidFields': [],
                 'taskContext': {'state': 'needs_input', 'remaining': ['报告日期尚待补充']}}))
     context.intent_model = context.work_change_model = ChangeJudge()
     await read_work(context, work['id'])

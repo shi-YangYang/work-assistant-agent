@@ -276,9 +276,11 @@ async def test_report_gets_read_document_requirements_and_rechecks_them(setup, c
         assert bool(live.result.get('reportSaved')) is (not change), live.error
         if change:
             assert not any((await db.get(Report, job.target_id)).content.values())
+    assert not model.reviews
+    assert len(model.inputs) == (0 if change == 'before' else 1)
     if change != 'before':
-        for request in (model.inputs[0], model.reviews[0]):
-            assert marker in json.dumps(json.loads(request[-1].content)['materialsForInstructionsOnly'], ensure_ascii=False)
+        payload = json.loads(model.inputs[0][-1].content)
+        assert marker in json.dumps(payload['materialsForInstructionsOnly'], ensure_ascii=False)
 
 
 @pytest.mark.parametrize('explicit', [False, True])

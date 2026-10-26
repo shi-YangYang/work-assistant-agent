@@ -354,7 +354,7 @@ async def remember_requirements(context, plan, payload, proposal, *, selected=Fa
     async with context.sessions.begin() as db:
         job, _ = await lease(db, context)
         if binding and binding.get('workRecovery'):
-            from app.agent.actions.task_items import recovery_binding_error
+            from app.agent.actions.task_bindings import recovery_binding_error
             error = recovery_binding_error(job, binding)
             if error:
                 return error
@@ -364,7 +364,7 @@ async def remember_requirements(context, plan, payload, proposal, *, selected=Fa
                  definitions={name: digest(getattr(plan, name).model_dump()) for name in requested_fields(plan, proposal)},
                  selected=selected)
         if binding and binding.get('workRecovery'):
-            from app.agent.actions.task_items import recovery_plan_state
+            from app.agent.actions.task_bindings import recovery_plan_state
             binding['workRecovery']['selectedPlan'] = digest(recovery_plan_state(job, proposal['targetId'], 'workChangeRequirements'))
 
 

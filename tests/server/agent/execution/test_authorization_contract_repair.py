@@ -148,7 +148,7 @@ async def test_new_authorization_request_does_not_inherit_prior_repair_constrain
         await initialize(context, 'another-request')
     authorized = await authorize_intent(context, proposal)
     if change == 'evidence':
-        from app.agent.actions.task_items import STALE_BINDING
+        from app.agent.actions.task_bindings import STALE_BINDING
         # A direct authorization call left an unexecuted proposed item. New
         # evidence reruns the judge but cannot silently rebind that unseen item.
         assert authorized == (False, STALE_BINDING)
