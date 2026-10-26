@@ -112,6 +112,7 @@ async def test_obligation_directory_opens_only_actual_report_links_without_inven
     async with sessions.begin() as db:
         linked = await report(db, users['employee'], '2026-09-01', published=False)
         cancelled = await report(db, users['employee'], '2026-08-24', published=False)
+        cancelled.deleted = True
         for item, status in [(linked, 'pending'), (cancelled, 'cancelled')]:
             db.add(ReportObligation(company_id=item.company_id, owner_id=item.owner_id,
                 kind='weekly', period=item.period, period_end=item.period_end, timezone=item.timezone,

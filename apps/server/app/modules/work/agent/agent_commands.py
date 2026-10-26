@@ -57,8 +57,8 @@ async def apply_action(db, actor, row, settings, *, confirmed=False, job=None):
     # never credits unrelated files merely retained by the work transaction.
     material_ids = list(dict.fromkeys([*result.get('materialIds', []),
         *(identifier for identifier in changes.get('materialIds', []) if identifier in work.get('materialIds', []))]))
-    return {'objectType': 'work', 'objectId': work['id'], 'revision': work['revision'], 'changedFields': sorted(p['changes']),
-            'updateId': result.get('update', {}).get('id'), 'updateRevision': result.get('update', {}).get('revision'), 'materialIds': material_ids}
+    return {'objectType': 'work', 'objectId': work['id'], 'revision': work['revision'], 'changedFields': [] if result.get('unchanged') else sorted(p['changes']), 'unchanged': result.get('unchanged', False), 'satisfiedFields': sorted(p['changes']) if result.get('unchanged') else [],
+            'updateId': result.get('update', {}).get('id'), 'updateRevision': result.get('update', {}).get('revision'), 'updateWorkRevision': result.get('update', {}).get('workRevision'), 'materialIds': material_ids}
 
 
 async def action_preview(db, actor, work, changes):

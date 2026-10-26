@@ -73,23 +73,15 @@ async def test_invalid_report_keeps_original_without_success(setup, content, fin
     assert model.calls == 1
 
 
-@pytest.mark.parametrize('verdict', ['{"valid":false}', '{"valid":"true"}', '{}', 'invalid'])
-async def test_report_fact_failure_keeps_original_and_never_regenerates_implicitly(setup, verdict):
+async def test_generation_has_no_semantic_review_or_correction(setup):
     settings, sessions, users, _ = setup
     report, job, _ = await prepared(setup)
-    async with sessions.begin() as db:
-        saved = await db.get(Report, report.id); saved.content = {**CONTENT, 'completed': '原报告'}
-    model = ReportModel(json.dumps({**CONTENT, 'completed': '整项方案已经完成'}), verdict=verdict)
+    model = ReportModel(verdict='{"valid":false}')
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
     async with sessions() as db:
-        saved = await db.get(Report, report.id)
-        live = await db.get(Job, job.id)
-        assert saved.content['completed'] == '原报告' and saved.candidate is None and not saved.published_revision
-        assert live.state == 'failed' and not live.result.get('reportSaved')
-    assert model.calls == 1 and len(model.reviews) == 1
-    checked = json.loads(model.reviews[0][-1].content)
-    assert checked['confirmed'][0]['content']['summary'] == '初稿完成'
-    assert checked['report']['completed'] == '整项方案已经完成'
+        assert (await db.get(Report, report.id)).content == CONTENT
+        assert (await db.get(Job, job.id)).result['reportSaved']
+    assert model.calls == 1 and not model.reviews
 
 
 async def test_report_review_policy_change_rechecks_old_verdict_and_reuses_current_result(setup):
@@ -118,37 +110,22 @@ async def test_report_review_policy_change_rechecks_old_verdict_and_reuses_curre
         assert reviews[0]['output']['valid'] is False and reviews[1]['output']['valid'] is True
 
 
-async def test_rejected_draft_rechecks_new_policy_without_resetting_correction_budget(setup, monkeypatch):
-    from app.agent import reports
-    settings, sessions, users, clients = setup
+@pytest.mark.parametrize('stage', ['review', 'correcting', 'corrected_review', 'ready', 'rejected'])
+async def test_legacy_review_draft_generates_once_under_current_contract(setup, stage):
+    settings, sessions, users, _ = setup
     report, job, _ = await prepared(setup)
     async with sessions.begin() as db:
         live = await db.get(Job, job.id)
-        live.result = {**live.result, 'instructions': '按已有工作整理报告，不提交'}
-    rejected = ReportModel(verdict='{"valid":false,"reason":"来源阶段不符"}')
-    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=rejected)
-    assert rejected.calls == 2 and len(rejected.reviews) == 2
+        live.result = {**live.result, 'reportDraft': {'stage': stage, 'input': 'old', 'reviewVersion': 3,
+            'content': {**CONTENT, 'completed': '旧审查草稿不能直接放行'}}, 'reportCorrectionAttempted': True}
+    model = ReportModel()
+    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
+    assert model.calls == 1 and not model.reviews
     async with sessions() as db:
         live = await db.get(Job, job.id)
-        assert live.result['reportDraft']['stage'] == 'rejected' and live.result['reportCorrectionAttempted']
-        assert live.result['reportDraft']['reviewVersion'] == reports.REVIEW_VERSION
-        assert not live.result.get('reportSaved')
-        rejected_content = live.result['reportDraft']['content']
-    unchanged = ReportModel()
-    assert (await clients['employee'].post(f'/api/v1/jobs/{job.id}/retry', json={})).status_code == 200
-    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=unchanged)
-    assert unchanged.calls == 0 and not unchanged.reviews
-    monkeypatch.setattr(reports, 'REVIEW_VERSION', reports.REVIEW_VERSION + 1)
-    current = ReportModel()
-    assert (await clients['employee'].post(f'/api/v1/jobs/{job.id}/retry', json={})).status_code == 200
-    await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=current)
-    assert current.calls == 0 and len(current.reviews) == 1
-    assert json.loads(current.reviews[0][-1].content)['report'] == rejected_content
-    async with sessions() as db:
-        live = await db.get(Job, job.id)
-        saved = await db.get(Report, report.id)
-        assert live.state == 'succeeded' and live.result['reportSaved'] and live.result['reportCorrectionAttempted']
-        assert saved.content == rejected_content and not saved.published_revision
+        assert live.result['reportSaved'] and 'reportDraft' not in live.result
+        assert not live.result.get('reportCorrectionAttempted')
+        assert (await db.get(Report, report.id)).content == CONTENT
 
 
 @pytest.mark.parametrize('change', ['delete_report', 'delete_work', 'inactive', 'role'])
@@ -379,8 +356,10 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
     def respond(request):
         data=json.loads(request.content);requests.append(data)
         assert not data.get('tools') and not data.get('tool_choice')
+        if len(requests) == 1:
+            assert data['max_tokens'] == 8000
         content='测试成功' if '只回复：测试成功' in str(data['messages']) else json.dumps(CONTENT,ensure_ascii=False)
-        if reasoning_check and len(requests) <= 2:
+        if reasoning_check and len(requests) == 1:
             explicit_generation = reasoning_check == 'explicit' and len(requests) == 1
             assert data['enable_thinking'] is explicit_generation
             if explicit_generation:
@@ -400,12 +379,12 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
     async with sessions() as db:
         assert (await db.get(Job,job.id)).state=='succeeded'
         usages=(await db.scalars(select(ModelUsage).where(ModelUsage.job_id==job.id))).all()
-        assert len(usages)==2 and all(usage.status=='succeeded' and usage.kind=='report' and usage.actual_input_tokens==123 and usage.actual_output_tokens==45 for usage in usages)
-    assert len(requests)==2
+        assert len(usages)==1 and all(usage.status=='succeeded' and usage.kind=='report' and usage.actual_input_tokens==123 and usage.actual_output_tokens==45 for usage in usages)
+    assert len(requests)==1
     result=await c['admin'].post('/api/v1/settings/model-services/test',json={**payload(),'models':[{**model,'streaming':False} for model in payload()['models']],'draftVersion':'report-json','modelId':'chat','purpose':'report'})
     assert result.status_code==200
     assert [check['state'] for check in result.json()['checks']]==['passed','passed'],result.text
-    assert result.json()['checks'][-1]['name']=='报告结构' and len(requests)==4
+    assert result.json()['checks'][-1]['name']=='报告结构' and len(requests)==3
 
 
 async def test_ready_reminder_once_and_old_owner_execution_cancelled_on_disable(setup):

@@ -15,6 +15,7 @@ from app.modules.members.models import Company, Member
 from app.modules.messages.models import Message
 from app.modules.operations.models import BusinessAction
 from app.modules.reports.models import Report
+from app.modules.reports.schemas import ReportContent
 from app.modules.work.models import WorkItem
 from app.tasks.nodes import node_execution
 from app.tasks.context import InputChanged, LostLease, RunContext
@@ -46,7 +47,7 @@ async def interrupted_node(setup, monkeypatch, action):
         async with context.sessions.begin() as db:
             report = Report(company_id=context.company_id, owner_id=context.owner_id, kind='weekly',
                             period=now().date().isoformat(), period_end=now().date().isoformat(),
-                            timezone='Asia/Shanghai', content={'ongoing': '正在整理方案'})
+                            timezone='Asia/Shanghai', content=ReportContent(ongoing='正在整理方案').model_dump())
             db.add(report)
             await db.flush()
             target_id = report.id

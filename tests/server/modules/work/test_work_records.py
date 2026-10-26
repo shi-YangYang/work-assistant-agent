@@ -4,11 +4,49 @@ import pytest
 from sqlalchemy import select
 from app.modules.work.models import WorkItem, WorkUpdate, WorkUpdateRevision
 from app.modules.reports.models import Report
-from app.modules.reports.generation.sources import report_inputs, report_source_content
+from app.modules.reports.generation.sources import report_inputs, source_payload
 from app.db.base import now
 from _support.work.work_records import body, create, key
 
 pytestmark = pytest.mark.asyncio
+
+
+async def test_editor_normalization_does_not_create_history_but_real_edits_do(setup):
+    from copy import deepcopy
+    from app.modules.work.models import WorkRevision
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    original = {'schemaVersion': 1, 'content': [{'type': 'taskList', 'content': [
+        {'type': 'taskItem', 'attrs': {'checked': False}, 'content': [
+            {'type': 'paragraph', 'content': [{'type': 'text', 'text': '核对方案'}]}]},
+    ]}]}
+    work = await create(client, body=original)
+    path = '/api/v1/work-items/' + work['id']
+    before = (await client.get(path)).json()
+    normalized = deepcopy(work['body'])
+    paragraph = normalized['content'][0]['content'][0]['content'][0]
+    paragraph['attrs']['id'] = str(uuid4())
+    paragraph['content'][0].pop('attrs', None)
+    normalized['content'].append({'type': 'paragraph', 'attrs': {'id': str(uuid4())}})
+    payload = {'expectedRevision': 1, 'body': normalized}
+    headers = key()
+    result = await client.patch(path, json=payload, headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()['unchanged'] and result.json()['work']['body'] == work['body']
+    assert (await client.get(path)).json() == before
+    assert (await client.patch(path, json=payload, headers=headers)).json() == result.json()
+    assert (await client.patch(path, json={**payload, 'expectedRevision': 2}, headers=key())).status_code == 409
+    for role in ('peer', 'admin', 'outsider'):
+        assert (await clients[role].patch(path, json=payload, headers=key())).status_code == 404
+    async with sessions() as db:
+        assert len((await db.scalars(select(WorkRevision).where(WorkRevision.work_id == work['id']))).all()) == 1
+    # Formatting is authored content even when the extracted plain text matches.
+    paragraph['content'][0]['marks'] = [{'type': 'bold'}]
+    changed = await client.patch(path, json=payload, headers=key())
+    assert changed.status_code == 200 and changed.json()['work']['revision'] == 2
+    item_id = work['body']['content'][0]['content'][0]['attrs']['id']
+    checked = await client.patch(path, json={'expectedRevision': 2, 'bodyEdits': [{'action': 'set_checked', 'itemId': item_id, 'checked': True}]}, headers=key())
+    assert checked.status_code == 200 and checked.json()['work']['revision'] == 3
 
 
 async def test_body_progress_metadata_and_legacy_preservation(setup):
@@ -80,7 +118,7 @@ async def test_version_conflict_and_access_do_not_overwrite(setup):
     assert detail['body'] == work['body'] and detail['dueDate'] == '2026-10-08'
 
 
-async def test_search_all_updates_and_reports_exclude_plans(setup):
+async def test_search_all_updates_and_reports_include_work_context(setup):
     _, sessions, users, clients = setup
     client = clients['employee']
     work = await create(client, body=body('未来计划：下周上线'))
@@ -92,7 +130,7 @@ async def test_search_all_updates_and_reports_exclude_plans(setup):
     async with sessions() as db:
         report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC')
         rows = await report_inputs(db, report)
-        facts = [report_source_content(row)['summary'] for row in rows]
+        facts = [item['content']['summary'] for item in await source_payload(db, rows) if item['content']['summary']]
         assert facts == ['客户确认需求', '完成可访问性检查']
         assert '未来计划' not in str(facts)
 
@@ -148,7 +186,7 @@ async def test_reports_keep_mixed_legacy_and_new_progress_once(setup):
     assert second.status_code == 200, second.text
     async with sessions() as db:
         report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC')
-        facts = [report_source_content(row)['summary'] for row in await report_inputs(db, report)]
+        facts = [item['content']['summary'] for item in await source_payload(db, await report_inputs(db, report)) if item['content']['summary']]
         assert facts == ['新版确认需求', '旧入口完成校对']
 
 
@@ -182,7 +220,7 @@ async def test_reports_correct_only_selected_imported_entry_and_preserve_saved_f
     async with sessions.begin() as db:
         report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=stamp.date().isoformat(), period_end=stamp.date().isoformat(), timezone='UTC', source_ids=[])
         originals = await report_inputs(db, report)
-        assert [report_source_content(row)['summary'] for row in originals] == ['首次旧进展', '另一次旧进展']
+        assert [item['content']['summary'] for item in await source_payload(db, originals) if item['content']['summary']] == ['首次旧进展', '另一次旧进展']
         report.source_ids = [row.id for row in originals]
         db.add(report)
         await db.flush()
@@ -196,17 +234,20 @@ async def test_reports_correct_only_selected_imported_entry_and_preserve_saved_f
     async with sessions() as db:
         report = await db.get(Report, report_id)
         latest = await report_inputs(db, report)
-        assert [report_source_content(row)['summary'] for row in latest] == ['更正后的首次进展', '另一次旧进展']
-        assert await report_fact_basis(db, users['employee'], report) == original_facts
+        assert [item['content']['summary'] for item in await source_payload(db, latest) if item['content']['summary']] == ['另一次旧进展']
+        facts = await report_fact_basis(db, users['employee'], report)
+        assert [item['content']['summary'] for item in facts['items'] if item['content']['summary']] == ['另一次旧进展']
         assert len(await sources_for(db, report, users['employee'], [row.id for row in latest])) == 2
-        with pytest.raises(ValueError, match='报告来源已变化'):
-            await sources_for(db, report, users['employee'], report.source_ids)
+        # Period-later corrections never flow backwards; withdrawn old text
+        # is suppressed while its immutable work-state snapshot remains.
+        assert await sources_for(db, report, users['employee'], report.source_ids)
     deleted = await client.request('DELETE', path + '/updates/' + first['id'], json={'expectedRevision': 3, 'expectedUpdateRevision': 2}, headers=key())
     assert deleted.status_code == 200, deleted.text
     async with sessions() as db:
         report = await db.get(Report, report_id)
-        assert [report_source_content(row)['summary'] for row in await report_inputs(db, report)] == ['另一次旧进展']
-        assert await report_fact_basis(db, users['employee'], report) == original_facts
+        assert [item['content']['summary'] for item in await source_payload(db, await report_inputs(db, report)) if item['content']['summary']] == ['另一次旧进展']
+        facts = await report_fact_basis(db, users['employee'], report)
+        assert [item['content']['summary'] for item in facts['items'] if item['content']['summary']] == ['另一次旧进展']
 
 
 async def test_single_update_reads_current_and_history_without_cross_work_or_owner_leaks(setup):
@@ -242,3 +283,71 @@ async def test_single_update_reads_current_and_history_without_cross_work_or_own
     async with sessions() as db:
         persisted = await db.get(WorkUpdate, update['id'])
         assert persisted.deleted and persisted.revision == 3
+
+
+async def test_unchanged_update_preserves_history_times_latest_summary_and_protections(setup):
+    from app.modules.work.models import WorkRevision
+    _, sessions, _, clients = setup
+    client = clients['employee']
+    work = await create(client)
+    path = '/api/v1/work-items/' + work['id']
+    first = (await client.post(path + '/updates', json={'expectedRevision': 1, 'text': '初次进展'}, headers=key())).json()['update']
+    await client.post(path + '/updates', json={'expectedRevision': 2, 'text': '最新进展'}, headers=key())
+    before = (await client.get(path)).json()
+    target = path + '/updates/' + first['id']
+    payload = {'expectedRevision': 3, 'expectedUpdateRevision': 1, 'text': '  初次进展\n', 'status': 'in_progress', 'materialIds': []}
+    headers = key()
+    result = await client.patch(target, json=payload, headers=headers)
+    assert result.status_code == 200, result.text
+    assert result.json()['unchanged'] is True
+    assert result.json()['update'] == first
+    assert (await client.get(path)).json() == before
+    assert (await client.patch(target, json=payload, headers=headers)).json() == result.json()
+    for values in ({'expectedRevision': 2}, {'expectedUpdateRevision': 2}):
+        assert (await client.patch(target, json={**payload, **values}, headers=key())).status_code == 409
+    for role in ('peer', 'admin', 'outsider'):
+        assert (await clients[role].patch(target, json=payload, headers=key())).status_code == 404
+    assert (await client.patch(target, json={**payload, 'materialIds': ['missing']}, headers=key())).status_code == 404
+    async with sessions() as db:
+        assert len((await db.scalars(select(WorkRevision).where(WorkRevision.work_id == work['id']))).all()) == 3
+        assert len((await db.scalars(select(WorkUpdateRevision).where(WorkUpdateRevision.update_id == first['id']))).all()) == 1
+    # Equal text in a newly-created entry is a distinct event, not an edit replay.
+    created = await client.post(path + '/updates', json={'expectedRevision': 3, 'text': '初次进展'}, headers=key())
+    assert created.status_code == 201 and created.json()['work']['revision'] == 4
+    assert created.json()['update']['id'] != first['id']
+    # A real property change accompanying unchanged text is still retained.
+    changed = await client.patch(target, json={**payload, 'expectedRevision': 4, 'status': 'blocked'}, headers=key())
+    assert changed.status_code == 200 and changed.json()['work']['revision'] == 5
+    assert changed.json()['update']['revision'] == 2
+    assert changed.json()['work']['summary'] == '初次进展'
+    assert (await client.get(path + '?revision=3')).json()['status'] == 'in_progress'
+
+
+async def test_update_material_reuse_order_and_failure_atomicity(setup):
+    from app.modules.work.models import WorkMaterial
+    from _support.materials.documents import upload
+    settings, sessions, _, clients = setup
+    client = clients['employee']
+    work = await create(client)
+    path = '/api/v1/work-items/' + work['id']
+    attachments = [await upload(client, name + '.txt', name.encode(), 'text/plain') for name in ('one', 'two')]
+    sources = [{'attachmentId': row['id']} for row in attachments]
+    saved = (await client.post(path + '/updates', json={'expectedRevision': 1, 'text': '带材料的进展', 'materials': sources}, headers=key())).json()
+    item = saved['update']
+    target = path + '/updates/' + item['id']
+    payload = {'expectedRevision': 2, 'expectedUpdateRevision': 1, 'text': item['text'], 'materialIds': item['materialIds'], 'materials': sources}
+    unchanged = await client.patch(target, json=payload, headers=key())
+    assert unchanged.status_code == 200 and unchanged.json()['unchanged']
+    assert unchanged.json()['update'] == item
+    # Binding a fresh file must roll back when a selected material is invalid.
+    extra = await upload(client, 'extra.txt', b'extra', 'text/plain')
+    files_before = set(settings.media_dir.iterdir())
+    rejected = await client.patch(target, json={**payload, 'materials': [{'attachmentId': extra['id']}], 'materialIds': ['missing']}, headers=key())
+    assert rejected.status_code == 404
+    assert set(settings.media_dir.iterdir()) == files_before
+    async with sessions() as db:
+        assert len((await db.scalars(select(WorkMaterial).where(WorkMaterial.work_id == work['id']))).all()) == 2
+    changed = await client.patch(target, json={**payload, 'materials': [], 'materialIds': item['materialIds'][::-1]}, headers=key())
+    assert changed.status_code == 200 and changed.json()['work']['revision'] == 3
+    assert changed.json()['update']['revision'] == 2
+    assert changed.json()['update']['materialIds'] == item['materialIds'][::-1]

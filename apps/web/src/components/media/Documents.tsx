@@ -2,7 +2,7 @@ import utilitiesStyles from '../../styles/utilities.module.css'
 import layoutStyles from '../../styles/layout.module.css'
 import controlsStyles from '../../styles/controls.module.css'
 import documentsStyles from './documents.module.css'
-import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
+import { ResourceCard } from '@web/components/content/ResourceCard'
 import type { Attachment, DocumentCitation, ExtractionPage } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
@@ -112,93 +112,76 @@ export function DocumentCard({
   const hint = documentHint(extraction)
   const isPdf = attachment.mime === 'application/pdf'
   const status = extractionStatus(extraction)
-  const primaryContent = (
-    <>
-      <span className={cardStyles.icon} aria-hidden="true">
-        <FileText size={24} />
-      </span>
-      <span className={cardStyles.content}>
-        <strong className={cardStyles.title} title={attachment.name}>
-          {attachment.name}
-        </strong>
-        <span className={`${cardStyles.meta} ${cardStyles.fileSubtitle}`} aria-hidden="true">
-          <span className={cardStyles.fileInfo}>
-            {attachment.name.split('.').pop()?.toUpperCase()} · {fileSize(attachment.size)}
-          </span>
-          <span className={cardStyles.fileHint}>{isPdf ? '打开文件' : '下载文件'}</span>
-        </span>
-      </span>
-    </>
-  )
+  const canRefresh = ['pending', 'processing'].includes(extraction?.status ?? '')
+  const canRetry = own && extraction?.status === 'failed'
   return (
-    <div
-      className={`${cardStyles.card} ${cardStyles.fileCard} ${cardStyles.hoverActions} ${documentsStyles['document-card']}`}
-      data-compact={compact}
-    >
-      {isPdf ? (
-        <button
-          type="button"
-          className={cardStyles.fileMain}
-          aria-label={`打开${attachment.name}`}
-          onClick={() => setPdf(true)}
-        >
-          {primaryContent}
-        </button>
-      ) : (
-        <a
-          className={cardStyles.fileMain}
-          href={attachment.url}
-          download={attachment.name}
-          aria-label={`下载${attachment.name}`}
-        >
-          {primaryContent}
-        </a>
-      )}
-      <a
-        className={`${cardStyles.fileDownload} ${cardStyles.hoverAction}`}
-        href={attachment.url}
-        download={attachment.name}
-        aria-label="下载原文件"
-        title="下载原文件"
-      >
-        <Download size={20} aria-hidden="true" />
-      </a>
-      {(status || hint || error) && (
-        <div className={documentsStyles['document-details']}>
-          {status && <p className={cardStyles.meta}>{status}</p>}
-          {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
-          <ErrorNotice>{error}</ErrorNotice>
-          {['pending', 'processing'].includes(extraction?.status ?? '') && (
-            <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
-              刷新状态
-            </button>
-          )}
-          {own && extraction?.status === 'failed' && (
-            <BusyButton
-              type="button"
-              busy={busy}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  await retryDocument(attachment, {})
-                  refresh()
-                  setError('')
-                } catch (e) {
-                  setError(e as Error)
-                } finally {
-                  setBusy(false)
-                }
-              }}
-            >
-              重新解析
-            </BusyButton>
-          )}
-        </div>
-      )}
+    <>
+      <ResourceCard
+        className={documentsStyles['document-card']}
+        data-compact={compact}
+        title={attachment.name}
+        icon={<FileText size={24} />}
+        status={status}
+        subtitle={`${attachment.name.split('.').pop()?.toUpperCase()} · ${fileSize(attachment.size)}`}
+        hoverSubtitle={isPdf ? '打开文件' : '下载文件'}
+        primaryAction={
+          isPdf
+            ? { kind: 'button', onClick: () => setPdf(true), label: `打开${attachment.name}` }
+            : {
+                kind: 'link',
+                href: attachment.url,
+                download: attachment.name,
+                label: `下载${attachment.name}`,
+              }
+        }
+        trailingAction={{
+          action: {
+            kind: 'link',
+            href: attachment.url,
+            download: attachment.name,
+            label: '下载原文件',
+          },
+          icon: <Download size={20} aria-hidden="true" />,
+          reveal: 'hover',
+        }}
+        footer={
+          (hint || error || canRefresh || canRetry) && (
+            <div className={documentsStyles['document-details']}>
+              {hint && <p className={documentsStyles['document-warning']}>{hint}</p>}
+              <ErrorNotice>{error}</ErrorNotice>
+              {canRefresh && (
+                <button type="button" className={controlsStyles['text-button']} onClick={refresh}>
+                  刷新状态
+                </button>
+              )}
+              {canRetry && (
+                <BusyButton
+                  type="button"
+                  busy={busy}
+                  onClick={async () => {
+                    setBusy(true)
+                    try {
+                      await retryDocument(attachment, {})
+                      refresh()
+                      setError('')
+                    } catch (e) {
+                      setError(e as Error)
+                    } finally {
+                      setBusy(false)
+                    }
+                  }}
+                >
+                  重新解析
+                </BusyButton>
+              )}
+            </div>
+          )
+        }
+      />
       {pdf && (
         <PdfPreview name={attachment.name} url={attachment.url} onClose={() => setPdf(false)} />
       )}
-    </div>
+    </>
   )
 }
 

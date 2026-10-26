@@ -36,7 +36,7 @@ const third = {
   content: { ...second.content, status: 'done' as const },
 }
 
-it('shows older changes without repeating the current version', () => {
+it('hides creation-only history and shows later changes without numbered editions', () => {
   const work: Work = {
     ...third.content,
     id: 'w',
@@ -45,18 +45,26 @@ it('shows older changes without repeating the current version', () => {
     updatedAt: first.createdAt,
     history: [third, second, first],
   }
-  render(
+  const { rerender } = render(
+    <MemoryRouter>
+      <WorkHistory work={{ ...work, revision: 1, history: [first] }} />
+    </MemoryRouter>,
+  )
+  expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
+  expect(screen.queryByRole('link', { name: '查看当时内容' })).toBeNull()
+  rerender(
     <MemoryRouter>
       <WorkHistory work={work} />
     </MemoryRouter>,
   )
+  expect(screen.getByRole('region', { name: '修改记录' })).toBeTruthy()
   expect(screen.getAllByText('今天完成多次提交')).toHaveLength(1)
   expect(screen.getByText(/助手更新 · 已确认/)).toBeTruthy()
   expect(screen.getByText(/手动创建/)).toBeTruthy()
-  expect(screen.getByText('2026-10-01')).toBeTruthy()
-  expect(screen.queryByText('已完成')).toBeNull()
+  expect(screen.getAllByText('2026-10-01')[0]).toBeTruthy()
+  expect(screen.getByText('已完成')).toBeTruthy()
   expect(screen.queryByText(/第 3 版/)).toBeNull()
-  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(2)
+  expect(screen.getAllByRole('link', { name: '查看当时内容' })).toHaveLength(3)
 })
 
 it('includes clearing fields and never infers a diff across missing private history', () => {
@@ -71,7 +79,7 @@ it('includes clearing fields and never infers a diff across missing private hist
       { key: 'blocker', label: '阻碍', before: '未设置', after: '等待确认' },
     ]),
   )
-  expect(historyChanges(third, first).every((change) => change.before === undefined)).toBe(true)
+  expect(historyChanges(third, first)).toEqual([])
   expect(historyOrigin({ ...second, origin: undefined })).toBe('历史记录')
   expect(historyChanges({ ...second, content }, first)).toEqual([])
 })
@@ -98,8 +106,8 @@ it('omits an empty initial body but records a later explicit clearing', () => {
   expect(historyChanges({ ...created, revision: 2 }, previous)).toContainEqual({
     key: 'body',
     label: '工作内容',
-    before: '旧正文',
-    after: '空正文',
+    before: undefined,
+    after: '已清空正文',
   })
 })
 
@@ -167,7 +175,7 @@ it.each([
       />
     </MemoryRouter>,
   )
-  expect(screen.getByText('材料已更新')).toBeTruthy()
+  expect(screen.getAllByText('材料').length).toBeGreaterThan(0)
   expect(screen.queryByText('工作内容、材料已更新')).toBeNull()
 })
 
@@ -191,4 +199,38 @@ it.each(['text', 'format'])('retains real %s changes when materials also change'
     content: { ...content, body: document([edited, material]), materialIds: ['file-1'] },
   }
   expect(historyChanges(current, previous).map((entry) => entry.key)).toEqual(['body', 'materials'])
+})
+
+it('summarizes body edits without expanding saved prose', () => {
+  const previous = {
+    ...first,
+    content: { ...content, body: document([paragraph]), bodyText: '保留这段工作内容' },
+  }
+  const current = {
+    ...second,
+    content: {
+      ...previous.content,
+      body: document([{ ...paragraph, content: [{ type: 'text', text: '当前正文不重复' }] }]),
+      bodyText: '当前正文不重复',
+    },
+  }
+  render(
+    <MemoryRouter>
+      <WorkHistory
+        work={{
+          ...current.content,
+          id: 'w',
+          ownerId: 'owner',
+          revision: 2,
+          updatedAt: first.createdAt,
+          history: [current, previous],
+        }}
+      />
+    </MemoryRouter>,
+  )
+  expect(screen.queryByText('当前正文不重复')).toBeNull()
+  expect(screen.getAllByText('已修改正文').length).toBeGreaterThan(0)
+  expect(screen.getAllByRole('link', { name: '查看当时内容' })[0].getAttribute('href')).toBe(
+    '/work/w?revision=2',
+  )
 })

@@ -117,7 +117,7 @@ it('retains confirmed state on failure and refreshes explicitly after a conflict
   )
   expect(write).toHaveBeenCalledOnce()
   expect(saved).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: '读取最新版本' }))
+  fireEvent.click(screen.getByRole('button', { name: '读取当前内容' }))
   expect(saved).toHaveBeenCalledOnce()
 })
 

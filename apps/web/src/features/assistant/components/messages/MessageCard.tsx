@@ -4,7 +4,7 @@ import utilitiesStyles from '../../../../styles/utilities.module.css'
 import noticeStyles from '../../../../styles/patterns/Notice.module.css'
 import styles from './MessageCard.module.css'
 import attachmentsStyles from '../../styles/attachments.module.css'
-import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
+import { ResourceCardGroup } from '@web/components/content/ResourceCard'
 import type { DeliverableReference, Draft, Job, JobFeedback, WorkMessage } from '@paa/api-contracts'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
 import { Status } from '@web/components/feedback/Status'
@@ -162,12 +162,13 @@ export function MessageCard({
         <div className={styles['user-attachments']}>
           {(['image', 'document'] as const).map((kind) => {
             const items = message.attachments.filter((a) => a.kind === kind)
+            const Group = kind === 'document' && items.length > 1 ? ResourceCardGroup : 'div'
             return (
               items.length > 0 && (
-                <div
+                <Group
                   className={
                     kind === 'document' && items.length > 1
-                      ? `${cardStyles.card} ${cardStyles.group} ${attachmentsStyles['document-group']}`
+                      ? attachmentsStyles['document-group']
                       : attachmentsStyles['attachments']
                   }
                   data-kind={kind}
@@ -187,7 +188,7 @@ export function MessageCard({
                       <DocumentCard key={a.id} attachment={a} own={own} refresh={onChange} />
                     ),
                   )}
-                </div>
+                </Group>
               )
             )
           })}

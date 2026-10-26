@@ -45,6 +45,9 @@ async def test_ordinary_prose_exposes_catalog_and_question_once_and_keeps_clock_
     assert model.systems[0].count(POLICIES['research']) == 1
     assert all(policy not in model.systems[0] for group, policy in POLICIES.items() if group != 'research')
     assert '缺用户选择直接 request_user_input' in model.systems[0]
+    assert '内部ID、转写字段名、行号/字符范围' in model.systems[0]
+    assert '正文不汇报读取范围或完整性检查' in model.systems[0]
+    assert '保留原文数字、时间、否定及条件' in model.systems[0]
     from langchain_core.utils.function_calling import convert_to_openai_tool
     from app.agent.tools.control.questions import request_user_input
     assert model.schemas[0][1] == convert_to_openai_tool(request_user_input)
@@ -63,6 +66,7 @@ async def test_load_read_then_prose_exposes_only_requested_full_schemas(setup):
     assert '工具定义' in model.schemas[0][0]['function']['description']
     assert 'bodyEdits' in model.schemas[1][1]['function'].get('description', '') or any('bodyEdits' in str(tool) for tool in model.schemas[1])
     assert '工作：' not in model.systems[0] and '工作：' in model.systems[1]
+    assert '未勾选仅表示未完成/未勾选，不代表尚未开始' in model.systems[1]
     assert '报告：' not in model.systems[1]
     assert stored['toolCatalog']['groups'] == ['work']
     assert len([node for node in result['job']['nodes'] if node['kind'] == 'tool']) == 1
@@ -291,6 +295,16 @@ async def test_disabled_execution_history_has_discoverable_recovery_group(setup)
         assert 'read_execution' in visible_tools(context, loaded_groups(context, job))
 
 
+async def test_loaded_document_policy_reaches_actual_model_input(setup):
+    model = fake(scenario='files', answer='已说明材料范围。')
+    result, stored = await run(setup, model, '请读取此前的材料')
+    assert result['reply'] == '已说明材料范围。' and model.calls == 2
+    assert stored['toolCatalog']['groups'] == ['documents']
+    assert 'attachmentSummary' not in model.systems[0]
+    assert 'attachmentSummary' in model.systems[1]
+    assert '缺少某事实不代表来源冲突' in model.systems[1]
+
+
 async def test_files_group_locates_prior_uploads_without_loading_documents_or_granting_access(setup):
     from sqlalchemy import func, select
     from _support.http.management import conversation, message
@@ -342,3 +356,21 @@ async def test_closed_discovery_returns_only_currently_available_tools(setup):
     result = json.loads(await load_tools.coroutine(['research', 'documents'], SimpleNamespace(context=context)))
     assert 'save_deliverable' in result['tools']
     assert not {'web_search', 'web_fetch', 'read_document', 'find_documents'} & set(result['tools'])
+
+
+@pytest.mark.parametrize('groups', [[], ['work'], ['reports'], ['work', 'reports']])
+async def test_shared_business_contract_preserves_cross_group_direct_actions(groups):
+    from app.agent.tools.business.actions import execute_business_action
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+    context = SimpleNamespace(role='employee', settings=SimpleNamespace(sandbox_url='', sandbox_token=''))
+    visible = visible_tools(context, groups)
+    assert ('execute_business_action' in visible) == bool(groups)
+    schema = convert_to_openai_tool(execute_business_action)['function']
+    parameters = schema['parameters']['properties']
+    assert set(parameters['action']['enum']) == {
+        'create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'}
+    assert {'step', 'task_item_id', 'target_id', 'expected_revision', 'changes', 'report_date',
+            'report_kind', 'submit_after', 'source_tokens', 'requires_step', 'copy_index',
+            'deliverable_id', 'deliverable_revision', 'item_id', 'shared_attachment_ids'} <= parameters.keys()
+    assert all(term in schema['description'] for term in ('Monday-Sunday', 'bodyEdits', 'materialIds',
+        'review-before-submit', 'get_business_actions', 'source_tokens', 'never guess', 'compound items'))

@@ -3,14 +3,13 @@ import utilitiesStyles from '../../../../styles/utilities.module.css'
 import layoutStyles from '../../../../styles/layout.module.css'
 import controlsStyles from '../../../../styles/controls.module.css'
 import styles from './BusinessActionCard.module.css'
-import cardStyles from '@web/styles/patterns/ResourceCard.module.css'
+import { ResourceCard } from '@web/components/content/ResourceCard'
 import type { BusinessAction, Progress, ReportContent } from '@paa/api-contracts'
 import { BusyButton } from '@web/components/actions/BusyButton'
 import { ErrorNotice } from '@web/components/feedback/ErrorNotice'
-import { Status } from '@web/components/feedback/Status'
 import { resolveBusinessAction } from '@web/features/assistant/api/requests'
 import { detailState } from '@web/utils/navigation'
-import { AlertCircle, ArrowUpRight, ClipboardList, Clock3, FileText } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, ClipboardList, Clock3, FileText, RefreshCw } from 'lucide-react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { epoch } from '@web/api/client'
 import type { TaskContinuation } from '../../api/interactions'
@@ -37,13 +36,11 @@ export function WorkActionDetails({
   action: BusinessAction
   showMaterialCount?: boolean
 }) {
+  if (action.unchanged) return <p>内容未变化，已保留原记录。</p>
   return (
     <div className={styles['business-action-preview']}>
       {action.changedFields?.some((key) => key === 'body' || key === 'bodyEdits') && (
-        <section>
-          <strong>工作内容已保存</strong>
-          <p className={utilitiesStyles.preserve}>{action.details?.bodyText?.slice(0, 500)}</p>
-        </section>
+        <p className={utilitiesStyles.preserve}>{action.details?.bodyText?.slice(0, 500)}</p>
       )}
       {action.updateId && (
         <section>
@@ -64,7 +61,7 @@ export function WorkActionDetails({
         )
         .map(([key, label]) => (
           <section key={key}>
-            <strong>{label}</strong>
+            {!(action.state === 'pending' && key === 'nextStep') && <strong>{label}</strong>}
             <p className={utilitiesStyles['preserve']}>
               {action.details?.[key as keyof Progress] || '已清空'}
             </p>
@@ -75,7 +72,8 @@ export function WorkActionDetails({
 }
 
 export const actionStateLabel = (action: BusinessAction) => {
-  if (action.state === 'succeeded') return action.action === 'update_work' ? '已更新' : '已完成'
+  if (action.state === 'succeeded')
+    return action.unchanged ? '内容未变化' : action.action === 'update_work' ? '已更新' : '已完成'
   if (action.state === 'pending') return '等待确认'
   if (action.state === 'cancelled') return '已取消'
   if (action.state === 'running')
@@ -135,6 +133,7 @@ export function BusinessActionCard({
   const openLabel = `查看当前${current.objectType === 'work' ? '工作' : '报告'}`
   const objectPath = `/${current.objectType === 'work' ? 'work' : 'reports'}/${current.objectId}`
   const linkedHeading = current.state === 'succeeded' && !!current.objectId && !current.canConfirm
+  const completed = current.state === 'succeeded'
   const respond = async (choice: 'confirm' | 'cancel') => {
     if (submitting.current) return
     submitting.current = true
@@ -158,130 +157,129 @@ export function BusinessActionCard({
       if (active.current && generation === epoch) setBusy(false)
     }
   }
-  const heading = (
-    <>
-      <span className={`${cardStyles.icon} ${styles['business-action-icon']}`} aria-hidden="true">
-        <Icon size={24} />
-      </span>
-      <div className={cardStyles.content}>
-        <h4
-          className={cardStyles.title}
-          title={current.title ?? current.preview?.title ?? current.label}
-        >
-          {current.title ?? current.preview?.title ?? current.label}
-        </h4>
-        <div className={`${cardStyles.meta} ${styles['business-action-state']}`}>
-          {current.state !== 'succeeded' && (current.title || current.preview?.title) && (
-            <span>{current.label}</span>
-          )}
-          <span className={styles['business-action-outcome']}>
-            {busy
-              ? '正在处理'
-              : current.state === 'succeeded' && current.materialIds?.length
-                ? `已保存 ${current.materialIds.length} 个材料`
-                : actionStateLabel(current)}
-          </span>
-          {current.details?.status && <Status value={current.details.status} />}
-        </div>
-      </div>
-      {linkedHeading && (
-        <ArrowUpRight className={styles['business-action-arrow']} size={16} aria-hidden="true" />
-      )}
-    </>
-  )
   return (
-    <section
-      className={`${cardStyles.card} ${styles['business-action-card']}`}
+    <ResourceCard
+      as="section"
+      className={styles['business-action-card']}
       data-status={current.state}
       aria-label={`${current.label} · ${actionStateLabel(current)}`}
+      title={current.title ?? current.preview?.title ?? current.label}
+      titleAs="h4"
+      icon={<Icon size={24} />}
+      tone={current.state === 'pending' ? 'warning' : 'default'}
+      status={completed ? actionStateLabel(current) : undefined}
+      subtitle={
+        current.state !== 'pending' &&
+        (!completed || (!current.unchanged && !!current.materialIds?.length)) && (
+          <span className={styles['business-action-state']}>
+            {!completed && (current.title || current.preview?.title) && (
+              <span>{current.label}</span>
+            )}
+            <span>
+              {busy
+                ? '正在处理'
+                : completed && !current.unchanged && current.materialIds?.length
+                  ? `已保存 ${current.materialIds.length} 个材料`
+                  : actionStateLabel(current)}
+            </span>
+          </span>
+        )
+      }
+      variant={linkedHeading ? 'preview' : 'auto'}
+      primaryAction={
+        linkedHeading
+          ? { kind: 'route', to: objectPath, state: detailState(location), label: openLabel }
+          : undefined
+      }
+      trailing={linkedHeading ? <ArrowUpRight size={16} /> : undefined}
+      trailingAction={
+        current.state === 'running'
+          ? {
+              action: { kind: 'button', onClick: refresh, label: '刷新状态' },
+              icon: (
+                <RefreshCw size={18} aria-hidden="true">
+                  <title>刷新状态</title>
+                </RefreshCw>
+              ),
+            }
+          : undefined
+      }
+      footer={
+        (error || (current.objectId && !linkedHeading) || busy || current.canConfirm) && (
+          <>
+            <ErrorNotice>{error}</ErrorNotice>
+            <div className={`${layoutStyles['card-actions']} ${styles['slot-card-actions']}`}>
+              {current.objectId && !linkedHeading && (
+                <Link
+                  className={`${controlsStyles['text-button']}`}
+                  to={objectPath}
+                  state={detailState(location)}
+                >
+                  {openLabel}
+                </Link>
+              )}
+              {busy && <span role="status">正在处理…</span>}
+              {current.canConfirm && !busy && (
+                <>
+                  <button disabled={busy} onClick={() => void respond('cancel')}>
+                    取消
+                  </button>
+                  <BusyButton
+                    busy={busy}
+                    className={
+                      current.action.startsWith('delete_')
+                        ? controlsStyles['danger']
+                        : controlsStyles['primary']
+                    }
+                    onClick={() => void respond('confirm')}
+                  >
+                    {current.confirmLabel ??
+                      (current.action.startsWith('delete_')
+                        ? '确认删除'
+                        : current.action === 'submit_report'
+                          ? '确认提交'
+                          : '确认执行')}
+                  </BusyButton>
+                </>
+              )}
+            </div>
+          </>
+        )
+      }
     >
-      {linkedHeading ? (
-        <Link
-          className={`${cardStyles.row} ${styles['business-action-link']}`}
-          to={objectPath}
-          state={detailState(location)}
-          aria-label={openLabel}
-        >
-          {heading}
-        </Link>
-      ) : (
-        <div className={cardStyles.row}>{heading}</div>
+      {current.details && !current.preview?.changes && (
+        <WorkActionDetails action={current} showMaterialCount={current.state !== 'succeeded'} />
       )}
-      <div className={styles['business-action-body']}>
-        {current.details && !current.preview?.changes && (
-          <WorkActionDetails action={current} showMaterialCount={current.state !== 'succeeded'} />
-        )}
-        {current.preview?.changes && (
-          <ActionChanges
-            before={current.preview.before}
-            changes={current.preview.changes}
-            names={current.preview.materialNames}
-          />
-        )}
-        {current.message && <p className={utilitiesStyles['muted']}>{current.message}</p>}
-        {current.preview?.content && (
-          <div className={styles['business-action-preview']}>
-            {Object.entries(reportLabels).map(([key, label]) => (
-              <section key={key}>
-                <strong>{label}</strong>
-                <p className={utilitiesStyles['preserve']}>
-                  {current.preview?.content?.[key as keyof ReportContent] || '暂无记录'}
-                </p>
-              </section>
-            ))}
-          </div>
-        )}
-        {current.action.startsWith('delete_') && current.canConfirm && (
-          <p>
-            {current.action === 'delete_work'
-              ? '删除工作后，原始消息与报告中的历史记录会保留。'
-              : `将删除报告，同时清理 ${current.impact?.messages ?? 0} 条原始消息、${current.impact?.attachments ?? 0} 个附件。其他独立工作与报告保留。`}{' '}
-            此操作不能撤销。
-          </p>
-        )}
-        <ErrorNotice>{error}</ErrorNotice>
-        <div className={`${layoutStyles['card-actions']} ${styles['slot-card-actions']}`}>
-          {current.state === 'running' && (
-            <button className={controlsStyles['text-button']} onClick={refresh}>
-              刷新状态
-            </button>
-          )}
-          {current.objectId && !linkedHeading && (
-            <Link
-              className={`${controlsStyles['text-button']}`}
-              to={objectPath}
-              state={detailState(location)}
-            >
-              {openLabel}
-            </Link>
-          )}
-          {busy && <span role="status">正在处理…</span>}
-          {current.canConfirm && !busy && (
-            <>
-              <button disabled={busy} onClick={() => void respond('cancel')}>
-                取消
-              </button>
-              <BusyButton
-                busy={busy}
-                className={
-                  current.action.startsWith('delete_')
-                    ? controlsStyles['danger']
-                    : controlsStyles['primary']
-                }
-                onClick={() => void respond('confirm')}
-              >
-                {current.confirmLabel ??
-                  (current.action.startsWith('delete_')
-                    ? '确认删除'
-                    : current.action === 'submit_report'
-                      ? '确认提交'
-                      : '确认执行')}
-              </BusyButton>
-            </>
-          )}
+      {current.preview?.changes && (
+        <ActionChanges
+          before={current.preview.before}
+          changes={current.preview.changes}
+          names={current.preview.materialNames}
+          pending={current.state === 'pending'}
+        />
+      )}
+      {current.message && <p className={utilitiesStyles['muted']}>{current.message}</p>}
+      {current.preview?.content && (
+        <div className={styles['business-action-preview']}>
+          {Object.entries(reportLabels).map(([key, label]) => (
+            <section key={key}>
+              <strong>{label}</strong>
+              <p className={utilitiesStyles['preserve']}>
+                {current.preview?.content?.[key as keyof ReportContent] || '暂无记录'}
+              </p>
+            </section>
+          ))}
         </div>
-      </div>
-    </section>
+      )}
+      {current.action.startsWith('delete_') && current.canConfirm && (
+        <p>
+          {current.action === 'delete_work'
+            ? '删除工作后，原始消息与报告中的历史记录会保留。'
+            : `将删除报告，同时清理 ${current.impact?.messages ?? 0} 条原始消息、${current.impact?.attachments ?? 0} 个附件。其他独立工作与报告保留。`}{' '}
+          此操作不能撤销。
+        </p>
+      )}
+    </ResourceCard>
   )
 }
 
@@ -326,17 +324,19 @@ function ActionChanges({
   before,
   changes,
   names,
+  pending,
 }: {
   before?: Record<string, unknown>
   changes: Record<string, unknown>
   names?: Record<string, string>
+  pending: boolean
 }) {
   return (
     <div className={styles['business-action-preview']}>
       {Object.entries(changes).map(([key, value]) => (
         <section key={key}>
-          <strong>{fieldLabels[key] ?? key}</strong>
-          {before && Object.hasOwn(before, key) && (
+          {!(pending && key === 'nextStep') && <strong>{fieldLabels[key] ?? key}</strong>}
+          {!pending && before && Object.hasOwn(before, key) && (
             <p className={`${utilitiesStyles.preserve} ${styles.before}`}>
               原内容：{workChangeText(key, before[key], names) ?? previewValue(before[key])}
             </p>

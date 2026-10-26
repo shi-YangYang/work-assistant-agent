@@ -1,4 +1,4 @@
-"""Replay actual authorization wire variants through the strict parser and worker."""
+"""Keep historical wire parsing and replay material evidence under the current plan contract."""
 import copy
 import hashlib
 import json
@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.agent.actions.intent import WorkIntentVerdict, destination_gap_precedes_fields, schema_feedback
 from app.agent.actions.material_selection import issue, normalize_contract, resolve
-from app.agent.actions.work_change_plan import FIELDS
+from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
 from app.agent.runtime.model import BoundedChatModel
 from app.modules.deliverables.models import Deliverable, DeliverableRevision
 from app.modules.messages.models import Message
@@ -35,6 +35,17 @@ CLARIFICATION_RESPONSE = json.loads((Path(__file__).parents[1] / '_support/agent
 TEXT = RESPONSES[0]['quote']
 MESSAGE = RESPONSES[0]['materialSelection']['messageId']
 WORK = RESPONSES[0]['materialSelection']['targetId']
+
+
+def planned_material_wire(recorded):
+    """Project only superseded scope fields; preserve raw evidence and other defects.
+
+    This is a fixed test projection, not a new captured model response. The
+    independent compact plan now provides requested fields and their quotes.
+    """
+    return {**{key: copy.deepcopy(value) for key, value in recorded.items()
+               if key not in ('requestedChanges', 'requiredFields', 'appendFields')},
+            'invalidFields': []}
 
 
 def request():
@@ -190,13 +201,13 @@ async def runtime(setup, *, text=TEXT, reference=True):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('variant', [0, 1, 2, 3, 'denied'])
-async def test_real_wire_replay_through_http_worker_preserves_authorization(setup, monkeypatch, variant):
+@pytest.mark.parametrize('variant', [0, 1, 2, 3, 'denied', 'scope-conflict'])
+async def test_recorded_material_evidence_with_current_plan_preserves_authorization(setup, monkeypatch, variant):
     job, sent, work, values, original = await runtime(setup)
     settings, sessions, users, clients = setup
-    index = 0 if variant == 'denied' else variant
+    index = 0 if isinstance(variant, str) else variant
     wire = json.dumps(RESPONSES[index], ensure_ascii=False).replace(MESSAGE, sent['messageId']).replace(WORK, work['id'])
-    # Only replace fixture identities. All fields and semantic omissions remain.
+    # Original files stay unchanged; rebind identities before the explicit projection.
     for old, new in zip(RESPONSES[1]['materialSelection']['references'], values):
         wire = wire.replace(old['deliverableId'], new['deliverableId']).replace(old['fileId'], new['fileId'])
     if variant == 'denied':
@@ -222,13 +233,16 @@ async def test_real_wire_replay_through_http_worker_preserves_authorization(setu
                 self.plans += 1
                 fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
                 fields['materials'] = {'mode': 'set', 'value': None, 'quotes': [{'messageId': sent['messageId'], 'text': TEXT}]}
-                return AIMessage(content=json.dumps(fields))
+                return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(fields))))
             if payload.get('proposedOperation'):
                 self.checks += 1
                 reference = payload['conversationTask']['workReference']
                 assert reference['id'] == work['id'] and not reference.get('unavailable')
                 self.repairs.extend(m.content for m in input if isinstance(m.content, str) and m.content.startswith('本次核对输出须同时满足：'))
-                return AIMessage(content=wire)
+                projected = planned_material_wire(json.loads(wire))
+                if variant == 'scope-conflict':
+                    projected['invalidFields'] = ['materials']
+                return AIMessage(content=json.dumps(projected, ensure_ascii=False))
             return await super().ainvoke(input, config, stop=stop, **kwargs)
         async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
             self.calls += 1
@@ -247,7 +261,9 @@ async def test_real_wire_replay_through_http_worker_preserves_authorization(setu
         await handlers.process_job(job, sessions, settings, saver, model=model)
     public = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
     assert not public['interactions']
-    success = variant in (0, 1, 2)
+    # Variant 3 omitted old scope lists, now supplied by the independent plan.
+    # A contradictory current verdict remains a separate zero-write failure.
+    success = variant in (0, 1, 2, 3)
     async with sessions() as db:
         current = await db.get(WorkItem, work['id'])
         assert {key: value for key, value in current.content.items() if key != 'materialIds'} == {
@@ -262,10 +278,10 @@ async def test_real_wire_replay_through_http_worker_preserves_authorization(setu
         actions = (await db.scalars(select(BusinessAction).where(BusinessAction.message_id == sent['messageId']))).all()
         assert len(actions) == int(success)
         live = await db.get(Job, job.id)
-        if variant == 3:
+        if variant == 'scope-conflict':
             assert live.state in ('failed', 'awaiting_retry')
             assert '操作核对未返回完整有效结果' in live.error
-            assert any('requestedChanges' in text and 'workChangePlan' in text and 'materials' in text for text in model.repairs)
+            assert any('invalidFields' in text and 'allowed=true' in text and 'materials' in text for text in model.repairs)
             assert model.checks == 4 and model.calls == 2 and model.plans == 1
             visible = json.dumps(public, ensure_ascii=False)
             assert '操作核对未返回完整有效结果' not in visible and '内部核对未完成' not in visible
@@ -353,11 +369,11 @@ def gap_model(sent, work, values, text, wire_for, *, source_message=None):
                 fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
                 fields['materials'] = {'mode': 'set', 'value': None,
                     'quotes': [{'messageId': source_message or sent['messageId'], 'text': text}]}
-                return AIMessage(content=json.dumps(fields))
+                return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(fields))))
             if payload.get('proposedOperation'):
                 self.checks += 1
                 self.repairs.extend(m.content for m in input if isinstance(m.content, str) and m.content.startswith('本次核对输出须同时满足：'))
-                result = AIMessage(content=json.dumps(wire_for(payload, self.checks), ensure_ascii=False))
+                result = AIMessage(content=json.dumps(planned_material_wire(wire_for(payload, self.checks)), ensure_ascii=False))
                 # Real BoundedChatModel validates before returning; check()
                 # parses again. Both passes must be side-effect free.
                 if self._response_validator:

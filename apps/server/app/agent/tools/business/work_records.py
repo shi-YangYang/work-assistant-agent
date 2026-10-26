@@ -31,7 +31,9 @@ def unavailable_work():
 @tool
 async def list_work_updates(work_id: str, runtime: ToolRuntime[RunContext], start: int = 0) -> str:
     """Read current progress entries, 20/page. Entries have stable id/revision for
-    correcting or deleting one entry. Follow nextCursor. Work body is separate.
+    correcting or deleting one entry. revision and workRevision are internal
+    snapshot/concurrency tokens to copy into writes, not user-facing editions.
+    Follow nextCursor. Work body is separate.
     """
     from app.modules.work.updates.service import update_page
     async with runtime.context.sessions.begin() as db:

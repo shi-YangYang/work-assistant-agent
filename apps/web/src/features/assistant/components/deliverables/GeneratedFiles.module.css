@@ -1,16 +1,11 @@
 .files {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
   max-width: 100%;
   margin: 12px 0;
   padding: 0;
   list-style: none;
-}
-.file {
-  overflow: hidden;
-}
-.file-error {
-  padding: 0 16px 16px;
 }
 .images {
   display: flex;

@@ -1,5 +1,6 @@
 """Bounded node state stored with its owning job, cleaned up with that job."""
 import copy
+import json
 from datetime import datetime, timezone
 from app.tasks.feedback.feedback_state import update_feedback
 
@@ -20,6 +21,36 @@ def iso(value):
     return datetime.fromtimestamp(value, timezone.utc).isoformat() if value is not None else None
 
 
+def business_item(row):
+    if row.get('businessTaskItemId'):
+        return row['businessTaskItemId']
+    output = row.get('output') or {}
+    if not isinstance(output, dict) or output.get('name') != 'execute_business_action':
+        return None
+    try:
+        value = json.loads(output.get('content', '{}'))
+    except (TypeError, ValueError):
+        return None
+    return value.get('taskItemId') if isinstance(value, dict) else None
+
+
+def recovered_business_item(job, row):
+    """Display a recovered request without rewriting the failed attempt journal."""
+    from app.tasks.feedback.outcomes import BLOCKING
+    if row.get('kind') != 'tool' or row.get('state') != 'failed':
+        return False
+    item_id = business_item(row)
+    item = next((item for item in job.result.get('taskItems', []) if item['id'] == item_id), {})
+    if item.get('action') not in ('create_work', 'update_work') or item.get('state') != 'succeeded' or not item.get('receiptId'):
+        return False
+    if any(outcome.get('taskItemId') == item_id and outcome.get('category') in BLOCKING
+           for outcome in job.result.get('toolOutcomes', [])):
+        return False
+    return any(outcome.get('taskItemId') == item_id and outcome.get('action') == item['action']
+               and outcome.get('receiptId') == item['receiptId'] and outcome.get('category') == 'success'
+               for outcome in job.result.get('toolOutcomes', []))
+
+
 def node_dtos(job):
     from app.tasks.feedback.public import node_error
     state = job.result.get('nodeExecution', {})
@@ -30,7 +61,8 @@ def node_dtos(job):
     for row in rows:
         if row.get('scope') != state.get('scope'):
             continue
-        status = row['state']
+        recovered = recovered_business_item(job, row)
+        status = 'succeeded' if recovered else row['state']
         if job.state == 'cancelled' and status in ('running', 'retry_wait', 'waiting'):
             status = 'cancelled'
         # Retrying can take a different path, leaving reopened nodes unused.
@@ -39,13 +71,13 @@ def node_dtos(job):
             status = 'failed'
         result.append({
             'id': row['id'], 'parentId': row.get('parentId'), 'kind': row['kind'],
-            'label': row['label'], 'state': status, 'attempts': row['attempts'],
+            'label': row['label'] + ('（已恢复）' if recovered else ''), 'state': status, 'attempts': row['attempts'],
             **({'presentation': row['presentation']} if row.get('presentation') else {}),
             **({'activity': row['activity']} if row.get('activity') and status == 'running' else {}),
             'maxAttempts': row.get('maxAttempts', 4), 'retries': max(0, row['attempts'] - 1),
             'totalRetries': row.get('totalRetries', 0), 'round': row.get('round', 0),
             'nextRetryAt': iso(row.get('nextAt')) if status == 'retry_wait' else None,
-            'errorCode': row.get('errorCode', ''), 'error': node_error(row),
+            'errorCode': '' if recovered else row.get('errorCode', ''), 'error': '' if recovered else node_error(row),
             'canRetry': row.get('resumable', False) and status == 'failed' and job.state in ('failed', 'awaiting_retry'),
         })
     return result
@@ -88,5 +120,7 @@ def release_outputs(job):
     state = execution(job)
     if state:
         for row in state.get('nodes', []):
+            if item_id := business_item(row):
+                row['businessTaskItemId'] = item_id
             row.pop('output', None)
         save(job, state)

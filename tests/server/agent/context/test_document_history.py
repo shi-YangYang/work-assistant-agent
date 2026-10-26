@@ -47,6 +47,9 @@ async def history(context):
 async def test_followup_reuses_only_actual_delivered_fragments_and_registers_after_delivery(setup):
     context, attachment, first, second, receipt = await followup(setup)
     messages = await history(context)
+    reference = next(m.content for m in messages if m.id == 'history:' + first['messageId'])
+    assert first['messageId'] in reference
+    assert 'feedbackProjection' not in reference and 'materialTranscript' not in reference
     source = next(m for m in messages if m.id == 'history-material:' + first['messageId'])
     assert isinstance(source, HumanMessage)
     wire = [{'role': 'user', 'content': source.content}]

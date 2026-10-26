@@ -77,12 +77,14 @@ async def find_work_items(query: str, runtime: ToolRuntime[RunContext], status: 
 
 @tool
 async def get_work_item(work_id: str, runtime: ToolRuntime[RunContext], body_start: int = 0) -> str:
-    """Read one's current work: authoritative revision, body blocks, recent progress
+    """Read one's current work: internal concurrency revision, body blocks, recent progress
     and saved materials. body_start is a zero-based top-level block offset; pass
     nextBodyStart until null to read the body fully. Each page includes up to 20
     whole blocks (roughly 12k characters; an indivisible block can exceed that,
     bounded by the 250KB document limit). Stable attrs.id identifies local edits;
     taskItem.attrs.id and checked identify each checklist item and its state.
+    revision is a read/write token, not a user-facing edition; use it unchanged
+    for expected_revision. Do not ask users to supply it.
     A checked item does not imply that the entire work is done.
     updates/materials are bounded previews with nextCursor. Continue through
     list_work_updates/list_work_materials. Read actual files with read_work_material;

@@ -1,0 +1,149 @@
+{
+  "baseline": "0ec9e229268e62a4bb282a684ba8df4704ac47cb",
+  "head": "ade2d904759e29720b04f48fc1d680e8a0afb746",
+  "budget": {
+    "maxMessages": 24,
+    "timeoutSecondsPerMessage": 600,
+    "attemptsPerCaseEffort": 1,
+    "efforts": ["low", "high"]
+  },
+  "features": {
+    "F01": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F02": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F03": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F04": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F05": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F06": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F07": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F08": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F09": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F10": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F11": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F12": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F13": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F14": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F15": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F16": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F17": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F18": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F19": {
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    "F20": {
+      "status": "NOT_RUN",
+      "evidence": []
+    }
+  },
+  "ai": [
+    {
+      "id": "work-create",
+      "feature": "F03",
+      "prompt": "请直接创建一项工作，标题为“验收{{run}}-{{effort}}材料归档”，正文是“汇总了三份合同资料，已经完成目录核对；合同扫描归档待完成，发送客户尚未开始”。工作清单两项：目录核对（已完成）、合同扫描归档（未完成）。状态进行中。只创建这一项，不提交周报。"
+    },
+    {
+      "id": "work-edit",
+      "feature": "F04",
+      "prompt": "把刚才创建的“验收{{run}}-{{effort}}材料归档”工作下一步改为“周一完成扫描归档”，保留其他全部内容。"
+    },
+    {
+      "id": "question",
+      "feature": "F08",
+      "prompt": "我想创建一项工作，请先通过提问框问清我需要填写的任务名称和内容，不要替我决定，也不要先创建。"
+    },
+    {
+      "id": "document",
+      "feature": "F06",
+      "prompt": "请阅读我上传的全部六份资料，按文件逐一给出文件名、唯一验收编号和关键数据。尤其读取PDF第二页的数据，不能仅凭文件名推断。只回答，不创建工作。"
+    },
+    {
+      "id": "search",
+      "feature": "F09",
+      "prompt": "请公开查证 PostgreSQL 17 官方文档中什么命令会重新加载配置文件，提供官方文档链接和命令。只需简短回答，不写公司记录。"
+    },
+    {
+      "id": "file",
+      "feature": "F07",
+      "prompt": "请交付一份可持续修改的文字成果《资料归档说明》，正文包含“目录已核对，扫描归档待完成，尚未发送客户”。同时导出一份可下载的CSV表格，列为事项、状态，三行分别为目录核对/已完成、扫描归档/待完成、发送客户/未开始。不创建工作或报告。"
+    },
+    {
+      "id": "report",
+      "feature": "F12",
+      "prompt": "根据我本周全部工作生成并保存本周周报草稿。包含正文及清单，不要求先有独立进展。不要提交发布。"
+    },
+    {
+      "id": "rewrite",
+      "feature": "F14",
+      "prompt": "把本周周报措辞改得更简洁，保留所有来源和事实，明确尚未发送客户。保存草稿，不提交。"
+    },
+    {
+      "id": "sandbox",
+      "feature": "F07",
+      "prompt": "请使用代码执行沙盒运行Python，计算1到100的平方和，并生成包含逐项平方和总和的XLSX文件供我下载。不要用普通CSV导出替代代码执行。"
+    },
+    {
+      "id": "confirmation",
+      "feature": "F18",
+      "prompt": "请创建一项工作，标题“待确认{{run}}-{{effort}}”，正文“仅用于测试确认取消，不含真实业务”。"
+    },
+    {
+      "id": "report-rebuild",
+      "feature": "F15",
+      "prompt": "我已主动删除本周周报。请根据我的本周工作重新生成并保存一个新周报草稿，不要提交。"
+    }
+  ]
+}

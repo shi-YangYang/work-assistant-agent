@@ -66,7 +66,7 @@ async def test_empty_generation_creates_nothing_and_same_request_can_succeed_aft
     await process_job(await claim(sessions, actor.id), sessions, settings, None, model=model)
     report = (await client.get('/api/v1/reports/' + ready.json()['reportId'])).json()
     assert report['content'] == CONTENT and report['job']['state'] == 'succeeded'
-    assert model.calls == 1 and len(model.reviews) == 1
+    assert model.calls == 1 and len(model.reviews) == 0
 
 
 async def test_work_outside_period_is_not_used_and_existing_report_is_unchanged(setup):

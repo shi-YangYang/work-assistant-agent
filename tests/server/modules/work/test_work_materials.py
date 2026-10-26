@@ -292,6 +292,7 @@ async def test_submitted_report_keeps_progress_snapshot_and_file_after_correctio
     async with sessions.begin() as db:
         report = Report(company_id=users['employee'].company_id, owner_id=users['employee'].id, kind='weekly', period=now().date().isoformat(), period_end=now().date().isoformat(), timezone='UTC', content={'completed': '', 'ongoing': '客户确认初稿', 'blockers': '', 'next': ''})
         sources = await report_inputs(db, report)
+        sources = [row for row in sources if row.content.get('_updateId') == update['id']]
         assert len(sources) == 1
         report.source_ids = [sources[0].id]
         original_source = deepcopy(sources[0].content)
@@ -324,3 +325,93 @@ async def test_submitted_report_keeps_progress_snapshot_and_file_after_correctio
     assert (await client.get(path + '/updates')).json()['items'][0]['text'] == '更正：客户尚待确认'
     assert (await client.get(historical['attachment']['url'])).content == b'original confirmation evidence'
     assert (settings.media_dir / file_id).read_bytes() == b'original confirmation evidence'
+
+
+@pytest.mark.parametrize('change', ['none', 'unattached', 'removed', 'work_deleted', 'file_deleted',
+                                    'foreign_owner', 'foreign_company', 'access_revoked', 'extraction_changed', 'chunk_missing'])
+async def test_report_read_work_upload_retains_authorization_and_source_versions(setup, change):
+    from fastapi import HTTPException
+    from app.agent.context.references.report_context import load_materials
+    from app.modules.attachments.models import DocumentChunk
+    from app.security.access import scope
+    settings, sessions, users, clients = setup
+    actor, client = users['employee'], clients['employee']
+    uploaded = await upload(client, 'source.txt', b'12 checked; 3 missing signatures; archive only after signatures.', 'text/plain')
+    work = await create(client, materials=[{'attachmentId': uploaded['id']}])
+    material = (await client.get('/api/v1/work-items/' + work['id'] + '/materials')).json()['items'][0]
+    context, sent = await mode_runtime(setup, 'full', 'Generate a report using the saved work material')
+    result = json.loads(await read_work_material.coroutine(work['id'], material['id'], SimpleNamespace(context=context)))
+    assert 'archive only after signatures' in result['items'][0]['text']
+    identifier = material['attachment']['id']
+    source = {'messageId': sent['messageId'], 'materials': list(context.document_reads.values())}
+    assert source['materials'] and all(row[0] == identifier for row in source['materials'])
+    async with sessions.begin() as db:
+        attachment = await db.get(Attachment, identifier)
+        record = await db.get(WorkItem, work['id'])
+        assert attachment.message_id is None
+        if change == 'unattached':
+            source['materials'] = [(uploaded['id'], attachment.extraction_revision, source['materials'][0][2])]
+        elif change == 'removed':
+            (await db.get(WorkMaterial, material['id'])).removed = True
+        elif change == 'work_deleted':
+            record.deleted = True
+        elif change == 'file_deleted':
+            attachment.deleted = True
+        elif change == 'foreign_owner':
+            attachment.owner_id = users['peer'].id
+        elif change == 'foreign_company':
+            attachment.company_id = users['outsider'].company_id
+        elif change == 'access_revoked':
+            record.access = {**scope(actor), 'team': True}
+        elif change == 'extraction_changed':
+            attachment.extraction_revision += 1
+        elif change == 'chunk_missing':
+            chunk = await db.scalar(select(DocumentChunk).where(DocumentChunk.attachment_id == identifier))
+            await db.delete(chunk)
+    async with sessions() as db:
+        report_job = SimpleNamespace(result={'instructionSource': source})
+        if change == 'none':
+            rows = await load_materials(db, actor, report_job)
+            assert len(rows) == 1 and rows[0]['text'] == result['items'][0]['text']
+            assert rows[0]['name'] == 'source.txt'
+        elif change in ('extraction_changed', 'chunk_missing'):
+            with pytest.raises(ValueError, match='附件已变化'):
+                await load_materials(db, actor, report_job)
+        else:
+            with pytest.raises(HTTPException) as rejected:
+                await load_materials(db, actor, report_job)
+            assert rejected.value.status_code in (403, 404)
+
+
+@pytest.mark.parametrize('change', ['none', 'deleted', 'access_revoked'])
+async def test_report_chat_material_still_rechecks_parent_message(setup, change):
+    from fastapi import HTTPException
+    from app.agent.context.references.report_context import load_materials
+    from app.agent.tools.resources.documents import read_document_result
+    from app.security.access import scope
+    _, sessions, users, clients = setup
+    actor, client = users['employee'], clients['employee']
+    attachment = await upload(client, 'chat.txt', b'Actual chat source', 'text/plain')
+    conv = await conversation(client)
+    parent_sent = await message(client, conv, 'Read this source', [attachment['id']])
+    async with sessions.begin() as db:
+        (await db.get(Job, parent_sent['jobId'])).state = 'succeeded'
+    sent = await message(client, conv, 'Use the previous source for this report')
+    from _support.materials.documents import running_context
+    context = await running_context(setup[0], sessions, actor, sent)
+    await read_document_result(context, attachment['id'])
+    source = {'messageId': sent['messageId'], 'materials': list(context.document_reads.values())}
+    async with sessions.begin() as db:
+        parent = await db.get(Message, parent_sent['messageId'])
+        if change == 'deleted':
+            parent.deleted = True
+        elif change == 'access_revoked':
+            parent.access = {**scope(actor), 'team': True}
+    async with sessions() as db:
+        report_job = SimpleNamespace(result={'instructionSource': source})
+        if change == 'none':
+            assert (await load_materials(db, actor, report_job))[0]['text'] == 'Actual chat source'
+        else:
+            with pytest.raises(HTTPException) as rejected:
+                await load_materials(db, actor, report_job)
+            assert rejected.value.status_code in (403, 404)

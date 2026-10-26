@@ -94,6 +94,27 @@ def plain_text(body):
     return '\n'.join(walk(n) for n in (body or {}).get('content', []))
 
 
+def same_content(left, right):
+    """Compare authored content, excluding editor IDs/defaults and cursor paragraphs.
+
+    Used only to skip a no-op write: the saved document and its stable IDs stay
+    untouched. Formatting, links, materials and checklist states remain content.
+    """
+    def normalize(node):
+        kind = node['type']
+        attrs = {key: value for key, value in node.get('attrs', {}).items() if key != 'id' and value is not None}
+        defaults = {'heading': {'level': 2}, 'orderedList': {'start': 1}, 'taskItem': {'checked': False}}
+        return {'type': kind, 'attrs': {**defaults.get(kind, {}), **attrs},
+                'text': node.get('text'), 'marks': node.get('marks', []),
+                'content': [normalize(child) for child in node.get('content', [])]}
+    def document(body):
+        nodes = [normalize(node) for node in body.get('content', [])]
+        while nodes and nodes[-1] == normalize({'type': 'paragraph'}):
+            nodes.pop()
+        return nodes
+    return document(left) == document(right)
+
+
 def material_ids(body):
     def walk(node):
         return ([node['attrs']['materialId']] if node.get('type') == 'material' else []) + [v for child in node.get('content', []) for v in walk(child)]

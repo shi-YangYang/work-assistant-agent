@@ -77,6 +77,19 @@ async def test_owned_worker_sigkill_before_write_after_commit_and_after_delivery
                 assert (await db.get(WorkItem, row.result['workId'])).title == '恢复唯一工作 ' + jobs[row.id]
             assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id.in_([users[role].id for role in ('admin', 'employee', 'peer')]))) == 3
             assert await db.scalar(select(func.count()).select_from(Idempotency).where(Idempotency.key.in_(jobs))) == 3
+        # Replay a late result using each killed worker's actual pre-kill fence.
+        # The guard must reject before the business mutation can be reached.
+        from app.tasks.context import RunContext, LostLease
+        from app.tasks.lease import lease
+        stale_rejected = 0
+        for row in after:
+            stale = RunContext(row.owner_id, row.company_id, row.id, fences[row.id], sessions, settings)
+            with pytest.raises(LostLease):
+                async with sessions.begin() as db:
+                    await lease(db, stale)
+                    raise AssertionError('Killed worker reached a late business write')
+            stale_rejected += 1
+        result['staleFenceLateWritesRejected'] = stale_rejected
         result.update(status='PASS', elapsedSeconds=round(time.monotonic() - started, 2), finalWorks=3, finalReceipts=3, stolenUnexpiredLeases=0, duplicateWrites=0)
         directory = os.getenv('SPEC044_SERVER_EVIDENCE')
         if directory:

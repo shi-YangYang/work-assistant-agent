@@ -1,7 +1,7 @@
 """Shared controlled fixtures extracted from test_work_change_plan."""
 import json
 from langchain_core.messages import AIMessage
-from app.agent.actions.work_change_plan import FIELDS
+from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan
 
 
 class PlanJudge:
@@ -15,4 +15,4 @@ class PlanJudge:
         result = {field: {'mode': 'preserve', 'quotes': [], 'value': None} for field in FIELDS}
         for field, (mode, quote, value) in self.fields.items():
             result[field] = {'mode': mode, 'quotes': [{'messageId': payload['messageId'], 'text': quote}], 'value': value}
-        return AIMessage(content=json.dumps(result))
+        return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(result))))

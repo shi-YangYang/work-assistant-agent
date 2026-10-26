@@ -1,0 +1,101 @@
+{
+  "suite": "spec081",
+  "baselineCommit": "6622a97",
+  "sampling": "Two pairs per effort, AB then BA; failures retained, no quality resampling",
+  "journeys": [
+    {
+      "id": "answer-then-operation",
+      "efforts": ["low", "high"],
+      "executionMode": "full",
+      "personaId": "professional",
+      "turns": [
+        {
+          "id": "rewrite",
+          "prompt": "请把这句话改成一句简洁、礼貌的工作通知，保留数字和条件，不添加信息：我们已核对12份材料，其中3份缺签字，只有补齐签字后才能归档。只给改写结果。",
+          "quality": {
+            "kind": "answer",
+            "required": ["12", "3", "补齐签字后才能归档"]
+          }
+        },
+        {
+          "id": "create-work",
+          "prompt": "请直接新建一条我的工作，标题为“资料归档核对”，内容为“已核对12份材料，其中3份缺签字；补齐签字后才能归档。”，状态进行中。只创建这一条，不改其他工作，也不要生成报告。",
+          "quality": {
+            "kind": "create_work",
+            "required": ["资料归档核对", "12", "3", "补齐签字后才能归档"],
+            "newWorks": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "property-then-report",
+      "efforts": ["low", "high"],
+      "executionMode": "full",
+      "personaId": "professional",
+      "workReference": true,
+      "turns": [
+        {
+          "id": "property-update",
+          "prompt": "仅把这项工作的状态改为有阻碍，阻碍写为“3份材料缺签字”，下一步改为“联系负责人补齐签字”，期限改为2026-10-30。正文、标题和材料保持不变，不记录独立进展。",
+          "quality": {
+            "kind": "update_work",
+            "status": "blocked",
+            "blocker": "3份材料缺签字",
+            "nextStep": "联系负责人补齐签字",
+            "dueDate": "2026-10-30",
+            "preserveBody": true
+          }
+        },
+        {
+          "id": "weekly-report",
+          "prompt": "请根据本周的实际工作，生成2026-10-25所在周的周报草稿，不提交。保留已经完成的核对数量、尚缺的签字数量和归档前提，不把下一步写成已完成。",
+          "quality": {
+            "kind": "report_generate",
+            "required": ["12", "3", "签字"],
+            "mustRemainDraft": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "body-update",
+      "efforts": ["low", "high"],
+      "executionMode": "full",
+      "personaId": "professional",
+      "workReference": true,
+      "turns": [
+        {
+          "id": "body-update",
+          "prompt": "请在这项工作正文最后追加一段：“已收到2份补充说明，仍须补齐签字后才能归档。”保留原有标题、段落顺序、条件、备注以及其他属性；不替换整篇正文，不记录独立进展。",
+          "quality": {
+            "kind": "update_work",
+            "appendBody": "已收到2份补充说明，仍须补齐签字后才能归档。",
+            "preserveProperties": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "create-control",
+      "efforts": ["low", "high"],
+      "executionMode": "full",
+      "personaId": "professional",
+      "turns": [
+        {
+          "id": "create-work",
+          "prompt": "请直接新建一条我的工作，标题为“资料归档核对”，内容为“已核对12份材料，其中3份缺签字；补齐签字后才能归档。”，状态进行中。只创建这一条，不改其他工作，也不要生成报告。",
+          "quality": {
+            "kind": "create_work",
+            "required": ["资料归档核对", "12", "3", "补齐签字后才能归档"],
+            "newWorks": 1
+          }
+        }
+      ]
+    }
+  ],
+  "baselineReuse": {
+    "lowPair1": ["pairs/rewrite-low-A1", "pairs/create-work-low-A1"],
+    "history": "Two consecutive turns in one previously empty conversation; all subsequent samples use a new conversation and this same order."
+  }
+}

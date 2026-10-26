@@ -34,7 +34,7 @@ export function ReportSources({ report }: { report: Report }) {
               to={`/work/${item.workId}?revision=${item.revision}`}
               state={detailState(location)}
             >
-              {item.title} · 第 {item.revision} 版
+              {item.title} · 查看当时内容
             </Link>
           )}
           {item.sourceIds.map((id) =>

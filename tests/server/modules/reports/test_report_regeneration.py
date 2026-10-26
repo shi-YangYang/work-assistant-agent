@@ -78,7 +78,7 @@ async def test_api_delete_rebuild_worker_submit_and_old_identity_isolation(setup
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
     saved = (await client.get('/api/v1/reports/' + second['reportId'])).json()
     assert saved['content'] == CONTENT and saved['publishedRevision'] == 0 and saved['candidate'] is None
-    assert model.calls == 1 and len(model.reviews) == 1
+    assert model.calls == 1 and len(model.reviews) == 0
     submit_headers = keyed()
     assert (await client.post('/api/v1/reports/' + second['reportId'] + '/submit', json={'expectedRevision': saved['revision']}, headers=submit_headers)).status_code == 200
     assert (await clients['admin'].get('/api/v1/reports/' + second['reportId'])).status_code == 200
@@ -152,6 +152,8 @@ async def test_explicit_regeneration_restores_only_deleted_obligation(setup, ent
         historical = {key: getattr(cached, key) for key in ('company_id', 'owner_id', 'action', 'key', 'digest', 'response')}
         db.add(ReportNotification(company_id=obligation.company_id, owner_id=obligation.owner_id, obligation_id=obligation.id, stage='ready'))
     await remove(client, first['reportId'])
+    deleted_item = (await client.get('/api/v1/report-obligations')).json()['items'][0]
+    assert deleted_item['id'] == obligation.id and deleted_item['reportId'] is None and deleted_item['job'] is None
     async with sessions.begin() as db:
         assert not await db.scalar(select(Idempotency.id).where(Idempotency.action == historical['action'], Idempotency.owner_id == users['employee'].id))
         assert not await db.scalar(select(ReportNotification.id).where(ReportNotification.obligation_id == obligation.id))
@@ -203,7 +205,7 @@ async def test_no_sources_does_not_restore_cancelled_obligation(setup):
 
 
 @pytest.mark.parametrize('reason', ['unknown', 'eligibility_revoked'])
-async def test_unrelated_cancellation_survives_explicit_generation(setup, reason):
+async def test_manual_preparation_uses_report_existence_not_historical_cancellation(setup, reason):
     _, sessions, users, clients = setup
     client, actor = clients['employee'], users['employee']
     await create(client, '方案', summary='初稿完成')
@@ -219,13 +221,28 @@ async def test_unrelated_cancellation_survives_explicit_generation(setup, reason
             await eligibility_changed(db, member)
         else:
             (await db.get(ReportObligation, obligation.id)).cancel_reason = reason
-    denied = await client.post(f'/api/v1/report-obligations/{obligation.id}/prepare', json={}, headers=keyed())
-    assert denied.status_code == 409
-    second = await generate(client)
+    path = f'/api/v1/report-obligations/{obligation.id}/prepare'
+    for who in ('admin', 'peer', 'outsider'):
+        assert (await clients[who].post(path, json={}, headers=keyed())).status_code in (403, 404)
+    prepared = await client.post(path, json={}, headers=keyed())
+    assert prepared.status_code == 200, prepared.text
+    second = prepared.json()
     async with sessions() as db:
         row = await db.get(ReportObligation, obligation.id)
         assert row.state == 'cancelled' and row.cancel_reason == reason and row.report_id == first['reportId']
         assert not (await db.get(Report, second['reportId'])).deleted
+    item = (await client.get('/api/v1/report-obligations')).json()['items'][0]
+    assert item['reportId'] == second['reportId'] and item['job']['id'] == second['jobId']
+    # A stale button with a new key must reuse even a finished report, never
+    # regenerate it merely because its obligation still points at a tombstone.
+    async with sessions.begin() as db:
+        (await db.get(Job, second['jobId'])).state = 'succeeded'
+    replay = await client.post(path, json={}, headers=keyed())
+    assert replay.status_code == 200 and replay.json() == second
+    team = (await clients['admin'].get('/api/v1/team/report-obligations', params={'period': obligation.period})).json()['items'][0]
+    assert team['reportId'] is None
+    async with sessions() as db:
+        assert len((await db.scalars(select(Job.id).where(Job.target_id == second['reportId']))).all()) == 1
 
 
 async def test_materialize_prefers_active_report_and_retains_deleted_cancellation(setup):

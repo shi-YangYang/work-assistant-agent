@@ -1,6 +1,6 @@
 from langchain.tools import ToolRuntime, tool
 from app.agent.tools.common import clip, referenced_record, text_page
-from app.modules.attachments.inventory import attachment_inventory
+from app.modules.attachments.inventory import attachment_inventory, inventory_summary
 from app.modules.attachments.models import Attachment
 from app.modules.attachments.documents import document_reference
 from app.modules.messages.models import Message
@@ -37,5 +37,9 @@ async def get_message_context(message_id: str, runtime: ToolRuntime[RunContext],
         attachments = (await db.scalars(select(Attachment).where(Attachment.message_id == message.id, Attachment.deleted.is_(False)).order_by(Attachment.created_at, Attachment.id))).all()
         from app.agent.context.references.conversation_context import message_reference
         reference = await message_reference(db, actor, message)
-        content, page = text_page({'text': message.text, 'transcript': message.transcript, 'userRequest': reference['userText'], 'reply': reference['assistantReference']}, start)
-        return clip({'messageId': message.id, 'attachments': attachment_inventory(attachments, message.transcript, message.transcript_revision), 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], **content, **page, 'replyIsHistorical': True, 'currentActions': reference['currentActions'], 'documents': [document_reference(item) for item in attachments if item.kind == 'document']})
+        fields = {'text': message.text, 'userRequest': reference['userText'], 'reply': reference['assistantReference']}
+        if message.transcript.strip():
+            fields['transcript'] = message.transcript
+        content, page = text_page(fields, start)
+        inventory = attachment_inventory(attachments, message.transcript, message.transcript_revision)
+        return clip({'messageId': message.id, 'attachments': inventory, 'attachmentSummary': inventory_summary(inventory), 'progress': [{'status': draft.status, 'workId': draft.work_id} for draft in drafts], **content, **page, 'replyIsHistorical': True, 'currentActions': reference['currentActions'], 'documents': [document_reference(item) for item in attachments if item.kind == 'document']})

@@ -143,11 +143,15 @@ async def test_saved_plan_rechecks_refusal_and_creates_exactly_two_linked_works(
 
     class SelectedJudge(Judge):
         async def ainvoke(self, messages):
-            payload = json.loads(messages[-1].content)
+            payload = next(json.loads(message.content) for message in messages if str(message.content).startswith('{'))
             selection = payload['proposedOperation']['deliverableSelection']
             assert selection['revision'] == 1 and len(selection['items']) == 1
             assert selection['items'][0]['id'] in {entry['id'] for entry in saved['items'][:2]}
-            return await super().ainvoke(messages)
+            response = await super().ainvoke([message for message in messages if str(message.content).startswith('{')])
+            value = json.loads(response.content)
+            if payload.get('recoveringItem'):
+                value['taskItemId'] = payload['recoveringItem']['id']
+            return AIMessage(content=json.dumps(value))
     fresh = SelectedJudge()
     context.intent_model = fresh
     reference = {'deliverable_id': saved['id'], 'deliverable_revision': 1}

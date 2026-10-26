@@ -16,8 +16,9 @@ class ReceiptJudge(Judge):
         verdict = json.loads(response.content)
         if 'allowed' in verdict:
             verdict['receiptOnly'] = self.receipt
-            verdict['requiredFields'] = list(self.required_fields)
-            verdict['requestedChanges'] = list(self.requested_changes)
+            if 'workChangePlan' not in self.inputs[-1]:
+                verdict['requiredFields'] = list(self.required_fields)
+                verdict['requestedChanges'] = list(self.requested_changes)
         return AIMessage(content=json.dumps(verdict))
 
 

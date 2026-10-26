@@ -24,7 +24,7 @@ from app.modules.work.models import WorkItem
 pytestmark = pytest.mark.asyncio
 
 
-async def test_chat_report_keeps_original_brief_for_generation_and_fact_review(setup):
+async def test_chat_report_keeps_original_brief_for_single_generation(setup):
     settings, sessions, users, clients = setup
     await create(clients['employee'], '报价方案', summary='已完成初稿', status='in_progress')
     request = '生成本周周报，简洁一点，下一步帮我拟一条可执行建议，标为计划，不要提交。'
@@ -36,10 +36,10 @@ async def test_chat_report_keeps_original_brief_for_generation_and_fact_review(s
     assert report_job.result['instructions'] == request
     model = ReportModel()
     await process_job(report_job, sessions, settings, None, model=model)
-    for messages in (model.inputs[0], model.reviews[0]):
-        payload = json.loads(messages[-1].content)
-        assert payload['userRequest'] == request
-        assert payload['confirmed'][0]['content']['summary'] == '已完成初稿'
+    assert model.calls == 1 and not model.reviews
+    payload = json.loads(model.inputs[0][-1].content)
+    assert payload['userRequest'] == request
+    assert payload['confirmed'][0]['facts'][0]['summary'] == '已完成初稿'
     async with sessions() as db:
         saved = await db.get(Job, report_job.id)
         assert saved.state == 'succeeded' and saved.result['instructions'] == request
@@ -130,32 +130,33 @@ async def test_multi_step_authorization_preserves_reserved_final_answer_budget(s
     assert context.calls == regular_limit + 1
 
 
-@pytest.mark.parametrize('repaired', [True, False])
-async def test_agent_report_repairs_specific_fact_feedback_only_once(setup, repaired):
+@pytest.mark.parametrize('valid_content', [True, False])
+async def test_agent_report_single_generation_validates_four_columns_without_review(setup, valid_content):
     settings, sessions, users, _ = setup
     report, job, _ = await prepared(setup)
+    original = {'completed': '保留原草稿', 'ongoing': '', 'blockers': '', 'next': '手写备注'}
+    from app.modules.reports.models import Report
     async with sessions.begin() as db:
         live = await db.get(Job, job.id)
         live.result = {**live.result, 'instructions': '生成周报，下一步可拟一项合理建议'}
+        (await db.get(Report, report.id)).content = original
 
-    class CorrectableModel(ReportModel):
+    class SingleGenerationModel(ReportModel):
         async def ainvoke(self, messages):
             payload = json.loads(messages[-1].content)
-            if payload.get('task') == 'report_fact_review':
-                self.verdict = json.dumps({'valid': repaired and self.calls == 2, 'reason': '只能写初稿完成，不能写整项完成'})
-            if payload.get('task') == 'correct_report':
-                self.content = json.dumps(CONTENT, ensure_ascii=False)
+            assert payload.get('task') not in ('report_fact_review', 'correct_report')
+            assert payload['userRequest'] == '生成周报，下一步可拟一项合理建议'
+            assert payload['confirmed'][0]['facts'][0]['summary'] == '初稿完成'
             return await super().ainvoke(messages)
 
-    model = CorrectableModel(json.dumps({**CONTENT, 'completed': '整项方案已完成'}))
+    output = CONTENT if valid_content else {'completed': '缺少另外三栏'}
+    model = SingleGenerationModel(json.dumps(output, ensure_ascii=False))
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
-    assert model.calls == 2 and len(model.reviews) == 2
-    assert '初稿完成' in json.loads(model.inputs[1][-1].content)['feedback']
-    from app.modules.reports.models import Report
+    assert model.calls == 1 and not model.reviews
     async with sessions() as db:
         saved, live = await db.get(Report, report.id), await db.get(Job, job.id)
-        assert live.result['reportCorrectionAttempted']
-        if repaired:
+        assert not live.result.get('reportCorrectionAttempted') and saved.published_revision == 0
+        if valid_content:
             assert saved.content == CONTENT and live.state == 'succeeded'
         else:
-            assert not any(saved.content.values()) and live.state == 'failed'
+            assert saved.content == original and live.state == 'failed'

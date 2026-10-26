@@ -23,8 +23,10 @@ def work_scope(changes):
         elif name in ('materialIds', 'materials'):
             scopes.add('materials')
         elif name == 'update':
+            value = value if isinstance(value, dict) else {}
             scopes.add(name + ':' + str(value.get('action', '')) + ':' + str(value.get('id', '')))
         elif name == 'removeMaterial':
+            value = value if isinstance(value, dict) else {}
             scopes.add(name + ':' + str(value.get('id', '')))
         else:
             scopes.add(name)
@@ -63,6 +65,8 @@ def record(job, action, arguments, result):
     has_reference = any(arguments.get(name) for name in reference_fields)
     scope = work_scope(arguments.get('changes') or {}) if action in ('update_work', 'edit_report', 'propose_progress', 'propose_followup') else []
     references = {name: arguments.get(name) for name in reference_fields if arguments.get(name)}
+    if arguments.get('shared_attachment_ids'):
+        references['shared_attachment_ids'] = sorted(arguments['shared_attachment_ids'])
     if arguments.get('source_tokens'):
         references['source_tokens'] = sorted(arguments['source_tokens'])
     if arguments.get('copy_index', 1) > 1:
@@ -117,6 +121,15 @@ def record(job, action, arguments, result):
                              if same_item(entry, item) and entry.get('effect') == effect and entry.get('hasReference') is False
                              and entry['category'] in BLOCKING)
     if resolved:
+        if item['category'] == 'success' and result.get('messageId') == getattr(job, 'target_id', None):
+            for recovered in job.result.get('taskItems', []):
+                proof = recovered.get('recoveredSchemaFailure')
+                if (not proof or recovered.get('receiptId') != item.get('receiptId')
+                        or recovered.get('recoveredBy') != item['taskItemId'] or recovered.get('state') != 'succeeded'):
+                    continue
+                audited = {entry['key']: digest(entry) for entry in proof['outcomes']}
+                resolved_keys.update(entry['key'] for entry in previous
+                                     if audited.get(entry['key']) == digest(entry))
         corrected_identity = corrected_draft_identity(job, item, result, identity)
         if corrected_identity:
             resolved_keys.update(entry['key'] for entry in previous

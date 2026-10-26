@@ -36,6 +36,15 @@ async def source_check(db, actor, row):
             problem(403, '督办来源必须来自实际读取的工作或报告')
         await business_resolve(db, actor, evidence, latest=True)
         selected.add((evidence['type'], evidence['id'], evidence['ownerId']))
+    if row.action == 'edit_report':
+        from app.security.locks import company_lock
+        await company_lock(db, actor.company_id)
+        from app.modules.reports.generation.sources import report_fact_basis
+        from app.core.digests import digest
+        target = await read_target(db, actor, row.action, row.params['targetId'])
+        facts = await report_fact_basis(db, actor, target, full=True)
+        if not facts['complete'] or row.params.get('reportSourceDigest') != digest(facts):
+            problem(409, '报告来源已变化，请重新读取后修改；原报告已保留')
     if row.action == 'update_work':
         target = await read_target(db, actor, row.action, row.params['targetId'])
         # Persisted links are also dependencies: omitting sourceTokens must not

@@ -666,3 +666,147 @@ async def test_prose_failure_keeps_only_authorized_prefix_without_header(setup, 
     assert detail['job']['state']=='awaiting_retry'
     assert detail['replyStream']['state']==('interrupted' if ending=='network' else 'withdrawn')
     assert detail['replyStream']['text']==('尚未完成的正文' if ending=='network' else '')
+
+
+@pytest.mark.parametrize('split', [1, 2, 3, 7, 19])
+async def test_interleaved_completion_fragments_match_full_arguments(split):
+    from app.integrations.models.stream_events import tool_arguments
+    answer = '中文😀\n引号"与反斜线\\以及链接 https://example.org/'
+    raw = json.dumps({'before': {'nested': [None, True, -2.3e4]}, 'answer': answer,
+                      'after': ['不显示', {'k': 'v'}]}, ensure_ascii=True)
+    publisher = CapturingPublisher()
+    candidate = ReplyCandidate(publisher)
+    await candidate.feed(ModelDelta('<!--noria:{}-->\n暂时正文'))
+    assert candidate.prose_visible
+    names = ['f', 'in', 'ish', '_', 'ta', 'sk']
+    fragments = [raw[i:i + split] for i in range(0, len(raw), split)]
+    for index in range(max(len(names), len(fragments))):
+        await candidate.feed(ModelDelta('仅供内部工具伴随内容',
+            (ToolDelta(0, names[index] if index < len(names) else '',
+                       fragments[index] if index < len(fragments) else ''),)))
+    await candidate.finish()
+    assert None in publisher.values and candidate.mixed_prose
+    assert candidate.parser.finish() == tool_arguments(raw)
+    assert candidate.text == answer and publisher.values[-1] == answer
+    assert all('仅供内部' not in (text or '') for text in publisher.values)
+
+
+@pytest.mark.parametrize('ending', ['truncated', 'duplicate', 'mixed_index', 'changed_name'])
+async def test_interleaved_completion_invalid_tail_withdraws(ending):
+    publisher = CapturingPublisher()
+    candidate = ReplyCandidate(publisher)
+    prefix = '{"answer":"中文\\ud83d\\ude00"'
+    await candidate.feed(ModelDelta('<!--noria:{}-->\n临时前言'))
+    await candidate.feed(ModelDelta(tools=(ToolDelta(0, 'finish_task', prefix),)))
+    assert candidate.text == '中文😀'
+    with pytest.raises(ProviderError):
+        if ending == 'duplicate':
+            await candidate.feed(ModelDelta(tools=(ToolDelta(0, '', ',"answer":"另一个"}'),)))
+        elif ending == 'mixed_index':
+            await candidate.feed(ModelDelta(tools=(ToolDelta(1, 'get_work_item', '{}'),)))
+        elif ending == 'changed_name':
+            await candidate.feed(ModelDelta(tools=(ToolDelta(0, '_changed', '}'),)))
+        else:
+            await candidate.finish()
+    assert publisher.values[-1] is None
+
+
+@pytest.mark.parametrize('boundary', ['before_write', 'after_write'])
+async def test_interleaved_parser_failure_retries_with_one_real_write_and_final_sse(setup, monkeypatch, fast_nodes, boundary):
+    from sqlalchemy import select, func
+    from app.modules.work.models import WorkItem
+    from app.modules.operations.models import BusinessAction
+    from app.modules.members.models import Member
+    settings, sessions, users, clients = setup
+    configured = await create(clients['admin'])
+    await clients['admin'].put('/api/v1/settings/model-routing', json=route(configured))
+    async with sessions.begin() as db:
+        (await db.get(Member, users['employee'].id)).execution_mode = 'full'
+    recover = False
+    broken = 0
+    transcript = []
+    answer = '工作已创建，正文保留中文😀与反斜线\\。'
+
+    def wire(message, request, *, malformed=False):
+        if not request.get('stream'):
+            return httpx.Response(200, json={'id': 'fixed', 'model': 'controlled',
+                'choices': [{'message': message, 'finish_reason': 'stop'}]})
+        events = [{'choices': [{'delta': {'content': '<!--noria:{}-->\n工具执行前言'}, 'finish_reason': None}]}]
+        for index, call in enumerate(message.get('tool_calls', [])):
+            raw = call['function']['arguments']
+            if malformed:
+                raw = raw[:-1] + ',"answer":"重复字段"}'
+            name = call['function']['name']
+            for pos in range(max(len(name), len(raw))):
+                function = {'name': name[pos:pos+1], 'arguments': raw[pos:pos+1]}
+                events.append({'choices': [{'delta': {'content': '内部伴随文本', 'tool_calls': [
+                    {'index': index, 'id': call['id'] if pos == 0 else '', 'function': function}]}, 'finish_reason': None}]})
+        if not message.get('tool_calls'):
+            events = [{'choices': [{'delta': {'content': message.get('content', '')}, 'finish_reason': 'stop'}]}]
+        else:
+            events.append({'choices': [{'delta': {}, 'finish_reason': 'tool_calls'}]})
+        transcript.append({'request': request, 'events': events, 'malformed': malformed})
+        return stream(*events)
+
+    def response(req):
+        nonlocal broken
+        payload = json.loads(req.content)
+        tools = {t['function']['name'] for t in payload.get('tools', [])}
+        if not tools:
+            value = json.loads(payload['messages'][-1]['content'])
+            assert value.get('proposedOperation'), value
+            return wire({'role': 'assistant', 'content': json.dumps({'allowed': True,
+                'quote': value['currentUserText'], 'reason': '', 'receiptOnly': False})}, payload)
+        receipts = []
+        for msg in payload['messages']:
+            if msg['role'] == 'tool':
+                try:
+                    value = json.loads(msg['content'])
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(value, dict) and value.get('action') == 'create_work' and value.get('state') == 'succeeded':
+                    receipts.append(value)
+        malformed = not recover and (boundary == 'before_write' or receipts)
+        if malformed:
+            broken += 1
+            return wire(wire_completion(answer, business=bool(receipts), operation_ids=[x['id'] for x in receipts]), payload, malformed=True)
+        if receipts:
+            return wire(wire_completion(answer, business=True, operation_ids=[receipts[-1]['id']]), payload)
+        name, args = ('execute_business_action', {'step': 1, 'action': 'create_work', 'changes': {'title': '分片恢复唯一工作', 'summary': '固定正文'}}) if 'execute_business_action' in tools else ('load_tools', {'groups': ['work']})
+        return wire({'role': 'assistant', 'content': '', 'tool_calls': [{'id': name, 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(args, ensure_ascii=False)}}]}, payload)
+
+    client_for(monkeypatch, response)
+    sent = await send(clients['employee'], '直接新建一项工作，标题分片恢复唯一工作，正文固定正文；完成后说明结果。')
+    token = hashlib.sha256(clients['employee'].cookies.get('paa_company_session').encode()).hexdigest()
+    async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_url) as saver:
+        await process_job(await claim(sessions, users['employee'].id), sessions, settings, saver)
+        failed = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+        assert failed['job']['state'] == 'awaiting_retry', failed
+        assert broken == 4 and not failed['reply']
+        assert failed['replyStream']['state'] == 'withdrawn'
+        async with sessions() as db:
+            count = await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id))
+        assert count == (1 if boundary == 'after_write' else 0)
+        recover = True
+        retried = await clients['employee'].post('/api/v1/jobs/' + sent['jobId'] + '/retry', json={})
+        assert retried.status_code == 200, retried.text
+        await process_job(await claim(sessions, users['employee'].id), sessions, settings, saver)
+    final = (await clients['employee'].get('/api/v1/messages/' + sent['messageId'])).json()
+    assert final['job']['state'] == 'succeeded', final
+    assert final['reply'] == answer + '\n\n创建工作《分片恢复唯一工作》：已完成。', final
+    assert final['job']['taskOutcome']['state'] == 'completed'
+    assert len(final['actions']) == 1 and final['actions'][0]['state'] == 'succeeded'
+    current = await snapshot(sessions, token, sent['jobId'])
+    assert current['state'] == 'succeeded'
+    received = events(sessions, token, sent['jobId'], settings=settings)
+    first = await anext(received)
+    assert first.startswith('event: snapshot') and 'succeeded' in first
+    await received.aclose()
+    async with sessions() as db:
+        assert await db.scalar(select(func.count()).select_from(WorkItem).where(WorkItem.owner_id == users['employee'].id)) == 1
+        assert await db.scalar(select(func.count()).select_from(BusinessAction).where(BusinessAction.owner_id == users['employee'].id)) == 1
+    import os
+    from pathlib import Path
+    if directory := os.getenv('SPEC081_GAP_EVIDENCE'):
+        Path(directory, 'stream-' + boundary + '.json').write_text(json.dumps({'boundary': boundary, 'transcript': transcript,
+            'failure': failed, 'final': final, 'sse': first}, ensure_ascii=False, indent=2))

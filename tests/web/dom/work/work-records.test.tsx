@@ -65,16 +65,32 @@ it('returns through historical versions to the latest work without losing the re
   })
   renderWork(<WorkDetail recordId="work" />)
   await screen.findByRole('heading', { name: work.title })
-  fireEvent.click(screen.getAllByRole('link', { name: '查看此版本' })[0])
-  await screen.findByText('历史版本 · 第 2 版')
-  fireEvent.click(screen.getByRole('link', { name: '查看此版本' }))
-  await screen.findByText('历史版本 · 第 1 版')
+  fireEvent.click(screen.getAllByRole('link', { name: '查看当时内容' })[1])
+  await waitFor(() =>
+    expect(api).toHaveBeenLastCalledWith('/work-items/work?revision=2', expect.anything()),
+  )
+  fireEvent.click(screen.getAllByRole('link', { name: '查看当时内容' })[1])
+  await waitFor(() =>
+    expect(api).toHaveBeenLastCalledWith('/work-items/work?revision=1', expect.anything()),
+  )
   expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
   fireEvent.click(screen.getByRole('link', { name: '返回上一步' }))
-  await screen.findByText('历史版本 · 第 2 版')
-  fireEvent.click(screen.getByRole('link', { name: '返回最新版本' }))
-  await screen.findByRole('button', { name: '编辑内容' })
-  expect(screen.queryByText(/历史版本 ·/)).toBeNull()
+  await waitFor(() =>
+    expect(api).toHaveBeenLastCalledWith('/work-items/work?revision=2', expect.anything()),
+  )
+  fireEvent.click(screen.getByRole('link', { name: '返回当前工作' }))
+  const editContent = await screen.findByRole('button', { name: '编辑内容' })
+  expect(editContent.closest('header')).toBeTruthy()
+  expect(
+    within(screen.getByRole('region', { name: '工作内容' })).queryByRole('button', {
+      name: '编辑内容',
+    }),
+  ).toBeNull()
+  fireEvent.click(editContent)
+  expect(screen.getByRole('textbox', { name: '工作正文' })).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
+  expect(screen.getByRole('button', { name: '编辑内容' }).closest('header')).toBeTruthy()
+  expect(screen.queryByText(/当时内容 ·/)).toBeNull()
 })
 
 it('lists uploaded materials below the text editor and excludes removed files from the save', async () => {
@@ -176,7 +192,7 @@ it('omits history for a newly created work and opens material tools on demand', 
   expect(screen.getByText('目标与计划')).toBeTruthy()
   expect(screen.queryByRole('button', { name: '记录新进展' })).toBeNull()
   expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
-  expect(screen.queryByRole('link', { name: '查看此版本' })).toBeNull()
+  expect(screen.queryByRole('link', { name: '查看当时内容' })).toBeNull()
   expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('/updates'))).toBe(false)
   expect(screen.queryByText('修改记录与来源')).toBeNull()
   expect(vi.mocked(api).mock.calls.some(([path]) => String(path).includes('/materials'))).toBe(
@@ -211,9 +227,9 @@ it('keeps older modifications available without expanding every field change', (
       }}
     />,
   )
-  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(3)
-  fireEvent.click(screen.getByRole('button', { name: '查看更早的 2 条修改' }))
-  expect(screen.getAllByRole('link', { name: '查看此版本' })).toHaveLength(5)
+  expect(screen.getAllByRole('link', { name: '查看当时内容' })).toHaveLength(3)
+  fireEvent.click(screen.getByRole('button', { name: '查看更早的 3 条修改' }))
+  expect(screen.getAllByRole('link', { name: '查看当时内容' })).toHaveLength(6)
 })
 it('keeps historical work read-only without empty history', async () => {
   vi.mocked(api).mockImplementation(async (path) =>
@@ -228,7 +244,7 @@ it('keeps historical work read-only without empty history', async () => {
   await screen.findByRole('heading', { name: work.title })
   expect(screen.queryByRole('button', { name: '管理工作' })).toBeNull()
   expect(screen.queryByRole('region', { name: '修改记录' })).toBeNull()
-  expect(screen.getByRole('link', { name: '返回最新版本' }).getAttribute('href')).toBe('/work/work')
+  expect(screen.getByRole('link', { name: '返回当前工作' }).getAttribute('href')).toBe('/work/work')
   expect(screen.queryByRole('menuitem', { name: '编辑工作属性' })).toBeNull()
   expect(screen.queryByRole('menuitem', { name: '删除工作' })).toBeNull()
   expect(screen.queryByRole('button', { name: '编辑内容' })).toBeNull()
@@ -355,7 +371,7 @@ it('replays only the changed metadata after reviewing a concurrent server update
   })
   fireEvent.click(screen.getByRole('button', { name: '保存属性' }))
   await screen.findByText('内容已变化')
-  fireEvent.click(screen.getByRole('button', { name: '读取最新版本' }))
+  fireEvent.click(screen.getByRole('button', { name: '读取当前内容' }))
   fireEvent.click(await screen.findByRole('button', { name: '保留当前输入，继续编辑' }))
   expect(screen.getByLabelText('截止日期（选填）').getAttribute('value')).toBe('2026-10-06')
   fireEvent.click(screen.getByRole('button', { name: '保存属性' }))

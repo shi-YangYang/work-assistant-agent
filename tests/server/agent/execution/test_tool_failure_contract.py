@@ -134,13 +134,13 @@ async def test_business_step_saved_during_authorization_has_same_terminal_contra
     authorize = operations.authorize_intent
     inserted = False
 
-    async def save_other_request(current, proposal):
+    async def save_other_request(current, proposal, *, binding=None):
         nonlocal inserted
         if not inserted:
             inserted = True
             committed = await operations.execute(context, step=1, action='create_work', changes={'title': '第一项'})
             assert committed['state'] == 'succeeded'
-        return await authorize(current, proposal)
+        return await authorize(current, proposal, binding=binding)
 
     monkeypatch.setattr(operations, 'authorize_intent', save_other_request)
     result = await operations.execute(context, step=1, action='create_work', changes={'title': '第二项'})

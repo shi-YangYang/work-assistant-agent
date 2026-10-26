@@ -115,6 +115,8 @@ class BoundedChatModel(ChatOpenAI):
         text_messages = list(payload['messages'])
         document_pages = {}
         output_limit = output_reserve(context, self.max_tokens)
+        if context.model_purpose != 'assistant' and output_limit <= 0:
+            raise BudgetExceeded('本次处理已达到输出限制，请缩短内容后重试或补充说明')
         if not internal_kind and not self._verification:
             payload['messages'], document_pages = await assemble_pages(context, payload['messages'], tools=payload.get('tools', ()), output_reserve=output_limit)
         payload['messages'], document_text = project_document_messages(context, payload['messages'])
@@ -258,7 +260,7 @@ class BoundedChatModel(ChatOpenAI):
                 save(job, state)
             usage = await db.get(ModelUsage, usage_id)
             usage.output_tokens = output
-        if context.model_purpose != 'assistant' and context.output_tokens > (32000 if context.node_retry else 8000):
+        if context.model_purpose != 'assistant' and context.output_tokens > (32000 if context.node_retry and context.model_purpose != 'report' else 8000):
             raise BudgetExceeded('模型响应超过本次输出限制，已停止后续处理')
         return result
 

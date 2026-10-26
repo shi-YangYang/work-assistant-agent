@@ -177,7 +177,11 @@ async def test_mp3_real_decode_and_mixed_message_single_task_and_asr_failure(set
     assert result['transcript'] == '今天完成现场检查，附件是进度资料'
     assert model.seen_images and next(a for a in result['attachments'] if a['kind'] == 'document')['extraction']['status'] == 'partial'
     prompt, source = received[-1]
-    inventory = json.loads(prompt.split('本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：', 1)[1].split('\n', 1)[0])
+    manifest = json.loads(prompt.split('本次完整附件清单：', 1)[1].split('\n', 1)[0])
+    inventory = manifest['attachments']
+    assert manifest['attachmentSummary'] == source['attachmentSummary']
+    assert manifest['attachmentSummary']['total'] == 3
+    assert manifest['attachmentSummary']['countsByKind'] == {'image': 1, 'document': 1, 'audio': 1}
     assert {item['id']: item for item in inventory} == {item['id']: item for item in source['attachments']}
     assert {item['id'] for item in inventory} == {image['id'], doc['id'], audio['id']}
     voice = next(item for item in inventory if item['kind'] == 'audio')

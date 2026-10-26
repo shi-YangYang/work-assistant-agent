@@ -193,7 +193,10 @@ async def test_identical_images_and_audio_keep_all_sources_with_one_processing_p
     assert data['job']['state'] == 'awaiting_input', data
     assert len(data['attachments']) == 4 and len(calls) == 1
     assert sum(block['type'] == 'image_url' for block in blocks) == 1
-    inventory = json.loads(blocks[0]['text'].split('本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：')[1].split('\n')[0])
+    manifest = json.loads(blocks[0]['text'].split('本次完整附件清单：')[1].split('\n')[0])
+    inventory = manifest['attachments']
+    assert manifest['attachmentSummary']['total'] == 4
+    assert manifest['attachmentSummary']['countsByKind'] == {'image': 2, 'audio': 2}
     assert len(inventory) == 4 and sum('sameContentAs' in item for item in inventory) == 2
     async with sessions() as db:
         job = await db.get(Job, sent['jobId'])

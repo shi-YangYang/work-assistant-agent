@@ -85,16 +85,22 @@ export function completionSummary(job: Job, completed: number, retries: number) 
   }
   const waiting = job.nodes?.some((node) => node.state === 'awaiting_input')
   const confirming = job.nodes?.some((node) => node.state === 'awaiting_confirmation')
-  const status = job.taskOutcome
-    ? names[job.taskOutcome.state]
-    : job.incompleteTask
-      ? '仍有事项未完成'
-      : job.state === 'awaiting_input'
-        ? confirming
-          ? '等待你的确认'
-          : waiting
-            ? '等待补充信息'
-            : '仍有事项未完成'
-        : '已完成'
-  return `${status}${completed ? ` · ${status === '已完成' ? '' : '已完成 '}${completed} 项操作` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
+  const status =
+    job.state === 'cancelled'
+      ? names.cancelled
+      : job.taskOutcome
+        ? names[job.taskOutcome.state]
+        : job.incompleteTask
+          ? '仍有事项未完成'
+          : job.state === 'awaiting_input'
+            ? confirming
+              ? '等待你的确认'
+              : waiting
+                ? '等待补充信息'
+                : '仍有事项未完成'
+            : '已完成'
+  // Successful steps can only mean an async operation was queued. The outcome
+  // describes delivery, and its completed entries can also be non-operation work.
+  const legacyCompleted = job.taskOutcome ? 0 : completed
+  return `${status}${legacyCompleted ? ` · ${status === '已完成' ? '' : '已完成 '}${legacyCompleted} 项操作` : ''}${retries ? ` · 自动重试 ${retries} 次` : ''}`
 }

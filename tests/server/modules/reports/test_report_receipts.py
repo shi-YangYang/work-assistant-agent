@@ -77,7 +77,7 @@ async def test_submitted_receipt_freezes_actual_fields_and_not_later_edits(setup
         report.revision += 1
     later = (await clients['employee'].get(url)).json()['actions'][0]
     assert later['reportSnapshot'] == evidence
-    assert model.calls == 1 and len(model.reviews) == 1
+    assert model.calls == 1 and len(model.reviews) == 0
 
 
 @pytest.mark.asyncio
@@ -153,4 +153,4 @@ async def test_failed_report_child_is_projected_as_failed_and_same_retry_recover
     assert final['actions'][0]['message'] == ''
     assert final['actions'][0]['reportSnapshot']['content'] == CONTENT
     assert final['job']['taskOutcome']['state'] == 'completed'
-    assert model.calls == 1 and len(model.reviews) == 1
+    assert model.calls == 1 and len(model.reviews) == 0

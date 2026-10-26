@@ -128,7 +128,7 @@ function responseFailure(
   if (status === 409)
     return {
       category: 'conflict' as const,
-      message: businessMessage(message, '内容已变化，请读取最新版本后继续。'),
+      message: businessMessage(message, '内容已变化，请读取当前内容后继续。'),
     }
   return {
     category: 'validation' as const,

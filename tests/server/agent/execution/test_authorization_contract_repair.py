@@ -46,8 +46,7 @@ def response(payload, *, task_item='', fields=True):
     proposal = payload['proposedOperation']
     return {'allowed': True, 'quote': payload['currentUserText'], 'quoteMessageId': payload['messageId'],
         'reason': '', 'resumeTask': True, 'newTaskItem': False, 'taskItemId': task_item,
-        'requiredFields': ['materials'], 'requestedChanges': [
-            {'quote': '选中的附件', 'field': 'materials', 'kind': 'material'}] if fields else [],
+        'invalidFields': [] if fields else ['materials'],
         'materialSelection': {'mode': 'selected', 'quote': payload['currentUserText'],
             'references': proposal['changes']['materials'], 'destination': 'existing',
             'targetId': proposal['targetId'], 'destinationEvidence': {
@@ -82,8 +81,8 @@ async def test_reference_and_field_repairs_remain_joint_constraints_before_one_w
     result = await execute(context, **arguments)
     assert result['state'] == 'succeeded' and len(calls) == len(replies)
     feedback = calls[-1][-1]['content']
-    assert 'taskItemId' in feedback and 'requestedChanges' in feedback and 'materials' in feedback
-    assert feedback.count('taskItemId') == 1 and feedback.count('requestedChanges') == 1
+    assert 'taskItemId' in feedback and 'invalidFields' in feedback and 'materials' in feedback
+    assert feedback.count('taskItemId') == 1 and feedback.count('invalidFields') == 1
     assert '留空' in feedback and '不是用户缺少授权' in feedback
     # The response is evaluated as a whole, including the old task's real ID.
     assert result['taskItemId'] != saved['taskItemId']
@@ -109,7 +108,7 @@ async def test_incomplete_alternating_verdicts_exhaust_original_budget_without_c
     with pytest.raises(NodeFailed):
         await execute(context, **arguments)
     assert len(calls) == 4
-    assert all('taskItemId' in messages[-1]['content'] and 'requestedChanges' in messages[-1]['content']
+    assert all('taskItemId' in messages[-1]['content'] and 'invalidFields' in messages[-1]['content']
                for messages in calls[2:])
     assert len(calls[2][-1]['content']) == len(calls[3][-1]['content'])
     async with context.sessions() as db:
@@ -147,7 +146,16 @@ async def test_new_authorization_request_does_not_inherit_prior_repair_constrain
         context, _ = await runtime(setup, '创建一项独立的新工作')
         context.node_retry, context.intent_model = True, None
         await initialize(context, 'another-request')
-    assert (await authorize_intent(context, proposal))[0]
+    authorized = await authorize_intent(context, proposal)
+    if change == 'evidence':
+        from app.agent.actions.task_bindings import STALE_BINDING
+        # A direct authorization call left an unexecuted proposed item. New
+        # evidence reruns the judge but cannot silently rebind that unseen item.
+        assert authorized == (False, STALE_BINDING)
+    else:
+        assert authorized[0], authorized
+    async with context.sessions() as db:
+        assert not await db.scalar(select(BusinessAction.id).where(BusinessAction.message_id == (await db.get(Job, context.job_id)).target_id))
     assert len(calls) == 3 and len(calls[2]) == 2
     assert calls[2][-1]['content'].startswith('{')
 

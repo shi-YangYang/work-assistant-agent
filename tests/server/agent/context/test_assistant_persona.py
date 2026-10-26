@@ -283,8 +283,7 @@ async def test_persona_stays_out_of_authorization_and_report_generation(setup):
             prompts.append(messages)
             assert all('当前聊天风格是' not in str(message.content) for message in messages)
             data = json.loads(messages[-1].content)
-            if data.get('task') == 'report_fact_review':
-                return AIMessage(content='{"valid":true}')
+            assert data.get('task') != 'report_fact_review', '报告不得新增第二次模型审查'
             assert data['userRequest'] == '生成今天的正式周报'
             assert '幽默' not in data['userRequest'] and 'personaId' not in data
             return AIMessage(content=json.dumps({'completed': '方案已整理', 'ongoing': '', 'blockers': '', 'next': ''}))
@@ -292,7 +291,7 @@ async def test_persona_stays_out_of_authorization_and_report_generation(setup):
     await process_job(report_job, sessions, settings, None, model=Reporter())
     report = (await clients['employee'].get('/api/v1/reports/' + result['objectId'])).json()
     assert report['content']['completed'] == '方案已整理'
-    assert len(prompts) == 2
+    assert len(prompts) == 1
 
 
 @pytest.mark.asyncio
