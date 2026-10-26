@@ -51,11 +51,11 @@ async def test_report_generation_and_rewrite_receive_full_work_without_review(se
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
     generated_payload = json.loads(model.inputs[0][-1].content)
     assert not model.reviews
-    assert [item['content']['summary'] for item in generated_payload['confirmed'] if item['content']['summary']] == facts
+    assert [fact['summary'] for item in generated_payload['confirmed'] for fact in item['facts'] if fact['summary']] == facts
     contexts = generated_payload['confirmed']
-    latest = [item['content'] for item in contexts if item['content']['isLatestWorkState']]
+    latest = [item['currentState'] for item in contexts]
     assert len(latest) == 1 and latest[0]['bodyText'] == original_plan
-    assert latest[0]['sourceId'] in source_ids and latest[0]['workId'] == work['id']
+    assert latest[0]['sourceId'] in source_ids and contexts[0]['workId'] == work['id']
     async with sessions() as db:
         saved = await db.get(Report, report.id)
         assert saved.content == content and saved.source_ids == source_ids and not saved.published_revision
@@ -69,7 +69,8 @@ async def test_report_generation_and_rewrite_receive_full_work_without_review(se
     context.node_retry = True
     await initialize(context, 'report-rewrite-plan-context')
     preview = json.loads(await query_reports.coroutine(SimpleNamespace(context=context), report_id=report.id))
-    assert preview['items'][0]['sourceFacts']['items'] == contexts
+    from app.agent.reports import confirmed_by_work
+    assert confirmed_by_work(preview['items'][0]['sourceFacts']['items']) == contexts
 
     class RewriteJudge:
         def __init__(self):
@@ -98,5 +99,5 @@ async def test_report_generation_and_rewrite_receive_full_work_without_review(se
         saved = await db.get(Report, report.id)
         assert saved.revision == original_revision + 1 and saved.content == {**content, **changes}
         assert saved.source_ids == source_ids and not saved.published_revision
-        assert (await report_fact_basis(db, users['employee'], saved, full=True))['items'] == contexts
+        assert confirmed_by_work((await report_fact_basis(db, users['employee'], saved, full=True))['items']) == contexts
         assert {row.id: row.content for row in (await db.scalars(select(WorkRevision).where(WorkRevision.id.in_(source_ids)))).all()} == snapshots

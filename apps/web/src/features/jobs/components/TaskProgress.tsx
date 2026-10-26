@@ -67,7 +67,7 @@ export function TaskProgress({
         : job.state === 'queued'
           ? '等待继续处理'
           : job.state === 'cancelled'
-            ? `已中断${completed ? ` · 已完成 ${completed} 项操作` : ''}`
+            ? completionSummary(job, completed, retries)
             : retrying
               ? active.length === 1
                 ? nodeStatus(active[0], now)

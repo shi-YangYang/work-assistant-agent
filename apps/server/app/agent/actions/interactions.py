@@ -58,7 +58,12 @@ async def ask(context, raw_questions, *, continue_task=False, append_pending=Fal
                         await resolve(db, actor, evidence, latest=True)
                     option['objectRevision'] = item.revision
                     option['label'] = item.title if kind == 'work' else f'{item.period} 周报'
-                    option['description'] = item.content.get('summary', '')[:160] if kind == 'work' and item.owner_id == actor.id else ''
+                    option['description'] = ''
+                    if kind == 'work' and item.owner_id == actor.id:
+                        from app.security.access import require
+                        from app.modules.work.content.document import plain_text
+                        await require(db, actor, item.access, retained=True)
+                        option['description'] = (item.content.get('summary') or plain_text(item.content.get('body')))[:160]
         waiting = None
         if append_pending:
             waiting = await db.scalar(select(AssistantInteraction).where(

@@ -290,8 +290,14 @@ async def test_continuation_binds_actual_source_and_copy_before_reusing_receipt(
     assert second['state'] == 'succeeded', second
     assert (second['id'] == first['id']) is (relation == 'same_source_copy')
     assert (second['taskItemId'] == first['taskItemId']) is (relation == 'same_source_copy')
+    async with context.sessions() as db:
+        current = await db.get(Job, context.job_id)
+        bound = next(item for item in current.result['taskItems'] if item['id'] == second['taskItemId'])
     replay = await execute(context, step=2, action='create_work', changes=changes, **next_arguments)
     assert replay.get('id') == second['id'], replay
+    if relation == 'same_source_copy':
+        observed = context.intent_model.inputs[-1]['conversationTask']['previousTask']['items']
+        assert next(item for item in observed if item['id'] == bound['id']) == bound
     async with context.sessions() as db:
         from sqlalchemy import select
         from app.modules.operations.models import BusinessAction

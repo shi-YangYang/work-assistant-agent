@@ -119,12 +119,22 @@ async def test_structured_answer_binds_same_name_object_id_and_task(setup):
     from app.tasks.context import RunContext
     from app.agent.context.task_context import projection
     _, sessions, users, clients = setup
-    first = await create(clients['employee'], '同名', summary='第一个')
-    second = await create(clients['employee'], '同名', summary='第二个')
+    from _support.work.work_records import create as create_body_work, body
+    first = await create_body_work(clients['employee'], title='同名', body=body('已核对12份，3份缺签字'))
+    second = await create_body_work(clients['employee'], title='同名', body=body('预算8000元，已付2400元'))
     context, sent = await mode_runtime(setup, 'auto', '完成同名的那项')
     await read_work(context, first['id']); await read_work(context, second['id'])
     asked = await ask(context, [{'id': 'work', 'prompt': '完成哪项？', 'type': 'single', 'options': [{'id': 'a', 'label': '任意', 'objectType': 'work', 'objectId': first['id']}, {'id': 'b', 'label': '任意', 'objectType': 'work', 'objectId': second['id']}]}])
     await finish_waiting(context)
+    stored = (await clients['employee'].get('/api/v1/conversations/' + sent['conversationId'] + '/interactions')).json()['items'][0]
+    options = stored['questions'][0]['options']
+    assert [option['label'] for option in options] == ['同名', '同名']
+    assert [option['description'] for option in options] == ['已核对12份，3份缺签字', '预算8000元，已付2400元']
+    assert all('objectId' not in option for option in options)
+    async with sessions() as db:
+        persisted_options = (await db.get(AssistantInteraction, asked['interactionId'])).questions[0]['options']
+        assert [option['objectId'] for option in persisted_options] == [first['id'], second['id']]
+        assert all(option['objectRevision'] == 1 for option in persisted_options)
     answer = await clients['employee'].post('/api/v1/interactions/' + asked['interactionId'] + '/answer', json={'expectedRevision': 1, 'answers': [{'questionId': 'work', 'optionIds': ['b']}]}, headers=keyed())
     assert answer.status_code == 200, answer.text
     job = await claim(sessions, users['employee'].id)
@@ -324,3 +334,37 @@ async def test_expired_question_closes_waiting_node_without_reviving_sources(set
     assert message['job']['nodes'][0]['state'] == 'cancelled'
     assert message['job']['taskOutcome']['nextAction'] == 'none'
     assert message['interactions'][0]['state'] == 'expired' and message['interactions'][0]['questions'] == []
+
+
+@pytest.mark.parametrize('case', ['own', 'peer', 'outsider', 'revoked'])
+async def test_object_option_body_preview_uses_authorized_data_not_model_description(setup, case):
+    from fastapi import HTTPException
+    from _support.work.work_records import create as create_body_work, body
+    from app.modules.work.models import WorkItem
+    from app.security.access import scope
+    _, sessions, users, clients = setup
+    owner = case if case in ('peer', 'outsider') else 'employee'
+    work = await create_body_work(clients[owner], title='真实标题', body=body('真实正文' * 60))
+    context, sent = await mode_runtime(setup, 'auto', '选择工作')
+    if case in ('own', 'revoked'):
+        await read_work(context, work['id'])
+    else:
+        context.read_versions[work['id']] = work['revision']
+    if case == 'revoked':
+        async with sessions.begin() as db:
+            (await db.get(WorkItem, work['id'])).access = {**scope(users['employee']), 'team': True}
+    raw = [{'id': 'target', 'prompt': '选择工作', 'type': 'single', 'options': [
+        {'id': 'w', 'label': '伪造标题', 'description': '伪造已完成', 'objectType': 'work', 'objectId': work['id']}]}]
+    if case != 'own':
+        with pytest.raises(HTTPException) as rejected:
+            await ask(context, raw)
+        assert rejected.value.status_code in (403, 404)
+        async with sessions() as db:
+            assert not await db.scalar(select(AssistantInteraction.id).where(AssistantInteraction.message_id == sent['messageId']))
+        return
+    result = await ask(context, raw)
+    async with sessions() as db:
+        option = (await db.get(AssistantInteraction, result['interactionId'])).questions[0]['options'][0]
+    assert option['label'] == '真实标题' and option['description'] == ('真实正文' * 60)[:160]
+    assert option['objectId'] == work['id'] and option['objectRevision'] == work['revision']
+    assert '伪造' not in str(option)

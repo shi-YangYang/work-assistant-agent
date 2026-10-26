@@ -31,9 +31,9 @@ async def test_body_checklist_only_work_generates_with_checked_state_and_distinc
         report, job = await ensure_report(db, users['employee'], 'weekly', now().date(), report_timezone='UTC')
     model = ReportModel()
     await process_job(await claim(sessions, users['employee'].id), sessions, settings, None, model=model)
-    rows = [item['content'] for item in json.loads(model.inputs[0][-1].content)['confirmed']]
+    rows = json.loads(model.inputs[0][-1].content)['confirmed']
     assert {row['workId'] for row in rows} == {first['id'], second['id']}
-    selected = next(row for row in rows if row['workId'] == first['id'])
+    selected = next(row['currentState'] for row in rows if row['workId'] == first['id'])
     assert [item['attrs']['checked'] for item in selected['body']['content'][0]['content']] == [True, False]
     assert selected['status'] == 'in_progress' and selected['revision'] == 1 and selected['recordedAt']
     assert model.calls == 1 and not model.reviews

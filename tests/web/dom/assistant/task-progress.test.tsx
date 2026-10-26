@@ -285,3 +285,66 @@ it('shows image generation instead of a second thinking activity, then resumes t
   )
   expect(view.getByText('生成回答 · 处理中')).toBeTruthy()
 })
+
+it('keeps queued steps distinct from delivery through failure, partial delivery, cancellation and recovery', () => {
+  const queued = { ...node, id: 'enqueue', label: '任务入队', state: 'succeeded' as const }
+  const base: Job = {
+    ...job,
+    state: 'succeeded',
+    nodes: [queued],
+    taskOutcome: {
+      state: 'blocked',
+      completed: [],
+      remaining: ['成果尚未生成'],
+      nextAction: 'none',
+    },
+  }
+  const renderJob = (value: Job) => <JobNotice job={value} refresh={vi.fn()} showNodes />
+  const view = render(renderJob(base))
+  const details = view.container.querySelector('details')!
+  const summary = details.querySelector('summary')!
+  fireEvent.click(summary)
+  const row = details.querySelector('[data-node-id="enqueue"]')
+  expect(summary.textContent).toBe('暂时无法继续')
+  expect(view.getByRole('status').textContent).toBe('成果尚未生成')
+  expect(row?.textContent).toContain('任务入队已完成')
+
+  for (const state of ['queued', 'running'] as const) {
+    view.rerender(renderJob({ ...base, state }))
+    expect(summary.textContent).not.toContain('已完成')
+  }
+  view.rerender(renderJob({ ...base, taskOutcome: { ...base.taskOutcome!, state: 'processing' } }))
+  expect(summary.textContent).toBe('正在处理')
+  view.rerender(
+    renderJob({
+      ...base,
+      nodes: [queued, { ...node, id: 'saved', label: '保存工作', state: 'succeeded' }],
+      taskOutcome: {
+        ...base.taskOutcome!,
+        state: 'partial',
+        completed: ['保存工作', '已交付部分内容'],
+      },
+    }),
+  )
+  expect(summary.textContent).toBe('部分完成')
+  expect(details.querySelector('[data-node-id="saved"]')?.textContent).toContain('保存工作已完成')
+  view.rerender(renderJob({ ...base, state: 'cancelled' }))
+  expect(summary.textContent).toBe('已中断')
+  view.rerender(
+    renderJob({
+      ...base,
+      taskOutcome: {
+        state: 'completed',
+        completed: ['生成成果'],
+        remaining: [],
+        nextAction: 'none',
+      },
+    }),
+  )
+  expect(summary.textContent).toBe('已完成')
+  expect(details.querySelector('[data-node-id="enqueue"]')).toBe(row)
+  expect(details.open).toBe(true)
+  expect(view.queryByText('成果尚未生成')).toBeNull()
+  view.rerender(renderJob({ ...base, state: 'cancelled', taskOutcome: undefined }))
+  expect(summary.textContent).toBe('已中断 · 已完成 1 项操作')
+})

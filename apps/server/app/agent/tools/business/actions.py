@@ -21,69 +21,60 @@ from typing import Annotated, Literal
 
 @tool
 async def execute_business_action(step: int, action: Literal['create_work', 'update_work', 'delete_work', 'generate_report', 'edit_report', 'submit_report', 'delete_report'], runtime: ToolRuntime[RunContext], target_id: str = '', expected_revision: Annotated[int, 'Internal concurrency token copied from the actual current read; never ask the user or guess/increment it.'] = 0, changes: dict | None = None, report_kind: Literal['weekly'] = 'weekly', report_date: str = '', obligation_id: str = '', source_tokens: list[str] | None = None, submit_after: bool = False, requires_step: int | None = None, copy_index: int = 1, deliverable_id: str = '', deliverable_revision: int = 0, item_id: str = '', shared_attachment_ids: list[str] | None = None, task_item_id: str = '') -> str:
-    """Perform the user's settled business operation; execution mode and server
-    authorization apply; explicit review-first always waits for approval.
+    """Execute a settled business operation. Server authorization/execution mode
+    applies; explicit review-first always waits for approval. All actions remain
+    directly available across work/reports capabilities.
 
-    step: stable 1..8 business-action ordinal for this message (not other tools).
-    Corrections keep step and returned taskItemId. task_item_id may reuse only
-    the same previousTask item/object/workScope; new remaining items leave it empty.
-    Pending/running waits, succeeded is not replayed. Unknown results use
-    get_business_actions; known failure follows recovery. requires_step is an
-    earlier successful business step, omitted for independent actions.
-    copy_index=1; only explicitly requested identical copies use fixed 1..8 indexes.
+    step: stable 1..8 business ordinal per message; corrections keep step and
+    task_item_id. Reuse a previousTask item only for the same object/workScope;
+    new remaining items leave it empty. Pending/running waits; succeeded never
+    replays. Unknown results: get_business_actions; failures: follow recovery.
+    requires_step names an earlier successful business step; omit if independent.
+    copy_index=1; only explicit identical copies use fixed indexes 1..8.
+    target_id and expected_revision come from actual current reads. All nested
+    expectedRevision/workRevision values are internal concurrency tokens: copy,
+    never guess/increment or ask users. Describe content, not numbered editions.
 
-    Work fields go in changes:
-    title, status, blocker, nextStep, dueDate (YYYY-MM-DD/null), body/bodyEdits,
-    update, materials, removeMaterial; summary is legacy.
-    create_work requires title. Title-only leaves other fields empty; delegated
-    design includes actionable future plans, never invented achievements/deadlines.
-    Create ALL supplied content in one operation. Existing edits require the
-    actual read ID/current expected_revision. Work revision, expected_revision,
-    nested expectedRevision and workRevision are internal snapshot/concurrency
-    tokens: copy actual read values, never guess/increment or ask users for them.
-    Describe current content, progress and changes, not numbered work editions.
-    unchanged=true means no actual change and the existing record was retained.
-    Only requested fields change;
-    append supplies NEW content, explicit replacement/clearing supplies full value.
-    body is {schemaVersion:1,content:[Tiptap nodes]}; prefer local bodyEdits:
-    - {action:'append',blocks:[...]}
-    - {action:'replace',blockId,blocks:[...]} or {action:'remove',blockId}
-    - {action:'append_checklist',items:[{text,checked?:false}],blockId?:taskListId}
-      (omit blockId for new list; use a read top-level taskList ID otherwise)
-    - {action:'replace_checklist',blockId,items} only for requested conversion
-    - {action:'set_checked',itemId,checked,blockId?} using read taskItem.attrs.id;
-      optional blockId is that item's taskList. Do not rewrite lists to toggle.
-    Checklist plus note example: changes={title:'今日待办',bodyEdits:[
-      {action:'append_checklist',items:[{text:'收周报'}]},
-      {action:'append',blocks:[{type:'paragraph',content:[{type:'text',text:'保留备注'}]}]}]}.
-    Batch requested items and notes together; body/bodyEdits are exclusive.
-    Preserve order, conditions and compound items. Default unchecked; partial
-    completion is not entire item completion; checklist completion does not set
-    work status. Same-text items in different sections need user selection unless
-    all matches were explicitly selected.
-    update: {action:'create',text,materialIds?,materials?},
-      {action:'edit',id,expectedRevision,text,materialIds?}, or
-      {action:'delete',id,expectedRevision}; list_work_updates before edit/delete.
-    materials: [{attachmentId} or {deliverableId,revision,fileId}], only selected
-    NEW files to append; existing materials are retained by the server. Known IDs
-    need no content reread or plan conversion. Read saved IDs via list_work_materials.
-    removeMaterial:{id,expectedRevision}; remove body/update references first.
-    New material nodes use attrs.materialId=attachmentId plus materials:[{attachmentId}].
-    Advice entries use read deliverable_id/deliverable_revision/item_id, one entry
-    per work, preserving full goals/content/conditions. Files may share one work;
-    shared_attachment_ids only for explicitly shared files.
+    Work changes: title, status, blocker, nextStep, dueDate (YYYY-MM-DD/null),
+    body/bodyEdits, update, materials, removeMaterial; summary is legacy.
+    create_work requires title and ALL supplied content in one atomic operation.
+    Title-only leaves others empty; delegated plans never invent achievements or
+    deadlines. Change only requested fields; append NEW text, replace full values
+    only for explicit replacement/clearing. Omit preserved fields from changes; unchanged belongs to server receipts.
+    body={schemaVersion:1,content:[Tiptap nodes]}; prefer local bodyEdits:
+    {action:'append',blocks}, {action:'replace',blockId,blocks},
+    {action:'remove',blockId},
+    {action:'append_checklist',items:[{text,checked?:false}],blockId?:taskListId},
+    {action:'replace_checklist',blockId,items} only for requested conversion,
+    {action:'set_checked',itemId,checked,blockId?} using read taskItem.attrs.id.
+    Optional blockId is the read top-level taskList; omit to append a new list.
+    Batch items/notes together; body/bodyEdits exclusive. Preserve order, other
+    blocks, conditions and compound items; default unchecked, partial completion
+    cannot check the whole item, checklist completion never changes work status.
+    Same-text items across sections require selection unless all were selected.
+    update={action:'create',text,materialIds?,materials?},
+    {action:'edit',id,expectedRevision,text,materialIds?}, or
+    {action:'delete',id,expectedRevision}; list_work_updates before edit/delete.
+    materials=[{attachmentId} or {deliverableId,revision,fileId}] appends selected
+    NEW files; existing files stay. Known IDs need no content reread/plan conversion.
+    list_work_materials reads saved IDs; removeMaterial={id,expectedRevision}
+    requires removing body/update references first. New inline material nodes use
+    attrs.materialId=attachmentId plus materials:[{attachmentId}].
+    Advice uses read deliverable_id/deliverable_revision/item_id, one entry/work,
+    full goals/content/conditions. Files may share one work; shared_attachment_ids
+    only explicitly shared files. Admin follow-ups create own work using actual
+    source_tokens (not citation syntax); never edit employee work.
 
-    Reports: generate_report uses report_kind and company-local report_date
-    (YYYY-MM-DD): weekly uses the Monday-through-Sunday
-    week containing that date, never the submission date. Omits changes/source_tokens. The server reads all in-period work bodies, checklist checked states, status and valid progress; no separate progress entry is required. It copies
-    the original brief: enqueue and end, no preliminary work/obligation lookup,
-    polling or extra edit. submit_after=true only for generate-and-submit,
-    including review-before-submit; review-first/mode still control approval.
-    edit/submit/delete require current report/revision. Edit requested
-    completed/ongoing/blockers/next only; source plans/titles are not achievements.
-    reportSnapshot is the saved/candidate revision; emptyFields were not written.
-    Admin own follow-ups use create_work with actual source_tokens (not citation
-    syntax); cannot edit employee work or generate/submit employee reports.
+    generate_report: report_kind=weekly, report_date=YYYY-MM-DD in company time;
+    selects its Monday-Sunday week, NOT submission date. Omit changes/source_tokens.
+    Server reads all in-period bodies, checked items, status and valid progress;
+    no separate progress required. Original brief is copied: enqueue and end,
+    no preliminary work/obligation lookup, polling or extra edit. submit_after=true
+    only for generate-and-submit, including review-before-submit; review/mode
+    controls approval. edit/submit/delete use read report ID/current revision.
+    edit_report changes only completed/ongoing/blockers/next; plans/titles are not
+    achievements. reportSnapshot is saved/candidate revision; emptyFields weren't
+    written. Admin cannot generate/submit employee reports.
     """
     try:
         result = await actions_execute(runtime.context, step=step, action=action, target_id=target_id, expected_revision=expected_revision, changes=changes, report_kind=report_kind, report_date=report_date, obligation_id=obligation_id, source_tokens=source_tokens, submit_after=submit_after, requires_step=requires_step, copy_index=copy_index, deliverable_id=deliverable_id, deliverable_revision=deliverable_revision, item_id=item_id, shared_attachment_ids=shared_attachment_ids, task_item_id=task_item_id)
@@ -177,7 +168,9 @@ async def query_report_obligations(runtime: ToolRuntime[RunContext], kind: Liter
     cover scheduled obligations, not all members: zeros mean no obligations, not
     everyone submitted. Empty items may mean no matches for the selected status.
     Do not repeat equivalent queries or switch periods outside requested
-    scope. To generate, pass the employee obligation ID, kind and period.
+    scope. When generating for a selected existing employee obligation, pass its
+    ID, kind and period. Ordinary generation for a requested weekly period does
+    not require a reporting rule, an obligation ID, or this lookup.
     """
     from app.modules.reports.scheduling.schedule import obligation_page
     from zoneinfo import ZoneInfo

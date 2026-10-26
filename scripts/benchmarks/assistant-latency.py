@@ -83,7 +83,7 @@ async def observe(client, receipt, began, path, protocol, metrics):
 
 async def execute(args):
     metadata, private = load_environment(args.metadata)
-    if metadata.get('suite') not in ('spec055', 'spec056'):
+    if metadata.get('suite') not in ('spec055', 'spec056', 'spec081'):
         raise RuntimeError('This benchmark requires its explicitly owned performance environment')
     cases_path = Path(args.cases).resolve()
     manifest = json.loads(cases_path.read_text())

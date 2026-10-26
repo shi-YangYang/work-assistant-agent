@@ -8,7 +8,7 @@ from app.agent.harness import invoke_harness
 from app.db.base import now
 from app.integrations.media import MAX_MESSAGE_IMAGE_BLOCKS, MAX_MESSAGE_IMAGE_BYTES, MAX_MESSAGE_IMAGE_PIXELS, image_process
 from app.modules.attachments.documents import delivered_citations
-from app.modules.attachments.inventory import attachment_inventory
+from app.modules.attachments.inventory import attachment_inventory, inventory_summary
 from app.modules.attachments.models import Attachment
 from app.modules.messages.models import Message
 from app.modules.messages.references.web_sources import web_citations
@@ -274,7 +274,8 @@ async def _execute_job(context, job, sessions, settings, checkpointer, *, model=
         context.source_revision = transcript_revision
     blocks.insert(0, {'type': 'text', 'text': f'服务端当前消息 ID（messageId）：{job.target_id}\n' + (f'补充此前消息（messageId）：{reply_to}\n' if reply_to else '') + '用户正文：\n' + text})
     if attachments:
-        blocks[0]['text'] += '\n本次完整附件清单（已上传的原始材料；不代表所有内容均已读取）：' + json.dumps(attachment_inventory(attachments, transcript, transcript_revision), ensure_ascii=False)
+        inventory = attachment_inventory(attachments, transcript, transcript_revision)
+        blocks[0]['text'] += '\n本次完整附件清单：' + json.dumps({'attachmentSummary': inventory_summary(inventory), 'attachments': inventory}, ensure_ascii=False)
         if any(len(group) > 1 for group in content_groups(attachments)):
             blocks[0]['text'] += '\nsameContentAs 表示相同内容的独立附件；可复用读取结果，保留每份来源，不把重复上传自动当成多笔业务事实。'
     if transcript:

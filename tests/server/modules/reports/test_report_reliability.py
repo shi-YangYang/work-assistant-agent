@@ -356,6 +356,8 @@ async def test_structured_report_actual_request_usage_and_report_probe(setup,mon
     def respond(request):
         data=json.loads(request.content);requests.append(data)
         assert not data.get('tools') and not data.get('tool_choice')
+        if len(requests) == 1:
+            assert data['max_tokens'] == 8000
         content='测试成功' if '只回复：测试成功' in str(data['messages']) else json.dumps(CONTENT,ensure_ascii=False)
         if reasoning_check and len(requests) == 1:
             explicit_generation = reasoning_check == 'explicit' and len(requests) == 1

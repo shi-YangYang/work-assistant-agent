@@ -82,8 +82,12 @@ async def test_reply_review_and_repair_get_saved_material_mapping_and_independen
         wrong = deepcopy(cards[2])
         wrong['objectId'] = 'another-work'
         assert (await work_record_evidence(db, users['employee'], [wrong]))[0]['materials'] == []
-        wrong = {**cards[1], 'objectRevision': cards[1]['objectRevision'] + 1}
+        mismatched_object = {**cards[1], 'objectRevision': cards[1]['objectRevision'] + 1}
+        assert (await work_record_evidence(db, users['employee'], [mismatched_object]))[0]['progressUpdate'] == progress
+        wrong = {**cards[1], 'updateWorkRevision': cards[1]['updateWorkRevision'] + 1}
         assert 'progressUpdate' not in (await work_record_evidence(db, users['employee'], [wrong]))[0]
+        legacy_wrong = {key: value for key, value in mismatched_object.items() if key != 'updateWorkRevision'}
+        assert 'progressUpdate' not in (await work_record_evidence(db, users['employee'], [legacy_wrong]))[0]
 
 
 async def test_rejected_list_claim_removes_only_its_empty_bullet_and_keeps_error_visible():

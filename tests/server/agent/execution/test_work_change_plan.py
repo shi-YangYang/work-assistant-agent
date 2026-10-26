@@ -7,8 +7,8 @@ from langchain_core.messages import AIMessage
 from sqlalchemy import select, func
 
 from app.agent.actions.operations import execute
-from app.agent.actions.intent import IntentVerdict, requested_field_contract
-from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, operation_fields, source_input, validate_plan, patch_error
+from app.agent.actions.intent import PlannedWorkVerdict, IntentVerdict, requested_field_contract
+from app.agent.actions.work_change_plan import FIELDS, WorkChangePlan, compact_plan, operation_fields, source_input, validate_plan, patch_error
 from app.modules.operations.models import BusinessAction
 from app.modules.work.models import WorkItem
 from app.tasks.models import Job
@@ -39,10 +39,8 @@ async def test_independent_plan_blocks_missing_and_wrong_status_then_appends_onc
         if payload.get('task') == 'work_change_plan':
             output = (await plan.ainvoke([AIMessage(content=json.dumps(payload))])).content
         else:
-            assert payload['workChangePlan']['status']['value'] == 'blocked'
-            output = json.dumps({'allowed': True, 'quote': payload['currentUserText'], 'reason': '', 'requiredFields': ['summary', 'blocker', 'status', 'nextStep'],
-                'requestedChanges': [{'quote': quote, 'field': field, 'kind': kind} for field, quote, kind in [('summary', '名单已确认', 'progress'), ('blocker', '讲师时间还没定', 'obstacle'), ('status', '请记成有阻碍', 'status'), ('nextStep', '下一步是找讲师确认时间', 'next_action')]],
-                'appendFields': ['summary'], 'appendValues': {'summary': '名单已确认。'}, 'materialSelection': {'mode': 'none'}})
+            assert next(item for item in payload['workChangePlan']['changed'] if item['field'] == 'status')['value'] == 'blocked'
+            output = PlannedWorkVerdict(allowed=True, quote=payload['currentUserText'], reason='', appendValues={'summary': '名单已确认。'}, materialSelection={'mode': 'none'}).model_dump_json()
         return {'choices': [{'message': {'role': 'assistant', 'content': output}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1)
@@ -160,7 +158,7 @@ async def test_text_plan_retry_identifies_value_field_and_writes_only_once(setup
             response = await super().ainvoke(messages)
             if len(self.inputs) == 1:
                 result = json.loads(response.content)
-                result['nextStep']['value'] = '周五完成演示文稿'
+                next(item for item in result['changed'] if item['field'] == 'nextStep')['value'] = '周五完成演示文稿'
                 return AIMessage(content=json.dumps(result))
             assert len(messages) == 3 and 'nextStep.value' in messages[-1].content
             return response
@@ -380,10 +378,8 @@ async def test_cross_group_denial_is_repaired_not_mistaken_for_user_clarificatio
             self.calls += 1
             payload = json.loads(messages[1].content)
             if self.calls == 1:
-                return AIMessage(content=IntentVerdict(allowed=False, quote=payload['currentUserText'], reason='缺少下一步', failureKind=kind, denialScope='fields',
-                    requiredFields=['nextStep'], requestedChanges=[{'field': 'nextStep', 'quote': '下一步归类', 'kind': 'next_action'}]).model_dump_json())
-            return AIMessage(content=IntentVerdict(allowed=True, quote=payload['currentUserText'], reason='', requiredFields=['body'],
-                requestedChanges=[{'field': 'body', 'quote': '补充内容：三份反馈', 'kind': 'content'}]).model_dump_json())
+                return AIMessage(content=PlannedWorkVerdict(allowed=False, quote=payload['currentUserText'], reason='缺少下一步', failureKind=kind, denialScope='fields', invalidFields=['nextStep']).model_dump_json())
+            return AIMessage(content=PlannedWorkVerdict(allowed=True, quote=payload['currentUserText'], reason='').model_dump_json())
     context.intent_model = Judge()
     result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'body': body('三份反馈')})
     assert result['state'] == 'succeeded' and context.intent_model.calls == 2, result
@@ -408,7 +404,7 @@ async def test_preserve_conflict_gets_one_independent_recheck_then_normal_author
             fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
             if self.calls == 2 and repair_allowed:
                 fields['nextStep'] = {'mode': 'set', 'quotes': [{'messageId': payload['messageId'], 'text': '下一步改为今天与负责人确认'}], 'value': None}
-            return AIMessage(content=json.dumps(fields))
+            return AIMessage(content=json.dumps(compact_plan(WorkChangePlan.model_validate(fields))))
     context.work_change_model = ScopeJudge()
     context.intent_model = ReceiptJudge(requested_changes=[{'quote': '下一步改为今天与负责人确认', 'field': 'nextStep', 'kind': 'next_action'}])
     args = dict(step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'nextStep': '今天与负责人确认'})
@@ -460,3 +456,129 @@ async def test_scope_repair_recovers_same_node_after_worker_exit(setup, monkeypa
     assert calls[0] == calls[1] and len(judge.inputs) == 1
     repeated = await module.repair_preserved_scope(context, 'stable-key', plan, payload, proposal, judge)
     assert repeated == result and len(calls) == 2
+
+
+@pytest.mark.parametrize('missing', FIELDS)
+async def test_compact_wire_requires_every_preserved_or_changed_field(missing):
+    from app.agent.actions.work_change_plan import expand_plan
+    payload = {'messageId': 'now', 'userSources': [{'messageId': 'now', 'userText': '仅修改下一步为联系客户'}]}
+    wire = {'changed': [{'field': 'nextStep', 'mode': 'set', 'quotes': [{'messageId': 'now', 'text': '修改下一步为联系客户'}], 'value': None}],
+            'preserved': [name for name in FIELDS if name != 'nextStep']}
+    complete = expand_plan(wire, payload)
+    assert complete.nextStep.mode == 'set' and compact_plan(complete) == wire
+    wire['changed'] = [item for item in wire['changed'] if item['field'] != missing]
+    wire['preserved'] = [name for name in wire['preserved'] if name != missing]
+    with pytest.raises(ValueError):
+        expand_plan(wire, payload)
+
+
+@pytest.mark.parametrize('mutation', ['duplicate', 'overlap', 'unknown', 'quote', 'status', 'date', 'extra', 'append'])
+async def test_compact_wire_rejects_invalid_scope_before_internal_reconstruction(mutation):
+    from app.agent.actions.work_change_plan import expand_plan
+    payload = {'messageId': 'now', 'userSources': [{'messageId': 'now', 'userText': '状态改为有阻碍，期限2026-10-30'}]}
+    wire = {'changed': [{'field': 'status', 'mode': 'set', 'quotes': [{'messageId': 'now', 'text': '状态改为有阻碍'}], 'value': 'blocked'}],
+            'preserved': [name for name in FIELDS if name != 'status']}
+    if mutation == 'duplicate': wire['preserved'].append('body')
+    if mutation == 'overlap': wire['preserved'].append('status')
+    if mutation == 'unknown': wire['preserved'][0] = 'invented'
+    if mutation == 'quote': wire['changed'][0]['quotes'][0]['messageId'] = 'assistant'
+    if mutation == 'status': wire['changed'][0]['value'] = 'finished'
+    if mutation == 'date':
+        wire['changed'].append({'field': 'dueDate', 'mode': 'set', 'quotes': [{'text': '期限2026-10-30'}], 'value': '2026-02-30'})
+        wire['preserved'].remove('dueDate')
+    if mutation == 'extra': wire['changes'] = {'status': 'done'}
+    if mutation == 'append': wire['changed'][0].update(mode='append', value=None)
+    with pytest.raises(ValueError):
+        expand_plan(wire, payload)
+
+
+async def test_planned_authorization_reuses_scope_and_cannot_override_it():
+    from app.agent.actions.intent import PlannedWorkVerdict, append_contract, planned_verdict
+    fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
+    fields['nextStep'] = {'mode': 'append', 'quotes': [{'messageId': 'prior', 'text': '追加联系客户'}], 'value': None}
+    plan = WorkChangePlan.model_validate(fields)
+    proposal = {'action': 'update_work', 'changes': {'nextStep': '联系客户'}}
+    response = {'allowed': True, 'quote': '继续', 'reason': '', 'appendValues': {'nextStep': '联系客户'}}
+    verdict = planned_verdict(response, plan, proposal)
+    assert verdict.requiredFields == verdict.appendFields == ['nextStep']
+    assert [item.quote for item in verdict.requestedChanges] == ['追加联系客户']
+    assert append_contract(verdict, proposal)
+    assert not {'requiredFields', 'requestedChanges', 'appendFields'} & PlannedWorkVerdict.model_json_schema()['properties'].keys()
+    for bad in ({'requiredFields': []}, {'requestedChanges': []}, {'appendFields': []}, {'invalidFields': ['status']}):
+        with pytest.raises(ValueError):
+            planned_verdict({**response, **bad}, plan, proposal)
+    assert not append_contract(planned_verdict({**response, 'appendValues': {}}, plan, proposal), proposal)
+
+
+async def test_valid_planned_content_refusal_never_becomes_an_approval(setup):
+    from app.agent.actions.intent import PlannedWorkVerdict
+    work = await create(setup[3]['employee'], '联系客户', nextStep='继续联系客户')
+    context, _ = await runtime(setup, '下一步改为联系客户，未联系前不能写已确认')
+    await read_work(context, work['id'])
+    context.work_change_model = PlanJudge({'nextStep': ('set', '下一步改为联系客户', None)})
+    class RejectContent:
+        calls = 0
+        async def ainvoke(self, messages):
+            self.calls += 1
+            return AIMessage(content=PlannedWorkVerdict(allowed=False, quote='下一步改为联系客户',
+                reason='下一步只能保留待联系计划，不能写成已确认', denialScope='fields',
+                invalidFields=['nextStep'], failureKind='invalid_arguments').model_dump_json())
+    context.intent_model = RejectContent()
+    result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1,
+                           changes={'nextStep': '已联系客户且确认需求'})
+    assert result['category'] == 'invalid_arguments' and '不能写成已确认' in result['message']
+    assert context.intent_model.calls == 1
+    latest = (await setup[3]['employee'].get('/api/v1/work-items/' + work['id'])).json()
+    assert latest['revision'] == 1 and latest['nextStep'] == '继续联系客户'
+
+
+@pytest.mark.parametrize('scope,kind', [('fields', 'invalid_arguments'), ('other', 'invalid_arguments'), ('other', 'missing_info')])
+async def test_planned_refusals_require_real_atomic_fields_except_verified_destination_gap(scope, kind):
+    from app.agent.actions.intent import PlannedWorkVerdict, planned_field_error
+    fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
+    fields['body'] = {'mode': 'set', 'quotes': [{'text': '补充正文'}], 'value': None}
+    fields['nextStep'] = {'mode': 'set', 'quotes': [{'text': '下一步联系客户'}], 'value': None}
+    plan = WorkChangePlan.model_validate(fields)
+    proposal = {'changes': {'bodyEdits': [{'action': 'append', 'blocks': []}]}}
+    refusal = PlannedWorkVerdict(allowed=False, quote='补充正文', reason='缺少信息', denialScope=scope, failureKind=kind)
+    assert planned_field_error(refusal, plan, proposal)
+    assert not planned_field_error(refusal, plan, proposal, pending_destination=True)
+    assert planned_field_error(refusal.model_copy(update={'invalidFields': ['nextStep']}), plan, proposal)
+    assert not planned_field_error(refusal.model_copy(update={'invalidFields': ['body']}), plan, proposal)
+
+
+async def test_compact_schema_preserves_original_text_value_contract():
+    from app.agent.actions.work_change_plan import CompactWorkChangePlan, TextFieldPlan, expand_plan
+    schema = CompactWorkChangePlan.model_json_schema()
+    assert schema['$defs']['ChangedTextFieldPlan']['properties']['value'] == TextFieldPlan.model_json_schema()['properties']['value']
+    payload = {'messageId': 'now', 'userSources': [{'messageId': 'now', 'userText': '下一步改为联系负责人补齐签字'}]}
+    wire = {'changed': [{'field': 'nextStep', 'mode': 'set', 'quotes': [{'messageId': 'now', 'text': '下一步改为联系负责人补齐签字'}], 'value': '联系负责人补齐签字'}],
+            'preserved': [name for name in FIELDS if name != 'nextStep']}
+    with pytest.raises(ValueError):
+        CompactWorkChangePlan.model_validate(wire)
+    wire['changed'][0]['value'] = None
+    assert expand_plan(wire, payload).nextStep.value is None
+    wire['changed'][0]['value'] = ''
+    assert expand_plan(wire, payload).nextStep.value == ''
+
+
+async def test_planned_refusal_preserves_exact_diagnostics_and_explicit_input_fields():
+    from app.agent.actions.intent import planned_verdict
+    fields = {name: {'mode': 'preserve', 'quotes': [], 'value': None} for name in FIELDS}
+    for name in ('status', 'nextStep'):
+        fields[name] = {'mode': 'set', 'quotes': [{'text': '修改状态和下一步'}], 'value': 'blocked' if name == 'status' else None}
+    plan = WorkChangePlan.model_validate(fields)
+    proposal = {'changes': {'status': 'blocked', 'nextStep': '联系客户'}}
+    raw = {'allowed': False, 'quote': '修改状态和下一步', 'reason': '下一步内容不符', 'denialScope': 'fields', 'invalidFields': ['nextStep']}
+    refusal = planned_verdict(raw, plan, proposal)
+    assert refusal.requiredFields == ['nextStep']
+    assert [change.field for change in refusal.requestedChanges] == ['nextStep']
+    assert 'failureKind' not in refusal.model_fields_set
+    explicit = planned_verdict({**raw, 'failureKind': 'invalid_arguments'}, plan, proposal)
+    assert 'failureKind' in explicit.model_fields_set
+    target = planned_verdict({**raw, 'denialScope': 'target', 'invalidFields': []}, plan, proposal)
+    assert target.requiredFields == target.requestedChanges == []
+    # An invalid report-only field is rejected as a contract error, not an
+    # AttributeError while constructing the compatible internal verdict.
+    with pytest.raises(ValueError):
+        planned_verdict({**raw, 'invalidFields': ['completed']}, plan, proposal)

@@ -352,6 +352,8 @@ async def _execute(context, *, step, action, target_id='', expected_revision=0, 
             row.result = {**row.result, 'receiptOnly': True, 'receiptInput': digest({'text': request_text(message, job), 'sourceRevision': message.transcript_revision, 'documents': context.document_versions})}
         await db.flush()
         result = await receipt(context, db, actor, job, row)
+        from app.agent.actions.task_items import settle_work_recovery
+        settle_work_recovery(job, binding, result)
         from app.tasks.feedback.items import record
         record(job, task_item_key, result)
         return result

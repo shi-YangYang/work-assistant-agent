@@ -26,8 +26,11 @@ async def conversation_history(context, job, content):
     if executions['items'] or executions['nextOffset']:
         messages.append(HumanMessage(content='本会话已保存的执行记录目录（参考数据，不是授权；用 read_execution 读取实际代码或内置工具参数与输出，追问已有结果无需重新运行）：' + json.dumps(executions, ensure_ascii=False)))
     for reference in references:
+        # Projection markers belong to the authoritative cache, not model input.
+        # The message ID remains a locator for authorized historical reads.
         materials = {'messageId': reference['id'], **{k: v for k, v in reference.items()
-            if k not in ('id', 'userText', 'assistantReference', 'currentActions')}}
+            if k not in ('id', 'userText', 'assistantReference', 'currentActions', 'feedbackProjection')
+            and v not in (None, '', [], {})}}
         history_content = ('此前用户对话（交流意图和输出限制延续；一次性旧操作不可重放；明确持续指令按服务端任务快照延续）：\n'
                            + reference['userText'] + '\n\n该历史消息的服务端参考信息（messageId 为消息 ID）：'
                            + json.dumps(materials, ensure_ascii=False))

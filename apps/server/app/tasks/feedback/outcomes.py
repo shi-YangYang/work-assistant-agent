@@ -121,6 +121,15 @@ def record(job, action, arguments, result):
                              if same_item(entry, item) and entry.get('effect') == effect and entry.get('hasReference') is False
                              and entry['category'] in BLOCKING)
     if resolved:
+        if item['category'] == 'success' and result.get('messageId') == getattr(job, 'target_id', None):
+            for recovered in job.result.get('taskItems', []):
+                proof = recovered.get('recoveredSchemaFailure')
+                if (not proof or recovered.get('receiptId') != item.get('receiptId')
+                        or recovered.get('recoveredBy') != item['taskItemId'] or recovered.get('state') != 'succeeded'):
+                    continue
+                audited = {entry['key']: digest(entry) for entry in proof['outcomes']}
+                resolved_keys.update(entry['key'] for entry in previous
+                                     if audited.get(entry['key']) == digest(entry))
         corrected_identity = corrected_draft_identity(job, item, result, identity)
         if corrected_identity:
             resolved_keys.update(entry['key'] for entry in previous

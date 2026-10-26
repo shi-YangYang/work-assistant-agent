@@ -33,7 +33,8 @@ export async function runBrowserJourney(options) {
     { cwd: root, stdio: 'pipe' },
   )
   const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'))
-  if (metadata.suite !== 'spec056') throw new Error('Only an owned spec056 environment is allowed')
+  if (!['spec056', 'spec081'].includes(metadata.suite))
+    throw new Error('Only an owned performance environment is allowed')
   const secret = JSON.parse(readFileSync(metadata.secretFile, 'utf8'))
   const manifest = JSON.parse(readFileSync(options.cases, 'utf8'))
   const journey = manifest.journeys.find((item) => item.id === options.journey)
@@ -54,6 +55,26 @@ export async function runBrowserJourney(options) {
     reducedMotion: 'no-preference',
   })
   const page = await context.newPage()
+  await page.addInitScript(() => {
+    const Original = window.EventSource
+    window.__latencySse = []
+    window.EventSource = class extends Original {
+      constructor(url, options) {
+        super(url, options)
+        if (!String(url).includes('/events')) return
+        for (const event of ['snapshot', 'reply_sync', 'reply_delta'])
+          this.addEventListener(event, (message) => {
+            window.__latencySse.push({
+              url: String(url),
+              event,
+              atUnixMs: Date.now(),
+              atMs: performance.now(),
+              body: JSON.parse(message.data),
+            })
+          })
+      }
+    }
+  })
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   let csrf
@@ -78,7 +99,13 @@ export async function runBrowserJourney(options) {
       password: actor.password,
     })
     csrf = identity.csrf
-    const selection = await api('/assistant/reasoning-settings')
+    let selection = await api('/assistant/reasoning-settings')
+    if (metadata.suite === 'spec081' && selection.selected?.effort !== options.effort)
+      selection = await api('/assistant/reasoning-settings', 'PATCH', {
+        effort: options.effort,
+        preferenceRevision: selection.preferenceRevision,
+        configVersion: selection.configVersion,
+      })
     if (selection.selected?.effort !== options.effort)
       throw new Error('Actual effort differs from frozen stratum')
     const mode = await api('/assistant/execution-settings')
@@ -109,7 +136,12 @@ export async function runBrowserJourney(options) {
       metadata.origin +
         (fixture.conversationId
           ? '/assistant/' + fixture.conversationId
-          : '/assistant' + (journey.workReference ? '?workId=' + fixture.workId : '')),
+          : '/assistant' +
+            (journey.workReference
+              ? '?workId=' + fixture.workId
+              : metadata.suite === 'spec081'
+                ? '?new=1'
+                : '')),
     )
     await page.getByRole('textbox', { name: '工作消息', exact: true }).waitFor()
     const currentPersona = page.getByRole('button', { name: '选择人设：Noria人设', exact: true })
@@ -308,15 +340,31 @@ export async function runBrowserJourney(options) {
         await stopBrowserObservation(page, row)
       }
       row.afterWorks = await api('/work-items?limit=20')
+      const sse = await page.evaluate(
+        (jobId) =>
+          window.__latencySse.filter((item) => item.url.includes('/jobs/' + jobId + '/events')),
+        receipt.jobId,
+      )
+      json(resolve(directory, 'sse.json'), sse)
+      const firstSse = sse.find(({ event, body }) =>
+        String(
+          event === 'snapshot' ? (body.replyStream?.text ?? '') : (body.text ?? body.delta ?? ''),
+        ).trim(),
+      )
+      row.metrics.firstSseTextSeconds = firstSse
+        ? (firstSse.atUnixMs - row.sentUnixMs) / 1000
+        : null
       if (turn.quality.kind === 'memory') row.afterMemory = await api('/assistant/memory')
       row.persistenceReadbackSeconds = (performance.now() - began) / 1000
-      row.workCommitTimes = (row.afterWorks.items ?? [])
+      // updatedAt is assigned inside the transaction, not a commit timestamp.
+      // The owned runtime's after_commit observer records actual commits.
+      row.workRecordTimes = (row.afterWorks.items ?? [])
         .filter((work) => Date.parse(work.updatedAt) >= row.sentUnixMs)
         .map((work) => ({
           id: work.id,
           revision: work.revision,
           updatedAt: work.updatedAt,
-          commitSeconds: (Date.parse(work.updatedAt) - row.sentUnixMs) / 1000,
+          updatedAtSeconds: (Date.parse(work.updatedAt) - row.sentUnixMs) / 1000,
         }))
       row.actualLength = {
         hanCharacters: [...(message?.reply ?? '').matchAll(/[\u3400-\u9fff]/g)].length,

@@ -92,8 +92,9 @@ async def load_materials(db, actor, job):
     result = []
     for identifier, revision, ordinal in source.get('materials', []):
         document = await agent_attachment(db, identifier, actor, message_job)
-        parent = await active_message(db, document.message_id, actor)
-        await require(db, actor, parent.access)
+        if document.message_id:
+            parent = await active_message(db, document.message_id, actor)
+            await require(db, actor, parent.access)
         chunk = await db.scalar(select(DocumentChunk).where(DocumentChunk.attachment_id == identifier, DocumentChunk.revision == revision, DocumentChunk.ordinal == ordinal))
         if document.extraction_revision != revision or chunk is None:
             raise ValueError('报告引用的附件已变化，请使用最新材料重新生成')

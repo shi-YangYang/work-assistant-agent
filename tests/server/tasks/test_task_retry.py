@@ -527,8 +527,7 @@ async def test_wrong_judge_item_reference_is_repaired_internally_before_any_busi
         calls.append(messages)
         await on_event('started')
         verdict = {'allowed': True, 'quote': '待补对象下一步写发给客户', 'reason': '', 'resumeTask': True,
-            'taskItemId': saved['taskItemId'] if len(calls) == 1 else '', 'newTaskItem': False, 'requiredFields': ['nextStep'],
-            'requestedChanges': [{'quote': '下一步写发给客户', 'field': 'nextStep', 'kind': 'next_action'}]}
+            'taskItemId': saved['taskItemId'] if len(calls) == 1 else '', 'newTaskItem': False, 'invalidFields': []}
         return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     result = await execute(context, step=1, action='update_work', target_id=b['id'], expected_revision=1, changes={'nextStep': '发给客户'})
@@ -563,7 +562,10 @@ async def test_append_contract_rechecks_legacy_cached_authorization_and_repairs_
     async def chat(settings, config, key, messages, *, on_event, **kwargs):
         calls.append(messages)
         await on_event('started')
-        verdict = old if len(calls) == 1 else {**old, 'appendValues': {'summary': '部署文档已更新完成。'}}
+        verdict = {key: value for key, value in old.items() if key not in ('appendFields', 'requiredFields', 'requestedChanges')}
+        verdict['invalidFields'] = []
+        if len(calls) > 1:
+            verdict['appendValues'] = {'summary': '部署文档已更新完成。'}
         return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     assert (await authorize_intent(context, proposal))[0]
@@ -612,26 +614,38 @@ async def test_field_coverage_repairs_missing_or_invented_quotes_before_business
     await node_execution.initialize(context, 'coverage-contract')
     work = await create(setup[3]['employee'], '验收', summary='准备验收')
     await read_work(context, work['id'])
-    context.work_change_model = PlanJudge({'summary': ('append', '联调已通过', None)})
+    plan_calls, authorization_calls = [], []
+    class RepairingPlan(PlanJudge):
+        async def ainvoke(self, messages):
+            plan_calls.append(messages)
+            async with context.sessions() as db:
+                assert (await db.get(WorkItem, work['id'])).revision == 1
+                assert await db.scalar(select(func.count()).select_from(BusinessAction).where(BusinessAction.owner_id == context.owner_id)) == 0
+            response = await super().ainvoke(messages)
+            value = json.loads(response.content)
+            changed = value['changed'][0]
+            if len(plan_calls) == 1:
+                changed['quotes'] = []
+            elif len(plan_calls) == 2:
+                changed['quotes'][0]['text'] = '全部验收已通过'
+            elif len(plan_calls) == 3:
+                changed['quotes'][0]['messageId'] = 'unrelated-source-message'
+            return AIMessage(content=json.dumps(value, ensure_ascii=False))
+    context.work_change_model = RepairingPlan({'summary': ('append', '联调已通过', None)})
     async def resolve(*args):
         return {'model': 'controlled', 'parameters': {}, 'baseUrl': 'https://example.com'}, 'test'
     monkeypatch.setattr('app.modules.model_services.bindings.resolve_bound', resolve)
-    calls = []
     async def chat(settings, config, key, messages, *, on_event, **kwargs):
-        calls.append(messages)
+        authorization_calls.append(messages)
         await on_event('started')
-        async with context.sessions() as db:
-            assert (await db.get(WorkItem, work['id'])).revision == 1
-            assert await db.scalar(select(func.count()).select_from(BusinessAction).where(BusinessAction.owner_id == context.owner_id)) == 0
-        verdict = {'allowed': True, 'quote': '更新验收：联调已通过', 'reason': '', 'requiredFields': ['summary'], 'appendFields': ['summary'], 'appendValues': {'summary': '联调已通过'}}
-        if len(calls) > 1:
-            verdict['requestedChanges'] = [{'quote': '全部验收已通过' if len(calls) == 2 else '联调已通过', 'field': 'summary', **({'kind': 'progress'} if len(calls) >= 4 else {})}]
+        verdict = {'allowed': True, 'quote': '更新验收：联调已通过', 'reason': '', 'invalidFields': [], 'appendValues': {'summary': '联调已通过'}}
         return {'choices': [{'message': {'role': 'assistant', 'content': json.dumps(verdict)}, 'finish_reason': 'stop'}]}
     monkeypatch.setattr('app.integrations.models.chat.chat', chat)
     result = await execute(context, step=1, action='update_work', target_id=work['id'], expected_revision=1, changes={'summary': '准备验收；联调已通过'})
-    assert result['state'] == 'succeeded' and len(calls) == 4
-    assert 'kind' in calls[3][-1]['content']
-    assert 'requestedChanges' in calls[1][-1]['content'] and '逐字引用' in calls[2][-1]['content']
+    assert result['state'] == 'succeeded' and len(plan_calls) == 4 and len(authorization_calls) == 1
+    assert 'user source' in plan_calls[1][-1].content
+    assert 'original user text' in plan_calls[2][-1].content
+    assert 'source' in plan_calls[3][-1].content
     async with context.sessions() as db:
         updated = await db.get(WorkItem, work['id'])
         assert updated.revision == 2 and updated.content['summary'] == '准备验收\n联调已通过'

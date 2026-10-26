@@ -23,7 +23,7 @@ def isolated_url(settings):
         from environment import load_environment
         metadata, private = load_environment(declaration)
         expected = make_url(private['environment']['DATABASE_URL'])
-        if (metadata['suite'] not in ('spec059', 'spec060', 'spec068') or metadata['schema'] != f"{metadata['suite']}_{metadata['purpose']}_{metadata['runId'][:12]}"
+        if (metadata['suite'] not in ('spec059', 'spec060', 'spec068', 'spec081') or metadata['schema'] != f"{metadata['suite']}_{metadata['purpose']}_{metadata['runId'][:12]}"
                 or url.set(drivername='postgresql') != expected.set(drivername='postgresql') or url.query.get('options') != '-csearch_path=' + metadata['schema']):
             raise RuntimeError('Fault target does not match the owned environment declaration')
     elif not re.fullmatch(r'-csearch_path=spec059_[a-z]+_[a-f0-9]{12}', url.query.get('options', '')):
@@ -47,7 +47,7 @@ def main():
     parser.add_argument('--cases', nargs='+')
     args = parser.parse_args()
     metadata, private = load_environment(args.metadata)
-    if metadata['suite'] not in ('spec059', 'spec060', 'spec068'):
+    if metadata['suite'] not in ('spec059', 'spec060', 'spec068', 'spec081'):
         raise RuntimeError('Refusing another suite environment')
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)

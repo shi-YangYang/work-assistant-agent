@@ -103,7 +103,8 @@ async def test_resolved_selection_with_preserved_body_uses_one_scope_call_and_ke
         async def ainvoke(self, messages):
             response = await super().ainvoke(messages)
             result = json.loads(response.content)
-            result['body'] = {'mode': 'preserve', 'quotes': [], 'value': None}
+            result['changed'] = [item for item in result['changed'] if item['field'] != 'body']
+            result['preserved'].append('body')
             return AIMessage(content=json.dumps(result))
     context.work_change_model = PreservedBodyJudge('resolved', [{'itemId': target, 'checked': True}], quote)
     context.intent_model = ReceiptJudge(requested_changes=[{'field': 'body', 'kind': 'content', 'quote': quote}])
@@ -120,8 +121,9 @@ async def test_resolved_selection_with_preserved_body_uses_one_scope_call_and_ke
         assert cached[0]['checklistSelection']['targets'] == [{'itemId': target, 'checked': True}]
         assert not job.result.get('workChangePlanRepairs')
     authorized = context.intent_model.inputs[0]['workChangePlan']
-    assert authorized['body']['mode'] == 'set'
-    assert authorized['body']['quotes'] == authorized['checklistSelection']['quotes']
+    field = next(item for item in authorized['changed'] if item['field'] == 'body')
+    assert field['mode'] == 'set'
+    assert field['quotes'] == authorized['checklistSelection']['quotes']
 
 
 @pytest.mark.asyncio

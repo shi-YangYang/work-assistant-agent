@@ -260,6 +260,8 @@ it.each([
   ['partial', '部分完成'],
   ['processing', '正在处理'],
   ['blocked', '暂时无法继续'],
+  ['completed', '已完成'],
+  ['cancelled', '已中断'],
 ] as const)(
   'uses the business %s outcome instead of declaring the task complete',
   (state, label) => {
@@ -267,15 +269,24 @@ it.each([
       createElement(TaskProgress, {
         job: job({
           state: 'awaiting_input',
-          nodes: [node({ state: 'succeeded' })],
-          taskOutcome: { state, completed: [], remaining: ['请提供具体对象'], nextAction: 'reply' },
+          nodes: [node({ kind: 'tool', label: '任务入队', state: 'succeeded' })],
+          taskOutcome: {
+            state,
+            completed:
+              state === 'partial' || state === 'completed'
+                ? ['已交付部分内容', '进展建议已确认']
+                : [],
+            remaining: ['请提供具体对象'],
+            nextAction: 'reply',
+          },
         }),
         busy: false,
         onRetry: vi.fn(),
       }),
     )
     expect(html).toContain(label)
-    expect(html).not.toContain('已完成 ·')
+    expect(html).not.toContain('项操作')
+    expect(html).toContain('任务入队')
   },
 )
 

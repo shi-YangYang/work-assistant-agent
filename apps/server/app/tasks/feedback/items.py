@@ -5,7 +5,19 @@ def collect(job):
     snapshot = job.result.get('taskSnapshot', {})
     previous = snapshot.get('previousTask', {}).get('items', []) if snapshot.get('relation') == 'continue' else []
     current = job.result.get('taskItems', [])
-    return list({item['id']: item for item in [*previous, *current]}.values())[-32:]
+    items = {item['id']: item for item in [*previous, *current]}
+    def audit_alias(item):
+        recovered = item.get('recoveredSchemaFailure') or {}
+        executed = items.get(item.get('recoveredBy'))
+        return (executed and executed['id'] != item['id']
+                and item.get('action') == executed.get('action') == 'update_work'
+                and item.get('targetId') == executed.get('targetId')
+                and item.get('state') == executed.get('state') == 'succeeded'
+                and recovered.get('receiptId')
+                and recovered['receiptId'] == item.get('receiptId') == executed.get('receiptId'))
+    # Keep the superseded attempt in the job audit, not as a second completed
+    # operation (its original fields may include explicitly preserved content).
+    return [item for item in items.values() if not audit_alias(item)][-32:]
 
 
 def record(job, item_id, result):
