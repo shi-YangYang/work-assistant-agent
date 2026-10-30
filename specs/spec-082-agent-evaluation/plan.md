@@ -1,4 +1,4 @@
-# Plan — Agent 评测集与验收机制
+# 本地 Agent 评测机制：实施方案
 
 ## 对应 Spec
 

@@ -1,4 +1,4 @@
-# 34项未完成槽位的技术处置
+# 本地 Agent 评测机制：实现与验证
 
 本次基于本地提交 `832b4e2`，新增评测修复未提交、推送或部署。34项原来源已固定在 [targets.json](../../artifacts/agent-eval/spec082-incomplete-audit/targets.json)：33项在新owned环境各执行一次，旧HTTP s0020以既有真实wire和成功提交证据离线判FAIL，不再业务重跑。原4项明确FAIL未纳入。技术修复已通过 [新的独立验收](acceptance.md)，不代表人工语义批准。
 
@@ -42,7 +42,7 @@
 
 # 以下为前轮实施历史记录
 
-# Implementation Report
+# 实现与验证
 
 最终框架独立验收为 PASS，见 [acceptance.md](acceptance.md)。共执行38个真实业务试验槽位，原34槽的4 FAIL/30 INCOMPLETE加新增4 INCOMPLETE不变；本报告后文保留分轮证据及当时限制。
 

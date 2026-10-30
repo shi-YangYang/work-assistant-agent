@@ -6,7 +6,7 @@
 
 ## 图片与文档处理
 
-- PDF、DOCX、PPTX、XLSX、TXT、Markdown、CSV、JSON 提取原生文字或可见表格；不做扫描件 OCR、复杂图表理解或宏执行。
-- XLSX 只读已有数据和公式缓存，不执行公式；不把旧式 DOC／PPT 视为 DOCX／PPTX。
+- PDF、DOCX、PPTX、XLSX、TXT、Markdown、CSV、JSON 提取原生文字或可见表格；不执行宏。扫描件、图表和版式可将实际页面图片提供给支持图像输入的主模型，不另加 OCR 或图片描述模型。
+- XLSX 只读已有数据和公式缓存，不执行公式；旧 Office／RTF／ODF 由 worker 转换后读取，不把旧式 DOC／PPT 直接视为 DOCX／PPTX。
 - 本地 PDF.js 仅预览原页，不使用公共预览服务；图片通过 Pillow／HEIF 处理方向、格式和私有预览，原件仍保留。
 - 原件、提取结果和模型回答分开保存，回答保留来源，便于回查和纠正。

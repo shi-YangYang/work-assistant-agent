@@ -18,39 +18,44 @@
   <img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker" />
 </p>
 
-Noria 是一个开源的公司云端助手，名称灵感来自诺亚方舟。通过 **Web** 进行通用问答、理解材料、查询资料、制定方案；启用沙盒后，还可分析数据、生成文件并持续修改成果。是否写入工作和报告，由你决定。**Electron 桌面端** 专注会议录音、本地转写与 AI 纪要。公司服务可部署在自己的云服务器或内网。
+Noria 是一个开源的公司工作助手。你可以通过浏览器提问、分析材料、查询公开资料和生成文件，再按需要把成果保存到工作或周报。Electron 桌面端用于会议录音、本地转写和 AI 纪要。
 
-## 目录
+公司服务可部署在自己的云服务器或内网。Web 适配电脑和手机；桌面端支持 macOS、Windows，也可独立使用。
 
-[功能](#功能) · [安装](#安装) · [使用](#使用) · [技术栈](#技术栈) · [项目结构](#项目结构) · [部署与打包](#部署与打包) · [贡献](#贡献)
+## 从这里开始
 
-## 功能
+| 你想做什么              | 阅读入口                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| 使用公司已经部署的服务  | 浏览器打开公司地址，用管理员提供的账号登录；[功能与使用说明](docs/setup.md#模型用途分配) |
+| 在本机运行公司 Web      | [开发环境安装](docs/setup.md#公司-web)                                                   |
+| 运行桌面会议应用        | [桌面端安装](docs/setup.md#electron-桌面端)                                              |
+| 部署、更新或备份服务器  | [Web 部署](docs/setup.md#web-部署)                                                       |
+| 了解代码和数据流        | [技术架构](docs/architecture.md)                                                         |
+| 验证 Agent 的回答和操作 | [本地评测](eval/README.md)                                                               |
+| 查看设计依据和验收结果  | [规格索引](specs/README.md)                                                              |
+
+## 主要功能
 
 ### 公司 Web
 
-- **任务协助**：多会话聊天，结合材料与联网查询整理计划、分析和文稿，支持连续修改；按会话设置选择执行权限。
-- **多种输入**：支持文字、图片、网页录音与语音文件；可粘贴截图、拖入附件、预览图片和 PDF，修正语音转写。
-- **文档理解**：解析 PDF、Word（DOCX）、PowerPoint（PPTX）、Excel（XLSX）、TXT、Markdown、CSV 和 JSON，结合材料处理工作。
-- **数据分析与文件生成**：启用自部署沙盒后，可运行 Python、检查和导出表格、绘制图表、生成 Word／PDF／PPT。内置工具处理常见操作，每次执行使用独立隔离环境。
-- **图片生成**：管理员独立分配图片模型后，可在聊天中用文字生成图片，预览、下载并在历史会话中查看；兼容模型可通过接口和尺寸设置接入，内置万相模型的尺寸预设。
-- **工作与报告**：手动管理，或明确让助手创建、修改工作与报告；支持日报、周报和汇报提醒，业务操作遵循所选执行权限与账号权限。
-- **团队看板与问答**：管理员查看团队进度、阻碍和汇报情况，也可直接向助手提问；员工查询范围限定为本人资料。
-- **模型服务管理**：配置多家服务，分配文字模型、语音转写和图片生成；聊天与日报周报共用文字模型，可测试连通性并查看调用用量。
-- **公司管理**：账号密码或钉钉登录；管理员管理成员、汇报规则，并登记成员声纹供桌面端使用。
-- **使用反馈**：查看任务处理进度、恢复异常请求，提交问题反馈并跟进处理结果。
+- **问答与材料分析**：多会话聊天、联网查询，读取文档、图片和语音，连续修改方案与文稿。旧版 Office 和文档页面读取需安装相应依赖。
+- **文件与图片生成**：启用沙盒后，可分析表格、运行 Python、绘图并生成 Office／PDF 文件；图片生成使用管理员单独配置的图片模型。
+- **工作与周报**：管理工作正文、清单、附件和进展；手动准备周报，或按管理员的汇报安排审阅、提交。正式报告只保留周报。
+- **团队与公司管理**：管理员查看团队进度和汇报情况，管理成员、模型服务、用量、登录方式、声纹及问题反馈。
 
-### Electron 桌面端
+助手的执行权限按账号设置，适用于所有会话。员工只访问本人资料，管理员的团队查询仍受服务端权限控制。工具显示成功并不代替你对内容的检查。
 
-- **会议录制与回放**：支持暂停、继续、进度跳转、倍速播放和会议搜索。
-- **本地语音转写**：多款 Whisper 模型，支持中文、英文及中英混合；可选择 CPU、Apple Silicon GPU 或受支持的 NVIDIA GPU，查看模型实测错误率和内存占用。
-- **AI 会议纪要**：整理议题、发言人观点、决策、行动项及风险，区分会议结论与 AI 建议，可回到原文核对，支持 Markdown／TXT 导出。
-- **说话人识别**：无需公司声纹也能区分不同说话人；同步声纹后可匹配成员姓名，支持会后校正与人工修改。文字记录可切换发言人／纯文本视图，纪要可选择是否使用发言人信息。
+### 桌面会议
 
-Web 适配电脑和手机浏览器；桌面端支持 macOS、Windows，可作为游客独立使用。会议资料保存在本机，不自动同步到公司服务；生成纪要时，所选文字会发送至配置的模型服务。
+- **录音与回放**：暂停、继续、进度跳转、倍速播放和会议搜索。
+- **本地转写与说话人识别**：支持中文、英文及混合语音；按设备选择 CPU、Apple Silicon GPU 或受支持的 NVIDIA GPU。同步公司声纹后可匹配姓名，也可手动更正。
+- **AI 纪要**：整理议题、观点、决策和行动项，回到原文核对，导出 Markdown／TXT。
 
-## 安装
+会议资料保存在本机，不自动上传公司服务。下载模型后可离线转写；生成纪要时，所选文字会发送到配置的模型服务。
 
-源码运行需要 **Node.js 24、npm 11、Python 3.12**；公司 Web 另需 **Docker Compose、FFmpeg**。
+## 源码运行
+
+需要 **Node.js 24、npm 11、Python 3.12**。公司 Web 另需 Docker Compose 和 FFmpeg。
 
 ```sh
 git clone https://github.com/shi-YangYang/work-assistant-agent.git
@@ -58,92 +63,43 @@ cd work-assistant-agent
 npm ci
 ```
 
-首次运行先初始化对应应用：
-
-| 应用 | 初始化内容 | 指南 |
-| --- | --- | --- |
-| 公司 Web | Python 依赖、环境配置、数据库与管理员账号 | [Web 初始化](docs/setup.md#公司-web) |
-| 桌面端 | Python 依赖与本地核心 | [桌面初始化](docs/setup.md#electron-桌面端) |
-
-## 使用
-
-<a id="公司工作助手-webspec-008"></a>
-
-### 公司 Web
-
-初始化完成并启动 Docker 后，运行：
+先按[安装指南](docs/setup.md)完成 Python、环境配置和数据库初始化，再启动对应应用：
 
 ```sh
-npm run dev:web
+npm run dev:web       # 公司 Web：http://127.0.0.1:5174
+npm run dev:electron  # 桌面会议应用
 ```
 
-命令会在 Docker 中统一管理 `paa-company` 项目：数据库、正文流 Redis，以及可选的沙盒服务，等待就绪后启动应用。访问 [http://127.0.0.1:5174](http://127.0.0.1:5174)。管理员配置模型服务、添加成员后即可使用。
-
-旧环境首次升级先退出开发服务，执行一次 `npm run dev:web:migrate`，保留原数据库与沙盒数据。
-
-需要代码执行和文件生成时，先启动 Docker，执行一次 `npm run sandbox:setup`，再启动 `npm run dev:web`。开发命令会管理本地沙盒的启动和停止；未启用沙盒也可使用普通聊天与业务功能。见[本地沙盒配置](docs/setup.md#公司-web)。
-
-### Electron 桌面端
-
-```sh
-npm run dev:electron
-```
-
-在设置中下载转写模型、配置纪要模型，然后开始会议。模型下载后可离线转写，生成纪要需要在线模型 API。桌面安装包自带 Python，终端用户无需配置开发环境。
-
-需要匹配员工姓名时，在 `apps/desktop/.env.electron` 设置 `PAA_DESKTOP_COMPANY_URL`，登录并同步公司声纹。留空为游客模式；本地会议无需公司后端。见[公司连接配置](docs/setup.md#连接公司与离线识别)。
-
-## 技术栈
-
-| 模块 | 技术 |
-| --- | --- |
-| 前端 | React、TypeScript、Vite、React Router |
-| 桌面应用 | Electron、electron-vite |
-| 服务端 | Python、FastAPI、Uvicorn |
-| Agent | Deep Agents、LangGraph；通过 harness 管理工具权限、任务恢复与人工确认 |
-| 代码执行 | 自部署 Python 沙盒、gVisor/runsc；内置表格、图表和文档生成工具 |
-| 数据存储 | PostgreSQL、SQLAlchemy、Alembic；桌面使用 SQLite |
-| 语音处理 | faster-whisper／CTranslate2、MLX Whisper、sounddevice、FFmpeg |
-| 说话人与声纹 | pyannote Community-1、WeSpeaker、PyTorch |
-| 文档与媒体 | pypdf、python-docx、python-pptx、openpyxl、Pillow、PDF.js |
-| 部署与打包 | Docker Compose、Caddy、electron-builder、PyInstaller |
+两条命令按需要选择，不要求同时运行。公司 Web 的开发命令会管理本地数据库、Redis 和已启用的沙盒；桌面本地会议不依赖公司后端。
 
 ## 项目结构
 
 ```text
-apps/
-  web/              公司 Web
-  desktop/          Electron 应用与本地 Python 核心
-  server/           公司 API、后台任务与 Agent
-  sandbox/          沙盒控制服务、Python 执行镜像与内置工具
-packages/           共享类型、模型参数、品牌资源与声纹引擎
-scripts/            开发与构建脚本
-tests/              各模块测试
+apps/web/           浏览器界面
+apps/server/        公司 API、后台任务与 Agent
+apps/desktop/       Electron 应用与本地 Python 核心
+apps/sandbox/       隔离代码执行与文件生成
+packages/           共享类型、模型参数、品牌资源和声纹引擎
+scripts/            开发、构建与运维脚本
+tests/              普通自动化测试
+eval/               本地 Agent 测试集、评分器与真实流程评测
 deploy/             部署配置
-docs/               安装指南与技术架构
+docs/               安装、架构与设计说明
+constitution/       产品方向与工程约定
+specs/              需求、实施方案与验收记录
+.ai/                项目决策与协作规则
 ```
 
-模块职责和数据流见[技术架构](docs/architecture.md)，视觉与品牌见[设计规范](docs/design/README.md)。
+前端使用 React／TypeScript，服务端使用 FastAPI／PostgreSQL，Agent 基于 Deep Agents／LangGraph，桌面端使用 Electron 与 Python。完整版本和工程命令见[技术栈](constitution/tech-stack.md)。
 
-## 部署与打包
+## 发布与贡献
 
-- **公司 Web**：使用 Docker Compose 部署到 Linux，通过 HTTPS 提供访问；聊天与转写调用外部 API，声纹登记由后台 CPU 提取。见 [Web 部署与备份](docs/setup.md#web-部署)。
-- **更新发布**：在 GitHub Actions 手动运行 `Deploy Company Web`，分支选 `main`，按访问方式选择 `domain` 或 `ip`。CD 在服务器构建 Web、API、Worker，自动备份、迁移并更新服务，保留业务数据与服务器配置；不打包 Electron。见[发布配置](docs/setup.md#github-手动发布)。
-- **可选沙盒**：首次启用需在 Linux 服务器安装并注册 `gVisor/runsc`，配置 `sandbox` profile、内部服务地址和独立令牌；之后 CD 会一起构建和更新沙盒。普通聊天不依赖沙盒，本地初始化不会配置生产服务器。见[沙盒部署](docs/setup.md#自部署代码沙盒)。
-- **桌面端**：在对应系统构建 macOS DMG 或 Windows 安装程序，打包内置 Python 核心。见[桌面打包](docs/setup.md#桌面打包)。目前尚未接入正式签名、公证和自动更新。
+公司 Web 通过 Docker Compose 部署；GitHub Actions 的手动发布流程负责构建、备份、迁移和更新。[部署说明](docs/setup.md#github-手动发布)包含所需配置和恢复步骤。可选沙盒需要 gVisor/runsc，不能用普通容器替代隔离执行。
 
-`SANDBOX_CONCURRENCY` 控制同时执行的沙盒任务数，默认 `1`，超出时排队；设为 `2` 可同时执行两个任务。每个任务默认最多使用 1 核 CPU、1 GiB 内存，配置变更在重新创建沙盒服务后生效，CD 会应用新配置。此设置只控制沙盒执行并发。
+桌面安装包自带 Python，产物为 macOS DMG 或 Windows 安装程序。见[打包说明](docs/setup.md#桌面打包)；目前尚未接入正式签名、公证和自动更新。
 
-## 贡献
-
-欢迎提交 [Issue](https://github.com/shi-YangYang/work-assistant-agent/issues) 或 Pull Request，参与问题修复、功能改进与文档完善。
-
-## 维护者
-
-[小洋（@shi-YangYang）](https://github.com/shi-YangYang)
+欢迎提交 [Issue](https://github.com/shi-YangYang/work-assistant-agent/issues) 或 Pull Request。维护者：[小洋（@shi-YangYang）](https://github.com/shi-YangYang)。
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 小洋。
-
-随包分发的说话人模型遵循各自许可证，见[模型署名与许可](apps/desktop/resources/models/speaker-community-1/NOTICE.md)。
+[MIT](LICENSE) © 2026 小洋。随包分发的模型另有许可证，见[模型署名与许可](packages/voiceprint-engine/resources/models/speaker-community-1/NOTICE.md)。
