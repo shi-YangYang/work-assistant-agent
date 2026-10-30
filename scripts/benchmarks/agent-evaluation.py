@@ -18,6 +18,13 @@ checkpoints use paa_company_test; fixture tenants are removed in finally blocks.
 Do not run alongside the ordinary server suite: its startup key checks share
 the test database and use independent temporary encryption keys.
 """
+import sys
+if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] in {
+    'list', 'check', 'plan', 'run', 'grade', 'review', 'report', 'compare', 'cleanup', 'calibrate', 'diagnose'
+}:
+    from agent_eval.cli import main as unified_main
+    raise SystemExit(unified_main())
+
 import argparse
 import asyncio
 from collections import Counter

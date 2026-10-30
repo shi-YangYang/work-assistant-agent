@@ -4,15 +4,16 @@
 
 ## 当前规格
 
-| Spec                                             | 内容                                   | 状态   |
-| ------------------------------------------------ | -------------------------------------- | ------ |
-| [075](spec-075-agent-execution-feedback/spec.md) | Agent 执行范围、受阻恢复与用户反馈治理 | 实施中 |
-| [076](spec-076-agent-decision-flow/spec.md)      | Agent 及时澄清、探索收束与上下文精简   | 系统修复完成；模型表现限制见验收 |
-| [077](spec-077-report-period-regeneration/spec.md) | 汇报周期展示与删除后主动重新生成 | 独立验收 PASS，未部署 |
-| [078](spec-078-remove-daily-reports/spec.md) | 移除日报功能，仅保留周报 | 独立验收 PASS；未执行真实用户库迁移或部署 |
-| [079](spec-079-report-source-validation/spec.md) | 工作修改记录与内部修订分离、报告程序校验及真实模型验收 | 阶段 A／B 系统实现独立验收 PASS；保留模型限制及未覆盖入口，全产品扩展未完成 |
-| [080](spec-080-recent-changes-real-workflow-regression/spec.md) | 最近变更的完整回归与真实流程验收 | 实测及独立验收完成：FAIL，保留产品失败、未决与未覆盖项；隔离服务及数据已清理 |
-| [081](spec-081-agent-response-latency/spec.md) | 保持质量与权限的 AI 回答、操作提速 | 七缺口补测及进度摘要返工已独立验收；54项质量仍FAIL：47通过／7失败／0部分覆盖。超时阶段已定位，模型失败与历史证据限制保留，不宣称全面提速 |
+| Spec                                                            | 内容                                                   | 状态                                                                                                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| [075](spec-075-agent-execution-feedback/spec.md)                | Agent 执行范围、受阻恢复与用户反馈治理                 | 实施中                                                                                                                                   |
+| [076](spec-076-agent-decision-flow/spec.md)                     | Agent 及时澄清、探索收束与上下文精简                   | 系统修复完成；模型表现限制见验收                                                                                                         |
+| [077](spec-077-report-period-regeneration/spec.md)              | 汇报周期展示与删除后主动重新生成                       | 独立验收 PASS，未部署                                                                                                                    |
+| [078](spec-078-remove-daily-reports/spec.md)                    | 移除日报功能，仅保留周报                               | 独立验收 PASS；未执行真实用户库迁移或部署                                                                                                |
+| [079](spec-079-report-source-validation/spec.md)                | 工作修改记录与内部修订分离、报告程序校验及真实模型验收 | 阶段 A／B 系统实现独立验收 PASS；保留模型限制及未覆盖入口，全产品扩展未完成                                                              |
+| [080](spec-080-recent-changes-real-workflow-regression/spec.md) | 最近变更的完整回归与真实流程验收                       | 实测及独立验收完成：FAIL，保留产品失败、未决与未覆盖项；隔离服务及数据已清理                                                             |
+| [081](spec-081-agent-response-latency/spec.md)                  | 保持质量与权限的 AI 回答、操作提速                     | 七缺口补测及进度摘要返工已独立验收；54项质量仍FAIL：47通过／7失败／0部分覆盖。超时阶段已定位，模型失败与历史证据限制保留，不宣称全面提速 |
+| [082](spec-082-agent-evaluation/spec.md)                        | Agent 本地测试集、证据、质量与速度评测及验收机制       | 框架独立验收PASS；真实业务结果保留FAIL/INCOMPLETE，仅本地手动，不接入CI                                                                  |
 
 ## 文档分工
 
@@ -23,4 +24,4 @@
 
 ## 生命周期
 
-下一个 Spec 使用 **082**，采用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。
+下一个 Spec 使用 **083**，采用 `spec-XXX-short-name/` 和 [_template](_template/)。主 Agent 确认需求后，由实施 Agent 开发、独立 Agent 验收；FAIL 返工，PASS 交付。仅测试类 Spec 的产品缺陷按其约定报告，不自动修复。普通修改不额外建立 Spec。

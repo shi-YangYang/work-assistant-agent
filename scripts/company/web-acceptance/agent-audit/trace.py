@@ -1,4 +1,4 @@
-"""Test-process-only observations; never store system prompts or private reasoning."""
+"""Test-process-only observations; full synthetic input is opt-in; never store private reasoning."""
 from contextvars import ContextVar
 import base64
 import hashlib
@@ -11,6 +11,7 @@ from uuid import uuid4
 scope = ContextVar('audit_scope', default={})
 http_scope = ContextVar('audit_http_scope', default=None)
 OUTPUT = None
+commit_capture = ContextVar('audit_commit_capture', default=None)
 
 
 def database_diagnostic(ctx):
@@ -63,6 +64,18 @@ def safe(value):
     return value if value is None or isinstance(value, (str, int, float, bool)) else str(value)
 
 
+def public_input(value):
+    """Preserve public messages/tool schemas while removing private reasoning."""
+    if isinstance(value, dict):
+        if value.get('type') in ('thinking', 'reasoning', 'redacted_thinking'):
+            return {'type': 'private-reasoning-omitted'}
+        return {k: public_input(v) for k, v in value.items()
+                if k.lower() not in ('reasoning_content', 'thinking', 'reasoning_details', 'encrypted_content', 'signature')}
+    if isinstance(value, list):
+        return [public_input(v) for v in value]
+    return value
+
+
 def transport_input(body):
     """Describe actual synthetic chat inputs without saving prompts or pixels."""
     try:
@@ -71,6 +84,8 @@ def transport_input(body):
         return None
     if not isinstance(payload, dict) or not isinstance(payload.get('messages'), list):
         return None
+    if os.environ.get('PAA_EVAL_FULL_INPUT') == '1':
+        return safe(public_input(payload))
     messages = []
     for message in payload['messages']:
         role = message.get('role')
@@ -111,7 +126,10 @@ def transport_input(body):
 
 
 def emit(kind, **values):
+    capture = commit_capture.get()
     row = {'time': time.time(), 'pid': os.getpid(), **scope.get(), 'kind': kind, **safe(values)}
+    if capture:
+        row['captureId'] = capture['id']
     data = (json.dumps(row, ensure_ascii=False, default=str) + '\n').encode()
     descriptor = os.open(OUTPUT, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
     try:
@@ -153,11 +171,16 @@ def validation_causes(error):
 def observe_job(operation):
     async def observed(job, *args, **kwargs):
         token = scope.set({'jobId': job.id, 'companyId': job.company_id, 'ownerId': job.owner_id, 'attempt': job.attempt, 'fence': job.fence, 'jobKind': job.kind, 'stateVersions': {}})
+        capture = {'id': str(uuid4()), 'commits': [], 'unsupported': []}
+        capture_token = commit_capture.set(capture)
+        emit('commit_observation_start', protocol=1)
         emit('worker_job_start')
         try:
             return await operation(job, *args, **kwargs)
         finally:
             emit('worker_job_end')
+            emit('commit_observation_end', protocol=1, commits=capture['commits'], unsupported=capture['unsupported'])
+            commit_capture.reset(capture_token)
             scope.reset(token)
     return observed
 
@@ -178,7 +201,7 @@ def install(path):
             http_scope.reset(token)
 
     Boundaries.__call__ = observed_boundaries
-    if os.environ.get('ACCEPTANCE_SUITE') == 'spec074':
+    if os.environ.get('ACCEPTANCE_SUITE') == 'spec074' or os.environ.get('PAA_EVAL_FULL_INPUT') == '1':
         import httpx
         original_send = httpx.AsyncClient.send
 
@@ -265,7 +288,7 @@ def install(path):
                 {'finish_reason': c.get('finish_reason'), 'message': {
                     k: c.get('message', {}).get(k) for k in ('role', 'content', 'tool_calls')}}
                 for c in result.get('choices', [])]}
-            emit('provider_request_end', status='succeeded', **({'response': observed_response} if os.environ.get('ACCEPTANCE_SUITE') == 'spec074' else {}))
+            emit('provider_request_end', status='succeeded', **({'response': observed_response} if os.environ.get('ACCEPTANCE_SUITE') == 'spec074' or os.environ.get('PAA_EVAL_FULL_INPUT') == '1' else {}))
             return result
         except BaseException as error:
             emit('provider_request_end', status='failed', error=type(error).__name__, code=getattr(error, 'code', None))
@@ -352,6 +375,10 @@ def install(path):
     from sqlalchemy.orm import Session
     tables = {'company_work_item', 'company_work_revision', 'company_report', 'company_report_revision', 'company_assistant_memory', 'company_deliverable', 'company_deliverable_revision', 'company_business_action', 'company_sandbox_execution', 'company_work_material', 'company_work_update', 'company_work_update_revision'}
 
+    @event.listens_for(Session, 'before_flush')
+    def begin_flush(session, ctx, instances):
+        session.connection().info['audit_orm_flush'] = True
+
     @event.listens_for(Session, 'after_flush')
     def flushed(session, ctx):
         rows = session.info.setdefault('audit_changes', [])
@@ -361,11 +388,17 @@ def install(path):
                 table = getattr(obj, '__tablename__', '')
                 if table not in tables or operation == 'update' and not session.is_modified(obj):
                     continue
-                values = {c.key: getattr(obj, c.key) for c in inspect(obj).mapper.column_attrs if c.key in ('id', 'owner_id', 'company_id', 'revision', 'state', 'document', 'content', 'work_id', 'report_id', 'action', 'result')}
+                values = {c.key: getattr(obj, c.key) for c in inspect(obj).mapper.column_attrs if c.key in ('id', 'owner_id', 'company_id', 'revision', 'state', 'document', 'content', 'work_id', 'report_id', 'action', 'result', 'deleted', 'material_id', 'update_id', 'status')}
                 rows.append({'operation': operation, 'table': table, 'values': safe(values), 'scope': scope.get()})
+
+    @event.listens_for(Session, 'after_flush_postexec')
+    def end_flush(session, ctx):
+        session.connection().info.pop('audit_orm_flush', None)
 
     @event.listens_for(Session, 'after_commit')
     def committed(session):
+        if session.in_nested_transaction():
+            return
         transaction = session.info.pop('audit_transaction', None)
         committed = {}
         for row in session.info.pop('audit_changes', []):
@@ -373,15 +406,37 @@ def install(path):
             if key in committed and committed[key]['operation'] == 'insert':
                 row = {**row, 'operation': 'insert'}
             committed[key] = row
-        for row in committed.values():
+        rows = list(committed.values())
+        for row in rows:
             emit('database_commit', transactionId=transaction, **row)
+        capture = commit_capture.get()
+        if capture is not None and rows:
+            capture['commits'].append({'transactionId': transaction, 'rows': len(rows), 'sha256': digest(rows)})
 
     @event.listens_for(Session, 'after_rollback')
     def rolled_back(session):
+        capture = commit_capture.get()
+        if capture is not None:
+            capture['unsupported'].append('rollback: flushed history discarded; no completeness claim')
         session.info.pop('audit_changes', None)
         session.info.pop('audit_transaction', None)
 
     from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, 'rollback')
+    @event.listens_for(Engine, 'commit')
+    def clear_flush_flag(conn):
+        conn.info.pop('audit_orm_flush', None)
+
+    @event.listens_for(Engine, 'before_cursor_execute')
+    def observe_sql(conn, cursor, statement, parameters, context, executemany):
+        capture = commit_capture.get()
+        if capture is None:
+            return
+        import re
+        match = re.search(r'\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:[\w\"]+\.)?[\"]?(company_\w+)', statement, re.I)
+        if match and match.group(1).lower() in tables and not conn.info.get('audit_orm_flush'):
+            capture['unsupported'].append({'reason': 'non-ORM mutation', 'table': match.group(1), 'statementSha256': digest(statement)})
 
     @event.listens_for(Engine, 'handle_error')
     def database_error(ctx):

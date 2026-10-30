@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "suites": {
+    "core": {
+      "cases": [
+        "local/direct-answer",
+        "local/rewrite",
+        "local/unavailable-web",
+        "local/deny-private",
+        "local/weekly",
+        "local/download",
+        "local/injection",
+        "local/authorized-fields",
+        "browser/B05",
+        "browser/B06",
+        "browser/B01",
+        "local/mixed-materials",
+        "local/sandbox-computation"
+      ]
+    },
+    "representative-http": {
+      "cases": [
+        "local/direct-answer",
+        "local/rewrite",
+        "local/unavailable-web",
+        "local/deny-private",
+        "local/weekly",
+        "local/download",
+        "local/injection",
+        "local/authorized-fields",
+        "local/mixed-materials",
+        "local/sandbox-computation"
+      ]
+    },
+    "browser": {
+      "cases": ["browser/B05", "browser/B06", "browser/B01"]
+    },
+    "contracts": {
+      "cases": ["contract/object-denial"]
+    },
+    "gaps": {
+      "cases": ["gap/long-visual", "gap/live-web"]
+    }
+  }
+}

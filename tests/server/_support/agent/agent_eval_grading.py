@@ -17,6 +17,8 @@ def visible_action_card(action):
     state = action.get('state', '')
     state_label = {'succeeded': '已完成', 'pending': '等待确认', 'cancelled': '已取消',
                    'conflict': '内容已变化', 'unavailable': '记录不可用'}.get(state, '未完成')
+    if state == 'succeeded':
+        state_label = '内容未变化' if action.get('unchanged') else '已更新' if action.get('action') == 'update_work' else '已完成'
     if state == 'running':
         state_label = '尚未生成' if (action.get('job') or {}).get('state') in ('failed', 'awaiting_retry', 'cancelled') else '正在生成'
     visible = {'label': action.get('label', ''), 'stateLabel': state_label}
@@ -24,18 +26,27 @@ def visible_action_card(action):
     if action.get('title') or preview.get('title'):
         visible['title'] = action['title'] if action.get('title') is not None else preview.get('title')
     details = action.get('details')
-    if isinstance(details, dict):
+    if action.get('unchanged'):
+        visible['unchanged'] = '内容未变化，已保留原记录。'
+    elif isinstance(details, dict) and not preview.get('changes'):
+        changed = action.get('changedFields') or []
         visible['details'] = {key: details.get(key) or '已清空' for key in ('summary', 'blocker', 'nextStep', 'dueDate')
-                              if details.get(key) or key in (action.get('changedFields') or [])}
-        if details.get('status'):
-            visible['details']['status'] = {'in_progress': '进行中', 'blocked': '有阻碍', 'done': '已完成',
-                                            'pending': '待确认', 'confirmed': '已确认', 'ignored': '已忽略'}.get(details['status'], details['status'])
+                              if key in changed} if changed else {key: details[key] for key in ('summary', 'blocker', 'nextStep', 'dueDate') if details.get(key)}
+        if any(key in changed for key in ('body', 'bodyEdits')):
+            visible['bodyText'] = (details.get('bodyText') or '')[:500]
+        if action.get('updateId'):
+            visible['updateLabel'] = '进展已删除' if details.get('_updateDeleted') else '进展已保存'
+            visible['updateText'] = (details.get('_updateText') or '附件进展')[:500]
+    if action.get('materialIds') and not action.get('unchanged'):
+        visible['materialCount'] = '已保存 ' + str(len(action['materialIds'])) + ' 个材料'
+    # Rich pending diffs require the actual browser text; never expose hidden DTO
+    # fields as if they were rendered by ActionChanges.
+    if preview.get('changes'):
+        visible['projectionRequiresBrowser'] = True
     if action.get('message'):
         visible['message'] = action['message']
     if isinstance(preview.get('content'), dict):
         visible['reportContent'] = {key: preview['content'].get(key) or '暂无记录' for key in ('completed', 'ongoing', 'blockers', 'next')}
-    if action.get('objectRevision'):
-        visible['version'] = f"本次操作结果：第 {action['objectRevision']} 版"
     return {'state': state, 'visible': visible}
 
 

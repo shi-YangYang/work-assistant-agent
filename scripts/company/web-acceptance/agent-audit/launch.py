@@ -63,7 +63,10 @@ if __name__ == '__main__':
             runtime_versions[package] = importlib.metadata.version(package)
         except importlib.metadata.PackageNotFoundError:
             runtime_versions[package] = 'unavailable'
-    audit_trace.emit('runtime_start', service=args.service, schema=metadata['schema'],
+    root = Path(__file__).resolve().parents[4]
+    application_paths = subprocess.check_output(['git', 'ls-files', '-co', '--exclude-standard', '--', 'apps', 'packages'], cwd=root, text=True).splitlines()
+    application_source = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in sorted(set(application_paths)) if (root / name).is_file()}
+    audit_trace.emit('runtime_start', applicationSource=[{'path': name, 'sha256': value} for name, value in application_source.items()], service=args.service, schema=metadata['schema'],
                      applicationCommit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                      appDiffSha256=hashlib.sha256(subprocess.check_output(['git', 'diff', '--', 'apps', 'packages'])).hexdigest(),
                      scriptSha256={p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in Path(__file__).parent.glob('*.py')},

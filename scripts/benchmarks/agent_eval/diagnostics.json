@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "long-document",
+      "node": "tests/server/modules/materials/test_document_ranges.py::test_long_single_paragraph_cell_and_more_than_2000_paragraphs",
+      "assertion": "long_single_paragraph_cell_and_more_than_2000_paragraphs",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "vision-pixels",
+      "node": "tests/server/modules/materials/test_document_vision.py::test_pixels_reach_main_model_citations_are_private_and_repeat_uses_cache",
+      "assertion": "pixels_reach_main_model_citations_are_private_and_repeat_uses_cache",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "material-distinct-ids",
+      "node": "tests/server/modules/materials/test_document_vision.py::test_same_content_pages_reuse_processing_but_keep_distinct_private_ids",
+      "assertion": "same_content_pages_reuse_processing_but_keep_distinct_private_ids",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "old-document-version",
+      "node": "tests/server/modules/materials/test_document_vision.py::test_old_ranges_generation_is_upgraded_before_reusing_its_first_chunk",
+      "assertion": "old_ranges_generation_is_upgraded_before_reusing_its_first_chunk",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "saved-material",
+      "node": "tests/server/modules/materials/test_document_vision.py::test_saved_material_rebuilds_pages_after_original_message_deleted",
+      "assertion": "saved_material_rebuilds_pages_after_original_message_deleted",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "noop-history",
+      "node": "tests/server/modules/work/test_work_materials.py::test_noop_does_not_rewrite_historical_change_metadata",
+      "assertion": "noop_does_not_rewrite_historical_change_metadata",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "unauthorized-material-fields",
+      "node": "tests/server/modules/work/test_work_materials.py::test_update_edit_preserves_unmentioned_materials_and_limits_combined_audio",
+      "assertion": "update_edit_preserves_unmentioned_materials_and_limits_combined_audio",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "material-selection",
+      "node": "tests/server/scenarios/test_material_selection_workflow.py::test_all_is_independent_of_old_failed_proposal_and_subset_remains_exact",
+      "assertion": "all_is_independent_of_old_failed_proposal_and_subset_remains_exact",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "checklist-report",
+      "node": "tests/server/modules/reports/test_report_source_contract.py::test_body_checklist_only_work_generates_with_checked_state_and_distinct_identity",
+      "assertion": "body_checklist_only_work_generates_with_checked_state_and_distinct_identity",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "report-progress-history",
+      "node": "tests/server/modules/reports/test_report_source_contract.py::test_states_reopening_progress_and_post_period_body_do_not_overwrite_history",
+      "assertion": "states_reopening_progress_and_post_period_body_do_not_overwrite_history",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "empty-report",
+      "node": "tests/server/modules/reports/test_report_empty_sources.py::test_empty_generation_creates_nothing_and_same_request_can_succeed_after_work_added",
+      "assertion": "empty_generation_creates_nothing_and_same_request_can_succeed_after_work_added",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "delete-regenerate",
+      "node": "tests/server/modules/reports/test_report_regeneration.py::test_api_delete_rebuild_worker_submit_and_old_identity_isolation",
+      "assertion": "api_delete_rebuild_worker_submit_and_old_identity_isolation",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "manual-report",
+      "node": "tests/server/modules/reports/test_report_regeneration.py::test_manual_preparation_uses_report_existence_not_historical_cancellation",
+      "assertion": "manual_preparation_uses_report_existence_not_historical_cancellation",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "report-source-change",
+      "node": "tests/server/modules/reports/test_report_source_contract.py::test_source_change_during_generation_blocks_commit",
+      "assertion": "source_change_during_generation_blocks_commit",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "permission-revocation",
+      "node": "tests/server/modules/reports/test_report_source_contract.py::test_rewrite_rechecks_source_access_after_authorization",
+      "assertion": "rewrite_rechecks_source_access_after_authorization",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "removed-material",
+      "node": "tests/server/modules/work/test_work_materials.py::test_removed_material_current_denied_but_authorized_history_readable",
+      "assertion": "removed_material_current_denied_but_authorized_history_readable",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "context-history",
+      "node": "tests/server/tasks/test_operation_recovery.py::test_intent_and_reasoning_share_referenced_plan_outside_recent_window",
+      "assertion": "intent_and_reasoning_share_referenced_plan_outside_recent_window",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "retry-receipt",
+      "node": "tests/server/tasks/test_task_retry.py::test_committed_write_receipt_survives_delivery_failure",
+      "assertion": "committed_write_receipt_survives_delivery_failure",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "worker-recovery",
+      "node": "tests/server/tasks/test_task_retry.py::test_worker_recovery_keeps_spent_attempt_and_completed_result",
+      "assertion": "worker_recovery_keeps_spent_attempt_and_completed_result",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "concurrent-tools",
+      "node": "tests/server/tasks/test_task_retry.py::test_parallel_identical_tools_have_distinct_nodes_and_structured_refusal",
+      "assertion": "parallel_identical_tools_have_distinct_nodes_and_structured_refusal",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "web-fixed-page",
+      "node": "tests/server/agent/tools/test_web_research.py::test_long_web_pages_are_paged_without_losing_remaining_text",
+      "assertion": "long_web_pages_are_paged_without_losing_remaining_text",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "web-error",
+      "node": "tests/server/agent/tools/test_web_research.py::test_temporary_web_failure_uses_shared_node_retry_and_visible_state",
+      "assertion": "temporary_web_failure_uses_shared_node_retry_and_visible_state",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "authorization-target",
+      "node": "tests/server/scenarios/test_material_authorization_contract.py::test_reference_recovery_does_not_authorize_a_different_proposed_target",
+      "assertion": "reference_recovery_does_not_authorize_a_different_proposed_target",
+      "execution": "contract/replay"
+    },
+    {
+      "id": "mobile-visible-state",
+      "node": "tests/web/dom/assistant/mobile-composer.test.tsx + job-notice.test.tsx + task-progress.test.tsx",
+      "assertion": "fixed input mobile composer and visible failure/completion status; DOM layer, not real browser viewport",
+      "execution": "contract/replay",
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "apps/web/vitest.config.ts",
+        "tests/web/dom/assistant/mobile-composer.test.tsx",
+        "tests/web/dom/assistant/job-notice.test.tsx",
+        "tests/web/dom/assistant/task-progress.test.tsx"
+      ]
+    }
+  ]
+}

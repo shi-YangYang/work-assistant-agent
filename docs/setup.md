@@ -497,3 +497,25 @@ Redis 不可用或预览达到预算时，界面提示实时预览不可用；�
 ### 移除历史日报
 
 正式报告仅支持周报；按天总结仍可在普通聊天中撰写。升级包含不可逆的 `0034_remove_daily_reports` 数据清理：先停止旧 API 和 worker，备份 PostgreSQL 并确认备份可恢复，再执行数据库迁移并启动新版 API／worker。迁移删除日报正文、候选、修订、安排、待办、通知与关联结构化回执／任务缓存，保留原始消息、完整聊天、工作进展、附件及周报。数据库约束会拒绝旧进程写入日报。回滚须停止服务并恢复迁移前备份，`downgrade` 不能恢复已删除正文。
+
+### 本地 Agent 评测（手动）
+
+统一入口为 `.venv-server/bin/python scripts/benchmarks/agent-evaluation.py`。
+`list --suite core` 查看目录；`check` 执行无模型自检；两者不会调用模型，且不接入 CI。
+旧 `--suite business/persona/task-consistency/work-records --source-user ...` 入口仍保留。
+
+1. 使用 `scripts/company/web-acceptance/environment.py prepare --suite spec082 --purpose web --output <目录>/metadata.json` 创建拥有 ownership 标记的本地测试 schema；使用既有 `agent-audit/configure.py` 只读复制本机账号的模型配置。不要将凭证文件加入 Git。
+2. 启动 `agent-audit/launch.py` 的 API 与 worker，启用 `PAA_EVAL_FULL_INPUT=1` 仅在该合成评测环境捕获实际模型输入。前端使用同一隔离 API，必须覆盖 Vite 的日常代理地址。
+3. 本地配置 JSON 包含 `models`（每项 `id/provider/model/parameters/effort`，effort 为实际 low/high）、`environment`（`schema/profile`）、`timeoutSeconds`（不超过既有1860秒）、`comparison`（预声明 AB/BA 顺序和样本数）。配置只含公开模型元数据，不含密钥。
+4. `plan --suite representative-http --config <配置> --output <计划>` 冻结用例、源码和全部试验槽位；`run --plan <计划> --metadata <目录>/metadata.json --output <新目录>` 才执行真实业务模型。重用同一目录仅补未开始槽位，已开始/失败结果不可覆盖；源码变化必须新计划/新目录。
+5. `grade --run <运行目录> --source-user <本地账号>` 默认真实离线模型评审；`--mode deterministic` 只做程序断言，保留语义待判。评分不修改业务结果、不触发业务重试。每次评分新增版本；`--slots s0001,s0002` 只重评明确受评分器修正影响的已存证据。当前评审使用程序生成的 `id/path/kind/text` 证据面；模型只能引用这些证据ID，公开正文与持久状态分开。
+6. `review --run <运行目录> --decisions <JSON>` 导入逐项复核，记录 `slot/actor/actorType/provenance/evidenceSha256/gradeSha256/requirements`；每条要求需 `id/status/evidence`。`actorType=agent` 的复核不会满足初期 human gate。
+7. `report --run <运行目录>` 生成可离线查看的 JSON/HTML；`compare --baseline <目录> --candidate <目录>` 拒绝任务、模型、环境配置或评分版本不匹配的配对。未执行、失败和待人工复核均留在分母；少量观测不代表普遍提速。
+
+目录中的历史来源仅代表盘点，不代表本提交实测通过。所有下载、trace、模型原始评分和校准结果保留在 `artifacts/agent-eval/`，不要提交原始账号、用户资料或凭证。独立验收前保留环境。完成后先停止本次启动的API/worker/Web进程，再运行 `cleanup --metadata <环境manifest> --runs <各运行目录>` 预览；加 `--apply` 才删除已验证owned schema、私有环境及各试验凭证。该命令不停止共享Postgres/Redis或沙盒容器。
+
+本地专项入口：
+
+- `plan --suite contracts --config <配置> --output <计划>` 后按普通 `run`/`grade --mode deterministic`/`report` 运行明确对象ID的同公司／跨公司HTTP与工具拒绝、无泄漏、无多写及owned任务取消检查；这是contract层，不调用业务模型。
+- `calibrate --source-user <账号> --ids equivalent,added-condition,absent-evidence --output <新目录>` 真实调用离线评分模型并比对开发参考标签。`--replay <旧的类型化证据校准目录>` 只重放已有评分，不产生新模型调用。输出不可覆盖，参考标签不是human签名。
+- 比较须声明正确的样本数，并使用相同任务、材料、初态和环境profile；共享worker上重叠执行的HTTP与browser运行只报告观测，不用作串行AB提速证据。
