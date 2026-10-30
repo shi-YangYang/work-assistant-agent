@@ -19,7 +19,7 @@ test('frozen Agent journey measures complete browser delivery and actual artifac
   // Invoke the same native ESM driver used for real sampling. Playwright's test
   // transform runs these specs as CommonJS and cannot import its import.meta.
   await promisify(execFile)(process.execPath, [
-    resolve('scripts/benchmarks/assistant-latency-browser.mjs'),
+    resolve('eval/benchmarks/assistant-latency-browser.mjs'),
     ...Object.entries(options).flatMap(([key, value]) => [`--${key}`, String(value)]),
   ])
   const rows = readFileSync(resolve(options.output, 'results.jsonl'), 'utf8')

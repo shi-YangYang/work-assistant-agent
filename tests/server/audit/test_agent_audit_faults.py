@@ -13,7 +13,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from sqlalchemy import func, select
 from sqlalchemy.engine import make_url
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'))
 from faults import evidence, isolated_url
 from app.modules.memories.models import AssistantMemory
 from app.modules.members.models import Member

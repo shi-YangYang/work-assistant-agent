@@ -87,7 +87,7 @@ def main():
     os.environ.update(private['environment'])
     source = Path(args.source).resolve()
     sys.path[:0] = [str(source / 'apps/server'), str(source / 'packages/voiceprint-engine/src')]
-    specification = importlib.util.spec_from_file_location('repair_audit_trace', BASE / 'agent-audit/trace.py')
+    specification = importlib.util.spec_from_file_location('repair_audit_trace', ROOT / 'eval/web/agent-audit/trace.py')
     trace = importlib.util.module_from_spec(specification)
     specification.loader.exec_module(trace)
     trace.install(args.trace)

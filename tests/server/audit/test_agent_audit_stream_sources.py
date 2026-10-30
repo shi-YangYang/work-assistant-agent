@@ -20,7 +20,7 @@ from app.tasks.streaming.publisher import ReplyPublisher
 from app.tasks.feedback.feedback import events, snapshot
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'))
 from faults import evidence
 from app.tasks.models import Job
 from app.tasks.processing.handlers import process_job

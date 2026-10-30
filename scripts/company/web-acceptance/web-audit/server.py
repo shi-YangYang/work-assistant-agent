@@ -33,7 +33,7 @@ def main(args):
                SPEC044_SERVER_EVIDENCE=str(output / 'faults'), SPEC044_PROCESS_RECOVERY='1',
                ACCEPTANCE_REQUEST_COVERAGE=str(output / 'request-coverage.json'),
                ACCEPTANCE_INVENTORY=str(Path(args.inventory).resolve()),
-               PYTHONPATH=os.pathsep.join([str(BASE), str(BASE / 'agent-audit'), str(ROOT / 'tests/server'), str(ROOT / 'tests/server/modules/image_generation'), private['environment']['PYTHONPATH']]))
+               PYTHONPATH=os.pathsep.join([str(BASE), str(ROOT / 'eval/web/agent-audit'), str(ROOT / 'tests/server'), str(ROOT / 'tests/server/modules/image_generation'), private['environment']['PYTHONPATH']]))
     command = [str(ROOT / '.venv-server/bin/python'), '-m', 'pytest', '-q', '-p', 'fixed', '-p', 'request_coverage',
                '--tb=short', *(['--import-mode=importlib'] if args.importlib else []), '--junitxml=' + str(output / 'server.xml'), *(json.loads(Path(args.cases).read_text()) if args.cases else ['tests/server'])]
     start = time.monotonic()

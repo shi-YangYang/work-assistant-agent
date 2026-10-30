@@ -23,8 +23,8 @@ from app.tasks.models import Job
 from app.tasks.runtime.queue import claim
 from _support.agent.business_actions import Judge, create, finish, run_reply, runtime
 from _support.work.report_reliability import CONTENT, ReportModel, prepared
-from _support.agent.agent_eval_cases import cases, failures
-from _support.agent.agent_eval_grading import grading_input, parse_grade
+from eval.support.agent.agent_eval_cases import cases, failures
+from eval.support.agent.agent_eval_grading import grading_input, parse_grade
 
 pytestmark = pytest.mark.asyncio
 

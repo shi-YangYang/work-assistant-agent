@@ -10,7 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'scripts/company/web-acceptance'))
-spec = importlib.util.spec_from_file_location('acceptance_agent_http', ROOT / 'scripts/company/web-acceptance/agent-http.py')
+spec = importlib.util.spec_from_file_location('acceptance_agent_http', ROOT / 'eval/web/agent-http.py')
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 

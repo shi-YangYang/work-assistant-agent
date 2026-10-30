@@ -502,12 +502,13 @@ Redis 不可用或预览达到预算时，界面提示实时预览不可用；�
 
 ### 本地 Agent 评测（手动）
 
-统一入口为 `.venv-server/bin/python scripts/benchmarks/agent-evaluation.py`。
+评测代码、用例和运行器集中在 [`eval/`](../eval/README.md)；普通自动化测试仍在 `tests/`。
+统一入口为 `.venv-server/bin/python eval/agent-evaluation.py`。
 `list --suite core` 查看目录；`check` 执行无模型自检；两者不会调用模型，且不接入 CI。
 旧 `--suite business/persona/task-consistency/work-records --source-user ...` 入口仍保留。
 
-1. 使用 `scripts/company/web-acceptance/environment.py prepare --suite spec082 --purpose web --output <目录>/metadata.json` 创建拥有 ownership 标记的本地测试 schema；使用既有 `agent-audit/configure.py` 只读复制本机账号的模型配置。不要将凭证文件加入 Git。
-2. 启动 `agent-audit/launch.py` 的 API 与 worker，启用 `PAA_EVAL_FULL_INPUT=1` 仅在该合成评测环境捕获实际模型输入。前端使用同一隔离 API，必须覆盖 Vite 的日常代理地址。
+1. 使用 `scripts/company/web-acceptance/environment.py prepare --suite spec082 --purpose web --output <目录>/metadata.json` 创建拥有 ownership 标记的本地测试 schema；使用 `eval/web/agent-audit/configure.py` 只读复制本机账号的模型配置。不要将凭证文件加入 Git。
+2. 启动 `eval/web/agent-audit/launch.py` 的 API 与 worker，启用 `PAA_EVAL_FULL_INPUT=1` 仅在该合成评测环境捕获实际模型输入。前端使用同一隔离 API，必须覆盖 Vite 的日常代理地址。
 3. 本地配置 JSON 包含 `models`（每项 `id/provider/model/parameters/effort`，effort 为实际 low/high）、`environment`（`schema/profile`）、`timeoutSeconds`（不超过既有1860秒）、`comparison`（预声明 AB/BA 顺序和样本数）。配置只含公开模型元数据，不含密钥。
 4. `plan --suite representative-http --config <配置> --output <计划>` 冻结用例、源码和全部试验槽位；`run --plan <计划> --metadata <目录>/metadata.json --output <新目录>` 才执行真实业务模型。重用同一目录仅补未开始槽位，已开始/失败结果不可覆盖；源码变化必须新计划/新目录。
 5. `grade --run <运行目录> --source-user <本地账号>` 默认真实离线模型评审；`--mode deterministic` 只做程序断言，保留语义待判。评分不修改业务结果、不触发业务重试。每次评分新增版本；`--slots s0001,s0002` 只重评明确受评分器修正影响的已存证据。当前评审使用程序生成的 `id/path/kind/text` 证据面；模型只能引用这些证据ID，公开正文与持久状态分开。

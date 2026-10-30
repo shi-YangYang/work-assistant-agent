@@ -3,7 +3,7 @@ import { chromium } from 'playwright'
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
-import { api, browserEnvironment } from '../agent-browser-common.mjs'
+import { api, browserEnvironment } from '../../../../eval/web/agent-browser-common.mjs'
 
 const metadataPath = process.env.SPEC068_ENVIRONMENT
 const output = process.env.SPEC068_BROWSER_OUTPUT

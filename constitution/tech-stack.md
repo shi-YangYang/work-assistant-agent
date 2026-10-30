@@ -29,7 +29,8 @@
 | 公司 API、worker、harness、迁移 | `apps/server/app/`，包名 `app` |
 | 共享 HTTP 类型、模型参数、品牌、声纹引擎 | `packages/{api-contracts,model-config,ui-web,voiceprint-engine}/` |
 | 固定公共说话人权重 | `packages/voiceprint-engine/resources/models/speaker-community-1/` |
-| 测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
+| 本地 Agent 评测 | `eval/`；运行产物仍放忽略的 `artifacts/agent-eval/` |
+| 自动化测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
 | 脚本与部署 | `scripts/`、`deploy/company/` |
 | 产品方向、架构／使用指南、规格、Agent 规则 | `constitution/`、`docs/`、`specs/`、`.ai/` |
 
@@ -78,7 +79,7 @@
 - 生成 TXT、MD、JSON、CSV、XLSX、PNG、DOCX、PDF、PPTX，沿用个人成果版本与媒体存储。Python 固定依赖、中文字体、LibreOffice／Poppler 在独立执行镜像中，不加入业务 API 镜像。
 - 可选配置 `PAA_SANDBOX_URL`、`PAA_SANDBOX_TOKEN`，部署使用 `sandbox` profile；默认关闭，未启用不影响既有聊天与业务工具。
 - 本地执行一次 `npm run sandbox:setup`，配置写入 `apps/server/.env.web`。`dev:web` 将数据库、Redis 与本地沙盒统一归入 `paa-company` 项目；只停止本次拥有的 Redis／沙盒，数据库继续运行。沙盒与业务网络隔离，停止保留镜像与缓存，不改宿主 Docker 配置。
-- `tests/sandbox/test_protocol.py` 验证控制协议；`tests/sandbox/real_execution.py` 仅显式启用时对本地隔离执行服务运行真实破坏性测试；真实模型评测入口 `scripts/benchmarks/sandbox-evaluation.py`。
+- `tests/sandbox/test_protocol.py` 验证控制协议；`tests/sandbox/real_execution.py` 仅显式启用时对本地隔离执行服务运行真实破坏性测试；真实模型评测入口 `eval/benchmarks/sandbox-evaluation.py`。
 
 ## Office 兼容读取
 
@@ -86,4 +87,4 @@
 - `olefile` 固定版本只负责 OLE 结构与公式保存结果核对；不增加第二套旧格式正文解析器。转换策略、LibreOffice 版本与现有解析版本一起构成新增格式缓存指纹。
 - `python -m app.integrations.parsing.office_preflight` 在 worker 镜像发布前验证三种真实旧格式及 Office→PDF→PNG。模块／流程检查位于 `tests/server/modules/materials/test_office_conversion.py`、`test_document_preparation.py` 和 `tests/server/scenarios/test_legacy_document_workflow.py`；本地依赖及限制见 [安装说明](../docs/setup.md#旧版-office-文件读取)。
 
-- 原件范围续提取和页面像素装配分别归属 `integrations/parsing`、`tasks/processing`、`agent/context/document_input.py`；不新增向量检索或描述模型。私有处理产物按原件与版本隔离，随附件持久化和删除，不设累计容量额度；磁盘空间保护见[图文读取说明](../docs/setup.md#长文件与图文内容读取)。相关检查为 `test_document_ranges.py`、`test_document_vision.py`，low／high 对照入口为 `scripts/benchmarks/document-understanding.py`。
+- 原件范围续提取和页面像素装配分别归属 `integrations/parsing`、`tasks/processing`、`agent/context/document_input.py`；不新增向量检索或描述模型。私有处理产物按原件与版本隔离，随附件持久化和删除，不设累计容量额度；磁盘空间保护见[图文读取说明](../docs/setup.md#长文件与图文内容读取)。相关检查为 `test_document_ranges.py`、`test_document_vision.py`，low／high 对照入口为 `eval/benchmarks/document-understanding.py`。

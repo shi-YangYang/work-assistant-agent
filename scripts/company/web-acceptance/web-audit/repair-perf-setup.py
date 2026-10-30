@@ -161,7 +161,7 @@ def prepare():
     env = {**clean_env(), 'DATABASE_TEST_URL': f'postgresql+psycopg://audit:audit@127.0.0.1:{port}/paa_company_test'}
     with (directory / 'prepare.log').open('w') as log:
         subprocess.run([sys.executable, str(BASE / 'environment.py'), 'prepare', '--suite', 'spec068', '--purpose', 'baseline', '--output', str(manifest), '--api-url', f'http://127.0.0.1:{free_port()}'], env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
-        subprocess.run([sys.executable, str(BASE / 'agent-audit/configure.py'), '--metadata', str(manifest)], env=clean_env(), stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run([sys.executable, str(ROOT / 'eval/web/agent-audit/configure.py'), '--metadata', str(manifest)], env=clean_env(), stdout=log, stderr=subprocess.STDOUT, check=True)
     metadata, private = load_environment(manifest)
     private['environment'].update(PAA_REPLY_STREAM_REDIS_URL=f"redis://127.0.0.1:{resources['containers']['redis']['port']}/0",
         PAA_REPLY_STREAM_NAMESPACE='spec068:repair:' + run + ':baseline', PAA_SANDBOX_URL='', PAA_SANDBOX_TOKEN='',

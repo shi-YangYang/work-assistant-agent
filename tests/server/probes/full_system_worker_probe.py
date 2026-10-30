@@ -24,7 +24,7 @@ def checked_target(settings):
     if os.environ.get('PAA_AGENT_FAULT_ENVIRONMENT'):
         # Validates the exact database, schema, owner marker and private manifest;
         # a new audit suite must never become a broad search_path prefix bypass.
-        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'))
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'))
         from faults import isolated_url
         url = isolated_url(settings)
         metadata = json.loads(Path(os.environ['PAA_AGENT_FAULT_ENVIRONMENT']).read_text())
