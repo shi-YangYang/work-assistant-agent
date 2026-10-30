@@ -1,3 +1,53 @@
+# 来源 manifest 绑定纠正：独立验收
+
+## Result
+
+**PASS — 三项离线迁移来源绑定的唯一技术阻塞已关闭。** 本次只验收该项追加纠正；34项来源映射、原始结果／评分／截图和共享机制沿用下方上一独立验收已通过的结论，不重复全量验收。此结论不表示34项业务全部通过，也不构成 human 批准。原 FAIL 及更早历史完整保留。
+
+## 修复证据
+
+- [纠正记录](../../artifacts/agent-eval/spec082-followup-binding-correction-v1/correction.json)明确只纠正旧迁移 manifest 的 `offlineMigration.sourceManifestSha256`，保留旧错误声明 `3f462c16a70502f6b7e781191428db93fe5aa4d23a4a1eec02f2bedc57733b8a` 和旧文件身份。源 manifest 的文件字节 SHA256 为 `6d92a482e25efd3bbecf2b2a96588763ff542bcd8dc67915ebb0f8dfb8b7087c`；canonical digest `95d9e42cb870d99c29e75084ef5acc1e2c88cd7e6ccff37632ae6dd2e4dd2d4d` 与 seal `29e3794e50bfdb8dd2c28141fb89e0ce953f8067b6d9066de56764ea1c51f443` 单列，未混用。
+- s0013、s0014、s0019 分别绑定源／有效 result、冻结槽位、原／迁移 case 与 requirements、有效 grade、实际语义模型输入及原文。脚本核对 grade 的证据／requirements 哈希、模型输入中的要求及真实请求上下文，并验证三份 raw 字节相同；没有新模型调用、重新评分或人工签名。
+- [新版台账](../../artifacts/agent-eval/spec082-followup-review-v2/ledger.json)及[复核入口](../../artifacts/agent-eval/spec082-followup-review-v2/review.html)可直接找到纠正与历史入口。独立抽核纠正文件字节 SHA256 为 `27341b3d8c8a9e02afa95b78c623f53ec66809e14723ccc450550ef542f6f9b6`，与新版台账一致；源 manifest、旧错误 manifest、旧台账和旧复核包的实际文件哈希也与纠正记录一致。
+
+## 检查范围与结论限制
+
+静态审阅 [check.py](../../artifacts/agent-eval/spec082-followup-binding-correction-v1/check.py)及[已保存 PASS 结果](../../artifacts/agent-eval/spec082-followup-binding-correction-v1/check-result.json)，未重跑该脚本或已通过的机制检查，仅做上述少量只读哈希核对。已保存结果证明执行当时3项绑定与588份文件快照校验通过；588份中包含33份临时 credentials.json，不能将其称为永久必需业务证据。来源／结果／评分及模型输入复核读取落盘产物，不依赖存活数据库或密钥。主 Agent 后续按 ownership 正常删除临时凭证和 schema 不推翻本次结论；原快照脚本会因已清理凭证缺失而不能原样重跑，须区分清理与业务证据损坏，不能为重跑保留密钥。
+
+统计保持34项＝33项新真实槽＋1项旧证据处置：程序33 PASS／1 FAIL，语义32 PASS／2 FAIL，人工34 PENDING，最终2 FAIL／32 INCOMPLETE。两份周报范围疑点与初评矛盾、TXT标题差异、旧s0020多写FAIL均保留；人工仍须自行裁决。
+
+本次仅更新本验收文件，按S0检查新增文档与引用；未修改业务／评测代码，未运行业务测试或模型，未提交、推送、部署或清理环境。没有本次修复的必要返工，验收至此停止。
+
+---
+
+# 上次来源绑定 FAIL 历史（已由上方纠正关闭）
+
+# 34项未完成槽位后续处理：独立验收
+
+## Result
+
+FAIL — 当前唯一发现的必要返工为三项离线评分迁移的来源 manifest 哈希绑定错误；不是要求业务全绿或人工已经签名。其余本轮机制与保存证据未发现新的阻塞。
+
+## Issues / Required Rework
+
+`artifacts/agent-eval/spec082-followup-offline-fields/manifest.json` 的 `offlineMigration.sourceManifest` 指向 `spec082-followup-33/manifest.json`，但声明的 `sourceManifestSha256` 为 `3f462c16a70502f6b7e781191428db93fe5aa4d23a4a1eec02f2bedc57733b8a`。实际原文件字节 SHA256 为 `6d92a482e25efd3bbecf2b2a96588763ff542bcd8dc67915ebb0f8dfb8b7087c`，评测器 canonical digest 为 `95d9e42cb870d99c29e75084ef5acc1e2c88cd7e6ccff37632ae6dd2e4dd2d4d`，内嵌且验证有效的 seal 为 `29e3794e50bfdb8dd2c28141fb89e0ce953f8067b6d9066de56764ea1c51f443`，均不匹配。原 manifest 与冻结 `plan-33.json` 完全一致；三份 `sourceResults` 与原 raw 的哈希均正确、内容未变。因此不能据此断言原运行被篡改，但不能验收为已可靠绑定原评分规则的迁移。
+
+仅需追加纠正记录，明确采用的哈希口径、正确来源 manifest、原错误迁移声明及有效评分之间的关系，并让复核入口引用该纠正。保留旧 manifest、raw、grade 和错误声明，不覆盖旧证据；无需新业务或模型初评调用。新的独立验收只核对这一来源绑定。
+
+## Coverage / Tests
+
+按 S2 只读核对 diff、定向检查脚本和已保存通过日志；没有重复执行已通过的定向测试、33项业务、24项诊断或全仓检查。独立校验34项来源集合、原报告/原结果/有效结果/评分哈希以及所有引用附件；33个新槽与原来源的 case/model/effort/trial 一一对应，结果数量为33。核对最终六项证明所绑定源码哈希仍等于当前源码；三项离线迁移的 raw 与新运行原件完全一致。检查 `run --slots` 保留冻结分母并跳过已开始槽。未修改业务或评测代码、未提交/推送/部署、未清理环境。
+
+403原快照保留，零写结论来自主表及子表提交账本；缺capture及实际写入不能PASS。列表DTO缺content使用匹配revision的完整旧提交，逐提交越权恢复反例仍FAIL，缺初态/中间内容仍不能证明授权。异步报告仅豁免绑定目标的一次revision+1完成，额外create/delete和缺child capture的定向证据保留。上述通过结论来自源码审阅与保存的正反例，不冒充本验收重新执行。
+
+## 业务结果与人工事项
+
+台账的34项分母、33次新业务加1项旧证据处置及保存等级统计可核对：程序33 PASS/1 FAIL，模型初评32 PASS/2 FAIL，人工34 PENDING，最终2 FAIL/32 INCOMPLETE；三项迁移的来源说明须先完成上述纠正。原HTTP s0020保留原子create契约、实际create后update的正向多写证据，不能因旧capture不全免除FAIL。原4个provider FAIL未混入此范围。
+
+两份周报均含旧fixture与新工作；复核包同时突出low/high的范围疑点及原初评一PASS一FAIL、后次均PASS的矛盾，不以后次PASS抹除问题。TXT low请求“发布检查”而实际标题“发布检查备忘录”，保留初评FAIL供人工裁决。所有语义项仍待实际人类确认，本验收不作人工签名。进程50428/50445/50473的命令仍分别指向本次owned API/worker/Web，留给主Agent按ownership收尾。
+
+---
+
 # Acceptance
 
 ## 当前 Result

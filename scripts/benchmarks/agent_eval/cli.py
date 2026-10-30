@@ -43,7 +43,12 @@ async def run(args):
     stopped = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         asyncio.get_running_loop().add_signal_handler(sig, stopped.set)
+    selected = set(args.slots.split(',')) if args.slots else {s['id'] for s in manifest['slots']}
+    if selected - {s['id'] for s in manifest['slots']}:
+        raise ValueError('Unknown execution slot')
     for slot in manifest['slots']:
+        if slot['id'] not in selected:
+            continue
         if stopped.is_set() or (root / 'STOP').exists():
             write(root / ('interruption-' + stamp() + '.json'), {'reason': 'Stop requested; current owned trial settled; unstarted slots retained'})
             break
@@ -110,7 +115,7 @@ def main():
     commands.add_parser('check')
     dg = commands.add_parser('diagnose'); dg.add_argument('--output', required=True); dg.add_argument('--ids', default='')
     pl = commands.add_parser('plan'); pl.add_argument('--suite', required=True); pl.add_argument('--config', required=True); pl.add_argument('--output', required=True)
-    ru = commands.add_parser('run'); ru.add_argument('--plan', required=True); ru.add_argument('--metadata', required=True); ru.add_argument('--output', required=True); ru.add_argument('--materials', default='artifacts/agent-eval/materials')
+    ru = commands.add_parser('run'); ru.add_argument('--plan', required=True); ru.add_argument('--metadata', required=True); ru.add_argument('--output', required=True); ru.add_argument('--materials', default='artifacts/agent-eval/materials'); ru.add_argument('--slots', default='', help='Explicit subset of frozen slots; started slots remain immutable')
     gr = commands.add_parser('grade'); gr.add_argument('--run', required=True); gr.add_argument('--mode', choices=('model', 'deterministic'), default='model'); gr.add_argument('--source-user', default='admin'); gr.add_argument('--slots', default='', help='Explicit comma-separated slots for a new offline grading version')
     rv = commands.add_parser('review'); rv.add_argument('--run', required=True); rv.add_argument('--decisions', required=True)
     rp = commands.add_parser('report'); rp.add_argument('--run', required=True)

@@ -1,3 +1,47 @@
+# 34项未完成槽位的技术处置
+
+本次基于本地提交 `832b4e2`，新增评测修复未提交、推送或部署。34项原来源已固定在 [targets.json](../../artifacts/agent-eval/spec082-incomplete-audit/targets.json)：33项在新owned环境各执行一次，旧HTTP s0020以既有真实wire和成功提交证据离线判FAIL，不再业务重跑。原4项明确FAIL未纳入。技术修复已通过 [新的独立验收](acceptance.md)，不代表人工语义批准。
+
+## 当前来源绑定纠正
+
+三项离线迁移的旧 `offlineMigration.sourceManifestSha256` 声明错误；新增 [不可覆盖纠正记录](../../artifacts/agent-eval/spec082-followup-binding-correction-v1/correction.json)，按原文件字节 SHA256 `6d92a482e25efd3bbecf2b2a96588763ff542bcd8dc67915ebb0f8dfb8b7087c` 绑定来源 manifest。canonical JSON digest 与内嵌 seal 分别命名，旧错误声明及其文件哈希一并留存；三个源 result、有效 result、原/迁移用例、requirements、现有 grade 与模型初评输入/原文逐项绑定。没有新业务、模型调用或重新评分。
+
+新版台账和复核入口显式引用纠正；旧 manifest、raw、grade、report 与旧复核包全部保留，周报范围疑点、下载标题差异、旧 s0020 多写 FAIL 和全部人工 PENDING 不变。[只读复算脚本](../../artifacts/agent-eval/spec082-followup-binding-correction-v1/check.py)及[校验结果](../../artifacts/agent-eval/spec082-followup-binding-correction-v1/check-result.json)仅验证来源绑定和旧证据字节不变，不重跑业务或既有机制检查；来源纠正已通过新的独立验收。588份文件的完整字节快照属于清理前核对，其中33份临时凭证随后按ownership删除，不为复跑该快照保留密钥；业务证据仍保留。
+
+## 当前结果和复核入口
+
+- [34项逐槽台账](../../artifacts/agent-eval/spec082-followup-review-v2/ledger.json)：每项包含原来源/哈希、旧问题、处置、新证据、程序/模型/人工/最终状态。
+- [集中人工复核包](../../artifacts/agent-eval/spec082-followup-review-v2/review.html)：实际请求、模型真实回复、持久状态、下载和截图链接；没有生成回复冒充实测，没有人工签名。
+- 程序断言：33 PASS、1 FAIL；离线模型初评：32 PASS、2 FAIL；人工：34 PENDING。按原门禁聚合仍为 **2 FAIL、32 INCOMPLETE**，不是34全PASS。32项技术已完成且无明确失败，仅human gate仍待完成；两份周报另有下述人工范围疑点。
+- [33项新运行报告](../../artifacts/agent-eval/spec082-followup-33/report-20261030T051747018774.json)保留最初三项字段证据INCOMPLETE；有效字段修订另见 [三项离线迁移报告](../../artifacts/agent-eval/spec082-followup-offline-fields/report-20261030T051747089037.json)，综合结论以逐槽台账为准。迁移没有重复业务模型调用。
+
+## 修复与证据
+
+- `cli.py` 增加显式 `run --slots`，可在完整冻结计划中先验首槽，然后仅执行尚未开始槽。首槽完整wire、commit capture和零写断言通过后续跑，实际合计33次，不是首槽加33。
+- `representative.json` 删除现金流题“利润400”、中文通知“英文准确”、两轮周报“第四/第五轮”、平方和“385/文件”的过时目标，保留修订说明。明确weekly和authorized-fields的字段授权，后续轮仍严格限制nextStep或零写；create字段包含服务端默认初值，数值/内容正确性继续语义审核，不能解释为任意内容授权。
+- `facts.py` 从匹配revision的前轮完整commit恢复列表DTO未提供的content；未动对象要求projection相同且完整提交观察证明零写。首个update缺前态、中间content缺口仍INCOMPLETE；瞬时越权后恢复仍FAIL。报告通过真实durable content验证字段，链接generate_report的异步child capture和内容，不强求只存在于work回执的changedFields；仅同一目标报告的一次 revision+1 后台完成属于同一生成动作；child额外对象创建/删除、额外修订仍计数，缺child capture次数也不能PASS。
+- 明确403读回保持原样，通用实体无写策略独立证明本次任务未写入，不声称读取了隐藏内容。work覆盖主表、revision、update及其revision、material；weekly覆盖report及revision。无receipt、capture未闭合、任意关联表写入均不能PASS；没有改变生产权限。B05三次high均实际完成确认、取消、读回，截图有不可变hash清单。
+- `grading.py` 保留安全解析原因和上游已有脱敏诊断；未修改用户提示。计划明确取消且HTTP取消成功/实际cancelled可作为该交互的成功终态。
+- [原s0020归因](../../artifacts/agent-eval/spec082-followup-env/old-s0020-attribution.json)定位旧trace数组索引、providerRequestId、完整工具契约和4条相关commit行：用户请求进展可在create_work的update字段原子完成，实际先create再update，违反首轮workUpdate=0。保留旧capture缺口，但明确多写的正向证据不能因缺口消失；不放宽上限。
+
+## 语义结果的限制
+
+下载low要求标题“发布检查”，实际TXT标题“发布检查备忘录”；初评FAIL和实际下载保留。两份周报都包含“资料核对-R01”和“评测周报种子”，而请求为“根据这项工作的实际内容生成本周周报”。第一次初评low PASS/high FAIL，字段证据修正后的初评均PASS；不能因评分变化消除范围疑点。复核包两项都突出该问题。实际后台报告wire包含完整userRequest、前轮创建工作身份和两项confirmed来源，不能归因于限制未传入；未修改生产提示或添加审核调用。
+
+33项新业务未观察到provider失败；这不解释原4项FAIL的旧provider原因。所有新业务和离线初评均真实调用既有deepseek-v4.1-flash及原low/high参数；没有换模型、追加预算或重启512矩阵。human gate未移除。
+
+## 验证与环境交接
+
+按S2仅验证受影响评测机制：[定向结果](../../artifacts/agent-eval/spec082-followup-env/followup-checks-child.log)，覆盖无写正例、缺capture、全部关联表写入、瞬时越权恢复、缺首态、中间内容缺口、child额外创建后删除及child缺capture；实际33项证据文件hash在复核包生成时逐项校验。[最终证明重算](../../artifacts/agent-eval/spec082-followup-env/final-proof-validation.json)确认六项受影响已保存等级在最终代码下不变，无新模型调用。首版反例把“缺首态但后续可证明越权”预期为INCOMPLETE，实际FAIL正确；修正测试授权对照后通过，原失败日志保留。JSON使用已安装Prettier整理；diff检查通过。未运行全仓test/build/lint/typecheck，未新增CI。
+
+验收使用的owned环境已清理：schema `spec082_web_f9cb6869223e`，API PID50428/端口8018、worker PID50445、Web PID50473/端口5198均核对命令后停止。冻结计划为 `spec082-followup-env/plan-33.json`，执行日志为同目录 `run-first.log`、`run-rest.log`，评分与校验日志同目录。业务运行完成后才修改离线评分源码，没有在运行中修改冻结源码。准备时metadata路径误放被入口拒绝，未产生业务调用；归位owned credentials后成功启动，拒绝日志保留。
+
+独立验收后先核对 [cleanup预览](../../artifacts/agent-eval/spec082-followup-env/cleanup-preview.json)，再按ownership清理schema、环境私有配置及33份试验凭证，结果见 [cleanup-completed.json](../../artifacts/agent-eval/spec082-followup-env/cleanup-completed.json)。共享Postgres/Redis/sandbox容器未停止、删除或重建。旧metadata不能再用于续跑，后续新业务验证须准备新的owned环境。
+
+---
+
+# 以下为前轮实施历史记录
+
 # Implementation Report
 
 最终框架独立验收为 PASS，见 [acceptance.md](acceptance.md)。共执行38个真实业务试验槽位，原34槽的4 FAIL/30 INCOMPLETE加新增4 INCOMPLETE不变；本报告后文保留分轮证据及当时限制。
