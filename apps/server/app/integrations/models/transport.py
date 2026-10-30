@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from httpcore._backends.auto import AutoBackend
 from httpcore import ConnectError, ConnectTimeout
 from urllib.parse import urlsplit, urlunsplit
+from app.integrations.models.diagnostics import http_error
 
 
 _task_transports = ContextVar('task_model_transports', default=None)
@@ -271,6 +272,14 @@ async def finish_stream(lines):
 
 
 def status_error(response):
+    try:
+        _status_error(response)
+    except ProviderError as error:
+        http_error(error, response, on_timing=_request_timing.get())
+        raise
+
+
+def _status_error(response):
     code = response.status_code
     if 200 <= code < 300:
         return

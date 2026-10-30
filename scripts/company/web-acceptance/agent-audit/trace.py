@@ -291,7 +291,8 @@ def install(path):
             emit('provider_request_end', status='succeeded', **({'response': observed_response} if os.environ.get('ACCEPTANCE_SUITE') == 'spec074' or os.environ.get('PAA_EVAL_FULL_INPUT') == '1' else {}))
             return result
         except BaseException as error:
-            emit('provider_request_end', status='failed', error=type(error).__name__, code=getattr(error, 'code', None))
+            emit('provider_request_end', status='failed', error=type(error).__name__, code=getattr(error, 'code', None),
+                 upstreamDiagnostic=getattr(error, 'upstream_diagnostic', None))
             raise
         finally:
             scope.reset(token)

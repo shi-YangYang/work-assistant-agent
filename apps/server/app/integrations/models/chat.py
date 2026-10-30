@@ -1,30 +1,13 @@
 import json
 import logging
-import re
 import time
 from app.integrations.models import transport
+from app.integrations.models.diagnostics import http_error, response_metadata as _response_metadata, upstream_error
 from app.integrations.models.stream_events import ModelDelta, ToolDelta, tool_arguments
 from app.integrations.models.transport import ProviderError, normalize_url, status_error, structured_error, retry_after
 
 
 log = logging.getLogger(__name__)
-REQUEST_ID_HEADERS = ('x-request-id', 'x-dashscope-request-id', 'x-acs-request-id')
-REQUEST_ID_PATTERN = re.compile(r'(?:[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}|req_[A-Za-z0-9_-]{8,120}|[0-9a-fA-F]{16,128})')
-
-
-def _response_metadata(response):
-    """Only fixed media types and recognizable opaque request identifiers leave HTTP."""
-    content_type = response.headers.get('content-type', '').partition(';')[0].strip().lower()
-    fields = {'http_status': response.status_code,
-              'content_type': content_type if content_type in (
-                  'application/json', 'application/problem+json', 'text/event-stream',
-                  'text/html', 'text/plain', 'application/octet-stream') else 'other' if content_type else None}
-    for header in REQUEST_ID_HEADERS:
-        value = response.headers.get(header, '')
-        if len(value) <= 128 and REQUEST_ID_PATTERN.fullmatch(value):
-            fields.update(provider_request_id=value, provider_request_id_header=header)
-            break
-    return fields
 
 
 def _json_error_metadata(error, scope):
@@ -149,7 +132,8 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     detail = response.json().get('error', {})
                     message = str(detail.get('message', '')).lower() if isinstance(detail, dict) else ''
                     if ('tool_choice' in message or 'tool choice' in message) and any(word in message for word in ('unsupported', 'not support', 'invalid', 'required')):
-                        raise ProviderError('tool_choice_unsupported', '服务不支持 required 工具选择', response.status_code)
+                        raise http_error(ProviderError('tool_choice_unsupported', '服务不支持 required 工具选择', response.status_code),
+                                         response, on_timing=on_timing)
                 except (ValueError, AttributeError) as error:
                     if isinstance(error, ProviderError):
                         raise
@@ -166,7 +150,9 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                     invalid_response_diagnostic(result, 'response_structure', None, on_timing, **response_metadata)
                     raise ProviderError('invalid_response', '模型返回内容结构无效')
                 if result.get('error'):
-                    raise structured_error(result) or ProviderError('provider_error', '模型服务报告请求失败，请联系管理员查看服务调用记录')
+                    error = structured_error(result) or ProviderError('provider_error', '模型服务报告请求失败，请联系管理员查看服务调用记录')
+                    raise upstream_error(error, result, source='json', key=key,
+                                         metadata=response_metadata, on_timing=on_timing)
                 if on_timing and result.get('choices'):
                     on_timing('model.first_event')
                 if on_event:
@@ -198,7 +184,9 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                         stream_diagnostic('stream_structure')
                         raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if part.get('error'):
-                        raise structured_error(part, delay=retry_after(response)) or ProviderError('provider_error', '模型服务报告流式请求失败，请联系管理员查看服务调用记录')
+                        error = structured_error(part, delay=retry_after(response)) or ProviderError('provider_error', '模型服务报告流式请求失败，请联系管理员查看服务调用记录')
+                        raise upstream_error(error, part, source='sse', key=key,
+                                             metadata=response_metadata, on_timing=on_timing)
                     if part.get('usage'):
                         usage = part['usage']
                         if on_event:
@@ -214,7 +202,8 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
                         stream_diagnostic('stream_delta_structure')
                         raise ProviderError('invalid_response', '流式接口返回无效数据')
                     if item.get('finish_reason') == 'content_filter':
-                        raise structured_error({'code': 'content_filter'})
+                        raise upstream_error(structured_error({'code': 'content_filter'}), {'finish_reason': 'content_filter'},
+                                             source='sse', key=key, metadata=response_metadata, on_timing=on_timing)
                     delta = item.get('delta', {})
                     if not first_event and (delta.get('content') or delta.get('tool_calls') or delta.get('reasoning_content') or item.get('finish_reason')):
                         if on_timing:
@@ -284,7 +273,8 @@ async def _chat(settings, config, key, messages, *, tools=None, tool_choice=None
         choice = result['choices'][0]
         reason = 'choice_structure'
         if choice.get('finish_reason') == 'content_filter':
-            raise structured_error({'code': 'content_filter'})
+            raise upstream_error(structured_error({'code': 'content_filter'}), {'finish_reason': 'content_filter'},
+                                 source='json', key=key, metadata=response_metadata, on_timing=on_timing)
         if choice.get('finish_reason') not in ('stop', 'tool_calls'):
             invalid_response_diagnostic(result, 'finish_reason', None, on_timing, **response_metadata, **stream_metadata)
             raise ProviderError('invalid_response', '模型响应未正常完成或达到输出限制', output_limit=choice.get('finish_reason') == 'length')
