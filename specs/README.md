@@ -14,16 +14,17 @@
 
 ## 规格索引
 
-| 规格                                                            | 内容                         | 验收结论摘要                                      |
-| --------------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
-| [075](spec-075-agent-execution-feedback/spec.md)                | 执行反馈与写入前提问         | 工具链门控局部通过；完整需求与总体性能未全部通过  |
-| [076](spec-076-agent-decision-flow/spec.md)                     | 决策流转、探索收束与搜索入口 | 必要系统修复通过；保留模型失败及速度差异          |
-| [077](spec-077-report-period-regeneration/spec.md)              | 周报周期与删除后重建         | 独立验收通过                                      |
-| [078](spec-078-remove-daily-reports/spec.md)                    | 删除日报，仅保留周报         | 独立验收通过；真实用户库的数据迁移不属于该验收    |
-| [079](spec-079-report-source-validation/spec.md)                | 工作记录与周报来源校验       | 阶段 A／B 系统实现通过；全产品真实入口未全部覆盖  |
-| [080](spec-080-recent-changes-real-workflow-regression/spec.md) | 最近变更的真实流程回归       | 原回归仍 FAIL；后续关闭三项系统缺陷               |
-| [081](spec-081-agent-response-latency/spec.md)                  | 回答与操作提速               | 系统返工已验收；真实质量仍 FAIL，不能宣称全面提速 |
-| [082](spec-082-agent-evaluation/spec.md)                        | 本地评测与验收机制           | 框架通过；业务批次与人工待复核分别统计            |
+| 规格                                                            | 内容                          | 验收结论摘要                                      |
+| --------------------------------------------------------------- | ----------------------------- | ------------------------------------------------- |
+| [075](spec-075-agent-execution-feedback/spec.md)                | 执行反馈与写入前提问          | 工具链门控局部通过；完整需求与总体性能未全部通过  |
+| [076](spec-076-agent-decision-flow/spec.md)                     | 决策流转、探索收束与搜索入口  | 必要系统修复通过；保留模型失败及速度差异          |
+| [077](spec-077-report-period-regeneration/spec.md)              | 周报周期与删除后重建          | 独立验收通过                                      |
+| [078](spec-078-remove-daily-reports/spec.md)                    | 删除日报，仅保留周报          | 独立验收通过；真实用户库的数据迁移不属于该验收    |
+| [079](spec-079-report-source-validation/spec.md)                | 工作记录与周报来源校验        | 阶段 A／B 系统实现通过；全产品真实入口未全部覆盖  |
+| [080](spec-080-recent-changes-real-workflow-regression/spec.md) | 最近变更的真实流程回归        | 原回归仍 FAIL；后续关闭三项系统缺陷               |
+| [081](spec-081-agent-response-latency/spec.md)                  | 回答与操作提速                | 系统返工已验收；真实质量仍 FAIL，不能宣称全面提速 |
+| [082](spec-082-agent-evaluation/spec.md)                        | 本地评测与验收机制            | 框架通过；业务批次与人工待复核分别统计            |
+| [083](spec-083-project-testing/spec.md)                         | 项目级测试整理、UI 与功能回归 | 本地测试与既有 CI 精简；独立验收通过              |
 
 表中是保存的验收结论，不是生产部署状态。历史记录中的“当前”“未提交”“进程仍运行”只描述当时；不可据此直接操作旧 PID、测试环境或线上数据。
 
@@ -37,4 +38,4 @@
 
 ## 新增规格
 
-下一个编号为 **083**，目录使用 `spec-XXX-short-name/`，模板见 [_template/](_template/)。先写清问题、目标行为和可验证的标准，再写实施方案；结果记录只写实际做过的验证及限制。普通修改不必另开规格，协作流程见 [AGENTS.md](../AGENTS.md)。
+下一个编号为 **084**，目录使用 `spec-XXX-short-name/`，模板见 [_template/](_template/)。先写清问题、目标行为和可验证的标准，再写实施方案；结果记录只写实际做过的验证及限制。普通修改不必另开规格，协作流程见 [AGENTS.md](../AGENTS.md)。

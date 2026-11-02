@@ -18,7 +18,7 @@ async def main():
     parser.add_argument('--output', required=True)
     args = parser.parse_args()
     metadata, private = load_environment(args.metadata)
-    if metadata['purpose'] != 'web' or metadata['suite'] not in ('spec044', 'spec054', 'spec068'):
+    if metadata['purpose'] != 'web' or metadata['suite'] not in ('project', 'spec044', 'spec054', 'spec068'):
         raise RuntimeError('Only an owned browser acceptance environment is allowed')
     output = Path(args.output)
     if output.exists():
@@ -32,12 +32,21 @@ async def main():
     from app.modules.conversations.models import Conversation
     from app.modules.messages.models import Message
     from app.modules.reports.models import Report, ReportRevision
-    from app.modules.model_services.models import ModelUsage
+    from app.modules.model_services.models import ModelUsage, ModelService, ModelServiceRevision, ModelRouting
+    from app.security.secrets import encrypt
     engine, sessions = database(Settings())
     markdown = '# 合成验收资料\n\n用于检查长文、代码和表格显示，不代表真实业务。\n\n| 工作 | 结果 |\n| --- | --- |\n| 桌面与手机 | 可读 |\n\n```python\nprint("synthetic layout fixture")\n```\n\n' + '\n\n'.join(f'## 第 {n} 节\n\n核对布局、滚动和内容可读性。' for n in range(1, 12))
     records = {}
     try:
         async with sessions.begin() as db:
+            if metadata['suite'] == 'project':
+                company = metadata['companies']['primary']
+                models = [{'id': 'text', 'model': 'controlled-text', 'protocol': 'chat', 'streaming': False, 'reasoning': {'efforts': ['low', 'high'], 'initial': 'low'}}]
+                service = ModelService(company_id=company, name='合成测试供应商', base_url='https://project-provider.invalid/v1', models=models)
+                db.add(service)
+                await db.flush()
+                db.add(ModelServiceRevision(company_id=company, service_id=service.id, revision=1, name=service.name, base_url=service.base_url, models=models, credential=encrypt(Settings().model_key_file, 'synthetic-only', company, service.id, 1)))
+                db.add(ModelRouting(company_id=company, choices={'assistant': {'serviceId':service.id,'modelId':'text'}, 'report':'follow', 'asr':None}))
             for role in ('admin', 'employee'):
                 member = private['accounts'][role]
                 owned = dict(company_id=member['companyId'], owner_id=member['id'])
@@ -52,9 +61,9 @@ async def main():
                 db.add(message)
                 await db.flush()
                 result = {'work': work.id, 'conversation': conversation.id, 'message': message.id}
-                for kind, period in [('daily', date.today()), ('weekly', date.today() - timedelta(days=date.today().weekday())), ('workflow', date.today() - timedelta(days=date.today().weekday()+7))]:
+                for kind, period in [('weekly', date.today() - timedelta(days=date.today().weekday())), ('workflow', date.today() - timedelta(days=date.today().weekday()+7)), ('team', date.today() - timedelta(days=date.today().weekday()+14))]:
                     content_report = {'completed': '核对需求与界面布局', 'ongoing': '记录跨设备结果', 'blockers': '暂无阻碍', 'next': '完成验收'}
-                    report = Report(**owned, kind='weekly' if kind == 'workflow' else kind, period=str(period), period_end=str(period + timedelta(days=6 if kind != 'daily' else 0)), timezone='Asia/Shanghai', content=content_report, source_ids=[], published_revision=1 if kind == 'daily' else 0)
+                    report = Report(**owned, kind='weekly', period=str(period), period_end=str(period + timedelta(days=6)), timezone='Asia/Shanghai', content=content_report, source_ids=[], published_revision=1 if kind == 'team' else 0)
                     db.add(report)
                     await db.flush()
                     db.add(ReportRevision(**owned, report_id=report.id, revision=1, content=content_report, source_ids=[]))

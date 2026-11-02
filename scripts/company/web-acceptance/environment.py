@@ -15,10 +15,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / 'apps/server'), str(ROOT / 'packages/voiceprint-engine/src')]
+sys.path.insert(0, str(ROOT / 'scripts/testing'))
+from importlib import import_module
+redis_environment = import_module('redis-environment').redis_environment
 from dotenv import dotenv_values
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -45,10 +49,16 @@ def load_environment(path):
     secret = Path(metadata['secretFile']).resolve()
     if secret.stat().st_mode & 0o077:
         raise RuntimeError('Private environment must have mode 0600')
+    if secret != Path(metadata['privateDirectory']).resolve() / 'environment.json':
+        raise RuntimeError('Unexpected private environment location')
     values = json.loads(secret.read_text())
+    if values.get('runId') != metadata['runId']:
+        raise RuntimeError('Private run identity mismatch')
+    if metadata['schema'] != metadata.get('suite', 'spec044') + '_' + metadata['purpose'] + '_' + metadata['runId'][:12]:
+        raise RuntimeError('Schema/run identity mismatch')
     url = checked_url(values['environment']['DATABASE_URL'])
     schema = metadata['schema']
-    if not re.fullmatch(r'spec[0-9]{3}_[a-z]+_[a-f0-9]{12}', schema):
+    if not re.fullmatch(r'(?:spec[0-9]{3}|project)_[a-z]+_[a-f0-9]{12}', schema):
         raise RuntimeError('Unexpected acceptance schema')
     if url.query.get('options') != '-csearch_path=' + schema:
         raise RuntimeError('Schema mismatch')
@@ -96,11 +106,16 @@ async def seed():
 
 
 def prepare(args):
-    defaults = dotenv_values(ROOT / 'apps/server/.env.web')
+    defaults = {} if args.suite == 'project' else dotenv_values(ROOT / 'apps/server/.env.web')
+    for origin in (args.web_origin, args.api_url):
+        parsed = urlsplit(origin)
+        if parsed.scheme != 'http' or parsed.hostname != '127.0.0.1' or not parsed.port or parsed.path or parsed.query or parsed.fragment or parsed.username:
+            raise RuntimeError('Only explicit loopback service origins are allowed')
     base = checked_url(os.environ.get('DATABASE_TEST_URL') or defaults.get('DATABASE_TEST_URL', ''))
     run_id = uuid4().hex
-    if not re.fullmatch(r'spec[0-9]{3}', args.suite):
+    if not re.fullmatch(r'(?:spec[0-9]{3}|project)', args.suite):
         raise RuntimeError('Unexpected acceptance suite identifier')
+    redis_env = redis_environment(os.environ, run_id)
     schema = args.suite + '_' + args.purpose + '_' + run_id[:12]
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -117,16 +132,19 @@ def prepare(args):
         'PAA_SANDBOX_URL': '', 'PAA_SANDBOX_TOKEN': '', 'PAA_MODEL_ALLOWED_ORIGINS': '',
         'PAA_WORKER_CONCURRENCY': '3', 'SPEC044_RUN_ID': run_id,
         'ACCEPTANCE_SUITE': args.suite,
+        **redis_env,
     }
     metadata = {'runId': run_id, 'suite': args.suite, 'purpose': args.purpose, 'database': 'paa_company_test', 'schema': schema,
                 'apiUrl': args.api_url, 'webUrl': args.web_origin, 'apiOrigin': args.api_url, 'origin': args.web_origin, 'privateDirectory': str(directory),
                 'secretFile': str(directory / 'environment.json'), 'secretEnvFile': str(directory / 'environment.env'),
                 'commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'processes': []}
     engine = create_engine(base)
+    created = False
     try:
         with engine.begin() as connection:
             connection.execute(CreateSchema(schema))
             connection.execute(text(f"COMMENT ON SCHEMA {schema} IS '{args.suite}:{run_id}'"))
+        created = True
         os.environ.update(env)
         with output.with_suffix('.setup.log').open('w') as log:
             subprocess.run([sys.executable, '-m', 'app.cli', 'migrate'], cwd=ROOT, env={**os.environ, **env}, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=90)
@@ -146,8 +164,11 @@ def prepare(args):
         output.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + '\n')
         print(json.dumps({'metadata': str(output), 'schema': schema, 'secretFile': metadata['secretFile'], 'secretEnvFile': metadata['secretEnvFile']}))
     except BaseException:
-        with engine.begin() as connection:
-            connection.execute(DropSchema(schema, cascade=True, if_exists=True))
+        if created:
+            with engine.begin() as connection:
+                marker = connection.scalar(text("SELECT obj_description(oid, 'pg_namespace') FROM pg_namespace WHERE nspname=:schema"), {'schema': schema})
+                if marker == args.suite + ':' + run_id:
+                    connection.execute(DropSchema(schema, cascade=True))
         shutil.rmtree(directory)
         raise
     finally:
@@ -162,6 +183,15 @@ def cleanup(args):
         raise RuntimeError('Refusing cleanup of unexpected private directory')
     if credentials and credentials != Path(args.metadata).resolve().parent / 'credentials.json':
         raise RuntimeError('Refusing cleanup of unexpected credentials file')
+    redis_url = private['environment'].get('PAA_REPLY_STREAM_REDIS_URL', '')
+    if redis_url:
+        checked = redis_environment({'PAA_REPLY_STREAM_TEST_URL': redis_url}, metadata['runId'])
+        if private['environment'].get('PAA_REPLY_STREAM_NAMESPACE') != checked['PAA_REPLY_STREAM_NAMESPACE']:
+            raise RuntimeError('Redis namespace ownership mismatch')
+        import redis
+        with redis.Redis.from_url(redis_url, socket_timeout=5, socket_connect_timeout=5) as client:
+            for key in client.scan_iter(match=checked['PAA_REPLY_STREAM_NAMESPACE'] + ':*', count=100):
+                client.delete(key)
     engine = create_engine(checked_url(private['environment']['DATABASE_URL']))
     with engine.begin() as connection:
         connection.execute(DropSchema(metadata['schema'], cascade=True))

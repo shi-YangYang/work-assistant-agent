@@ -73,11 +73,17 @@ test('W21 @cross memory edit, switch stability, conflict recovery and explicit c
   expect((await http<AssistantMemory>('/api/v1/assistant/memory')).data.markdown).toContain(
     '本地未保存补充',
   )
-  page.once('dialog', (dialog) => dialog.dismiss())
   await page.getByRole('button', { name: '清空记忆' }).click()
+  await page
+    .getByRole('dialog', { name: '清空记忆' })
+    .getByRole('button', { name: '取消', exact: true })
+    .click()
   await expect(page.getByRole('heading', { name: '我的偏好' })).toBeVisible()
-  page.once('dialog', (dialog) => dialog.accept())
   await page.getByRole('button', { name: '清空记忆' }).click()
+  await page
+    .getByRole('dialog', { name: '清空记忆' })
+    .getByRole('button', { name: '确认清空', exact: true })
+    .click()
   await expect(page.getByText(/还没有记忆/)).toBeVisible()
   await capture('memory-explicit-clear')
 })

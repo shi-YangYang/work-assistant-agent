@@ -88,3 +88,5 @@
 - `python -m app.integrations.parsing.office_preflight` 在 worker 镜像发布前验证三种真实旧格式及 Office→PDF→PNG。模块／流程检查位于 `tests/server/modules/materials/test_office_conversion.py`、`test_document_preparation.py` 和 `tests/server/scenarios/test_legacy_document_workflow.py`；本地依赖及限制见 [安装说明](../docs/setup.md#旧版-office-文件读取)。
 
 - 原件范围续提取和页面像素装配分别归属 `integrations/parsing`、`tasks/processing`、`agent/context/document_input.py`；不新增向量检索或描述模型。私有处理产物按原件与版本隔离，随附件持久化和删除，不设累计容量额度；磁盘空间保护见[图文读取说明](../docs/setup.md#长文件与图文内容读取)。相关检查为 `test_document_ranges.py`、`test_document_vision.py`，low／high 对照入口为 `eval/benchmarks/document-understanding.py`。
+
+项目级本地测试使用 `npm run test:project -- --list`，运行组与隔离环境见 [测试指南](../tests/README.md)。日常 CI 仅静态检查与普通构建；平台运行按需手动，部署保护保持独立。

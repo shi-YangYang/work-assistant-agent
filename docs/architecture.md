@@ -271,3 +271,5 @@ Agent 的 `inspect_table`、`export_table`、`create_chart`、`create_document`�
 `SandboxExecution.request` 保存内置任务的原始参数，`code` 保留 Python 历史；`read_execution` 按会话和来源授权阅读两类记录。Python 旧请求摘要保持不变，结构化参数规范化后参与幂等。授权文件引用仅在执行时映射为隔离环境输入文件名；检查表格只返回有界数据，不创建空成果。
 
 普通问答、联网和业务工具不进入执行队列。沙盒关闭时上述能力保持可用，历史成果仍可下载。
+
+项目级本地测试使用 `npm run test:project -- --list`，运行组与隔离环境见 [测试指南](../tests/README.md)。日常 CI 仅静态检查与普通构建；平台运行按需手动，部署保护保持独立。

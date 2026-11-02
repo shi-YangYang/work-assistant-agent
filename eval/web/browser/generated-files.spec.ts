@@ -1,5 +1,5 @@
 import { readFileSync, mkdirSync } from 'node:fs'
-import { test, expect } from '../fixtures/test'
+import { test, expect } from '../../../tests/e2e/web/fixtures/test'
 
 test('F03 download the real revised spreadsheet and image', async ({
   page,

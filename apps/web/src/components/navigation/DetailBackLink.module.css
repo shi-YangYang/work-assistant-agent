@@ -37,3 +37,11 @@
   margin-left: 0;
   max-width: 100%;
 }
+
+@media (max-width: 760px) {
+  :global([data-pet-visible='true']) .back:not(.embedded) {
+    margin-top: 44px;
+    margin-left: 0;
+    max-width: 100%;
+  }
+}

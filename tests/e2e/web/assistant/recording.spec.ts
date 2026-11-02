@@ -14,7 +14,8 @@ test('W05 fixed microphone input produces playable recording with duration', asy
     await expect(page.getByRole('button', { name: /停止录音 · [3-9] 秒/ })).toBeVisible({
       timeout: 10_000,
     })
-    await page.getByRole('button', { name: /停止录音/ }).click()
+    // Keyboard stop retains the clip for preview; pointer release sends immediately.
+    await page.getByRole('button', { name: /停止录音/ }).press('Enter')
     await page.getByRole('button', { name: /^展开语音 .*试听$/ }).click()
     const audio = page.getByLabel(/^试听/)
     await expect(audio).toBeVisible()

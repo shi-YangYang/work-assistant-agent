@@ -28,6 +28,8 @@ type Fixtures = {
 }
 
 export async function login(page: Page, state: State, role = 'admin') {
+  // Layout fixtures explicitly opt into the optional companion. Production defaults stay hidden.
+  await page.addInitScript(() => localStorage.setItem('paa.company.pet-visible', 'true'))
   await page.goto(state.origin)
   await page.getByRole('button', { name: /直接登录/ }).click()
   await page.getByLabel('账号', { exact: true }).fill(state.users[role].username)
@@ -36,6 +38,10 @@ export async function login(page: Page, state: State, role = 'admin') {
   await expect(
     page.getByRole('navigation', { name: '工作空间', includeHidden: true }),
   ).toBeAttached()
+  const identity = await page.request.get(state.origin + '/api/v1/auth/me')
+  expect(identity.ok()).toBe(true)
+  const actual = await identity.json()
+  expect(actual.member.id).toBe(state.users[role].id)
 }
 
 export const test = base.extend<Fixtures>({

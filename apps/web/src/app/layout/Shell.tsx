@@ -224,7 +224,7 @@ export function Shell({
                 petVisible={pet.visible}
                 setPetVisible={pet.setVisible}
               />
-              <section ref={mainRef} className={styles['main']}>
+              <section ref={mainRef} className={styles['main']} data-pet-visible={pet.visible}>
                 <PetStage
                   visible={pet.visible}
                   navTriggerRef={triggerRef}
