@@ -2,7 +2,7 @@
 import { chromium, webkit, expect } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { api } from '../agent-browser-common.mjs'
+import { api } from '../../../../eval/web/agent-browser-common.mjs'
 import { isolatedEnvironment } from '../../../../tests/e2e/web/fixtures/environment.mjs'
 const state = isolatedEnvironment()
 const output = resolve(

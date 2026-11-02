@@ -1,4 +1,6 @@
-# 汇报周期与删除后重新生成
+# 周报周期与删除后重建：需求
+
+[实施方案](plan.md) · [验收结果](acceptance.md) · [实现与验证](implementation.md)
 
 ## 状态
 

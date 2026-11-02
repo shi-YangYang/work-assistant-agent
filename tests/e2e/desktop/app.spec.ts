@@ -319,7 +319,7 @@ test('synthetic capture survives navigation, guards close/retry, saves, restarts
     page = await ready(app)
     await expect(page.locator('.meeting-row')).toHaveCount(1)
     await page.locator('.meeting-row').click()
-    await expect(page.locator('.meeting-detail')).toContainText('已完成')
+    await expect(page.locator('.meeting-detail')).toContainText('录音完成')
     await expect
       .poll(() => page.locator('audio').evaluate((audio) => (audio as HTMLAudioElement).readyState))
       .toBeGreaterThanOrEqual(1)

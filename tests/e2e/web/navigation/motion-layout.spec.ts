@@ -116,7 +116,7 @@ test('W20 route loading duration, cached navigation, narrow and low-height contr
     .getByRole('heading', { name: '模型服务管理', exact: true })
     .evaluate((node) => {
       const a = node.getBoundingClientRect(),
-        b = document.querySelector('button[aria-label="Noria 外观"]')!.getBoundingClientRect()
+        b = document.querySelector('button[aria-label^="Noria"]')!.getBoundingClientRect()
       return (
         Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)) *
         Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))

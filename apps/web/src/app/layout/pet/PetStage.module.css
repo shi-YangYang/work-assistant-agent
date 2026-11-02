@@ -124,7 +124,11 @@
 }
 @media (max-width: 760px) {
   .trigger {
-    top: calc(8px + env(safe-area-inset-top));
+    top: calc(4px + env(safe-area-inset-top));
+  }
+  .avatar > span {
+    width: 40px;
+    height: 40px;
   }
   .bubble {
     margin-top: -5px;

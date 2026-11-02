@@ -8,7 +8,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'))
 from faults import evidence
 from fixed import inventory
 

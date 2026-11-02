@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def module(name):
-    path = Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit' / (name + '.py')
+    path = Path(__file__).resolve().parents[3] / 'eval/web/agent-audit' / (name + '.py')
     spec = importlib.util.spec_from_file_location('audit_' + name, path)
     value = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(value)
@@ -110,7 +110,7 @@ def test_continuation_keeps_memory_settings_and_accepted_receipt(tmp_path, monke
     import hashlib
     import json
     from types import SimpleNamespace
-    directory = Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'
+    directory = Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'
     monkeypatch.syspath_prepend(str(directory))
     runner = module('run')
     case = {'id': 'synthetic', 'role': 'realEmployee', 'turns': ['first', 'second'], 'mutationBounds': [{}, {}]}
@@ -176,7 +176,7 @@ def test_search_progress_distinguishes_changed_queries_from_new_results():
 
 
 def test_api_confirmation_commits_link_by_action_and_transaction_only(monkeypatch):
-    directory = Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'
+    directory = Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'
     monkeypatch.syspath_prepend(str(directory))
     reporter = module('report')
     events = [
@@ -189,7 +189,7 @@ def test_api_confirmation_commits_link_by_action_and_transaction_only(monkeypatc
 
 
 def test_turn_report_excludes_historical_child_job_cards(monkeypatch):
-    directory = Path(__file__).resolve().parents[3] / 'scripts/company/web-acceptance/agent-audit'
+    directory = Path(__file__).resolve().parents[3] / 'eval/web/agent-audit'
     monkeypatch.syspath_prepend(str(directory))
     reporter = module('report')
     jobs = {'prior-report': [{'time': 1, 'kind': 'database_commit'}], 'current': [{'time': 2, 'kind': 'worker_job_start'}], 'new-report': [{'time': 3, 'kind': 'database_commit'}]}

@@ -10,7 +10,7 @@ import {
   readdirSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { api, browserEnvironment } from '../agent-browser-common.mjs'
+import { api, browserEnvironment } from '../../../../eval/web/agent-browser-common.mjs'
 const { metadata, state } = browserEnvironment({ metadataPath: process.env.SPEC080_ENVIRONMENT })
 if (metadata.suite !== 'spec080') throw new Error('Spec080 environment required')
 const root = process.env.SPEC080_OUTPUT

@@ -1,4 +1,6 @@
-# Spec 076 — Agent 及时澄清、探索收束与上下文精简
+# Agent 决策流转与上下文：需求
+
+[实施方案](plan.md) · [验收结果](acceptance.md) · [实现与验证](implementation.md) · [问题记录](rework.md)
 
 ## 状态
 

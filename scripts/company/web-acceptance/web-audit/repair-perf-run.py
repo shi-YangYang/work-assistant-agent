@@ -28,7 +28,7 @@ if OUT not in (OWNED_ROOT, OWNED_ROOT/'v2'):
 sys.path.insert(0, str(BASE))
 from environment import load_environment
 
-spec = importlib.util.spec_from_file_location('repair_latency', ROOT / 'scripts/benchmarks/assistant-latency.py')
+spec = importlib.util.spec_from_file_location('repair_latency', ROOT / 'eval/benchmarks/assistant-latency.py')
 latency = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(latency)
 TERMINAL = latency.TERMINAL

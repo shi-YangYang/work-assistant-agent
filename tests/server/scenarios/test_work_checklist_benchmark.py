@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def module(name):
-    path = ROOT / 'scripts/benchmarks/work-checklist' / (name + '.py')
+    path = ROOT / 'eval/benchmarks/work-checklist' / (name + '.py')
     spec = importlib.util.spec_from_file_location('checklist_benchmark_' + name, path)
     result = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(result)

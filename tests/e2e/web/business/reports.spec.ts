@@ -10,7 +10,10 @@ test('W13 W14 edit submit and read employee report as manager', async ({
 }) => {
   const report = JSON.parse(
     readFileSync(
-      process.env.UI_REPORT_RECORD || 'artifacts/spec044/environment/report.json',
+      process.env.UI_REPORT_RECORD ||
+        (() => {
+          throw new Error('UI_REPORT_RECORD required; run seed-layout.py')
+        })(),
       'utf8',
     ),
   ) as {

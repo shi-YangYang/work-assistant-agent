@@ -22,7 +22,7 @@ async def main():
     output = Path(args.output)
     if output.exists():
         raise RuntimeError('Refusing to overwrite evidence')
-    spec = importlib.util.spec_from_file_location('agent_http', Path(__file__).with_name('agent-http.py'))
+    spec = importlib.util.spec_from_file_location('agent_http', Path(__file__).resolve().parents[3] / 'eval/web/agent-http.py')
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     result = {'scope': 'Read at collection time; does not replace per-turn historical evidence', 'roles': {}}

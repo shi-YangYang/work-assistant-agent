@@ -3,12 +3,12 @@ import type { Work } from '@paa/api-contracts'
 import { test, expect } from '../fixtures/test'
 
 async function theme(page: Page, name: '浅色' | '深色' | '跟随系统') {
-  await page.getByRole('button', { name: 'Noria 外观' }).click()
-  const dialog = page.getByRole('dialog', { name: 'Noria 外观' })
+  await page.getByRole('button', { name: /^Noria(?:，|$)/ }).click()
+  const dialog = page.getByRole('dialog', { name: /^Noria(?:，|$)/ })
   await dialog.getByRole('button', { name, exact: true }).click()
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Noria 外观' })).toBeFocused()
+  await expect(page.getByRole('button', { name: /^Noria(?:，|$)/ })).toBeFocused()
 }
 
 const pages = [
@@ -36,7 +36,7 @@ for (const [path, heading] of pages) {
     else await expect(page.getByRole('textbox', { name: '工作消息' })).toBeVisible()
     await expect(page.getByRole('alert')).toHaveCount(0)
     await expect(page.getByRole('navigation', { name: '面包屑' })).toHaveCount(0)
-    const pet = page.getByRole('button', { name: 'Noria 外观' })
+    const pet = page.getByRole('button', { name: /^Noria(?:，|$)/ })
     const center = await pet.evaluate((node) => {
       const bounds = node.getBoundingClientRect()
       const main = node.closest('section')!.getBoundingClientRect()
@@ -91,7 +91,7 @@ test('W03 @cross employee navigation, reports and role restricted deep links', a
   await theme(page, '浅色')
   await capture('employee-reports-mobile-light')
   await page.getByRole('button', { name: '全部报告', exact: true }).click()
-  await page.getByRole('button', { name: '周报', exact: true }).click()
+  await expect(page.getByRole('button', { name: '日报', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '生成周报', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '汇报安排', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -111,7 +111,7 @@ test('W03 pet appearance preserves assistant and work drafts, navigation identit
   await page.goto(state.origin + '/assistant?new=1')
   const composer = page.getByRole('textbox', { name: '工作消息' })
   await composer.fill('保留这条尚未发送的消息')
-  const pet = page.getByRole('button', { name: 'Noria 外观' })
+  const pet = page.getByRole('button', { name: /^Noria(?:，|$)/ })
   await pet.evaluate((node) => node.setAttribute('data-stability-check', 'same-pet'))
   const requests: string[] = []
   page.on('request', (request) => {
@@ -123,7 +123,7 @@ test('W03 pet appearance preserves assistant and work drafts, navigation identit
   await page.keyboard.press('ControlOrMeta+k')
   await expect(page.getByRole('dialog', { name: '查找页面与操作' })).toBeVisible()
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Noria 外观' }).click()
+  await page.getByRole('button', { name: /^Noria(?:，|$)/ }).click()
   await capture('appearance-dialog-dark')
   await page.keyboard.press('Escape')
   await page.getByRole('link', { name: '我的工作', exact: true }).click()
@@ -140,7 +140,7 @@ test('W03 pet appearance preserves assistant and work drafts, navigation identit
   await theme(page, '浅色')
   await expect(editor).toHaveText('尚未保存的工作正文')
   await page.setViewportSize({ width: 360, height: 780 })
-  await page.getByRole('button', { name: 'Noria 外观' }).click()
+  await page.getByRole('button', { name: /^Noria(?:，|$)/ }).click()
   await capture('appearance-dialog-mobile')
 })
 
@@ -154,17 +154,25 @@ test('W03 details and source retain contextual returns, history has no duplicate
   await login('employee')
   const title = `返回入口验证-${Date.now()}`
   const created = await http<Work>('/api/v1/work-items', 'POST', { title })
+  expect(
+    (
+      await http(`/api/v1/work-items/${created.data.id}`, 'PATCH', {
+        expectedRevision: created.data.revision,
+        title: title + ' 已更新',
+      })
+    ).status,
+  ).toBe(200)
   await page.goto(state.origin + '/work?q=' + encodeURIComponent(title))
   await page.getByRole('link', { name: new RegExp(title) }).click()
   await expect(page.getByRole('link', { name: '返回我的工作' })).toBeVisible()
   await capture('work-detail-light')
   await theme(page, '深色')
   await capture('work-detail-dark')
-  await page.getByRole('link', { name: '查看此版本' }).first().click()
-  await expect(page.getByRole('link', { name: /返回最新版本|返回上一步/ })).toHaveCount(1)
+  await page.getByRole('link', { name: '查看当时内容' }).first().click()
+  await expect(page.getByRole('link', { name: /返回当前工作|返回上一步/ })).toHaveCount(1)
   await expect(page.getByRole('link', { name: '返回我的工作' })).toHaveCount(0)
   await capture('work-history-dark')
-  await page.getByRole('link', { name: /返回最新版本|返回上一步/ }).click()
+  await page.getByRole('link', { name: /返回当前工作|返回上一步/ }).click()
   await page.getByRole('link', { name: '返回我的工作' }).click()
   await expect(page).toHaveURL(/\/work(?:\?q=)?/)
   await page.goto(state.origin + '/messages/missing-source')
@@ -191,9 +199,9 @@ test('W03 employee notification, report and message source retain local navigati
   const report = {
     id: 'pet-report',
     ownerId,
-    kind: 'daily',
+    kind: 'weekly',
     period: '2026-10-05',
-    periodEnd: '2026-10-05',
+    periodEnd: '2026-10-11',
     timezone: 'Asia/Shanghai',
     revision: 1,
     publishedRevision: 0,
@@ -228,7 +236,7 @@ test('W03 employee notification, report and message source retain local navigati
             read,
             obligation: {
               id: 'pet-obligation',
-              kind: 'daily',
+              kind: 'weekly',
               period: report.period,
               periodEnd: report.periodEnd,
               timezone: report.timezone,
@@ -286,12 +294,15 @@ test('W03 employee notification, report and message source retain local navigati
   )
   await login('employee')
   await page.setViewportSize({ width: 360, height: 780 })
-  await page.getByRole('button', { name: '展开导航', exact: true }).click()
-  await page.getByRole('link', { name: /^通知/ }).click()
+  await page.getByRole('button', { name: /^Noria(?:，|$)/ }).click()
+  await page
+    .getByRole('dialog', { name: 'Noria', exact: true })
+    .getByRole('link', { name: /通知/ })
+    .click()
   await page.getByRole('tab', { name: /^提醒/ }).click()
   await expect(page.getByRole('heading', { name: '通知', exact: true })).toBeVisible()
   await capture('employee-notifications-mobile')
-  await page.getByRole('button', { name: /日报 · 草稿已就绪/ }).click()
+  await page.getByRole('button', { name: /周报 · 草稿已就绪/ }).click()
   await expect(page).toHaveURL(/\/reports\/pet-report$/)
   expect(read).toBe(true)
   await expect(page.getByRole('dialog')).toHaveCount(0)
@@ -349,7 +360,7 @@ test('W03 floating pet leaves page headers and controls reachable at narrow widt
       if (heading)
         await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible()
       else await expect(page.getByRole('textbox', { name: '工作消息' })).toBeVisible()
-      const result = await page.getByRole('button', { name: 'Noria 外观' }).evaluate((pet) => {
+      const result = await page.getByRole('button', { name: /^Noria(?:，|$)/ }).evaluate((pet) => {
         const bounds = pet.getBoundingClientRect()
         const stage = pet.parentElement!
         const main = stage.parentElement!
@@ -428,7 +439,7 @@ test('W03 floating pet leaves page headers and controls reachable at narrow widt
   }
   await page.goto(state.origin + '/work/' + work.data.id)
   await expect(page.getByRole('heading', { name: work.data.title })).toBeVisible()
-  const pet = page.getByRole('button', { name: 'Noria 外观' })
+  const pet = page.getByRole('button', { name: /^Noria(?:，|$)/ })
   const before = await pet.boundingBox()
   const scroller = page.locator('[data-scroll-container]')
   await scroller.evaluate((node) => node.scrollTo(0, node.scrollHeight))

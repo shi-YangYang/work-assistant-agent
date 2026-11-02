@@ -1,0 +1,146 @@
+{
+  "suites": {
+    "modules": ["web-modules", "desktop-modules", "core", "server"],
+    "web-ui": ["web-ui"],
+    "web-flow": ["web-flow"],
+    "desktop": ["desktop"],
+    "integration": ["integration"],
+    "web-modules": ["web-modules"],
+    "desktop-modules": ["desktop-modules"],
+    "server": ["server"],
+    "core": ["core"],
+    "server-critical": ["server-critical"]
+  },
+  "groups": {
+    "web-modules": {
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "apps/web/vitest.config.ts",
+        "--reporter=json",
+        "--outputFile={output}/results.json"
+      ],
+      "reporter": "vitest",
+      "timeoutMs": 180000,
+      "boundary": "Module contracts; no browser or real model"
+    },
+    "desktop-modules": {
+      "command": [
+        "node",
+        "node_modules/vitest/vitest.mjs",
+        "run",
+        "--config",
+        "apps/desktop/vitest.config.ts",
+        "--reporter=json",
+        "--outputFile={output}/results.json"
+      ],
+      "reporter": "vitest",
+      "timeoutMs": 180000,
+      "boundary": "Module contracts; no browser or real model"
+    },
+    "web-ui": {
+      "command": [
+        ".venv-server/bin/python",
+        "scripts/testing/web-run.py",
+        "tests/e2e/web/(navigation|assistant|settings)/",
+        "--grep-invert",
+        "S55 real publisher|W17 real voiceprint"
+      ],
+      "reporter": "playwright",
+      "timeoutMs": 900000,
+      "boundary": "Business API injection and real UI"
+    },
+    "web-flow": {
+      "command": [
+        ".venv-server/bin/python",
+        "scripts/testing/web-run.py",
+        "tests/e2e/web/(auth|business)/"
+      ],
+      "reporter": "playwright",
+      "timeoutMs": 900000,
+      "boundary": "Real API persistence; owned environment required"
+    },
+    "server": {
+      "command": [".venv-server/bin/python", "scripts/testing/server-run.py", "tests/server"],
+      "timeoutMs": 1800000,
+      "boundary": "Server contracts; dedicated local database required",
+      "reporter": "normalized",
+      "junit": true
+    },
+    "core": {
+      "command": ["npm", "run", "test:python"],
+      "timeoutMs": 1800000,
+      "boundary": "Python core; synthetic inputs",
+      "reporter": "normalized"
+    },
+    "desktop": {
+      "command": ["npm", "run", "test:smoke:quick"],
+      "timeoutMs": 1800000,
+      "boundary": "Electron controlled software; no microphone",
+      "reporter": "playwright"
+    },
+    "integration": {
+      "command": [
+        "node",
+        "--test",
+        "--test-reporter=junit",
+        "--test-reporter-destination={output}/results.xml",
+        "tests/deploy/local-*.test.mjs",
+        "tests/sandbox/local-dev.test.mjs"
+      ],
+      "timeoutMs": 1800000,
+      "boundary": "Local infrastructure contracts; explicit selection",
+      "reporter": "normalized",
+      "junit": true
+    },
+    "server-critical": {
+      "command": [
+        ".venv-server/bin/python",
+        "scripts/testing/server-run.py",
+        "tests/server/modules/work",
+        "tests/server/modules/reports",
+        "tests/server/modules/auth",
+        "-q",
+        "-k",
+        "not test_real_proxy_office_login_burst_and_forwarded_header_spoofing"
+      ],
+      "timeoutMs": 1800000,
+      "boundary": "Server contracts; dedicated local database required",
+      "reporter": "normalized",
+      "junit": true
+    }
+  },
+  "manualIntegrations": {
+    "real-proxy": {
+      "entry": "tests/server/modules/auth/test_login_proxy.py::test_real_proxy_office_login_burst_and_forwarded_header_spoofing",
+      "command": ".venv-server/bin/python -m pytest tests/server/modules/auth/test_login_proxy.py -k test_real_proxy_office_login_burst_and_forwarded_header_spoofing",
+      "requires": "Local service image and Docker; enable opt-in documented by the test",
+      "default": "not selected"
+    },
+    "redis-transport": {
+      "entry": "tests/e2e/web/assistant/streaming-latency.spec.ts: S55 real publisher",
+      "requires": "Owned compatible API and Redis, SPEC055_REAL_STREAM=1; transport fixture is not worker business coverage",
+      "command": "npx playwright test --config apps/web/playwright.config.ts --grep \"S55 real publisher\"",
+      "default": "not selected"
+    },
+    "voiceprint": {
+      "entry": "tests/e2e/web/settings/voiceprint.spec.ts",
+      "requires": "Declared VOICEPRINT_ENROLLMENT synthetic audio and local inference worker",
+      "command": "npx playwright test --config apps/web/playwright.config.ts tests/e2e/web/settings/voiceprint.spec.ts",
+      "default": "not selected"
+    },
+    "office": {
+      "entry": "apps/server/app/integrations/parsing/office_preflight.py",
+      "command": ".venv-server/bin/python -m app.integrations.parsing.office_preflight",
+      "requires": "PYTHONPATH=apps/server, LibreOffice, Poppler, fonts",
+      "default": "not selected"
+    },
+    "asr-package": {
+      "command": "npm run test:asr; npm run package; npm run test:package",
+      "requires": "Explicit platform, local model downloads and packaging dependencies; see root README",
+      "default": "not selected"
+    }
+  }
+}

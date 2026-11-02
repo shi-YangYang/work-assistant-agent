@@ -15,7 +15,7 @@ from _support.agent.model_stream_errors import client_for, stream
 
 
 def observer():
-    path = Path(__file__).resolve().parents[3] / 'scripts/benchmarks/assistant-latency-runtime.py'
+    path = Path(__file__).resolve().parents[3] / 'eval/benchmarks/assistant-latency-runtime.py'
     spec = importlib.util.spec_from_file_location('latency_runtime_test', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

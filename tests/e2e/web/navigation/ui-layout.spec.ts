@@ -5,18 +5,24 @@ import { test, expect } from '../fixtures/test'
 
 type Records = Record<
   'admin' | 'employee',
-  { work: string; conversation: string; message: string; daily: string; weekly: string }
+  { work: string; conversation: string; message: string; weekly: string; team: string }
 >
 
 function records(): Records {
   return JSON.parse(
-    readFileSync(process.env.UI_LAYOUT_RECORDS || 'artifacts/spec050/records.json', 'utf8'),
+    readFileSync(
+      process.env.UI_LAYOUT_RECORDS ||
+        (() => {
+          throw new Error('UI_LAYOUT_RECORDS required; run seed-layout.py')
+        })(),
+      'utf8',
+    ),
   ) as Records
 }
 
 async function theme(page: Page, value: '浅色' | '深色') {
-  await page.getByRole('button', { name: 'Noria 外观', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Noria 外观', exact: true })
+  await page.getByRole('button', { name: /^Noria(?:，|$)/, exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: /^Noria(?:，|$)/, exact: true })
   await dialog.getByRole('button', { name: value, exact: true }).click()
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
@@ -109,14 +115,14 @@ for (const role of ['admin', 'employee'] as const) {
       await page.setViewportSize({ width, height: 844 })
       for (const value of ['浅色', '深色'] as const) {
         await page.goto(`${state.origin}/work/${id}?revision=1`)
-        const back = page.getByRole('link', { name: '返回最新版本', exact: true })
+        const back = page.getByRole('link', { name: '返回当前工作', exact: true })
         await expect(back).toBeVisible()
         await theme(page, value)
         await unobscured(back)
         const heading = page.getByRole('heading', { level: 2 })
         await expect(heading).toBeVisible()
         await unobscured(heading)
-        await expect(page.getByText('历史版本 · 第 1 版', { exact: true })).toBeVisible()
+        await expect(page.getByText(/^当时内容 ·/)).toBeVisible()
         await capture(`history-${width}-${value}`)
         await back.click()
         await expect(page).toHaveURL(`${state.origin}/work/${id}`)
@@ -140,15 +146,21 @@ test('UI-03 team work and report drawers use their own width', async ({
       await theme(page, value)
       for (const [kind, id] of [
         ['work', ids.work],
-        ['reports', ids.daily],
+        ['reports', ids.team],
       ]) {
         await page.goto(`${state.origin}/team?view=${kind}&record=${id}`)
         const modal = page.getByRole('dialog', { name: kind === 'work' ? '工作详情' : '报告详情' })
+        await expect(
+          modal.getByRole('heading', {
+            name: kind === 'work' ? '界面验收长标题：工作进展与跨设备协作的可读性核对' : '周报',
+            exact: true,
+          }),
+        ).toBeVisible()
         const heading = modal.getByRole('heading', { level: 2 }).last()
         await expect(heading).toBeVisible()
         const geometry = await heading.evaluate((node) => {
           const rect = node.getBoundingClientRect()
-          const compact = node.closest('[data-compact="true"]')!
+          const compact = node.closest('[data-compact="true"]') ?? node.closest('dialog')!
           const parent = compact.getBoundingClientRect()
           const available = node.parentElement!.getBoundingClientRect()
           const style = getComputedStyle(node)
@@ -168,7 +180,10 @@ test('UI-03 team work and report drawers use their own width', async ({
                 fragment.bottom <= rect.bottom + 1,
             ),
             textLines: new Set(fragments.map((fragment) => Math.round(fragment.top))).size,
-            left: rect.left - parent.left,
+            left:
+              rect.left -
+              available.left -
+              parseFloat(getComputedStyle(node.parentElement!).paddingLeft),
             marginLeft: parseFloat(style.marginLeft),
           }
         })

@@ -4,22 +4,24 @@ import { dirname, resolve } from 'node:path'
 
 // Every browser mutation must first verify the disposable schema's ownership marker.
 export function isolatedEnvironment() {
-  const manifestPath = process.env.SPEC073_ENVIRONMENT
-    ? resolve(process.env.SPEC073_ENVIRONMENT)
-    : process.env.SPEC068_ENVIRONMENT
-      ? resolve(process.env.SPEC068_ENVIRONMENT)
-      : process.env.SPEC054_ENVIRONMENT
-        ? resolve(process.env.SPEC054_ENVIRONMENT)
-        : process.env.SPEC044_STATE
-          ? resolve(dirname(process.env.SPEC044_STATE), 'environment.json')
-          : null
+  const manifestPath = process.env.PROJECT_TEST_ENVIRONMENT
+    ? resolve(process.env.PROJECT_TEST_ENVIRONMENT)
+    : process.env.SPEC073_ENVIRONMENT
+      ? resolve(process.env.SPEC073_ENVIRONMENT)
+      : process.env.SPEC068_ENVIRONMENT
+        ? resolve(process.env.SPEC068_ENVIRONMENT)
+        : process.env.SPEC054_ENVIRONMENT
+          ? resolve(process.env.SPEC054_ENVIRONMENT)
+          : process.env.SPEC044_STATE
+            ? resolve(dirname(process.env.SPEC044_STATE), 'environment.json')
+            : null
   if (!manifestPath)
     throw new Error(
-      'SPEC073_ENVIRONMENT, SPEC068_ENVIRONMENT, SPEC054_ENVIRONMENT or SPEC044_STATE is required',
+      'PROJECT_TEST_ENVIRONMENT, SPEC073_ENVIRONMENT, SPEC068_ENVIRONMENT, SPEC054_ENVIRONMENT or SPEC044_STATE is required',
     )
   const metadata = JSON.parse(readFileSync(manifestPath, 'utf8'))
   if (
-    !['spec044', 'spec054', 'spec055', 'spec056', 'spec068', 'spec073'].includes(
+    !['project', 'spec044', 'spec054', 'spec055', 'spec056', 'spec068', 'spec073'].includes(
       metadata.suite ?? 'spec044',
     )
   )
@@ -32,7 +34,7 @@ export function isolatedEnvironment() {
   )
     throw new Error('Invalid disposable schema identity')
   execFileSync(
-    resolve('.venv-server/bin/python'),
+    resolve('.venv-server', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'),
     [
       '-c',
       [
@@ -61,14 +63,29 @@ export function isolatedEnvironment() {
     throw new Error('Credentials and manifest identity differ')
   const ports =
     suite === 'spec056' ? [5206, 8036] : suite === 'spec055' ? [5198, 8020] : [5196, 8016]
-  if (
+  if (suite === 'project') {
+    for (const origin of [state.origin, state.apiOrigin]) {
+      const url = new URL(origin)
+      if (
+        url.protocol !== 'http:' ||
+        url.hostname !== '127.0.0.1' ||
+        !url.port ||
+        url.origin !== origin
+      )
+        throw new Error('Only explicit loopback origins allowed')
+    }
+  } else if (
     state.origin !== `http://127.0.0.1:${ports[0]}` ||
     state.apiOrigin !== `http://127.0.0.1:${ports[1]}`
   )
     throw new Error('Only the dedicated browser API and UI are allowed')
-  for (const role of ['admin', 'employee']) {
+  if (!state.users?.admin || !state.users?.employee)
+    throw new Error('Required synthetic accounts missing')
+  for (const role of Object.keys(state.users)) {
     if (
+      !metadata.accounts[role] ||
       !state.users[role]?.password ||
+      state.users[role].username !== metadata.accounts[role].username ||
       state.users[role].id !== metadata.accounts[role].id ||
       state.users[role].companyId !== metadata.accounts[role].companyId
     )

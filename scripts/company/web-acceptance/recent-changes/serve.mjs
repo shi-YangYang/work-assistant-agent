@@ -1,6 +1,6 @@
 import { createServer } from 'vite'
 import { resolve } from 'node:path'
-import { browserEnvironment } from '../agent-browser-common.mjs'
+import { browserEnvironment } from '../../../../eval/web/agent-browser-common.mjs'
 const { metadata, state } = browserEnvironment({ metadataPath: process.env.SPEC080_ENVIRONMENT })
 if (metadata.suite !== 'spec080') throw new Error('Spec080 ownership required')
 const server = await createServer({

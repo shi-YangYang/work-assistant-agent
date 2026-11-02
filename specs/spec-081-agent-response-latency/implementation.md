@@ -1,12 +1,12 @@
-# Implementation Report
+# Agent 回答与操作速度：实现与验证
 
-## Summary
+## 主要改动
 
 已实施，待独立验收。业务改动只有授权调用输入的两处 JSON 紧凑序列化：删除 JSON 分隔符周围的格式空格，保留所有字段、Schema、原文字符串、角色、政策与校验。未改变模型、推理档位、预算、重试、授权、来源、幂等或回执完成路径。
 
 稳定观察到的是授权输入成本下降：四对首次授权实际输入减少 495～510 token，约 7.2%～7.4%。没有证据支持普通回答全面提速；操作端到端差值同时受外部请求波动及基线原有模型错误重试影响，不能全部归功于本改动。
 
-## Files Changed
+## 涉及文件
 
 - `apps/server/app/agent/actions/intent.py`：仅两处 `json.dumps(..., separators=(',', ':'))`。
 - `scripts/benchmarks/assistant-latency.py`：明确允许已验证归属的 Spec081 环境，保留旧 suite 限制与首试保护。
@@ -17,24 +17,24 @@
 
 本报告之外的 Spec/Plan/索引由协调 Agent 维护。没有 commit、push、部署或远端 CI。
 
-## Important Decisions
+## 关键取舍
 
 保留的候选：授权输入中的 JSON 格式空白。基线首个工作写入有两次主模型调用和一次必要授权；授权输入 6856 实际 token、外部请求 4.065 秒。其 Schema 可减少 586 字符、该请求 JSON 另减少 98 字符，解析后结构和值完全相同。
 
 拒绝或暂不实施：
 
-| 候选 | 当前证据与结论 |
-| --- | --- |
-| 图/Schema 缓存 | 首次建图 198ms，暖建图约14ms；Schema 转换不足6μs。不值得为小开销引入携带状态的图复用或失效机制。 |
-| 领取唤醒 | 本次领取等待 47～812ms，未观察积压；基线工作路径 50～436ms。更换共享调度需要新通知与恢复机制，不是当前主要成本，不靠提高轮询频率提速。 |
-| 准备与最终持久化 | 准备34～104ms，最终持久化22～35ms；未找到可安全删除的重复事实读取。 |
-| 发布/前端 | 沿用来源校验与动画；来源校验后的流式发布较短，操作提交到完整回执约0.21～0.35秒，不改来源保护或会话恢复。 |
-| 额外收尾/工具预加载 | 既有纯操作回执已直接完成，无额外收尾模型；不重算旧成果，不无条件增加工具Schema。 |
-| 必要授权 | 保留；不把4秒授权删除，也不增加分类、审核或润色调用。 |
+| 候选                | 当前证据与结论                                                                                                                         |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 图/Schema 缓存      | 首次建图 198ms，暖建图约14ms；Schema 转换不足6μs。不值得为小开销引入携带状态的图复用或失效机制。                                       |
+| 领取唤醒            | 本次领取等待 47～812ms，未观察积压；基线工作路径 50～436ms。更换共享调度需要新通知与恢复机制，不是当前主要成本，不靠提高轮询频率提速。 |
+| 准备与最终持久化    | 准备34～104ms，最终持久化22～35ms；未找到可安全删除的重复事实读取。                                                                    |
+| 发布/前端           | 沿用来源校验与动画；来源校验后的流式发布较短，操作提交到完整回执约0.21～0.35秒，不改来源保护或会话恢复。                               |
+| 额外收尾/工具预加载 | 既有纯操作回执已直接完成，无额外收尾模型；不重算旧成果，不无条件增加工具Schema。                                                       |
+| 必要授权            | 保留；不把4秒授权删除，也不增加分类、审核或润色调用。                                                                                  |
 
 外部请求计时覆盖 `_chat` 调用，包含HTTP等待、供应商响应以及本地流处理/回调；无法分离网络、供应商排队和推理，不称为供应商纯计算时间。并行或嵌套阶段不相加冒充端到端。
 
-## Tests
+## 验证
 
 业务修改触及授权输入，采用该子系统定向检查，未跑全仓测试、build、lint 或 typecheck。
 
@@ -53,23 +53,23 @@
 
 秒数如下。短答“首显”仅指首个非空且已授权的正文 DOM，平滑动画可能尚未显示完整句子；“完整”是本次单句回答可用时间的保守上界。操作值是实际保存后的完整可用回执。
 
-| 场景 | 档位/配对 | 基线首显→完整 | 候选首显→完整 | 基线→候选主模型/授权次数 |
-| --- | --- | --- | --- | --- |
-| 短答 | low 1 | 3.649→4.130 | 3.380→3.881 | 1/0→1/0 |
-| 短答 | low 2 | 3.882→4.448 | 2.382→2.833 | 1/0→1/0 |
-| 短答 | high 1 | 3.229→3.730 | 3.630→4.114 | 1/0→1/0 |
-| 短答 | high 2 | 3.897→4.348 | 4.269→4.831 | 1/0→1/0 |
-| 创建工作 | low 1 | 11.959→11.959 | 8.265→8.265 | 2/1→2/1 |
-| 创建工作 | low 2 | 23.131→23.131 | 19.047→19.047 | 2/3→2/1 |
-| 创建工作 | high 1 | 16.930→16.930 | 12.282→12.282 | 2/2→2/1 |
-| 创建工作 | high 2 | 13.965→13.965 | 10.115→10.115 | 2/1→2/1 |
+| 场景     | 档位/配对 | 基线首显→完整 | 候选首显→完整 | 基线→候选主模型/授权次数 |
+| -------- | --------- | ------------- | ------------- | ------------------------ |
+| 短答     | low 1     | 3.649→4.130   | 3.380→3.881   | 1/0→1/0                  |
+| 短答     | low 2     | 3.882→4.448   | 2.382→2.833   | 1/0→1/0                  |
+| 短答     | high 1    | 3.229→3.730   | 3.630→4.114   | 1/0→1/0                  |
+| 短答     | high 2    | 3.897→4.348   | 4.269→4.831   | 1/0→1/0                  |
+| 创建工作 | low 1     | 11.959→11.959 | 8.265→8.265   | 2/1→2/1                  |
+| 创建工作 | low 2     | 23.131→23.131 | 19.047→19.047 | 2/3→2/1                  |
+| 创建工作 | high 1    | 16.930→16.930 | 12.282→12.282 | 2/2→2/1                  |
+| 创建工作 | high 2    | 13.965→13.965 | 10.115→10.115 | 2/1→2/1                  |
 
 | 创建工作配对 | 首次授权输入token，基线→候选 | 全部授权外部请求秒，基线→候选 | 实际工作提交秒，基线→候选 |
-| --- | --- | --- | --- |
-| low 1 | 6856→6349 | 4.065→3.161 | 11.727→8.044 |
-| low 2 | 6857→6347 | 4.038+5.118+4.888→13.022 | 22.922→18.799 |
-| high 1 | 6847→6352 | 4.638+3.332→4.524 | 16.680→11.995 |
-| high 2 | 6845→6349 | 5.092→3.646 | 13.699→9.762 |
+| ------------ | ---------------------------- | ----------------------------- | ------------------------- |
+| low 1        | 6856→6349                    | 4.065→3.161                   | 11.727→8.044              |
+| low 2        | 6857→6347                    | 4.038+5.118+4.888→13.022      | 22.922→18.799             |
+| high 1       | 6847→6352                    | 4.638+3.332→4.524             | 16.680→11.995             |
+| high 2       | 6845→6349                    | 5.092→3.646                   | 13.699→9.762              |
 
 逐角色的所有调用、输入/输出token、实际参数、工具次序、调用身份、首次错误及原始时间见 [summary.json](../../artifacts/agent-response-latency/summary.json)；完整请求/Schema/返回分别在 [基线 trace](../../artifacts/agent-response-latency/baseline/trace.jsonl)、[候选 trace](../../artifacts/agent-response-latency/candidate/trace.jsonl)，持久读回在各自 `readback.json`。这不是降低调用预算或减少必要审核；基线额外授权来自原有重试。
 
@@ -79,7 +79,7 @@
 
 [网络记录](../../artifacts/agent-response-latency/pairs/high-B2/receipt-open-rework-network.json) 中除允许的登录 POST 外，观察到的 `/api/v1/` 业务请求均为 GET；页面拦截器禁止其他写请求，实际没有触发拦截。没有发送消息、创建／修改工作或再次调用模型。补采前后两侧 `ModelUsage` 均为基线19、候选16，合计35不变。此次只补充现有对象的页面证据，未重复既有通过项；等待新的独立验收。
 
-## Known Limitations
+## 已知限制
 
 - 高档短答对照完整显示变慢约0.38/0.48秒；该路径没有调用被修改的授权函数，输入/调用量无新增。原样保留波动，不用其他场景收益抵扣，不声称普通回答更快。
 - low候选第2次授权用了13.022秒，明显慢于该对基线的首次授权4.038秒。稳定收益是输入token减少；小样本不支持将总等待缩短全部归因于序列化。
@@ -91,7 +91,7 @@
 - 首次环境准备因Docker/数据库未启动失败，空临时目录已移除；一次合成登录因用户名大小写失败，尚未发送消息，修正测试账号后另建输出目录，首试记录未覆盖。
 - 独立验收观察到采样结束后两个 worker 的无 jobId 数据库连接异常，原因未定；不属于已测模型失败。补采前本地时间20:15的 [只读诊断](../../artifacts/agent-response-latency/receipt-rework-diagnostic.json) 显示两侧 `load_environment` 所有权校验及数据库读取成功，共享 PostgreSQL／Redis 当前 healthy；20:16 的详情 GET 与登录也成功。无需恢复或重启服务，这些当前成功不解释历史异常。
 
-## Remaining Questions / Resource Ownership
+## 待确认事项、测试资源归属
 
 无需产品决策，等待独立验收。保留全部证据及隔离环境供只读复核，当前没有模型任务运行。
 
@@ -117,34 +117,34 @@
 
 ### 旧保护与新实现逐项对应
 
-| 既有有效检查 | 本轮承载位置／替代方式 |
-| --- | --- |
-| 范围不能从候选 changes 反推 | 原 `source_input` 仍不发送提案字段／值；独立范围调用在授权前完成。`required_fields/operation_fields` 只选择已验证计划中的原子组，不发明用户意图。 |
-| 十字段不可遗漏；禁止把缺项默认 preserve | compact wire 的 changed+preserved 必须唯一、互斥、并集恰为 FIELDS；缺一个 preserve 也失败。新增未知字段／额外属性同样拒绝。 |
-| 引文来源、逐字匹配、非空、字段模式 | changed 保留全部 quotes；expand 后仍执行原 `validate_plan` 的用户来源、逐字引用和模式限制。完整用户文本仍包含否定／条件指令，preserved 显式列名。 |
-| 文本清空、精确状态／日期、记录字段、清单选择 | typed wire 保留原 TextFieldPlan 限制及说明、FieldPlan 引文约束；原 dense 校验和 patch_error 继续检查 status、dueDate、clear、记录范围及 checklistSelection。 |
-| requestedChanges 的来源与 kind/field 分类 | 已验证独立计划已完成来源与字段归类；后续不再让见过提案的模型重提取。dense requestedChanges 是程序字段索引，每字段选首条已验证引文，最多10条，遵守旧32条上限；其 `explicit_field` 只作内部目的字段兼容标记，不表示用户说过字段名。所有引文留在发送给授权器的 compact plan 和持久 dense plan；持续指令／resume／authorization 使用各自原始来源，未改为依赖这个索引。代码有对应注释。 |
-| 缺字段、越界字段、原子组不相互阻塞 | 原 patch_error、canonical_field、required_fields 的对称覆盖和互斥原子组检查保留。成功 verdict 只重建本原子组全部必需字段；不会要求正文步骤同时写属性或材料步骤。 |
-| 不能把错误值默认通过；不能捏造缺字段让用户重述 | allowed 仍由授权模型给出，程序不默认 true。`invalidFields` 必须唯一、canonical 后属于当前已请求原子组；allowed=true 不得附问题字段。`fields` 拒绝，以及 `other` 且 invalid_arguments/missing_info，都要求非空真实字段；唯一例外仍是已有、引文验证通过的材料保存位置缺口。原精确 missingInputs／recoveryOwner 和 missing_info 约束继续执行。 |
-| 单字段错误只修该字段 | 拒绝时 dense requiredFields/requestedChanges 只从有效 invalidFields 重建；目标／来源等拒绝保持原分支，不能把一处错误扩大为整组。模型是否显式提供 failureKind 的 `model_fields_set` 被保留，内部默认值不能伪装成模型输入。 |
-| append 不覆盖旧事实／不编造增量 | appendFields 从本原子组计划模式计算；授权模型仍提供 appendValues，原 append_contract 检查键精确匹配、非空且是实际提案的连续原文子串；原写入追加路径不变。 |
-| 授权引文、对象、真实执行意图与内容 | quote/quoteMessageId、quote_valid、当前/持续真实指令、目标权限仍检查；独立计划不是执行授权。授权模型逐项核对实际内容、条件与来源，不因字段在计划内就允许错误内容。 |
-| 材料与保存目标、注入、来源版本 | normalize_contract/resolve、material selection、validate_sources、权限/版本栅栏保留；工作正文／附件／助手内容仍只是数据。源变化、目标变化、取消 lease 不复用旧允许结果。 |
-| 确认、恢复、重放、完成回执 | requireConfirmation、receiptOnly/taskContext、recoveringItem、task_item_reference、bind、旧 source/resume 绑定、待确认/成功回执防重放及整个任务完成判断均保留。dense 序列化消费者不换形状。 |
-| 非工作更新的合同与共享入口 | create/report/general 使用原字段合同；execute_business_action 全 action/参数可达，[]、work、reports、两组四种组合均定向检查。 |
-| 合同修复与资源预算 | 原联合 repair_constraints 和已有有界重试保留；新字段错误加入同一错误集合，未提前抛出导致丢失其它修复约束。未增加 classifier/reviewer/调用轮次。 |
+| 既有有效检查                                   | 本轮承载位置／替代方式                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 范围不能从候选 changes 反推                    | 原 `source_input` 仍不发送提案字段／值；独立范围调用在授权前完成。`required_fields/operation_fields` 只选择已验证计划中的原子组，不发明用户意图。                                                                                                                                                                                                                                  |
+| 十字段不可遗漏；禁止把缺项默认 preserve        | compact wire 的 changed+preserved 必须唯一、互斥、并集恰为 FIELDS；缺一个 preserve 也失败。新增未知字段／额外属性同样拒绝。                                                                                                                                                                                                                                                        |
+| 引文来源、逐字匹配、非空、字段模式             | changed 保留全部 quotes；expand 后仍执行原 `validate_plan` 的用户来源、逐字引用和模式限制。完整用户文本仍包含否定／条件指令，preserved 显式列名。                                                                                                                                                                                                                                  |
+| 文本清空、精确状态／日期、记录字段、清单选择   | typed wire 保留原 TextFieldPlan 限制及说明、FieldPlan 引文约束；原 dense 校验和 patch_error 继续检查 status、dueDate、clear、记录范围及 checklistSelection。                                                                                                                                                                                                                       |
+| requestedChanges 的来源与 kind/field 分类      | 已验证独立计划已完成来源与字段归类；后续不再让见过提案的模型重提取。dense requestedChanges 是程序字段索引，每字段选首条已验证引文，最多10条，遵守旧32条上限；其 `explicit_field` 只作内部目的字段兼容标记，不表示用户说过字段名。所有引文留在发送给授权器的 compact plan 和持久 dense plan；持续指令／resume／authorization 使用各自原始来源，未改为依赖这个索引。代码有对应注释。 |
+| 缺字段、越界字段、原子组不相互阻塞             | 原 patch_error、canonical_field、required_fields 的对称覆盖和互斥原子组检查保留。成功 verdict 只重建本原子组全部必需字段；不会要求正文步骤同时写属性或材料步骤。                                                                                                                                                                                                                   |
+| 不能把错误值默认通过；不能捏造缺字段让用户重述 | allowed 仍由授权模型给出，程序不默认 true。`invalidFields` 必须唯一、canonical 后属于当前已请求原子组；allowed=true 不得附问题字段。`fields` 拒绝，以及 `other` 且 invalid_arguments/missing_info，都要求非空真实字段；唯一例外仍是已有、引文验证通过的材料保存位置缺口。原精确 missingInputs／recoveryOwner 和 missing_info 约束继续执行。                                        |
+| 单字段错误只修该字段                           | 拒绝时 dense requiredFields/requestedChanges 只从有效 invalidFields 重建；目标／来源等拒绝保持原分支，不能把一处错误扩大为整组。模型是否显式提供 failureKind 的 `model_fields_set` 被保留，内部默认值不能伪装成模型输入。                                                                                                                                                          |
+| append 不覆盖旧事实／不编造增量                | appendFields 从本原子组计划模式计算；授权模型仍提供 appendValues，原 append_contract 检查键精确匹配、非空且是实际提案的连续原文子串；原写入追加路径不变。                                                                                                                                                                                                                          |
+| 授权引文、对象、真实执行意图与内容             | quote/quoteMessageId、quote_valid、当前/持续真实指令、目标权限仍检查；独立计划不是执行授权。授权模型逐项核对实际内容、条件与来源，不因字段在计划内就允许错误内容。                                                                                                                                                                                                                 |
+| 材料与保存目标、注入、来源版本                 | normalize_contract/resolve、material selection、validate_sources、权限/版本栅栏保留；工作正文／附件／助手内容仍只是数据。源变化、目标变化、取消 lease 不复用旧允许结果。                                                                                                                                                                                                           |
+| 确认、恢复、重放、完成回执                     | requireConfirmation、receiptOnly/taskContext、recoveringItem、task_item_reference、bind、旧 source/resume 绑定、待确认/成功回执防重放及整个任务完成判断均保留。dense 序列化消费者不换形状。                                                                                                                                                                                        |
+| 非工作更新的合同与共享入口                     | create/report/general 使用原字段合同；execute_business_action 全 action/参数可达，[]、work、reports、两组四种组合均定向检查。                                                                                                                                                                                                                                                      |
+| 合同修复与资源预算                             | 原联合 repair_constraints 和已有有界重试保留；新字段错误加入同一错误集合，未提前抛出导致丢失其它修复约束。未增加 classifier/reviewer/调用轮次。                                                                                                                                                                                                                                    |
 
 ### 相称检查与已知旧失败
 
 使用 `.venv-server/bin/python`；没有全仓 build、lint、typecheck 或无关完整测试。项目格式器覆盖 JS/JSON，本轮修改的 cases JSON 已用项目 Prettier 整理；Python 不在当前格式器覆盖列表内。
 
-| 检查 | 结果／定位 |
-| --- | --- |
-| 范围／清单／完成／授权修复首次检查 | 84 passed、6 failed。修正 compact 替身和联合错误收集位置；后续针对失败检查12 passed、1旧失败。 |
+| 检查                                                 | 结果／定位                                                                                                                                                                                                     |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 范围／清单／完成／授权修复首次检查                   | 84 passed、6 failed。修正 compact 替身和联合错误收集位置；后续针对失败检查12 passed、1旧失败。                                                                                                                 |
 | 权限、授权证据、材料／来源、执行与工具等相关安全检查 | 201 passed、12 failed、4 deselected。12项均由已有共享测试 schema 缺 migration 导致（缺 cancel_reason、旧默认 auto）；在本轮新建并迁移的 owned schema 只重跑这12项，12 passed，4.16秒。没有修改共享测试数据库。 |
-| 恢复旧 other 拒绝范围保护 | 11 passed，9.12秒。 |
-| typed compact Schema 后范围／清单／完成检查 | 86 passed，17.44秒；包括十字段逐一遗漏、重复/交叉、额外字段、伪引文、状态/日期、文本约束、歧义、材料、确认、版本、重放与恢复。 |
-| 最后拒绝诊断与显式字段来源修正 | 9 passed，9.15秒；包括多字段组只错一个时只返回一个诊断、有效拒绝不写入、有效通过、cross-group 拒绝、联合修复和未显式提供 failureKind。 |
+| 恢复旧 other 拒绝范围保护                            | 11 passed，9.12秒。                                                                                                                                                                                            |
+| typed compact Schema 后范围／清单／完成检查          | 86 passed，17.44秒；包括十字段逐一遗漏、重复/交叉、额外字段、伪引文、状态/日期、文本约束、歧义、材料、确认、版本、重放与恢复。                                                                                 |
+| 最后拒绝诊断与显式字段来源修正                       | 9 passed，9.15秒；包括多字段组只错一个时只返回一个诊断、有效拒绝不写入、有效通过、cross-group 拒绝、联合修复和未显式提供 failureKind。                                                                         |
 
 检查有交叉，计数不可相加。原 `test_new_authorization_request_does_not_inherit_prior_repair_constraints[evidence]` 仍失败，在原始 HEAD 源码+原始测试也复现（1 failed，1.88秒），新迁移测试 schema 同样复现。与本轮映射无关，未顺手修改；完整原始复现在 [baseline-evidence-test-original.log](../../artifacts/agent-response-latency/contracts-20261025/baseline-evidence-test-original.log)。首次路径布局错误的日志不作有效复现。上轮已证实的 `test_saved_plan_rechecks_refusal_and_creates_exactly_two_linked_works` 旧夹具失败未纳入重跑。其余完整日志在本轮目录，失败未删，已通过检查未无理由重复。
 
@@ -160,31 +160,31 @@
 
 最终候选完整可用耗时如下，单位秒；操作计实际写入后完整回执，报告计子任务完成并打开有内容的报告。失败没有成功耗时。low 属性／报告的候选是已排除旧版本，故不生成最终配对结论。
 
-| 场景 | 档位／配对 | 基线→最终候选完整可用秒 | 总模型请求（含报告子任务） |
-| --- | --- | --- | --- |
-| 属性更新 | high 1 | 14.831→14.803 | 3→3 |
-| 属性更新 | high 2 | 17.464→13.752 | 3→3 |
-| 正文追加 | low 1 | 26.730→13.581 | 5→4 |
-| 正文追加 | low 2 | 19.048→14.148 | 4→4 |
-| 正文追加 | high 1 | 15.198→18.546 | 4→4 |
-| 正文追加 | high 2 | 16.947→17.314 | 4→4 |
-| 创建控制 | low 1 | 9.799→11.996 | 3→3 |
-| 创建控制 | low 2 | 20.331→12.365 | 3→3 |
-| 创建控制 | high 1 | 12.915→10.648 | 3→3 |
-| 创建控制 | high 2 | 10.196→10.664 | 3→3 |
-| 属性后生成报告 | high 1 | 55.150→42.163 | 3→3 |
-| 属性后生成报告 | high 2 | 30.323→失败 | 3→3（含1次失败子调用） |
+| 场景           | 档位／配对 | 基线→最终候选完整可用秒 | 总模型请求（含报告子任务） |
+| -------------- | ---------- | ----------------------- | -------------------------- |
+| 属性更新       | high 1     | 14.831→14.803           | 3→3                        |
+| 属性更新       | high 2     | 17.464→13.752           | 3→3                        |
+| 正文追加       | low 1      | 26.730→13.581           | 5→4                        |
+| 正文追加       | low 2      | 19.048→14.148           | 4→4                        |
+| 正文追加       | high 1     | 15.198→18.546           | 4→4                        |
+| 正文追加       | high 2     | 16.947→17.314           | 4→4                        |
+| 创建控制       | low 1      | 9.799→11.996            | 3→3                        |
+| 创建控制       | low 2      | 20.331→12.365           | 3→3                        |
+| 创建控制       | high 1     | 12.915→10.648           | 3→3                        |
+| 创建控制       | high 2     | 10.196→10.664           | 3→3                        |
+| 属性后生成报告 | high 1     | 55.150→42.163           | 3→3                        |
+| 属性后生成报告 | high 2     | 30.323→失败             | 3→3（含1次失败子调用）     |
 
 范围／授权成本分开列；以下 token 均来自真实 usage，授权列只列首次，不能把字符当 token。正文 low1 基线另有一次修复授权，输入7093／输出411。
 
-| 更新场景 | 范围输入 token A→B | 范围输出 token A→B | 首次授权输入 token A→B | 首次授权输出 token A→B |
-| --- | --- | --- | --- | --- |
-| 属性 high1 | 2663→2971 | 549→372 | 7231→6259 | 505→309 |
-| 属性 high2 | 2664→2979 | 616→388 | 7289→6275 | 479→306 |
-| 正文 low1 | 2653→2978 | 347→126 | 7060→6141 | 382→199 |
-| 正文 low2 | 2662→2976 | 343→130 | 7039→6141 | 384→319 |
-| 正文 high1 | 2665→2973 | 458→147 | 7085→6134 | 302→204 |
-| 正文 high2 | 2663→2967 | 388→155 | 7078→6105 | 234→309 |
+| 更新场景   | 范围输入 token A→B | 范围输出 token A→B | 首次授权输入 token A→B | 首次授权输出 token A→B |
+| ---------- | ------------------ | ------------------ | ---------------------- | ---------------------- |
+| 属性 high1 | 2663→2971          | 549→372            | 7231→6259              | 505→309                |
+| 属性 high2 | 2664→2979          | 616→388            | 7289→6275              | 479→306                |
+| 正文 low1  | 2653→2978          | 347→126            | 7060→6141              | 382→199                |
+| 正文 low2  | 2662→2976          | 343→130            | 7039→6141              | 384→319                |
+| 正文 high1 | 2665→2973          | 458→147            | 7085→6134              | 302→204                |
+| 正文 high2 | 2663→2967          | 388→155            | 7078→6105              | 234→309                |
 
 主模型工具入口输入单列：同形状更新首调用约5750～5760→5579～5590 token；创建纯 load_tools 首调用仍2352～2362 token，其后含工作工具调用约5798～5806→5615～5631 token。报告在工作回执后首调用5807/5810→5645/5641 token，全部直接 execute_business_action，没有额外 reports 加载。正文 low B2/high B2 主模型自行同时选择 load_tools 和 get_work_item，工具 trace 保留，但两者都在同一模型回合，没有增加请求数；入口动作/参数本就完整，未因裁剪强制加载。创建首轮预加载开销仍存在，本轮没有处理它。
 
@@ -243,16 +243,16 @@ S3限输出预算与报告子系统。迁移后的owned schema `spec081_recovery
 
 基线是本次修复前的全部未提交候选＋报告4000，候选仅加本次预算修复；按low/high各AB、BA，共16输入、8会话。全部首试保留，没有用户重发、手动重试或补采。实际62次模型调用，基线29、候选33；8个报告子任务均各生成一次，基线实际 `max_tokens=4000`，候选8000，报告均保留 `reasoning_effort=low`。助手high不等于报告high。
 
-| 输入 | 档位／配对 | 基线完整可用秒 | 候选完整可用秒 | 基线→候选调用数 |
-| --- | --- | --- | --- | --- |
-| 属性更新 | low 1 | 10.214 | 12.998 | 3→3 |
-| 属性更新 | low 2 | 12.814 | 14.915 | 4→4 |
-| 属性更新 | high 1 | 11.282 | 14.565 | 3→4 |
-| 属性更新 | high 2 | 12.481 | 失败；29.614秒观察到矛盾状态 | 3→7 |
-| 同会话周报 | low 1 | 28.849 | 56.014 | 3→5 |
-| 同会话周报 | low 2 | 45.967 | 29.059 | 5→3 |
-| 同会话周报 | high 1 | 47.559 | 28.722 | 5→3 |
-| 同会话周报 | high 2 | 32.635 | 31.414 | 3→4 |
+| 输入       | 档位／配对 | 基线完整可用秒 | 候选完整可用秒               | 基线→候选调用数 |
+| ---------- | ---------- | -------------- | ---------------------------- | --------------- |
+| 属性更新   | low 1      | 10.214         | 12.998                       | 3→3             |
+| 属性更新   | low 2      | 12.814         | 14.915                       | 4→4             |
+| 属性更新   | high 1     | 11.282         | 14.565                       | 3→4             |
+| 属性更新   | high 2     | 12.481         | 失败；29.614秒观察到矛盾状态 | 3→7             |
+| 同会话周报 | low 1      | 28.849         | 56.014                       | 3→5             |
+| 同会话周报 | low 2      | 45.967         | 29.059                       | 5→3             |
+| 同会话周报 | high 1     | 47.559         | 28.722                       | 5→3             |
+| 同会话周报 | high 2     | 32.635         | 31.414                       | 3→4             |
 
 上表调用数已按 job／child job 对原始 `wire_input` 重新归属，纠正初稿将父助手额外调用误分配给周报的统计；原始记录未改。逐角色核对见 [调用数审计](../../artifacts/agent-response-latency/invalid-attempt-20261026/prior-call-count-audit.json)。
 
@@ -308,19 +308,19 @@ HTTP200与first_body之后、`model.received/usage`之前失败，结合错误�
 
 固定重放使用原high B2真实plan、授权响应和原始字段，只替换夹具message/object ID；这是固定响应测试，不是实际模型采样。原始输入与来源见 `replay-source.json`。
 
-| 证据 | 结果及含义 |
-| --- | --- |
-| `replay-before-first.log` | 两条原故障均首次失败：旧ID范围拒绝、新ID旧反馈残留 |
-| `replay-after-first.log` | 两条初步修复通过；之后加强为实际完成入口 |
-| `targeted-first.log` | 61通过、2失败：同源副本快照错配及DB503，全部保留 |
-| `targeted-plan-binding.log` | 26通过，独立计划与并发证明检查 |
-| `targeted-final.log` | 22通过、1夹具连接失败；不以它宣称最终通过 |
-| `targeted-binding-final.log` | 32通过、27 deselected，涵盖最终绑定修复、两条恢复、安全负向及原身份并发检查 |
-| `replay-worker-final-first.log` | 两条通过实际 `process_job → delivery → persist_final`，最终DTO succeeded、incompleteTask=false、completed、空operationFeedback、一回执／一次revision |
-| `partial-continuation-before.log` / `after.log` | 已恢复属性子项＋另一未完成创建的正确部分任务续接：冻结源码首次 operation_mismatch，精确退休旧attempt后首次通过 |
-| `alias-projection-before.log` | 新事项恢复后旧六字段审计别名仍被投影，首次断言失败 |
-| `continuation-projection-final.log` | 最终两条续接路径2通过：只投影真实回执项及另一未完成项、复用原回执／无新revision、不同receipt和新非法attempt仍拒绝 |
-| `finalize-projection-final.log` | collect实际受影响的完成双路径及另一真实正文需求保留3通过；未重复其它成功检查 |
+| 证据                                            | 结果及含义                                                                                                                                           |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `replay-before-first.log`                       | 两条原故障均首次失败：旧ID范围拒绝、新ID旧反馈残留                                                                                                   |
+| `replay-after-first.log`                        | 两条初步修复通过；之后加强为实际完成入口                                                                                                             |
+| `targeted-first.log`                            | 61通过、2失败：同源副本快照错配及DB503，全部保留                                                                                                     |
+| `targeted-plan-binding.log`                     | 26通过，独立计划与并发证明检查                                                                                                                       |
+| `targeted-final.log`                            | 22通过、1夹具连接失败；不以它宣称最终通过                                                                                                            |
+| `targeted-binding-final.log`                    | 32通过、27 deselected，涵盖最终绑定修复、两条恢复、安全负向及原身份并发检查                                                                          |
+| `replay-worker-final-first.log`                 | 两条通过实际 `process_job → delivery → persist_final`，最终DTO succeeded、incompleteTask=false、completed、空operationFeedback、一回执／一次revision |
+| `partial-continuation-before.log` / `after.log` | 已恢复属性子项＋另一未完成创建的正确部分任务续接：冻结源码首次 operation_mismatch，精确退休旧attempt后首次通过                                       |
+| `alias-projection-before.log`                   | 新事项恢复后旧六字段审计别名仍被投影，首次断言失败                                                                                                   |
+| `continuation-projection-final.log`             | 最终两条续接路径2通过：只投影真实回执项及另一未完成项、复用原回执／无新revision、不同receipt和新非法attempt仍拒绝                                    |
+| `finalize-projection-final.log`                 | collect实际受影响的完成双路径及另一真实正文需求保留3通过；未重复其它成功检查                                                                         |
 
 `replay-followup-first/fixed/diagnostic.log` 是早期续接夹具错误：完全完成任务不会作为 previousTask 续接，因此“事项不存在”不能证明业务bug。保留这些失败，改用上表真实部分任务场景后才确认边界。没有把失败日志改成通过。
 
@@ -334,8 +334,8 @@ DB503根因记录在 `failed-fixture-diagnostic.log`：psycopg OperationalError�
 
 实际42次模型请求：助手21、独立plan8、授权13。创建high B1第一次授权误把当前messageId `62ca729d-281d-4b19-8e59-280f61b011a8` 当作不存在的taskItemId，完整JSON及输入均保留；服务端 `invalid_response` 拒绝后原有授权重试返回空taskItemId，最终正确一次创建。不是用户缺信息或新增系统错误，没有补提示、增加重试或重采；不能称所有模型首轮正确。该额外授权调用计入次数和16.515秒。
 
-| 场景 | low1 | low2 | high1 | high2 |
-| --- | --- | --- | --- | --- |
+| 场景                   | low1      | low2      | high1     | high2     |
+| ---------------------- | --------- | --------- | --------- | --------- |
 | 属性完整可用秒／调用数 | 12.648／3 | 12.465／3 | 12.781／3 | 10.282／3 |
 | 正文完整可用秒／调用数 | 13.264／5 | 14.379／4 | 13.848／4 | 12.967／4 |
 | 创建完整可用秒／调用数 | 10.448／3 | 14.082／3 | 16.515／4 | 13.233／3 |
@@ -354,16 +354,15 @@ DB503根因记录在 `failed-fixture-diagnostic.log`：psycopg OperationalError�
 
 独立验收PASS后，协调Agent执行两轮已有清理脚本；每份manifest均重新核对归属后成功清理。新候选与旧预算轮共4份owned schema、剩余5个Web/API/worker进程、各自Redis namespace和私有临时配置已删除，原始证据保留。清理结果分别在 `invalid-attempt-20261026/cleanup-final.log` 与 `report-budget-20261026/cleanup-final.log`；共享Docker/PostgreSQL/Redis及日常环境未变。停止验证，未提交或推送。
 
-
 ### 验收补充：从原回执只读打开三份工作详情
 
 独立验收指出原12条缺工作详情导航证据，以上原范围已更正。随后新鲜验证owned schema/API/worker/Web归属，以原property/body/create各high B2账号进入原会话，点击唯一“查看当前工作”原回执链接进入详情，等待精确标题及每段完整正文显示；不是直接拼详情URL导航。三份详情的GET均200，链接对象、响应对象和DB对象一致，截图已通过view_image实际查看：
 
-| 场景 | 原工作对象ID | 详情状态／revision |
-| --- | --- | --- |
-| property high B2 | `61d1a0f7-6a64-4df2-98ae-410a5fc18adb` | 有阻碍／2；原正文和备注保留，期限10月30日、阻碍和下一步正确 |
-| body high B2 | `825c0df8-fa97-43aa-ad8b-240c78bd1958` | 进行中／2；原正文和备注后精确追加“已收到2份补充说明，仍须补齐签字后才能归档。” |
-| create high B2 | `1f0bcf73-9748-4182-9c02-5ee49ab494ad` | 进行中／1；完整指定正文 |
+| 场景             | 原工作对象ID                           | 详情状态／revision                                                             |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------ |
+| property high B2 | `61d1a0f7-6a64-4df2-98ae-410a5fc18adb` | 有阻碍／2；原正文和备注保留，期限10月30日、阻碍和下一步正确                    |
+| body high B2     | `825c0df8-fa97-43aa-ad8b-240c78bd1958` | 进行中／2；原正文和备注后精确追加“已收到2份补充说明，仍须补齐签字后才能归档。” |
+| create high B2   | `1f0bcf73-9748-4182-9c02-5ee49ab494ad` | 进行中／1；完整指定正文                                                        |
 
 证据在独立新增的 [detail-readonly](../../artifacts/agent-response-latency/invalid-attempt-20261026/detail-readonly/)：每场景 `before.json` 保留原会话／回执href，`detail.json` 保留最终URL、完整DOM和GET响应，`detail.png` 是实际详情截图，`network.json` 记录方法／URL／响应码。观察器阻断全部非GET浏览器请求，仅显式允许三次登录POST；实际没有业务修改请求或被阻断的修改尝试。前后只读DB快照比较见 [verification.json](../../artifacts/agent-response-latency/invalid-attempt-20261026/detail-readonly/verification.json)：ModelUsage 42→42，Job、BusinessAction、WorkItem、WorkRevision及模型记录均未变化，没有新模型／新采样。首次离线比对脚本误读WorkItem.status而非content.status的KeyError仅修正读字段，没有重新导航或读库。
 
@@ -393,21 +392,21 @@ DB503根因记录在 `failed-fixture-diagnostic.log`：psycopg OperationalError�
 
 ### 仍失败或未完全覆盖的项目
 
-| 结果 | ID | 实际结论 |
-| --- | --- | --- |
-| 失败 | A04 | 把未勾选的原件核对说成“尚未开始”；未勾选只能证明未完成。 |
-| 失败 | B04 | 数字／条件正确，但正文泄露读取行号、字符范围及内部读取过程，违反已有明确规则。 |
-| 失败 | B06 | 将“不含采购金额”误读为金额冲突，后续又错算附件分类数量，并暴露附件 ID。 |
-| 失败 | D03 | 输入确有 21 和 34，正常 stop 原始输出及保存报告遗漏 21；页面独立分支正确，不能抵消模型遗漏。 |
-| 失败 | D05 | 助手首试现有 4 次内部请求均超时，尚无足够证据区分外部服务排队／推理／网络原因；无额外重试。页面无规则生成成功。 |
+| 结果 | ID  | 实际结论                                                                                                                                             |
+| ---- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 失败 | A04 | 把未勾选的原件核对说成“尚未开始”；未勾选只能证明未完成。                                                                                             |
+| 失败 | B04 | 数字／条件正确，但正文泄露读取行号、字符范围及内部读取过程，违反已有明确规则。                                                                       |
+| 失败 | B06 | 将“不含采购金额”误读为金额冲突，后续又错算附件分类数量，并暴露附件 ID。                                                                              |
+| 失败 | D03 | 输入确有 21 和 34，正常 stop 原始输出及保存报告遗漏 21；页面独立分支正确，不能抵消模型遗漏。                                                         |
+| 失败 | D05 | 助手首试现有 4 次内部请求均超时，尚无足够证据区分外部服务排队／推理／网络原因；无额外重试。页面无规则生成成功。                                      |
 | 失败 | G03 | PPTX 将“验收后支付”加强为“验收合格后支付”；DOCX 正文条件正确。两者 OOXML 有完整中文，但本地渲染缺中文字形，未满足中文视觉验收，不能以 XML 文本代替。 |
-| 部分 | A06 | 修正时间的 30 轮合成历史确实进入真实末轮输入并保留早期限制；实际 1M 上下文未触发压缩。原夹具时间错误及中断失败保留。 |
-| 部分 | D10 | 正常真实流程和受控 invalid-JSON 子任务失败／原任务重试通过；计划中的精确子任务超时注入未执行。 |
-| 部分 | E01 | 初次消歧和原问题续接已执行；W 正文没有要“更正”的审核期限，后续目标问题合理，夹具不足不能算完成修改。 |
-| 部分 | E02 | 真实 3 题均由自定义文本作答；单选自动跳页、返回改选未由真实流程执行。受控 DOM／Schema 边界另列。 |
-| 部分 | F06 | pending／failed／unavailable 及正确回执通过；另一动作／目标／成员的完整替换矩阵未充分逐项对应。 |
-| 部分 | F08 | 取消、旧 fence、防迟到及保留已提交内容通过；专用进程 SIGKILL／接管节点跳过，未冒充已执行。 |
-| 部分 | F10 | 前缀、异常、重试、SSE 状态及权限变化检查通过；原正文／工具参数交错解析疑点未精确复现归因，不能关闭。 |
+| 部分 | A06 | 修正时间的 30 轮合成历史确实进入真实末轮输入并保留早期限制；实际 1M 上下文未触发压缩。原夹具时间错误及中断失败保留。                                 |
+| 部分 | D10 | 正常真实流程和受控 invalid-JSON 子任务失败／原任务重试通过；计划中的精确子任务超时注入未执行。                                                       |
+| 部分 | E01 | 初次消歧和原问题续接已执行；W 正文没有要“更正”的审核期限，后续目标问题合理，夹具不足不能算完成修改。                                                 |
+| 部分 | E02 | 真实 3 题均由自定义文本作答；单选自动跳页、返回改选未由真实流程执行。受控 DOM／Schema 边界另列。                                                     |
+| 部分 | F06 | pending／failed／unavailable 及正确回执通过；另一动作／目标／成员的完整替换矩阵未充分逐项对应。                                                      |
+| 部分 | F08 | 取消、旧 fence、防迟到及保留已提交内容通过；专用进程 SIGKILL／接管节点跳过，未冒充已执行。                                                           |
+| 部分 | F10 | 前缀、异常、重试、SSE 状态及权限变化检查通过；原正文／工具参数交错解析疑点未精确复现归因，不能关闭。                                                 |
 
 C10 修订夹具真实上传同名旧／新文件后，只保存新版 7 个工作日文件，原两份材料和完整正文／属性不变；模型额外询问一次保存位置，按原问题选择 W 后完成。E06 的 ask／auto／full、明确先预览后同意／拒绝均有实际结果。G01／G02／G04 原沙盒不可达失败保留，启动本轮自有真实 gVisor 沙盒后各按冻结输入至多恢复一次；XLSX 值／类型／空白、G02 2000／800／2800 汇总与图、G04 改标题后内容一致和旧链接原 hash 均已核对。没有用 export_table 冒充通用沙盒执行。
 
@@ -433,15 +432,15 @@ A03 原始模糊草稿、A05 合法 no-op、C10 缺旧附件、A06 未来时间�
 
 ### 分支结果与证据
 
-| ID | 实际执行与结论 | 证据（均位于 gaps-20261026） |
-| --- | --- | --- |
-| A06 | 隔离配置冻结 `contextWindow=80000`，实际估算 140610 超过 90% 门槛，经真实生产压缩到 11364；3 次真实摘要模型调用后真实主模型答复。持久摘要、主模型实际输入和原始输出均保留早期“原件只供阅读、不上传第三方”和最新 9000/2400/6600、验收后支付。质量失败：原始答复暴露 messageId、“历史 transcript 为空”等内部信息。 | `A06-compaction.json`、`history-preflight.json`、`real/cases/A06-past/results.jsonl`、`real/trace.jsonl` |
-| D10 | 正常助手编排实际 report child；在未改变的生产 `request_with_deadline` 下无进展 60.000122 秒后超时，原父卡 blocked／子任务 awaiting_retry。浏览器点击原报告页“重试”一次，同 child attempt1/fence2 成功；原父卡 completed、同 action 成功、报告内容一致，仅 1 份报告、revision1→2、publishedRevision0，无重复业务操作或手动 ReportRevision。 | `D10-fault-freeze.json`、`D10-consistency.json`、`real/D10-retry/`、`real/D10-final-details/` |
-| E01 | 冻结工作正文确有 3 工作日审核期限，真实材料 M5/M7；真实助手先澄清，回答 M7 后正文改成 7 工作日，其他正文块、条件、属性及材料保留。一次写入，revision1→2；真实详情 GET200，截图已实际查看。 | `real/cases/E01/results.jsonl`、`real/cases/E01/1-E01-1/` |
-| E02 | 真实模型返回 3 道单选题；浏览器 radio 自动跳下一题，回到第二题将 next_week 改为 this_week，再提交。原卡仅 1 次 POST、每题仅 1 个最终 optionId、一次真实续接。续接追问选项明确暂缓的工作主题，再真实回答一次，最终仅创建《审核资料准备》一项、期限 11月1日、系统内文字交付，无文件；详情 GET200。 | `E02-selection-assertions.json`、`real/E02-radio/`、`real/E02-topic/`、`real/E02-final-details/` |
-| F06 | 另一 action、target、member 的回执以及实际入队的 pending report child 均不能消除旧 schema 失败或宣称完成。member 经真实 DTO 权限检查 404 并回滚，pending 使用真实生产 generate_report 入队结果。既有 positive 不重复。 | `local/receipt.xml`、`local/receipt-member.xml`、`local/pending-child.xml` |
-| F08 | 专用进程在写入前、提交后、交付后三处真实 SIGKILL/reclaim；旧 fence 迟到经实际 lease 被拒绝 3 次。最终 3 份工作／3 份回执，重复副作用和 stolen lease 均为 0。 | `local/process-worker-recovery.json`、`local/process-late.xml` |
-| F10 | 5 种任意 name/arguments 分片、content/tool 交错、Unicode/escape、嵌套字段与整包 tool_arguments 一致；4 种非法尾部安全撤回。写入前／后两条完整 HTTP 分片失败链均经原重试机制及原任务重试，最终仅一次实际写入，完整原回执和 SSE snapshot 一致。4 个 opt-in 真实 Redis 传输节点全部通过，含独立 reader 进程、容量拒绝与独占容器重启。 | `F10-parser-attribution.json`、`local/stream-before_write.json`、`local/stream-after_write.json`、`local/stream-new.xml`、`local/stream-recovery.xml`、`local/optin.xml` |
+| ID  | 实际执行与结论                                                                                                                                                                                                                                                                                                                             | 证据（均位于 gaps-20261026）                                                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A06 | 隔离配置冻结 `contextWindow=80000`，实际估算 140610 超过 90% 门槛，经真实生产压缩到 11364；3 次真实摘要模型调用后真实主模型答复。持久摘要、主模型实际输入和原始输出均保留早期“原件只供阅读、不上传第三方”和最新 9000/2400/6600、验收后支付。质量失败：原始答复暴露 messageId、“历史 transcript 为空”等内部信息。                           | `A06-compaction.json`、`history-preflight.json`、`real/cases/A06-past/results.jsonl`、`real/trace.jsonl`                                                                 |
+| D10 | 正常助手编排实际 report child；在未改变的生产 `request_with_deadline` 下无进展 60.000122 秒后超时，原父卡 blocked／子任务 awaiting_retry。浏览器点击原报告页“重试”一次，同 child attempt1/fence2 成功；原父卡 completed、同 action 成功、报告内容一致，仅 1 份报告、revision1→2、publishedRevision0，无重复业务操作或手动 ReportRevision。 | `D10-fault-freeze.json`、`D10-consistency.json`、`real/D10-retry/`、`real/D10-final-details/`                                                                            |
+| E01 | 冻结工作正文确有 3 工作日审核期限，真实材料 M5/M7；真实助手先澄清，回答 M7 后正文改成 7 工作日，其他正文块、条件、属性及材料保留。一次写入，revision1→2；真实详情 GET200，截图已实际查看。                                                                                                                                                 | `real/cases/E01/results.jsonl`、`real/cases/E01/1-E01-1/`                                                                                                                |
+| E02 | 真实模型返回 3 道单选题；浏览器 radio 自动跳下一题，回到第二题将 next_week 改为 this_week，再提交。原卡仅 1 次 POST、每题仅 1 个最终 optionId、一次真实续接。续接追问选项明确暂缓的工作主题，再真实回答一次，最终仅创建《审核资料准备》一项、期限 11月1日、系统内文字交付，无文件；详情 GET200。                                           | `E02-selection-assertions.json`、`real/E02-radio/`、`real/E02-topic/`、`real/E02-final-details/`                                                                         |
+| F06 | 另一 action、target、member 的回执以及实际入队的 pending report child 均不能消除旧 schema 失败或宣称完成。member 经真实 DTO 权限检查 404 并回滚，pending 使用真实生产 generate_report 入队结果。既有 positive 不重复。                                                                                                                     | `local/receipt.xml`、`local/receipt-member.xml`、`local/pending-child.xml`                                                                                               |
+| F08 | 专用进程在写入前、提交后、交付后三处真实 SIGKILL/reclaim；旧 fence 迟到经实际 lease 被拒绝 3 次。最终 3 份工作／3 份回执，重复副作用和 stolen lease 均为 0。                                                                                                                                                                               | `local/process-worker-recovery.json`、`local/process-late.xml`                                                                                                           |
+| F10 | 5 种任意 name/arguments 分片、content/tool 交错、Unicode/escape、嵌套字段与整包 tool_arguments 一致；4 种非法尾部安全撤回。写入前／后两条完整 HTTP 分片失败链均经原重试机制及原任务重试，最终仅一次实际写入，完整原回执和 SSE snapshot 一致。4 个 opt-in 真实 Redis 传输节点全部通过，含独立 reader 进程、容量拒绝与独占容器重启。         | `F10-parser-attribution.json`、`local/stream-before_write.json`、`local/stream-after_write.json`、`local/stream-new.xml`、`local/stream-recovery.xml`、`local/optin.xml` |
 
 A06 是**受控低阈值下实际压缩**，不是自然 1M 窗口压缩；仅修改新 owned 环境的配置和版本快照，实际模型、low/high、输出预算和重试次数未变。首个新 A06 误沿用未来日期历史，未把历史带入，已计入新增初始输入并保留原失败夹具结果；第二次先以实际 refs 和 estimator 只读验证 30 条历史、早期限制及末轮纠正再入队。没有假摘要。A06 的 `job.state=awaiting_input` 是 `tasks/processing/handlers.py` 既有无操作／无交付物纯文本生命周期；其 `taskOutcome=completed`、remaining 空，模型没有发等待指令，页面按 completed 展示。不得将该状态误报为模型误选或新系统缺陷。
 
@@ -534,12 +533,12 @@ A06及六个旧质量失败继续保留，F10历史失败原始字节不可得�
 
 按跨模型输入、权限事实和保存边界的S3受影响范围执行相关模块，未重跑此前1946服务端／426 Web集合，也未做全量build/lint/typecheck。
 
-| 记录 | 实际结果 | 原因与后续 |
-| --- | --- | --- |
-| `local/targeted.log/xml` | 99节点，97通过／2失败，56.10秒 | 旧报告测试仍断言原数组；get_message_context空text被省略影响既有契约 |
-| `local/fixed-contracts.log/xml` | 50通过，18.64秒 | 保留text/userRequest/reply合同；报告检查核对完整事实与分组，不只换字段；仅重查2失败及48个受影响conversation_task_state节点 |
-| `local/observer.log/xml` | 5通过，0.03秒 | 取证脱敏／日志异常保护修改后仅重查观察器；覆盖实际adapter的tool JSON、SSE和非流失败、截断、跨分片密钥与原异常 |
-| `local/wiring.log/xml` | 3通过，3.43秒 | 实际harness完整请求、work能力和documents能力装配包含新规则 |
+| 记录                            | 实际结果                       | 原因与后续                                                                                                                 |
+| ------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `local/targeted.log/xml`        | 99节点，97通过／2失败，56.10秒 | 旧报告测试仍断言原数组；get_message_context空text被省略影响既有契约                                                        |
+| `local/fixed-contracts.log/xml` | 50通过，18.64秒                | 保留text/userRequest/reply合同；报告检查核对完整事实与分组，不只换字段；仅重查2失败及48个受影响conversation_task_state节点 |
+| `local/observer.log/xml`        | 5通过，0.03秒                  | 取证脱敏／日志异常保护修改后仅重查观察器；覆盖实际adapter的tool JSON、SSE和非流失败、截断、跨分片密钥与原异常              |
+| `local/wiring.log/xml`          | 3通过，3.43秒                  | 实际harness完整请求、work能力和documents能力装配包含新规则                                                                 |
 
 执行器为 `.venv-server/bin/python -m pytest`，使用 owned local 环境，具体实际节点、参数化、时间和失败原文见以上 JUnit／log。`local/executed-scopes.json` 从实际JUnit重建完整选择器供复现，明确不是另一次运行；`local/results.json` 保留每个节点历次结果，最终151个去重节点通过。已通过项未无故重跑。Python文件经项目已装Prettier `--file-info` 确认 inferredParser=null，不在其覆盖范围，未引入另一格式化器；本次相关diff检查通过。
 
@@ -547,17 +546,17 @@ A06及六个旧质量失败继续保留，F10历史失败原始字节不可得�
 
 [quality-observations.json](../../artifacts/agent-response-latency/input-contracts-20261026/quality-observations.json) 保存每分支原结果路径、SHA和任务ID；完整原回复、工具参数序列、SSE、刷新截图、下载与数据库读回保留。
 
-| 分支 | 观察 |
-| --- | --- |
-| A01 | 按要求仅输出排序结果，无工具和写入，未发现本次质量问题。 |
-| A02 | **失败**：原“须验收后支付”变为“验收合格后支付”，增加前提。确切历史原回复也有同错，属于旧pass漏判；见下文，不宣称是新提示导致。 |
-| A04 | **失败**：未再把未勾选说成尚未开始，但确定推断签字依赖外部负责人、本人不可控，并添加期限暂停须有提交补签要求依据等原文没有的条件。 |
-| A06 | **失败**：原件只读／不上传第三方、9000／2400／6600与验收后条件都在真实压缩后保留，仍在正文输出messageId和UUID。 |
-| B04 | **失败**：正确引用终止条款、提前30日及保密义务存续，未再输出行号／字符范围；仍输出检索词、无匹配及全文覆盖检查过程，不能仅匹配旧泄漏字符串判通过。 |
-| B06 | **整段三轮失败**：最终核对改为无差异、单一金额来源与五份无金额材料计数正确、图片与第三批同名来源区分正确，末轮无UUID；但首轮仍有received、revision和完整提取说明，第二轮列完整附件UUID，未满足原输出边界。音频在首轮已读并说明，不因末轮没重复音频说明而机械添加新断言。 |
-| D03 | **失败保留**：真实报告输入按工作含21、34，100、200不在输入，保存的草稿仍只含34、publishedRevision=0。证据 `D03-evidence.json`；不程序猜正文语义或补算，也未因主提示接线修复重采此路径。 |
-| G03 DOCX | 数字、签字后归档／验收后支付保留，未添加“合格”；Office实施Agent用修好字体的同一可复现环境确认1页中文正常，原文件哈希未变。正文“核对已完成，共核对12份”需结合已核对12份与补签后才能归档全文由独立验收判断状态边界。 |
-| G03 PPTX | 数字与条件保留，原错误“验收合格”未再出现；Office实施Agent确认2页中文正常且原文件哈希未变。同样将“核对已完成”措辞交全文独立判断，不以单个关键词判对／错。 |
+| 分支     | 观察                                                                                                                                                                                                                                                                     |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A01      | 按要求仅输出排序结果，无工具和写入，未发现本次质量问题。                                                                                                                                                                                                                 |
+| A02      | **失败**：原“须验收后支付”变为“验收合格后支付”，增加前提。确切历史原回复也有同错，属于旧pass漏判；见下文，不宣称是新提示导致。                                                                                                                                           |
+| A04      | **失败**：未再把未勾选说成尚未开始，但确定推断签字依赖外部负责人、本人不可控，并添加期限暂停须有提交补签要求依据等原文没有的条件。                                                                                                                                       |
+| A06      | **失败**：原件只读／不上传第三方、9000／2400／6600与验收后条件都在真实压缩后保留，仍在正文输出messageId和UUID。                                                                                                                                                          |
+| B04      | **失败**：正确引用终止条款、提前30日及保密义务存续，未再输出行号／字符范围；仍输出检索词、无匹配及全文覆盖检查过程，不能仅匹配旧泄漏字符串判通过。                                                                                                                       |
+| B06      | **整段三轮失败**：最终核对改为无差异、单一金额来源与五份无金额材料计数正确、图片与第三批同名来源区分正确，末轮无UUID；但首轮仍有received、revision和完整提取说明，第二轮列完整附件UUID，未满足原输出边界。音频在首轮已读并说明，不因末轮没重复音频说明而机械添加新断言。 |
+| D03      | **失败保留**：真实报告输入按工作含21、34，100、200不在输入，保存的草稿仍只含34、publishedRevision=0。证据 `D03-evidence.json`；不程序猜正文语义或补算，也未因主提示接线修复重采此路径。                                                                                  |
+| G03 DOCX | 数字、签字后归档／验收后支付保留，未添加“合格”；Office实施Agent用修好字体的同一可复现环境确认1页中文正常，原文件哈希未变。正文“核对已完成，共核对12份”需结合已核对12份与补签后才能归档全文由独立验收判断状态边界。                                                       |
+| G03 PPTX | 数字与条件保留，原错误“验收合格”未再出现；Office实施Agent确认2页中文正常且原文件哈希未变。同样将“核对已完成”措辞交全文独立判断，不以单个关键词判对／错。                                                                                                                 |
 
 Office结果单列内容和视觉，原文件与渲染见 `office/candidate-review.json`；不是对首批未接线Office文件作最终提示效果判断。所有本轮只读工作快照前后相同，D03只保存草稿；没有为了得到绿灯再改提示或重采。
 
@@ -567,19 +566,19 @@ Office结果单列内容和视觉，原文件与渲染见 `office/candidate-revi
 
 [comparison.json](../../artifacts/agent-response-latency/input-contracts-20261026/comparison.json) 为机器可读逐轮新旧对照；`evidence-index.json` 还保留首批接线缺失阶段和每次实际请求的角色、哈希、公开输出、工具参数及计时。下表“旧→候选”均为非同期，D03候选是首批、其余为最终接线版。字符为各次请求消息文字之和（不含图片base64），schema字符单列；token为provider实际usage，不是估算。耗时到页面可用／文件下载／报告打开，未只取首字。
 
-| 分支 | 可用秒 | chat请求 | input tokens | 消息文字字符 | schema字符 |
-| --- | --- | --- | --- | --- | --- |
-| A01 | 4.23→3.23 | 1→1 | 2318→2360 | 1870→1930 | 3683→3683 |
-| A02 | 2.95→18.52 | 1→1 | 2343→2381 | 1902→1962 | 3683→3683 |
-| A04 | 34.45→35.63 | 3→4 | 23096→29604 | 21460→25824 | 45921→61176 |
-| A06 | 144.71→101.73 | 4→4 | 93756→94860 | 153509→154519 | 3689→3689 |
-| B04 | 17.15→20.25 | 3→3 | 45145→31608 | 64683→41329 | 31367→31367 |
-| B06第1轮 | 18.42→17.80 | 1→1 | 7936→8090 | 10470→10804 | 10495→10495 |
-| B06第2轮 | 15.14→9.85 | 1→1 | 10712→10905 | 16927→17292 | 10495→10495 |
-| B06核对轮 | 13.91→17.10 | 1→1 | 13160→13312 | 22468→22862 | 10495→10495 |
-| D03 | 31.90→26.53 | 4→4 | 14087→14335 | 18946→19377 | 21056→21213 |
-| G03 DOCX | 10.83→16.97 | 3→3 | 22209→20531 | 12361→8958 | 54259→54259 |
-| G03 PPTX | 14.51→20.39 | 3→3 | 20451→20482 | 8717→8907 | 54259→54259 |
+| 分支      | 可用秒        | chat请求 | input tokens | 消息文字字符  | schema字符  |
+| --------- | ------------- | -------- | ------------ | ------------- | ----------- |
+| A01       | 4.23→3.23     | 1→1      | 2318→2360    | 1870→1930     | 3683→3683   |
+| A02       | 2.95→18.52    | 1→1      | 2343→2381    | 1902→1962     | 3683→3683   |
+| A04       | 34.45→35.63   | 3→4      | 23096→29604  | 21460→25824   | 45921→61176 |
+| A06       | 144.71→101.73 | 4→4      | 93756→94860  | 153509→154519 | 3689→3689   |
+| B04       | 17.15→20.25   | 3→3      | 45145→31608  | 64683→41329   | 31367→31367 |
+| B06第1轮  | 18.42→17.80   | 1→1      | 7936→8090    | 10470→10804   | 10495→10495 |
+| B06第2轮  | 15.14→9.85    | 1→1      | 10712→10905  | 16927→17292   | 10495→10495 |
+| B06核对轮 | 13.91→17.10   | 1→1      | 13160→13312  | 22468→22862   | 10495→10495 |
+| D03       | 31.90→26.53   | 4→4      | 14087→14335  | 18946→19377   | 21056→21213 |
+| G03 DOCX  | 10.83→16.97   | 3→3      | 22209→20531  | 12361→8958    | 54259→54259 |
+| G03 PPTX  | 14.51→20.39   | 3→3      | 20451→20482  | 8717→8907     | 54259→54259 |
 
 A02的18.52秒不能归为模型或提示变慢：原worker日志第1377–1417行显示排队0.601秒、provider2.864秒，首SSE4.354秒／首屏4.464秒。主要差额是worker `model.end`→`persist.start` **12.378秒**，随后最终保存0.418秒、最终SSE18.189秒／DOM18.518秒。该阶段包含usage持久化、graph／checkpoint收尾、pendingReply与确定性交付检查；现有事件未细分各await，不能锁定其中某个确定等待缺陷，也不能称纯验收驱动污染。原值保留，细节见 `A02-timing.json`；无额外模型、工具、重试或采样。若另行定位，最小下一步是在隔离固定模型返回下对这一段补分段／DB等待观测，不直接增加真实样本。
 

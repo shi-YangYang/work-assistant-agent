@@ -45,7 +45,7 @@ async def main():
             })
             fixture.raise_for_status()
             result['fixture'] = {'work': fixture.json(), 'countsAsAgentSuccess': False}
-            case = next(row for row in json.loads(Path(__file__).with_name('cases.json').read_text()) if row['id'] == 'C05')
+            case = next(row for row in json.loads((Path(__file__).resolve().parents[3] / 'eval/web/cases.json').read_text()) if row['id'] == 'C05')
             prompt = case['turns'][0]
             sent = await client.post('/api/v1/messages', headers={'Idempotency-Key': str(uuid4())}, json={
                 'text': prompt, 'attachmentIds': [], 'newConversation': True,

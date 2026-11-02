@@ -60,9 +60,9 @@ test('W15 member lifecycle through real forms', async ({ page, state, login, cap
   await expect(duplicate.getByText('账号名称已被使用')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(duplicate).toHaveCount(0)
-  await page.getByRole('button', { name: 'Noria 外观', exact: true }).click()
+  await page.getByRole('button', { name: /^Noria(?:，|$)/, exact: true }).click()
   await page
-    .getByRole('dialog', { name: 'Noria 外观' })
+    .getByRole('dialog', { name: /^Noria(?:，|$)/ })
     .getByRole('button', { name: '深色', exact: true })
     .click()
   await page.keyboard.press('Escape')
@@ -74,9 +74,9 @@ test('W15 member lifecycle through real forms', async ({ page, state, login, cap
   await page.getByRole('menuitem', { name: '编辑姓名' }).click()
   await capture('member-name-mobile-dark')
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Noria 外观', exact: true }).click()
+  await page.getByRole('button', { name: /^Noria(?:，|$)/, exact: true }).click()
   await page
-    .getByRole('dialog', { name: 'Noria 外观' })
+    .getByRole('dialog', { name: /^Noria(?:，|$)/ })
     .getByRole('button', { name: '浅色', exact: true })
     .click()
   await page.keyboard.press('Escape')

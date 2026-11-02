@@ -37,6 +37,7 @@ test('W04 W06 W07 @cross draft, persona, execution mode and attachment previews'
     .click()
   await expect(text).toHaveValue(/请帮我阅读附件/)
   await expect(page.getByRole('button', { name: '移除需求.txt', exact: true })).toBeVisible()
+  await page.getByRole('article', { name: '需求.txt', exact: true }).hover()
   await page.getByRole('button', { name: '移除需求.txt', exact: true }).click()
   await expect(page.getByRole('button', { name: '移除需求.txt', exact: true })).toHaveCount(0)
   await capture('restored-draft')

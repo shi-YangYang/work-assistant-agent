@@ -3,7 +3,7 @@ import { chromium } from '@playwright/test'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isolatedEnvironment } from '../../../../tests/e2e/web/fixtures/environment.mjs'
-import { api } from '../agent-browser-common.mjs'
+import { api } from '../../../../eval/web/agent-browser-common.mjs'
 const state = isolatedEnvironment()
 if (!process.env.SPEC068_OUTPUT) throw new Error('Unique evidence output required')
 const output = resolve(process.env.SPEC068_OUTPUT)

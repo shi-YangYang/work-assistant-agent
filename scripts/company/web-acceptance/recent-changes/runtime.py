@@ -22,7 +22,7 @@ os.environ.update(private['environment'])
 os.environ['AGENT_AUDIT_PLAN_INPUT'] = 'synthetic'
 # Use the existing passive observer with full synthetic transport evidence.
 # Its suite gate only affects recording; the actual environment identity stays Spec080.
-spec = importlib.util.spec_from_file_location('spec080_trace', HERE.parent / 'agent-audit/trace.py')
+spec = importlib.util.spec_from_file_location('spec080_trace', HERE.parents[3] / 'eval/web/agent-audit/trace.py')
 trace = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(trace)
 original_suite = os.environ['ACCEPTANCE_SUITE']
@@ -44,7 +44,7 @@ if a.service == 'api':
     import uvicorn
     uvicorn.run('app.main:app', host='127.0.0.1', port=int(metadata['apiOrigin'].rsplit(':',1)[1]), access_log=False)
 else:
-    spec = importlib.util.spec_from_file_location('spec080_launch', HERE.parent / 'agent-audit/launch.py')
+    spec = importlib.util.spec_from_file_location('spec080_launch', HERE.parents[3] / 'eval/web/agent-audit/launch.py')
     launch = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(launch)
     launch.audit_trace = trace

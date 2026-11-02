@@ -2,7 +2,7 @@
   "name": "personal-agent-assistant-workspace",
   "version": "0.1.0",
   "private": true,
-  "description": "Noria：面向公司的云端工作助手，支持任务协助、工作汇报与桌面会议",
+  "description": "Noria\uff1a\u9762\u5411\u516c\u53f8\u7684\u4e91\u7aef\u5de5\u4f5c\u52a9\u624b\uff0c\u652f\u6301\u4efb\u52a1\u534f\u52a9\u3001\u5de5\u4f5c\u6c47\u62a5\u4e0e\u684c\u9762\u4f1a\u8bae",
   "license": "MIT",
   "engines": {
     "node": ">=24 <25",
@@ -21,9 +21,9 @@
     "build": "npm run build --workspace apps/desktop",
     "start": "npm run start --workspace apps/desktop",
     "typecheck": "npm run typecheck --workspace apps/desktop",
-    "lint": "eslint apps packages tests scripts *.mjs",
-    "format": "prettier --write apps/desktop/src apps/web/src packages tests/web tests/desktop tests/e2e scripts \"apps/*/*.{json,ts}\" \"packages/*/package.json\" *.json *.mjs \".github/workflows/*.yml\"",
-    "format:check": "prettier --check apps/desktop/src apps/web/src packages tests/web tests/desktop tests/e2e scripts \"apps/*/*.{json,ts}\" \"packages/*/package.json\" *.json *.mjs \".github/workflows/*.yml\"",
+    "lint": "eslint apps packages tests scripts eval *.mjs",
+    "format": "prettier --write apps/desktop/src apps/web/src packages tests/web tests/desktop tests/e2e scripts eval \"apps/*/*.{json,ts}\" \"packages/*/package.json\" *.json *.mjs \".github/workflows/*.yml\"",
+    "format:check": "prettier --check apps/desktop/src apps/web/src packages tests/web tests/desktop tests/e2e scripts eval \"apps/*/*.{json,ts}\" \"packages/*/package.json\" *.json *.mjs \".github/workflows/*.yml\"",
     "test": "npm run test:unit && npm run test:python",
     "test:unit": "vitest run --config apps/desktop/vitest.config.ts",
     "test:python": "node scripts/desktop/test-python.mjs",
@@ -42,7 +42,8 @@
     "db:company": "node scripts/company/run.mjs migrate",
     "admin:company": "node scripts/company/run.mjs bootstrap-admin",
     "test:server": "node scripts/company/run.mjs test",
-    "test:web": "vitest run --config apps/web/vitest.config.ts"
+    "test:web": "vitest run --config apps/web/vitest.config.ts",
+    "test:project": "node scripts/testing/project-tests.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
