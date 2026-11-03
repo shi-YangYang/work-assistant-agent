@@ -232,9 +232,11 @@ styles/       本端基础 CSS、公共布局和控件 Module
 
 | 目录         | 用途                                           | 执行方式                                         |
 | ------------ | ---------------------------------------------- | ------------------------------------------------ |
-| `tests/`     | 单元、接口、组件和业务流程检查                 | 按改动选择自动化测试；常规 CI 使用其中的快速检查 |
+| `tests/`     | 单元、接口、组件和业务流程检查                 | 本地按改动选择运行组，详见[测试指南](../tests/README.md) |
 | `eval/`      | Agent 真实模型评测、固定用例、评分器与采集脚本 | 本地手动执行，详见[评测指南](../eval/README.md)  |
 | `artifacts/` | 日志、截图、下载和评测结果                     | 不入 Git；历史结果不能冒充当前版本已通过         |
+
+项目级入口为 `npm run test:project -- --list`。日常 [CI](../.github/workflows/ci.yml) 只做格式、Lint、类型、Python 语法检查及普通构建；桌面运行、ASR 和打包检查按需手动触发，部署保护保持独立。本地测试的隔离环境与平台限制见测试指南。
 
 - `tests/server/` 按 `agent/`、`modules/`、`tasks/`、`integrations/`、`contracts/`、`scenarios/`、`audit/` 分类；领域内部继续按被测功能分组。`conftest.py` 与架构检查留在根目录，保持 fixture 作用域。
 - 复用模型、请求、材料及工作工厂放在 `tests/server/_support/{agent,http,materials,work}/`。测试直接引用支持模块，不从其他测试文件导入；支持模块不能反向依赖测试。复用的故障场景由支持模块实现，原用例保留收集入口和隔离标记。
@@ -271,5 +273,3 @@ Agent 的 `inspect_table`、`export_table`、`create_chart`、`create_document`�
 `SandboxExecution.request` 保存内置任务的原始参数，`code` 保留 Python 历史；`read_execution` 按会话和来源授权阅读两类记录。Python 旧请求摘要保持不变，结构化参数规范化后参与幂等。授权文件引用仅在执行时映射为隔离环境输入文件名；检查表格只返回有界数据，不创建空成果。
 
 普通问答、联网和业务工具不进入执行队列。沙盒关闭时上述能力保持可用，历史成果仍可下载。
-
-项目级本地测试使用 `npm run test:project -- --list`，运行组与隔离环境见 [测试指南](../tests/README.md)。日常 CI 仅静态检查与普通构建；平台运行按需手动，部署保护保持独立。

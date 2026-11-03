@@ -31,6 +31,7 @@ Noria 是一个开源的公司工作助手。你可以通过浏览器提问、�
 | 运行桌面会议应用        | [桌面端安装](docs/setup.md#electron-桌面端)                                              |
 | 部署、更新或备份服务器  | [Web 部署](docs/setup.md#web-部署)                                                       |
 | 了解代码和数据流        | [技术架构](docs/architecture.md)                                                         |
+| 运行功能、界面和模块测试 | [测试指南](tests/README.md)                                                             |
 | 验证 Agent 的回答和操作 | [本地评测](eval/README.md)                                                               |
 | 查看设计依据和验收结果  | [规格索引](specs/README.md)                                                              |
 
@@ -103,7 +104,3 @@ specs/              需求、实施方案与验收记录
 ## 许可证
 
 [MIT](LICENSE) © 2026 小洋。随包分发的模型另有许可证，见[模型署名与许可](packages/voiceprint-engine/resources/models/speaker-community-1/NOTICE.md)。
-
-项目级测试入口与证据边界见 [测试指南](tests/README.md)。Web／server 使用显式本机测试数据库和可选 `PAA_REPLY_STREAM_TEST_URL`，按运行隔离 Redis 命名空间；当前进程组监督执行支持 POSIX，Windows 执行明确拒绝。
-
-Windows 限制只适用于新增项目统一 runner 及其 Web／server wrapper；原有 Windows 原生测试命令与 CI 手动平台命令不受影响，未声明 Windows 验收通过。
