@@ -94,7 +94,7 @@ node_modules/.bin/vite --config docs/design/prototype/vite.config.mjs
 | `desktop/app-icon.png`                 | 窗口与 Dock 图标                                       |
 | `desktop/app.icns`、`app.ico`          | macOS／Windows 安装图标                                |
 
-品牌名为 **Noria**，名称灵感来自诺亚方舟；Web 定位为面向公司的云端工作助手，桌面端专注会议录音、本地转写与 AI 纪要。
+品牌名为 **Noria**，名称灵感来自诺亚方舟；定位为围绕用户目标、协助完成任务的 AI 工作助手。Web 以对话、任务执行和成果交付为核心，工作记录与团队汇报按需使用；桌面端专注会议录音、本地转写与 AI 纪要。
 
 界面导入 `@paa/ui-web/mark.png`，统一使用白底圆形头像，深色模式也保留白底与小熊原色，不使用单色 mask 或反色。紧凑位置保证头部轮廓完整；旁边已有名称时图片设为空替代文本。README 使用同源大图。Logo 的颜色不改变应用的黑白灰配色。
 
