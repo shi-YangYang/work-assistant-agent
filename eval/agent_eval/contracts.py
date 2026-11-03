@@ -4,6 +4,15 @@ import subprocess
 from .evidence import BASE, ROOT, digest, fingerprint, read, seal
 
 
+def material_bytes(name):
+    if name == 'long.txt':
+        text = '合成档案，仅依据材料回答。\n'
+        text += ''.join(f'第{index}条：常规检查已登记，没有新增变更。\n' for index in range(1, 2601))
+        text += '最终批准预算：48217元。交付批次：ZX-914。\n'
+        return text.encode('utf-8')
+    return (BASE / 'cases/materials' / name).read_bytes()
+
+
 def catalog():
     data = read(BASE / 'catalog.json')
     if data['version'] != 1:
@@ -39,7 +48,7 @@ def plan(suite, config):
             continue
         case = copy.deepcopy(item)
         case['input'] = next(c for c in read(ROOT / case['source']['file']) if c['id'] == case['source']['id'])
-        case['materials'] = {name: {'base64': __import__('base64').b64encode((BASE / 'cases/materials' / name).read_bytes()).decode()} for name in case['input'].get('attachments', [])}
+        case['materials'] = {name: {'base64': __import__('base64').b64encode(material_bytes(name)).decode()} for name in case['input'].get('attachments', [])}
         cases.append(case)
     if set(selected['cases']) != {c['id'] for c in cases}:
         raise ValueError('Unknown suite member')

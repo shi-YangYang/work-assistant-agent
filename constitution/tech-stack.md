@@ -30,7 +30,9 @@
 | 共享 HTTP 类型、模型参数、品牌、声纹引擎 | `packages/{api-contracts,model-config,ui-web,voiceprint-engine}/` |
 | 固定公共说话人权重 | `packages/voiceprint-engine/resources/models/speaker-community-1/` |
 | 本地 Agent 评测 | `eval/`；运行产物仍放忽略的 `artifacts/agent-eval/` |
-| 自动化测试 | `tests/{desktop,core,web,server}/`、`tests/e2e/desktop/` |
+| 单元、组件与接口测试 | `tests/{desktop,core,web,server}/` |
+| Web 与桌面流程测试 | `tests/e2e/{web,desktop}/` |
+| 部署、沙盒与测试工具检查 | `tests/{deploy,sandbox,tooling}/` |
 | 脚本与部署 | `scripts/`、`deploy/company/` |
 | 产品方向、架构／使用指南、规格、Agent 规则 | `constitution/`、`docs/`、`specs/`、`.ai/` |
 
@@ -56,11 +58,12 @@
 | 公司声纹依赖 | `python3.12 scripts/company/install-voiceprints.py`；Windows 使用 `py -3.12` |
 | 桌面模块检查 | `npm test`、`npm run typecheck` |
 | 公司模块检查 | `npm run test:server`、`npm run test:web`、`npm run typecheck:web` |
+| 项目级本地测试 | `npm run test:project -- --list` 查看运行组；环境与平台限制见[测试指南](../tests/README.md) |
 | Web 构建 | `npm run build:web` |
 | 静态检查 | `npm run lint`、`npm run format:check` |
 | 手动集成／发布检查 | `npm run test:asr`、`npm run test:smoke`、`npm run test:smoke:asr`、`npm run test:package` |
 
-按改动范围选择检查，不默认全部执行。安装、部署和备份步骤在[使用指南](../docs/setup.md)；模块依赖在[技术架构](../docs/architecture.md)。
+按改动范围选择检查，不默认全部执行。日常 CI 仅静态检查与普通构建，平台运行检查按需手动触发，部署保护保持独立。安装、部署和备份步骤在[使用指南](../docs/setup.md)；模块依赖在[技术架构](../docs/architecture.md)。
 
 ## 运行边界
 
@@ -88,5 +91,3 @@
 - `python -m app.integrations.parsing.office_preflight` 在 worker 镜像发布前验证三种真实旧格式及 Office→PDF→PNG。模块／流程检查位于 `tests/server/modules/materials/test_office_conversion.py`、`test_document_preparation.py` 和 `tests/server/scenarios/test_legacy_document_workflow.py`；本地依赖及限制见 [安装说明](../docs/setup.md#旧版-office-文件读取)。
 
 - 原件范围续提取和页面像素装配分别归属 `integrations/parsing`、`tasks/processing`、`agent/context/document_input.py`；不新增向量检索或描述模型。私有处理产物按原件与版本隔离，随附件持久化和删除，不设累计容量额度；磁盘空间保护见[图文读取说明](../docs/setup.md#长文件与图文内容读取)。相关检查为 `test_document_ranges.py`、`test_document_vision.py`，low／high 对照入口为 `eval/benchmarks/document-understanding.py`。
-
-项目级本地测试使用 `npm run test:project -- --list`，运行组与隔离环境见 [测试指南](../tests/README.md)。日常 CI 仅静态检查与普通构建；平台运行按需手动，部署保护保持独立。
