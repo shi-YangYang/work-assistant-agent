@@ -38,6 +38,20 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 
+# Tool caches and generated coverage anywhere in the repository
+.cache/
+.vite/
+.vitest/
+.nyc_output/
+coverage/
+
+# Local test/eval material caches
+/tests/**/cache/
+/eval/**/cache/
+
+# Legacy local copy of the generated long-text fixture
+/eval/agent_eval/cases/materials/long.txt
+
 # Separate company service environment
 .venv-server/
 .venv-voiceprints/

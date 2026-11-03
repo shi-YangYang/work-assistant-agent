@@ -109,6 +109,6 @@ eval/
 └── web/                  真实 HTTP、浏览器流程与调用采集
 ```
 
-`eval/` 和 `tests/` 的源码、合成测试集提交 Git；运行产物写入被忽略的 `artifacts/agent-eval/`。测试凭证与真实用户资料不提交。
+`eval/` 和 `tests/` 的源码、用例定义及小型固定样本提交 Git；运行产物写入被忽略的 `artifacts/agent-eval/`，eval 下的 `cache/`、`.cache/` 也不提交。`long.txt` 这类重复长文由代码在冻结计划时生成，内容直接存入计划，不依赖仓库中的大文本；旧本地副本已忽略。测试凭证与真实用户资料不提交。
 
 旧入口 `scripts/benchmarks/agent-evaluation.py` 已移至本目录。历史 Spec、`inventory.json` 来源快照及冻结产物保留当时路径和哈希；查旧记录时应使用对应 Git 版本，新运行则使用当前入口和新计划。
